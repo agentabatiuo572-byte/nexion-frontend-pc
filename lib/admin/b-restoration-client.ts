@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
   normalizeB2LiquidityHistory as normalizeB2LiquidityHistoryContract,
   normalizeB4GrowthFlowHistory as normalizeB4GrowthFlowHistoryContract,
@@ -23,7 +23,7 @@ export type B4GrowthFlowHistory = {
   healthyRatio: number;
   currentRatio: number | null;
   suggestion: string;
-  ratioSeries: Array<{ label: string; newInflowWan: number; outflowWan: number; ratio: number | null }>;
+  ratioSeries: Array<{ label: string; newInflowWan: number; outflowWan: number; newInflowUsdt: number; outflowUsdt: number; ratio: number | null }>;
   budget: {
     available: boolean;
     totalUsdt?: number;
@@ -123,6 +123,8 @@ export function normalizeB4GrowthFlowHistory(value: unknown): B4GrowthFlowHistor
       label: text(item.label, `B4.ratioSeries.${index}.label`),
       newInflowWan: nonNegative(item.newInflowWan, `B4.ratioSeries.${index}.newInflowWan`),
       outflowWan: nonNegative(item.outflowWan, `B4.ratioSeries.${index}.outflowWan`),
+      newInflowUsdt: nonNegative(item.newInflowUsdt, `B4.ratioSeries.${index}.newInflowUsdt`),
+      outflowUsdt: nonNegative(item.outflowUsdt, `B4.ratioSeries.${index}.outflowUsdt`),
       ratio: nullableNumber(item.ratio, `B4.ratioSeries.${index}.ratio`),
     };
   });
@@ -186,7 +188,7 @@ export async function fetchB4GrowthFlowHistory() {
   return normalizeB4GrowthFlowHistory(await request("/api/admin/treasury/growth-flow-history"));
 }
 
-function useHistory<T>(loader: () => Promise<T>, enabled = true) {
+function useHistory<T>(loader: () => Promise<T>, enabled = true, formatError = displayAdminError) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
@@ -198,11 +200,11 @@ function useHistory<T>(loader: () => Promise<T>, enabled = true) {
       setData(await loader());
     } catch (cause) {
       setData(null);
-      setError(displayAdminError(cause));
+      setError(formatError(cause));
     } finally {
       setLoading(false);
     }
-  }, [enabled, loader]);
+  }, [enabled, loader, formatError]);
   useEffect(() => { void reload(); }, [reload]);
   return { data, loading, error, reload };
 }
@@ -212,5 +214,5 @@ export function useB2LiquidityHistory(enabled = true) {
 }
 
 export function useB4GrowthFlowHistory(enabled = true) {
-  return useHistory(fetchB4GrowthFlowHistory, enabled);
+  return useHistory(fetchB4GrowthFlowHistory, enabled, displayAdminReadError);
 }

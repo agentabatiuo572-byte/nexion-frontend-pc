@@ -1,4 +1,5 @@
-import { supportRequest } from "./m-support-client.ts";
+import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract";
+import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { guardedFetch } from "./error-messages.ts";
 import type { SupportBoardRow } from "../../app/components/domain-views/m-tabs/support-leaderboard";
 
@@ -162,8 +163,14 @@ export function publicLeaderboardAvatar(url: string, agentId: string, q: Leaderb
 }
 export async function fetchLeaderboardAvatar(url: string, agentId: string, q: LeaderboardQuery, expectedVersion: string, signal: AbortSignal): Promise<Blob> {
   const response = await guardedFetch(publicLeaderboardAvatar(url, agentId, q, expectedVersion), { signal, credentials: "same-origin", cache: "no-store" });
-  if (!response.ok) { const error = new Error("公开头像暂不可用") as Error & { status: number }; error.status = response.status; throw error; }
-  if (!["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) invalid("avatarType");
+  if (!response.ok || !["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) {
+    try { parseMContentApiEnvelope(response.status, await response.text(), false); }
+    catch (error) {
+      if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
+      throw error;
+    }
+    invalid("avatarType");
+  }
   const blob = await response.blob(); if (!blob.size) invalid("avatarEmpty"); return blob;
 }
 export function locateLeaderboardSelf(page: LeaderboardPage, q: LeaderboardQuery): LeaderboardQuery | null { return page.self.pageNum === null ? null : { ...q, keyword: undefined, pageNum: page.self.pageNum, expectedVersion: page.viewVersion }; }

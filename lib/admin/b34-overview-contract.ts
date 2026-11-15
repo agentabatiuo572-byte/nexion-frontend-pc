@@ -292,14 +292,14 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
     if (key === "complianceHoldEnabled") {
       boolean(dial.currentValue, "B4", `dials.${index}.currentValue`);
     } else if (["newUserBonusMultiplier", "inviteRewardMultiplier", "reinvestMultiplier", "questBonusMultiplier"].includes(key)) {
-      numberInRange(dial.currentValue, 1, 4, "B4", `dials.${index}.currentValue`);
+      numberInRange(dial.currentValue, 0.01, 10, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawPenaltyFeeRate") {
       numberInRange(dial.currentValue, 0, 100, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawCooldownDays") {
       const days = nonNegativeInteger(dial.currentValue, "B4", `dials.${index}.currentValue`);
-      if (days > 90) invalid("B4", `dials.${index}.currentValue`);
+      if (days > 365) invalid("B4", `dials.${index}.currentValue`);
     } else if (key === "binaryDailyCap") {
-      numberInRange(dial.currentValue, 0, 50_000, "B4", `dials.${index}.currentValue`);
+      numberInRange(dial.currentValue, 0, 1_000_000_000, "B4", `dials.${index}.currentValue`);
     }
     if (typeof dial.unit !== "string") invalid("B4", `dials.${index}.unit`);
     boolean(dial.v1Active, "B4", `dials.${index}.v1Active`);

@@ -1,184 +1,98 @@
-.rhythmpage { display: grid; gap: 16px; }
+/* B4 运营阶段状态。只用 --rd-* 令牌，深浅两套由令牌切换。 */
 
-.rhythmpage .b4-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: end;
-  justify-content: space-between;
-  padding: 18px;
+.rhythmpage .b4-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+.rhythmpage .b4-muted { color: var(--rd-text-3); font-weight: 400; }
+.rhythmpage .b4-line { margin: 0; color: var(--rd-text-2); }
+.rhythmpage .b4-strong { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.rhythmpage .b4-stack { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.rhythmpage .b4-nowrap { white-space: nowrap; }
+
+/* ---------- 阶段线：阶段进度和下一个阶段排在线下面，照运营阶段设置的总体安排 ---------- */
+.rhythmpage .b4-stage-note { margin: var(--rd-space-3) 0 0; color: var(--rd-text-3); }
+.rhythmpage .b4-stage-facts {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--rd-space-7); align-items: start;
+  margin: var(--rd-space-6) 0 0; padding-top: var(--rd-space-5); border-top: 1px solid var(--rd-line);
 }
+.rhythmpage .b4-stage-facts > div { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
+.rhythmpage .b4-stage-facts > div + div { padding-left: var(--rd-space-7); border-left: 1px solid var(--rd-line); }
+.rhythmpage .b4-stage-facts dt { display: inline-flex; align-items: center; gap: 2px; color: var(--rd-text-3); }
+.rhythmpage .b4-stage-facts dd { margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--rd-space-2); min-width: 0; }
+.rhythmpage .b4-stage-facts strong { font-size: var(--rd-text-key); line-height: var(--rd-lh-key); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.rhythmpage .b4-stage-facts strong[data-empty] { color: var(--rd-text-3); }
+.rhythmpage .b4-stage-facts small { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 400; color: var(--rd-text-3); }
+.rhythmpage .b4-stage-facts .rd-scale { width: 100%; max-width: 360px; }
 
-.rhythmpage .b4-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  gap: 12px;
-  flex: 1;
-  max-width: 680px;
-}
+/* ---------- 用户分布：一阶段一条，名字列定宽，条从同一条线起 ---------- */
+.rhythmpage .b4-dist-body { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; }
+.rhythmpage .b4-bars { --rd-track-w: 440px; }
+.rhythmpage .b4-bars li { grid-template-columns: minmax(150px, 220px) minmax(120px, var(--rd-track-w)) minmax(132px, max-content); }
+.rhythmpage .b4-bar-name { display: inline-flex; align-items: baseline; gap: var(--rd-space-2); min-width: 0; }
+.rhythmpage .b4-bar-name b { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.rhythmpage .b4-bar-name span { color: var(--rd-text-3); font-size: var(--rd-text-aux); white-space: nowrap; }
+.rhythmpage .b4-track { display: block; min-width: 0; }
+.rhythmpage .b4-track .rd-ratio { max-width: none; }
+.rhythmpage .b4-bars .rd-barlist-text { display: inline-flex; justify-content: flex-end; gap: var(--rd-space-3); }
+.rhythmpage .b4-bars [data-zero] { color: var(--rd-text-3); }
+.rhythmpage .b4-share { min-width: 48px; color: var(--rd-text-3); }
+.rhythmpage .b4-bars li[data-out] .rd-barlist-label,
+.rhythmpage .b4-bars li[data-out] .b4-bar-name b,
+.rhythmpage .b4-bars li[data-out] .rd-barlist-text { color: var(--rd-text-3); }
 
-.rhythmpage .b4-filter-grid label { display: grid; gap: 6px; }
-.rhythmpage .b4-filter-grid label > span { color: var(--ink-3); font-size: 12px; }
-.rhythmpage select {
-  min-height: 38px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-2);
-  color: var(--ink);
-  padding: 0 10px;
-}
-
-.rhythmpage .b4-actions { display: flex; gap: 8px; }
-.rhythmpage .b4-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-2);
-  color: var(--ink);
-  cursor: pointer;
-}
-.rhythmpage .b4-btn.primary { background: var(--brand); border-color: var(--brand); color: var(--v5-on-brand); }
-.rhythmpage .b4-btn:disabled { opacity: .45; cursor: not-allowed; }
-.rhythmpage .b4-notice { flex-basis: 100%; margin: 0; color: var(--ink-2); font-size: 12.5px; }
-
-.rhythmpage .b4-alert {
-  display: grid;
-  gap: 8px;
-  padding: 18px;
-  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
-  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
-}
-.rhythmpage .b4-alert span { color: var(--ink-3); font-size: 13px; }
-.rhythmpage .b4-alert .b4-btn { width: max-content; }
-
-.rhythmpage .b4-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-.rhythmpage .b4-summary article { display: grid; gap: 5px; padding: 18px; }
-.rhythmpage .b4-summary span { color: var(--ink-3); font-size: 12px; }
-.rhythmpage .b4-summary strong { color: var(--brand); font-size: 26px; }
-.rhythmpage .b4-summary small { color: var(--ink-4); }
-
-.rhythmpage .b4-distribution,
-.rhythmpage .b4-pivot,
-.rhythmpage .b4-levers,
-.rhythmpage .b4-dials,
-.rhythmpage .b4-attribution { padding: 20px; }
-
-.rhythmpage .b4-section-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: start;
-  margin-bottom: 18px;
-}
-.rhythmpage .b4-section-head h2 { margin: 0; font-size: 16px; }
-.rhythmpage .b4-section-head p { margin: 5px 0 0; color: var(--ink-3); font-size: 12.5px; }
-.rhythmpage .b4-source {
-  border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
-  border-radius: 999px;
-  color: var(--success);
-  font-size: 11px;
-  padding: 4px 9px;
-  white-space: nowrap;
+/* 按月：按阶段分组，每组一个小标题；宽时两列 */
+.rhythmpage .b4-dist { container-type: inline-size; }
+.rhythmpage .b4-groups { list-style: none; margin: 0; padding: 0; column-gap: var(--rd-space-8); }
+.rhythmpage .b4-group { break-inside: avoid; display: flex; flex-direction: column; gap: var(--rd-space-2); padding-bottom: var(--rd-space-4); }
+.rhythmpage .b4-group-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.rhythmpage .b4-group[data-out] .b4-group-name { color: var(--rd-text-3); }
+.rhythmpage .b4-groups .b4-bars { --rd-track-w: 280px; }
+.rhythmpage .b4-groups .b4-bars li { grid-template-columns: 136px minmax(96px, var(--rd-track-w)) minmax(132px, max-content); }
+@container (min-width: 980px) {
+  .rhythmpage .b4-groups { columns: 2; }
 }
 
-.rhythmpage .b4-bars {
-  display: flex;
-  min-height: 190px;
-  gap: 10px;
-  align-items: end;
-  overflow-x: auto;
-}
-.rhythmpage .b4-bars article {
-  flex: 1;
-  min-width: 54px;
-  display: grid;
-  grid-template-rows: 20px 130px auto auto;
-  gap: 6px;
-  text-align: center;
-  color: var(--ink-2);
-}
-.rhythmpage .b4-bars article.muted { opacity: .35; }
-.rhythmpage .b4-bar-value { font: 600 12px var(--font-jet-mono), monospace; }
-.rhythmpage .b4-bar-track {
-  display: flex;
-  align-items: end;
-  border-radius: 7px 7px 3px 3px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-.rhythmpage .b4-bar-track > div {
-  width: 100%;
-  background: linear-gradient(180deg, var(--brand), var(--brand-deep));
-  border-radius: 7px 7px 3px 3px;
-}
-.rhythmpage .b4-bars small { color: var(--ink-4); }
+/* ---------- 八项参数 ---------- */
+.rhythmpage .b4-panel-note { margin: 0; padding: 0 var(--rd-panel-pad-x) var(--rd-space-3); color: var(--rd-text-2); }
+.rhythmpage .b4-dials { table-layout: fixed; width: 100%; }
+.rhythmpage .b4-dials th:nth-child(1), .rhythmpage .b4-dials td:nth-child(1) { width: 26%; }
+.rhythmpage .b4-dials th:nth-child(2), .rhythmpage .b4-dials td:nth-child(2) { width: 22%; }
+.rhythmpage .b4-dials th:nth-child(3), .rhythmpage .b4-dials td:nth-child(3) { width: 16%; }
+.rhythmpage .b4-dials th:nth-child(4), .rhythmpage .b4-dials td:nth-child(4) { width: 26%; }
+.rhythmpage .b4-dial-name { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.rhythmpage .b4-dial-name b { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.rhythmpage .b4-th { display: inline-flex; align-items: center; gap: 2px; }
+.rhythmpage .b4-value { font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.rhythmpage .b4-value[data-retired] { color: var(--rd-text-3); }
+.rhythmpage .b4-dials .rd-fact-change { justify-content: flex-end; white-space: nowrap; }
+.rhythmpage .b4-retired-inline { display: none; }
 
-.rhythmpage .b4-grid {
-  display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
-  gap: 16px;
-}
-.rhythmpage .b4-pivot > strong { display: block; color: var(--brand); font-size: 34px; }
-.rhythmpage .b4-pivot > span { color: var(--ink-2); font-size: 13px; }
-.rhythmpage .b4-pivot ul { margin: 15px 0 0; padding-left: 18px; color: var(--ink-3); font-size: 12.5px; }
-.rhythmpage .b4-pivot li + li { margin-top: 6px; }
+/* ---------- 钱的进出和预算 ---------- */
+.rhythmpage .b4-amounts { margin: 0; display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-5); color: var(--rd-text-3); }
+.rhythmpage .b4-amounts b { font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.rhythmpage .b4-amounts b[data-zero] { color: var(--rd-text-3); }
+.rhythmpage .b4-advice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); }
+.rhythmpage .b4-money-table { table-layout: fixed; width: 100%; }
 
-.rhythmpage .b4-lever-list { display: grid; gap: 9px; }
-.rhythmpage .b4-lever-list article {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 4px 10px;
-  padding: 11px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-2);
-}
-.rhythmpage .b4-lever-list article > span { grid-row: span 2; color: var(--brand); font-size: 12px; font-weight: 600; }
-.rhythmpage .b4-lever-list small { color: var(--ink-3); }
+/* ---------- 每月重点参数 ---------- */
+.rhythmpage .b4-lever { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.rhythmpage .b4-lever-month { display: inline-flex; align-items: center; gap: var(--rd-space-3); color: var(--rd-text-2); }
+.rhythmpage .b4-lever-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rhythmpage .b4-lever-list li { display: grid; grid-template-columns: 72px minmax(160px, max-content) minmax(0, 1fr); align-items: center; gap: var(--rd-space-1) var(--rd-space-4); padding: var(--rd-space-2) 0; }
+.rhythmpage .b4-lever-list li + li { border-top: 1px solid var(--rd-line); }
+.rhythmpage .b4-lever-list li > .rd-tag { grid-column: 2 / -1; justify-self: start; }
+.rhythmpage .b4-lever-key { justify-self: start; padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.rhythmpage .b4-lever-list b { font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
 
-.rhythmpage .b4-table-wrap { overflow-x: auto; }
-.rhythmpage .b4-dials table { width: 100%; min-width: 920px; border-collapse: collapse; }
-.rhythmpage .b4-dials th,
-.rhythmpage .b4-dials td { padding: 11px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
-.rhythmpage .b4-dials th { color: var(--ink-3); font-size: 11px; font-weight: 500; }
-.rhythmpage .b4-dials td { color: var(--ink-2); font-size: 12.5px; }
-.rhythmpage .b4-dials td:first-child { display: grid; gap: 3px; }
-.rhythmpage .b4-dials td:first-child small { color: var(--ink-4); font: 10.5px var(--font-jet-mono), monospace; }
-.rhythmpage .b4-dials .mono { font-family: var(--font-jet-mono), monospace; font-weight: 600; }
-.rhythmpage .b4-status { display: inline-block; border-radius: 999px; padding: 4px 8px; font-size: 11px; }
-.rhythmpage .b4-status.active { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
-.rhythmpage .b4-status.pending { color: var(--ink-3); background: var(--surface-3); }
-.rhythmpage .b4-link { color: var(--brand); text-decoration: none; font-weight: 600; }
+.rhythmpage .rd-links [aria-disabled="true"]:not(a) { color: var(--rd-text-3); }
 
-.rhythmpage .b4-attribution-links {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+/* ---------- 窄屏 ---------- */
+@media (max-width: 1180px) {
+  .rhythmpage .b4-col-what { display: none; }
+  .rhythmpage .b4-retired-inline { display: block; margin-top: var(--rd-space-1); }
+  .rhythmpage .b4-dials th:nth-child(1), .rhythmpage .b4-dials td:nth-child(1) { width: 32%; }
+  .rhythmpage .b4-dials th:nth-child(3), .rhythmpage .b4-dials td:nth-child(3) { width: 20%; }
+  .rhythmpage .b4-dials th:nth-child(4), .rhythmpage .b4-dials td:nth-child(4) { width: 34%; }
+  .rhythmpage .b4-stage-facts { gap: var(--rd-space-5); }
+  .rhythmpage .b4-stage-facts > div + div { padding-left: var(--rd-space-5); }
+  .rhythmpage .b4-bars { --rd-track-w: 320px; }
 }
-.rhythmpage .b4-link-card {
-  display: grid;
-  gap: 5px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 13px;
-  color: var(--ink);
-  background: var(--surface-2);
-  text-decoration: none;
-}
-@media (hover: hover) and (pointer: fine) { .rhythmpage .b4-link-card:hover { border-color: var(--brand); } }
-.rhythmpage .b4-link-card span { color: var(--ink-3); font-size: 11.5px; }
-
-@container bpage (max-width: 980px) {
-  .rhythmpage .b4-filter-grid,
-  .rhythmpage .b4-summary,
-  .rhythmpage .b4-grid,
-  .rhythmpage .b4-attribution-links { grid-template-columns: 1fr; }
-}
+.rhythmpage .b4-filter-end { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--rd-space-2) var(--rd-space-3); }

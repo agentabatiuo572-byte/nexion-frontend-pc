@@ -1,103 +1,118 @@
-/* UVEL F2: confirmed v4 design. Route scope preserves the other console pages. */
-[data-royalty-shell] .fdom { --surface: #101115; --surface-2: #16181e; --border: #292c35; --border-strong: #383d4b; --ink-3: #a5aabb; --cyan: #b799ff; --brand: #b5ef62; }
-.fdom .f2-page-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 0 0 18px; }
-.fdom .f2-page-header h1 { margin: 6px 0 0; font-size: 28px; font-weight: 650; line-height: 1.35; }
-.fdom .f2-breadcrumb { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--ink-3); }
-.fdom .f2-page-meta { font-size: 12px; color: var(--ink-3); text-align: right; }
-.fdom .f2-layout { gap: 20px; font-size: 13px; line-height: 1.6; }
-.fdom .f2-layout .pane { border-color: var(--border-strong); border-radius: 6px; }
-.fdom .f2-layout .pane-h { align-items: start; gap: 12px; padding: 16px 20px 14px; }
-.fdom .f2-layout .pane-h > * { min-width: 0; }
-.fdom .f2-layout .ph-ttl { display: block; position: relative; font-size: 16px; font-weight: 600; line-height: 1.5; white-space: normal; }
-.fdom .f2-layout .ph-ttl::before { content: ''; position: absolute; left: -10px; top: 2px; width: 3px; height: 21px; border-radius: 2px; background: var(--cyan); }
-.fdom .f2-layout .ph-sub { display: block; margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--ink-3); white-space: normal; }
-.fdom .f2-history-link { margin-left: auto; padding: 0; border: 0; background: transparent; color: var(--cyan); font: inherit; font-size: 12px; text-decoration: none; cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .fdom .f2-history-link:hover { text-decoration: underline; } }
-.fdom .f2-help, .fdom .f2-layout .f-foot { font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.fdom .f2-layout .fbtn { min-height: 32px; padding: 5px 12px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
-.fdom .f2-layout .fbtn.amp::after { content: none; }
-.fdom .f2-layout :is(button, a, summary, select, input):focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
-.fdom .f2-unconfigured { margin: -5px 16px 12px; }
-.fdom .f2-layout .f-stats { margin: 0 16px 12px; }
-.fdom .f2-layout .casc { margin: 0 16px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
-.fdom .f2-layout .casc-head,
-.fdom .f2-layout .casc-row { display: grid; grid-template-columns: .65fr 1.35fr 1.65fr 1.05fr 1fr; align-items: stretch; gap: 0; font-size: 13px; line-height: 1.5; }
-.fdom .f2-layout .casc-head { background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
-.fdom .f2-layout .casc-head > *,
-.fdom .f2-layout .casc-row > * { display: flex; min-width: 0; justify-content: center; align-items: center; gap: 8px; padding: 3px 10px; border-right: 1px solid var(--border); text-align: center; }
-.fdom .f2-layout .casc-head { min-height: 30px; }
-.fdom .f2-layout .casc-row { min-height: 31px; border-top: 1px solid var(--border); }
-.fdom .f2-layout .casc-row > :last-child,
-.fdom .f2-layout .casc-head > :last-child { border-right: 0; }
-.fdom .f2-layout .casc-rate strong { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.fdom .f2-layout .casc-rate { flex-direction: row-reverse; }
-.fdom .f2-layout .rate-bar { width: 72px; max-width: 34%; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; flex-shrink: 0; }
-.fdom .f2-layout .rate-bar .f { height: 100%; background: var(--cyan); }
-.fdom .f2-layout .lchip { font-size: 13px; font-weight: 400; }
-.fdom .f2-layout .nex-val { color: var(--ink-2); font-size: 13px; font-weight: 400; text-align: center; line-height: 1.5; }
-.fdom .f2-layout button.nex-val { color: var(--brand); min-height: 24px; }
-.fdom .f2-layout .nex-val small { display: inline; font-size: 11px; color: var(--ink-3); margin-left: 6px; }
-.fdom .f2-layout .casc-fixed { font-size: 12px; color: var(--ink-3); }
-.fdom .f2-layout .casc-fixed small { display: none; }
-.fdom .f2-layout .casc-action .fbtn { color: var(--brand); background: transparent; border-color: transparent; min-height: 24px; padding: 0 6px; }
-@media (hover: hover) and (pointer: fine) { .fdom .f2-layout .casc-action .fbtn:hover { background: var(--brand-soft); } }
-.fdom .f2-layout .casc-mobile-label { display: none; }
-.fdom .f2-status { display: inline-flex; align-items: center; gap: 7px; }
-.fdom .f2-status::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--ink-3); }
-.fdom .f2-status[data-state="off"]::before { background: var(--success); }
-.fdom .f2-status[data-state="on"]::before { background: var(--warning); }
-.fdom .f2-layout .casc-foot { margin: 0; padding: 6px 16px; gap: 8px; font-size: 12px; color: var(--ink-3); }
-.fdom .f2-layout > .pane > .casc-foot .fbtn { min-height: 24px; padding-block: 2px; }
-.fdom .f2-parameters-title { margin: 2px 16px 10px; font-size: 14px; font-weight: 600; }
-.fdom .f2-layout .params.f2-rule-params { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 16px; margin: 0; }
-.fdom .f2-rule-params .param { position: relative; min-width: 0; min-height: 64px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 5px; background: transparent; }
-.fdom .f2-rule-params .pk { font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.fdom .f2-layout .f2-rule-params .pv { margin: 4px 46px 0 0; font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
-.fdom .f2-rule-params .fbtn { position: absolute; right: 8px; bottom: 6px; padding-inline: 6px; background: transparent; border-color: transparent; color: var(--brand); }
-.fdom .f2-layout .param .psub { font-size: 12px; }
-.fdom .f2-legacy { margin: 10px 16px 12px; font-size: 12px; color: var(--ink-3); }
-.fdom .f2-legacy summary { cursor: pointer; padding: 0; }
-.fdom .f2-legacy > p { margin: 12px 0; }
-.fdom .f2-legacy-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.fdom .f2-legacy-values .param { background: transparent; padding: 10px; }
-.fdom .f2-legacy-values .pv { font-size: 14px; }
-.fdom .f2-top { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.fdom .f2-top > .pane { min-width: 0; }
-.fdom .f2-partner-picker { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 16px; }
-.fdom .f2-partner-picker label { font-size: 12px; color: var(--ink-2); }
-.fdom .f2-partner-picker select,
-.fdom .f2-readonly-value { min-width: 0; min-height: 32px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-2); color: var(--ink-2); font: inherit; }
-.fdom .f2-partner-picker select { padding: 4px 8px; width: 100%; font-size: 13px; }
-.fdom .f2-top .casc-foot { padding-block: 12px; }
-.fdom .f2-top .casc-foot > .fbtn { margin-left: auto; }
-.fdom .f2-top .tier { grid-template-columns: minmax(0, 1fr) auto auto; }
-.fdom .f2-top .tier .nm { font-size: 14px; }
-.fdom .f2-top .tier .nm .req { font-size: 12px; }
-.fdom .f2-cooling-body { display: grid; gap: 12px; padding: 0 16px; }
-.fdom .f2-cooling-row { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 12px; font-size: 12px; color: var(--ink-2); }
-.fdom .f2-readonly-value { display: flex; align-items: center; padding: 0 10px; gap: 8px; }
-.fdom .f2-readonly-value input { min-width: 0; width: 100%; padding: 5px 0; color: var(--ink-3); font: inherit; font-size: 13px; background: none; border: 0; }
-.fdom .f2-readonly-value > span { color: var(--ink-3); font-size: 12px; }
-.fdom .f2-layout .f-foot { margin: 0; }
-@media (max-width: 850px) {
-  .fdom .f2-top { grid-template-columns: minmax(0, 1fr); }
-  .fdom .f2-page-header { flex-wrap: wrap; }
-  .fdom .f2-layout .casc-head { display: none; }
-  .fdom .f2-layout .casc-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; gap: 10px; }
-  .fdom .f2-layout .casc-row > * { border: 0; padding: 0; justify-content: start; text-align: left; }
-  .fdom .f2-layout .casc-level { grid-column: 1; grid-row: 1; }
-  .fdom .f2-layout .casc-action { grid-column: 2; grid-row: 1; justify-content: end; }
-  .fdom .f2-layout .casc-rate, .fdom .f2-layout .casc-nex { flex-wrap: wrap; flex-direction: row; }
-  .fdom .f2-layout .casc-mobile-label { display: block; flex-basis: 100%; color: var(--ink-3); font-size: 12px; }
-  .fdom .f2-layout .casc-status { grid-column: 1 / -1; }
-  .fdom .f2-layout .casc-status .casc-mobile-label { flex-basis: auto; }
-  .fdom .f2-layout .nex-val { text-align: left; }
-  .fdom .f2-layout .params.f2-rule-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* F2 团队奖励设置（改版）。只用 --rd-* 令牌，深浅两套由令牌切换；规则都挂在 .f2-page 下，不影响 F 域其他页。 */
+.f2-page { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.f2-page .f2-stack { display: grid; gap: 16px; }
+.f2-page .f2-muted { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.f2-page .f2-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* 整体结算 */
+.f2-page .f2-settle-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); gap: 16px 32px; align-items: start; }
+.f2-page .f2-settle-body:has(> :only-child) { grid-template-columns: minmax(0, 1fr); }
+.f2-page .f2-settle-state { display: grid; gap: 4px; min-width: 0; }
+.f2-page .f2-settle-name { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.f2-page .f2-settle-name[data-state="running"] { color: var(--rd-ok); }
+.f2-page .f2-settle-name[data-state="paused"], .f2-page .f2-settle-name[data-state="off"] { color: var(--rd-warn); }
+.f2-page .f2-settle-name[data-state="loading"], .f2-page .f2-settle-name[data-state="failed"] { color: var(--rd-text-3); }
+.f2-page .f2-settle-what { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.f2-page .f2-settle-note { margin: 4px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f2-page .f2-checks { display: grid; gap: 8px; min-width: 0; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.f2-page .f2-checks-title { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.f2-page .f2-checks-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.f2-page .f2-checks-list li { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.f2-page .f2-checks-list li > svg { color: var(--rd-text-3); }
+.f2-page .f2-checks-list li[data-ok="true"] > svg { color: var(--rd-ok); }
+.f2-page .f2-checks-list li[data-ok="false"] > svg, .f2-page .f2-checks-list li[data-ok="false"] .f2-checks-seen { color: var(--rd-warn); }
+.f2-page .f2-checks-label { color: var(--rd-text); }
+.f2-page .f2-checks-seen { color: var(--rd-text-2); font-variant-numeric: tabular-nums; text-align: right; }
+.f2-page .f2-alerts { display: grid; gap: 8px; margin: 16px 0 0; padding: 0; list-style: none; }
+.f2-page .rd-notice-title > .rd-tag, .f2-page .rd-notice-title > span > .rd-tag { margin-left: 8px; }
+
+/* 每层分多少：合计条 */
+.f2-page .f2-sum-graphic { --rd-track-w: 100%; padding-top: 8px; }
+.f2-page .f2-sum { display: grid; gap: 8px; margin: 0; }
+.f2-page .f2-sum > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.f2-page .f2-sum dt { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f2-page .f2-sum dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.f2-page .f2-sum dd strong { font-size: var(--rd-text-key); line-height: var(--rd-lh-key); font-weight: var(--rd-weight-semibold); }
+.f2-page .f2-sum dd span { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f2-page .f2-sum dd[data-empty] { color: var(--rd-text-3); }
+
+/* 七层表 */
+.f2-page .f2-layer-table { table-layout: fixed; }
+.f2-page .f2-layer-table th:nth-child(1) { width: 16%; }
+.f2-page .f2-layer-table th:nth-child(2) { width: 15%; }
+.f2-page .f2-layer-table th:nth-child(3) { width: 14%; }
+.f2-page .f2-layer-table th:nth-child(4) { width: 15%; }
+.f2-page .f2-layer-table th:nth-child(5) { width: 18%; }
+.f2-page .f2-layer { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.f2-page .f2-layer-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 20px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-role-4-bg); color: var(--rd-text); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.f2-page .f2-layer-chip[data-direct] { background: var(--rd-role-4-tile); color: var(--rd-role-4-tile-ink); }
+.f2-page .f2-rate { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; --rd-track-w: 56px; }
+.f2-page .f2-rate strong { min-width: 40px; text-align: right; font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.f2-page .f2-layer-table tr[data-paused] .f2-rate strong { color: var(--rd-text-3); text-decoration: line-through; }
+.f2-page .f2-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.f2-page .f2-row-actions { display: inline-flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.f2-page .f2-fixed { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.f2-page .f2-bad { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+@container (max-width: 820px) {
+  .f2-page .f2-settle-body { grid-template-columns: minmax(0, 1fr); }
+  .f2-page .f2-rate { --rd-track-w: 0px; }
+  .f2-page .f2-rate .rd-ratio { display: none; }
 }
-@media (max-width: 640px) {
-  .fdom .f2-page-header h1 { font-size: 24px; }
-  .fdom .f2-layout .pane-h { padding-inline: 18px; }
-  .fdom .f2-layout .params.f2-rule-params, .fdom .f2-legacy-values { grid-template-columns: minmax(0, 1fr); }
-  .fdom .f2-partner-picker { grid-template-columns: minmax(0, 1fr); }
-  .fdom .f2-cooling-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+
+/* 谁能拿到 */
+.f2-page .f2-gate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
+.f2-page .f2-gate-text { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+
+/* 合作伙伴权益 */
+.f2-page .f2-perk-toggle { display: flex; }
+.f2-page .f2-perks { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.f2-page .f2-perks li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; padding: 6px 0; border-top: 1px solid var(--rd-line); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.f2-page .f2-perk-tier { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.f2-page .f2-inline-tag { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+
+/* 旧档位和旧参数：只读、已不生效 */
+.f2-page .f2-legacy { display: grid; gap: 8px; }
+.f2-page .f2-legacy-title { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text-3); }
+.f2-page .f2-legacy-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.f2-page .f2-legacy-list li { display: grid; grid-template-columns: minmax(160px, 1.4fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--rd-line); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.f2-page .f2-legacy-list li:last-child { border-bottom: 1px solid var(--rd-line); }
+
+/* 确认框里的七层对比图 */
+.f2-compare { display: grid; gap: 8px; }
+.f2-compare-title { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 等级门：七格，要看等级的层带锁 */
+.f2-page .f2-gate-strip { display: inline-flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.f2-page .f2-gate-strip li { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 8px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.f2-page .f2-gate-strip li[data-gated] { border-color: transparent; background: var(--rd-role-3-bg); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.f2-page .f2-nowrap { white-space: nowrap; }
+
+/* 合作伙伴四档 */
+.f2-page .f2-tiers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.f2-page .f2-tiers li { display: grid; gap: 2px; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.f2-page .f2-tier-name { display: inline-flex; align-items: center; gap: 8px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.f2-page .f2-tier-step { width: 8px; height: 8px; border-radius: 2px; background: var(--rd-level-1); }
+.f2-page .f2-tier-step[data-step="2"] { background: var(--rd-level-2); }
+.f2-page .f2-tier-step[data-step="3"] { background: var(--rd-level-3); }
+.f2-page .f2-tier-step[data-step="4"] { background: var(--rd-level-4); }
+.f2-page .f2-tier-value { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.f2-page .f2-tier-value strong { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.f2-page .f2-tier-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container (max-width: 820px) { .f2-page .f2-tiers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* 页面最上方的原申请逐条提醒：和 F4、F5 同一种排法。 */
+.f2-page { container: f2-page / inline-size; }
+.f2-page .f2-recovery { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content; gap: var(--rd-space-2) 0; margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.f2-page .f2-recovery li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.f2-page .f2-recovery-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.f2-page .f2-recovery-change { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.f2-page .f2-recovery-change small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f2-page .f2-recovery-time, .f2-page .f2-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f2-page .f2-recovery-zone { margin: var(--rd-space-2) 0 0; }
+.f2-page .f2-recovery .f2-actions { justify-content: flex-end; }
+@container f2-page (max-width: 860px) {
+  .f2-page .f2-recovery { display: flex; flex-direction: column; }
+  .f2-page .f2-recovery li { display: flex; flex-wrap: wrap; align-items: center; }
+  .f2-page .f2-recovery-change { flex: 1 1 12em; }
+  .f2-page .f2-recovery .f2-actions { margin-inline-start: auto; }
 }

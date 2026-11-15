@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 
 export type PlacementStatus = "ALL" | "ASSIGNED" | "UNASSIGNED";
 export type Placement = {
@@ -15,6 +16,26 @@ export class PlacementError extends Error {
   constructor(message: string, public outcome: "rejected" | "unknown", public status = 0) { super(message); }
 }
 const id = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0;
+type PlacementAttempt = PendingMutationRecord & { adminId: number; intent: PlacementIntent };
+const attempts = createPendingMutationStore<PlacementAttempt>({
+  storageKey: "nexion-admin-f3-placements-v1", retainExpiredRecords: true,
+  isValidRecord: row => id(row.adminId) && !!row.intent && id(row.intent.ownerUserId) && id(row.intent.memberUserId)
+    && ["A", "B"].includes(row.intent.leg),
+});
+export const pendingPlacement = (adminId: number) => attempts.list().find(row => row.adminId === adminId);
+export function rememberPlacement(adminId: number, intent: PlacementIntent) {
+  if (pendingPlacement(adminId)) throw new Error("F3_PLACEMENT_UNRESOLVED");
+  const slot = `${adminId}:assignment`, key = crypto.randomUUID(); // Local evidence ID only; never sent as an idempotency key.
+  attempts.remember(slot, key, { adminId, intent });
+  if (!attempts.isDurablyStored(slot, key)) {
+    attempts.forget(slot, key);
+    throw new Error("F3_PROPOSAL_STORAGE_UNAVAILABLE");
+  }
+}
+export function forgetPlacement(adminId: number) {
+  const original = pendingPlacement(adminId);
+  if (original) attempts.forget(original.fingerprint, original.commandKey);
+}
 const invalid = () => new Error("分组信息加载不完整，请重新查询。");
 const uncertain = () => new PlacementError("分组结果暂未确认，请稍后查看分组结果。", "unknown");
 
@@ -41,9 +62,7 @@ async function request(query: string, intent?: PlacementIntent): Promise<unknown
     throw uncertain();
   }
   if (!response.ok || result?.code !== 0) {
-    const message = response.status === 409 || result?.code === 409
-      ? "该成员的分组已被修改，请查看分组结果；已分组的不能更改。"
-      : formatAdminApiError(result?.message, "F3_ASSIGNMENT_READ_FAILED");
+    const message = formatAdminApiError(result?.message, "F3_ASSIGNMENT_READ_FAILED");
     throw new PlacementError(message, "rejected", response.status === 200 ? result?.code : response.status);
   }
   return result.data;
