@@ -170,11 +170,26 @@ const ORDER_STATE: Record<string, readonly [string, "ok" | "warn" | "danger" | "
   placed: ["待付款", "warn"], paid: ["已付款", "progress"], provisioning: ["设备开通中", "progress"], activated: ["已开通", "ok"], payment_failed: ["付款失败", "danger"],
   expired: ["已过期", "done"], provisioning_failed: ["开通失败", "danger"], cancelled: ["已取消", "done"], refunded: ["已退款", "done"], chargeback: ["已拒付", "danger"],
 };
-/** 充值状态码按后端充值流水的三组上色（OpsFinanceService TOPUP_FLOW_STATUSES）：待确认是处理中，异常组是要核对的；已入账和不认识的码不上色。文字用后端的 statusLabel。 */
+/** 充值状态码按后端充值流水的三组上色（OpsFinanceService TOPUP_FLOW_STATUSES），最近一笔的银行卡订单状态按银行卡订单页分组：待确认、待付款是处理中，异常和待核对是要核对的；已入账和不认识的码不上色。 */
 const DEPOSIT_TONE: Record<string, "progress" | "danger"> = Object.fromEntries([
-  ...["CREATED", "PENDING", "CONFIRMING", "WAITING_CONFIRMATION"].map((code) => [code, "progress"] as const),
+  ...["CREATED", "PENDING", "CONFIRMING", "WAITING_CONFIRMATION", "CREATING", "AWAITING_PAYMENT", "PROCESSING", "RETURN_PENDING"].map((code) => [code, "progress"] as const),
+  ...["UNKNOWN", "RECEIPT_REVIEW", "MISMATCH_REVIEW", "LATE_REVIEW", "MANUAL_REVIEW"].map((code) => [code, "danger"] as const),
   ...["FAILED", "DECLINED", "EXPIRED", "REJECTED", "ABNORMAL", "CHARGEBACK", "DISPUTED", "CHARGEBACK_REVIEW", "CHARGEBACK_REFUNDED", "CHARGEBACK_RECOVERED", "CHARGEBACK_PARTIAL"].map((code) => [code, "danger"] as const),
 ]);
+/** 最近一笔充值的来源，叫法和充值与收款对账页一致。 */
+const DEPOSIT_SOURCE: Record<string, string> = {
+  DEPOSIT_ORDER: "USDT 链上充值", PAYMENT_RECORD: "国际卡刷卡", CARD_ADMISSION: "国际卡刷卡",
+  HDPAY: "银行卡支付", VIETQR: "银行转账", VIETQR_RECONCILIATION: "银行转账回单",
+};
+/** 最近一笔充值只带状态码，叫法和充值与收款对账页、银行卡订单一致；认不出的不写原码。 */
+const DEPOSIT_STATUS: Record<string, string> = {
+  SUCCESS: "已成功", CONFIRMED: "已确认", CREDITED: "已入账", PAID: "已付款", CREATED: "已创建", PENDING: "待确认", CONFIRMING: "确认中",
+  WAITING_CONFIRMATION: "待确认", PROCESSING: "处理中", FAILED: "处理失败", DECLINED: "支付被拒绝", EXPIRED: "已过期", REJECTED: "已拒绝",
+  ABNORMAL: "账务异常", CHARGEBACK: "拒付待处理", DISPUTED: "拒付争议中", CHARGEBACK_REVIEW: "拒付复核中", CHARGEBACK_REFUNDED: "拒付已退款",
+  CHARGEBACK_RECOVERED: "拒付已追回", CHARGEBACK_PARTIAL: "拒付部分追回", CREATING: "创建中", AWAITING_PAYMENT: "待付款", UNKNOWN: "结果未知",
+  CANCELLED: "已取消", RETURNED: "已退回", RECEIPT_REVIEW: "回单待核对", MISMATCH_REVIEW: "信息不一致待核对", LATE_REVIEW: "逾期回单待核对",
+  RETURN_PENDING: "退回处理中", MANUAL_REVIEW: "待人工核对",
+};
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const withdrawalTone = (row: JsonRecord) => WITHDRAWAL_TONE[asText(row.status, "").toUpperCase()];
@@ -210,14 +225,14 @@ function numberLabel(value: unknown) {
   return Number.isFinite(number) ? fmtNum(number) : "—";
 }
 
-/** 金额按接口原值显示，至少两位小数，不舍入，非零不会变成 0（TX-20）。读不到写「—」，不当成 0。 */
+/** 金额按接口原值显示：去掉后端补的末尾 0，至少两位小数，不舍入，非零不会变成 0（TX-20）。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
   const raw = typeof value === "number" && Number.isFinite(value)
     ? value.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 20 })
     : typeof value === "string" ? value.trim() : "";
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
   if (!match) return raw || "—";
-  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").padEnd(2, "0")}`;
+  return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")}`;
 }
 
 function assetText(value: unknown) {
@@ -422,6 +437,13 @@ const DEPOSIT_RECORD = { title: "充值记录", sub: (row: JsonRecord) => mono(r
   ["金额", amountText(row.amount, row.asset)], ["状态", depositStatus(row)], ["渠道", asText(row.channel)], ["币种", assetText(row.asset) || "—"],
   ["发起时间", detailTime(row.createdAt)], ["确认时间", detailTime(row.confirmedAt)],
 ] as const };
+/** 最近一笔充值（可能不在下面的列表里）：后端只给来源、金额、状态和发起时间，没有确认时间。用户付的币种和入账币种不同时两个都写。 */
+const LATEST_DEPOSIT_RECORD = { title: "最近一笔充值", sub: (row: JsonRecord) => mono(row.depositNo), facts: (row: JsonRecord) => [
+  ["充值金额", amountText(row.amount, row.asset)],
+  ...(row.paymentCurrency != null && asText(row.paymentCurrency, "") !== asText(row.asset, "")
+    ? [["用户付款", row.paymentAmount == null ? `${assetText(row.paymentCurrency)}，金额没有记下` : amountText(row.paymentAmount, row.paymentCurrency)] as const] : []),
+  ["状态", depositStatus(row)], ["来源", asText(row.channel)], ["发起时间", detailTime(row.createdAt)],
+] as const };
 const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => ReactNode; facts: (row: JsonRecord) => readonly (readonly [string, ReactNode])[] }> = {
   session: { title: "登录记录", sub: (row) => platformSessionDeviceText(asText(row.deviceName)), facts: (row) => [
     ["状态", sessionTag(row)], ["IP", asText(row.clientIpMasked)], ["登录时间", detailTime(row.issuedAt)], ["过期时间", detailTime(row.expiresAt)],
@@ -433,10 +455,12 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => Reac
     ["重试次数", asText(row.revokeAttempts)], ["撤销时限", shortTime(row.revokeDeadlineAt)], ["最近错误", asText(row.revokeLastError)],
   ] },
   deposit: DEPOSIT_RECORD,
-  topup: DEPOSIT_RECORD,
+  topup: LATEST_DEPOSIT_RECORD,
   withdrawal: { title: "提现记录", sub: (row) => mono(row.withdrawalNo), facts: (row) => [
     ["金额", amountText(row.amount, row.asset)], ["状态", withdrawalStatus(row)], ...(withdrawalReason(row) ? [["原因", withdrawalReason(row)] as const] : []),
-    ["风险分", asText(row.riskScore)], ["币种", assetText(row.asset) || "—"], ["链", asText(row.chain)], ["创建时间", detailTime(row.createdAt)],
+    // 最近一笔提现不带风险分和链，不写成「—」冒充读不到。
+    ...(row.sourceType === "WITHDRAWAL" ? [] : [["风险分", asText(row.riskScore)] as const]), ["币种", assetText(row.asset) || "—"],
+    ...(row.sourceType === "WITHDRAWAL" ? [] : [["链", asText(row.chain)] as const]), ["创建时间", detailTime(row.createdAt)],
   ] },
   device: { title: "设备明细", sub: (row) => mono(row.instanceNo), facts: (row) => [
     ["状态", deviceTag(row)], ["运行状态", formatC1RuntimeStatus(row.runtimeStatus)], ["名称", asText(row.name)], ["规格", formatC1DeviceTier(row.productTier)],
@@ -478,7 +502,7 @@ function recordConclusion(kind: RecordKind, row: JsonRecord): { tone: StateTone;
   if (kind === "order") return orderTone(row) === "danger" ? { tone: "danger", text: "这笔订单付款、开通或拒付有异常，请到订单进度核对。" }
     : orderTone(row) === "ok" ? { tone: "ok", text: "这笔订单已开通，无需重复开通。" } : undefined;
   if (kind === "deposit" || kind === "topup") return depositTone(row) === "danger" ? { tone: "danger", text: "这笔充值没有到账或有异常，请到充值与收款对账核对。" }
-    : depositTone(row) === "progress" ? { tone: "progress", text: "这笔充值还在等待确认，还没有到账。" }
+    : depositTone(row) === "progress" ? { tone: "progress", text: ["CREATING", "AWAITING_PAYMENT"].includes(asText(row.status, "").toUpperCase()) ? "用户还没付款，没有到账。" : "这笔充值还在等待确认，还没有到账。" }
     : row.confirmedAt ? { tone: "ok", text: "这笔充值已有确认记录；需要查账时按充值单号核对。" } : undefined;
   if (kind === "session") return row.status === "REVOKED" || row.status === "EXPIRED" ? { tone: "neutral", text: "这次登录已失效，无需再次撤销。" } : undefined;
   if (kind === "notification") return row.readFlag === true || row.readFlag === 1 ? { tone: "neutral", text: "这条通知已读；时间有疑问时可查看时间证据。" } : row.readFlag === false || row.readFlag === 0 ? { tone: "neutral", text: "这条通知尚未读，不能据此判断推送失败。" } : undefined;
@@ -802,7 +826,7 @@ export default function UserDetailPage() {
   // Aliases feed the existing detail facts. No confirmation time, chain or risk facts are invented.
   const latestDeposit: JsonRecord | null = detail?.latestDepositStatus === "READY" && detail.latestDeposit ? {
     ...detail.latestDeposit, depositNo: detail.latestDeposit.bizNo, asset: detail.latestDeposit.currency,
-    channel: detail.latestDeposit.sourceType, statusLabel: detail.latestDeposit.status,
+    channel: DEPOSIT_SOURCE[detail.latestDeposit.sourceType] ?? "其他充值", statusLabel: DEPOSIT_STATUS[asText(detail.latestDeposit.status, "").toUpperCase()] ?? "状态待核实",
   } : null;
   const latestWithdrawal: JsonRecord | null = detail?.latestWithdrawalStatus === "READY" && detail.latestWithdrawal ? {
     ...detail.latestWithdrawal, withdrawalNo: detail.latestWithdrawal.bizNo, asset: detail.latestWithdrawal.currency,
@@ -1060,24 +1084,23 @@ export default function UserDetailPage() {
   const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" && <p>这次后端标明只核对到一部分，是已核对小计。</p>;
   // 最近一笔写在累计数第二行，一眼对上是哪个数的（产品 2026-11-07）。
   const depositRecent = <Recent label="最近一笔" openLabel="查看最近一笔充值"
-    note={detail.latestDepositStatus !== "READY" ? "—" : latestDeposit ? undefined : "暂无链上充值"}
+    note={detail.latestDepositStatus === "ERROR" ? "暂时读不到" : detail.latestDepositStatus !== "READY" ? "—" : latestDeposit ? undefined : "暂无充值"}
     amount={amountText(latestDeposit?.amount, latestDeposit?.asset)} time={shortTime(latestDeposit?.createdAt)}
     status={asText(latestDeposit?.statusLabel)} tone={latestDeposit ? depositTone(latestDeposit) : undefined}
     onOpen={() => setRecord({ kind: "topup", index: 0 })} />;
   const withdrawalRow = latestWithdrawal;
-  const withdrawalsTotal = asNumber(detail.withdrawals?.total, withdrawals.length);
-  const withdrawalRecent = <Recent label="最近一笔" openLabel="查看最近一笔提现" note={detail.latestWithdrawalStatus !== "READY" ? "—" : withdrawalRow ? undefined : "暂无提现"}
+  const withdrawalRecent = <Recent label="最近一笔" openLabel="查看最近一笔提现" note={detail.latestWithdrawalStatus === "ERROR" ? "暂时读不到" : detail.latestWithdrawalStatus !== "READY" ? "—" : withdrawalRow ? undefined : "暂无提现"}
     amount={amountText(withdrawalRow?.amount, withdrawalRow?.asset)} time={shortTime(withdrawalRow?.createdAt)} status={withdrawalRow && withdrawalLabel(withdrawalRow)} tone={withdrawalRow ? withdrawalTone(withdrawalRow) : undefined}
     onOpen={() => setRecord({ kind: "withdrawal", index: 0, latest: true })} />;
   const kpis = [
     detail.financial && { label: "钱包可用余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
     detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: depositRecent, explain: <>
       <p>能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("creditedDepositTotal")}
-      <p>{"最近一笔：按发起时间取最新的一笔链上充值，待确认和失败的也算；停用前的国际卡充值也在内，银行卡充值不在内。"}</p>
+      <p>最近一笔：按发起时间取最新的一笔充值，链上、银行卡支付、银行转账和国际卡都算，待付款和失败的也算。</p>
     </> },
     detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: withdrawalRecent, explain: <>
       <p>能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("successfulWithdrawalPrincipalTotal")}
-      <p>最近一笔：按创建时间取下面提现记录里最新的一笔，各种状态都算。{withdrawalsTotal > withdrawals.length ? `共 ${numberLabel(withdrawalsTotal)} 笔，这里只列了 ${withdrawals.length} 笔，最新的一笔可能不在其中。` : ""}</p>
+      <p>最近一笔：按创建时间取最新的一笔提现，各种状态都算，不受下面列表条数限制。</p>
     </> },
     detail.devices && { label: "设备数", value: numberLabel(summary.deviceCount), unit: "台", tone: "role-2" as const, icon: Cpu, group: "devices", anchor: "hub-devices", explain: "这个用户的全部设备记录，含已回收和已停用的，最多读 200 台。现在还能运行的看下面的活跃数。" },
     detail.referral && { label: "团队规模", value: numberLabel(summary.teamSize), unit: "人", tone: "role-3" as const, icon: UsersRound, group: "team", anchor: "hub-referral" },

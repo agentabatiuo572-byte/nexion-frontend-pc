@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Drawer, Button, BlockState, Fact, Facts, Fold, Table, Th, Tr, Td } from "@/app/components/rd";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
 import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
@@ -14,14 +14,15 @@ export type FundMetric = keyof typeof fundLabels;
 export type StatisticSource =
   | { kind: "maintenance"; overview: SupportOverview; choice: MaintenanceChoice }
   | { kind: "fund"; origin: SupportAnalyticsResponse; query: SupportAnalyticsQuery; metric: FundMetric; detailView?: SupportAnalyticsDetailView };
-type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string };
+/** facts 有值时代替一行「核对摘要」；tech 放进折叠的技术信息。 */
+type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string; facts?: readonly { k: string; v: ReactNode }[]; tech?: string };
 type SuccessList = { version: string; rows: string[][]; restricted: number };
 const PAGE_SIZE = 10;
-const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
+const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
 /** TX-26 full time in Beijing time, 2026-11-05 14:30:00; callers state the zone once. */
-export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; };
+export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`; };
 const changed = () => new SupportClientError(409, undefined, "SUPPORT_STATISTIC_CHANGED");
-const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "原统计 " + total + unit + " · 可见 " + visible + unit + " · 受限 " + restricted + unit;
+const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "统计 " + total + unit + " · 你能看到 " + visible + unit + " · 看不到 " + restricted + unit;
 
 async function maintenancePage(source: Extract<StatisticSource, { kind: "maintenance" }>, page: number, version: string | undefined, cache: { current: SuccessList | null }, signal: AbortSignal): Promise<Result> {
   const { overview, choice: { metric, day } } = source;
@@ -34,7 +35,7 @@ async function maintenancePage(source: Extract<StatisticSource, { kind: "mainten
     return { headings: ["客户编号", "客户名称", "当前归属客服编号"], rows: list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.displayName ?? "") || "未登记", String(row.agentAdminId ?? "未知")]), total: list.total, next: page * PAGE_SIZE < list.total, summary: "当前暂停主动维护 " + list.total + " 人", note: "按当前归属逐页核对 · 本页核对时间（北京时间） " + beijing(current.overview.evaluatedAt) };
   }
   const byCustomer = metric === "SUCCESSFUL_CUSTOMER";
-  if (!performance.scopeVersion) return { headings: [], rows: [], total: null, next: false, summary: "明细版本待同步", note: "原工作台未返回范围版本，暂时无法核对这项维护统计。" };
+  if (!performance.scopeVersion) return { headings: [], rows: [], total: null, next: false, summary: "明细还在同步", note: "这项维护统计还在同步，暂时核对不了明细，稍后刷新工作台再看。" };
   const rawMetric: PerformanceMetric = byCustomer ? "SUCCESSFUL_CYCLE" : metric;
   const pageSize = byCustomer ? 100 : PAGE_SIZE;
   const first = await supportClient.performanceDetails(overview, rawMetric, day, { pageNum: byCustomer ? 1 : page, pageSize, expectedQueryVersion: version, signal });
@@ -81,7 +82,7 @@ function groupedAmount(value: string, places = 2): string {
   return `${parts[1]}${parts[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(parts[3] ?? "").replace(/0+$/, "").padEnd(Math.max(2, places), "0")}`;
 }
 function amountText(amount?: Amount, places?: number) {
-  return amount?.confirmed != null ? groupedAmount(amount.confirmed, places) : amount?.observed == null ? "未知" : groupedAmount(amount.observed, places) + "（已观测）";
+  return amount?.confirmed != null ? groupedAmount(amount.confirmed, places) : amount?.observed == null ? "未知" : groupedAmount(amount.observed, places) + "（未核实完）";
 }
 function exactGroupSum(values: string[], total: string) {
   const digits = Math.max(...[total, ...values].map(value => (value.split(".")[1] ?? "").length));
@@ -97,7 +98,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   const currency = query.currency ?? "USDT";
   const amountOf = (receipt: SupportAnalyticsResponse) => metric === "net" ? receipt.scopeSummary.financial.currencies.find(row => row.currency === currency)?.net : fundAmount(receipt.funds, metric, currency);
   const original = amountOf(origin);
-  const summary = "原统计 " + amountText(original) + " " + nexGridBrandText(currency);
+  const summary = "统计 " + amountText(original) + " " + nexGridBrandText(currency);
   const scopeGroups = origin.scopeSummary.groups.map(group => group.groupId).sort().join(",");
   const checkSummary = (receipt: SupportAnalyticsResponse) => {
     const amount = amountOf(receipt);
@@ -118,11 +119,28 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     const detail = list.detailSummary;
     if (expected?.confirmed == null || !exactGroupSum([detail.totalAmount!], expected.confirmed)) throw changed();
     const title = view === "NET_CONTRIBUTIONS" ? fundLabels.net : view === "FIRST_DEPOSITS" ? "充值首充" : "付费购机首充";
-    return { headings: ["客户编号", "客户名称", title + " / " + nexGridBrandText(currency)],
-      rows: list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", row.amount]),
-      total: list.total, next: list.canContinue,
-      summary: "原统计 " + detail.totalAmount + " " + nexGridBrandText(currency) + " · 可见 " + detail.visibleAmount + " " + nexGridBrandText(currency) + " · 受限 " + detail.restrictedAmount + " " + nexGridBrandText(currency),
-      note: summaryCounts(detail.totalCount, detail.visibleCount, detail.restrictedCount, " 条"), version: list.queryVersion ?? undefined };
+    const unit = nexGridBrandText(currency);
+    const money = (value: string) => groupedAmount(value) + " " + unit;
+    const groupName = (groupId: string | null) => groupId == null ? null : origin.scopeSummary.groups.find(row => row.groupId === groupId)?.name ?? "组编号 " + groupId;
+    // 原归属是这笔钱成功那一刻算给的客服和小组，不是客户现在的归属；没有有效归属写「没有归属」。
+    const owner = (row: (typeof list.records)[number]) => row.agentId == null && row.groupId == null ? "没有归属"
+      : [row.agentId == null ? null : "客服 " + row.agentId, groupName(row.groupId)].filter(Boolean).join(" · ");
+    const facts = [
+      { k: "统计总额", v: <>{money(detail.totalAmount!)} · {detail.totalCount} 条 · {detail.customerCount} 位客户</> },
+      { k: "核实情况", v: detail.status === "AVAILABLE" ? "全部已核实"
+        : <>部分已核实{detail.observedAmount != null && <> · 含未核实的共 {money(detail.observedAmount)}</>}<Explain label="部分已核实是什么意思" content="有的资金记录还没核实完。统计总额只算已核实的，「含未核实的共」把还没核实的也算进去。" /></> },
+      { k: "你能看到", v: <>{money(detail.visibleAmount!)} · {detail.visibleCount} 条 · {detail.visibleCustomerCount} 位客户</> },
+      { k: "看不到的", v: detail.restrictedCount === 0 ? "没有"
+        : <>{money(detail.restrictedAmount!)} · {detail.restrictedCount} 条 · {detail.restrictedCustomerCount} 位客户<Explain label="看不到的是什么" content="这些客户不在你的查看范围里，金额计入统计总额，不列明细。" /></> },
+    ];
+    return { headings: ["成功时间（北京时间）", "客户编号", "客户名称", "原归属", "金额 / " + unit],
+      rows: list.records.map(row => [beijing(row.succeededAt), row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", owner(row), groupedAmount(row.amount)]),
+      total: list.total, next: list.canContinue, facts,
+      summary: "统计 " + detail.totalAmount + " " + unit + " · 你能看到 " + detail.visibleAmount + " " + unit + " · 看不到 " + detail.restrictedAmount + " " + unit,
+      note: view === "NET_CONTRIBUTIONS" ? "列出成功时间在这段时间里的每一笔，按成功那一刻的归属算给客服和小组；金额是原币种原值，负数是退款或提现扣回。"
+        : "每位客户只有一笔" + title + "，成功时间在这段时间里的才列出，按成功那一刻的归属算给客服和小组。",
+      tech: list.records.length ? "本页记录编号：" + list.records.map(row => row.id).join("、") : undefined,
+      version: list.queryVersion ?? undefined };
   }
   // Net uses the entire authorized scope. Wallet and withdrawal totals use the selected current customers.
   // Without a query version there is no next page, so this one read takes everything the backend allows instead of cutting the list at PAGE_SIZE.
@@ -136,7 +154,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   const places = amountPlaces(list.records.map(row => { const amount = amountFor(row); return amount?.confirmed ?? amount?.observed; }));
   const rows = list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", amountText(amountFor(row), places)]);
   const stable = Boolean(origin.queryVersion && list.queryVersion);
-  return { headings: ["客户编号", "客户名称", fundLabels[metric] + " / " + nexGridBrandText(currency)], rows, total: stable ? list.total : null, next: stable && list.canContinue, summary, note: (metric === "net" ? "按原范围当前客户的累计净额核对。" : "按原筛选的当前客户逐人核对，不受月份筛选。未知表示缺少可核实金额。") + (stable ? "" : " 当前显示本次核权返回的 " + rows.length + " 名客户。暂无查询版本，暂不能翻页。"), version: stable ? list.queryVersion ?? undefined : undefined };
+  return { headings: ["客户编号", "客户名称", fundLabels[metric] + " / " + nexGridBrandText(currency)], rows, total: stable ? list.total : null, next: stable && list.canContinue, summary, note: (metric === "net" ? "按原范围当前客户的累计净额核对。" : "按原筛选的当前客户逐人核对，不受月份筛选。未知表示缺少可核实金额。") + (stable ? "" : " 这次只列出 " + rows.length + " 位客户；统计还在同步，暂时不能翻页。"), version: stable ? list.queryVersion ?? undefined : undefined };
 }
 
 export function M1StatisticDetails({ source, onClose, onInvalid }: { source: StatisticSource; onClose: () => void; onInvalid: (status: number) => void }) {
@@ -159,7 +177,6 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
   }, [source, page, retry, onInvalid]);
   const title = source.kind === "maintenance" ? maintenanceLabels[source.choice.metric] : source.detailView === "FIRST_DEPOSITS" ? "充值首充" : source.detailView === "FIRST_PURCHASES" ? "付费购机首充" : fundLabels[source.metric];
   const cutoff = source.kind === "maintenance" ? source.overview.evaluatedAt : source.origin.asOf;
-  const unit = "条";
   const move = (next: number) => { setResult(null); setPage(next); };
   const group = source.kind === "fund" && source.query.groupId != null ? source.origin.scopeSummary.groups.find(row => row.groupId === String(source.query.groupId)) : null;
   return <Drawer open title={title + "明细"} sub={"统计截至 " + beijing(cutoff) + "（北京时间）"} onClose={onClose} wide footer={<div className="m1-stat-footer"><Button type="button" onClick={onClose}>返回工作台</Button>{result && result.total !== null && <div className="m1-stat-pager"><Button type="button" disabled={page === 1} onClick={() => move(page - 1)}>上一页</Button><span>第 {page} 页</span><Button type="button" disabled={!result.next} onClick={() => move(page + 1)}>下一页</Button></div>}</div>}>
@@ -167,7 +184,7 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
       {!result && !error && <BlockState state="loading" title="正在读取明细…" />}
       {error && <BlockState state="error" title="明细读取失败，请重试。" onRetry={() => setRetry(n => n + 1)} retryLabel="重试" />}
-      {result && <><Facts><Fact k="核对摘要">{result.summary}</Fact></Facts><Fold title="统计口径" summary={result.version ? "已核对同版统计" : "无稳定查询版本"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title={`当前可见列表为 0 ${unit}。`} />}</>}
+      {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title="没有你能看到的记录" />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
     </section>
   </Drawer>;
 }

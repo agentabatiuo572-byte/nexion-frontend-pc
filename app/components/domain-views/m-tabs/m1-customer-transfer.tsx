@@ -41,7 +41,7 @@ export async function readTransferTargets(agentAdminId: number, mode: "ALL" | "M
 /** Unconfirmed transfers of this operator; each row reopens the dialog on the original command. */
 export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
-  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <Notice tone="warn" key={record.commandKey} action={<Button type="button" size="sm" onClick={() => onOpen(record.payload.customers[0].id)}>查询转绑结果 {index + 1}</Button>}>存在结果尚未确认的转绑。</Notice>)}</>;
+  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <Notice tone="warn" key={record.commandKey} action={<Button type="button" size="sm" onClick={() => onOpen(record.payload.customers[0].id)}>查询原结果 {index + 1}</Button>}>有一次转绑结果未知。</Notice>)}</>;
 }
 
 /** BUG-114 / BUG-040: 正式转绑 for one customer, for every role that may do it. Authorization stays on the server; this only shows what it allows. */
@@ -82,7 +82,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   const reasonOk = trimmed.length >= 8 && trimmed.length <= 200;
 
   async function send(record: TransferRecord, replay = false) {
-    if (replay && !canReplayGroupCommand(record)) { setError("原操作已超过 24 小时，原资料与命令号仍保留；只能查询和核对，不能重新发送。"); return; }
+    if (replay && !canReplayGroupCommand(record)) { setError("原操作已超过 24 小时，只能查询原结果，不能再重试；原内容仍保留。"); return; }
     const actor = actorStamp();
     let written = false;
     setSaving(true); setError(""); setNotReceived(false);
@@ -97,9 +97,9 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       onDone(`已转给 ${record.targetName ?? "新的专属客服"}，并核对了最新归属。`);
     } catch (cause) {
       if (actor !== actorStamp()) return;
-      if (written || !isDefiniteSupportRefusal(cause)) { setPending(record); setError("转绑结果尚未确认，原操作已保留。请查询原操作，不要另发新的转绑。"); }
+      if (written || !isDefiniteSupportRefusal(cause)) { setPending(record); setError("转绑结果未知，原操作已保留。请查询原结果，不要另发新的转绑。"); }
       // A replay is refused by today's scope and version, which says nothing about the earlier attempt: only a first write's refusal releases the command.
-      else if (replay) setError(`重试被拒绝：${displayAdminError(cause)} 这不能说明原转绑没有成功，原操作已保留，请再查询原操作。`);
+      else if (replay) setError(`重试被拒绝：${displayAdminError(cause)} 这说明不了原转绑没有成功，原操作已保留，请再查询原结果。`);
       else {
         transferCommands.forget(record.fingerprint, record.commandKey);
         setPending(null); setError(`转绑没有成功：${displayAdminError(cause)}`); setReload((value) => value + 1);
@@ -111,7 +111,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     const payload: TransferPayload = { targetAgentAdminId: chosen.adminId, customers: [{ id: detail.customerId, expectedAssignmentId: detail.assignmentId, expectedVersion: detail.assignmentVersion }], reason: trimmed };
     const fingerprint = `bound-transfer:${detail.customerId}:${detail.assignmentId}:${detail.assignmentVersion}`, commandKey = crypto.randomUUID();
     transferCommands.remember(fingerprint, commandKey, { actorId: adminId, payload, customerName: detail.displayName || detail.customerNo, fromName: detail.agentName, targetName: chosen.name });
-    if (!transferCommands.isDurablyStored(fingerprint, commandKey)) { transferCommands.forget(fingerprint, commandKey); setError("暂时无法保存这次操作，未提交转绑。请恢复浏览器存储后重试。"); return; }
+    if (!transferCommands.isDurablyStored(fingerprint, commandKey)) { transferCommands.forget(fingerprint, commandKey); setError("浏览器存不下这次操作，没有提交转绑；请允许浏览器保存网站数据后重试。"); return; }
     await send(transferCommands.list().find((row) => row.commandKey === commandKey)!);
   }
   async function check() {
@@ -136,18 +136,18 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     } catch (cause) {
       if (actor !== actorStamp()) return;
       // Only this code means there is no receipt. A 404 from the scope re-check or the read-back says nothing about the write.
-      if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") { setNotReceived(canReplayGroupCommand(pending)); setError(canReplayGroupCommand(pending) ? "尚未找到原命令回执；可在 24 小时内按原操作重试，编号和内容保持不变。" : "原操作已超过 24 小时，原资料与命令号仍保留；只能查询和核对，不能重新发送。"); }
-      else setError("结果暂时无法核对，原操作和客户范围已保留。");
+      if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") { setNotReceived(canReplayGroupCommand(pending)); setError(canReplayGroupCommand(pending) ? "还没查到原操作的结果；24 小时内可以按原请求重试，内容不变。" : "原操作已超过 24 小时，只能查询原结果，不能再重试；原内容仍保留。"); }
+      else setError("结果暂时查不到，原操作和客户范围已保留。");
     } finally { setSaving(false); }
   }
 
   const footer = pending
-    ? <><Button type="button" size="sm" disabled={saving} onClick={onClose}>稍后再查</Button>{notReceived && canReplayGroupCommand(pending) && <Button type="button" size="sm" disabled={saving} onClick={() => void send(pending, true)}>按原操作重试</Button>}<Button type="button" variant="primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</Button></>
+    ? <><Button type="button" size="sm" disabled={saving} onClick={onClose}>稍后再查</Button>{notReceived && canReplayGroupCommand(pending) && <Button type="button" size="sm" disabled={saving} onClick={() => void send(pending, true)}>按原请求重试</Button>}<Button type="button" variant="primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</Button></>
     : <><Button type="button" size="sm" disabled={saving} onClick={onClose}>返回</Button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <Button type="button" size="sm" onClick={onOpenOwn}>查看我的客户资料</Button>}{targets && <Button type="button" variant="primary" disabled={saving} disabledReason={!chosen ? "请选择目标专属客服" : !reasonOk ? "请填写 8–200 字转绑理由" : undefined} onClick={() => void submit()}>{saving ? "提交中…" : "确认正式转绑"}</Button>}</>;
 
   return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="m1-transfer-form">
     {pending ? <>
-      <Notice tone="warn">这次转绑的结果尚未确认，原操作已锁定，不能修改。</Notice>
+      <Notice tone="warn">这次转绑结果未知，原操作已锁定，不能修改。</Notice>
       <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="专属客服变更"><Change from={pending.fromName ?? "原专属客服"} to={pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`} /></Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold inset title="技术信息" summary="原命令号与绑定版本"><Facts><Fact k="原命令号"><span data-mono>{pending.commandKey}</span></Fact><Fact k="绑定版本">{String(pending.payload.customers[0].expectedVersion)}</Fact></Facts></Fold>
     </> : denied ? <Notice tone="danger">{denied}</Notice>
       : loadError ? <BlockState state="error" title={loadError} onRetry={() => setReload((value) => value + 1)} retryLabel="重新加载" />

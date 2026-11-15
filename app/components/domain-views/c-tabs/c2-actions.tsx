@@ -2,7 +2,7 @@
 
 /**
  * C2 账户操作（工作台页，PG-45）。一页四件事，分四个页签：账户处置（默认）、注销申请、用户数据只读视图、账户名单。
- * 首屏一句话说有没有注销申请等处理，统计带写全量；账户处置有查找框，表格只是最近注册的 50 个样本。
+ * 首屏一句话说有没有注销申请等处理，统计带写全量；账户处置有查找框，表格按账户状态分页列出全部账户（默认冻结）。
  * 写操作照提现审核：先把原操作存好再发；结果未知转成页面上方的待确认条，对象锁住，只能原样重试，
  * 后端明确拒绝后才能解除（OP-91～OP-96）。退出全部设备走审批，未决记录和安全与登录设备共用一份。
  */
@@ -36,6 +36,7 @@ import {
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
   fetchUserAccountActionPage,
+  type UserAccountActionStatus,
   isUsersRequestNotFound,
   removeUserAccountList,
   startUserImpersonation,
@@ -65,14 +66,19 @@ const K1_PATH = "/risk/multi-account";
 const D1_PATH = "/finance/recon";
 const FOCUS_SOURCES: Record<string, string> = { C1: "用户详情", M1: "客服工作台", M3: "专属会话", J3: "篡改防御监控" };
 const PAGE_SIZES = [10, 20, 50] as const;
+/** 账户列表的五种状态，叫法和用户详情一致；冻结排第一，是这里最常处理的。 */
+const ACCOUNT_FILTERS: readonly { value: UserAccountActionStatus; label: string }[] = [
+  { value: "FROZEN", label: "冻结" }, { value: "RESTRICTED", label: "受限" }, { value: "BANNED", label: "封禁" },
+  { value: "ACTIVE", label: "正常" }, { value: "DISABLED", label: "已注销" },
+];
 const TABS = ["accounts", "deletions", "views", "lists"] as const;
 type Tab = (typeof TABS)[number];
 
 /** 排序不变：冻结、受限、封禁、正常，同状态风险分高的在前（C2-V05）。 */
 const STATUS_WEIGHT: Record<string, number> = { FROZEN: 0, RESTRICTED: 1, BANNED: 2, ACTIVE: 3 };
 const FREEZE_SOURCE: Record<string, string> = {
-  C2_DIRECT: "账户操作直接冻结",
-  K1_MULTI_ACCOUNT_CLUSTER: "随多账户风险排查的账户组冻结",
+  C2_DIRECT: "账户操作页冻结",
+  K1_MULTI_ACCOUNT_CLUSTER: "多账户风险排查冻结",
   CREGIS_DEPOSIT_INCIDENT: "USDT 充值异常",
 };
 /** 充值异常冻结时后端把事件状态码写进冻结原因（CregisDepositService），用充值对账页的叫法。 */
@@ -95,9 +101,9 @@ const MIRROR_PAGES = [
 const K1_BLOCK = "这个账户是随多账户风险排查的账户组冻结的，要在那里解除，这里不能恢复。";
 /** 系统不会自己解冻：要在充值异常处置里单独提交解冻，另一位同事复核（后端 CregisReorgResolutionService 的 UNFREEZE）。 */
 const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位同事复核后解除。";
-const LOCKED_USER = "这个账户有结果未确认的操作，先到页面上方核对";
-const LOCKED_LIST = "这个用户的名单有结果未确认的操作，先到页面上方核对";
-const LOCKED_VIEW = "这次查看有结果未确认的操作，先到页面上方核对";
+const LOCKED_USER = "这个账户有一次操作结果未知，先到页面上方查询原结果";
+const LOCKED_LIST = "这个用户的名单有一次操作结果未知，先到页面上方查询原结果";
+const LOCKED_VIEW = "这次查看有一次操作结果未知，先到页面上方查询原结果";
 const SUBMITTING = "正在提交，稍候";
 const REFRESHING = "正在刷新，稍候";
 const STALE = "账户数据没刷新成功，先重试读取";
@@ -107,7 +113,7 @@ const NO_SESSION_TO_REVOKE = "没有在线设备，不用退出";
 const VIEW_NEEDS_ACTIVE = "只有正常账户能打开用户数据只读视图";
 const VIEW_ALREADY_OPEN = "这个用户已有进行中的只读视图，先结束它";
 const STORE_FAILED = "浏览器存不下这次操作，没有提交。换一个窗口再试。";
-const UNKNOWN_TOAST = "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 const PERMISSION_DENIED_CODES = ["无权限访问", "ADMIN_PERMISSION_DENIED", "ACCESS_DENIED"];
 const REASON_CODES = ["RISK_HIT", "AML_REVIEW", "USER_APPEAL", "JUDICIAL_ASSISTANCE", "OTHER"];
@@ -211,10 +217,6 @@ function riskOf(account: Pick<User360Profile, "riskBand" | "riskScore"> | null |
 }
 
 /** 表格里只给中、高风险上色，低风险和没有档的不上色（VS-21）。 */
-function RiskCell({ account }: { account?: Pick<User360Profile, "riskBand" | "riskScore"> }) {
-  const risk = riskOf(account);
-  return risk.tone === "danger" || risk.tone === "warn" ? <StatusTag tone={risk.tone}>{risk.text}</StatusTag> : <Cell main={risk.text} />;
-}
 
 /** 金额按接口原值显示，至少两位小数，不舍入，千分位（TX-20，同用户详情）。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
@@ -374,7 +376,7 @@ async function submitStatusProposal(input: ProposalInput, key: string, retry: bo
     }
   }
   const ticket = found ?? await createA2OperationProposal(input, key, true);
-  if (!ticket.mine || ticket.obj !== input.obj) throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+  if (!ticket.mine || ticket.obj !== input.obj) throw new A2OutcomeUncertainError("查到的审批单和原操作对不上，请到操作记录与审批核对。", key);
   return ticket;
 }
 
@@ -703,8 +705,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       if (statusDiff !== 0) return statusDiff;
       return (count(b.riskScore) ?? 0) - (count(a.riskScore) ?? 0);
     }), [data]);
-  const sessions = useMemo(() => data?.sessions ?? [], [data]);
-  const sessionsTruncated = (count(data?.totalSessions) ?? 0) > sessions.length;
   // 生效中在前，再按加入时间新的在前；按时间值比，不按格式化后的字符串。
   const listRows = useMemo(() => [...(data?.accountLists ?? [])].sort((a, b) => {
     const activeDiff = Number(isActiveListEntry(b)) - Number(isActiveListEntry(a));
@@ -718,6 +718,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     return (parseBusinessTime(text(b.createdAt, "")) || 0) - (parseBusinessTime(text(a.createdAt, "")) || 0);
   }), [data]);
 
+  const [accountStatus, setAccountStatus] = useState<UserAccountActionStatus>("FROZEN");
   const [accountPage, setAccountPage] = useState(1);
   const [accountSize, setAccountSize] = useState<number>(10);
   const [accountList, setAccountList] = useState<Block<UserPage<UserAccountActionRow>>>({ data: null, loading: canReadC2, error: "" });
@@ -727,7 +728,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const seq = ++accountListSeq.current;
     setAccountList(block => ({ ...block, loading: true, error: "" }));
     try {
-      const page = await fetchUserAccountActionPage("FROZEN", accountPage, accountSize);
+      const page = await fetchUserAccountActionPage(accountStatus, accountPage, accountSize);
       if (seq !== accountListSeq.current) return;
       const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
       if (page.pageNum > lastPage) { setAccountPage(lastPage); return; }
@@ -735,7 +736,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     } catch (cause) {
       if (seq === accountListSeq.current) setAccountList({ data: null, loading: false, error: readError(cause) });
     }
-  }, [canReadC2, accountPage, accountSize]);
+  }, [canReadC2, accountStatus, accountPage, accountSize]);
   useEffect(() => { void loadAccountList(); }, [loadAccountList, authEpoch]);
   const [listPage, setListPage] = useState(1);
   const [listSize, setListSize] = useState<number>(10);
@@ -764,7 +765,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const scope = scopeOf(record.kind, record.target);
     const retained = c2Commands.get(scope);
     if (!retry && (retained || locked.has(scope))) {
-      throw new Error(scope.startsWith("list|") ? LOCKED_LIST : scope.startsWith("view|") ? LOCKED_VIEW : scope.startsWith("deletion|") ? "这张申请有结果未确认的操作，先到页面上方核对" : LOCKED_USER);
+      throw new Error(scope.startsWith("list|") ? LOCKED_LIST : scope.startsWith("view|") ? LOCKED_VIEW : scope.startsWith("deletion|") ? "这张申请有一次操作结果未知，先到页面上方查询原结果" : LOCKED_USER);
     }
     const key = retained ?? newCommandKey(record.kind);
     c2Commands.remember(scope, key, record);
@@ -1030,7 +1031,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="退出范围">批准时在线的全部设备</Fact>
       </Facts>,
       // 没有未决记录时说明和影响是一件事，只写影响（VS-105）。
-      detail: pendingRevoke ? "审批提交结果尚未确认，重试原操作会使用原理由和操作编号。" : "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
+      detail: pendingRevoke ? "审批提交结果未知，按原请求重试会用原理由，不会重复提交。" : "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
       amplifies: false,
       statedBrief: { impact: "批准后这个用户的全部设备立即退出登录，要重新登录才能用。", check: "核对用户和在线设备数，理由写清工单号和处理依据。" },
       confirmLabel: "提交审批",
@@ -1132,9 +1133,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="查看人">{text(row.operator)}</Fact>
         <Fact k="剩余时间">{left === null ? "—" : `${left} 分钟`}</Fact>
       </Facts>,
-      detail: fromMirror ? "确认后这次查看立即结束并关闭窗口，令牌失效，不能再看。" : "确认后这次查看立即结束，令牌失效，不能再看。",
+      detail: fromMirror ? "确认后这次查看立即结束并关闭窗口，之后不能再看。" : "确认后这次查看立即结束，之后不能再看。",
       amplifies: false,
-      statedBrief: { impact: fromMirror ? "确认后这次查看立即结束并关闭窗口，令牌失效，不能再看。" : "确认后这次查看立即结束，令牌失效，不能再看。", check: "核对编号和用户，理由写清结束原因。" },
+      statedBrief: { impact: fromMirror ? "确认后这次查看立即结束并关闭窗口，之后不能再看。" : "确认后这次查看立即结束，之后不能再看。", check: "核对编号和用户，理由写清结束原因。" },
       confirmLabel: fromMirror ? "退出并结束" : "确认结束",
       reasonMin: 8,
       reasonMax: 200,
@@ -1195,7 +1196,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const today = businessDay(0);
     const check = listKind === "BLOCK" ? "核对用户和有效期，理由写清工单号和处理依据。" : "核对用户和有效期，理由写清依据或工单号。";
     // 有效期按选的写：长期没有失效日期（VS-105「写的必须是真的」）。
-    const until = (value: Record<string, string>) => value.expiryMode === "SPECIFIED" && value.expiresAt ? `到 ${value.expiresAt} 23:59:59（${zone}）后自动失效` : "一直有效，直到移出";
+    const until = (value: Record<string, string>) => value.expiryMode === "SPECIFIED" && value.expiresAt ? `${value.expiresAt} 这天过完后自动失效（${zone}）` : "一直有效，直到移出";
     const brief = (value: Record<string, string>) => listKind === "BLOCK"
       ? { impact: `加入后这个用户登录不了 App，已登录的设备全部立即下线；${until(value)}。`, check }
       : other
@@ -1223,12 +1224,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       businessForm: {
         kind: "multi-field",
         feedback: (value) => value.expiryMode === "SPECIFIED" && value.expiresAt && value.expiresAt < today
-          ? { message: `失效日期不能早于今天；选的日期当天 23:59:59（${zone}）后失效。`, invalid: true, field: "expiresAt" }
+          ? { message: `失效日期不能早于今天；名单在选的那天过完后失效（${zone}）。`, invalid: true, field: "expiresAt" }
           : { message: "", invalid: false },
         fields: [
           ...(target ? [] : [{ key: "userCode", label: "用户编码或系统编号", inputKind: "text" as const, required: true, placeholder: "例如 U00000010", explain: "可以填用户编码或系统编号" }]),
           { key: "expiryMode", label: "有效期", inputKind: "select", required: true, current: "PERMANENT", options: ["PERMANENT", "SPECIFIED"], optionLabels: { PERMANENT: "长期", SPECIFIED: "指定日期" } },
-          { key: "expiresAt", label: "失效日期", inputKind: "date", required: true, wide: true, help: `这天 23:59:59（${zone}）后失效`, visibleWhen: { key: "expiryMode", equals: "SPECIFIED" } },
+          { key: "expiresAt", label: "失效日期", inputKind: "date", required: true, wide: true, help: `这天过完后失效（${zone}）`, visibleWhen: { key: "expiryMode", equals: "SPECIFIED" } },
         ],
       },
       blockedReason,
@@ -1350,7 +1351,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     if (isRetryExpired(record)) { notePending(record.fingerprint, `${RETRY_EXPIRED_TEXT}。`); return; }
     if (!canRetry(record)) { notePending(record.fingerprint, `${RETRY_NO_PERMISSION}。`); return; }
     if (!c2Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      notePending(record.fingerprint, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
+      notePending(record.fingerprint, "浏览器里查不到这条记录，本次没有发送。原记录继续保留，请到操作记录与审批核对。");
       return;
     }
     setRetryRejected((keys) => keys.filter((key) => key !== record.commandKey));
@@ -1367,15 +1368,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         setDeletionRefresh((value) => value + 1);
       }
       if (outcome === "unknown") notePending(record.fingerprint, record.proposal
-        ? "还是没有确认，原命令继续保留。原审批单可能已经提交，请到操作记录与审批核对。"
-        : "还是没有确认，原命令继续保留。");
+        ? "重试的结果仍然未知，原记录继续保留。审批单可能已经提交，请到操作记录与审批核对。"
+        : "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isC2PermissionDenied(cause)) announcePermissionDenied();
       // 系统要求核查、核查已有结论这些幂等层的码不算明确拒绝（共用分类），原命令和锁都留着，不放「解除待确认」。
       if (explicitlyRejected(cause)) {
-        notePending(record.fingerprint, `重试没有成功：${sentence(errorMessage(cause))}这说明不了原操作的结果，原命令继续保留。`);
+        notePending(record.fingerprint, `重试没有成功：${sentence(errorMessage(cause))}这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((keys) => [...keys, record.commandKey]);
-      } else notePending(record.fingerprint, `这次没能确认结果：${sentence(errorMessage(cause))}原命令继续保留。`);
+      } else notePending(record.fingerprint, `这次没查到结果：${sentence(errorMessage(cause))}原记录继续保留。`);
     }
   };
 
@@ -1383,32 +1384,32 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const verifyPending = async (record: C2Pending) => {
     if (record.kind === "deletion") {
       const fresh = await fetchAccountDeletion(record.target).catch(() => null);
-      if (!fresh) { notePending(record.fingerprint, "读回失败，暂时读不到。待确认继续保留。"); return; }
-      notePending(record.fingerprint, `读回：这张申请现在是「${DELETION_STATUS_LABELS[fresh.status] ?? "状态未知"}」，版本 ${fresh.version}；发出时是「${DELETION_STATUS_LABELS[record.fromStatus ?? ""] ?? "状态未知"}」，版本 ${record.version ?? "—"}。状态可能是别人改的，待确认继续保留。`);
+      if (!fresh) { notePending(record.fingerprint, "查询失败，暂时读不到。原记录继续保留。"); return; }
+      notePending(record.fingerprint, `查到：这张申请现在是「${DELETION_STATUS_LABELS[fresh.status] ?? "状态未知"}」，发出时是「${DELETION_STATUS_LABELS[record.fromStatus ?? ""] ?? "状态未知"}」。状态可能是别人改的，原记录继续保留。`);
       return;
     }
     if (record.kind === "impEnd") {
       const fresh = await fetchUserAccountActionOverview().catch(() => null);
-      if (!fresh) { notePending(record.fingerprint, "读回失败，暂时读不到。待确认继续保留。"); return; }
+      if (!fresh) { notePending(record.fingerprint, "查询失败，暂时读不到。原记录继续保留。"); return; }
       setOverview({ data: fresh, loading: false, error: "" });
       const row = fresh.impersonations?.find((item) => item.sessionNo === record.target);
       notePending(record.fingerprint, row
-        ? `读回：这次查看现在是「${impersonationStatus(row).label}」，发出时是「进行中」。状态可能是别人改的，待确认继续保留。`
-        : "读回：最近 50 次查看里找不到这一次。待确认继续保留。");
+        ? `查到：这次查看现在是「${impersonationStatus(row).label}」，发出时是「进行中」。状态可能是别人改的，原记录继续保留。`
+        : "查到：最近 50 次查看里没有这一次。原记录继续保留。");
       return;
     }
     const fresh = await fetchUserAccountActionContext(record.target).catch(() => null);
-    if (!fresh?.account) { notePending(record.fingerprint, "读回失败，暂时读不到。待确认继续保留。"); return; }
+    if (!fresh?.account) { notePending(record.fingerprint, "查询失败，暂时读不到。原记录继续保留。"); return; }
     openFromContext(fresh);
     if (record.kind === "listAdd" || record.kind === "listRemove") {
-      notePending(record.fingerprint, `读回：这个用户现在是「${listEntryText(fresh.accountList)}」。这不能证明原操作的结果，待确认继续保留。`);
+      notePending(record.fingerprint, `查到：这个用户现在是「${listEntryText(fresh.accountList)}」。这证明不了原操作的结果，原记录继续保留。`);
     } else if (record.kind === "impStart") {
       const active = fresh.impersonations?.find(isActiveImpersonation);
       notePending(record.fingerprint, active
-        ? `读回：这个用户现在有进行中的只读视图 ${text(active.sessionNo)}，查看人 ${text(active.operator)}。这不能证明原操作的结果，待确认继续保留。`
-        : "读回：这个用户现在没有进行中的只读视图。这不能证明原操作的结果，待确认继续保留。");
+        ? `查到：这个用户现在有进行中的只读视图 ${text(active.sessionNo)}，查看人 ${text(active.operator)}。这证明不了原操作的结果，原记录继续保留。`
+        : "查到：这个用户现在没有进行中的只读视图。这证明不了原操作的结果，原记录继续保留。");
     } else {
-      notePending(record.fingerprint, `读回：这个账户现在是「${formatAccountStatus(fresh.account.status).label}」，发出时是「${formatAccountStatus(record.fromStatus).label}」。状态可能是别人改的，待确认继续保留。`);
+      notePending(record.fingerprint, `查到：这个账户现在是「${formatAccountStatus(fresh.account.status).label}」，发出时是「${formatAccountStatus(record.fromStatus).label}」。状态可能是别人改的，原记录继续保留。`);
     }
   };
 
@@ -1419,7 +1420,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setPendingNotes((notes) => { const next = { ...notes }; delete next[record.fingerprint]; return next; });
     setReleasing(null);
     setRetryRejected((keys) => keys.filter((key) => key !== record.commandKey));
-    toast("已解除待确认，可以重新处理", "success");
+    toast("已解除原操作记录，可以重新处理", "success");
   };
 
   /** 退出全部设备的未决记录：按原命令号先查审批单，查不到再按原内容提交（甲档，现有逻辑）。 */
@@ -1431,7 +1432,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       await proposeSessionRevocation(session, record.userId, record.label, record.reason);
       toast("已提交退出全部设备的审批，批准后生效", "success");
     } catch (cause) {
-      notePending(fingerprint, isA2OutcomeUncertainError(cause) ? "还是没有确认，原命令继续保留。" : `重试没有成功：${errorMessage(cause)}`);
+      notePending(fingerprint, isA2OutcomeUncertainError(cause) ? "重试的结果仍然未知，原记录继续保留。" : `重试没有成功：${errorMessage(cause)}`);
       // 共用库只在明确拒绝后清掉原命令，其他情况记录照旧留着（F04）。
     } finally {
       setSubmitting("");
@@ -1487,15 +1488,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {pending.map((record) => {
       const expired = isRetryExpired(record);
       return (
-        <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
+        <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
           action={<>
-            <Button size="sm" disabled={busy} onClick={() => void verifyPending(record)}>读回核对</Button>
-            <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
-            {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除待确认</Button>}
+            <Button size="sm" disabled={busy} onClick={() => void verifyPending(record)}>查询原结果</Button>
+            <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
+            {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           </>}>
           <p>
             {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-            {expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试用同一个命令号和原内容，已经执行过的不会再执行一次；系统要求先核查时原命令继续保留。"}
+            {expired ? `${RETRY_EXPIRED_TEXT}。` : "可以按原请求重试，不会重复执行。"}
             {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link></> : "请有操作记录读权限的同事核对。"}
             <Explain label="这次操作的技术信息" rows={[
               { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
@@ -1510,10 +1511,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {revocations.map((record) => {
       const fingerprint = `revoke|${record.userId}`;
       return (
-        <Notice key={record.fingerprint} tone="warn" title={`退出全部设备 · ${record.label} · 结果未确认`} actionBelow
-          action={<Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原操作重试</Button>}>
+        <Notice key={record.fingerprint} tone="warn" title={`退出全部设备 · ${record.label} · 结果未知`} actionBelow
+          action={<Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原请求重试</Button>}>
           <p>
-            {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批，可能已经提交成功。按原操作重试会先按原命令号查审批单，查不到再用原理由提交，不会重复提交。
+            {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批，可能已经提交成功。按原请求重试会先查原审批单，查不到再用原理由提交，不会重复提交。
             {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link></> : "请有操作记录读权限的同事核对。"}
             <Explain label="这次操作的技术信息" rows={[
               { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
@@ -1555,7 +1556,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     <StatBand label="账户操作概况">
       {/* 读不到时四格都写「—」，重试在下面页签里的失败块上，不挂在第一格下（看着像只重试这一格）。 */}
       <Stat tone="role-3" icon={Snowflake} label="冻结中账户" value={statValue(frozenUsers)} unit={frozenUsers === null ? undefined : "个"}
-        explain="现在冻结中的全部账户，含随账户组冻结和充值异常冻结的。下面的列表只有最近注册的 50 个，不一定都在。" />
+        explain="现在冻结中的全部账户，含随账户组冻结和充值异常冻结的。" />
       <Stat tone="progress" icon={Eye} label="只读视图进行中" value={statValue(activeViews)} unit={activeViews === null ? undefined : "个"}
         sub={longestLeft !== null && activeViews ? `最长剩 ${longestLeft} 分钟` : undefined}
         explain={activeViews ? "「最长剩」按页面读取时算，不会自己倒数，点「刷新」更新。" : "现在打开着的用户数据只读视图。"} onOpen={() => changeTab("views")} openLabel="到用户数据只读视图" />
@@ -1596,13 +1597,18 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const accountActions = canFreeze || canUnfreeze;
   // 时区只在面板标题旁写一次，表头不再写（TX-25）。
   const zoneNote = `时间为${zone}`;
+  // 冻结列表多三列冻结的事实：来源和原因、时间和操作人、停住的提现；其余状态只写状态和注册时间。
+  const frozenView = accountStatus === "FROZEN";
+  const statusName = ACCOUNT_FILTERS.find((item) => item.value === accountStatus)!.label;
+  const accountColumns = (frozenView ? 5 : 3) + (accountActions ? 1 : 0);
 
   const accountsPane = (
     <div className="rd-stack">
       {/* 右端写列表的范围：为什么要用查找框，也让定宽的框右边不空着（量尺 P2-side）。 */}
       <FilterBar onSubmit={() => void findAccount()} querying={lookup.state === "loading"}
+        scope={<div className="rd-filter-scope-row"><Segments label="账户状态" value={accountStatus} items={ACCOUNT_FILTERS} onChange={(next) => { setAccountStatus(next); setAccountPage(1); }} /></div>}
         action={<Button type="submit" loading={lookup.state === "loading"}>打开</Button>}
-        sort={!overviewFailedFirst ? <span className="rd-filter-result">列表只取最近注册的 50 个账户</span> : undefined}
+        sort={<span className="rd-filter-result">下面按账户状态列出全部账户</span>}
         notice={lookup.state === "empty" ? "填用户编码、系统编号、邀请码或邮箱。" : lookup.state === "error" ? <>{lookup.error} <InlineRetry onRetry={() => void findAccount()} /></> : undefined}>
         {/* 定宽查找框，「打开」紧贴右边（同 Ant Input.Search、提现审核），不横跨整行。 */}
         <FilterField>
@@ -1613,43 +1619,47 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {/* 没找到不是错误：灰字写在框下，不带重试。 */}
       {lookup.state === "not-found" && <p className="rd-weak" role="status">没有找到这个用户，核对后再查。</p>}
       {staleNotice}
-      {(accountList.error ? <BlockState state="error" title="账户概况读取失败，不显示旧数据" detail={accountList.error} onRetry={() => void loadAccountList()} retrying={accountList.loading} /> : null) ?? (
-        <Panel title="账户" icon={UserRound} tone="role-3" flush
-          sub={accountList.loading && !accountList.data ? undefined : accountList.data ? `共 ${accountList.data.total.toLocaleString("en-US")} 个账户 · ${zoneNote}` : zoneNote}
-          explain="冻结的排在前面；冻结中的账户不一定都在这里，找具体用户用上面的查找。在线设备按最近 200 条登录记录数，可能少算，准确数在详情里。">
+      <Panel title="账户" icon={UserRound} tone="role-3" flush
+        sub={accountList.data && !accountList.error ? `共 ${accountList.data.total.toLocaleString("en-US")} 个${frozenView ? "冻结" : statusName}账户 · ${zoneNote}` : zoneNote}
+        explain={frozenView ? "按冻结时间从新到旧排。多账户风险排查和充值异常冻结的不能在这里恢复，到对应页面处理。来源单号在账户详情里。" : "找具体用户用上面的查找。"}>
+        {accountList.error ? <BlockState state="error" title={`${statusName}账户读取失败，不显示旧数据`} detail={accountList.error} onRetry={() => void loadAccountList()} retrying={accountList.loading} /> : (
           <Table label="账户">
             <thead><tr>
               <Th icon={User} tone="users">账户</Th>
-              <Th>账户状态</Th>
-              <Th>风险</Th>
-              <Th>注册 · 最近登录</Th>
-              <Th align="right">{sessionsTruncated ? "在线设备（至少）" : "在线设备"}</Th>
+              {frozenView ? <>
+                <Th>冻结来源 · 原因</Th>
+                <Th>冻结时间 · 操作人</Th>
+                <Th align="right">一起冻结的提现 <Explain label="一起冻结的提现怎么算" content="因为这次账户冻结一起停住的提现单。恢复账户时一起恢复，之后按原来的提现流程处理。" /></Th>
+              </> : <Th>账户状态</Th>}
+              <Th>注册时间</Th>
               {accountActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
-              {accountList.loading ? <TableLoading columns={accountActions ? 6 : 5} rows={5} />
-                : accountRows.length === 0 ? <TableMessage columns={accountActions ? 6 : 5}>暂无账户</TableMessage>
+              {accountList.loading ? <TableLoading columns={accountColumns} rows={5} />
+                : accountRows.length === 0 ? <TableMessage columns={accountColumns}>{`没有${statusName}的账户`}</TableMessage>
                   : accountRows.map((account) => {
                     const id = accountId(account);
+                    const stuck = account.d2FrozenWithdrawalCount;
                     return (
                       <Tr key={id} selected={accountId(acct) === id} aria-label={`查看账户 ${displayAccount(account)}`} onOpen={() => openAccount(account)}>
-                        {/* 账户列伸缩，时间列按内容定宽，在线设备紧跟在后面（第 6 列的列宽）。 */}
+                        {/* 账户列伸缩，其余列按内容定宽。 */}
                         <Td grow><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
-                        <Td><AccountStatusTag status={account.status} table /></Td>
-                        <Td><RiskCell /></Td>
-                        {/* 最近登录帮着判断账户还在不在用；列表是最近注册的 50 个，注册时间说明排在这里的是谁。 */}
-                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} sub="—" /></Td>
-                        <Td align="right"><Cell num main="—" /></Td>
+                        {frozenView ? <>
+                          <Td><Cell main={freezeSourceText(account.freezeSource)} sub={freezeReasonText(account)} title={freezeReasonText(account)} /></Td>
+                          <Td data-fit=""><Cell num main={timeText(account.frozenAt)} sub={text(account.freezeOperator)} /></Td>
+                          <Td align="right">{stuck > 0 ? <StatusTag tone="warn">{`${stuck.toLocaleString("en-US")} 笔`}</StatusTag> : <Cell num main="0 笔" />}</Td>
+                        </> : <Td><AccountStatusTag status={account.status} table /></Td>}
+                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} /></Td>
                         {accountActions && <Td sticky="end">{rowAction(account)}</Td>}
                       </Tr>
                     );
                   })}
             </tbody>
           </Table>
-          {accountList.data && accountList.data.total > 0 && <Pager label="账户" total={accountList.data.total} page={accountPage} pageSize={accountSize} sizes={PAGE_SIZES} loading={accountList.loading}
-            onPage={setAccountPage} onPageSize={(size) => { setAccountSize(size); setAccountPage(1); }} />}
-        </Panel>
-      )}
+        )}
+        {!accountList.error && accountList.data && accountList.data.total > 0 && <Pager label="账户" total={accountList.data.total} page={accountPage} pageSize={accountSize} sizes={PAGE_SIZES} loading={accountList.loading}
+          onPage={setAccountPage} onPageSize={(size) => { setAccountSize(size); setAccountPage(1); }} />}
+      </Panel>
     </div>
   );
 
@@ -1660,7 +1670,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {overviewBlock("用户数据只读视图") ?? (
         <Panel title="用户数据只读视图" icon={Eye} tone="progress" flush
           sub={firstLoading ? undefined : `${totalViews !== null && totalViews > impersonations.length ? `最近 ${impersonations.length} 次 · 共 ${totalViews.toLocaleString("en-US")} 次` : `共 ${impersonations.length} 次`} · ${zoneNote}`}
-          explain="按这个用户的数据显示账户、钱包、设备和资料四组内容，不是用户看到的 App 页面。只能看不能改，到时间自动关闭；打开和每次切页都记进操作记录。"
+          explain="按这个用户的数据显示账户、钱包、设备和资料，不是用户看到的 App 页面。只能看不能改，到时间自动关闭；打开和切页都记进操作记录。"
           actions={canStartImpersonation ? <Button disabled={busy} disabledReason={submitting ? SUBMITTING : undefined} onClick={() => startView(null)}>开始查看</Button> : undefined}>
           <Table label="用户数据只读视图记录">
             <thead><tr>
@@ -1699,7 +1709,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   );
 
   /* ── 账户名单页签 ── */
-  const listsExplain = "禁入：用户登录不了 App，加入时已登录的设备全部下线。信任：目前没有哪项检查按它放宽，只做记录。每个用户只有一条，加入另一种会替换掉现在的。";
+  const listsExplain = "禁入：登录不了 App，加入时已登录的设备全部下线。信任：只做记录，目前不放宽任何检查。每个用户只有一条，加入另一种会替换掉现在的。";
   const listsPane = (
     <div className="rd-stack">
       {staleNotice}
@@ -1855,7 +1865,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             </Table>
             {ctxData.sessionsTruncated && <p className="rd-weak">该用户共有 {text(ctxData.totalSessions, "0")} 条登录记录，这里显示最近 {shownSessions.length} 条。</p>}
           </Fold>
-          <Fold inset title="技术详情" summary={`系统编号 ${shownId || "—"}`}>
+          <Fold inset title="技术信息" summary={`系统编号 ${shownId || "—"}`}>
             <Facts>
               <Fact k="系统编号">{shownId || "—"}</Fact>
               {shownStatus === "FROZEN" && <Fact k="冻结时间">{formatBusinessTimeFull(fact?.frozenAt, "—")}</Fact>}
@@ -1925,7 +1935,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   if (!canReadC2 && !canReadDeletions) {
     return <>
       {header}
-      <BlockState state="denied" title="无权限访问" detail="这个账号没有账户操作和注销申请的读取权限。" />
+      <BlockState state="denied" title="你的账号不能查看账户操作" detail="需要账户操作或注销申请的查看权限，请超级管理员在「运营账号与权限」里开通。" />
     </>;
   }
 
@@ -1961,6 +1971,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {traceDrawer}
     {mirrorDrawer}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先读回核对或到操作记录确认。这里只清理本页的待确认，不是系统结案；之后的操作仍须通过系统校验。" />}
+      explain="重试被拒证明不了原操作的结果，先查询原结果或到操作记录核对。解除只清掉本页这条记录，不撤销后台的操作。" />}
   </>;
 }
