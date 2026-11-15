@@ -65,7 +65,7 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
 export async function queryF5Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId); // The endpoint judges read grants independently from the POST grant.
   if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: original.ticket?.id ?? original.f5TicketId, ticket: undefined, absent: false });
+  fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: original.ticket?.id ?? original.f5TicketId, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, true);
   if (!ticket) {
     fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
