@@ -146,7 +146,8 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
           if (cause instanceof HApprovalRequired) {
             ctx.openActionConfirm(null);
             ctx.openConfirm(hApprovalReconfirm(cause, { action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`, title: "保存玩法配置", reason,
-              completed: complete, approver: "另一位超级管理员", holds: "玩法", extra: <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact> }));
+              completed: complete, hasPending: () => !!h4PendingFor(`H/h4_event_rule/${base.eventCode}`),
+              onUnknown: () => { ctx.closeConfirm?.(); setSelected(null); setDraft(null); }, approver: "另一位超级管理员", holds: "玩法", extra: <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact> }));
             return;
           }
           if (own === generation.current) setError(displayAdminError(cause));

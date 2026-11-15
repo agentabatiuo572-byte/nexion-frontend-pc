@@ -110,7 +110,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
           if (cause instanceof HApprovalRequired) {
             ctx.openActionConfirm(null);
             ctx.openConfirm(hApprovalReconfirm(cause, { action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, title: "保存抽奖配置", reason,
-              completed: complete, approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact> }));
+              completed: complete, hasPending: () => !!h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`),
+              onUnknown: () => { ctx.closeConfirm?.(); setDraft(null); setBase(null); }, approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact> }));
             return;
           }
           if (own === generation.current) setError(displayAdminError(cause));

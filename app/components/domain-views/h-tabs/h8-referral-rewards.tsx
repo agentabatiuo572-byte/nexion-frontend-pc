@@ -579,7 +579,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           if (failure instanceof HApprovalRequired) {
             const { param, value, reason, snapshot } = failure.input as { param: H8Param; value: string; reason: string; snapshot: H8ReferralRewardOverview };
             setMc(null);
-            ctx.openConfirm(hApprovalReconfirm(failure, { action: mc.action, title: mc.title, reason, approver: APPROVER, holds: "奖励配置",
+            ctx.openConfirm(hApprovalReconfirm(failure, { hasPending: () => !!session && pendingH8RewardCommands(session.adminId).some(record => record.paramKey === param.key), onUnknown: () => ctx.closeConfirm?.(), action: mc.action, title: mc.title, reason, approver: APPROVER, holds: "奖励配置",
               change: <Change from={valueText(param, String(snapshot.params[param.key]))} to={valueText(param, value)} /> }));
             return;
           }

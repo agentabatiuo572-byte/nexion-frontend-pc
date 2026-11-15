@@ -40,7 +40,7 @@ import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
+import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
@@ -185,7 +185,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       before: creating ? null : field.current ?? null, after: businessValue[field.key] ?? null,
       beforeUnit: creating ? undefined : unit(field.key, before), afterUnit: unit(field.key, businessValue),
     })) : undefined;
-    return hApprovalReconfirm(error, { changes, action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
+    return hApprovalReconfirm(error, { changes,
+      hasPending: () => !!h4PendingFor(h4Scope((error.input as { path: string }).path, JSON.parse((error.input as { body: string }).body))),
+      onUnknown: () => ctx.closeConfirm?.(), action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
       change: edit && value !== undefined ? <Change from={`${edit.current || "—"}${edit.unit ? ` ${edit.unit}` : ""}`} to={`${value}${edit.unit ? ` ${edit.unit}` : ""}`} /> : undefined,
       context: edit ? undefined : facts, completed: async result => { await apply(result); } });
   };

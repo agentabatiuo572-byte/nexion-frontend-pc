@@ -4,6 +4,8 @@
  * 直接保存被后端以「要走审批」拒绝后的再确认（决定「H-改走审批」，H3、H4、H5、H8 共用）。
  * 刚才没有保存；值和理由是刚才提交的那一份，原样锁定，运营再点一次「提交审批」才建审批单（调 error.confirm）。
  */
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import type { ReactNode } from "react";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import type { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -27,6 +29,8 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
   /** 改动写不成一行「从多少到多少」时，原确认框的事实块整块放在这里。 */
   context?: ReactNode;
   completed?: (result: unknown) => Promise<void>;
+  hasPending: () => boolean;
+  onUnknown: () => void;
   /** Exact business-form facts for the visual confirmation handoff. */
   changes?: HApprovalChange[];
 }): HApprovalReconfirmReq {
@@ -52,6 +56,15 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
     initialReason: look.reason,
     getPendingReason: () => look.reason,
     okLabel: "提交审批",
-    run: async () => { const result = await error.confirm(); await look.completed?.(result); },
+    run: async () => {
+      let result: unknown;
+      try { result = await error.confirm(); }
+      catch (cause) {
+        // Recovery belongs to the persisted original request on the page, not this frozen dialog.
+        if (look.hasPending() || isOutcomeUnknownError(cause) || isA2OutcomeUncertainError(cause)) look.onUnknown();
+        throw cause;
+      }
+      await look.completed?.(result);
+    },
   };
 }
