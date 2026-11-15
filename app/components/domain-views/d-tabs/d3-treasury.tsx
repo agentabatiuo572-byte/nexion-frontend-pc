@@ -884,7 +884,7 @@ export function D3Treasury() {
         <Field label="凭证类型" required explain="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
           <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
         </Field>
-        <Field label="凭证号" required explain="链上到账填交易哈希，银行到账填流水号；至少 6 位，须能查到。" error={injectShown.voucher ? voucherIssue : undefined}>
+        <Field label="凭证号" required explain={"链上到账填交易哈希，银行到账填流水号；至少 6\u00a0位，须能查到。"} error={injectShown.voucher ? voucherIssue : undefined}>
           {(control) => (
             <div className="rd-reason-box">
               <Input {...control} className="rd-input-counted" maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="不能重复" aria-label="凭证号（必填，不能重复）" />
