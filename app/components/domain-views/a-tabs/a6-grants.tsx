@@ -24,7 +24,7 @@ import { Button, Checkbox, Decision, Drawer, Explain, Fold, Input, Notice, PageT
 const TYPE_LABEL: Record<string, string> = { HIGH: "敏感操作", WRITE: "修改", READ: "查看" };
 const TYPE_ICON = { HIGH: ShieldAlert, WRITE: PenLine, READ: Eye } as const;
 export const SENSITIVE_EXPLAIN = "权限清单里登记为「敏感操作」的权限：风险比普通修改高，比如放行资金、改账号和角色、紧急关停。";
-export const AMPLIFIES_EXPLAIN = "登记时标了这个记号：这项权限对应的操作可能让平台多付钱。老数据没有记号时后端按「可能」处理。只是登记的标记，授权时不做资金检查。";
+export const AMPLIFIES_EXPLAIN = "登记时标的记号：这项权限对应的操作可能让平台多付钱。老数据没有记号的按「可能」算。授权时不做资金检查。";
 
 export function TypeTag({ type }: { type: string }) {
   const Icon = TYPE_ICON[type as keyof typeof TYPE_ICON];
@@ -286,7 +286,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
         )}
         {detail.status === 0 && permDiff.added.length > 0 && (
           <Notice tone="warn" title="这个角色已停用">
-            <p>新加的权限批准后可能存不上（已提后端修），批准后回这页核对。</p>
+            <p>新加的权限批准后可能存不上，批准后回这页核对。</p>
           </Notice>
         )}
         {auditorWrites > 0 && (
