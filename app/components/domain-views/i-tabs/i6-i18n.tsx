@@ -53,7 +53,7 @@ type Course = {
   rewardRaw: string | null;
 };
 type CopyEditor = { mode: "edit" | "fix"; issue?: IntegrityIssue; zh: string; vi: string; en: string; tried: boolean };
-type CourseEditorState = { spec: CourseSpec; title: string; sub?: ReactNode; save: (form: CourseForm) => void };
+type CourseEditorState = { courseId?: string; spec: CourseSpec; title: string; sub?: ReactNode; save: (form: CourseForm) => void };
 
 const MSG_STATUS: Record<string, { text: string; tone: StateTone }> = {
   draft: { text: "草稿", tone: "neutral" }, published: { text: "已发布", tone: "ok" }, archived: { text: "已归档", tone: "done" },
@@ -199,6 +199,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [notFoundKeys, setNotFoundKeys] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
+  const courseConfirm = useRef<{ scope: string; request: ActionConfirmReq } | null>(null);
   const reloadCourseApprovals = async () => {
     if (view !== "learn") return;
     const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
@@ -213,10 +214,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     } catch {
       setCourseApprovals("error");
     }
-    if (results.some(result => result.status === "fulfilled" && result.value && result.value.status !== "pending")) {
+    const closedCourses = new Set(results.flatMap(result => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [result.value.obj] : []));
+    if (closedCourses.size) {
       readReady.current = false;
-      ctx.closeActionConfirm(); ctx.closeConfirm();
-      setCopyEditor(null); setCourseEditor(null);
+      const confirmation = courseConfirm.current;
+      if (confirmation?.scope.startsWith("course:") && closedCourses.has(confirmation.scope.slice(7))) {
+        ctx.closeActionConfirm(confirmation.request);
+        courseConfirm.current = null;
+      }
+      setCourseEditor(current => current?.courseId && closedCourses.has(current.courseId) ? null : current);
       await actions.reloadIContent();
     }
     updateRecovery(value => value + 1);
@@ -275,7 +281,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     let original: I6Command | undefined, proposal: HIRewardCommand | undefined, resolved = false;
     const carried = prefill.current?.scope === scope ? prefill.current : null;
     prefill.current = null;
-    openActionConfirm({ ...request,
+    const confirmation: ActionConfirmReq = { ...request,
       initialReason: carried?.reason,
       edit: request.edit && carried?.value !== undefined ? { ...request.edit, initialValue: carried.value } : request.edit,
       getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason
@@ -301,7 +307,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         }
         const problem = newWriteProblem(scope);
         if (problem) throw new Error(problem);
-        if (openedData !== latest.current.content.i18nLearning) {
+        const currentData = latest.current.content.i18nLearning;
+        const unchangedCourse = scope.startsWith("course:") && JSON.stringify(openedData?.courses.find(row => row.id === scope.slice(7)))
+          === JSON.stringify(currentData?.courses.find(row => row.id === scope.slice(7)));
+        if (openedData !== currentData && !unchangedCourse) {
           ctx.closeActionConfirm(); throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
         }
         try {
@@ -324,7 +333,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           throw new Error(`操作失败:${displayAdminError(error)}`);
         } finally { updateRecovery(current => current + 1); }
       },
-    });
+    };
+    courseConfirm.current = { scope, request: confirmation };
+    openActionConfirm(confirmation);
   };
   useEffect(() => {
     setCourseVersions([]);
@@ -859,7 +870,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }),
   });
 
-  const editCrsState = (c: Course): CourseEditorState => ({ spec: courseSpec("edit", {
+  const editCrsState = (c: Course): CourseEditorState => ({ courseId: c.id, spec: courseSpec("edit", {
     slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.rewardRaw,
     titleZh: c.titleZh, titleEn: c.titleEn, titleVi: c.titleVi, bodyZh: c.bodyZh, bodyEn: c.bodyEn, bodyVi: c.bodyVi,
     quizQuestions: c.quizQuestions, passScore: c.passScore, retryLimit: c.retryLimit,
@@ -910,7 +921,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const newCourseVersion = (c: Course) => {
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
-    setCourseEditor({ spec: courseSpec("version-create", courseCurrent(c, `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
+    setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
       save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
         action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
         title: "保存新版本草稿",
@@ -927,7 +938,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
 
   const editCourseVersionState = (c: Course, row: LearningCourseVersionView): CourseEditorState => ({
-    spec: courseSpec("version-edit", courseCurrent(c, row.version, row.payload)), title: "编辑版本草稿", sub: `${nexGridBrandText(c.title)} · ${row.version}`,
+    courseId: c.id, spec: courseSpec("version-edit", courseCurrent(c, row.version, row.payload)), title: "编辑版本草稿", sub: `${nexGridBrandText(c.title)} · ${row.version}`,
     save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
       title: "保存版本草稿",
