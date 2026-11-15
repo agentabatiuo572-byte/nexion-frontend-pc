@@ -97,7 +97,7 @@ const WAITING = "等待有批准权限的同事处理";
 const A2_WITHOUT_USER_DOMAIN = ["finance", "finance_lead", "growth", "content"];
 const AUDIT_ELSEWHERE = "请能查看「用户与账户」操作记录的同事按单号核对";
 const LARGE_EXPLAIN = "超过 500 USDT 等值，只有财务主管或超级管理员能发起。";
-const LARGE_REQUEST_RETIRED = "旧大额请求接口已退役，不能重试。原记录和对象锁继续保留，请按命令号核对。";
+const LARGE_REQUEST_RETIRED = "旧的大额申请入口已停用，不能重试。原记录保留，这个用户暂时不能再提交调整，请到「操作记录与审批」核对。";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ASSET_ADJUSTMENT_REVIEW_RACE_LOST", "INVALID_STATE_TRANSITION", "C3_ADJUSTMENT_WITHDRAW_CONFLICT", "C3_ADJUSTMENT_WITHDRAW_RACE_LOST", "C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"];
 
@@ -1385,7 +1385,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       value: detailLoading ? "正在读取…" : !detail ? <span className="rd-weak">读不到</span> : !shownCoverage?.reliable ? "算不出来"
         : <><Change from={pct(shownCoverage.ratio)} to={`批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}`} /> · 红线 {fmtConfigPct(shownCoverage.redline)}</>,
     }] : []),
-    { label: "提交人", value: text(shown.maker), reason: formatBusinessTimeFull(shown.createdAt, "—") },
+    { label: "提交人", value: text(shown.maker), reason: <span title={formatBusinessTimeFull(shown.createdAt, "") || undefined}>{formatBusinessTimeCompact(shown.createdAt, "—")}</span> },
     // 能不能批只写结论，原因只在底部一句（DT-12）。
     ...(shownPending && canApprove && !shownMine ? [{ label: "能不能批", value: shownApproveBlock ? "不能" : "能" }] : []),
   ];
@@ -1424,10 +1424,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </>}>
         <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会用同一个命令号重新发送，不会多建单，也不会重复入账。"}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会重发同一份原请求，不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
           <Explain label="这次操作的技术信息" rows={[
-            { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
+            { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
             { k: "操作人", v: record.operator },
             { k: "理由", v: record.reason ?? record.input?.reason },
           ]} />
@@ -1503,7 +1503,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           <Fact k="凭证">{text(shown.evidenceRef)}</Fact>
           {!shownPending && <Fact k="复核人">{text(shown.checker)}</Fact>}
           {!shownPending && <Fact k="复核理由">{reviewReasonText}</Fact>}
-          {!shownPending && <Fact k="复核时间">{formatBusinessTimeFull(shown.reviewedAt, "—")}</Fact>}
+          {!shownPending && <Fact k="复核时间"><span title={formatBusinessTimeFull(shown.reviewedAt, "") || undefined}>{formatBusinessTimeCompact(shown.reviewedAt, "—")}</span></Fact>}
           {shown.reversalOf && <Fact k="原调整单"><span data-mono>{text(shown.reversalOf)}</span></Fact>}
           {shown.reversedBy && <Fact k="冲正单"><span data-mono>{text(shown.reversedBy)}</span></Fact>}
         </Facts>

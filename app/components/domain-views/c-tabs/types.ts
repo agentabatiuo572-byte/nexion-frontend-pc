@@ -9,4 +9,4 @@ import type { DCtx } from "../d-tabs/types";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type CCtx = DCtx;
+export type CCtx = DCtx & { closeConfirms: () => void };

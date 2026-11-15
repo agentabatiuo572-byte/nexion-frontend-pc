@@ -1,6 +1,7 @@
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract";
 import { SupportClientError, supportRequest } from "./m-support-client.ts";
 import { guardedFetch } from "./error-messages.ts";
+import { businessStamp, businessZone } from "./business-time.ts";
 import type { SupportBoardRow } from "../../app/components/domain-views/m-tabs/support-leaderboard";
 
 const BOARDS = ["netContribution", "firstPayment", "customers"] as const;
@@ -87,7 +88,7 @@ function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
     : !confirmed || m.reason !== "NONE" || baselineAt === null || baselineVersion === null || Date.parse(baselineAt) >= Date.parse(meta.asOf)
       || (kind === "NEW" ? places !== null || previousRank !== null : previousRank === null || places === null
         || (kind === "SAME" ? places !== 0 || previousRank !== rank : places < 1 || (kind === "UP" ? previousRank - rank! !== places : rank! - previousRank !== places)))) invalid("movement");
-  const explanation = [reason(m.reason), baselineAt ? `对比截至 ${baselineAt} 的名次` : "", previousRank ? `原名次 ${previousRank}` : ""].filter(Boolean).join("；");
+  const explanation = [reason(m.reason), baselineAt ? `对比截至 ${businessStamp(Date.parse(baselineAt))}（${businessZone().label}）的名次` : "", previousRank ? `原名次 ${previousRank}` : ""].filter(Boolean).join("；");
   const movement: SupportBoardRow["movement"] = kind === "UP" || kind === "DOWN" ? { kind: kind === "UP" ? "up" : "down", places: places!, explanation } : { kind: kind === "SAME" ? "same" : kind === "NEW" ? "new" : "unavailable", explanation };
   const agentId = id(r.agentId), name = text(r.name);
   if (!name.trim()) invalid("name");

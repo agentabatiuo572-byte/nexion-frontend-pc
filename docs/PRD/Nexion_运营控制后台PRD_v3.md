@@ -195,6 +195,7 @@
 - `GET /api/config/exchange/caps` — 三阈值 + Queue 配置 + 费率配置;**server-canonical**,前端 §9.4.1 swap UI(`feeLabel/feeFree`)+ §9.4.2 gate 判定读此。
 - `GET /api/admin/exchange/queue?cursor=` — 次日队列监控(server 权威待处理单)。
 - `POST /api/admin/market/exchange/queue/process` 携带 `Idempotency-Key` 执行批次。G2「拦截与排队」结果卡分别列出成交、跳过、失败的订单，显示服务端给出的原因，并按回执 `orderStatus` 标明订单状态。`FAILED` 显示「订单已失败」，`QUEUED` 显示「订单仍在队列」，`CANCELLED` 显示「订单已取消」。结果未确认时，重试相同批次参数和理由沿用原命令号。只有收到有效批次回执并刷新队列后，才确认本次结果。
+- 批量处理排队结果未知时，「处理结果未知。可以关掉确认框，在页面上方点「查询原结果」，查看原批次的结果。」只在确认框里写一次，不另弹提示，页面上方的「操作提示」也不再写；核对查不到时提示标题写「没有查到原批次的结果」，正文不再重复这句。
 - 同一操作员有待核对批次时，G2 原按钮区显示「核对原处理」，队列为空也可打开。弹窗只读显示原笔数和理由，以原 `Idempotency-Key` 通过 `GET /api/admin/market/exchange/queue/process` 核对所属回执。收到有效回执并刷新现有队列后恢复普通入口。服务端明确返回 `404 G2_BATCH_RECEIPT_NOT_FOUND` 时继续保留原记录，不允许仅据此清号或开新批次。其他查询失败同样保留原记录。
 - `GET /api/admin/exchange/gate-stats?window=` — 三类拦截命中统计(喂仪表盘)。
 - `PUT /api/admin/exchange/caps` — 改三阈值 + Queue 配置(经确认弹窗 G2-MD1 / G2-MD3,reason 必填(空值 400 `REASON_REQUIRED`);**放宽 server 先核 B1,< 红线返 422**)。

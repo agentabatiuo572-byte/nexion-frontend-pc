@@ -57,8 +57,8 @@ type SecurityBaselineRow = SecurityBaselineMeta & {
 };
 
 const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
-  session_idle: { key: "session_idle", name: "会话空闲时限", sub: "多久无操作自动登出", unit: "分钟" },
-  session_abs: { key: "session_abs", name: "会话最长时限", sub: "登录后最长可保持多久", unit: "小时" },
+  session_idle: { key: "session_idle", name: "空闲登出时限", sub: "多久无操作自动登出", unit: "分钟" },
+  session_abs: { key: "session_abs", name: "最长登录时长", sub: "登录后最长可保持多久", unit: "小时" },
   lock_short_cnt: { key: "lock_short_cnt", name: "短时锁定 · 连续输错次数", sub: "连续输错几次后锁定", unit: "次", min: 3, max: 10 },
   lock_short_min: { key: "lock_short_min", name: "短时锁定 · 锁定时长", sub: "锁定多久后可重试", unit: "分钟", min: 5, max: 60 },
   lock_long_cnt: { key: "lock_long_cnt", name: "长时锁定 · 24 小时内输错次数", sub: "一天内累计输错几次后长时锁定", unit: "次" },
@@ -551,7 +551,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: `${picked === "unassigned"
           ? "批准后这个账号没有任何权限和菜单；已登录的设备不会被踢下线。"
           : "批准后按新角色的权限生效，已登录的设备不会被踢下线。"}${picked !== "support" && picked !== "super" ? "新角色不是客服或超级管理员，批准时会移除客服资格；名下还有客户或组成员时会被拒绝。" : ""}`,
-        check: "提交时带上你看到的账号版本；批准执行时核对版本，并检查有效的超级管理员不少于 2 人。",
+        check: "批准时账号已被别人改过，或有效的超级管理员会少于 2 人，会被拒绝。",
       },
       run: async (reason) => {
         const roleStr = (picked || "").trim();
@@ -604,7 +604,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ),
     statedBrief: {
       impact: "骗子常用这一步盗号，先用另一种方式核实是本人。批准后旧验证器失效、所有设备下线，下次登录重新绑定。",
-      check: "批准执行时核对账号版本和是否已绑定；核验方式、时间和工单号写进理由，后端不另外核对。",
+      check: "核验方式、时间和工单号写进理由，系统不另外核对；批准时账号已被别人改过或已解绑，会被拒绝。",
     },
     businessForm: {
       kind: "identity-verify",
@@ -650,7 +650,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ),
     statedBrief: {
       impact: "确认后马上生成 20 位临时密码，只在结果里显示一次；这个账号所有设备下线，下次登录先改密码。",
-      check: "提交时检查重置密码权限、账号版本和当前身份；核验方式、时间和工单号写进理由。",
+      check: "核验方式、时间和工单号写进理由；账号刚被别人改过时会提示失败，刷新后重来。",
     },
     businessForm: {
       kind: "identity-verify",
@@ -674,7 +674,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ["工作邮箱", op.email || "", form.email ?? op.email ?? ""],
     ];
     if (form.avatarAssetId !== undefined) changes.push(["头像", op.avatarAssetId ?? "", form.avatarAssetId]);
-    if (form.avatarGender !== undefined) changes.push(["头像性别", AVATAR_GENDER_OPTIONS.find(item => item.value === op.avatarGender)?.label ?? "", AVATAR_GENDER_OPTIONS.find(item => item.value === form.avatarGender)!.label]);
+    if (form.avatarGender !== undefined) changes.push(["头像分类", AVATAR_GENDER_OPTIONS.find(item => item.value === op.avatarGender)?.label ?? "", AVATAR_GENDER_OPTIONS.find(item => item.value === form.avatarGender)!.label]);
     const changed = changes.filter(([, before, after]) => before !== after);
     const genderLabel = (value?: string | null) => AVATAR_GENDER_OPTIONS.find(item => item.value === value)?.label ?? "未指定";
     const genderFrom = genderLabel(op.avatarGender), genderTo = form.avatarGender === undefined ? genderFrom : genderLabel(form.avatarGender);
@@ -700,7 +700,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: usernameChanged
           ? "批准后改资料；登录名改了，这个账号所有设备下线，要用新登录名重新登录。"
           : "批准后改资料，已登录的设备不下线；新头像批准后才换上。",
-        check: "批准执行时核对账号版本，并检查登录名、邮箱不重复。",
+        check: "批准时登录名或邮箱已被占用、账号已被别人改过，会被拒绝。",
       },
       run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
@@ -765,7 +765,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       statedBrief: {
         impact: isSelf ? "这是你自己的账号，批准后你会被登出、不能再登录。你发起的待审批单不会自动撤回；有主管资格时要先交接负责的组。"
           : "批准后这个账号所有设备下线、不能再登录，角色保留。它发起的待审批单不会自动撤回；有主管资格时要先交接负责的组。",
-        check: "批准执行时核对账号版本、有效的超级管理员不少于 2 人和客服交接。",
+        check: "批准时账号已被别人改过、有效的超级管理员会少于 2 人，或客服还没交接，会被拒绝。",
       },
     run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
@@ -814,7 +814,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ),
     statedBrief: {
       impact: "批准后可以重新登录，角色和两步验证保持原样；之前撤掉的客服资格不会自动恢复。",
-      check: "批准执行时核对账号版本；恢复期间只能启用已绑定两步验证的超级管理员。",
+      check: "批准时账号已被别人改过会被拒绝；恢复期只能启用已绑定两步验证的超级管理员。",
     },
     run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
@@ -860,7 +860,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       statedBrief: {
         impact: "另一位超级管理员批准后，批准时在线的设备全部下线；不改密码和两步验证，对方可以马上重新登录。要让对方登录不了，用「停用账号」。",
-        check: "批准执行时核对账号版本，并检查目标不是超级管理员、不是批准人自己。",
+        check: "对方是超级管理员、是批准人自己，或账号已被别人改过时，批准会被拒绝。",
       },
       run: async (reason) => {
         const def = findHighOp("a1_account_force_logout")!;
@@ -975,14 +975,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       openOperation({ kind: "create", form, approval: true }, { briefKind: "security",
         action: `提交新建账号审批 · ${form.displayName}`,
         title: "提交新建超级管理员审批",
-        detail: "这里只提交提案，须另一位超级管理员批准后才创建账号。",
+        detail: "这里只提交审批，另一位超级管理员批准后才创建账号。",
         amplifies: false,
         effect: approvalTag("批准前账号不会建好。"),
         confirmLabel: "提交审批",
         facts: <>{createFacts(form)}<Facts>{approverFact()}</Facts></>,
         statedBrief: {
           impact: "另一位超级管理员批准后才创建账号；本页拿不到临时密码，批准后到账号列表点「重置密码」，把临时密码交给本人。",
-          check: "提交时检查当前身份和审批发起权限；批准时再检查登录名、邮箱不重复，恢复期只能建超级管理员。",
+          check: "批准时登录名或邮箱已被占用会被拒绝；恢复期只能新建超级管理员。",
         },
         run: async (reason) => {
           await propose(toast, {
@@ -1009,7 +1009,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: form.role === "support"
           ? "确认后马上建好启用的账号，显示一次 20 位临时密码；首次登录先绑定两步验证再改密码。客服账号自动有专属客服资格（未分组）。"
           : "确认后马上建好启用的账号，显示一次 20 位临时密码；首次登录先绑定两步验证再改密码。",
-        check: "提交时检查当前身份、登录名和邮箱不重复、角色可用；同一次提交重试不会建第二个账号。",
+        check: "登录名或邮箱已被占用、角色不可用时会提示失败；按原请求重试不会建第二个账号。",
       },
       run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
@@ -1047,7 +1047,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       statedBrief: {
         impact: "确认后写进权限清单，不分给任何角色；要用这项权限，到「角色管理」分配给角色。",
-        check: "提交时检查权限码格式、资源路径和这个码还没登记过。",
+        check: "权限编码格式不对、资源路径不对或这个编码已登记过时，会提示失败。",
       },
       reasonMin: 8,
       reasonMax: 200,
@@ -1068,7 +1068,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     openOperation({ kind: "session", account: target, sessionId }, { briefKind: "security",
       action: `让单台设备下线 · ${operatorDisplayName(target)}`,
       title: "让这台设备下线",
-      detail: `只让这台设备（${sessionId}）下线，不影响该账号的其他设备。`,
+      detail: "只让这台设备下线，不影响该账号的其他设备。",
       amplifies: false,
       effect: directTag(),
       confirmLabel: "确认让这台设备下线",
@@ -1082,7 +1082,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       statedBrief: {
         impact: "确认后只让这台设备马上下线，这个账号的其他设备不受影响；对方可以重新登录。",
-        check: "提交时检查撤销登录权限、账号版本和这台设备还在线。",
+        check: "这台设备已经下线，或账号刚被别人改过时，会提示失败。",
       },
       run: async (reason) => {
         await submitRequest({ kind: "session", accountId: target.id, sessionId, expectedVersion: target.version, reason, operator });
@@ -1229,9 +1229,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   for (const draft of avatarDrafts.list().filter(row => row.actorId === currentAdminId && row.scope === "admin" && (!row.asset || row.cancelKey))) {
     const target = draft.fingerprint.split(":")[2] ?? "new";
     recoveryRows.push({ key: draft.cancelKey ?? draft.commandKey, name: draft.cancelKey ? "取消账号头像" : "准备账号头像", change: <>{draft.kind === "UPLOAD" ? draft.fileName ?? "上传的图片" : "随机默认头像"} · {target === "new" ? "新建账号" : <>账号编号 <span data-mono>{target}</span></>}</>, submittedAt: draft.createdAt,
-      tag: Date.now() >= draft.expiresAt ? expiredTag("原请求超过 24 小时，不能再重试；头像没有按原请求查询的接口，请联系值班人员核对。")
+      tag: Date.now() >= draft.expiresAt ? expiredTag("原请求超过 24 小时，不能再重试，也查不到原结果，请联系值班人员核对。")
         : unknownTag("direct", draft.cancelKey
-          ? "提交时没收到确定结果，取消可能已经生效。取消不能重试，后端也没有原请求回执，只能联系值班人员核对。"
+          ? "提交时没收到确定结果，取消可能已经生效。取消不能重试，也查不到原结果，请联系值班人员核对。"
           : "提交时没收到确定结果，头像可能已经准备好。24 小时内可以点「处理原头像」按原请求重试，上传的要选同一张图片。"),
       actions: <>
         <Button size="sm" onClick={() => void (async () => {
@@ -1292,7 +1292,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         explainTitle={governanceFrozen && stats ? "恢复期能做什么" : undefined}
         explain={governanceFrozen && stats
           ? <><p>只能新建或提升超级管理员、启用已绑定两步验证的超级管理员，都要另一位超级管理员批准。</p><p>资料、密码、两步验证、停用、资格和权限登记暂停；撤销登录不受影响。</p><p>没有第二位能批准的超级管理员时，请运维执行服务器恢复。</p></>
-          : "有效的超级管理员要同时满足：启用、超级管理员角色、已绑定两步验证，只按真实绑定计算。两步验证按账号列表里启用中的账号统计。"}>{conclusion.text}</Conclusion>
+          : "启用、超级管理员角色、已绑定两步验证三样都满足，才算有效的超级管理员。"}>{conclusion.text}</Conclusion>
 
       <StatBand label="账号安全">
         <Stat lead icon={ShieldUser} tone={!stats ? undefined : effectiveSupers < 2 ? "danger" : "role-3"} label="有效的超级管理员" value={stats ? String(effectiveSupers) : "—"} unit={stats ? "人" : undefined}
@@ -1301,14 +1301,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onOpen={() => pickFilter("super")} openLabel="只看超级管理员" selected={filter === "super"} selectedText="已筛选" aria-pressed={filter === "super"} />
         <Stat icon={ShieldCheck} tone={unboundOps.length ? "warn" : "role-3"} label="未绑定两步验证" value={String(unboundOps.length)} unit="个"
           sub={`启用账号 ${enabledOps.length} 个`}
-          explain="启用中的账号里还没绑定的。没绑定的账号登录时要先绑定，绑定前不能正常使用后台；例外是 superadmin 在临时绕过开关打开时可免验证登录，发布前必须关闭。点这格只看这些账号。"
+          explain="启用中、还没绑定两步验证的账号，登录时要先绑定才能用后台。临时免验证开关打开时，superadmin 不验证也能登录，上线前要关掉。点这格只看这些账号。"
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
-          explain="按操作名统计，资料、角色、两步验证、启停、撤销全部登录的申请目前可能没算进来，数字会偏少。以「操作记录与审批」里的待审批为准。"
+          explain="资料、角色、两步验证、启停、撤销全部登录的申请可能没算进来，数字会偏少，以「操作记录与审批」为准。"
           href="/platform/audit" openLabel="去操作记录与审批" />
         <Stat icon={MonitorSmartphone} tone="role-3" label="在线登录" value={stats ? stats.activeSessions.toLocaleString("en-US") : "—"} unit={stats ? "个" : undefined}
           sub={`${onlineAccounts} 个账号在线`}
-          explain="后台登录会话总数，一个账号在几台设备上登录就算几个，不是在线人数。" />
+          explain="一个账号在几台设备上登录就算几个，不是在线人数。" />
       </StatBand>
 
       <Panel title="运营账号" icon={Users} tone="role-3" flush
@@ -1364,7 +1364,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             ))}
           </ConfigList>
         ) : <BlockState compact state="empty" title="暂未获取到登录安全设置。" />}
-        <p className="a1-help">账号疑似被盗：先在详情里「让此设备下线」，再「重置密码」；要彻底收回，停用账号。<Explain label="锁定规则原文" content={`后端给的锁定规则：${operatorCopyText(lockBaseline)}`} /></p>
+        <p className="a1-help">账号疑似被盗：先在详情里「让此设备下线」，再「重置密码」；要彻底收回，停用账号。<Explain label="锁定规则原文" content={`锁定规则原文：${operatorCopyText(lockBaseline)}`} /></p>
       </Fold>
 
       <Fold icon={ShieldPlus} title="登记新权限" summary="登记后不会自动分给任何角色"

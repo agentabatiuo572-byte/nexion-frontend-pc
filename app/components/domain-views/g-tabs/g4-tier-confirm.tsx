@@ -62,7 +62,7 @@ function pendingApproval(adminId: number) {
         ? !change.tierId || params?.action !== "delete" || params.to !== undefined || params.priceUSDT !== undefined
         : typeof form?.to !== "string" || typeof form.priceUSDT !== "string" || params?.action !== undefined
           || params?.to !== Number(form.to) || params?.priceUSDT !== Number(form.priceUSDT))) {
-    throw new Error("原档位提案内容不完整，请到操作记录核对，勿重复提交。");
+    throw new Error("原档位申请的内容不全，请到操作记录核对，不要重复提交。");
   }
   return { ...record, ...original };
 }
@@ -79,7 +79,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
 }) {
   const [opening] = useState(() => {
     try { return { pending: pendingApproval(session.adminId), error: "" }; }
-    catch { return { pending: undefined, error: "原档位提案内容不完整，请到操作记录核对，勿重复提交。" }; }
+    catch { return { pending: undefined, error: "原档位申请的内容不全，请到操作记录核对，不要重复提交。" }; }
   });
   const [approvalRequiredFor, setApprovalRequiredFor] = useState<string>();
   const change = opening.pending?.change ?? requested;
@@ -169,7 +169,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       attempts.remember(slot(session.adminId), key, { input: JSON.stringify(original) });
       if (!attempts.isDurablyStored(slot(session.adminId), key)) {
         attempts.forget(slot(session.adminId), key);
-        throw new Error("浏览器无法保存原档位提案，请允许会话存储后重试。");
+        throw new Error("浏览器存不下原档位申请，请检查浏览器的存储设置后重试。");
       }
       command = pendingApproval(session.adminId)!;
     }
@@ -185,12 +185,12 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
     }
     if (!ticket) {
       if (Date.now() < original.createdAt || Date.now() >= original.expiresAt) {
-        throw new A2OutcomeUncertainError("原提案已过期或本机时间异常，只能继续查询，不能重试或另建编号。", original.commandKey);
+        throw new A2OutcomeUncertainError("原申请已过期或本机时间不对，只能继续查询，不能重试或重新提交。", original.commandKey);
       }
       try { ticket = await createA2OperationProposal(original.proposal, original.commandKey, true); }
       catch (failure) {
         if (original.ticket || !isExplicitRejection(failure)) {
-          throw new A2OutcomeUncertainError("原档位提案结果待确认，请查询原操作，或按原输入和原键重试。", original.commandKey);
+          throw new A2OutcomeUncertainError("原档位申请结果未知，请查询原结果，或按原请求重试。", original.commandKey);
         }
         attempts.forget(slot(session.adminId), original.commandKey);
         if (hadPending) { onClose(); await onError(failure); }
@@ -199,12 +199,12 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
     }
     ensureOwner(false, original.form);
     if (ticket.mine !== true || ticket.obj !== "tiers" || ticket.action !== "调整创世节点价格档位") {
-      throw new A2OutcomeUncertainError("回执与本人的原档位审批不匹配，请继续核对原操作。", original.commandKey);
+      throw new A2OutcomeUncertainError("查到的审批单和你的原档位申请对不上，请继续查询原结果。", original.commandKey);
     }
     attempts.remember(slot(session.adminId), original.commandKey, { input: JSON.stringify({ change: original.change, form: original.form, reason: original.reason, proposal: original.proposal, ticket }) });
     let active;
     try { active = await readActive(); }
-    catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已登记，当前配置回读失败，请查询原操作。`, original.commandKey); }
+    catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已建好，但当前档位没读到，请再查询原结果。`, original.commandKey); }
     ensureOwner(false, original.form);
     if (ticket.status !== "pending") attempts.forget(slot(session.adminId), original.commandKey);
     const status = { pending: "查询时待审，另一位超级管理员批准后生效", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[ticket.status];
@@ -222,13 +222,13 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       {!deleting && basis.nextTierId && <Fact k="下一档">改截止时下一档 {basis.nextTierId} 的起点跟着改，系列总量不变</Fact>}
       {!deleting && !basis.nextTierId && <Fact k="系列总量">{basis.seriesSetupRequired ? "还没发布系列；发布时按最后一档的截止定总量" : `最后一档的截止就是系列总量，现在 ${number(basis.totalSupply)} 张，不能少于已售 ${number(basis.sold)} 张`}</Fact>}
       <Fact k="什么时候生效">扩大已有系列的总量，或让还没卖出的节点涨价（删除也可能抬价）：提交审批，另一位超级管理员（需有价格档位权限）批准后才生效，批准前沿用原档位和原总量。其余修改确认后立即生效</Fact>
-      <Fact k="付不付钱">不付钱；只影响以后的销售，已下单的按下单时价格。目录审批不查兑付覆盖率</Fact>
+      <Fact k="付不付钱">不付钱；只影响以后的销售，已下单的按下单时价格。这类审批不查兑付覆盖率</Fact>
     </Facts>;
   };
   return <OperationConfirmModal
     action={deleting ? `删除价格档位 · ${basis.tierId}` : basis.tierId ? `修改价格档位 · ${basis.tierId}` : "新增价格档位"}
     title={opening.pending ? "价格档位的原申请" : deleting ? `删除价格档位 ${basis.tierId}` : basis.tierId ? `修改价格档位 ${basis.tierId}` : "新增价格档位"}
-    effect={<RdStatusTag tone="neutral" icon={ArrowLeftRight} explain="后端在提交时判断方向：扩容或未售涨价要另一位超级管理员批准；其余修改确认后立即生效。直接保存时后端答复要审批的，框不关，输入留着，再点一次确认才提交审批。">扩容或未售涨价要批准 · 其余立即生效</RdStatusTag>}
+    effect={<RdStatusTag tone="neutral" icon={ArrowLeftRight} explain="提交时判断：扩容或未售涨价要另一位超级管理员批准，其余修改确认后立即生效。直接保存被告知要审批时，框不关、输入保留，再点一次确认才提交审批。">扩容或未售涨价要批准 · 其余立即生效</RdStatusTag>}
     facts={tierFacts}
     statedBrief={{ impact: "改的是以后销售的档位和价格，已下单的订单不变。", check: "截止和单价都填整数；理由写清依据或工单号。" }}
     confirmTone={deleting ? "danger" : undefined}
@@ -236,9 +236,9 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
     detail={<>{deleting
       ? <>删除 <b>{basis.tierId}</b> 档（{number(basis.from)}–{number(basis.currentTo)}）。空出来的区间会自动补上（{basis.previousTierId ? <>上一档 <b>{basis.previousTierId}</b> 的截止延长到 {number(basis.currentTo)}</> : <>下一档 <b>{basis.nextTierId}</b> 的起点提前到 {number(basis.from)}</>}），至少保留一档。</>
       : <>起点 {number(basis.from)}，截止和单价都填整数。{basis.nextTierId && <>改截止时下一档 <b>{basis.nextTierId}</b> 的起点会跟着调整，系列总量不变。</>}尚未发布系列时仍需单独发布，不会自动开放销售。</>}
-      增加已有系列总供应量或服务端判定提高未售价格时，要另一位超级管理员批准；待审期间沿用原档位和原总量。只影响以后的销售，已下单的按下单时价格结算。</>}
+      扩大已有系列的总量，或让还没卖出的节点涨价时，要另一位超级管理员批准；待审期间沿用原档位和原总量。只影响以后的销售，已下单的按下单时价格结算。</>}
     content={<>
-      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>档位版本 {basis.expectedTiersVersion} · 原申请编号 <span data-mono>{opening.pending.commandKey}</span>。查询原结果不会把旧方案重新提交为当前配置。</p></RdNotice>}
+      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>查询原结果不会把旧方案重新提交为当前配置。</p><p className="rd-note">技术信息：档位版本 {basis.expectedTiersVersion} · 原申请编号 <span data-mono>{opening.pending.commandKey}</span></p></RdNotice>}
       {session.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=G">到「操作记录与审批」查看</Link>}
     </>}
     briefKind="config" reasonMin={8} reasonMax={200} amplifies={false}
@@ -249,9 +249,9 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       const to = Number(value.to);
       const target = value.to?.trim() && Number.isInteger(to) && to > basis.from && to >= basis.sold
         ? `${number(to)} 张` : "待填写有效截止数量";
-      const supply = basis.seriesSetupRequired ? "系列总供应量：尚未发布 → 尚未发布；发布系列时以末档截止数量确定总量。"
-        : `系列总供应量：${number(basis.totalSupply)} 张 → ${target}。`;
-      return { message: `末档截止数量：${number(basis.currentTo)} 张 → ${target}；${supply}末档截止数量和系列总供应量均不能少于已售的 ${number(basis.sold)} 张。`, invalid: false };
+      return { message: basis.seriesSetupRequired
+        ? `最后一档截止不能少于已售的 ${number(basis.sold)} 张：截止 ${number(basis.currentTo)} 张 → ${target}；系列还没发布，发布时按最后一档的截止定总量。`
+        : `最后一档截止和系列总量都不能少于已售的 ${number(basis.sold)} 张：截止 ${number(basis.currentTo)} 张 → ${target}，总量 ${number(basis.totalSupply)} 张 → ${target}。`, invalid: false };
     } }}
     getPendingReason={() => opening.error ? undefined : pendingApproval(session.adminId)?.reason ?? (directOriginal() ? JSON.parse(directOriginal()!.body).reason : undefined)}
     getPendingBusinessValue={() => opening.error ? undefined : pendingApproval(session.adminId)?.form ?? (directOriginal() ? Object.fromEntries(Object.entries(JSON.parse(directOriginal()!.body)).map(([key, value]) => [key, String(value)])) : undefined)}
@@ -262,7 +262,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       resolve: value => requiresApproval(value) ? {
         heading: "要另一位超级管理员批准后生效",
         disabledReason: approvalPermissionError(value),
-        completionCopy: "待审期间档位和系列总量保持原值，批准后同步生效。提交和批准时后端核对档位版本和快照；目录审批不查兑付覆盖率。",
+        completionCopy: "待审期间档位和系列总量保持原值，批准后一起生效。提交和批准时都核对档位有没有被别人改过；这类审批不查兑付覆盖率。",
       } : undefined,
       recover: () => execute("lookup"),
       retry: () => execute("retry").then(() => undefined),

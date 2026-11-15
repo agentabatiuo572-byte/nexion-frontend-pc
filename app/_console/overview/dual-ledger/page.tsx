@@ -22,6 +22,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { b1Commands, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { DOutcomeUnknownError } from "@/lib/admin/d-client";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
@@ -300,6 +301,8 @@ export default function DualLedgerPage() {
     if (!next) throw new Error("资金数据读取失败，不显示旧数据");
     return next;
   };
+  // 框关掉之后框里的错误行看不到，原因改用提示条写一次；缺权限由外壳统一提示。
+  const toastClosedDialogError = (error: unknown) => { if (!isPermissionDenied(error)) setToast(displayAdminError(error)); };
   const submitThresholdApproval = async (reason: string, values: BusinessFormValue, lookupOnly = false) => {
     if (!session || !thresholdBaseline) return false;
     const original = pendingThresholdConfigApproval("B1", session.adminId);
@@ -322,6 +325,7 @@ export default function DualLedgerPage() {
         await refreshB1();
       } else if (original && (isExplicitRejection(error) || !pendingThresholdConfigApproval("B1", session.adminId))) {
         setActionConfirm(null);
+        toastClosedDialogError(error);
         await refreshB1();
       }
       throw error;
@@ -345,8 +349,10 @@ export default function DualLedgerPage() {
       }
       let original = current.original;
       if (original && !b1Commands.list().some(record => record.commandKey === original!.commandKey)) {
+        const handled = new Error("原操作已处理，请重新读取后再操作。");
         setActionConfirm(null);
-        throw new Error("原操作已处理，请重新读取后再操作。");
+        toastClosedDialogError(handled);
+        throw handled;
       }
       if (!original) {
         if (newWriteBlocked || pendingWrites.some(record => record.kind === current.kind) || current.kind === "threshold" && pendingApproval) {
@@ -393,6 +399,7 @@ export default function DualLedgerPage() {
       } catch (error) {
         if (isBCommandRejection(error, !!current.original)) {
           setActionConfirm(current.original ? null : { ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form, draftReason: JSON.parse(original.body).reason });
+          if (current.original) toastClosedDialogError(error);
           const fresh = await refreshB1();
           if (fresh && !current.original && error instanceof Error && "reasonCode" in error && error.reasonCode === "CONFIG_VERSION_CONFLICT") throw new Error(THRESHOLD_REFRESHED);
           if (fresh && error instanceof Error && "reasonCode" in error && error.reasonCode === "B1_THRESHOLDS_APPROVAL_REQUIRED") {
@@ -414,12 +421,9 @@ export default function DualLedgerPage() {
       else { setSavedWhileUnread(success); setToast(success, "success"); }
     } catch (err) {
       if (current.kind === "export") {
-        const message = displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err);
-        setToast(message);
-        throw new Error(message);
+        // 错误只在确认框里写一次，不再在页面顶部弹同一句。
+        throw new Error(displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err));
       }
-      // 框里已经写了这句，不再弹同一句。
-      if (!(err instanceof Error && err.message === THRESHOLD_REFRESHED)) setToast(displayAdminError(err));
       throw err;
     }
   };
@@ -550,10 +554,10 @@ export default function DualLedgerPage() {
       <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserveUsd, statDigits)} unit="USDT"
         sub={prev.reserveUsd === 0 ? "24 小时前是 0，不算变化" : `较 24 小时前 ${reserveChg > 0 ? "+" : reserveChg < 0 ? "−" : ""}${fmtPct(Math.abs(reserveChg))}`}
         href={reserveLink ? "/finance/pool" : undefined} openLabel="可用储备，去资金储备与应付款"
-        explain={`平台现在能动用的钱：已确认的储备账本、VietQR 已收款，减去还锁着的质押本金，不低于 0。不是用户钱包余额，也不是链上在线核对的余额。24 小时前的值 = 现在的储备 − 这 24 小时的净流入。接口数值 ${reserveUsd} USDT。`} />
+        explain={`平台现在能动用的钱：已确认的储备账本、VietQR 已收款，减去还锁着的质押本金，不低于 0。不是用户钱包余额，也不是链上在线核对的余额。24 小时前的值 = 现在的储备 − 这 24 小时的净流入。原始数值 ${reserveUsd} USDT。`} />
       <Stat tone="role-2" icon={ReceiptText} label="应付款" value={valuationReliable ? amountText(liabilitiesUsd, statDigits) : TREASURY_VALUATION_UNAVAILABLE} unit={valuationReliable ? "USDT" : undefined}
         sub={`${accounts.length} 类`}
-        explain={`平台之后要付给用户的九类钱，全口径合计，不是都能马上提现。构成在下面「应付款构成」。${UVT_NOTE}${valuationReliable ? `接口数值 ${liabilitiesUsd} USDT。` : ""}`} />
+        explain={`平台之后要付给用户的九类钱，全口径合计，不是都能马上提现。构成在下面「应付款构成」。${UVT_NOTE}${valuationReliable ? `原始数值 ${liabilitiesUsd} USDT。` : ""}`} />
       <Stat icon={Scale} iconTone="role-other" label="差额（储备 − 应付款）"
         value={valuationReliable ? `${netShown < 0 ? "−" : ""}${amountText(Math.abs(netShown), statDigits)}` : TREASURY_VALUATION_UNAVAILABLE}
         unit={valuationReliable ? "USDT" : undefined}
@@ -622,7 +626,7 @@ export default function DualLedgerPage() {
           },
           {
             key: "risk", label: "提现风险评分均值",
-            explain: "只算进行中的 USDT 提现，没有风险评分的单按 0 算，不是全部用户的平均。接口没有上一时段的值，所以不写变化。",
+            explain: "只算进行中的 USDT 提现，没有风险评分的单按 0 算，不是全部用户的平均。系统没给上一时段的值，所以不写变化。",
             value: <span className="b1-kv-value">{linked("/risk/scoring", scoreLink, "提现风险评分均值，去风险评分", `${avgRiskScore} / 100`)}</span>,
           },
         ]} />

@@ -294,7 +294,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       summary={summary}
       actions={actions}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开页面时读取，不自动刷新</span>
+        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" loading={parentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={!ctx.canExport ? "当前角色只有查看权限，不能导出" : undefined}
@@ -314,8 +314,8 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
         现在看：{refreshing ? `${scope} · 正在读取` : scope}
         <Explain label="这几个条件管什么" content={<>
           <p>时间范围从读取那一刻往前滚动 24 小时、7 天、30 天，不是自然日、周、月；时区 {heatmapData.available ? heatmapData.businessTimeZone : businessZone().label}。</p>
-          <p>页面层级：{DEPTH_HINT[depth]}。按一级、二级汇总时一行是一组页面，浏览人数在组内去重。</p>
-          <p>设备、语言只按 App 上报的标记筛，「全部语言」里也包含这三种以外的语言。条件不保存，刷新页面回到近 7 天、全部。</p>
+          <p>页面层级：{DEPTH_HINT[depth]}。按一级、二级汇总时一行是一组页面，同一人在一组里只算一次。</p>
+          <p>设备、语言只按 App 记下的标记筛，「全部语言」里也包含这三种以外的语言。条件不保存，刷新页面回到近 7 天、全部。</p>
           <p>页头「导出近 7 天全端」不跟这些条件。</p>
         </>} />
       </span>}
@@ -344,7 +344,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
     return page(<>
       <Conclusion state="unknown">用户行为热力图：等待跨模块接入</Conclusion>
       <BlockState state="empty" title="还没上线：行为数据还没接入"
-        detail={<>{heatmapData.message || "行为热力数据源尚未接入，页面不会用业务表行数冒充用户行为事件。"} 要等 App 开始上报页面浏览（app.page_viewed）和元素点击（app.element_clicked）后才能使用；目前不显示热力数据、不能导出，也不会用假数据凑数。</>} />
+        detail={<>{heatmapData.message || "行为数据还没接入，页面不会用别的数据冒充用户行为。"} 要等 App 开始记录页面浏览和点击后才能使用；目前不显示热力数据，也不能导出。</>} />
     </>);
   }
   if (!heatmapData.available && heatmapData.status === "RETIRED_ENVIRONMENT") {
@@ -400,7 +400,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   const outside = stats.filter((stat) => !catalogRoutes.has(stat.route));
   const outsideNotice = outside.length ? (
     <Notice tone="progress" title={`合计里含 ${n(outside.length)} 个已不在页面目录里的页面`}>
-      这些页面已退役，但这段时间还有历史事件（共 {n(outside.reduce((sum, stat) => sum + stat.pv, 0))} 次浏览、{n(outside.reduce((sum, stat) => sum + stat.clicks, 0))} 次点击）。上面四个合计和导出的 CSV 都算它们；页面热力表只列当前页面目录里的页面，所以表里加起来会比合计少，不是数错了。
+      这些页面已退役，这段时间还有 {n(outside.reduce((sum, stat) => sum + stat.pv, 0))} 次浏览、{n(outside.reduce((sum, stat) => sum + stat.clicks, 0))} 次点击。合计和导出的 CSV 算它们，热力表不列，所以表里加起来比合计少，不是数错了。
     </Notice>
   ) : null;
 

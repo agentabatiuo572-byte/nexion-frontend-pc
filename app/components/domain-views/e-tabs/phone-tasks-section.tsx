@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { Activity, Clock3, ListTodo, Plus, Smartphone, Coins, Layers3 } from "lucide-react";
 import { E6ConfirmModal } from "./e6-confirm-modal";
-import { BlockState, Button, Cell, Check, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, MoreMenu, Notice, NumberInput, Pager, Panel, Select, Stat, StatBand, StatusTag, StepBar, Table, TableLoading, TableMessage, TaskClassTag, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, NumberInput, Pager, Panel, Select, Stat, StatBand, StatusTag, StepBar, Table, TableLoading, TableMessage, TaskClassTag, Td, Th, Tr } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -45,7 +46,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   },[]);
   useEffect(() => {
     let live = true; setPoolLoading(true); setPool(null); setPoolError("");
-    void fetchTaskPools("PHONE").then(rows => { if (live) { const next=rows.find(row=>row.code === "PHONE"); if (!next) throw new Error("手机任务池元数据缺失"); setPool(next); setReadAt(new Date().toLocaleTimeString("zh-CN",{hour12:false})); } }).catch(cause=>{ if(live) setPoolError(displayAdminError(cause)); }).finally(()=>{if(live)setPoolLoading(false);});
+    void fetchTaskPools("PHONE").then(rows => { if (live) { const next=rows.find(row=>row.code === "PHONE"); if (!next) throw new Error("手机任务池元数据缺失"); setPool(next); setReadAt(`${businessClock(Date.now())}（${businessZone().label}）`); } }).catch(cause=>{ if(live) setPoolError(displayAdminError(cause)); }).finally(()=>{if(live)setPoolLoading(false);});
     return ()=>{live=false;};
   },[ctx.tasks]);
   useEffect(()=>{ if(!ready) {setForm(null); if(!confirm || !m.locked(confirm.scope))setConfirm(null);} },[ready]);
@@ -138,8 +139,8 @@ export function PhoneTiersSection({ctx}:{ctx:EViewCtx}) {
       {ready&&ctx.yieldComparisons.length!==4&&<Notice tone="warn">数据不全，请核对在售商品与手机 T3 档位。</Notice>}
       <Table label="新用户引导收益对比" className="e6-compare-table"><thead><tr><Th>名称</Th><Th align="right">USDT/天</Th><Th align="right">UVT/天</Th><Th>来源</Th></tr></thead><tbody>{ctx.e2Loading?<TableLoading columns={4}/>:!ready?<TableMessage columns={4}>等档位收益读取成功后可用</TableMessage>:[...ctx.yieldComparisons].sort((a,b)=>Number(b.configKey==="phone")-Number(a.configKey==="phone")||a.sortOrder-b.sortOrder).map(r=><Tr key={r.configKey}><Td><Cell full main={nexGridBrandText(r.label)} sub={r.configKey==="phone"?"当前引导档":undefined}/></Td><Td align="right" data-num=""><E6Amount raw={r.dailyUsdtText} precision={comparisonUsdtPrecision} currency="USDT"/></Td><Td align="right" data-num=""><E6Amount raw={r.dailyNexText} precision={comparisonUvtPrecision} currency="UVT"/></Td><Td>{r.configKey==="phone"?"手机 T3 档位":"商品管理"}</Td></Tr>)}</tbody></Table>
     </Panel>
-    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`T${edit.tier.tier} ${currency} 日收益由 ${text(edit.tier,edit.field)} 增加至 ${value} ${currency}/天。`} briefKind="config" statedBrief={{impact:"只调整当前档位的一个币种，批准后更新配置；已发收益不变。",check:"核对原修订号、单币金额与相邻档位，批准时检查兑付覆盖率。"}} action={`调整手机 T${edit.tier.tier} 每日收益（${currency}）`} reasonMin={8} reasonMax={200} detail="只调整这个币种；五档同币种收益须非递减。批准后更新档位配置，供后续校准与引导展示使用；不改变已派任务的奖励快照。" completionCopy="由另一位具备批准权和对应业务权限的管理员复核。" coverageCheck="批准时检查兑付覆盖率。" edit={{kind:"number",current:text(edit.tier,edit.field),unit:`${currency}/天`,min:0.00001,step:0.00001,maxDecimals:6,disallowCurrent:true,amplifiesWhen:"increase",hint:range,validate:value=>!positiveAmount.test(value)?"收益最多 12 位整数、6 位小数。":lower&&compareE6Decimal(value,text(lower,edit.field))<0||upper&&compareE6Decimal(value,text(upper,edit.field))>0?`五档同币种收益须非递减：${range}`:undefined}}
-      facts={<Facts><Fact k="档位">{`T${edit.tier.tier} · ${operatorCopyText(edit.tier.name)}`}</Fact><Fact k="原修订号">{String(edit.tier.revision)}</Fact></Facts>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
+    {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`T${edit.tier.tier} ${currency} 日收益由 ${text(edit.tier,edit.field)} 增加至 ${value} ${currency}/天。`} briefKind="config" statedBrief={{impact:"只调整当前档位的一个币种，批准后更新配置；已发收益不变。",check:"核对单币金额与相邻档位，批准时检查兑付覆盖率。"}} action={`调整手机 T${edit.tier.tier} 每日收益（${currency}）`} reasonMin={8} reasonMax={200} detail="只调整这个币种；五档同币种收益须非递减。批准后更新档位配置，供后续校准与引导展示使用；不改变已派任务的奖励快照。" completionCopy="由另一位具备批准权和对应业务权限的管理员复核。" coverageCheck="批准时检查兑付覆盖率。" edit={{kind:"number",current:text(edit.tier,edit.field),unit:`${currency}/天`,min:0.00001,step:0.00001,maxDecimals:6,disallowCurrent:true,amplifiesWhen:"increase",hint:range,validate:value=>!positiveAmount.test(value)?"收益最多 12 位整数、6 位小数。":lower&&compareE6Decimal(value,text(lower,edit.field))<0||upper&&compareE6Decimal(value,text(upper,edit.field))>0?`五档同币种收益须非递减：${range}`:undefined}}
+      facts={<Facts><Fact k="档位">{`T${edit.tier.tier} · ${operatorCopyText(edit.tier.name)}`}</Fact></Facts>} content={<Fold inset title="技术信息" summary="提交时核对有没有被别人改过"><Facts><Fact k="修改序号">{String(edit.tier.revision)}</Fact></Facts></Fold>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
         const original=m.pending.find(r=>r.scope===scope);if(original) await m.send(original,true);else {
           if(!value||!positiveAmount.test(value)||compareE6Decimal(value,"0")<=0)throw new Error("收益须为正数，最多 12 位整数、6 位小数。");
           const index=ctx.phoneTiers.findIndex(t=>t.tier===edit.tier.tier),before=ctx.phoneTiers[index-1],after=ctx.phoneTiers[index+1];

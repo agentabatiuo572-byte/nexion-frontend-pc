@@ -216,7 +216,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
                   <Td><Input aria-label={`${channel.key} 文案模板`} placeholder="可以用 {link}" value={channel.textTemplate ?? ""} disabled={fieldsLocked} onChange={(event) => patchChannel(index, { textTemplate: event.target.value })} onFocus={() => (channel.intentType === "web" || channel.intentType === "scheme") && setPreviewKey(channel.key)} /></Td>
                   <Td>{channel.intentType === "web" || channel.urlTemplate
                     ? <Input aria-label={`${channel.key} 链接模板`} placeholder="https://…{link} 或 {text}" value={channel.urlTemplate ?? ""} disabled={fieldsLocked} onChange={(event) => patchChannel(index, { urlTemplate: event.target.value })} onFocus={() => channel.intentType === "web" && setPreviewKey(channel.key)} />
-                    : <span className="rd-note">不用填<Explain label="为什么不用填" content="只有打开链接类渠道用链接模板；其他类型填了后端会拒绝保存。" /></span>}</Td>
+                    : <span className="rd-note">不用填<Explain label="为什么不用填" content="只有打开链接类渠道用链接模板；其他类型填了会保存不了。" /></span>}</Td>
                 </Tr>;
               })}
             </tbody>
@@ -269,7 +269,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
               {(control) => <Textarea {...control} aria-label="英文发布说明" rows={2} value={config.appDownload.releaseNotes.en} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } })} />}
             </Field>
           </div>
-          <p className="rd-note">APK 链接：{config.appDownload.apkUrl || "—"}（这里不能改，保存时原样带上）</p>
+          <p className="rd-note">APK 链接：{config.appDownload.apkUrl || "—"}（这里不能改，保存时不变）</p>
         </div>
         {preview("下载", unavailable
           ? <div className="a3-download" data-empty=""><b>暂不提供官方安装包</b><span>用户看到下载暂不可用，没有可点的链接</span></div>

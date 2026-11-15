@@ -883,8 +883,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
   ) : active.length > 0 ? (
     <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；卡住时可以恢复核对，能不能核对由后端按最后一次更新判断。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
-  ) : recoveryRows.length > 0 ? (
-    <Conclusion state="warn" hint="到上方逐条查询原结果。">{count(recoveryRows.length)} 项操作结果未知；{count(ready)} 个预案可执行</Conclusion>
   ) : PLAYBOOKS.length === 0 ? (
     <Conclusion state="warn" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
   ) : ready === 0 ? (

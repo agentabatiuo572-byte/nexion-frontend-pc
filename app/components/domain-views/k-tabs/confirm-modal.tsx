@@ -17,7 +17,9 @@ import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
-  const [reason, setReason] = useState("");
+  const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
+  const [draftReason, setReason] = useState("");
+  const reason = pendingReason ?? draftReason;
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
       if (!handled) setError(displayAdminError(cause));
     } finally {
+      setPendingReason(req.getPendingReason?.());
       setSubmitting(false);
     }
   };
@@ -105,7 +108,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       }
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting} className="rd-contents">
+      <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
       {error && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}

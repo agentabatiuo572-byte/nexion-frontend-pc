@@ -132,7 +132,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
               return;
             }
             if (isA3OutcomeUncertainError(error)) {
-              toast(`提交结果暂未确认（命令号 ${error.commandKey}）。请先刷新，在操作记录里核对，不要重复提交。`);
+              toast(`结果未知：「${f.name}」可能已经切换。请先刷新，在操作记录里核对，不要重复提交。`);
               throw error;
             }
             toast(`提交失败:${displayAdminError(error)}`);
@@ -160,7 +160,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         toast(`${param.name} 已更新`);
       } catch (error) {
         if (isA3OutcomeUncertainError(error)) {
-          toast(`提交结果暂未确认（命令号 ${error.commandKey}）。保持输入不变再次确认即可，不会重复执行。`);
+          toast(`结果未知：${param.name}可能已经更新。保持输入不变再次确认即可，不会重复执行。`);
         } else {
           a3ParamCommands.forget(slot);
           toast(`提交失败:${displayAdminError(error)}`);

@@ -61,7 +61,7 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
     facts={<Facts>
       <Fact k="现在">0%，未配置，不发分红；批准前不变</Fact>
       <Fact k="谁来批">另一位超级管理员（需有审批批准权限和每日收益比例的修改权限）；你自己不能批</Fact>
-      <Fact k="批准后">后端再核对一次比例版本和兑付覆盖率，通过后写入新比例；之后新建的分红批次按它算</Fact>
+      <Fact k="批准后">再核对比例有没有被改过、兑付覆盖率够不够，通过后写入新比例；之后新建的分红批次按它算</Fact>
       <Fact k="付不付钱">批准本身不付钱；之后每天发分红时才付 USDT</Fact>
     </Facts>}
     detail="当前每日收益比例为 0%。"
@@ -83,7 +83,7 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
       expired: !!pending && (Date.now() < pending.createdAt || Date.now() >= pending.expiresAt),
       resolve: () => ({
         heading: "首次配置要另一位超级管理员批准",
-        completionCopy: "待审期间每日收益比例仍为 0%。提交审批时和批准时后端各检查一次比例版本和兑付覆盖率。",
+        completionCopy: "待审期间每日收益比例仍为 0%。提交和批准时各核对一次比例有没有被改过、兑付覆盖率够不够。",
       }),
       recover: () => submit(true),
       retry: () => submit("retry-original").then(() => undefined),

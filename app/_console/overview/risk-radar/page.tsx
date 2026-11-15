@@ -790,7 +790,7 @@ export default function RiskRadarPage() {
                   );
                 })()}
                 <Facts>
-                  <Fact k={subscriptionOriginal ? "提交时的接收人" : "现在的接收人"}>{subscriberText(subscriptionOriginal?.facts.subscriber ?? subscriber)}</Fact>
+                  <Fact k={subscriptionOriginal ? "提交时的接收人" : "现在的接收人"}>{session?.username && (subscriptionOriginal?.facts.subscriber ?? subscriber) === maskAuditActor(session.username) ? "你" : subscriberText(subscriptionOriginal?.facts.subscriber ?? subscriber)}</Fact>
                   <Fact k="保存后的接收人">你</Fact>
                 </Facts>
                 <Notice tone="warn">
