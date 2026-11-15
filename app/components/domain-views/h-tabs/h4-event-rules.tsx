@@ -58,10 +58,10 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
-  const load = async () => {
+  const load = async (preserve = false) => {
     const own = ++generation.current; setLoading(true); setError("");
-    try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); setSelected(null); setDraft(null); } }
-    catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); }
+    try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
+    catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
@@ -87,16 +87,16 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
-  const save = () => {
-    if (!selected || !draft || saving || !canWrite) return;
-    const next = { ...draft, rules: { ...draft.rules } };
-    try { if (selected.kind === "regional") next.rules.regions = parseEventRegions(regions); }
+  const save = (rebased?: { base: EventRuleView; draft: EventRuleChange; reason: string }) => {
+    const base = rebased?.base ?? selected, input = rebased?.draft ?? draft;
+    if (!base || !input || !rebased && saving || !canWrite) return;
+    const next = { ...input, rules: { ...input.rules } };
+    try { if (base.kind === "regional" && !rebased) next.rules.regions = parseEventRegions(regions); }
     catch (cause) { setError(displayAdminError(cause)); return; }
-    const base = selected;
     const firstOpen = next.enabled && !base.enabled && !base.rulesLocked;
     const readVersion = h4ReadVersion("rules");
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    ctx.openActionConfirm({ initialReason: rebased?.reason, getPendingReason: () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
@@ -128,7 +128,11 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
         } catch (cause) {
           if (own === generation.current) setError(displayAdminError(cause));
           if (isHGrowthReadConflict(cause)) setStale(`${EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · ${base.eventCode}`);
-          if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
+          if (isHGrowthReadConflict(cause) && !originalKey) {
+            ctx.openActionConfirm(null);
+            const values = await load(true), latest = values?.find(row => row.eventCode === base.eventCode);
+            if (latest) { setSelected(latest); setDraft(next); save({ base: latest, draft: next, reason }); }
+          } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
           throw cause;
         }
         finally { originalKey = h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.commandKey; setSaving(false); }
@@ -237,7 +241,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : undefined} onClick={save}>保存配置</Button>} />}>
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : undefined} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
   </Panel>;

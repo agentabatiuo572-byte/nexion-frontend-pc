@@ -76,7 +76,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
@@ -96,7 +96,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
           getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
-          blockedReason={tab === "H9" ? mc.blockedReason : undefined}
+          blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
           getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setActionConfirm(null)}
@@ -112,7 +112,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal key={cf.formKey} req={cf} onClose={() => setCf(null)} />}
       {toastNode}
     </>
   );

@@ -38,7 +38,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
   const [pendingReview, setPendingReview] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const generation = useRef(0);
-  const reload = async () => {
+  const reload = async (rebase = false) => {
     const request = ++generation.current;
     setLoading(true);
     try {
@@ -49,6 +49,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
       if (request !== generation.current) return;
       if (rules.status === "rejected") throw rules.reason;
       setPolicy(rules.value);
+      if (rebase) setDraftBase(rules.value);
       setError(null);
       if (audit.status === "rejected") {
         setReviewError("审批进度读取失败，请刷新后重试；暂不能再次提交。");

@@ -208,9 +208,13 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         if (record && !pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) {
             window.dispatchEvent(new Event('admin-promotion-original-settled'));
         }
-        if (e instanceof PromotionApiError && /REVISION|VERSION_CONFLICT|CONCURRENT_CHANGE|VERSION_NOT_CURRENT|VERSION_STATE_INVALID/.test(e.reasonCode || '')) {
-            if (onVersionConflict) onVersionConflict();
-            else if (onReload) setReloadNeeded(true);
+        if (!record && e instanceof PromotionApiError && !e.unknownOutcome && !e.bodyUnreadable
+            && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID'].includes(e.reasonCode || '')) {
+            setReloadNeeded(true);
+            if (onReload) {
+                try { setNote(await onReload()); setError(null); setReloadNeeded(false); }
+                catch (readError) { setError(readError); }
+            } else if (onVersionConflict) onVersionConflict();
         }
     }
     finally {

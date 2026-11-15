@@ -23,6 +23,7 @@ import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
@@ -91,10 +92,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
+    req = conflictDraft.action(req);
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
     setMc({ ...req, getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
-      getPendingBusinessValue: () => attempt.target ? mutations.record(attempt.target)?.change.businessValue : undefined,
+      getPendingBusinessValue: () => (attempt.target ? mutations.record(attempt.target)?.change.businessValue : undefined) ?? req.getPendingBusinessValue?.(),
       run: async (reason, value, businessValue) => {
         attempt.editValue = value; attempt.businessValue = businessValue;
         confirmation.current = attempt;
@@ -107,6 +109,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
+    req = { ...req, ...conflictDraft.confirm(req) };
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
     shellCtx.openConfirm({ ...req, freezePendingInput: true,
@@ -125,6 +128,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [model, setModel] = useState<H3Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const conflictDraft = useHConflictDraft(!loading && !error && fresh.current);
   const [readAt, setReadAt] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("dayOne");
   const [detail, setDetail] = useState<{ list: ListKey; code: string } | null>(null);
@@ -180,7 +184,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue } }, reason);
       setStale(null);
     } catch (error) {
-      if (isHGrowthReadConflict(error)) setStale({ title: attempt.action, before: write.before, after: write.after });
+      if (isHGrowthReadConflict(error)) {
+        setStale({ title: attempt.action, before: write.before, after: write.after });
+        if (write.store === "region" && !attempt.commandKey) await region.reload(true);
+        if (!attempt.commandKey) conflictDraft.retain(reason, attempt.editValue, attempt.businessValue, String(write.body.value ?? write.body.status ?? write.body.enabled ?? ""));
+      }
       throw error;
     } finally {
       attempt.commandKey = mutations.record(write.target)?.commandKey;
@@ -190,6 +198,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     await runWrite({ store: "region", path: "", method: "POST", body: {}, target: "growth.h3.weekly-region-policy",
       before, after, regionParams: params, success: "已提交审批" }, reason);
   }, () => ({ blocked: mutations.blocked("growth.h3.weekly-region-policy"), pending: mutations.pendingApprovals.some(t => t.obj === "growth.h3.weekly-region-policy" && t.status === "pending") }));
+
+  region.submit = conflictDraft.register("weekly-region", region.submit);
 
   const bindingMissionOptions = useMemo(() => {
     const tasks = [
@@ -291,7 +301,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openPromoStatus = () => {
     const current = text(model?.promoBanner?.status, "").toLowerCase();
     if (!current) { toast(displayAdminError(new Error("PROMO_BANNER_NOT_CONFIGURED"))); return; }
-    const next = current === "active" ? "paused" : "active";
+    const next = conflictDraft.intent ?? (current === "active" ? "paused" : "active");
     openActionConfirm({ target: "promoBanner.status", briefKind: "record",
       action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       title: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
@@ -468,7 +478,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openMissionStatus = (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
-    const targetStatus = status === "active" ? "paused" : "active";
+    const targetStatus = conflictDraft.intent ?? (status === "active" ? "paused" : "active");
     const enabling = targetStatus === "active";
     openConfirm({ briefKind: "config",
       target: taskCode,
@@ -478,7 +488,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       effect: immediate,
       content: <Facts>
         <Fact k={monthly ? "月度挑战" : "任务"}>{taskTitleText(label)}</Fact>
-        <Fact k="状态"><Change from={enabling ? "已停用" : "已启用"} to={enabling ? "已启用" : "已停用"} /></Fact>
+        <Fact k="状态"><Change from={status === "active" ? "已启用" : "已停用"} to={enabling ? "已启用" : "已停用"} /></Fact>
         {monthly
           ? <Fact k="用户">只维护历史状态：App 没有月度入口</Fact>
           : <>
@@ -562,20 +572,21 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
+    const nextEnabled = conflictDraft.intent === undefined ? !enabled : conflictDraft.intent === "true";
     openConfirm({ briefKind: "record",
       target: binding.bindingCode,
-      action: `${enabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
-      title: `${enabled ? "停用" : "启用"}完成条件`,
+      action: `${!nextEnabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
+      title: `${!nextEnabled ? "停用" : "启用"}完成条件`,
       detail: <>对应的任务要处于已停用或已启用状态。</>,
       effect: immediate,
       content: <Facts>
         <Fact k="条件"><span data-mono="">{binding.bindingCode}</span></Fact>
         <Fact k="用户做了什么">{bindingEventText(binding)}</Fact>
         <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `不在本页任务里（${binding.questCode}）`}</Fact>
-        <Fact k="状态"><Change from={enabled ? "已启用" : "已停用"} to={enabled ? "已停用" : "已启用"} /></Fact>
+        <Fact k="状态"><Change from={enabled ? "已启用" : "已停用"} to={!nextEnabled ? "已停用" : "已启用"} /></Fact>
         <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
-        <Fact k="以后的用户">{enabled ? "之后注册、之后发布的任务里，做这件事不再算完成" : "之后注册、之后发布的任务里，做这件事算完成"}</Fact>
-        {enabled && <Fact k="会被拒绝的情况">它是已启用首日任务的最后一条启用条件</Fact>}
+        <Fact k="以后的用户">{!nextEnabled ? "之后注册、之后发布的任务里，做这件事不再算完成" : "之后注册、之后发布的任务里，做这件事算完成"}</Fact>
+        {!nextEnabled && <Fact k="会被拒绝的情况">它是已启用首日任务的最后一条启用条件</Fact>}
       </Facts>,
       statedBrief: { impact: "只改以后的任务怎么算完成，不改已经发出的任务。", check: "核对条件和对应任务；理由写清依据。" },
       reason: true,
@@ -588,13 +599,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           eventType: binding.eventType,
           questCode: binding.questCode,
           userIdField: binding.userIdField,
-          enabled: !enabled,
+          enabled: nextEnabled,
           expectedProducer: binding.producer,
           expectedEventType: binding.eventType,
           expectedQuestCode: binding.questCode,
           expectedUserIdField: binding.userIdField,
           expectedEnabled: enabled,
-        }, before: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${Number(binding.status) === 1 ? "已启用" : "已停用"}`, after: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${!enabled ? "已启用" : "已停用"}`, success: `完成条件「${binding.bindingCode}」已${enabled ? "停用" : "启用"}` }, reason);
+        }, before: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${Number(binding.status) === 1 ? "已启用" : "已停用"}`, after: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${nextEnabled ? "已启用" : "已停用"}`, success: `完成条件「${binding.bindingCode}」已${!nextEnabled ? "停用" : "启用"}` }, reason);
       },
     });
   };
@@ -849,7 +860,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
   const confirmModal = mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
@@ -865,6 +876,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           coverageLead={mc.coverageLead}
           coverageCheck={mc.coverageCheck}
           reasonPlaceholder={mc.reasonPlaceholder}
+          blockedReason={mc.blockedReason}
           reasonPolicyOptional={mc.reasonPolicyOptional}
           inlineApproval={mc.inlineApproval ?? {
             pending: !!savedForConfirm, initialRecovery: "retry", resolve: () => undefined,
@@ -1007,19 +1019,19 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const rewardKey = `mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`;
     return [
       ...(!archived ? [
-        { key: "name", label: "改原名", onSelect: () => openMissionEdit(task, name) },
-        { key: "present", label: "改类别和跳转", onSelect: () => openMissionPresentation(task, name) },
+        { key: "name", label: "改原名", onSelect: conflictDraft.register(JSON.stringify(["openMissionEdit:1", task.taskCode ?? task.id]), () => openMissionEdit(task, name)) },
+        { key: "present", label: "改类别和跳转", onSelect: conflictDraft.register(JSON.stringify(["openMissionPresentation:1", task.taskCode ?? task.id]), () => openMissionPresentation(task, name)) },
       ] : []),
-      ...(list !== "dayOne" ? [{ key: "reward", label: "改奖励", disabledReason: lockReason(rewardKey), onSelect: () => openWeeklyReward(task) }] : []),
-      ...(!archived ? [{ key: "archive", label: "归档", danger: true, onSelect: () => openMissionArchive(task, name) }] : []),
+      ...(list !== "dayOne" ? [{ key: "reward", label: "改奖励", disabledReason: lockReason(rewardKey), onSelect: conflictDraft.register(JSON.stringify(["openWeeklyReward:1", task.taskCode ?? task.id]), () => openWeeklyReward(task)) }] : []),
+      ...(!archived ? [{ key: "archive", label: "归档", danger: true, onSelect: conflictDraft.register(JSON.stringify(["openMissionArchive:1", task.taskCode ?? task.id]), () => openMissionArchive(task, name)) }] : []),
     ];
   };
   const taskPrimary = (task: QuestTask) => {
     const name = text(task.task ?? task.cond);
     const status = taskStatusOf(task);
-    if (status === "archived") return <Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${nameOf(task)}`} onClick={() => openMissionDelete(task, name)}>删除</Button>;
+    if (status === "archived") return <Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${nameOf(task)}`} onClick={conflictDraft.register(JSON.stringify(["openMissionDelete:1", task.taskCode ?? task.id]), () => openMissionDelete(task, name))}>删除</Button>;
     return <Button size="sm" icon={status === "active" ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />} aria-label={`${status === "active" ? "停用" : "启用"} ${nameOf(task)}`}
-      onClick={() => openMissionStatus(task, name)}>{status === "active" ? "停用" : "启用"}</Button>;
+      onClick={conflictDraft.register(JSON.stringify(["openMissionStatus:1", task.taskCode ?? task.id]), () => openMissionStatus(task, name))}>{status === "active" ? "停用" : "启用"}</Button>;
   };
 
   const openWeeklyReward = (task: QuestTask) => {
@@ -1090,7 +1102,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             what="做完全部首日任务后领取的奖励，按领取时离注册多久分全额、宽限、过期三档。"
             when={`调高或第一次设置：提交审批，${FUND_APPROVER}批准后生效；调低确认后立即生效。`}
             effect="只影响之后注册的用户；已经注册的按注册时定下的三档。"
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={() => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true, {
+            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:1"]), () => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true, {
               title: "改首日奖励",
               effect: directionEffect("注册用户"),
               facts: (value) => {
@@ -1113,11 +1125,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
               coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
               hint: "格式：全额 / 宽限 / 0 UVT，例如 100 / 50 / 0 UVT",
-            }, <>全额、宽限、过期三档一起改。</>)}>调整</Button> : undefined} />
+            }, <>全额、宽限、过期三档一起改。</>))}>调整</Button> : undefined} />
           <ConfigRow name="资格期限" value={eligibility ? `注册后 ${eligibility} 小时` : "—"}
             what="从注册算，到这个时间首日任务过期，不能再完成和领取。"
             when="确认后立即生效，只对之后注册的用户。" effect="已经注册的用户按注册时定下的期限。"
-            action={canModuleWrite ? <Button size="sm" onClick={() => openSimpleConfig("dayOne.eligibilityHours", "新手任务资格有效期（小时）", text(model.dayOneEligibilityHours), false, {
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:2"]), () => openSimpleConfig("dayOne.eligibilityHours", "新手任务资格有效期（小时）", text(model.dayOneEligibilityHours), false, {
               title: "改首日资格期限",
               effect: immediate,
               facts: <Facts>
@@ -1129,12 +1141,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               confirmLabel: "确认修改",
               hint: "24–720 的整数小时",
               preview: (value) => /^\d+$/.test(value.trim()) ? `之后注册的用户，注册后 ${value.trim()} 小时首日任务过期。` : null,
-            }, <>从注册算，过了这个时间首日任务过期。</>)}>调整</Button> : undefined} />
+            }, <>从注册算，过了这个时间首日任务过期。</>))}>调整</Button> : undefined} />
           <ConfigRow name="任务时长说明文字" value={windowRaw ? operatorCopyText(windowRaw) : "还没填"}
             sub={<StatusTag tone="neutral">只是展示文字，不改变倒计时</StatusTag>}
             what="后台记的一段说明文字。"
             effect="不改变任何用户的倒计时：真实全额时限固定 24 小时。已提后端决定接上还是退役。"
-            action={canModuleWrite ? <Button size="sm" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false, {
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:3"]), () => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false, {
               title: "改任务时长说明文字",
               effect: <StatusTag tone="neutral">只改文字</StatusTag>,
               facts: <Facts>
@@ -1144,7 +1156,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               statedBrief: { impact: "只改一段说明文字，不改变任何用户的首日倒计时。", check: "核对文字；理由写清依据。" },
               confirmLabel: "确认修改",
               hint: "最多 160 字",
-            }, <>只是一段展示文字。</>)}>调整</Button> : undefined} />
+            }, <>只是一段展示文字。</>))}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
       <Panel title="首日任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
@@ -1175,7 +1187,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   ];
   const multAction = canModuleWrite ? (phase: string, mult: string) => {
     const current = decimalOf(mult);
-    return <Button size="sm" variant="ghost" aria-label={`调整 ${phase} 每周阶段倍率`} disabledReason={lockReason(`weekly.mult.${phase}`)} onClick={() => openSimpleConfig(`weekly.mult.${phase}`, `阶段倍率 ${phase}`, mult, true, {
+    return <Button size="sm" variant="ghost" aria-label={`调整 ${phase} 每周阶段倍率`} disabledReason={lockReason(`weekly.mult.${phase}`)} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:4", phase]), () => openSimpleConfig(`weekly.mult.${phase}`, `阶段倍率 ${phase}`, mult, true, {
       title: `改 ${phase} 每周阶段倍率`,
       effect: directionEffect("每周任务"),
       facts: (value) => {
@@ -1193,7 +1205,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
       coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
       hint: "0.1–5，例如 1.2",
-    })}>调整</Button>;
+    }))}>调整</Button>;
   } : undefined;
   const champion = text(model.weeklyChampionBonus, "");
   const weeklyTab = (
@@ -1217,7 +1229,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <ConfigRow name="周冠军说明文字" value={champion ? operatorCopyText(champion) : "还没填"}
             sub={<StatusTag tone="neutral" icon={Trophy}>只是展示文字，不发奖</StatusTag>}
             what="一段说明文字。" effect="系统不选冠军、不发奖，也不按里面的数字算钱。真正的冠军奖励规则还没定。"
-            action={canModuleWrite ? <Button size="sm" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军展示文字", text(model.weeklyChampionBonus), false, {
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:5"]), () => openSimpleConfig("weekly.champBonus", "周冠军展示文字", text(model.weeklyChampionBonus), false, {
               title: "改周冠军说明文字",
               effect: <StatusTag tone="neutral">只改文字</StatusTag>,
               facts: <Facts>
@@ -1227,7 +1239,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               statedBrief: { impact: "只改说明文字，不会给任何人发奖。", check: "文字里别承诺系统做不到的奖励。" },
               confirmLabel: "确认修改",
               hint: "最多 160 字",
-            }, <>只是一段展示文字。</>)}>调整</Button> : undefined} />
+            }, <>只是一段展示文字。</>))}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
@@ -1259,7 +1271,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <div {...tabIds.panel("bindings")} className="h3-tabpanel">
       <Panel title="完成条件" icon={Link2} tone="role-2" sub={`${bindings.length} 条 · 启用 ${bindings.filter((binding) => Number(binding.status) === 1).length} 条`} data-proof="h3-event-binding"
         explain="用户在 App 里做了某件事（系统记下的事件），对应任务就算完成。新任务要先绑定再启用。改这里只影响之后注册、之后发布的任务；已经发出的按原条件。"
-        actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={openCreateBinding}>新增完成条件</Button> : undefined}>
+        actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={conflictDraft.register(JSON.stringify(["openCreateBinding:1"]), openCreateBinding)}>新增完成条件</Button> : undefined}>
         {bindings.length === 0
           ? <BlockState state="empty" title="暂无完成条件" detail="没有完成条件的任务用户做不完；新建任务后在这里绑定。" />
           : <Table label="完成条件" className="h3-binding-table">
@@ -1284,10 +1296,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   <Td><Cell main={H3_BINDING_USER_FIELD_LABELS[binding.userIdField] ?? binding.userIdField} sub={<span data-mono="">{binding.userIdField}</span>} /></Td>
                   <Td>{enabled ? <StatusTag tone="ok" icon={CircleCheck}>已启用</StatusTag> : <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>}</Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
-                    <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改 ${binding.bindingCode}`} onClick={() => openBindingEdit(binding)}>修改</Button>
+                    <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改 ${binding.bindingCode}`} onClick={conflictDraft.register(JSON.stringify(["openBindingEdit:1", binding.bindingCode]), () => openBindingEdit(binding))}>修改</Button>
                     <MoreMenu label={`${binding.bindingCode} 的更多操作`} items={[
-                      { key: "toggle", label: enabled ? "停用" : "启用", onSelect: () => openBindingStatus(binding) },
-                      { key: "delete", label: "删除", danger: true, onSelect: () => openBindingDelete(binding) },
+                      { key: "toggle", label: enabled ? "停用" : "启用", onSelect: conflictDraft.register(JSON.stringify(["openBindingStatus:1", binding.bindingCode]), () => openBindingStatus(binding)) },
+                      { key: "delete", label: "删除", danger: true, onSelect: conflictDraft.register(JSON.stringify(["openBindingDelete:1", binding.bindingCode]), () => openBindingDelete(binding)) },
                     ]} />
                   </span></Td>}
                 </Tr>;
@@ -1333,7 +1345,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   <Td align="right"><Cell num main={rewardShown} sub={reward.legacy ? "旧名称 NEX" : undefined} /></Td>
                   <Td><TaskStatusTag task={mission} /></Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
-                    <Button size="sm" disabledReason={lockReason(`monthly.${text(mission.id)}.reward`)} onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward), {
+                    <Button size="sm" disabledReason={lockReason(`monthly.${text(mission.id)}.reward`)} onClick={conflictDraft.register(JSON.stringify(["openTaskReward:1", mission.id]), () => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward), {
                       title: "改月度挑战奖励",
                       displayCurrent: rewardShown.replace(/\s*[A-Za-z]+$/, ""), unit,
                       detail: <>当前奖励 <b>{rewardShown}</b>{reward.legacy ? "（旧名称 NEX）" : ""}。</>,
@@ -1354,13 +1366,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                       confirmLabelForValue: (value) => directionOf(decimalOf(mission.reward), value ?? null) === "up" ? "提交审批" : "确认修改",
                       coverageLead: "调高月度挑战奖励是放大方向，要另一位超级管理员批准",
                       hint: "0–100,000，最多 6 位小数",
-                    })}>改奖励</Button>
+                    }))}>改奖励</Button>
                     <MoreMenu label={`${label} 的更多操作`} items={status === "archived"
-                      ? [{ key: "delete", label: "删除", danger: true, onSelect: () => openMissionDelete(mission, label, true) }]
+                      ? [{ key: "delete", label: "删除", danger: true, onSelect: conflictDraft.register(JSON.stringify(["openMissionDelete:2", mission.id]), () => openMissionDelete(mission, label, true)) }]
                       : [
-                        { key: "name", label: "改名称", onSelect: () => openMissionEdit(mission, label, true) },
-                        { key: "toggle", label: status === "active" ? "停用" : "启用", onSelect: () => openMissionStatus(mission, label, true) },
-                        { key: "archive", label: "归档", danger: true, onSelect: () => openMissionArchive(mission, label, true) },
+                        { key: "name", label: "改名称", onSelect: conflictDraft.register(JSON.stringify(["openMissionEdit:2", mission.id]), () => openMissionEdit(mission, label, true)) },
+                        { key: "toggle", label: status === "active" ? "停用" : "启用", onSelect: conflictDraft.register(JSON.stringify(["openMissionStatus:2", mission.id]), () => openMissionStatus(mission, label, true)) },
+                        { key: "archive", label: "归档", danger: true, onSelect: conflictDraft.register(JSON.stringify(["openMissionArchive:2", mission.id]), () => openMissionArchive(mission, label, true)) },
                       ]} />
                   </span></Td>}
                 </Tr>;
@@ -1393,50 +1405,50 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"}
             sub={promoStatus ? (lockTag("promoBanner.status") ?? "启用要批准") : "没读到备用卡配置"}
             what="备用卡开还是关。" when={`启用：提交审批，${FUND_APPROVER}批准后生效；暂停立即生效。`} effect="不影响每周任务卡。"
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.status")} onClick={openPromoStatus}>{promoStatus === "active" ? "暂停" : "启用"}</Button> : undefined} />
+            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.status")} onClick={conflictDraft.register(JSON.stringify(["openPromoStatus:1"]), openPromoStatus)}>{promoStatus === "active" ? "暂停" : "启用"}</Button> : undefined} />
           <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} sub={lockTag("promoBanner.baseReward") ?? "调高要批准"}
             what="备用卡上写的基础奖励。" when={`调高：提交审批，${FUND_APPROVER}批准后生效；调低立即生效。`}
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.baseReward")} onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promo.baseReward), 0, 100000, 1, "increase", {
+            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.baseReward")} onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:1"]), () => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promo.baseReward), 0, 100000, 1, "increase", {
               title: "改备用卡基础奖励", effect: directionEffect("备用卡"), facts: promoFacts("promoBanner.baseReward", "基础奖励", promoBase, " UVT"),
               statedBrief: { impact: "只存参数，App 目前不显示，不发钱。", check: "0–100,000 的整数。" },
               confirmLabelForValue: (value) => directionOf(promoBase, value ?? null) === "up" ? "提交审批" : "确认修改",
               coverageLead: "调高备用卡奖励是放大方向，要另一位超级管理员批准", hint: "0–100,000 的整数",
-            })}>调整</Button> : undefined} />
+            }))}>调整</Button> : undefined} />
           <ConfigRow name="展示倍率" value={promoMult == null ? "—" : `${promoMult}×`} sub={lockTag("promoBanner.multiplier") ?? "调高要批准"}
             what="备用卡上写的倍率，和每周任务的倍率无关。" when={`调高：提交审批，${FUND_APPROVER}批准后生效；调低立即生效。`}
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.multiplier")} onClick={() => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promo.multiplier), 0.1, 5, 0.1, "increase", {
+            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.multiplier")} onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:2"]), () => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promo.multiplier), 0.1, 5, 0.1, "increase", {
               title: "改备用卡展示倍率", effect: directionEffect("备用卡"), facts: promoFacts("promoBanner.multiplier", "展示倍率", promoMult, "×"),
               statedBrief: { impact: "只存参数，App 目前不显示，不改每周任务倍率。", check: "0.1–5。" },
               confirmLabelForValue: (value) => directionOf(promoMult, value ?? null) === "up" ? "提交审批" : "确认修改",
               coverageLead: "调高备用卡倍率是放大方向，要另一位超级管理员批准", hint: "0.1–5",
-            })}>调整</Button> : undefined} />
+            }))}>调整</Button> : undefined} />
           <ConfigRow name="卡上写的奖励" value={mulDecimal(promoBase, promoMult) == null ? "—" : `${mulDecimal(promoBase, promoMult)} UVT`}
             sub="基础奖励 × 展示倍率" what="只读，按上面两项算。" effect="没有对应的领取和发币，不是实际应付金额。" />
           <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`}
             what="卡上显示的倒计时。" effect="只是展示，不改任何任务的真实期限。"
             action={canModuleWrite ? <span className="rd-row-actions">
-              <Button size="sm" onClick={() => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promo.countdownDays), 0, 365, 1, undefined, {
+              <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:3"]), () => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promo.countdownDays), 0, 365, 1, undefined, {
                 title: "改备用卡倒计时天数", effect: immediate, facts: promoFacts("promoBanner.countdownDays", "倒计时天数", decimalOf(promo.countdownDays), " 天"),
                 statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–365 的整数。" }, confirmLabel: "确认修改", hint: "0–365 的整数",
-              })}>改天数</Button>
-              <Button size="sm" onClick={() => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promo.countdownHours), 0, 23, 1, undefined, {
+              }))}>改天数</Button>
+              <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:4"]), () => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promo.countdownHours), 0, 23, 1, undefined, {
                 title: "改备用卡倒计时小时", effect: immediate, facts: promoFacts("promoBanner.countdownHours", "倒计时小时", decimalOf(promo.countdownHours), " 小时"),
                 statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–23 的整数。" }, confirmLabel: "确认修改", hint: "0–23 的整数",
-              })}>改小时</Button>
+              }))}>改小时</Button>
             </span> : undefined} />
           <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"}
             what="卡上写的设备名称，是一段文字，不是商品编号。"
-            action={canModuleWrite ? <Button size="sm" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promo.targetDevice), false, {
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:6"]), () => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promo.targetDevice), false, {
               title: "改备用卡推荐设备", effect: immediate,
               facts: <Facts><Fact k="App 上">目前不显示备用卡，改了用户看不到</Fact><Fact k="商品">只是文字，不核对商品是否存在</Fact></Facts>,
               statedBrief: { impact: "只存一段文字，App 目前不显示。", check: "最多 128 字。" }, confirmLabel: "确认修改", hint: "最多 128 字",
-            })}>调整</Button> : undefined} />
+            }))}>调整</Button> : undefined} />
           <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
             sub="后端没给币种" what="卡上显示的设备日收益数字。" effect="只是展示，不改设备收益和用户钱包；后端没有币种字段，已提后端。"
-            action={canModuleWrite ? <Button size="sm" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡显示的日收益", text(promo.targetDaily), 0, 1000000, 0.01, undefined, {
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:5"]), () => openNumericConfig("promoBanner.targetDaily", "转化卡显示的日收益", text(promo.targetDaily), 0, 1000000, 0.01, undefined, {
               title: "改备用卡日收益", effect: immediate, facts: promoFacts("promoBanner.targetDaily", "日收益", decimalOf(promo.targetDaily), ""),
               statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–1,000,000。" }, confirmLabel: "确认修改", hint: "0–1,000,000",
-            })}>调整</Button> : undefined} />
+            }))}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
     </div>
@@ -1516,13 +1528,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           onNext: () => detail && setDetail({ list: detail.list, code: codeOf(detailList[detailIndex + 1]) }) }}
         footer={detailTask && detail && canModuleWrite ? <Decision
           danger={detailArchived
-            ? <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={() => openMissionDelete(detailTask, detailName)}>删除</Button>
-            : <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={() => openMissionArchive(detailTask, detailName)}>归档</Button>}
+            ? <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={conflictDraft.register(JSON.stringify(["openMissionDelete:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionDelete(detailTask, detailName))}>删除</Button>
+            : <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={conflictDraft.register(JSON.stringify(["openMissionArchive:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionArchive(detailTask, detailName))}>归档</Button>}
           others={<>
-            {!detailArchived && <Button onClick={() => openMissionPresentation(detailTask, detailName)}>改类别和跳转</Button>}
-            {detail.list !== "dayOne" && <Button disabledReason={lockReason(`mission.${codeOf(detailTask)}.reward`)} onClick={() => openWeeklyReward(detailTask)}>改奖励</Button>}
+            {!detailArchived && <Button onClick={conflictDraft.register(JSON.stringify(["openMissionPresentation:2", detailTask?.taskCode ?? detailTask?.id]), () => openMissionPresentation(detailTask, detailName))}>改类别和跳转</Button>}
+            {detail.list !== "dayOne" && <Button disabledReason={lockReason(`mission.${codeOf(detailTask)}.reward`)} onClick={conflictDraft.register(JSON.stringify(["openWeeklyReward:2", detailTask?.taskCode ?? detailTask?.id]), () => openWeeklyReward(detailTask))}>改奖励</Button>}
           </>}
-          primary={!detailArchived ? <Button variant={taskStatusOf(detailTask) === "active" ? "secondary" : "primary"} onClick={() => openMissionStatus(detailTask, detailName)}>{taskStatusOf(detailTask) === "active" ? "停用" : "启用"}</Button> : undefined} /> : undefined}>
+          primary={!detailArchived ? <Button variant={taskStatusOf(detailTask) === "active" ? "secondary" : "primary"} onClick={conflictDraft.register(JSON.stringify(["openMissionStatus:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionStatus(detailTask, detailName))}>{taskStatusOf(detailTask) === "active" ? "停用" : "启用"}</Button> : undefined} /> : undefined}>
         {detailTask && detail && <>
           <JudgmentPoints rows={[
             { label: "状态", value: <TaskStatusTag task={detailTask} /> },
@@ -1537,7 +1549,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <section className="h3-detail-block" aria-label="三语名称">
             <div className="h3-sub-head"><h3>三语名称</h3><Explain label="三语名称怎么显示" content="App 按用户的语言显示；没填的先显示英文，再显示原名，不会自动翻译。已填的不能清空。改了只影响之后注册的用户和之后发布的每周任务。" /></div>
             <dl className="h3-locales">
-              <div><dt>原名</dt><dd>{detailName}</dd><span>{!detailArchived && canModuleWrite && <Button size="sm" variant="ghost" onClick={() => openMissionEdit(detailTask, detailName)}>改</Button>}</span></div>
+              <div><dt>原名</dt><dd>{detailName}</dd><span>{!detailArchived && canModuleWrite && <Button size="sm" variant="ghost" onClick={conflictDraft.register(JSON.stringify(["openMissionEdit:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionEdit(detailTask, detailName))}>改</Button>}</span></div>
               {(["en", "zh", "vi"] as const).map((locale) => {
                 const value = localizedValue(codeOf(detailTask), locale);
                 return <div key={locale}>
@@ -1545,7 +1557,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   <dd data-empty={value ? undefined : ""}>{value || (detailArchived ? "未填写" : "没填，App 回退显示")}</dd>
                   <span>{!detailArchived && canModuleWrite && <Button size="sm" variant="ghost" disabled={!codeOf(detailTask)}
                     aria-label={`${value ? "编辑" : "填写"} ${codeOf(detailTask)} ${LOCALE_LABEL[locale]}`}
-                    onClick={() => openLocalizedContent(codeOf(detailTask), locale, detailName)}>{value ? "改" : "填写"}</Button>}</span>
+                    onClick={conflictDraft.register(JSON.stringify(["openLocalizedContent:1", detailTask?.taskCode ?? detailTask?.id, locale]), () => openLocalizedContent(codeOf(detailTask), locale, detailName))}>{value ? "改" : "填写"}</Button>}</span>
                 </div>;
               })}
             </dl>

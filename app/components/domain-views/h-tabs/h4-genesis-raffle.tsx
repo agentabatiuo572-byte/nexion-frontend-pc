@@ -33,8 +33,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const [stale, setStale] = useState("");
   const load = async () => {
     const own = ++generation.current; setLoading(true); setError("");
-    try { const values = await fetchAdminRaffles(); if (own === generation.current) setRows(values); }
-    catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); }
+    try { const values = await fetchAdminRaffles(); if (own === generation.current) { setRows(values); return values; } return null; }
+    catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
@@ -53,23 +53,23 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const choose = (row: AdminRaffle | null) => { setStale(""); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
-  const save = () => {
-    if (!draft || !write || saving || (base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0)))) return;
-    const invalid = raffleDraftError(draft); if (invalid) { setError(invalid); return; }
-    const savedDraft = draft, previous = base, nextEnabled = !!base && enabled;
+  const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean; reason: string }) => {
+    const savedDraft = rebased?.draft ?? draft, previous = rebased?.base ?? base, nextEnabled = rebased?.enabled ?? (!!base && enabled);
+    if (!savedDraft || !write || !rebased && saving || (previous && (previous.status === "PROCESSING" || previous.status === "DRAWN" || (previous.status === "OPEN" && previous.totalEntries > 0)))) return;
+    const invalid = raffleDraftError(savedDraft); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
     const closing = !nextEnabled && previous?.status === "OPEN";
     const readVersion = h4ReadVersion("raffles");
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${draft.titleZh}`, amplifies: nextEnabled,
+    ctx.openActionConfirm({ initialReason: rebased?.reason, getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, amplifies: nextEnabled,
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       effect: opening ? effectApproval("这一期") : effectDirect,
-      detail: <>本期共 {seats(draft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
+      detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
         <Facts>
-          <Fact k="这一期">{draft.titleZh || "—"} · {draft.id}</Fact>
-          <Fact k="报名开始 → 开奖（北京时间）">{formatTime(draft.startsAt, "Asia/Shanghai")} → {formatTime(draft.drawAt, "Asia/Shanghai")}</Fact>
-          <Fact k="奖项">{draft.prizes.length} 项 · 共 {seats(draft.prizes)} 个名额：{draft.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</Fact>
+          <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact>
+          <Fact k="报名开始 → 开奖（北京时间）">{formatTime(savedDraft.startsAt, "Asia/Shanghai")} → {formatTime(savedDraft.drawAt, "Asia/Shanghai")}</Fact>
+          <Fact k="奖项">{savedDraft.prizes.length} 项 · 共 {seats(savedDraft.prizes)} 个名额：{savedDraft.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</Fact>
           {opening && <Fact k="开放后">用户可以用创世抽奖券报名；到开奖时间系统自动开奖、按奖项发奖</Fact>}
           {nextEnabled && <Fact k="之后能不能改">还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定，也不能再关闭</Fact>}
           {closing && <Fact k="关闭后">回到草稿，用户不能再报名；改好后可以再申请开放</Fact>}
@@ -91,8 +91,12 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
           ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "创世抽奖设置已保存");
         } catch (cause) {
           if (own === generation.current) setError(displayAdminError(cause));
-          if (isHGrowthReadConflict(cause)) setStale(draft.titleZh || savedDraft.id);
-          if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
+          if (isHGrowthReadConflict(cause)) setStale(savedDraft.titleZh || savedDraft.id);
+          if (isHGrowthReadConflict(cause) && !originalKey) {
+            ctx.openActionConfirm(null);
+            const values = await load(), latest = values?.find(row => row.id === savedDraft.id);
+            if (latest) { setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled); save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason }); }
+          } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
           throw cause;
         }
         finally { originalKey = h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.commandKey; setSaving(false); }
@@ -136,7 +140,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
         others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
-        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : saveBlocked ? "这一期不能再改" : undefined} onClick={save}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
+        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : saveBlocked ? "这一期不能再改" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body"><fieldset disabled={formLocked} className="h4-fieldset">
         {base && <Field label="开放报名" explain={enableBlocked ? (base.totalEntries > 0 ? "已有人报名，不能再关闭。" : "已开奖或正在开奖。") : "开放要另一位超级管理员批准；还没人报名时可以关回草稿。"}>
           <Segments label="开放创世抽奖报名" value={String(enabled)} onChange={v => setEnabled(v === "true")} items={[

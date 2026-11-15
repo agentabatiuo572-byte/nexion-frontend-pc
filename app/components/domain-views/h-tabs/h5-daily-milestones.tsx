@@ -19,6 +19,7 @@ import { useH5Mutations, type H5PendingCommand } from "@/lib/admin/use-h5-mutati
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -105,14 +106,16 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const [tab, setTab] = useState<Tab>("rules");
   const [mc, setMc] = useState<H5Confirm | null>(null);
   const fresh = useRef(false);
+  const conflictDraft = useHConflictDraft(!loading && !error && fresh.current);
   const [approvalLabel, setApprovalLabel] = useState(false);
   const openActionConfirm = (req: H5Confirm) => {
     if (!req.original && (!fresh.current || mutations.record(req.target))) {
       toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
       return;
     }
-    setApprovalLabel(false);
-    setMc(req);
+    const next = conflictDraft.action(req), values = next.getPendingBusinessValue?.();
+    setApprovalLabel(next.businessForm?.kind === "multi-field" && values ? next.businessForm.amplifies?.(values) ?? false : false);
+    setMc(next);
   };
 
   const reload = async () => {
@@ -140,7 +143,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const [releasing, setReleasing] = useState<H5PendingCommand | null>(null);
   const runChange = async (change: Parameters<typeof mutations.run>[0]) => {
     try { await mutations.run(change); setStale(null); } catch (error) {
-      if (isHGrowthReadConflict(error)) setStale({ name: change.name, before: change.before, after: change.after });
+      if (isHGrowthReadConflict(error)) {
+        setStale({ name: change.name, before: change.before, after: change.after });
+        conflictDraft.retain(change.reason, change.editValue, change.businessValue);
+      }
       throw error;
     }
   };
@@ -564,7 +570,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const activeCommand = mc ? mutations.record(mc.target) : undefined;
   const confirmModal = mc && (
-    <OperationConfirmModal key={`${mc.target}:${mc.original?.commandKey ?? "new"}`} briefKind={mc.briefKind}
+    <OperationConfirmModal key={`${mc.target}:${mc.original?.commandKey ?? mc.formKey ?? "new"}`} briefKind={mc.briefKind}
       action={mc.action}
       title={mc.title}
       detail={mc.detail}
@@ -574,9 +580,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       facts={mc.facts}
       effect={mc.effect}
       content={mc.content}
-      initialReason={mc.original?.change.reason}
+      initialReason={mc.original?.change.reason ?? mc.initialReason}
       getPendingReason={() => mutations.record(mc.target)?.change.reason}
-      getPendingBusinessValue={() => mc.original?.change.businessValue ?? mutations.record(mc.target)?.change.businessValue}
+      getPendingBusinessValue={() => mc.original?.change.businessValue ?? mutations.record(mc.target)?.change.businessValue ?? mc.getPendingBusinessValue?.()}
       blockedReason={activeCommand && !mutations.canRetry(activeCommand) ? isRetryExpired(activeCommand) ? "已超过 24 小时，只能查询原结果" : activeCommand.acknowledged ? "申请已建单，请查询原结果。" : "当前账号不能重试原操作，请查询原结果" : !mc.original && !mutations.record(mc.target) && !fresh.current ? "请先成功刷新签到数据" : undefined}
       confirmLabelForValue={mc.confirmLabelForValue}
       confirmLabel={mc.target.startsWith("power:") || mc.target.startsWith("earn:") ? approvalLabel ? "提交审批" : mc.confirmLabel : mc.confirmLabel}
@@ -693,7 +699,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {!fixed && <span className="h5-dir">改动都要批准</span>}
         </span>}
         action={!fixed && canRuleWrite ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={() => openRule(rule)}>调整</Button>
+          <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={conflictDraft.register(JSON.stringify(["openRule:1", rule.key]), () => openRule(rule))}>调整</Button>
         ) : undefined} />
     );
   };
@@ -736,7 +742,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 {pending && pendingTag(pending.approver, pending.note)}
               </>,
               action: canWrite ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改连签 ${milestone.day}奖励`}
-                disabledReason={blocked(`streak:${milestone.id}`)} onClick={() => openStreak(milestone)}>改奖励</Button> : undefined,
+                disabledReason={blocked(`streak:${milestone.id}`)} onClick={conflictDraft.register(JSON.stringify(["openStreak:1", milestone.id]), () => openStreak(milestone))}>改奖励</Button> : undefined,
             };
           })} />
           : <BlockState state="empty" title="还没有连签奖励" detail="也可能是读取失败，这页分不出来。" />}
@@ -772,7 +778,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               mark: retired ? "业务已停用" : unknown ? "状态未知" : pending ? "待审批" : undefined,
               actions: canWrite && !retired
                 ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`调整成长奖励 ${operatorCopyText(powerUp.label)}（${powerUp.day} 天）`}
-                  disabledReason={blocked(`power:${powerUp.id}`)} onClick={() => openPowerUp(powerUp)}>调整</Button>
+                  disabledReason={blocked(`power:${powerUp.id}`)} onClick={conflictDraft.register(JSON.stringify(["openPowerUp:1", powerUp.id]), () => openPowerUp(powerUp))}>调整</Button>
                 : canWrite && retired ? <span className="h5-readonly">只读</span> : undefined,
             };
           })} />
@@ -798,7 +804,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               secondary: `近 7 天达成 ${milestone.weekTrigger == null ? "—" : `${countText(milestone.weekTrigger)} 次`}`,
               mark: pending ? "待审批" : undefined,
               actions: canWrite ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`调整收益里程碑 ${milestone.key}`}
-                disabledReason={blocked(`earn:${milestone.key}`)} onClick={() => openEarn(milestone)}>调整</Button> : undefined,
+                disabledReason={blocked(`earn:${milestone.key}`)} onClick={conflictDraft.register(JSON.stringify(["openEarn:1", milestone.id ?? milestone.key]), () => openEarn(milestone))}>调整</Button> : undefined,
             };
           })} />
           : <BlockState state="empty" title="还没有收益里程碑" detail="也可能是读取失败，这页分不出来。" />}
@@ -822,7 +828,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   <StatusTag tone="neutral" icon={CircleSlash}>目前不影响签到</StatusTag>
                   {pendingOf(`rule:${rule.key}`) && pendingTag(RULE_APPROVER, RULE_PENDING_NOTE)}
                 </span>}
-                action={canRuleWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={() => openRule(rule)}>调整</Button> : undefined} />
+                action={canRuleWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={conflictDraft.register(JSON.stringify(["openRule:2", rule.key]), () => openRule(rule))}>调整</Button> : undefined} />
             );
           })}
           <ConfigRow name="收益里程碑检查间隔"
@@ -836,7 +842,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               <StatusTag tone="neutral" icon={CircleSlash}>目前不影响收益里程碑</StatusTag>
             </span>}
             action={canWrite || canRuleWrite || canWriteTick ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label="调整 收益里程碑检查间隔"
-              disabledReason={canWriteTick ? blocked("tick:interval") : "仅超级管理员可调整检查间隔，还要有检查间隔修改权限"} onClick={() => openTick()}>调整</Button> : undefined} />
+              disabledReason={canWriteTick ? blocked("tick:interval") : "仅超级管理员可调整检查间隔，还要有检查间隔修改权限"} onClick={conflictDraft.register(JSON.stringify(["openTick:1"]), () => openTick())}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
     ),

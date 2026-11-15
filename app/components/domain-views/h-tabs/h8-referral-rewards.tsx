@@ -6,6 +6,7 @@
  * 调高金额、启用、改成「符合资格就直接发」提交审批，另一位超级管理员批准后生效；反方向确认后立即保存。
  * 两种结算都只提交审批，另一位管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
  */
+import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useReach } from "@/lib/nav/use-reach";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
@@ -88,7 +89,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   /** 被「别人先改过」拒绝后已重读：留一条提醒写清现在的值和这次要改的值。只决定显示。 */
   const [stale, setStale] = useState<{ param?: H8Param; value?: string } | null>(null);
   const [releasing, setReleasing] = useState<H8RewardCommand | null>(null);
-  const openConfirm = setMc;
+  const conflictDraft = useHConflictDraft(readReady && !loading && !error);
+  const openConfirm = (req: ActionConfirmReq | null) => setMc(req ? conflictDraft.action(req) : null);
   const currentRead = useRef({ data, ready: readReady });
   currentRead.current = { data, ready: readReady && !loading };
 
@@ -164,6 +166,13 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         currentRead.current.ready = false;
         setReadReady(false);
         await load();
+        if (isHGrowthReadConflict(error) && !recovering && record.original) {
+          const original = record.original;
+          conflictDraft.retain(original.kind === "direct" ? original.reason : original.request.reason,
+            original.kind === "settlement" ? String(original.limit) : undefined,
+            original.kind === "settlement" ? undefined : { value: original.value },
+            original.kind === "settlement" ? undefined : original.value);
+        }
       }
       throw error;
     }
@@ -183,6 +192,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   };
   const editParam = (param: H8Param, fixedValue?: string, recovered?: H8RewardCommand, lookupOnly = false) => {
     if (!session) return;
+    if (fixedValue !== undefined) fixedValue = conflictDraft.intent ?? fixedValue;
     setStale(null);
     const pending = recovered ?? commandForParam(param);
     if (pending && !pending.original) {
@@ -533,7 +543,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   </Notice>;
 
   const confirmModal = mc && (
-    <OperationConfirmModal briefKind={mc.briefKind}
+    <OperationConfirmModal initialReason={mc.initialReason} briefKind={mc.briefKind}
       key={mc.formKey}
       action={mc.action}
       title={mc.title}
@@ -593,6 +603,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const targetUserId = Number(invitedUserIdInput.trim());
   const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);
+  const submitTarget = conflictDraft.register("settle:target", () => settle(targetUserId));
   const zone = businessZone().label;
   const effectiveAtText = formatBusinessTimeFull(data.effectiveAt, "—");
   const gateUnset = Date.parse(data.effectiveAt) === 0;
@@ -646,7 +657,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="h8-card-foot">
           <span className="h8-dir">{recoveryByKey[param.key] ?? "调高要批准 · 调低立即生效"}</span>
-          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={freshBlocked} onClick={() => editParam(param)}>调整</Button>}
+          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={freshBlocked} onClick={conflictDraft.register(`param:${param.key}`, () => editParam(param))}>调整</Button>}
         </div>
       </Stat>
     );
@@ -687,14 +698,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 ? <StatusTag tone="ok" icon={Check}>已启用</StatusTag>
                 : <StatusTag tone="neutral" icon={Power}>已停用</StatusTag>}{recoveryByKey.enabled}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" variant={data.enabled ? "danger-outline" : "secondary"} aria-describedby={describedBy}
-                disabledReason={freshBlocked} onClick={() => editParam(ENABLED_PARAM, String(!data.enabled))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
+                disabledReason={freshBlocked} onClick={conflictDraft.register("param:enabled", () => editParam(ENABLED_PARAM, String(!data.enabled)))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
             <ConfigRow name="发放方式"
               what="结算时怎么过风控"
               when={`改成「符合资格就直接发」要${APPROVER}批准；改回确认后立即保存`}
               effect={MODE_HELP[String(data.params["newcomer.lockMode"])]}
               note="两种方式都保留首购冻结；已冻结的礼包按当初的方式解冻。"
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
-              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={freshBlocked} onClick={() => editParam(MODE_PARAM)}>调整</Button> : undefined} />
+              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人才进入结算"
               effect="改金额、改发放方式（含和现在一样的保存）和启用批准后，都改成那一刻；之前注册、还没结算的不再自动结算。停用不改它"
@@ -706,11 +717,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
       <Panel title="结算" icon={Route} tone="role-3" sub={`待结算 ${countText(pending)} 位`}
         explain="不会自动结算。批量和指定新人两种结算都只提交审批，另一位管理员批准后才发；同一时间只能有一张结算审批单。"
-        actions={canSettle ? <Button variant="primary" disabledReason={freshBlocked ?? settleBlock} onClick={() => settle()}>批量结算</Button> : undefined}>
+        actions={canSettle ? <Button variant="primary" disabledReason={freshBlocked ?? settleBlock} onClick={conflictDraft.register("settle:batch", () => settle())}>批量结算</Button> : undefined}>
         <RewardFlow gateUnset={gateUnset} pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
         <div className="h8-settle-foot">
           {canSettle ? (
-            <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (readReady && data.enabled && targetUserValid) settle(targetUserId); }}>
+            <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (readReady && data.enabled && targetUserValid) submitTarget(); }}>
               <Field label="给指定新人结算" explain="只结算这一位：不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。">
                 {(control) => <Input {...control} inputMode="numeric" placeholder="新人用户编号" aria-label="指定结算的新人用户编号"
                   value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} />}

@@ -60,6 +60,9 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  rebaseValue?: string;
+  initialReason?: string;
+  formKey?: number;
   /** Opt-in for domains retaining the complete request after an unknown result. */
   freezePendingInput?: boolean;
   getPendingBlockReason?: () => string | undefined;

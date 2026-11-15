@@ -18,7 +18,7 @@ import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
-  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
   const reason = pendingReason ?? draftReason;
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
