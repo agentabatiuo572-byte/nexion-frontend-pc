@@ -156,8 +156,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     },
     legacy: e3Proposals.canQuery ? async (r: typeof e3Proposals.legacy[number]) => {
       try {
-        if (!await e3Proposals.lookupLegacy(r)) { ctx.toast("没有查到原审批单，记录继续保留。"); return; }
-        ctx.toast("已查到原审批单，审批结束后这条自动收起。");
+        const ticket = await e3Proposals.lookupLegacy(r);
+        if (!ticket) { ctx.toast("没有查到原审批单，记录继续保留。"); return; }
+        if (ticket.status === "pending") ctx.toast("已查到原审批单，审批结束后这条自动收起。");
         await ctx.refreshE3();
       } catch (error) { ctx.toast(displayAdminError(error)); }
     } : undefined,

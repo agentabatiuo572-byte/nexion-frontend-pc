@@ -148,7 +148,7 @@ export function useE3Proposals() {
     if (!ticket || !ticket.mine || ticket.obj !== record.fingerprint.split("|")[1].slice(0, 255)) return false;
     // The old record cannot supply the original values. Keep it until a terminal result is authoritative.
     if (["approved", "rejected", "withdrawn", "expired"].includes(ticket.status)) eDomainLegacyCommands.forget(record.fingerprint, record.commandKey);
-    sync(); return true;
+    sync(); return ticket;
   }
   return { records, legacy, busy, canQuery, queryErrors, missing, releaseMissing, allowed, locked, sync, reconcile, lookup, lookupLegacy, submit, send,
     pendingReason: (keys: string[]) => commands.list().find(r => r.owner === owner && r.state === "unknown" && r.keys.some(k => keys.includes(k)))?.input.reason };
