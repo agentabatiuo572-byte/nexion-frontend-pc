@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
-import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Command, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView } from "@/lib/admin/i-client";
+import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Command, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -609,26 +609,29 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   /* ============ tutorial actions ============ */
-  const activateCourse = async (c: Course, kind: "first_publish" | "version_publish" | "version_rollback", reason: string, target: LearningCourseVersionView) => {
+  const activateCourse = async (c: Course, kind: "first_publish" | "version_publish" | "version_rollback", reason: string, target: LearningCourseVersionView | LearningCourseView) => {
     const scope = hiCourseScope(c.id);
     if (pendingHIRewardCommand(scope)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
     const versions = await actions.fetchI7CourseVersions(c.id);
     const currentTarget = kind === "first_publish" ? versions.find(v => v.status === "DRAFT")
       : versions.find(v => v.version === target.version);
-    if (!currentTarget || currentTarget.version !== target.version || currentTarget.revision !== target.revision
-      || currentTarget.status !== target.status || JSON.stringify(currentTarget.payload) !== JSON.stringify(target.payload))
+    const independent = "payload" in target;
+    if (independent ? !currentTarget || currentTarget.version !== target.version || currentTarget.revision !== target.revision
+      || currentTarget.status !== target.status || JSON.stringify(currentTarget.payload) !== JSON.stringify(target.payload)
+      : kind !== "first_publish" || !!currentTarget)
       throw new Error(`${target.version} 刚变了或读不到，这次没有提交；关掉后重新打开核对。`);
     const current = (await fetchI6LearningOverview()).courses.find(course => course.id === c.id);
-    if (!current || current.version !== c.v || current.revision !== c.revision || current.status !== c.status)
+    if (!current || current.version !== c.v || current.revision !== c.revision || current.status !== c.status
+      || !independent && JSON.stringify(current) !== JSON.stringify(target))
       throw new Error("这门课刚被改过，这次没有提交；关掉后重新打开核对。");
-    const rawReward = target.payload.rewardNex;
+    const rawReward = independent ? target.payload.rewardNex : target.rewardNex;
     if (i6Amount(rawReward) === undefined)
       throw new Error("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。");
-    const snapshot = { course: current, courseVersion: target };
+    const snapshot = { course: current, courseVersion: independent ? target : undefined };
     if (Number(rawReward) > 0) {
       const session = useAdminAuth.getState().session;
       if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
-      const values = { courseId: c.id, version: target.version, expectedRevision: target.revision,
+      const values = { courseId: c.id, version: target.version, expectedRevision: independent ? target.revision : null,
         expectedCurrentVersion: c.v, expectedCurrentRevision: c.revision, expectedCurrentStatus: c.status };
       await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, `i7_course_${kind}`, values,
         `${c.v} · ${c.status} · ${c.rewardRaw} UVT`, `${values.version} · published · ${rawReward} UVT`, reason) }, undefined, undefined, snapshot);
@@ -669,11 +672,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const pubCrs = async (c: Course) => {
     if (courseCommandBlocks(c, "i7_course_first_publish")) return;
-    let target: LearningCourseVersionView | undefined;
-    try { target = (await actions.fetchI7CourseVersions(c.id)).find(row => row.status === "DRAFT"); }
+    let target: LearningCourseVersionView | LearningCourseView | undefined;
+    try { target = (await actions.fetchI7CourseVersions(c.id)).find(row => row.status === "DRAFT")
+      ?? latest.current.content.i18nLearning?.courses.find(row => row.id === c.id); }
     catch (error) { toast(displayAdminError(error), "warn"); return; }
     if (!target) { toast("目标课程版本读不到，请重新读取版本列表后核对。", "warn"); return; }
-    const rawReward = target.payload.rewardNex;
+    const rawReward = "payload" in target ? target.payload.rewardNex : target.rewardNex;
     if (i6Amount(rawReward) === undefined) { toast("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。", "warn"); return; }
     const reward = Number(rawReward);
     confirmI6(`course:${c.id}`, { briefKind: "content",
@@ -681,13 +685,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       title: reward > 0 ? "提交审批：发布课程" : "发布课程",
       detail: (
         <>
-          分类「{categoryLabel(target.payload.category as string)}」 · 奖励 {uvtText(rawReward)} UVT/人。发布后 App 学习课程里能看到并学这门课。
+          分类「{categoryLabel("payload" in target ? target.payload.category as string : target.category)}」 · 奖励 {uvtText(rawReward)} UVT/人。发布后 App 学习课程里能看到并学这门课。
         </>
       ),
       effect: activationEffect(reward),
       confirmLabel: reward > 0 ? "提交审批" : "发布",
       statedBrief: { impact: reward > 0 ? `批准后课程上线，学完并通过测验的用户每人领 ${uvtText(rawReward)} UVT；批准前用户看不到。` : "发布后用户能看到并学这门课。", check: "三种语言的标题、正文、测验都齐，奖励数核对过。" },
-      facts: courseChange(c, versionTarget(target)),
+      facts: courseChange(c, "payload" in target ? versionTarget(target) : { version: target.version, reward: target.rewardNex, title: target.title, quiz: target.quizQuestions.length, pass: target.passScore }),
       amplifies: reward > 0,
       coverageLead: "这门课学完会发 UVT",
       coverageCheck: "提交和批准时都检查兑付覆盖率。",
