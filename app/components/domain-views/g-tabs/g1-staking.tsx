@@ -287,8 +287,8 @@ export function G1Staking() {
           explain="待确认、计算奖励中、到期未领三种仓位的锁定金额合计，只算四档 USDT 历史质押。这页只查这四档，不含 UVT 质押。" />
         <Stat tone={mature > 0 ? "warn" : "role-3"} icon={CalendarClock} label="到期未领" value={fmtCount(mature)} unit="笔"
           explain="过了到期时间、等用户自己领取的仓位，都算在这里。系统不会自动发放，后台也不能代领。" />
-        <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 含四档以外产品"
-          explain="「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和，不按已锁天数折算。还含四档以外的产品，和上面的仓位范围对不上，正在修。不是已产生或已发放的奖励，只作量级参考。" />
+        <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 不是已发放"
+          explain="四档 USDT「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和，不按已锁天数折算。不是已产生或已发放的奖励，只作量级参考。" />
       </StatBand>}
 
       <Panel plain={pools.length > 0} title="四档历史产品" icon={Coins} tone="role-1"
