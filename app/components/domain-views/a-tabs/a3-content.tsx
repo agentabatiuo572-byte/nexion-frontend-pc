@@ -10,12 +10,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
-import { type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { type A3Command, type A3ContentComparison, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
 export type A3ContentSummary = { unsaved: number };
+/** 解除待确认后放回编辑器的内容：原来填的正文和版本，基于现在读到的修订号。 */
+export type A3Restored =
+  | { kind: "docs"; document: PublishedContentDocument; baseline: PublishedContentDocument; reason: string }
+  | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; reason: string };
+/** 读回和原提交对不上时的一句话（页面上方提示条和保存框里共用）。 */
+export const contentCheckLine = (check: A3ContentComparison) =>
+  `修订号应为 ${check.revision.expected}，现在是 ${check.revision.current}；内容${check.contentMatches ? "相同" : "不同"}。核对后可以解除。`;
+type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; restored: A3Restored | null; onRestored: () => void };
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
 type Row = Record<string, unknown>;
 type Mode = "DRAFT" | "PUBLISHED";
@@ -59,7 +67,7 @@ function publicLine(doc: { status: string; hasPublishedVersion?: boolean }) {
   return doc.hasPublishedVersion ? "草稿，App 仍读之前的公开版" : "草稿，还没有公开版";
 }
 
-export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, toast, onSummary }: A3RecoveryProps & { docsNonce: number; toast: Toast; onSummary: (summary: A3ContentSummary) => void }) {
+export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, toast, onSummary, ...release }: A3RecoveryProps & ReleaseProps & { docsNonce: number; toast: Toast; onSummary: (summary: A3ContentSummary) => void }) {
   const ids = useTabIds();
   const [tab, setTab] = useState<"docs" | "how">("how");
   const [dirty, setDirty] = useState({ docs: false, how: false });
@@ -71,8 +79,8 @@ export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, t
       { value: "how", label: "业务说明（6 页）", count: dirty.how ? "未保存" : undefined },
       { value: "docs", label: "开发者接口文档", count: dirty.docs ? "未保存" : undefined },
     ]} />
-    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} toast={toast} onDirty={markHow} /></div>
-    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} toast={toast} onDirty={markDocs} /></div>
+    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} toast={toast} onDirty={markHow} {...release} /></div>
+    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} toast={toast} onDirty={markDocs} {...release} /></div>
   </div>;
 }
 
@@ -97,6 +105,11 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
   </Modal>;
 }
 
+/** 结果未知的保存框里：读回对不上时给解除入口；点了先关保存框，再开页面上的解除框。 */
+function ReleaseNotice({ check, onOpen }: { check: A3ContentComparison; onOpen: () => void }) {
+  return <Notice tone="warn" title="读回和原提交对不上" actionBelow action={<Button size="sm" onClick={onOpen}>解除待确认…</Button>}>{contentCheckLine(check)}</Notice>;
+}
+
 function Preview({ title, children }: { title: string; children: ReactNode }) {
   return <aside className="a3-preview" aria-label={`App 上的样子：${title}`}>
     <span className="a3-preview-label"><Smartphone size={14} aria-hidden />App 上的样子</span>
@@ -106,7 +119,7 @@ function Preview({ title, children }: { title: string; children: ReactNode }) {
 
 /* ────────────────── 开发者接口文档（W06） ────────────────── */
 
-function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty }: A3RecoveryProps & { toast: Toast; onDirty: (value: boolean) => void }) {
+function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -130,6 +143,11 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
     if (recovery?.original.kind !== "docs") return;
     setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
   }, [recovery, onRecovered]);
+  useEffect(() => {
+    if (restored?.kind !== "docs") return;
+    setDocument(restored.document); setBaseline(restored.baseline); setReason(restored.reason); setMode(null); setError(null); setReadReady(true); onRestored();
+  }, [restored, onRestored]);
+  const check = original ? checks[original.commandKey] : undefined;
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setReadReady(false); setLoading(true);
@@ -288,7 +306,8 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
         { key: "locales", label: "语言", before: Object.keys(baseline?.locales ?? {}).map(localeName).join("、") || "—", after: localeKeys.map(localeName).join("、") || "—" },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
-      extra={<Notice tone="neutral">后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /></Notice>} />}
+      extra={check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
+        : <Notice tone="neutral">后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /></Notice>} />}
   </div>;
 }
 
@@ -305,7 +324,7 @@ function initialDocument(): PublishedHowContentDocument {
 }
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
-function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: A3RecoveryProps & { toast: Toast; onDirty: (value: boolean) => void }) {
+function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -330,6 +349,11 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
     if (recovery?.original.kind !== "how") return;
     setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
   }, [recovery, onRecovered]);
+  useEffect(() => {
+    if (restored?.kind !== "how") return;
+    setDocument(restored.document); setBaseline(restored.baseline); setReason(restored.reason); setMode(null); setError(null); setReadReady(true); onRestored();
+  }, [restored, onRestored]);
+  const check = original ? checks[original.commandKey] : undefined;
   const busyRef = useRef(false);
   const identitySequence = useRef(0);
   const identities = useRef(new WeakMap<Row, { block: string; items: string[] }>());
@@ -571,7 +595,8 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
       ]} />}
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页拒收。</Notice>}
-        <Notice tone="neutral">六页一起保存，后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
+        {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
+          : <Notice tone="neutral">六页一起保存，后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
       </>} />}
   </div>;
 }

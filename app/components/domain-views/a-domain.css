@@ -849,3 +849,6 @@
 .a7-page .a7-recovery-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
 .a7-page .a7-recovery-actions { display: inline-flex; gap: var(--rd-space-2); margin-left: auto; }
 .a7-page .a7-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+
+/* A3 上方结果未知提示条：说明内容读回对不上时，每条一行。 */
+.a3-check-line { display: block; }

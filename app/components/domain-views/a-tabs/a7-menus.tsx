@@ -140,7 +140,7 @@ export default function A7Menus() {
       const message = displayAdminReadError(err);
       setOverview(null);
       setLoadError(message);
-      setToast(message);
+      setToast(message.startsWith("操作未完成") ? "菜单列表没读到，请重试。" : message);
       return null;
     } finally {
       if (!quiet) setLoading(false);
@@ -328,6 +328,8 @@ export default function A7Menus() {
   const readReason = loading || !overview || loadError ? displayAdminError(new Error("RBAC_FRESH_READ_REQUIRED")) : undefined;
   const nodeReason = readReason ?? (selected && commands.blocked({ kind: "a7-delete", node: selected.node }) ? displayAdminError(new Error("RBAC_ORIGINAL_UNRESOLVED")) : undefined);
   const recoveryRecord = confirmReq?.getRecord();
+  // 读不到菜单只是没读到：写操作的兜底句「操作未完成…」不放进读取失败块，保存成功后重读失败时它会和「操作已提交成功」打架。
+  const readDetail = loadError?.startsWith("操作未完成") ? undefined : loadError ?? undefined;
 
   const counts = overview ? (
     <>{overview.domainCount} 个一级菜单、{overview.pageCount} 个页面</>
@@ -385,7 +387,7 @@ export default function A7Menus() {
             explain="一级菜单下面是页面，最多两级。点一行在右边看详情和动作；排序数字小的排前面。"
             actions={parents.length > 0 ? <Button variant="ghost" onClick={() => setExpanded(allOpen ? new Set() : new Set(parents))}>{allOpen ? "全部收起" : "全部展开"}</Button> : undefined}>
             {loading ? <BlockState state="loading" title="加载中…" />
-              : loadError ? <BlockState state="error" title="菜单列表加载失败，请重试。" detail={loadError} onRetry={() => void refresh()} />
+              : loadError ? <BlockState state="error" title="菜单列表加载失败，请重试。" detail={readDetail} onRetry={() => void refresh()} />
               : tree.length === 0 ? <BlockState state="empty" title="暂无菜单" detail={canWrite ? "点页头「新建一级菜单」开始。" : undefined} />
               : (
                 <div className="a7-tree" role="list" aria-label="菜单树">

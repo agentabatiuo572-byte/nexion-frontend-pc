@@ -572,8 +572,8 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
         {mode === "recovery" && <Fact k="原备注"><span className="a9-reason">{previous?.reason}</span></Fact>}
         {!retrying && <Fact k={{ approve: "批准后", reject: "驳回后", revoke: "撤销后" }[action]} >{afterText(action)}</Fact>}
       </Facts>
-      {mode !== "recovery" && <Field label={mode === "legacy" ? "上次提交的原备注" : "备注"} required hint="至少 8 字" error={reasonError} help="申请人在 App 里看不到这段备注。"
-        explain={<>例外：备注只填下面一个理由代码（不分大小写）时，App 会给申请人显示对应的理由：{PUBLIC_REASON_CODES.map((code, index) => <span key={code}>{index ? "、" : ""}<span data-mono>{code}</span></span>)}。</>}>
+      {mode !== "recovery" && <Field label={mode === "legacy" ? "上次提交的原备注" : "备注"} required hint="至少 8 字" error={reasonError} help="只填一个公开理由代码时申请人看得到对应理由，其他备注看不到。"
+        explain={<>公开理由代码有四个（不分大小写）：{PUBLIC_REASON_CODES.map((code, index) => <span key={code}>{index ? "、" : ""}<span data-mono>{code}</span></span>)}。备注只写其中一个时，App 给申请人显示对应的理由；写别的内容只留在后台。</>}>
         {(control) => <Textarea {...control} rows={3} value={reason} disabled={busy} count={`${length}/500`}
           placeholder={action === "approve" ? "例如：已核实公司和用途" : "例如：用途和公司资料对不上"}
           onChange={(event) => onReason(event.target.value)} onBlur={onTouch} />}
