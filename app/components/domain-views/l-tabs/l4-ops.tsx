@@ -347,11 +347,11 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       },
       facts: (
         <Facts>
-          <Fact k="导出什么">每对「邀请链顶层 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
-            <p>同一位成员可能在几条邀请链下各占一行，所以行数可以多于人数。</p>
+          <Fact k="导出什么">每对「上级 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
+            <p>成员往上追溯次数以内的每位上级各占一行，所以同一位成员可能有几行，行数可以多于人数。</p>
             <p>成员用户编码（部分隐藏）。</p>
-            <p>邀请人用户编码（部分隐藏）：其实是这条邀请链最上面那个人，不一定是这位成员的直接邀请人。</p>
-            <p>关系深度：从最上面那个人往下第几层。V-Rank：关系记录上的等级，没有写 UNRANKED。</p>
+            <p>邀请人用户编码（部分隐藏）：这一行的上级，可能是直接邀请人，也可能是再往上几层的人。</p>
+            <p>关系深度：从这位上级往下第几层，1 是直接邀请。V-Rank：关系记录上的等级，没有写 UNRANKED。</p>
             <p>团队 GMV USDT：关系记录上的累计量，不是所选时间段的成交额，没有写 0。</p>
             <p>加入时间：这条关系建立的时间，按服务器时间原样写。</p>
           </>} /></Fact>
@@ -479,7 +479,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       {ctx.canExportNetworkTree && (
         <span className="l4-pair" data-pair="">
           <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={() => requestNetworkTreeExport()}>导出团队关系明细</Button>
-          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「邀请链顶层 · 成员」一行，用户编码部分隐藏，不含手机号、昵称，最多 100,000 行。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由；确认后直接下载到这台电脑，不经另一位管理员放行，留高风险操作记录。</p></>} />
+          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「上级 · 成员」一行，一位成员可能有几行；用户编码部分隐藏，不含手机号、昵称；超过 100,000 行时不导出。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由；确认后直接下载到这台电脑，不经另一位管理员放行，留高风险操作记录。</p></>} />
         </span>
       )}
       {ctx.canExport && !ctx.canExportNetworkTree && <span className="rd-toolbar-note">团队关系明细需要专门的导出权限</span>}

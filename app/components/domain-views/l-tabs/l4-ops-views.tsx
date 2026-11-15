@@ -304,7 +304,7 @@ export function bestConversion(rows: readonly L4PhaseRow[]) {
 }
 
 const PHASE_EXPLAIN = {
-  active: "这个阶段有日活记录的人数，同一个人只算一次；不一定等于打开过 App 的人数。",
+  active: "这个阶段有日活记录的人数，同一个人只算一次。日活事件还没接上，这个数可能偏低甚至是 0，先别用。",
   retention: "在这个阶段注册、之后又活跃过的人 ÷ 在这个阶段注册的人；不是第 7 天留存。算不出时写「—」。",
   conversion: "在这个阶段先逛过商店、之后下单的人 ÷ 逛过商店的人。算不出时写「—」。",
   yield: "这个阶段的收益入账 USDT 合计。",
