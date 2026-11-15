@@ -128,7 +128,7 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
       const status = response.ok && typeof result.code === "number" && result.code >= 400 && result.code < 500 ? result.code : response.status;
       const code = typeof result.message === "string" ? result.message : "";
       throw new E5CommandError(formatAdminApiError(code, "原操作结果未确认，请核查"), status, code,
-        status >= 500 || !code || result.code == null || isIdempotencyOutcomeOpen(code) || retry && record.intent === "legacy" && code.startsWith("LEGACY_UNKNOWN_"),
+        response.status >= 500 || !code || !Number.isInteger(result.code) || typeof result.code === "number" && result.code >= 500 || isIdempotencyOutcomeOpen(code) || retry && record.intent === "legacy" && code.startsWith("LEGACY_UNKNOWN_"),
         response.status, typeof result.code === "number" ? result.code : undefined);
     }
     if (!result.data || typeof result.data !== "object" || Array.isArray(result.data)) throw new E5CommandError("原操作缺少有效回执", undefined, "", true);
