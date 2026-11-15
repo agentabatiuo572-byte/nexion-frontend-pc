@@ -96,7 +96,7 @@ export default function H4Promotions({ ctx, legacy }: {
     const refresh = async (nextStep?: number) => { if (!id)
         return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if (ongoing.current.id === id) { if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); } reloadList(); return latest; };
     const afterCreate = async (result: CommandReceipt, isCurrent: () => boolean = () => true) => { if (!result.resource)
-        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); reloadList(); if (!isCurrent()) return; setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); reloadList(); navigate('edit', target); };
+        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); reloadList(); if (!isCurrent()) return; setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); navigate('edit', target); };
     const openDelete = async (target: string) => {
         if (!can('growth_promotion_archive') || deleteLoading) return;
         setDeleteLoading(true); setNotice(''); setDeletedId('');

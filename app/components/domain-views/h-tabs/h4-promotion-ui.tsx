@@ -206,8 +206,13 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
     const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
-        await onSuccess(result, () => active.current);
-        window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: result.idempotencyKey }));
+        // A normal success callback can close its own dialog; that is not a dismissed original.
+        let notifyOriginal = !!record || !active.current;
+        await onSuccess(result, () => {
+            if (!active.current) notifyOriginal = true;
+            return active.current;
+        });
+        if (notifyOriginal) window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: result.idempotencyKey }));
         acknowledgePromotionCommand(result);
     }
     catch (e) {
