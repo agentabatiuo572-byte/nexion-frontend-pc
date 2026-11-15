@@ -655,7 +655,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   ) : pendingEndpoints.length > 0 || geoEndpoints.length === 0 ? (
     <Conclusion state="neutral" explainTitle="没接入的入口怎么管" explain="没接入的入口不能单独设规则，单独规则也不会生效；封锁名单和受限名单照常管它们。">{counts}；识别源正常，{geoEndpoints.length === 0 ? "还没有登记功能入口" : `${count(pendingEndpoints.length)} 个入口还没接入`}</Conclusion>
   ) : (
-    <Conclusion state="ok">{counts}；识别源正常，入口都已接入</Conclusion>
+    // 上方还有结果未知的修改时不报绿：那几项由上方的提醒逐条说。
+    <Conclusion state={recoveryRows.length > 0 ? "neutral" : "ok"}>{counts}；识别源正常，入口都已接入</Conclusion>
   );
 
   // ---------- 名单卡 ----------
