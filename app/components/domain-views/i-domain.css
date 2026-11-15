@@ -477,8 +477,9 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i4-editor-preview .i4-field { grid-template-columns: 1fr; gap: var(--rd-space-1); }
 
 /* 结果未知逐条（界面已备好） */
-.i4-recovery { display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
-.i4-recovery li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 1.4fr) auto auto auto; align-items: center; gap: var(--rd-space-3); }
+.i4-recovery { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 1.4fr) auto auto auto; column-gap: var(--rd-space-3); row-gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+/* 各行共用一套列，名称、变化、时间、状态、按钮上下对齐。 */
+.i4-recovery li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; row-gap: var(--rd-space-2); }
 .i4-recovery-name { font-weight: var(--rd-weight-medium); }
 .i4-recovery-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 

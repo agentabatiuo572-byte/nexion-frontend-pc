@@ -1259,7 +1259,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             if (!ticket && isRetryExpired(record)) setNotFoundKeys((keys) => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
             toast(ticket?.status === "pending" ? "已提交，等待审批后执行"
               : ticket ? "已查询到原审批单，请在操作记录核对执行状态"
-                : isRetryExpired(record) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。", "warn");
+                : isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。", "warn");
             if (ticket && ticket.status !== "pending") await finishRecovery();
             else await reloadCourseApprovals();
           } catch (error) {

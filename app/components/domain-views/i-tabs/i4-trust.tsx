@@ -641,7 +641,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const ticket = await queryI4SectionCommand(record);
       if (!ticket && !record.receiptKnown && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
       toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(ticket.status)}`
-        : !record.receiptKnown && isRetryExpired(record) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。");
+        : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
       if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey]);
     } catch (error) { toast(displayAdminError(error)); }
     finally { inFlight.current = false; setRecovering(null); syncCommands(); }
