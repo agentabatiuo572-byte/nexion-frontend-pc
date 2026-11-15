@@ -8,6 +8,7 @@ import { normalizeC3Adjustment } from "@/lib/admin/c3-adjustment-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { supportRequest, supportObject, parseSupportId } from "./m-support-client.ts";
+import { parseUserLatestFunds, preserveUserFundAmounts, type UserLatestFundActivity } from "./user-latest-funds-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -422,6 +423,10 @@ export interface User360Section {
 }
 
 export interface User360Detail extends JsonRecord {
+  latestDeposit?: UserLatestFundActivity | null;
+  latestWithdrawal?: UserLatestFundActivity | null;
+  latestDepositStatus?: "READY" | "ERROR";
+  latestWithdrawalStatus?: "READY" | "ERROR";
   profile?: User360Profile | null;
   security?: JsonRecord | null;
   sessions?: JsonRecord[] | null;
@@ -658,7 +663,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     }
     throw error;
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => JSON.parse(path.endsWith("/360") ? preserveUserFundAmounts(text) : text)).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     const authFailure = isAdminAuthFailure(response.status, result?.message);
@@ -694,7 +699,8 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
 }
 
 export async function fetchUser360(userKey: string) {
-  return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  return { ...detail, ...parseUserLatestFunds(detail) };
 }
 
 export async function fetchSupportCustomerFullProfile(customerId: string, signal?: AbortSignal): Promise<User360Detail> {
@@ -710,8 +716,8 @@ export async function fetchSupportCustomerFullProfile(customerId: string, signal
         else if (status !== "READY") detail[key] = { sourceStatus: status === "ERROR" ? "ERROR" : "UNKNOWN" };
       }
     }
-    return detail;
-  }, { signal });
+    return { ...detail, ...parseUserLatestFunds(detail) };
+  }, { signal, transformResponseText: preserveUserFundAmounts });
 }
 
 export type NotificationTimeEvidence = {

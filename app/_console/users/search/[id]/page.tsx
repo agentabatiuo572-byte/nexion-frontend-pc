@@ -27,7 +27,6 @@ import {
   type User360Section,
   type User360Summary,
 } from "@/lib/admin/user360-client";
-import { fetchD1TopupFlows } from "@/lib/admin/d-client";
 import { withdrawalRecordLabel } from "@/lib/admin/withdrawal-status";
 import { OperationConfirmModal, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
 import { KeepText,
@@ -539,16 +538,6 @@ function Block({ id, title, sub, explain, section, actions, failure, issue, issu
   );
 }
 
-/** 按时间取最新的一行，时间读不出的排最后。提现记录后端按风险档先排，第一行不一定是最新的。 */
-function latestIndex(rows: readonly JsonRecord[], field: string) {
-  let best = -1, bestAt = -Infinity;
-  rows.forEach((row, index) => {
-    const at = parseBusinessTime(asText(row[field], ""));
-    if (best < 0 || at > bestAt) { best = index; bestAt = Number.isFinite(at) ? at : -Infinity; }
-  });
-  return best;
-}
-
 /**
  * 统计格第二行的最近一笔（成熟规范 StatisticCard 的 footer 额外指标）：名称和金额一行，时间和状态一行。
  * 金额点开这一笔的抽屉；没有记录写弱字，读不到写「—」，都不能点。状态都用标签：要人注意的上色，已结束的灰，不像警告。
@@ -647,13 +636,9 @@ export default function UserDetailPage() {
   const [revokeScan, setRevokeScan] = useState<UserPaymentMethod[] | null>(null);
   const [revokeScanFailed, setRevokeScanFailed] = useState(false);
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
-  // 最近一笔充值要含待确认和失败的，360 的充值记录只列已入账的，所以按用户号另读 D1 充值流水第一条（后端按发起时间倒序）。
-  // 客服入口不读财务接口（读取范围分开），和没有 finance_d1_read 的账号一样，只看已入账的那些。
-  const canReadTopups = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("finance_d1_read"));
-  const [latestTopup, setLatestTopup] = useState<{ key: string; row?: JsonRecord; failed?: boolean } | null>(null);
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
   const [openRecordList, setOpenRecordList] = useState<RecordKind | "audit" | null>();
-  const [record, setRecord] = useState<{ kind: RecordKind; index: number } | null>(null);
+  const [record, setRecord] = useState<{ kind: RecordKind; index: number; latest?: boolean } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [corrections, setCorrections] = useState<PendingCorrection[]>([]);
@@ -786,16 +771,6 @@ export default function UserDetailPage() {
 
   useEffect(() => { void loadPaymentMethods(); }, [loadPaymentMethods, reloadTick]);
   useEffect(() => { setPaymentPage(1); }, [userId]);
-  const readsTopups = canReadTopups && !!detail?.deposits && /^[1-9]\d*$/.test(c3UserId);
-  useEffect(() => {
-    if (!readsTopups) return;
-    let live = true;
-    fetchD1TopupFlows({ userId: Number(c3UserId), pageNum: 1, pageSize: 1 }).then(
-      (page) => { if (live) setLatestTopup({ key: readKey, row: page.records[0] && { ...page.records[0] } }); },
-      () => { if (live) setLatestTopup({ key: readKey, failed: true }); },
-    );
-    return () => { live = false; };
-  }, [readsTopups, c3UserId, readKey, reloadTick]);
 
   const sessions = useMemo(() => asArray(detail?.sessions), [detail?.sessions]);
   // 后端下发最近最多 50 条会话样本（含 REVOKED）。默认只渲染最近一页，筛选或换用户回第 1 页。
@@ -823,13 +798,16 @@ export default function UserDetailPage() {
   const exchanges = useMemo(() => asArray(detail?.financial?.exchangeRows), [detail?.financial?.exchangeRows]);
   const notifications = useMemo(() => asArray(detail?.notifications?.records), [detail?.notifications?.records]);
   const orders = useMemo(() => asArray(detail?.commerce?.orders), [detail?.commerce?.orders]);
-  const topup = latestTopup?.key === readKey ? latestTopup : null;
-  // 能读 D1 时用那一笔，各种状态都有；不能读时退回这页列出的已入账充值，按确认时间取最新的。
-  const latestDeposit = readsTopups ? topup?.row : deposits[latestIndex(deposits, "confirmedAt")];
-  const latestDepositListed = latestDeposit ? deposits.findIndex((row) => row.depositNo === latestDeposit.depositNo) : -1;
-  const latestWithdrawal = latestIndex(withdrawals, "createdAt");
+  // Aliases feed the existing detail facts. No confirmation time, chain or risk facts are invented.
+  const latestDeposit: JsonRecord | null = detail?.latestDepositStatus === "READY" && detail.latestDeposit ? {
+    ...detail.latestDeposit, depositNo: detail.latestDeposit.bizNo, asset: detail.latestDeposit.currency,
+    channel: detail.latestDeposit.sourceType, statusLabel: detail.latestDeposit.status,
+  } : null;
+  const latestWithdrawal: JsonRecord | null = detail?.latestWithdrawalStatus === "READY" && detail.latestWithdrawal ? {
+    ...detail.latestWithdrawal, withdrawalNo: detail.latestWithdrawal.bizNo, asset: detail.latestWithdrawal.currency,
+  } : null;
   const recordRows: Record<RecordKind, JsonRecord[]> = {
-    session: visibleSessions, payment: methods, deposit: deposits, topup: latestDeposit && latestDepositListed < 0 ? [latestDeposit] : [], withdrawal: withdrawals, device: devices, earning: visibleEarnings,
+    session: visibleSessions, payment: methods, deposit: deposits, topup: latestDeposit ? [latestDeposit] : [], withdrawal: withdrawals, device: devices, earning: visibleEarnings,
     member: members, engagement, exchange: exchanges, notification: notifications, order: orders,
   };
 
@@ -1007,7 +985,8 @@ export default function UserDetailPage() {
   const securityUnread = !!detail?.sessions && detail.security == null;
   const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
   const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed || securityUnread;
-  const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread;
+  const latestFundsFailed = detail?.latestDepositStatus === "ERROR" || detail?.latestWithdrawalStatus === "ERROR";
+  const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread || latestFundsFailed;
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
   const devicesFailed = failedSection(detail?.devices, detail?.earnings) || ledgerUnread && !!detail?.earnings;
   const devicesAlert = deviceExceptions > 0;
@@ -1079,21 +1058,21 @@ export default function UserDetailPage() {
   const usdtTotals = asArray(detail.financial?.byCurrency).find((row) => row.currency === "USDT")?.fieldStatuses as JsonRecord | undefined;
   const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" && <p>这次后端标明只核对到一部分，是已核对小计。</p>;
   // 最近一笔写在累计数第二行，一眼对上是哪个数的（产品 2026-11-07）。
-  const depositRecent = <Recent label={readsTopups ? "最近一笔" : "最近一笔到账"} openLabel="查看最近一笔充值"
-    note={readsTopups ? !topup ? "读取中…" : topup.failed ? "—" : latestDeposit ? undefined : "暂无链上充值" : sectionFailed(detail.deposits) ? "—" : latestDeposit ? undefined : "暂无到账的链上充值"}
-    amount={amountText(latestDeposit?.amount, latestDeposit?.asset)} time={shortTime(readsTopups ? latestDeposit?.createdAt : latestDeposit?.confirmedAt)}
-    status={asText(latestDeposit?.statusLabel)} tone={latestDeposit && depositTone(latestDeposit)}
-    onOpen={() => setRecord(latestDepositListed >= 0 ? { kind: "deposit", index: latestDepositListed } : { kind: "topup", index: 0 })} />;
-  const withdrawalRow = withdrawals[latestWithdrawal];
+  const depositRecent = <Recent label="最近一笔" openLabel="查看最近一笔充值"
+    note={detail.latestDepositStatus !== "READY" ? "—" : latestDeposit ? undefined : "暂无链上充值"}
+    amount={amountText(latestDeposit?.amount, latestDeposit?.asset)} time={shortTime(latestDeposit?.createdAt)}
+    status={asText(latestDeposit?.statusLabel)} tone={latestDeposit ? depositTone(latestDeposit) : undefined}
+    onOpen={() => setRecord({ kind: "topup", index: 0 })} />;
+  const withdrawalRow = latestWithdrawal;
   const withdrawalsTotal = asNumber(detail.withdrawals?.total, withdrawals.length);
-  const withdrawalRecent = <Recent label="最近一笔" openLabel="查看最近一笔提现" note={sectionFailed(detail.withdrawals) ? "—" : withdrawalRow ? undefined : "暂无提现"}
-    amount={amountText(withdrawalRow?.amount, withdrawalRow?.asset)} time={shortTime(withdrawalRow?.createdAt)} status={withdrawalRow && withdrawalLabel(withdrawalRow)} tone={withdrawalRow && withdrawalTone(withdrawalRow)}
-    onOpen={() => setRecord({ kind: "withdrawal", index: latestWithdrawal })} />;
+  const withdrawalRecent = <Recent label="最近一笔" openLabel="查看最近一笔提现" note={detail.latestWithdrawalStatus !== "READY" ? "—" : withdrawalRow ? undefined : "暂无提现"}
+    amount={amountText(withdrawalRow?.amount, withdrawalRow?.asset)} time={shortTime(withdrawalRow?.createdAt)} status={withdrawalRow && withdrawalLabel(withdrawalRow)} tone={withdrawalRow ? withdrawalTone(withdrawalRow) : undefined}
+    onOpen={() => setRecord({ kind: "withdrawal", index: 0, latest: true })} />;
   const kpis = [
     detail.financial && { label: "钱包可用余额", value: amountValue(summary.walletUsdt ?? profile.walletUsdt), unit: "USDT", tone: "role-1" as const, icon: Wallet, group: "funds", anchor: "hub-deposit" },
     detail.deposits && { label: "累计充值", value: amountValue(summary.depositedUsd), unit: "USDT", tone: "role-2" as const, icon: ArrowDownToLine, group: "funds", anchor: "hub-deposit", sub: depositRecent, explain: <>
       <p>能核对到的已确认充值小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("creditedDepositTotal")}
-      <p>{readsTopups ? "最近一笔：按发起时间取最新的一笔链上充值，待确认和失败的也算；停用前的国际卡充值也在内，银行卡充值不在内。" : "最近一笔到账：只算这页列出的已入账链上充值，按确认时间取最新的；待确认、失败的和银行卡充值都不在内。"}</p>
+      <p>{"最近一笔：按发起时间取最新的一笔链上充值，待确认和失败的也算；停用前的国际卡充值也在内，银行卡充值不在内。"}</p>
     </> },
     detail.withdrawals && { label: "累计提现", value: amountValue(summary.withdrawnUsd), unit: "USDT", tone: "role-4" as const, icon: ArrowUpFromLine, group: "funds", anchor: "hub-withdrawal", sub: withdrawalRecent, explain: <>
       <p>能核对到的成功提现本金小计，不保证覆盖这个用户的全部历史，也不是下面列出的那些相加。读不到时写「—」，不算 0。</p>{subtotal("successfulWithdrawalPrincipalTotal")}
@@ -1128,7 +1107,7 @@ export default function UserDetailPage() {
     paymentError && "支付方式",
     !paymentError && revokeScanFailed && "支付方式的撤销状态",
     ledgerUnread && "账单流水",
-    failedSection(detail.deposits, detail.withdrawals, detail.financial, detail.account) && "资金",
+    (failedSection(detail.deposits, detail.withdrawals, detail.financial, detail.account) || latestFundsFailed) && "资金",
     failedSection(detail.devices, detail.earnings) && "设备与收益",
     teamFailed && "团队与互动",
     recordsFailed && "记录",
@@ -1225,7 +1204,7 @@ export default function UserDetailPage() {
     </Notice>;
   });
 
-  const current = record && recordRows[record.kind][record.index];
+  const current = record && (record.kind === "withdrawal" && record.latest ? latestWithdrawal : recordRows[record.kind][record.index]);
   const currentDevice = record?.kind === "device" && current ? current : null;
   const currentDeviceWritable = !!currentDevice && canWriteC2 && asNumber(currentDevice.id) > 0 && !FINAL_DEVICE_STATUS.includes(asText(currentDevice.status, "").toUpperCase());
   const currentNotificationId = record?.kind === "notification" && current ? Number(current.notificationId) : 0;
