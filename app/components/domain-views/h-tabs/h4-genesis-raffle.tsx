@@ -114,8 +114,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
             if (latest && previous) {
               setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
               const comparable = (row: AdminRaffle) => ({ id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi,
-                startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes, enabled: row.status === "OPEN" });
-              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), hConflictFields(comparable(previous), comparable(latest), { ...savedDraft, enabled: nextEnabled }), () => {
+                startsAt: row.startsAt, drawAt: row.drawAt, prizes: Object.fromEntries(row.prizes.map(prize => [encodeURIComponent(prize.id).replace(/\./g, "%2E"), prize])), enabled: row.status === "OPEN" });
+              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), hConflictFields(comparable(previous), comparable(latest), { ...savedDraft, prizes: Object.fromEntries(savedDraft.prizes.map(prize => [encodeURIComponent(prize.id).replace(/\./g, "%2E"), prize])), enabled: nextEnabled }), () => {
                 conflictReview.current = null;
                 save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason });
               });
@@ -134,28 +134,42 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
     path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
     key => {
-      const [, index, field] = key.split(".");
-      if (key.startsWith("prizes.")) return `奖项 ${Number(index) + 1} · ${PRIZE_FIELD[field] ?? "其他"}`;
+      const [, id, field] = key.split(".");
+      if (key.startsWith("prizes.")) return `奖项 ${review.fields.filter(item => /^prizes\.[^.]+\.id$/.test(item.path)).findIndex(item => item.path === `prizes.${id}.id`) + 1} · ${PRIZE_FIELD[field] ?? "其他"}`;
       return ({ enabled: "开放报名", titleZh: "抽奖名称 · 中文", titleEn: "抽奖名称 · 英文", titleVi: "抽奖名称 · 越南语", startsAt: "报名开始", drawAt: "开奖时间", id: "本期编号" } as Record<string, string>)[key] ?? "其他";
     },
-    (key, raw) => key === "enabled" ? raw === true ? "开放" : raw === false ? "关闭" : "—"
+    (key, raw, which) => key === "enabled" ? raw === true ? "开放" : raw === false ? "关闭" : "—"
       : key === "startsAt" || key === "drawAt" ? raw ? `${formatTime(raw as string, "Asia/Shanghai")}（北京时间）` : "未配置"
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
       : key.startsWith("prizes.") && raw === undefined ? "没有这一项"
-      : key.endsWith(".amount") ? `${amountText(String(raw))} ${PRIZE_UNIT[(draft?.prizes[Number(key.split(".")[1])] ?? base?.prizes[Number(key.split(".")[1])])?.rewardType ?? "UVT"]}`
+      : key.endsWith(".amount") ? `${amountText(String(raw))} ${PRIZE_UNIT[review.fields.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"]]}`
       : raw === undefined || raw === null || raw === "" ? "—" : String(raw)) : [];
-  // 合并：最新的这一期为底，放回自己改过的项；奖项按位置逐字段放回，数量不同时奖项整份用你的。
+  // Identity sets are compared with the opened snapshot on both sides. Reordering is harmless;
+  // additions/deletions require the explicit whole-draft choice, never an implicit replacement.
+  const prizeChanges = (which: "latest" | "mine") => {
+    const ids = review?.fields.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)) ?? [];
+    return {
+      added: ids.filter(field => field.opened === undefined && field[which] !== undefined).map(field => String(field[which])),
+      removed: ids.filter(field => field.opened !== undefined && field[which] === undefined).map(field => String(field.opened)),
+    };
+  };
+  const structureChanges = { latest: prizeChanges("latest"), mine: prizeChanges("mine") };
+  const mergeBlocked = Object.values(structureChanges).some(change => change.added.length || change.removed.length);
+  // Latest configuration plus only the draft's changed fields, matched by prize id.
   const mergeConflict = () => {
-    if (!base || !draft) return;
+    if (!base || !draft || mergeBlocked) return;
     const latest = base, mine = draft, kept = compareGroups.filter(group => group.byMe);
-    const prizeCountChanged = mine.prizes.length !== latest.prizes.length && kept.some(group => group.key.startsWith("prizes."));
     const next: RaffleDraft = { id: latest.id, titleZh: latest.titleZh, titleEn: latest.titleEn, titleVi: latest.titleVi, startsAt: latest.startsAt, drawAt: latest.drawAt,
-      prizes: prizeCountChanged ? mine.prizes.map(prize => ({ ...prize })) : latest.prizes.map(prize => ({ ...prize })) };
+      prizes: latest.prizes.map(prize => ({ ...prize })) };
     let nextEnabled = latest.status === "OPEN";
     for (const group of kept) {
-      const [top, index, field] = group.key.split(".");
+      const [top, id, field] = group.key.split(".");
       if (top === "enabled") nextEnabled = enabled;
-      else if (top === "prizes") { if (!prizeCountChanged && next.prizes[Number(index)] && mine.prizes[Number(index)]) next.prizes[Number(index)] = { ...next.prizes[Number(index)], [field]: mine.prizes[Number(index)][field as keyof RafflePrize] }; }
+      else if (top === "prizes") {
+        const target = next.prizes.find(prize => prize.id === decodeURIComponent(id));
+        const source = mine.prizes.find(prize => prize.id === decodeURIComponent(id));
+        if (target && source) Object.assign(target, { [field]: source[field as keyof RafflePrize] });
+      }
       else if (top === "titleZh" || top === "titleEn" || top === "titleVi" || top === "startsAt" || top === "drawAt") next[top] = mine[top];
     }
     choose(latest); setDraft(next); setEnabled(nextEnabled); setMerged(kept.length);
@@ -200,7 +214,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
         others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
         primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
-        {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
+        {review && <H4ConflictCompare groups={compareGroups} mergeDisabledReason={mergeBlocked ? review.message : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
         {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
         <fieldset disabled={formLocked} className="h4-fieldset">
         {base && <Field label="开放报名" explain={enableBlocked ? (base.totalEntries > 0 ? "已有人报名，不能再关闭。" : "已开奖或正在开奖。") : "开放要另一位超级管理员批准；还没人报名时可以关回草稿。"}>

@@ -11,7 +11,7 @@ import { Button, Notice, StatusTag } from "@/app/components/rd";
 import type { HConflictField } from "@/lib/admin/h-conflict-review";
 
 type Which = "opened" | "latest" | "mine";
-export type H4ConflictGroup = { key: string; label: string; opened: ReactNode; latest: ReactNode; mine: ReactNode; byOther: boolean; byMe: boolean };
+export type H4ConflictGroup = { key: string; label: string; opened: ReactNode; latest: ReactNode; mine: ReactNode; byOther: boolean; byMe: boolean; overwritesOther: boolean };
 
 /** 把一组叶子按路径拼回原来的值（数组、对象），给页面按自己的写法显示。 */
 function rebuild(key: string, leaves: Array<{ path: string; value: unknown }>): unknown {
@@ -32,19 +32,21 @@ function rebuild(key: string, leaves: Array<{ path: string; value: unknown }>): 
 }
 
 export function h4ConflictGroups(fields: HConflictField[], groupOf: (path: string) => string, label: (key: string) => string,
-  show: (key: string, value: unknown) => ReactNode): H4ConflictGroup[] {
+  show: (key: string, value: unknown, which: Which) => ReactNode): H4ConflictGroup[] {
   const groups = new Map<string, HConflictField[]>();
   for (const field of fields) { const key = groupOf(field.path); groups.set(key, [...(groups.get(key) ?? []), field]); }
   return [...groups].flatMap(([key, leaves]) => {
     const byOther = leaves.some(leaf => leaf.changedByOther), byMe = leaves.some(leaf => leaf.changedByMe);
     if (!byOther && !byMe) return [];
-    const value = (which: Which) => show(key, rebuild(key, leaves.map(leaf => ({ path: leaf.path, value: leaf[which] }))));
-    return [{ key, label: label(key), opened: value("opened"), latest: value("latest"), mine: value("mine"), byOther, byMe }];
+    const raw = (which: Which) => rebuild(key, leaves.map(leaf => ({ path: leaf.path, value: leaf[which] })));
+    const value = (which: Which) => show(key, raw(which), which);
+    const overwritesOther = byOther && JSON.stringify(raw("latest")) !== JSON.stringify(raw("mine"));
+    return [{ key, label: label(key), opened: value("opened"), latest: value("latest"), mine: value("mine"), byOther, byMe, overwritesOther }];
   });
 }
 
-export function H4ConflictCompare({ groups, onMerge, onKeepMine }: { groups: H4ConflictGroup[]; onMerge: () => void; onKeepMine: () => void }) {
-  const otherOnly = groups.filter(group => group.byOther && !group.byMe).length;
+export function H4ConflictCompare({ groups, onMerge, onKeepMine, mergeDisabledReason }: { groups: H4ConflictGroup[]; onMerge: () => void; onKeepMine: () => void; mergeDisabledReason?: string }) {
+  const otherOnly = groups.filter(group => group.overwritesOther).length;
   const mine = groups.filter(group => group.byMe).length;
   return <Notice tone="warn" title="没有保存：你编辑时，别人先保存过">
     <div className="h4-compare">
@@ -61,7 +63,7 @@ export function H4ConflictCompare({ groups, onMerge, onKeepMine }: { groups: H4C
       </table>
       <div className="h4-compare-choices">
         <div className="h4-compare-choice">
-          <Button variant="primary" size="sm" onClick={onMerge}>合并后再核对</Button>
+          <Button variant="primary" size="sm" disabledReason={mergeDisabledReason} onClick={onMerge}>合并后再核对</Button>
           <p>表单换成最新配置，再放回你改的 {mine} 项；核对后点「保存配置」。</p>
         </div>
         <div className="h4-compare-choice">
