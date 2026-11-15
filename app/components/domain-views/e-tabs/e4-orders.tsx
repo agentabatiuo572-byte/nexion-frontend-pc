@@ -8,7 +8,7 @@ import {
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
-import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact } from "@/lib/admin/e4-client";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
@@ -88,7 +88,7 @@ function OrdinaryRefundImpact({ impact, compact = false }: { impact: E4RefundImp
         <Fact k="保留 USDT">{orderAmount(impact.creditedRetained.usdtAmount)}</Fact>
         <Fact k="保留 UVT">{orderAmount(impact.creditedRetained.uvtAmount)}</Fact>
       </Facts>}
-      <p className="rd-note"><KeepText text={`${compact ? "" : "普通购买设备 · "}截至 ${formatBusinessTimeFull(impact.asOf, "—")}（${businessZone().label}）`} phrases={[businessZone().label]} /><Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
+      <p className="rd-note"><KeepText text={`${compact ? "" : "普通购买设备 · "}截至 ${formatBusinessTimeCompact(impact.asOf, "—")}（${businessZone().label}）`} phrases={[businessZone().label]} /><Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
     </>}
   </section>;
 }
@@ -114,7 +114,7 @@ export function E4PendingApprovalDetails({ approval }: { approval: E4PendingAppr
     <span className="rd-approval-meta">
       {approval.action && <span>{approval.action}</span>}
       {approval.submittedBy && <span> · {approval.submittedBy}</span>}
-      {approval.submittedAt && <span> · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeFull(approval.submittedAt, "—")}（{businessZone().label}）</time></span>}
+      {approval.submittedAt && <span> · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeCompact(approval.submittedAt, "—")}（{businessZone().label}）</time></span>}
     </span>
   );
 }
@@ -188,7 +188,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
           {!expired && ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        <p>{formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。解除待确认只清本页记录，不替后端原操作结案。
+        <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。解除待确认只清本页记录，不替后端原操作结案。
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} /></p>
         {!expired && ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "原命令继续保留", "原操作继续保留", "请查询原操作"]} /></p>}
@@ -519,7 +519,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "托管机房标签未提供" : o.dc} · 下单 ${o.age}前`}>
         <Facts>
           <Fact k="托管机房标签">{o.dc}</Fact>
-          <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
+          <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeCompact(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
           {e4Detail && !finalized && !refundableState && <Fact k="兑付覆盖率">{coverageText}</Fact>}
         </Facts>
       </Fold>
@@ -540,7 +540,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           {e4Detail.history.length === 1
             ? e4Detail.history.map((item) => <Facts key={item.createdAt}>
               <Fact k="状态变化">{stateLabel(item.fromState)} → {stateLabel(item.toState)}</Fact>
-              <Fact k="时间">{formatBusinessTimeFull(item.createdAt, "—")}（{businessZone().label}）</Fact>
+              <Fact k="时间">{formatBusinessTimeCompact(item.createdAt, "—")}（{businessZone().label}）</Fact>
               <Fact k="操作人">{maskAuditActor(operatorOrderHistoryActor(item.operator))}</Fact>
               {item.reason && <Fact k="原因">{operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</Fact>}
             </Facts>)

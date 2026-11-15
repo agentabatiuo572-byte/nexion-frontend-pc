@@ -4,6 +4,7 @@ import { Activity, Clock3, ListTodo, Plus, Smartphone, Coins, Layers3 } from "lu
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { BlockState, Button, Cell, Check, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, MoreMenu, Notice, NumberInput, Pager, Panel, Select, Stat, StatBand, StatusTag, StepBar, Table, TableLoading, TableMessage, TaskClassTag, Td, Th, Tr } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -45,7 +46,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   },[]);
   useEffect(() => {
     let live = true; setPoolLoading(true); setPool(null); setPoolError("");
-    void fetchTaskPools("PHONE").then(rows => { if (live) { const next=rows.find(row=>row.code === "PHONE"); if (!next) throw new Error("手机任务池元数据缺失"); setPool(next); setReadAt(new Date().toLocaleTimeString("zh-CN",{hour12:false})); } }).catch(cause=>{ if(live) setPoolError(displayAdminError(cause)); }).finally(()=>{if(live)setPoolLoading(false);});
+    void fetchTaskPools("PHONE").then(rows => { if (live) { const next=rows.find(row=>row.code === "PHONE"); if (!next) throw new Error("手机任务池元数据缺失"); setPool(next); setReadAt(`${businessClock(Date.now())}（${businessZone().label}）`); } }).catch(cause=>{ if(live) setPoolError(displayAdminError(cause)); }).finally(()=>{if(live)setPoolLoading(false);});
     return ()=>{live=false;};
   },[ctx.tasks]);
   useEffect(()=>{ if(!ready) {setForm(null); if(!confirm || !m.locked(confirm.scope))setConfirm(null);} },[ready]);
