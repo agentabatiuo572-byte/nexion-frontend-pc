@@ -11,8 +11,10 @@ export function f4Decimal(value: string | number): string | null {
   return `${match[1] === "-" && /[1-9]/.test(digits) ? "-" : ""}${whole.replace(/^0+(?=\d)/, "")}${fraction ? `.${fraction}` : ""}`;
 }
 
-/** top1/top5 use percentage points, matching OpsTeamService.parseDecimal. */
-export function f4HeadCapAmplifies(current: string, value: string): boolean {
+/** top1/top5 use percentage points, matching OpsTeamService.parseDecimal.
+ * An unconfigured cap is compared with its settlement default (25 / 60), as the backend does since f066d719. */
+export function f4HeadCapAmplifies(key: "F.pool.top1MaxPct" | "F.pool.top5MaxPct", stored: string | undefined, value: string): boolean {
+  const current = stored?.trim() ? stored : key === "F.pool.top1MaxPct" ? "25" : "60";
   const before = f4Decimal(current.replace(/[%,]/g, "")) ?? "0";
   const after = f4Decimal(value.replace(/[%,]/g, "")) ?? "0";
   const [beforeWhole, beforeFraction = ""] = before.split(".");

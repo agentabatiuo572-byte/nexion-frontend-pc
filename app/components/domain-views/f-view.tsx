@@ -1086,7 +1086,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const headCap = key === "F.pool.top1MaxPct" || key === "F.pool.top5MaxPct";
       const current = f4Submission.current?.overview ?? f4Overview;
       const amplifies = headCap && current
-        ? f4HeadCapAmplifies(current.configValues[key] ?? "", value)
+        ? f4HeadCapAmplifies(key, current.configValues[key], value)
         : vote ? Number(value) > vote.votes : undefined;
       await proposeFConfig("F4", key, value, reason, expectedVersion, amplifies, expectedMaterialRevision);
     },

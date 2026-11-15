@@ -319,7 +319,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.top1MaxPct": {
       spec = { briefKind: "config", name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct",
-              edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies(data.configValues["F.pool.top1MaxPct"] ?? "", value) },
+              edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top1MaxPct", data.configValues["F.pool.top1MaxPct"], value) },
               title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
@@ -328,7 +328,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.top5MaxPct": {
       spec = { briefKind: "config", name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct",
-              edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies(data.configValues["F.pool.top5MaxPct"] ?? "", value) },
+              edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top5MaxPct", data.configValues["F.pool.top5MaxPct"], value) },
               title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
