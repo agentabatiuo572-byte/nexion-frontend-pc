@@ -1329,7 +1329,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.3 C 用户与账户
 
-**2026-11-16 C6 管理读取元数据（hd-sync10，后端 6015e7e4）**：`UserRegistrationRiskStats` 接入可选 `otpIncludesRegistration`、`otpCountsSuccessfulSends`、`captchaTriggeredProducerFound`、`countsUseBusinessDay`、`stuffingClusters7dIsCredentialStuffing`、`stuffingClusters7dCountsMultiAccountThresholdHits`、`stuffingClusters7dCountsFirstInsertedOnly`、`stuffingClusters7dIncludesAllDispositions`；当前值依次为 false/false/false/true/false/true/true/true。概览接入 `captchaAlwaysScenes`（REGISTER/LOGIN/RESET 子集）、`h5RegisterCaptcha` 和 `h5RegisterMissingDeviceCaptcha`。在现有接收边界校验非空值类型，旧响应缺字段/null 保持未知。只补只读合同，不修改统计、认证、关闭窗口、权限或页面；口径与作用范围展示由视觉 worker 接入。
+**2026-11-16 C6 管理读取元数据（hd-sync10，后端 6015e7e4）**：`UserRegistrationRiskStats` 接入可选 `otpIncludesRegistration`、`otpCountsSuccessfulSends`、`captchaTriggeredProducerFound`、`countsUseBusinessDay`、`stuffingClusters7dIsCredentialStuffing`、`stuffingClusters7dCountsMultiAccountThresholdHits`、`stuffingClusters7dCountsFirstInsertedOnly`、`stuffingClusters7dIncludesAllDispositions`；当前值依次为 false/false/false/true/false/true/true/true。概览接入 `captchaAlwaysScenes`（REGISTER/LOGIN/RESET 子集）、`h5RegisterCaptcha` 和 `h5RegisterMissingDeviceCaptcha`。在现有接收边界校验非空值类型，旧响应缺字段/null 保持未知。只补只读合同，不修改统计、认证、关闭窗口或权限。页面（hd-vbe）：四个统计问号按标志写口径（今日验证码记录写含不含注册、发送失败算不算；人机验证记录在没有记录来源时注明 0 不代表没人拖；七日关联组写新出现、达阈值、按共用注册 IP/设备/支付方式关联、不是试密码的检测、已处理也算），「统计口径与数据来源」按 `countsUseBusinessDay` 写业务日；人机验证开启时多一行「每次都要拖滑块」列出 `captchaAlwaysScenes`；「关闭期间仍会验证」按 `h5RegisterCaptcha`/`h5RegisterMissingDeviceCaptcha` 写「H5 注册」或「缺设备信息的 H5 注册」。标志缺失时保留原写法。
 
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
@@ -1501,7 +1501,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.9 I 内容与合规 CMS
 
-**2026-11-16 I4 实际公开状态读取（hd-sync10，后端 bcf0125b）**：新增 `fetchI4PublishedSnapshot(signal?)` 读取 `GET /api/admin/content/trust-disclosure/published-snapshot`，复用内容代理的 trust-disclosure 白名单、会话令牌和错误处理，此精确路径只允许 GET，后端仅授予 `content_i4_read`。返回 `sampledAt/available/reason/source/sourceEnvironment/runId/sections`；每节为 `sectionKey/version/available/reason/fields`，每项为 `key/cleared/reason`。可空字符串保留 null；失效快照仍返回成功管理响应及六节不可用占位，不能将 available=false 当请求失败。`cleared` 只表示非空原值被清空，reason 可以非空但 cleared=false；不包含被扣下的值，也不是语言派生后 App 的完整文字。读取函数暂不由页面调用，旧环境不自动请求新接口；原页面推断暂保留，由视觉 worker 决定展示与读取时机。
+**2026-11-16 I4 实际公开状态读取（hd-sync10，后端 bcf0125b）**：新增 `fetchI4PublishedSnapshot(signal?)` 读取 `GET /api/admin/content/trust-disclosure/published-snapshot`，复用内容代理的 trust-disclosure 白名单、会话令牌和错误处理，此精确路径只允许 GET，后端仅授予 `content_i4_read`。返回 `sampledAt/available/reason/source/sourceEnvironment/runId/sections`；每节为 `sectionKey/version/available/reason/fields`，每项为 `key/cleared/reason`。可空字符串保留 null；失效快照仍返回成功管理响应及六节不可用占位，不能将 available=false 当请求失败。`cleared` 只表示非空原值被清空，reason 可以非空但 cleared=false；不包含被扣下的值，也不是语言派生后 App 的完整文字。页面（hd-vbe）：打开、点「刷新」、任一版块版本或状态变化时读取；结论下一行写核对结果（已核对 / 版本对不上 / 整页打不开 / 测试环境演示内容）和取样时间（北京时间），整块没公开的个数沿用结论句，这一行只补零散被清空的项数和版本不一致的块数。卡片标「App 实际给出」「N 项被清空」「App 给的是 vX」；详情多一行「App 实际给出」，字段旁写「App 没公开：原因」；原因码、来源、环境、运行号只在详情的技术信息里。读取失败（含旧后端没有此接口）不挡整页，结论下一行给重试，卡片退回页面推断并标「预计 App 显示」。
 
 **I4 删除草稿冲突理由（2026-11-15）**：删除确认的首次修订冲突将本次确认的理由和原 sectionKey 直接交给冲突核对，不再误取未打开的草稿编辑器保存说明。核对后仍删除原栏目/原版本，带回原理由，重新确认才以最新 revision 和新命令号提交。保存草稿继续保留完整 draftEditor 及保存说明；共用确认框无需为此重置表单。
 
