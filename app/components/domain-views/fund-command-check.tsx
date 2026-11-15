@@ -1,5 +1,4 @@
 "use client";
-import "./fund-command-check.css";
 import { useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, SearchCheck, X } from "lucide-react";
 import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, IrreversibleTag, Modal, Notice, Segments, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
@@ -181,7 +180,7 @@ export function FundClosureModal({ label, createdAt, facts, onClose, onSubmit }:
         {facts}
         <Fact k="首次提交">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}</Fact>
       </Facts>
-      <Notice tone="warn">后端按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。资金操作现在不能按「没有执行」结案。<span className="rd-keep">提交后不能撤销或改结论。</span></Notice>
+      <Notice tone="warn">系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。资金操作现在不能按「没有执行」结案。<span className="rd-keep">提交后不能撤销或改结论。</span></Notice>
       <Field label="核查结论" required error={touched && !conclusion ? "请选择核查结论" : undefined}
         help={conclusion === "SUCCEEDED" ? "原操作有完成记录，或操作记录里有这次请求的成功记录时选。确认后解除，不会再执行。" : conclusion === "STILL_UNKNOWN" ? "只留下这次核查记录，继续锁着，之后可以再核查。" : undefined}>
         <Segments label="核查结论" value={conclusion} onChange={value => setConclusion(value as "SUCCEEDED" | "STILL_UNKNOWN")}
