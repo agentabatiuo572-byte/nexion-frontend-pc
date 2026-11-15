@@ -377,11 +377,13 @@ function copyFormIssues(spec: CopyEditSpec | CopyCreateSpec, state: BusinessForm
   return { fields, other, blocked: list.length ? `还缺：${[...new Set(list)].join("、")}` : undefined };
 }
 
-export function CopyEditorDrawer({ spec, title, sub, basedOn, pausesDelivery, onClose, onSubmit }: {
+export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDelivery, onClose, onSubmit }: {
   spec: CopyEditSpec | CopyCreateSpec;
   title: string;
   sub?: ReactNode;
   basedOn?: ReactNode;
+  /** 页面数据没读到最新时放在表单最上面的提醒和重新加载（编辑框挡着页面上的那一个）。 */
+  stale?: ReactNode;
   /** 这条文案现在是已发布：存草稿会让它暂停投放（B01）。 */
   pausesDelivery?: boolean;
   onClose: () => void;
@@ -419,6 +421,7 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, pausesDelivery, on
             <Button variant="primary" disabledReason={publishCheck.blocked} onBlockedClick={() => setAttempted(true)} onClick={() => onSubmit(form, "发布生效")}>{isCreate ? "新增并发布" : "发布"}</Button>
           </>} />}>
         <div className="rd-form-stack" data-business-form={spec.kind}>
+          {stale}
           {basedOn && <Facts>{basedOn}</Facts>}
           {isCreate && (
             <div className="rd-form-grid" data-cols="2">

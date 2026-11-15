@@ -1499,6 +1499,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     );
   })();
 
+  // 编辑框挡着页面上的「重新加载」：读取失败时在编辑框里也给一个，填的内容不用丢。
+  const editorStale = errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={() => void reload()}>重新加载</Button>}>重新加载后再保存，你填的不会丢。</Notice>;
   const expNeed = EXPS.filter((exp) => ["scheduled", "running", "concluded", "stopped"].includes(exp.state)).length;
 
   return (
@@ -1535,12 +1537,13 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           title={editor.spec.version ? "编辑草稿" : editor.forceNew ? "新增版本" : "编辑文案"}
           sub={<>{editor.copy.desc} · <span data-mono="">{editor.copy.key}</span></>}
           basedOn={<Fact k="基于">{editor.base ? `${editor.base.v} · ${versionStatus(editor.base.st).text}` : editor.copy.version}</Fact>}
+          stale={editorStale}
           pausesDelivery={isPublished(editor.copy)}
           onClose={() => setEditor(null)}
           onSubmit={(form, mode) => submitCopyEdit(editor.copy, editor.base, { ...form, saveMode: mode }, mode)} />
       )}
       {editor?.kind === "create" && (
-        <CopyEditorDrawer spec={editor.spec} title="新增文案" onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
+        <CopyEditorDrawer spec={editor.spec} title="新增文案" stale={editorStale} onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
       )}
       {creatingExperiment && (
         <ExperimentDrawer copies={EXPERIMENT_COPY_OPTIONS} versionText={(copyKey, version) => findVersion(copyKey, version)?.zh}
