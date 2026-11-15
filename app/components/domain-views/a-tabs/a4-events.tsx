@@ -264,7 +264,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const refreshRegistryTicket = async () => {
     if (!registryTicket?.commandKey || registryTicket.adminId !== registryActor?.adminId) return;
     try {
-      const ticket = await fetchA2ProposalByKey(registryTicket.commandKey, true, true);
+      const ticket = await fetchA2ProposalByKey(registryTicket.commandKey, true, "a");
       if (!ticket || !ticket.mine || ticket.obj !== registryTicket.ticket.obj || ticket.operationCode !== registryTicket.ticket.operationCode) {
         throw new Error("A4_REGISTRY_RESULT_UNKNOWN");
       }

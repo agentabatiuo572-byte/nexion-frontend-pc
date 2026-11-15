@@ -3,6 +3,7 @@ import type { OperatorBriefKind, BusinessFormSpec, EditSpec } from "../design-ki
 import type { E4Query } from "./data";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2YieldComparison } from "@/lib/admin/e2-client";
+import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
 import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -135,6 +136,7 @@ export interface EViewCtx {
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)
   canWriteE3: boolean;
+  e3Proposals: ReturnType<typeof useE3Proposals>;
   e3Ready: boolean;
   e3Loading: boolean;
   e3Error: string | null;

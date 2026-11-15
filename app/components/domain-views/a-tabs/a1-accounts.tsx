@@ -371,7 +371,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       toast(displayAdminError(new Error("A1_READBACK_ONLY")));
       return false;
     }
-    const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true, "a");
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
     if (!ticket) {
       a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket: undefined, proposalNotFound: true }); reloadPending();
@@ -1173,7 +1173,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <Fact k="提交时间">{`${businessStamp(record.createdAt)}（${businessZone().label}）`}</Fact>
     </Facts>,
     run: async () => {
-      if (Date.now() < record.expiresAt || record.request.kind !== "proposal" || await fetchA2ProposalByKey(record.commandKey, true, true)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
+      if (Date.now() < record.expiresAt || record.request.kind !== "proposal" || await fetchA2ProposalByKey(record.commandKey, true, "a")) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
       recoveryStarted(); await refreshOverview(true);
       a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
     },

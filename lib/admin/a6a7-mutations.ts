@@ -165,7 +165,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
   };
   const queryProposal = async (record: RbacCommand) => {
     requireOriginalActor(record);
-    const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true, "a");
     requireOriginalActor(record);
     if (ticket) checkTicket(record.original, ticket);
     // The caller checks the current authenticated actor again after this await.

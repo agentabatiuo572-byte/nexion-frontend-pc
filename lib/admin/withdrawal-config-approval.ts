@@ -12,10 +12,11 @@ import { createPendingMutationStore, type PendingMutationRecord } from "./pendin
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
+import type { FDomainAttempt } from "./f2-approval";
 import type { B1CommandFacts } from "./b1-commands";
 import type { B5ThresholdFacts } from "./b5-commands";
 
-const attempts = createPendingMutationStore<PendingMutationRecord & {
+export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & {
   input: string;
   g4Ticket?: A2OperationRow;
   g4Request?: Parameters<typeof createA2OperationProposal>[0];
@@ -32,6 +33,7 @@ const attempts = createPendingMutationStore<PendingMutationRecord & {
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
+const attempts = configApprovalAttempts;
 
 const commands = {
   D5: { domain: "D", op: "d5_withdrawal_limits", type: "withdrawal_limits", action: "放宽提现参数" },
@@ -157,7 +159,7 @@ export async function submitB5ThresholdApproval<T>(
   }
   const queryOriginal = async () => {
     try {
-      const ticket = await fetchA2ProposalByKey(key, true, false, true);
+      const ticket = await fetchA2ProposalByKey(key, true, "metadata");
       // 111e00cd OpsAuditCenterService.ticketMetadata emits command.op for B5 too.
       if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "提高提现压力红线"
         || ticket.operationCode !== "b5_bankrun_thresholds")) {
