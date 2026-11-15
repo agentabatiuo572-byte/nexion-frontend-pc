@@ -8,7 +8,7 @@ import type { BusinessFormValue } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
   BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
@@ -181,15 +181,18 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const unit = (key: string, values: Record<string, string | undefined>) => key === "probabilityPct" ? "%"
       : key === "rewardAmount" ? values.rewardKind === "coupon" ? "张" : wheelUnit({ kind: values.rewardKind })
       : key === "guardValue" && values.guardKey === "budget" ? "USDT / 天" : undefined;
-    const changes = businessValue ? fields.map(field => ({ key: field.key, label: field.label,
+    const changes = businessValue && !(isValidElement(facts) && facts.type === ProbabilityCompare) ? fields.filter(field => !field.key.startsWith("__")).map(field => ({ key: field.key, label: field.label, labels: field.optionLabels,
       before: creating ? null : field.current ?? null, after: businessValue[field.key] ?? null,
       beforeUnit: creating ? undefined : unit(field.key, before), afterUnit: unit(field.key, businessValue),
     })) : undefined;
     return hApprovalReconfirm(error, { changes,
       hasPending: () => !!h4PendingFor(h4Scope((error.input as { path: string }).path, JSON.parse((error.input as { body: string }).body))),
-      onUnknown: () => ctx.closeConfirm?.(), action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
+      onUnknown: () => ctx.closeConfirm?.(), action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: creating ? "现有配置" : "这一项",
       change: edit && value !== undefined ? <Change from={`${edit.current || "—"}${edit.unit ? ` ${edit.unit}` : ""}`} to={`${value}${edit.unit ? ` ${edit.unit}` : ""}`} /> : undefined,
-      context: edit ? undefined : facts, completed: async result => { await apply(result); } });
+      // 有逐项改动时不再放原框的「现在」事实；只有改已有一项时补一行对象（目前是转盘奖项编辑）。
+      context: edit || changes ? undefined : facts,
+      subject: changes && !creating && typeof req.action === "string" && req.action.includes(" · ") ? <Fact k="奖项">{req.action.slice(req.action.indexOf(" · ") + 3)}</Fact> : undefined,
+      completed: async result => { await apply(result); } });
   };
   const openActionConfirm = (req: ActionConfirmReq) => {
     const version = h4ReadVersion("overview");
