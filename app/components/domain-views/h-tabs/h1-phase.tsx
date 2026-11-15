@@ -590,14 +590,13 @@ export default function H1Phase({ ctx,
         <Fact k="生效方式">{value && amplifies(dial.key,
           before,
           value) ? <>
-            批准后才改，批准前保持原值。
-            {row.month !== rhythm?.currentMonth ? "到这个月时生效。" : "改后立即生效。"}
+            {row.month !== rhythm?.currentMonth ? "批准后保存，到这个月时生效；批准前保持原值。" : "批准后立即生效，批准前保持原值。"}
           </> : row.month !== rhythm?.currentMonth
             ? "保存后，到这个月时生效。"
             : "保存后立即生效。"}</Fact>
         {value && amplifies(dial.key,
           before,
-          value) && <><Fact k="谁能批准">{APPROVER}</Fact><Fact k="资金核查">兑付覆盖率 {format(coverage?.coverageRatio)}% · 红线 {format(coverage?.redlinePct, 0)}%；批准时再查一次。</Fact></>}</Facts>,
+          value) && <><Fact k="谁能批准">{APPROVER}</Fact><Fact k="资金核查">兑付覆盖率 {format(coverage?.coverageRatio)}% · 红线 {format(coverage?.redlinePct, 0)}%<br />批准时会再查一次。</Fact></>}</Facts>,
       coverageCheck: "批准时会再查一次兑付覆盖率。",
       blockedReason: scopeBlock(scope) ?? (unavailable ? "阶段配置不可用，请先核对总体安排" : missingValue ? "当前值没读到，判断不了是调高还是调低，请先刷新" : undefined),
       getPendingReason: () => h1Pending.list().find((item) => item.scope === scope && item.state !== "approval")?.reason,
@@ -905,7 +904,7 @@ export default function H1Phase({ ctx,
         </Fold>
       </div>
       <div id={nav.anchor("overrides")} className="h1-section">
-        <Fold title="单独覆盖人群" icon={Users} tone="role-3" summary={model.overrides.length ? `${model.overrides.length} 条覆盖记录` : "系统暂未提供覆盖人群数据"} open={!!folds.overrides} onOpenChange={(open) => setFolds((value) => ({
+        <Fold title="单独覆盖人群" icon={Users} tone="role-3" summary={model.overrides.length ? `${model.overrides.length} 条覆盖记录` : "暂无数据"} open={!!folds.overrides} onOpenChange={(open) => setFolds((value) => ({
           ...value,
           overrides: open
         }))}>
