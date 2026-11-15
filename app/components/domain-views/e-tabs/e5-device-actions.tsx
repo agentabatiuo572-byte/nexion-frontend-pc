@@ -196,7 +196,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
           {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
           {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
           {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={expired ? "超过 24 小时不能再重试" : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
-          {refused && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
+          {refused && !releasable && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
           {releasable && <Button size="sm" disabled={!!busy} onClick={() => setMissing(record)}>解除原操作记录</Button>}
         </>,
         detail: <>
