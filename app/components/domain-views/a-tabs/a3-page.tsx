@@ -521,7 +521,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 <span className="a3-health-name">{row.name}<Explain label={`${row.name}怎么算`} content={<><p>{HEALTH_HELP[row.name] ?? "系统自动检测的读数。"}</p><p>来源：{row.source || "—"}</p></>} /></span>
                 <StatusTag tone={state.tone} icon={state.icon}>{state.text}</StatusTag>
               </span>
-              <span className="a3-health-metric">{row.metric ? (row.name === "事件待投递" ? row.metric : metricText(row.metric)).split(" · ").map((part, index, parts) => index < parts.length - 1 ? <span key={index}><span className="rd-keep">{part} ·</span> </span> : <span key={index} className="rd-keep">{part}</span>) : "—"}</span>
+              <span className="a3-health-metric">{row.metric ? metricText(row.metric).split(" · ").map((part, index, parts) => index < parts.length - 1 ? <span key={index}><span className="rd-keep">{part} ·</span> </span> : <span key={index} className="rd-keep">{part}</span>) : "—"}</span>
               <span className="a3-health-time">{row.stale ? "这次没测到，不能算正常" : `检测于 ${timeText(row.observedAt)}`}</span>
             </li>;
           })}
