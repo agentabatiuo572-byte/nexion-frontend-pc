@@ -1420,7 +1420,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   NETWORK_FEE_MIN_INVALID: "旧网络费字段不能再修改。请刷新后重试。",
   NETWORK_FEE_MAX_INVALID: "旧网络费字段不能再修改。请刷新后重试。",
   NETWORK_FEE_RANGE_INVALID: "网络费下限不能高于上限，请核对配置。",
-  D5_VERSION_MISSING: "提现参数缺少版本号，修改已暂停。请联系技术值班核对配置。",
+  D5_VERSION_MISSING: "提现参数读取不完整，修改已暂停。请联系技术值班核对。",
   D5_POLICY_VERSION_UNAVAILABLE: "提现参数缺少版本号，用户暂时不能提现。请联系技术值班核对配置。",
   D5_NETWORK_FEE_INVALID: "网络确认费配置不在 0–25 USD 之间，用户暂时不能提现。请联系技术值班核对配置。",
   D5_NEX_OFFSET_INVALID: "UVT 抵扣率配置不大于 0，用户暂时不能提现。请联系技术值班核对配置。",

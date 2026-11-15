@@ -503,7 +503,7 @@ type ReleaseTarget = { label: string; slot: string; commandKey: string; loosen: 
 const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果。";
 const TIGHTEN_LOCK = "这页有修改的结果未知，先到上方查询原结果";
 const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
-const NETWORK_RULE = "用户能不能用和 App 提现是同一个判断：「紧急停用开关」的提现开关开着，这页的开关开着，出款服务接通；接打款服务时还要全局出款总闸开着、打款服务开通了这个网络、最近完成过完整对账、没有没处理的资金风险。";
+const NETWORK_RULE = "用户能不能用和 App 提现是同一个判断：「紧急停用开关」的提现开关和这页的开关都开着，出款服务接通；接打款服务时还要全局出款总闸开着、打款服务开通了这个网络、最近完成过完整对账、没有没处理的资金风险。";
 const COVERAGE_RULE = "放宽在提交和批准时各查一次兑付覆盖率，低于红线或读不到可靠结果都会被拒。收紧不查。";
 const APPROVAL_NOTE = "另一位超级管理员批准后才生效，批准前当前值不变。发起人不能批自己提交的单。";
 
@@ -653,7 +653,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         base: latest,
         conflict: moved.length
           ? <>别人刚改过：{moved.map((row) => `${row.label} ${row.before} → ${row.after}`).join("；")}。你改的项还在，其余已换成最新值，核对后重新提交。</>
-          : <>别人刚改过提现参数的其他项，版本已更新。核对后重新提交。</>,
+          : <>别人刚改过提现参数的其他项，核对后重新提交。</>,
       };
     });
   };
@@ -696,7 +696,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       briefKind: "config",
       action: `调整提现参数 · ${label}`,
       title: editTitle(GROUP_TITLE[group]),
-      detail: <>版本 v{p.version}。提交时带上这个版本，别人先改了这次不会生效。</>,
+      detail: <>提交前别人改过提现参数时，这次不会生效。</>,
       // 等批准的提醒跟在前后值后面，同一块里看（有放宽在等时才有）。
       facts: <>
         <DiffList rows={evaluation.rows} restTitle="没改的项" />
@@ -714,7 +714,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       reasonMin: 8,
       reasonMax: 200,
       reasonPlaceholder: "例如：资金会议决定、工单号",
-      completionCopy: loosens ? "另一位超管批准前，当前配置保持不变。" : "提交后立即生效。",
+      completionCopy: loosens ? "另一位超级管理员批准前，当前值不变。" : "提交后立即生效。",
       statedBrief: { impact: GROUP_IMPACT[group], check: "核对改了哪几项和方向，理由写清调整原因和依据。" },
       blockedReason: blockedReason ?? (loosens ? proposeBlock : undefined),
       run: async (reason) => {
@@ -955,7 +955,6 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       meta={<span className="rd-toolbar">
         <span>
           {readAt && params ? `${readAt} 读取（${zone}）· ` : ""}打开时读取
-          {params && <> · <Explain label="版本号是什么" content="每改一次参数版本加 1。提交时带上你看到的版本，别人先改了这次就不会生效。">版本 v{params.version}</Explain></>}
         </span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
       </span>}
@@ -1049,7 +1048,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     const help = H[key];
     const spec = SPECS[key];
     const value = spec.current(p);
-    return <ConfigRow key={key} name={help.label} what={help.what} when={help.when} where={help.where} effect={help.effect}
+    return <ConfigRow key={key} name={help.label} what={help.what} when={help.when} where={help.where} effect={help.effect} note={"note" in help ? help.note : undefined}
       value={key === "smallAmountThresholdUsd" && value === 0 ? "0 USD（已关闭）" : spec.show(value)}
       action={can(spec.authority) ? action("limits", help.label, key) : undefined} />;
   };
@@ -1228,9 +1227,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       </div>
 
       <Drawer open={!!editing} onClose={askClose} title={editing ? editTitle(GROUP_TITLE[editing.group]) : ""} icon={editing ? drawerIcon[editing.group] : undefined}
-        tone={editing?.group === "limits" ? "role-4" : "role-2"} sub={`当前版本 v${p.version}`}
+        tone={editing?.group === "limits" ? "role-4" : "role-2"} 
         explain={editing && (editing.group === "limits"
-          ? "四项一起提交。只要有一项放宽，整组提交审批，另一位超管批准前当前值不变；全部收紧时提交后立即生效。"
+          ? "四项一起提交。只要有一项放宽，整组提交审批，另一位超级管理员批准前当前值不变；全部收紧时提交后立即生效。"
           : editing.group === "network" ? "三个网络一起提交。开启算放宽，要提交审批；只关不开时提交后立即生效。"
             : editing.group === "fee" ? "三个网络一起保存。任一网络调低，三个一起走审批。"
               : "调高算放宽，要提交审批；调低提交后立即生效。")}
