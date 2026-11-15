@@ -779,10 +779,11 @@
 .e6-page .e6-phones-table .e6-phone-device { width: 42%; }
 .e6-phone-device .rd-cell { max-width: none; }
 .e6-page .e6-phones-table :is(.rd-cell-main,.rd-cell-sub) { white-space: nowrap; }
-.e6-middle-text { display: inline-flex; max-width: 100%; vertical-align: bottom; }
-.e6-middle-text > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.e6-middle-text > :last-child { flex: none; }
-.e6-middle-text > :first-child, .e6-middle-text > :last-child { white-space: pre; }  /* 断点落在空格上时空格不丢 */
+/* 编号省略中间、留末 8 位。两段都是行内块和行内文字，复制和读屏仍是一整串，不在中间断开；空格不丢。 */
+.e6-middle-text { display: inline-block; max-width: 100%; white-space: pre; vertical-align: bottom; }
+.e6-middle-text > :first-child { display: inline-block; max-width: calc(100% - 8ch); overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+/* 设备名、任务名不拆开：整串一行，放不下在末尾省略，悬停看后端原值。 */
+.e6-end-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e6-phone-device .rd-cell-sub > .e6-original, .e6-tasks-table .rd-cell-main > .e6-original { display: block; }
 .e6-phone-panel { min-width: 0; }
 .e6-page .e6-phones-table .e6-phone-task { min-width: 240px; width: 240px; }
