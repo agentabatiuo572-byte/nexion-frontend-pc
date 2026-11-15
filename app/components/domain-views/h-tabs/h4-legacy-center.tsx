@@ -736,7 +736,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         if (Math.round(total * 10000) !== 1000000) {
           throw new Error("所有奖项的概率加起来要等于 100%");
         }
-        const amplifies = tiers.some(tier => ["uvt", "usdt", "coupon"].includes(text(tier.kind).toLowerCase())
+        const amplifies = tiers.some(tier => ["nex", "uvt", "usdt", "coupon"].includes(text(tier.kind).toLowerCase())
           && probabilities[text(tier.tier)] > numericValue(tier.prob));
         if (amplifies) {
           await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_probabilities_update", {
