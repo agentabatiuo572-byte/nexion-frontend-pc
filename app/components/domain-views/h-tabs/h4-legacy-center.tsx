@@ -9,7 +9,7 @@ import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, ReleaseModal, Stat, StatBand, StatusTag,
+  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -63,6 +63,16 @@ type Model = {
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
 const killOn = (value: string) => ["1", "true", "on", "enabled", "open", "开"].includes(value.trim().toLowerCase());
 const budgetNumber = (value: string) => value.replace(/[$,\s]/g, "");
+/** 今天还剩多少预算：两个十进制串按位相减，不经浮点、不舍入。只用于显示。 */
+const decimalMinus = (left: string, right: string) => {
+  if (!/^\d+(\.\d+)?$/.test(left) || !/^\d+(\.\d+)?$/.test(right)) return null;
+  const places = Math.max(...[left, right].map((value) => (value.split(".")[1] ?? "").length));
+  const scaled = (value: string) => { const [whole, fraction = ""] = value.split("."); return BigInt(whole + fraction.padEnd(places, "0")); };
+  const diff = scaled(left) - scaled(right);
+  const digits = (diff < BigInt(0) ? -diff : diff).toString().padStart(places + 1, "0");
+  return `${diff < BigInt(0) ? "-" : ""}${places ? `${digits.slice(0, -places)}.${digits.slice(-places)}` : digits}`;
+};
+const USAGE_DAY = "按 UTC 日统计，北京时间每天早上 8 点换日。";
 
 /** 原操作写成一句「做什么 · 对哪一项」，不露命令号和对象键。 */
 /** 审批申请按操作写动词；后端登记的 action 是一类操作的统称，不够具体。 */
@@ -110,7 +120,9 @@ function hiCommandChange(record: H4Command): string | undefined {
   }
   const { path, method } = record.request;
   if (path.startsWith("/media/uploads?")) {
-    try { return `文件 ${String(JSON.parse(record.request.body).fileName ?? "—")}`; } catch { return undefined; }
+    const target = record.uploadTarget;
+    const place = !target ? "" : target.kind === "banner" ? ` · 原活动 v${target.version} 草稿` : " · 原奖励的处置证据";
+    try { return `文件 ${String(JSON.parse(record.request.body).fileName ?? "—")}${place}`; } catch { return undefined; }
   }
   let b: Record<string, unknown>;
   try { b = JSON.parse(record.request.body); } catch { return undefined; }
@@ -981,6 +993,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     return null;
   };
   const contentEvent = contentId ? events.find((event) => event.id === contentId) : undefined;
+  const usedPayout = wheelDailyUsage?.realPayoutUsdt == null ? null : String(wheelDailyUsage.realPayoutUsdt);
+  const budgetText = budget ? budgetNumber(text(budget.value, "")) : "";
+  const budgetLeft = usedPayout !== null && budgetText ? decimalMinus(budgetText, usedPayout) : null;
+  const budgetSpent = budgetLeft !== null && (budgetLeft.startsWith("-") || /^0(\.0+)?$/.test(budgetLeft));
+  const tierUsage = new Map((wheelDailyUsage?.tiers ?? []).map((row) => [row.tierName, row.usedToday]));
   const conclusion = wheelBroken
     ? <Conclusion state="danger" lead icon={CircleAlert} hint="先处理「等你处理」第一行。">App 转盘现在抽不了{gapCount > 0 ? `，还有 ${gapsByEvent.length} 个活动缺翻译` : ""}</Conclusion>
     : todos.length > 0 ? <Conclusion state="warn" lead icon={ListChecks}>有 {todos.length} 件事等你处理</Conclusion>
@@ -993,7 +1010,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       <Stat label="进行中的既有活动" value={numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)}`} explain="按活动存的状态数「进行中」的个数（不看删除状态）。限地区的活动数后端没有提供；紧急处理去「紧急停用开关」。" />
       <Stat label="可追踪活动参与" value={numericValue(h4Stats.trackJoin)} unit="人次" icon={ListChecks} tone="role-3" sub={`达标 ${numericValue(h4Stats.trackDone)} · 已领 ${numericValue(h4Stats.trackClaim)}`} explain="开了「统计效果」的活动的参与、达标、领取次数合计，不是转化率。" />
       <Stat label="平均每次抽奖发出" value={text(model.wheelEvUsd, "") === "" ? "—" : amountText(text(model.wheelEvUsd))} unit="USDT" icon={Coins} tone="role-1" sub="只算发真钱的奖项" explain="后端按各档「金额 × 概率」逐档算到 6 位再相加、保留 2 位，是按概率的估算，不是实际发出的钱。" />
-      <Stat label="今天转盘发出" value="—" icon={Disc3} tone="role-2" sub="后端没有提供" explain="后端读模型没有今天的抽奖和发奖数，这里画不出来，不当成 0。" />
+      <Stat label="今天已发真钱" value={usedPayout === null ? "—" : amountText(usedPayout)} unit={usedPayout === null ? undefined : "USDT"} icon={Disc3} tone="role-2"
+        sub={wheelDailyUsageError ? "今天的用量没读到" : !wheelDailyUsage ? "正在读取…" : <>抽奖 <span className="h4-num">{wheelDailyUsage.spinCount}</span> 次 · UTC <span className="h4-num">{wheelDailyUsage.serverDate.slice(5)}</span></>}
+        explain={<><p>转盘今天发出的 USDT 真钱奖合计，和每日预算比的就是这个数。抽奖次数含每日免费抽奖和签到加抽。</p><p>{USAGE_DAY}</p></>}
+        onOpen={() => go("wheel", "h4l-guards")} openLabel="看预算和各档今天的用量" />
     </StatBand>
     {todos.length > 0 && <Panel title="等你处理" icon={ListChecks} tone="role-3" sub={`${todos.length} 件`}>
       <ul className="h4-todo">{todos.map((todo) => <li key={todo.key}><button type="button" onClick={todo.onOpen}>{todo.tag}<span className="h4-todo-title">{todo.title}</span><span className="h4-todo-sub">{todo.sub}</span></button></li>)}</ul>
@@ -1030,27 +1050,37 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 的奖型存成旧名 nex，等后端修（BUG-426）。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
         </Notice>}
+        {wheelDailyUsageError && <Notice tone="warn" title="今天的用量没读到" action={<Button size="sm" onClick={() => void reloadWheelUsage()}>重试</Button>}>已用次数和今天已发先显示「—」，不是 0；奖池其他内容照常。</Notice>}
         <div className="h4l-wheel-figure">
           <WheelBar tiers={tiers} />
           <div className="h4l-wheel-foot"><WheelLegend /><span className="h4l-sum" data-tone={probabilityOk ? undefined : "danger"}>合计 <b className="h4-num">{percentText(probabilitySum)}%</b>{probabilityOk ? "" : " · 不等于 100%"}</span></div>
         </div>
         <div id="h4l-tiers">
           {tiers.length === 0 ? <BlockState state="empty" title="奖池里还没有奖项" detail="点「新建奖项」添加；至少 2 档才能抽。" /> : <Table label="转盘奖项">
-            <thead><tr><Th>奖项</Th><Th>奖品</Th><Th>类型</Th><Th align="right">每次发放</Th><Th align="right">概率</Th><Th align="right">每 1000 次约中</Th><Th align="right">每日库存</Th><Th sticky="end">操作</Th></tr></thead>
+            <thead><tr><Th>奖项</Th><Th>奖品</Th><Th className="h4l-kind-col">类型</Th><Th align="right">每次发放</Th><Th align="right">概率</Th><Th align="right" className="h4l-per1k">每 1000 次约中</Th><Th align="right">今天已用 / 库存<Explain label="今天已用怎么算" content={<><p>每档今天实际发出的次数，改发的安慰奖算在安慰奖那一档。库存用完的档改发 UVT 安慰奖。</p><p>{USAGE_DAY}</p></>} /></Th><Th sticky="end">操作</Th></tr></thead>
             <tbody>{tiers.map((tier) => {
               const name = legacyName(tier.reward);
               const kindKey = text(tier.kind, "").toLowerCase();
               const unit = wheelUnit(tier);
+              const kindNode = wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
+                  : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="奖型存成了旧名 nex，后端只认 uvt，等后端修数据（BUG-426）">UVT · 旧奖型</StatusTag>
+                  : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>;
+              /** 1024 宽时类型列收起，奖品格第二行只留要人注意的标签（奖品名已带币种）。 */
+              const kindTag = wheelPointsTier(tier) || wheelLegacyNexTier(tier) ? kindNode : boolValue(tier.real) ? <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag> : null;
               return <Tr key={text(tier.tier)}>
                 <Td><span data-mono="" className="h4l-nowrap">{text(tier.tier)}</span></Td>
-                <Td><span className="h4l-reward"><span className="h4l-nowrap">{name.text}</span>{name.legacy && <LegacyNameTag where="奖项名称" />}</span></Td>
-                <Td>{wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
-                  : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="奖型存成了旧名 nex，后端只认 uvt，等后端修数据（BUG-426）">UVT · 旧奖型</StatusTag>
-                  : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>}</Td>
+                <Td><span className="h4l-reward"><span className="h4l-nowrap">{name.text}</span>{name.legacy && <LegacyNameTag where="奖项名称" />}</span>{kindTag && <span className="h4l-kind-sub">{kindTag}</span>}</Td>
+                <Td className="h4l-kind-col">{kindNode}</Td>
                 <Td align="right">{kindKey === "coupon" ? <span className="h4l-voucher"><span className="h4l-nowrap">1 张</span><small className="h4-dim" title={text(tier.voucherId, "未配券")}>{text(tier.voucherId, "未配券")}</small></span> : <span className="h4-num h4l-nowrap">{amountText(text(tier.amount, ""))} {unit}</span>}</Td>
-                <Td align="right"><b className="h4-num">{percentText(tier.prob)}%</b></Td>
-                <Td align="right"><span className="h4l-nowrap"><span className="h4-num">{percentText(numericValue(tier.prob) * 10)}</span> 次</span></Td>
-                <Td align="right">{numericValue(tier.dailyStock) === 0 ? <span className="h4-dim">不限</span> : <span className="h4-num h4l-nowrap">{numericValue(tier.dailyStock)} 次</span>}</Td>
+                <Td align="right"><b className="h4-num">{percentText(tier.prob)}%</b><small className="h4l-per1k-sub h4-dim">千次约 <span className="h4-num">{percentText(numericValue(tier.prob) * 10)}</span></small></Td>
+                <Td align="right" className="h4l-per1k"><span className="h4l-nowrap"><span className="h4-num">{percentText(numericValue(tier.prob) * 10)}</span> 次</span></Td>
+                <Td align="right">{(() => {
+                  const stock = numericValue(tier.dailyStock), used = tierUsage.get(text(tier.tier));
+                  if (used === undefined) return stock === 0 ? <span className="h4-dim">不限</span> : <span className="h4l-nowrap"><span className="h4-dim">—</span> / <span className="h4-num">{stock}</span> 次</span>;
+                  if (stock === 0) return <span className="h4l-nowrap"><b className="h4-num">{used}</b> 次 · <span className="h4-dim">不限</span></span>;
+                  return <span className="h4l-stock"><span className="h4l-nowrap"><b className="h4-num" data-tone={used >= stock ? "warn" : undefined}>{used}</b> / <span className="h4-num">{stock}</span> 次</span>
+                    <RatioBar compact quiet label={`${text(tier.tier)} 今天已用`} value={Math.min(used, stock)} total={stock} tone={used >= stock ? "warn" : "role-2"} valueText={`已用 ${used} 次，库存 ${stock} 次`} /></span>;
+                })()}</Td>
                 <Td sticky="end" data-fit=""><span className="h4-row h4l-ops">{wheelPointsTier(tier)
                   ? <Button size="sm" variant="danger-outline" aria-label={`退役 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openRetirePointsTier:1", tier.tier]), () => openRetirePointsTier(tier))}>退役</Button>
                   : <>
@@ -1072,9 +1102,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             explain="关掉后不再发真钱奖，抽中 USDT 改发 UVT 安慰奖。从关到开要另一位超级管理员批准。"
             action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelKill:1"]), () => openWheelKill(kill))}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
-            sub={<>今天已发 <span className="h4-dim">{wheelDailyUsage?.realPayoutUsdt == null ? "—" : `${amountText(wheelDailyUsage.realPayoutUsdt)} USDT`}</span></>}
-            explain="每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。后端按美元记，真钱奖只有 USDT。"
-            action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelBudget:1"]), () => openWheelBudget(budget))}>调整</Button>} />}
+            explain={<><p>每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。后端按美元记，真钱奖只有 USDT。</p><p>今天已发{USAGE_DAY}</p></>}
+            action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelBudget:1"]), () => openWheelBudget(budget))}>调整</Button>}>
+            <div className="h4l-usage">
+              {Number(budgetText) > 0 && <RatioBar label="今天已发占每日预算" quiet tone={budgetSpent ? "warn" : "role-1"} state={usedPayout === null ? wheelDailyUsageError ? "empty" : "loading" : "ready"}
+                value={usedPayout === null ? 0 : Math.min(Number(usedPayout), Number(budgetText))} total={Number(budgetText)} valueText={`今天已发 ${usedPayout ?? "—"} USDT，预算 ${budgetText} USDT`} />}
+              <span>今天已发 {usedPayout === null ? <span className="h4-dim">{wheelDailyUsageError ? "没读到" : "—"}</span> : <><b className="h4-num">{amountText(usedPayout)}</b> USDT{budgetLeft !== null && <> · {budgetSpent ? <span data-tone="warn">预算已用完，真钱奖改发 UVT</span> : <>还剩 <b className="h4-num">{amountText(budgetLeft)}</b> USDT</>}</>}</>}</span>
+            </div>
+          </GuardCard>}
           {cap && <GuardCard title={GUARD_NAME.cap} icon={<Ticket size={14} aria-hidden />} value={<small>按各档的每日库存</small>}
             sub={`${tiers.filter((tier) => numericValue(tier.dailyStock) > 0).length} 档限量，其余不限`}
             explain="每天每档最多发几次由奖项表的「每日库存」决定，这一条只是历史记录，不能改。" action={<StatusTag tone="neutral">历史只读</StatusTag>} />}
