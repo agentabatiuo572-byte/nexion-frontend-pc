@@ -16,7 +16,7 @@ import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 /** 90 天不再提供。已有的 90 天草稿还看得到，但不能连别的改动一起保存（PCN-38）。 */
 export const FORECAST_90D_BLOCK = "90 天不再提供，改成 7 天或 30 天才能保存。";
-const UVT_VALUATION_NOTE = "UVT 按最新有效价格折算；没有有效价格时，UVT 金额、应付款总额和占比显示「暂时无法估值」，储备、其他类金额和到期预测照常显示。";
+const UVT_VALUATION_NOTE = "UVT 按最新有效价格折算；没有有效价格时，含 UVT 的金额和占比显示「暂时无法估值」，其余照常显示。";
 
 export type ForecastValues = Pick<D3ForecastConfig, "reserveCategories" | "liabilityCategories" | "forecastWindow" | "genesisIncluded" | "includeFarLiabilities" | "stakingInterestMode" | "trialStressEnabled">;
 export interface Loadable<T> { data: T | null; loading: boolean; error: string }
@@ -404,14 +404,14 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt, statDigits) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。${shown ? `精确值 ${shown.cumulativeUsdt} USDT。` : ""}`} />
             {/* 能付多久是状态，和资金概况那句话同一个颜色；覆盖率是和红线比的数，角色四（VS-12）。 */}
             <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期，算不出能付多少天。" : `按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
-            <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付；和「能付多久」分开算。${UVT_VALUATION_NOTE}${coverage === null ? "" : `精确值 ${coverage}%。`}`} />
+            <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付；和「能付多久」分开算。UVT 没有有效价格时显示「暂时无法估值」。${coverage === null ? "" : `精确值 ${coverage}%。`}`} />
           </StatBand>
           <MaturityPanel maturity={shown} loading={maturity.loading} error={maturity.error} onRetry={onMaturityRetry} />
           <Panel
             flush
             title="应付款 · 9 类"
             sub={main.liabilities.totalUsdt === null ? "UVT 应付款缺少有效价格" : `${breakdown.filter((row) => row.amountUsdt !== null && row.amountUsdt > 0).length} 类有金额`}
-            explain={`九类里统计了 ${main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试：开启后算进到期预测和资金安全等级，不算进应付款和差额。${UVT_VALUATION_NOTE}`}
+            explain={`九类里统计了 ${main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试：开启后算进到期预测和资金安全等级，不算进应付款和差额。UVT 没有有效价格时，含 UVT 的金额和占比显示「暂时无法估值」。`}
             icon={ReceiptText}
             tone="role-2"
             actions={canExport ? <Button size="sm" disabledReason={exportBlocked} onClick={onExport}>导出应付款 CSV</Button> : undefined}
