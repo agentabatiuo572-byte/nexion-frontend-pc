@@ -202,7 +202,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
   const revoke = (row: LegalTermsVersion) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>撤回法律条款 · {row.version}</>,
     title: "撤回法律条款",
-    detail: <>{jurisdiction !== "GLOBAL" ? "App 现在只读 GLOBAL，用户本来就看不到这个版本。" : locale === "en" ? "有自己已发布版本的中文、越南语用户不受影响。" : `看${localeName(locale)}的用户改看英文版。`}撤回不走审批。</>,
+    detail: <>{jurisdiction !== "GLOBAL" ? "App 现在只读 GLOBAL，用户本来就看不到这个版本。" : locale === "en" ? "中文、越南语自己的版本不受影响。" : `看${localeName(locale)}的用户改看英文版。`}撤回不走审批。</>,
     amplifies: false,
     confirmTone: "danger",
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,

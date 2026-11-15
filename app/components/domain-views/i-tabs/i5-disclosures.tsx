@@ -801,7 +801,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     <Fold title="适用范围目录" icon={Globe2} tone="role-2" summary={`${catalog.length} 个适用范围 · ${activeCatalog.length} 个已启用`}
       actions={canDraft ? <Button size="sm" disabledReason={blocked()} onClick={() => editJurisdiction()}>新增适用范围</Button> : undefined}>
       <Table label="适用范围目录">
-        <thead><tr><Th>适用范围</Th><Th>状态</Th><Th align="right">版本数<Explain label="版本数怎么算" content="这个适用范围用过的版本都算，删掉的草稿也算，所以可能比版本列表多。不是 0 就不能删除。" /></Th><Th>当前生效设置</Th><Th>最后操作</Th>{(canDraft || canPublish) && <Th sticky="end" align="right">操作</Th>}</tr></thead>
+        <thead><tr><Th>适用范围</Th><Th>状态</Th><Th align="right"><Explain label="版本数怎么算" content="这个适用范围用过的版本都算，删掉的草稿也算，所以可能比版本列表多。不是 0 就不能删除。">版本数</Explain></Th><Th>当前生效设置</Th><Th>最后操作</Th>{(canDraft || canPublish) && <Th sticky="end" align="right">操作</Th>}</tr></thead>
         <tbody>
           {catalog.map((item) => {
             const status = item.status.toLowerCase();
