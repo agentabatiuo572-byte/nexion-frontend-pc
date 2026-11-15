@@ -201,7 +201,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     if (editFaq) {
       const currentFaq = faqs.find((faq) => faq.id === editFaq.id);
       if (!currentFaq || currentFaq.version !== editFaq.version || currentFaq.status !== editFaq.status) {
-        toast("常见问答 已更新或不可用，请保留当前输入，重新核对最新内容后再编辑。");
+        toast("这条问答刚被别人改过或已不在，你填的内容还在；核对最新内容后再保存。");
         return false;
       }
     }
@@ -339,7 +339,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
         : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void (needsRead ? readCurrent() : ctx.refreshContent())}>重新读取</Button>}
             hint={`暂时不能新建和修改。${loadError ? "客服中心的其他数据也没同步成功。" : ""}`}
-            explain={`知识库和旧的工单处理时限数据一起读取、一起校验，任何一部分不完整，问答都会读不到。点「重新读取」${needsRead ? "只重读知识库" : "会重读整个客服中心"}。`}>问答读不到，现在不知道线上有哪些</Conclusion></div>
+            explain={`问答和旧的工单处理时限数据是一起读的，其中一份读不全，问答就显示不了。点「重新读取」${needsRead ? "只重读知识库" : "会重读整个客服中心"}。`}>问答读不到，现在不知道线上有哪些</Conclusion></div>
           : visibleFaqs.length === 0 ? <Conclusion state="neutral" icon={BookOpenText} hint={canEdit ? "点右上角「新建问答」写第一条。" : undefined}>还没有问答</Conclusion>
             : unreachable.length > 0
               ? <Conclusion state="warn" hint="可以筛「显示位置」和「语言」找到它们。"
