@@ -5,6 +5,7 @@ import { ArrowRightLeft } from "lucide-react";
 import { BlockState, Button, Check, ConfigList, ConfigRow, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, Notice, NumberInput, Panel, Select, ReleaseModal } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchE6ComputeConfig } from "@/lib/admin/e6-client";
@@ -129,12 +130,14 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             }
         }
         catch (failure) {
-            if (isExplicitRejection(failure))
-                proposals.forget(fingerprint, key);
+            const response = failure as { httpStatus?: number; apiCode?: number };
+            const firstRejection = !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
+                && isDeterministicRejection(response.httpStatus, response.apiCode);
+            if (firstRejection) proposals.forget(fingerprint, key);
             if (live.current) {
                 syncPending();
-                setConfirm(null);
-                if (record(failure) && [401, 403].includes(Number(failure.status))) {
+                if (!firstRejection) setConfirm(null);
+                if (!firstRejection && record(failure) && [401, 403].includes(Number(failure.status))) {
                     setDenied(true);
                     setPolicy(null);
                     setPending(null);
@@ -142,6 +145,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
                 }
                 setError(isA2OutcomeUncertainError(failure) ? "审批提案结果暂不确定，原请求已保留。请查询审批队列，不要再次提交。" : (record(failure) ? phoneConflictMessage(failure.details) : null) ?? "审批提案被拒绝，请重新读取配置并核对权限、理由及版本。草稿已保留。");
             }
+            throw failure;
         }
         finally {
             mutation.current = false;
