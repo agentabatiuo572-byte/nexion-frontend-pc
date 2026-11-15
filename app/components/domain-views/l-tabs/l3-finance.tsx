@@ -71,6 +71,9 @@ const MATURITY_EXPLAIN: Record<string, ReactNode> = {
 };
 
 const VALUATION_NOTE = "UVT 锁仓到期应付按最新有效价格折算。没有有效价格时，这一类金额、应付款合计、覆盖率、差额和各类占比都写「暂时无法估值」；储备和其余 8 类照常显示。";
+/** The coverage read did not say whether it used a valid price: not the same as UVT having no price. */
+const COVERAGE_UNREAD = "暂时读不到";
+const COVERAGE_UNREAD_NOTE = "这次读到的覆盖率没有带上「是否按有效价格算」的说明，所以先不显示覆盖率和差额，也不下结论。储备和九类应付款照常显示，重新加载后再看。";
 
 type ExportOutcome =
   | { kind: "summary-done" | "summary-unknown" }
@@ -563,6 +566,10 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const valuationUnavailable = data.valuationReliable === false;
   const coverage = treasuryRaw.valuedCoverageRatio as number | null;
   const coverageUnavailable = coverage === null || valuationUnavailable;
+  // Liabilities still say their price was valid, but the coverage read gave no reliable flag.
+  const coverageUnread = coverageUnavailable && !valuationUnavailable;
+  const coverageGone = coverageUnread ? COVERAGE_UNREAD : TREASURY_VALUATION_UNAVAILABLE;
+  const coverageNote = coverageUnread ? COVERAGE_UNREAD_NOTE : VALUATION_NOTE;
 
   const reserve = num(ledgerRaw.reserveUsd);
   const liabilityTotal = valuationUnavailable ? null : data.valuedLiabilitiesUsd as number;
@@ -641,7 +648,9 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const overviewLink = reach(OVERVIEW_PAGE) ? <Link className="rd-link" href={OVERVIEW_PAGE}>去「{overviewName}」看处理建议</Link> : null;
   const conclusionExplain = <><p>兑付覆盖率 = 可用储备 ÷ 应付款，和「{overviewName}」是同一个数。低于红线时提现审核不能放行，低于健康线算警戒。</p><p>这页只能查看和导出，不会改账。</p></>;
   const conclusion = zone === "unknown"
-    ? <Conclusion state="unknown" icon={ShieldQuestion} explain={VALUATION_NOTE} explainTitle="为什么不下结论" hint="储备、其余 8 类应付款、收入、提现和到期照常显示。">资金状态：UVT 暂时无法估值，覆盖率不下结论</Conclusion>
+    ? coverageUnread
+      ? <Conclusion state="unknown" icon={ShieldQuestion} explain={COVERAGE_UNREAD_NOTE} explainTitle="为什么不下结论" hint="储备、九类应付款、收入、提现和到期照常显示。" action={<Button size="sm" onClick={() => void ctx.reloadBi?.()}>重新加载</Button>}>资金状态：覆盖率暂时读不到，先不下结论</Conclusion>
+      : <Conclusion state="unknown" icon={ShieldQuestion} explain={VALUATION_NOTE} explainTitle="为什么不下结论" hint="储备、其余 8 类应付款、收入、提现和到期照常显示。">资金状态：UVT 暂时无法估值，覆盖率不下结论</Conclusion>
     : noLiability
       ? <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>资金安全：目前没有应付款</Conclusion>
       : zone === "danger"
@@ -661,9 +670,9 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       <Stat tone="role-2" icon={ArrowUpFromLine} label="本期提现确认" value={count(redemption.confirmed)} unit="笔" sub={`申请 ${count(redemption.submitted)} 笔`}
         explain="提现只统计笔数，没有金额。按报表周期和注册业务月统计；本期确认的可能是上期申请的。" />
       <Stat tone={zone === "danger" || zone === "warn" ? zone : "role-4"} icon={Gauge} label="兑付覆盖率"
-        value={coverageUnavailable ? TREASURY_VALUATION_UNAVAILABLE : noLiability ? "无应付款" : pctText(coverage)}
+        value={coverageUnavailable ? coverageGone : noLiability ? "无应付款" : pctText(coverage)}
         sub={`红线 ${pctText(redLine)} · 健康线 ${pctText(healthyLine)}`}
-        explain={<><p>可用储备 ÷ 应付款，读取那一刻的数，不随周期变。</p>{coverageUnavailable && <p>{VALUATION_NOTE}</p>}</>} />
+        explain={<><p>可用储备 ÷ 应付款，读取那一刻的数，不随周期变。</p>{coverageUnavailable && <p>{coverageNote}</p>}</>} />
       <Stat tone="role-3" icon={CalendarClock} label="未来 7 天到期" value={amountText(due7Total, statDigits)} unit="USDT" sub={`未来 30 天 ${usdt(due30Total, statDigits)}`}
         explain="提现、质押奖励利息、创世节点收益三类相加，从今天（业务日）算起。质押只算利息，不含本金。" />
     </StatBand>
@@ -698,7 +707,9 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       explain={<><p>可用储备 ÷ 应付款，和「{overviewName}」同一个数，不随报表周期变。</p><p>红线和健康线在「{overviewName}」设置，这页只读。</p></>}>
       <div className="rd-stack">
         {coverageUnavailable
-          ? <BlockState state="empty" title={`覆盖率${TREASURY_VALUATION_UNAVAILABLE}`} detail="UVT 锁仓到期应付缺少有效价格，算不出应付款合计。红线和健康线照常生效。" />
+          ? coverageUnread
+            ? <BlockState state="empty" title={`覆盖率${COVERAGE_UNREAD}`} detail="这次没读到覆盖率是否按有效价格算，先不显示。储备和应付款照常，红线和健康线照常生效。" />
+            : <BlockState state="empty" title={`覆盖率${TREASURY_VALUATION_UNAVAILABLE}`} detail="UVT 锁仓到期应付缺少有效价格，算不出应付款合计。红线和健康线照常生效。" />
           : noLiability
             ? <p className="rd-note">目前没有应付款，不画覆盖率尺。</p>
             : <ThresholdMeter label="覆盖率和红线、健康线"
@@ -707,14 +718,14 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
         <KeyValues rows={[
           { key: "reserve", label: "可用储备", value: usdt(reserve, moneyDigits), explain: "平台现在能动用的钱，和「资金与应付款总览」同一个数。不是用户钱包余额。" },
           { key: "liability", label: "应付款", value: usdt(liabilityTotal, moneyDigits), explain: valuationUnavailable ? VALUATION_NOTE : "右边九类相加，是之后要付给用户的全部钱，不是都能马上提现。" },
-          { key: "net", label: "差额（储备 − 应付款）", value: netExposure === null ? TREASURY_VALUATION_UNAVAILABLE : <span className="l3-delta" data-dir={netExposure > 0 ? "up" : netExposure < 0 ? "down" : undefined}>{`${netExposure > 0 ? "+" : netExposure < 0 ? "−" : ""}${netAmount} USDT`}</span>,
-            explain: coverageUnavailable ? VALUATION_NOTE : "负数表示储备不够付全部应付款，不等于某一笔提现会马上失败。" },
+          { key: "net", label: "差额（储备 − 应付款）", value: netExposure === null ? coverageGone : <span className="l3-delta" data-dir={netExposure > 0 ? "up" : netExposure < 0 ? "down" : undefined}>{`${netExposure > 0 ? "+" : netExposure < 0 ? "−" : ""}${netAmount} USDT`}</span>,
+            explain: coverageUnavailable ? coverageNote : "负数表示储备不够付全部应付款，不等于某一笔提现会马上失败。" },
         ]} />
         <div className="l3-trend">
           <h3 className="l3-sub">近 {coverageSeries.length} 个时段（{seriesRange}）<Explain label="覆盖率走势怎么算" content="系统按资金账本倒推每个时段当时的储备，应付款一律用现在的值（应付款没有历史记录），所以这条线不是当时真实的覆盖率，起伏只来自储备进出。时间按服务器时间。" /></h3>
           <p className="l3-caliber">历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化{trendWord ? ` · ${trendWord}` : ""}</p>
           {coverageUnavailable
-            ? <p className="rd-note">覆盖率{TREASURY_VALUATION_UNAVAILABLE}，走势不画。</p>
+            ? <p className="rd-note">覆盖率{coverageGone}，走势不画。</p>
             : <TrendLines label="近几个时段的覆盖率" ticks={coverageTicks.map((tick) => tick.slice(-5))} format={pctText} axisFormat={(value) => `${Number(value.toFixed(1))}%`} height={120}
               series={[{ key: "coverage", label: "覆盖率", slot: 4, values: coverageSeries }]}
               marks={[{ key: "red", text: `红线 ${pctText(redLine)}`, value: redLine, tone: "danger" }, { key: "healthy", text: `健康线 ${pctText(healthyLine)}`, value: healthyLine, tone: "ok" }]} />}
