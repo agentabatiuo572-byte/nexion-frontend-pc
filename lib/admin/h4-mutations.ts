@@ -11,13 +11,22 @@ import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } 
 import { hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT } from "./pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
+import { promotionRead } from "./promotion-client";
+import type { Promotion, RewardAdmin } from "./promotion-types";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Resource = "overview" | "rules" | "raffles";
 type Direct = { path: string; method: "POST" | "PATCH" | "DELETE"; body: string };
+export type H4UploadTarget =
+  | { kind: "banner"; objectId: string; version: number; revision: number; position: "bannerAssetId" }
+  | { kind: "evidence"; objectId: string; revision: number; position: "evidenceAssetId"; operation: string };
+export type H4UploadRestoration = { canAutoRestore: boolean; restored: boolean; reason: string };
 export type H4Command = H4StoredCommand & {
   store: keyof typeof h4CommandStores; owner: number; scope: string; action: string; reason: string;
   request: Direct | { proposal: Proposal }; acknowledged?: boolean;
+  asset?: UploadedAsset;
+  uploadTarget?: H4UploadTarget;
+  restoration?: H4UploadRestoration;
 };
 export type H4ApprovalReceipt = { h4Approval: true; ticket: A2OperationRow };
 export const isH4ApprovalReceipt = (value: unknown): value is H4ApprovalReceipt => !!(value as H4ApprovalReceipt | null)?.h4Approval;
@@ -76,7 +85,11 @@ export function pendingH4Commands(): H4Command[] {
         if (raw.owner !== actor.adminId) return [];
         const b = JSON.parse(raw.request.body);
         if (b.reason !== raw.reason || !(raw.request.path.startsWith("/media/uploads?") || /^\/(?:quest-events\/(?:events|wheel-tiers|wheel-guards)(?:\/[^/]+)*(?:\/content\/[^/]+\/[^/]+)?|event-rules\/[^/]+|genesis-raffle(?:\/[^/]+)?)$/.test(raw.request.path))) return [];
-        return [{ ...raw, store } as H4Command];
+        const target = raw.uploadTarget;
+        const validTarget = target && typeof target.objectId === "string" && !!target.objectId && Number.isSafeInteger(target.revision)
+          && (target.kind === "banner" && target.position === "bannerAssetId" && Number.isSafeInteger(target.version)
+            || target.kind === "evidence" && target.position === "evidenceAssetId" && typeof target.operation === "string");
+        return [{ ...raw, store, uploadTarget: validTarget ? target : undefined } as H4Command];
       }
       if (!hasPersistedPendingCommandOwner(String(actor.adminId))) return [];
       if (store === "delete") return [{ ...raw, store, owner: actor.adminId, scope: `H/h4_legacy_event/${raw.eventId}`, action: `删除既有活动 · ${raw.eventId}`, reason: raw.reason,
@@ -92,7 +105,39 @@ export function pendingH4Commands(): H4Command[] {
   }));
 }
 export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.scope === scope && !r.asset);
-export const recoveredH4Uploads = () => pendingH4Commands().filter(r => r.scope.includes("/h4_media/") && !!r.asset);
+export const recoveredH4Uploads = () => pendingH4Commands().filter(r => r.scope.includes("/h4_media/") && !!r.asset).map(r => ({ ...r,
+  restoration: r.restoration ?? { canAutoRestore: !!r.uploadTarget, restored: false, reason: r.uploadTarget ? "等待在原对象中恢复" : "旧记录未保存目标对象，请重新选择" },
+}));
+/** Restore only the original field. This changes the draft, never saves it. */
+export async function restoreH4Uploads(target: H4UploadTarget, writable: boolean, apply: (assetId: string) => void, restored: Set<string>) {
+  const results: Array<{ commandKey: string } & H4UploadRestoration> = [];
+  for (const record of recoveredH4Uploads()) {
+    const saved = record.uploadTarget;
+    if (!saved || saved.kind !== target.kind || saved.objectId !== target.objectId || saved.position !== target.position) continue;
+    if (restored.has(record.commandKey)) { results.push({ commandKey: record.commandKey, ...record.restoration }); continue; }
+    let reason = "";
+    if (!writable) reason = "原对象当前不允许修改";
+    else if (saved.revision !== target.revision || saved.kind === "banner" && target.kind === "banner" && saved.version !== target.version
+      || saved.kind === "evidence" && target.kind === "evidence" && saved.operation !== target.operation) reason = "原对象的版本或操作已变化";
+    else {
+      try {
+        if (saved.kind === "banner") {
+          const current = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(saved.objectId)}`);
+          if (current.deleted || ["ENDED", "ARCHIVED"].includes(current.state) || current.current?.state !== "DRAFT"
+            || current.current.version !== saved.version || current.current.revision !== saved.revision) reason = "原活动草稿已不存在或状态已变化";
+        } else {
+          const current = await promotionRead<RewardAdmin>(`/promotion-rewards/${encodeURIComponent(saved.objectId)}`);
+          if (current.revision !== saved.revision) reason = "原奖励义务已变化";
+        }
+      } catch { reason = "无法确认原对象是否仍存在且允许修改"; }
+    }
+    const restoration = { canAutoRestore: !reason, restored: !reason, reason };
+    if (!reason) { apply(record.asset!.assetId); restored.add(record.commandKey); }
+    h4CommandStores[record.store].remember(record.fingerprint, record.commandKey, { ...record, restoration });
+    results.push({ commandKey: record.commandKey, ...restoration });
+  }
+  return results;
+}
 export async function acknowledgeH4Upload(record: H4Command) { if (!record.asset) throw new Error("H4_RESULT_UNKNOWN"); await deleteH4UploadFile(record.commandKey); forget(record); }
 export const h4TicketObservations = () => {
   const owner = useAdminAuth.getState().session?.adminId;
@@ -200,7 +245,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
     }
     throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");
   }
-  retain({ ...r, acknowledged: true, ...(media ? { asset: result } : {}) });
+  retain({ ...r, acknowledged: true, ...(media ? { asset: result as UploadedAsset } : {}) });
   if (media) {
     // Local file cleanup is outside the write-outcome catch: it cannot turn a
     // validated successful upload into an unknown backend result.
@@ -285,7 +330,7 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
 
 export const pendingH4EventDeletes = () => pendingH4Commands().filter(r => r.store === "delete");
 
-export async function uploadH4Media(file: File, params: URLSearchParams): Promise<UploadedAsset> {
+export async function uploadH4Media(file: File, params: URLSearchParams, uploadTarget?: H4UploadTarget): Promise<UploadedAsset> {
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
   const scope = `H/h4_media/${params.get("usage")}`;
@@ -297,7 +342,8 @@ export async function uploadH4Media(file: File, params: URLSearchParams): Promis
   const multipartContentType = wire.headers.get("Content-Type")!;
   const savedFile = new File([await wire.arrayBuffer()], file.name, { type: file.type });
   const record: H4Command = { store: "direct", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: key,
-    createdAt: now, expiresAt: now + 86400000, action: params.get("usage") === "promotion-banner" ? "上传宣传图" : "上传处置证据", reason: "",
+    createdAt: now, expiresAt: now + 86400000, action: params.get("usage") === "promotion-banner" ? "上传宣传图" : "上传处置证据", reason: "", uploadTarget,
+    restoration: { canAutoRestore: !!uploadTarget, restored: false, reason: uploadTarget ? "等待在原对象中恢复" : "旧记录未保存目标对象，请重新选择" },
     request: { path: `/media/uploads?${params}`, method: "POST", body: JSON.stringify({ reason: "", fileName: file.name, contentType: file.type, size: file.size, multipartContentType, params: params.toString() }) } };
   try { await saveH4UploadFile(key, savedFile); return await send(record, false) as UploadedAsset; }
   finally { if (!pendingH4Commands().some(r => r.commandKey === key)) await deleteH4UploadFile(key); }

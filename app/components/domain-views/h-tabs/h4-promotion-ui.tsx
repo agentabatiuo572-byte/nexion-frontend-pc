@@ -1,4 +1,5 @@
 "use client";
+import { restoreH4Uploads, type H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
@@ -186,6 +187,14 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     const initial = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId)?.body as Record<string, unknown> | undefined;
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
     const record = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId);
+    const restoredUploads = useRef(new Set<string>());
+    const uploadTarget: H4UploadTarget = { kind: "evidence", objectId: intent.targetId, revision: Number(body.expectedRevision), position: "evidenceAssetId", operation: intent.operation };
+    useEffect(() => {
+        if (!requireEvidence || evidenceMode !== "upload") return;
+        const restore = () => { void restoreH4Uploads(uploadTarget, writeAllowed && !record, assetId => { setUpload({ evidenceAssetId: assetId }); setEvidence([assetId]); }, restoredUploads.current); };
+        restore(); window.addEventListener("admin-h4-pending-changed", restore);
+        return () => window.removeEventListener("admin-h4-pending-changed", restore);
+    }, [intent.targetId, intent.operation, body.expectedRevision, writeAllowed, record?.commandKey]);
     const [reloadNeeded, setReloadNeeded] = useState(false);
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
     const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
@@ -246,7 +255,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     {record && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{children}</fieldset>
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}><RdField label="操作理由" required hint={policy.data ? `${policy.data.minChars}–${policy.data.maxChars} 字，和操作一起留痕` : '正在读取理由要求'}>{control => <Textarea {...control} value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars} count={policy.data ? `${reasonLength}/${policy.data.maxChars}` : undefined}/>}</RdField>{evidenceOptions.length > 0 && <fieldset className="h4-fieldset h4-evidence"><legend className="rd-form-label">关联证据{requireEvidence ? <span className="rd-form-required" aria-hidden>*</span> : null}</legend>{evidenceOptions.map(option => <RdCheck key={option.value} label={option.label} checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>)}</fieldset>}</fieldset>
-    {requireEvidence && evidenceMode === 'upload' && <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{evidenceNote}<BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
+    {requireEvidence && evidenceMode === 'upload' && <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{evidenceNote}<BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', uploadTarget, help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
     {!writeAllowed && <RdNotice tone="warn" title="当前操作已停用">授权或依赖数据当前无法支持此操作。原输入与操作记录继续保留；查询原结果也要这项操作的权限，可能被拒。</RdNotice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!error && <RdNotice tone="danger" title="操作尚未完成">{displayAdminError(error)}{error instanceof PromotionApiError&&error.fieldErrors.map((f,i)=><p key={i} className="h4-input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</RdNotice>}{note && <RdNotice tone="neutral" title="查询结果">{note}</RdNotice>}<span hidden>{version}</span>
   </Dialog>;
 }
