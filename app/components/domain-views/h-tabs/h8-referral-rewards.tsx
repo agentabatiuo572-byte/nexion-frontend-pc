@@ -12,7 +12,7 @@ import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useReach } from "@/lib/nav/use-reach";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, Check, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import {
@@ -83,7 +83,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invitedUserIdInput, setInvitedUserIdInput] = useState("");
-  const [mc, setMc] = useState<ActionConfirmReq | null>(null);
+  const [mc, setMc] = useState<(ActionConfirmReq & { commandKey?: string }) | null>(null);
   const loadGeneration = useRef(0);
   const [, changed] = useReducer((value: number) => value + 1, 0);
   const [readReady, setReadReady] = useState(false);
@@ -92,7 +92,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [stale, setStale] = useState<{ param?: H8Param; value?: string } | null>(null);
   const [releasing, setReleasing] = useState<H8RewardCommand | null>(null);
   const conflictDraft = useHConflictDraft(readReady && !loading && !error);
-  const openConfirm = (req: ActionConfirmReq | null) => setMc(req ? conflictDraft.action(req) : null);
+  const openConfirm = (req: (ActionConfirmReq & { commandKey?: string }) | null) => setMc(req ? conflictDraft.action(req) : null);
+  const confirmation = useRef(mc);
+  confirmation.current = mc;
   const currentRead = useRef({ data, ready: readReady });
   currentRead.current = { data, ready: readReady && !loading };
 
@@ -141,7 +143,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const freshBlocked = !readReady || loading ? displayAdminError(new Error("H8_OVERVIEW_REQUIRED")) : undefined;
 
   const finishCommand = async (record: H8RewardCommand, ticket: Awaited<ReturnType<typeof sendH8RewardCommand>>) => {
-    openConfirm(null);
+    setMc(current => current?.commandKey === record.commandKey ? null : current);
     currentRead.current.ready = false;
     setReadReady(false);
     changed();
@@ -156,6 +158,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     }
   };
   const sendCommand = async (record: H8RewardCommand, recovering: boolean) => {
+    const request = confirmation.current;
+    if (request && !recovering) request.commandKey = record.commandKey;
     try {
       const ticket = await sendH8RewardCommand(record, recovering);
       // 重建后提交成功，「没有保存」的提示随之清掉（同 H3、H5）。
@@ -166,7 +170,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       // A resolved recovery must not retain a closure that can dispatch the old request.
       if (isHGrowthReadConflict(error)) setStale({ param: [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey), value: record.value });
       if (isHGrowthReadConflict(error) || recovering && !pendingH8RewardCommands(record.adminId).some(r => r.commandKey === record.commandKey)) {
-        openConfirm(null);
+        setMc(current => current?.commandKey === record.commandKey ? null : current);
         currentRead.current.ready = false;
         setReadReady(false);
         await load();
@@ -254,7 +258,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       if (dir === "same") return <StatusTag tone="neutral">和现在一样</StatusTag>;
       return undefined;
     };
-    openConfirm({ rebaseValue: fixedValue, briefKind: "config",
+    openConfirm({ commandKey: pending?.commandKey, rebaseValue: fixedValue, briefKind: "config",
       action: isEnabled ? enabling ? "启用新人礼与邀请奖励" : "停用新人礼与邀请奖励" : `调整邀请奖励 · ${param.label}`,
       title: isEnabled ? enabling ? "启用新人礼与邀请奖励" : "停用新人礼与邀请奖励" : `调整${paramTitle(param)}`,
       detail: isEnabled
@@ -441,7 +445,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {proposeBlock && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，提交会被拒绝；请有权限的同事发起</Fact>}
       </Facts>;
     };
-    openConfirm({ briefKind: "funds",
+    openConfirm({ commandKey: pending?.commandKey, briefKind: "funds",
     action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
     title: targeted ? "给指定新人结算" : "批量结算邀请奖励",
     detail: targeted
@@ -547,7 +551,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       : "奖励配置或当月加成已变化。已读到最新值，你填的还在，核对后再提交。"}
   </Notice>;
 
-  const confirmModal = mc && (
+  // 固定 key，三种状态用同一个根元素：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
+  const confirmModal = mc && (<Fragment key="h8-confirm">
     <OperationConfirmModal initialReason={mc.initialReason} briefKind={mc.briefKind}
       key={mc.formKey}
       action={mc.action}
@@ -570,11 +575,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       getPendingReason={mc.inlineApproval ? mc.getPendingReason : undefined}
       getPendingBusinessValue={mc.getPendingBusinessValue}
       completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
-      onClose={() => setMc(null)}
+      onClose={() => setMc(current => current === mc ? null : current)}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
           await mc.run(reason, newValue, businessValue);
-          setMc(null);
+          setMc(current => current === mc ? null : current);
         } catch (failure) {
           // 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。
           if (failure instanceof HApprovalRequired) {
@@ -589,21 +594,21 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         }
       }}
     />
-  );
+  </Fragment>);
 
   const header = <PageHeader pageId="H8" title="新人礼与邀请奖励"
     summary="新人礼和邀请奖励发多少、怎么发、结算到哪一步。"
     readOnly={!canWrite && !canSettle ? "只读：可以查看奖励和结算记录，不能改奖励、不能结算" : undefined} />;
 
-  if (loading && !data) return <>
+  if (loading && !data) return <div className="h8-page">
     {header}
     <Conclusion state="unknown">正在读取奖励设置和结算情况…</Conclusion>
     {recoveryNotice}
     {savedUnreadNotice}
     <BlockState state="loading" title="正在读取新人礼与邀请奖励…" />
     {confirmModal}
-  </>;
-  if (!data) return <>
+  </div>;
+  if (!data) return <div className="h8-page">
     {header}
     <Conclusion state="unknown">读不到奖励设置，现在判断不了奖励开没开、有多少在等结算</Conclusion>
     {recoveryNotice}
@@ -613,7 +618,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       detail={<>页面不显示任何旧数据。<Explain label="失败原因" content={error ?? "没有收到数据。"} /></>}
       retryLabel="重新加载" onRetry={() => void load()} />
     {confirmModal}
-  </>;
+  </div>;
 
   const targetUserId = Number(invitedUserIdInput.trim());
   const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);

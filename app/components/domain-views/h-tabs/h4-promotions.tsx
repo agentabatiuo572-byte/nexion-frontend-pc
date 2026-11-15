@@ -1,6 +1,6 @@
 "use client";
 import { H4DateTimeField } from './h4-date-time-field';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { HCtx } from './types';
 import type { Catalog, CommandReceipt, Promotion, PromotionListItem, PromotionPage, Template } from '@/lib/admin/promotion-types';
@@ -50,6 +50,8 @@ export default function H4Promotions({ ctx, legacy }: {
     const [beijing, setBeijing] = useState(false), displayZone = beijing ? 'Asia/Shanghai' : undefined;
     const [recoveredExport, setRecoveredExport] = useState<{ activityId: string; exportId: string } | null>(null);
     const [deleting, setDeleting] = useState<Promotion | null>(null), [deleteLoading, setDeleteLoading] = useState(false), [deletedId, setDeletedId] = useState('');
+    const ongoing = useRef({ creating, template, copy, deleting, policiesOpen, screen, id });
+    ongoing.current = { creating, template, copy, deleting, policiesOpen, screen, id };
     const catalog = useRead(() => ctx.can('growth_promotion_read') ? promotionRead<Catalog>('/promotion-catalog') : Promise.reject(new Error('你没有查看促销活动的权限。')), [ctx.can]);
     const list = useRead(() => ctx.can('growth_promotion_read') ? promotionRead<PromotionPage>('/promotions', query) : Promise.reject(new Error('你没有查看促销活动的权限。')), [JSON.stringify(query), ctx.can], routeReady && screen === 'list' && !old);
     const reloadList = () => {
@@ -58,7 +60,12 @@ export default function H4Promotions({ ctx, legacy }: {
         list.reload();
     };
     useEffect(() => {
-        const settled = () => { setCreating(false); setTemplate(null); setCopy(null); setDeleting(null); setPoliciesOpen(false); catalog.reload(); reloadList(); if (id) retryActivity(); };
+        const settled = (event: Event) => {
+            const commandKey = (event as CustomEvent<string>).detail;
+            setPending(current => current?.commandKey === commandKey ? null : current);
+            if (pendingPromotionCommands().some(record => record.commandKey === commandKey && record.receipt)) ctx.toast('原操作已确认成功，正在更新活动资料。');
+            catalog.reload(); reloadList(); if (id) retryActivity();
+        };
         window.addEventListener('admin-promotion-original-settled', settled);
         return () => window.removeEventListener('admin-promotion-original-settled', settled);
     }, [id]);
@@ -87,9 +94,9 @@ export default function H4Promotions({ ctx, legacy }: {
         setActivityBusy(false); }); return () => { current = false; }; }, [id]);
     const changeStep=useCallback((step:number)=>{setEditStep(step);const url=new URL(location.href);url.searchParams.set('step',String(step));history.replaceState({},'',url);},[]);
     const refresh = async (nextStep?: number) => { if (!id)
-        return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); reloadList(); };
-    const afterCreate = async (result: CommandReceipt) => { if (!result.resource)
-        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); reloadList(); navigate('edit', target); };
+        return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if (ongoing.current.id === id) { if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); } reloadList(); return latest; };
+    const afterCreate = async (result: CommandReceipt, isCurrent: () => boolean = () => true) => { if (!result.resource)
+        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); reloadList(); if (!isCurrent()) return; setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); navigate('edit', target); };
     const openDelete = async (target: string) => {
         if (!can('growth_promotion_archive') || deleteLoading) return;
         setDeleteLoading(true); setNotice(''); setDeletedId('');
@@ -100,7 +107,7 @@ export default function H4Promotions({ ctx, legacy }: {
         } catch (error) { setNotice(error instanceof Error ? error.message : '活动资料读取失败，请刷新后重试。'); }
         finally { setDeleteLoading(false); }
     };
-    const afterDelete = (result: CommandReceipt) => { setDeletedId(result.targetId); setDeleting(null); setActivity(null); setActivityError(null); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); navigate('list', ''); reloadList(); };
+    const afterDelete = (result: CommandReceipt, isCurrent: () => boolean) => { setDeletedId(result.targetId); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); reloadList(); if (!isCurrent()) return; setDeleting(null); setActivity(null); setActivityError(null); navigate('list', ''); };
     const pendingItems = pendingPromotionCommands();
     const legacyUnknown = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request) && !h4CommandHasPendingTicket(r.commandKey)).length;
     const uploadUnknown = pendingH4Commands().filter(r => !r.asset && r.scope.includes('/h4_media/')).length;
@@ -187,27 +194,27 @@ export default function H4Promotions({ ctx, legacy }: {
     {notice && <Notice tone="neutral" title="操作反馈" action={deletedId ? <Button size="sm" onClick={() => navigate('detail', deletedId)}>查看历史记录</Button> : undefined}>{notice}</Notice>}
     {screen === 'list' ? listScreen : !pageReady && (pageLoading || readErrors.length > 0) ? <>{screen === 'edit' && <PromotionSteps step={editStep} onStep={changeStep} disabled/>}<PromotionReadPanel title={screen === 'edit' ? ['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep] : heading[0]} loading={readErrors.length === 0} errors={readErrors}/></> : <>
     {pageReady && readErrors.map(item => <ReadError key={item.target} {...item}/>)}
-    {!activity || activity.activityId !== id || !catalog.data ? <Empty title="活动资料尚未就绪" action={<Button onClick={() => navigate('list')}>返回列表</Button>}/> : <>{screen === 'edit' && activity.current && <PromotionEditor key={`${activity.activityId}:${activity.current.revision}`} activity={activity} catalog={catalog.data} can={can} onSaved={refresh} initialStep={editStep} onStep={changeStep} onBack={() => navigate('detail')} onReview={() => navigate('review')}/>}{(screen === 'detail' || screen === 'review') && <PromotionReview key={`${id}:${screen}`} activity={activity} catalog={catalog.data} can={can} onRefresh={refresh} onReload={setActivity} onCandidateConflict={() => { setNotice('内容已变化，本次未执行。请核对刷新后的候选内容，再重新打开确认。'); retryActivity(); }} onCopyCreated={afterCreate} onEdit={() => navigate('edit')} onRewards={() => navigate('rewards')} onMetrics={() => navigate('metrics')} onBack={() => navigate('detail')} review={screen === 'review'} displayZone={displayZone} zoneSwitch={<ZoneSwitch beijing={beijing} onChange={setBeijing} zones={[activity.displayTimezone || 'UTC']}/>} detailActions={screen === 'detail' ? <><Button variant="primary" disabledReason={activity.deleted ? '活动已删除' : !activity.draftVersion ? '没有候选版本，先创建改版草稿' : undefined} onClick={() => navigate('review')}>试算与审核</Button><Button disabledReason={rewardsReason} onClick={() => navigate('rewards')}>奖励台账</Button>{can('growth_promotion_archive') && <Button variant="danger-outline" disabledReason={deleteLoading ? '正在读取活动状态' : !isDeletablePromotion(activity) ? '只有草稿或已结束的活动可以删除' : undefined} onClick={() => void openDelete(activity.activityId)}>删除活动</Button>}</> : undefined}/>}{screen === 'rewards' && (can('growth_promotion_reward_read') ? <PromotionRewards activity={activity} catalog={catalog.data} can={can} onRefresh={refresh} onBack={() => navigate('detail')}/> : <BlockState state="denied" title="无奖励查看权限" detail="请返回活动详情。"/>)}{screen === 'metrics' && (can('growth_promotion_metrics_read') ? <PromotionMetrics activity={activity} catalog={catalog.data} can={can} onBack={() => navigate('detail')} recoveredExportId={recoveredExport?.activityId === activity.activityId ? recoveredExport.exportId : undefined} onRecoveredExportRead={() => setRecoveredExport(null)}/> : <BlockState state="denied" title="无报表查看权限" detail="请返回活动详情。"/>)}</>}
+    {!activity || activity.activityId !== id || !catalog.data ? <Empty title="活动资料尚未就绪" action={<Button onClick={() => navigate('list')}>返回列表</Button>}/> : <>{screen === 'edit' && activity.current && <PromotionEditor key={activity.activityId} activity={activity} catalog={catalog.data} can={can} onSaved={refresh} initialStep={editStep} onStep={changeStep} onBack={() => navigate('detail')} onReview={() => navigate('review')}/>}{(screen === 'detail' || screen === 'review') && <PromotionReview key={`${id}:${screen}`} activity={activity} catalog={catalog.data} can={can} onRefresh={async () => { await refresh(); }} onReload={setActivity} onCandidateConflict={() => { setNotice('内容已变化，本次未执行。请核对刷新后的候选内容，再重新打开确认。'); retryActivity(); }} onCopyCreated={afterCreate} onEdit={() => navigate('edit')} onRewards={() => navigate('rewards')} onMetrics={() => navigate('metrics')} onBack={() => navigate('detail')} review={screen === 'review'} displayZone={displayZone} zoneSwitch={<ZoneSwitch beijing={beijing} onChange={setBeijing} zones={[activity.displayTimezone || 'UTC']}/>} detailActions={screen === 'detail' ? <><Button variant="primary" disabledReason={activity.deleted ? '活动已删除' : !activity.draftVersion ? '没有候选版本，先创建改版草稿' : undefined} onClick={() => navigate('review')}>试算与审核</Button><Button disabledReason={rewardsReason} onClick={() => navigate('rewards')}>奖励台账</Button>{can('growth_promotion_archive') && <Button variant="danger-outline" disabledReason={deleteLoading ? '正在读取活动状态' : !isDeletablePromotion(activity) ? '只有草稿或已结束的活动可以删除' : undefined} onClick={() => void openDelete(activity.activityId)}>删除活动</Button>}</> : undefined}/>}{screen === 'rewards' && (can('growth_promotion_reward_read') ? <PromotionRewards activity={activity} catalog={catalog.data} can={can} onRefresh={async () => { await refresh(); }} onBack={() => navigate('detail')}/> : <BlockState state="denied" title="无奖励查看权限" detail="请返回活动详情。"/>)}{screen === 'metrics' && (can('growth_promotion_metrics_read') ? <PromotionMetrics activity={activity} catalog={catalog.data} can={can} onBack={() => navigate('detail')} recoveredExportId={recoveredExport?.activityId === activity.activityId ? recoveredExport.exportId : undefined} onRecoveredExportRead={() => setRecoveredExport(null)}/> : <BlockState state="denied" title="无报表查看权限" detail="请返回活动详情。"/>)}</>}
     </>}
     {policiesOpen && catalog.data && <PromotionPolicies catalog={catalog.data} can={can} onClose={() => setPoliciesOpen(false)} onChanged={catalog.reload}/>}
     {creating && !template && <Dialog title="选择活动模板" wide onClose={() => setCreating(false)} footer={<Button onClick={() => setCreating(false)}>取消</Button>}><p className="h4-lede">模板只创建配置结构，业务金额、资格、预算与政策均由运营明确填写。</p><div className="h4-templates">{Object.entries(TEMPLATE_LABELS).map(([v, label]) => <button type="button" key={v} className="h4-template" onClick={() => setTemplate(v as Template)}><b>{label}</b><span>{TEMPLATE_HINTS[v as Template]}</span></button>)}</div></Dialog>}
-    {template && <ConfirmCommand writeAllowed={can('growth_promotion_edit')} title={`新建${TEMPLATE_LABELS[template]}`} confirmLabel="创建草稿" sub={<StatusTag tone="progress" filled>立即创建草稿</StatusTag>} intent={{ operation: 'createPromotion', targetId: 'promotions', path: '/promotions', method: 'POST' }} body={{ draft: emptyDraft(template) }} onClose={() => setTemplate(null)} onSuccess={afterCreate}><Summary rows={[['模板', TEMPLATE_LABELS[template]], ['类别', template === 'DIRECT_REFERRAL' ? '邀请推广' : '促销'], ['创建后', '进入四步填写的第一步']]}/><OldNotice title="创建部分草稿">先创建可继续配置的活动，尚未提交审核或对外开放。</OldNotice></ConfirmCommand>}
+    {template && <ConfirmCommand writeAllowed={can('growth_promotion_edit')} title={`新建${TEMPLATE_LABELS[template]}`} confirmLabel="创建草稿" sub={<StatusTag tone="progress" filled>立即创建草稿</StatusTag>} intent={{ operation: 'createPromotion', targetId: 'promotions', path: '/promotions', method: 'POST' }} body={{ draft: emptyDraft(template) }} onClose={() => setTemplate(null)} onSettled={() => setCreating(false)} onSuccess={afterCreate}><Summary rows={[['模板', TEMPLATE_LABELS[template]], ['类别', template === 'DIRECT_REFERRAL' ? '邀请推广' : '促销'], ['创建后', '进入四步填写的第一步']]}/><OldNotice title="创建部分草稿">先创建可继续配置的活动，尚未提交审核或对外开放。</OldNotice></ConfirmCommand>}
     {deleting && <ConfirmCommand writeAllowed={can('growth_promotion_archive') && isDeletablePromotion(deleting)} danger confirmLabel="删除活动" sub={<IrreversibleTag/>} title={`删除活动 · ${deleting.name || deleting.activityId}`} intent={{ operation: 'deletePromotion', targetId: deleting.activityId, path: `/promotions/${encodeURIComponent(deleting.activityId)}/delete`, method: 'POST' }} body={promotionDeleteBody(deleting)} onClose={() => setDeleting(null)} onSuccess={afterDelete}><Summary rows={[['活动', deleting.name || deleting.activityId], ['当前状态', labelState(deleting.state)], ['候选版本', deleting.draftVersion ? `v${deleting.draftVersion}` : '无'], ['未完成奖励', deleting.impact.unfulfilledRewards]]}/><OldNotice title="删除后移出活动中心" kind="warn">仅草稿或已结束活动可以删除。历史订单、奖励权益和操作记录继续保留；系统内置的五种模板不受影响。删除后仍可通过历史活动详情处理奖励与查看效果。</OldNotice><p className="h4-lede">和「归档」不同：归档要求没有在途奖励、留在列表里可查；删除后列表里不再出现，也不能再编辑、复制或发布。</p></ConfirmCommand>}
     {copy && <ConfirmCommand writeAllowed={can('growth_promotion_edit')} title="复制为新活动" confirmLabel="复制为新活动" sub={<StatusTag tone="progress" filled>立即创建草稿</StatusTag>} intent={{ operation: 'copyPromotion', targetId: copy.activityId, path: `/promotions/${copy.activityId}/copies`, method: 'POST' }} body={{ expectedRevision: copy.revision, evidenceRefs: [] }} onClose={() => setCopy(null)} onSuccess={afterCreate}><Summary rows={[['原活动', copy.name || copy.activityId], ['复制内容', '当前配置'], ['不复制', '审批、累计使用量、订单']]}/><OldNotice title="仅复制配置">原活动 {copy.name || copy.activityId} 的审批、累计使用量与订单不会转到新活动。</OldNotice></ConfirmCommand>}
-    {pending && <ConfirmCommand writeAllowed={!!PROMOTION_COMMAND_PERMISSIONS[pending.operation] && ctx.can('growth_promotion_'+PROMOTION_COMMAND_PERMISSIONS[pending.operation])} title="查询原结果" intent={pending} body={pending.body as Record<string, unknown>} onClose={() => setPending(null)} onSuccess={async (result) => { setPending(null); setNotice('原操作已确认成功，正在更新活动资料。'); if (pending.operation === 'deletePromotion')
-        afterDelete(result);
-    else if (pending.operation === 'createPromotion' || pending.operation === 'copyPromotion')
-        await afterCreate(result);
-    else {
+    {pending && <ConfirmCommand writeAllowed={!!PROMOTION_COMMAND_PERMISSIONS[pending.operation] && ctx.can('growth_promotion_'+PROMOTION_COMMAND_PERMISSIONS[pending.operation])} title="查询原结果" intent={pending} body={pending.body as Record<string, unknown>} onClose={() => setPending(null)} onSuccess={async (result, isCurrent) => { setNotice('原操作已确认成功，正在更新活动资料。');
+        const hasOtherOperation = () => { const current = ongoing.current; return !!(current.creating || current.template || current.copy || current.deleting || current.policiesOpen || current.screen === 'edit'); };
+        if ((pending.operation === 'createPromotion' || pending.operation === 'copyPromotion') && !hasOtherOperation()) {
+            await afterCreate(result, () => isCurrent() && !hasOtherOperation());
+            return;
+        }
+        if (pending.operation === 'deletePromotion' && !hasOtherOperation() && (!ongoing.current.id || ongoing.current.id === pending.targetId)) { afterDelete(result, isCurrent); return; }
         if (pending.operation === 'createExport') {
             if (result.resource?.type !== 'EXPORT') throw new Error('导出结果暂无法确认，请核查原操作。');
             setRecoveredExport({ activityId: pending.targetId, exportId: result.resource.id });
         }
-        if (id)
-            await refresh();
-        else
-            reloadList();
-    } }}><Summary rows={[['原操作', OPERATION_LABELS[pending.operation] || '促销操作'], ['对象', pending.targetId], ['提交时间', `${formatTime(new Date(pending.createdAt).toISOString(), 'Asia/Shanghai')}（北京时间）`]]}/><OldNotice title="原参数保留">本操作只核查或原样恢复之前的操作记录，不修改目标与原始参数。</OldNotice></ConfirmCommand>}
+        if (id) await refresh();
+        else reloadList();
+    }}><Summary rows={[['原操作', OPERATION_LABELS[pending.operation] || '促销操作'], ['对象', pending.targetId], ['提交时间', `${formatTime(new Date(pending.createdAt).toISOString(), 'Asia/Shanghai')}（北京时间）`]]}/><OldNotice title="原参数保留">本操作只核查或原样恢复之前的操作记录，不修改目标与原始参数。</OldNotice></ConfirmCommand>}
   </div>;
 }
 const TEMPLATE_HINTS: Record<Template, string> = { SKU_GIFT: '买指定设备，送设备或奖励', FIRST_PURCHASE: '第一次购机的用户得奖励', DIRECT_REFERRAL: '被直接邀请的人首购，双方都得奖励', MULTI_PRODUCT: '同一单买齐几种型号才给奖励', REPURCHASE: '上次购机后隔一段时间再买' };

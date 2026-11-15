@@ -33,8 +33,10 @@ const SUBJECT_TEXT: Record<string, string> = {
   WEEKLY_T2: "每周二档任务",
 };
 
-export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
+export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview }: {
   missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2";
+  /** 抽屉开着时页面重读失败：抽屉和填的内容留着，读到前不能进下一步。 */
+  readFailed?: { retrying: boolean; onRetry: () => void };
   onClose: () => void;
   onReview: (value: H3MissionForm) => void;
 }) {
@@ -56,10 +58,14 @@ export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
       <Drawer open wide onClose={close} title={`新建${subject}`} sub="建好后是已停用" icon={ListChecks} tone="role-4"
         explain="左边填，右边看它在 App 上的样子。名称建好后可以在任务详情里分别填英文、中文、越南语。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
-          primary={<Button variant="primary" onClick={review}>下一步：核对并提交</Button>}
+          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : undefined} onClick={review}>下一步：核对并提交</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h3-form-split" data-detail="" data-preview="">
           <div className="h3-form">
+            {readFailed && <Notice tone="warn" title="最新数据没读到"
+              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>重试读取</Button>}>
+              填的内容还在，读到以后才能继续。
+            </Notice>}
             <Field label="任务编号" required hint="英文和数字" error={shown.missionCode}>
               {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>

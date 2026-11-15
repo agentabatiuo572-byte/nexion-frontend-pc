@@ -157,15 +157,20 @@ export function Dialog({ title, children, onClose, footer, wide = false, drawer 
     return <Modal title={title} sub={sub} tone={danger ? 'danger' : 'neutral'} wide={wide} onClose={onClose} footer={foot}><div className="h4-dialog-body">{children}</div></Modal>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
-export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, onReload, onVersionConflict, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote }: {
+export function ConfirmCommand({ title, intent, body, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, conflictReview, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote, extraAction }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
     children?: ReactNode;
     onClose: () => void;
-    onSuccess: (result: CommandReceipt) => void | Promise<void>;
-    onReload?: () => Promise<string>;
-    onVersionConflict?: () => void;
+    onSettled?: () => void;
+    onSuccess: (result: CommandReceipt, isCurrent: () => boolean) => void | Promise<void>;
+    /** 读到最新后返回给运营看的对比；编辑器的对比由 conflictReview.view 自己画，这里返回 null。 */
+    onReload?: () => Promise<ReactNode>;
+    onVersionConflict?: (error: PromotionApiError) => void;
+    /** Page-owned review survives closing and reopening this confirmation. */
+    /** view 画核对前、核对后两种样子；final 表示读到的最新状态已经不能再提交，不再给「重新加载并核对」。 */
+    conflictReview?: { reloadNeeded: boolean; view: ReactNode; final?: boolean; error: unknown };
     writeAllowed: boolean;
     evidenceOptions?: Array<{
         value: string;
@@ -178,15 +183,23 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     danger?: boolean;
     sub?: ReactNode;
     evidenceNote?: ReactNode;
+    /** 底栏「取消」右边的另一条出路（如冲突后不保存、返回活动）。 */
+    extraAction?: ReactNode;
 }) {
-    useEffect(() => {
-        const settled = () => onClose();
-        window.addEventListener('admin-promotion-original-settled', settled);
-        return () => window.removeEventListener('admin-promotion-original-settled', settled);
-    }, [onClose]);
     const initial = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId)?.body as Record<string, unknown> | undefined;
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
     const record = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId);
+    const originalKey = useRef(record?.commandKey);
+    if (record) originalKey.current = record.commandKey;
+    const active = useRef(true);
+    useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+    useEffect(() => {
+        const settled = (event: Event) => {
+            if ((event as CustomEvent<string>).detail === originalKey.current) { onSettled?.(); onClose(); }
+        };
+        window.addEventListener('admin-promotion-original-settled', settled);
+        return () => window.removeEventListener('admin-promotion-original-settled', settled);
+    }, [onClose, onSettled]);
     const restoredUploads = useRef(new Set<string>());
     const uploadTarget: H4UploadTarget = { kind: "evidence", objectId: intent.targetId, revision: Number(body.expectedRevision), position: "evidenceAssetId", operation: intent.operation };
     useEffect(() => {
@@ -195,26 +208,34 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         restore(); window.addEventListener("admin-h4-pending-changed", restore);
         return () => window.removeEventListener("admin-h4-pending-changed", restore);
     }, [intent.targetId, intent.operation, body.expectedRevision, writeAllowed, record?.commandKey]);
-    const [reloadNeeded, setReloadNeeded] = useState(false);
+    const [reloadNeeded, setReloadNeeded] = useState(false), [reviewed, setReviewed] = useState<ReactNode>(null), [reloadFailed, setReloadFailed] = useState(false);
+    const needsReload = reloadNeeded || !!conflictReview?.reloadNeeded;
+    const visibleError = error || (!record && conflictReview?.error);
+    const visibleNote = record ? note : '';
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
-    const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
+    const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
-        if (record) window.dispatchEvent(new Event('admin-promotion-original-settled'));
-        await onSuccess(result);
+        // A normal success callback can close its own dialog; that is not a dismissed original.
+        let notifyOriginal = !!record || !active.current;
+        await onSuccess(result, () => {
+            if (!active.current) notifyOriginal = true;
+            return active.current;
+        });
+        if (notifyOriginal) window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: result.idempotencyKey }));
         acknowledgePromotionCommand(result);
     }
     catch (e) {
         setError(e);
         if (record && !pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) {
-            window.dispatchEvent(new Event('admin-promotion-original-settled'));
+            window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         }
         if (!record && e instanceof PromotionApiError && !e.unknownOutcome && !e.bodyUnreadable
-            && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID'].includes(e.reasonCode || '')) {
-            if (onReload) {
-                setReloadNeeded(true);
-                try { setNote(await onReload()); setError(null); setReloadNeeded(false); }
-                catch (readError) { setError(readError); }
-            } else if (onVersionConflict) onVersionConflict();
+            && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID', 'PROMOTION_RESOURCE_NOT_FOUND'].includes(e.reasonCode || '')) {
+            // A rejection never authorizes a read-and-rebase or a second write.
+            setReloadNeeded(true);
+            setNote('');
+            setReviewed(null);
+            onVersionConflict?.(e);
         }
     }
     finally {
@@ -224,12 +245,14 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     const reload = async () => {
         if (!onReload || busy || record) return;
         setBusy(true);
+        setReloadFailed(false);
         try {
-            setNote(await onReload());
+            setReviewed(await onReload());
             setError(null);
             setReloadNeeded(false);
         } catch (e) {
             setError(e);
+            setReloadFailed(true);
         } finally {
             setBusy(false);
         }
@@ -238,11 +261,11 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
         if (result.status === 'SUCCEEDED') {
-            window.dispatchEvent(new Event('admin-promotion-original-settled'));
-            await onSuccess(result);
+            await onSuccess(result, () => active.current);
+            window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
             acknowledgePromotionCommand(result);
         }
-        else if (result.status === 'FAILED') window.dispatchEvent(new Event('admin-promotion-original-settled'));
+        else if (result.status === 'FAILED') window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         else
             setNote(result.status === 'NOT_FOUND' ? '未查到原操作，可按原参数和原操作编号重试。' : `原操作：${labelState(result.status)}。保留输入，继续核查。`);
     }
@@ -255,11 +278,20 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     } };
     const invalid = !policy.data || policy.loading || !!policy.error || reason.trim().length < policy.data.minChars || reason.trim().length > policy.data.maxChars || (requireEvidence && !evidence.length) || !!uploadState;
     const reasonLength = reason.trim().length;
-    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{reloadNeeded && onReload && <Button onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</Button>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原结果'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原请求重试</Button>}</> : <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || reloadNeeded || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
+    // 冲突这一块放在框的最上面：核对前只说没执行、点哪里核对；核对后是对比；读取失败、已经不能提交各一句。
+    const locked = !record && !!onReload && needsReload;
+    const conflictBlock = record || !onReload ? null : conflictReview?.final ? conflictReview.view
+        : locked && reloadFailed ? <RdNotice tone="danger" title="最新内容没读到">{displayAdminError(visibleError)}这一步还没做，填的内容都在；可以再点「重新加载并核对」。</RdNotice>
+        : conflictReview?.view ? conflictReview.view
+        : locked ? <RdNotice tone="warn" title="这次没有执行：你打开后，别人改过这个活动">{`点「重新加载并核对」，看清变了什么再决定要不要${confirmLabel}。`}</RdNotice>
+        : reviewed;
+    const conflictExplains = !!conflictBlock && (locked || !!conflictReview?.final);
+    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence || !!conflictBlock} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{extraAction}{needsReload && onReload && !conflictReview?.final && <RdButton variant="primary" onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</RdButton>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原结果'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原请求重试</Button>}</> : !locked && <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || needsReload || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
+    {conflictBlock}
     {record && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{children}</fieldset>
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}><RdField label="操作理由" required hint={policy.data ? `${policy.data.minChars}–${policy.data.maxChars} 字，和操作一起留痕` : '正在读取理由要求'}>{control => <Textarea {...control} value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars} count={policy.data ? `${reasonLength}/${policy.data.maxChars}` : undefined}/>}</RdField>{evidenceOptions.length > 0 && <fieldset className="h4-fieldset h4-evidence"><legend className="rd-form-label">关联证据{requireEvidence ? <span className="rd-form-required" aria-hidden>*</span> : null}</legend>{evidenceOptions.map(option => <RdCheck key={option.value} label={option.label} checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>)}</fieldset>}</fieldset>
     {requireEvidence && evidenceMode === 'upload' && <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{evidenceNote}<BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', uploadTarget, help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
-    {!writeAllowed && <RdNotice tone="warn" title="当前操作已停用">授权或依赖数据当前无法支持此操作。原输入与操作记录继续保留；查询原结果也要这项操作的权限，可能被拒。</RdNotice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!error && <RdNotice tone="danger" title="操作尚未完成">{displayAdminError(error)}{error instanceof PromotionApiError&&error.fieldErrors.map((f,i)=><p key={i} className="h4-input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</RdNotice>}{note && <RdNotice tone="neutral" title="查询结果">{note}</RdNotice>}<span hidden>{version}</span>
+    {!writeAllowed && !(conflictReview?.final || reviewed && !locked) && <RdNotice tone="warn" title="当前操作已停用">授权或依赖数据当前无法支持此操作。原输入与操作记录继续保留；查询原结果也要这项操作的权限，可能被拒。</RdNotice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!visibleError && !conflictExplains && <RdNotice tone="danger" title="操作尚未完成">{displayAdminError(visibleError)}{visibleError instanceof PromotionApiError&&visibleError.fieldErrors.map((f,i)=><p key={i} className="h4-input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</RdNotice>}{visibleNote && <RdNotice tone="neutral" title="查询结果">{visibleNote}</RdNotice>}<span hidden>{version}</span>
   </Dialog>;
 }

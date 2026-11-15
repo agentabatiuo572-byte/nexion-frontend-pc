@@ -360,3 +360,14 @@
 .h4-dialog-body .h4-compare-table tbody[data-section] tr:not(.h4-compare-section) th { padding-left: 24px; }
 .h4-dialog-body .h4-compare-table tbody[data-section] .h4-compare-section + tr > * { border-top: 0; }
 .h4-dialog-body .h4-compare-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 促销活动保存、审核动作遇到别人先改过：同一套对比表，值按条列出，不出原始数据 */
+.h4-dialog-body .h4-compare-lede { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.h4-dialog-body .h4-compare-table tbody th .rd-tag { margin-top: 2px; }
+.h4-dialog-body .h4-compare-values { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.h4-dialog-body .h4-compare-values li, .h4-dialog-body .h4-compare-value { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.h4-dialog-body .h4-compare-keep { display: block; margin-top: 2px; }
+.h4-dialog-body .h4-compare-choice > b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare .rd-fold { margin: 0; }
+.h4-page .footerbar .h4-conflict-hint { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
+.h4-dialog-body .h4-compare-table[data-promotion] thead th:first-child, .h4-dialog-body .h4-compare-table[data-promotion] tbody th { width: 24%; }
