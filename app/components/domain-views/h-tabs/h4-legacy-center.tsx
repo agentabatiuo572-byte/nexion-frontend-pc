@@ -511,7 +511,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: "新建转盘奖项",
       statedBrief: { impact: "这一档进奖池，按概率参与抽奖。", check: "核对奖型、发真钱和每日库存。" },
       effect: effectByDirection("新建 UVT 奖项，或概率大于 0 的 USDT、代金券奖项"),
-      detail: <>新建一个转盘奖项。概率 0–100，所有奖项合计要等于 100%；发真钱的奖项在覆盖率低于红线时存不了。</>,
+      detail: <>概率 0–100，所有奖项合计要等于 100%；发真钱的奖项在覆盖率低于红线时存不了。</>,
 
       amplifies: true,
       coverageLead: "这一档会让转盘多发奖",
