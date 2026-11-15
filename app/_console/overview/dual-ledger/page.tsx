@@ -414,12 +414,9 @@ export default function DualLedgerPage() {
       else { setSavedWhileUnread(success); setToast(success, "success"); }
     } catch (err) {
       if (current.kind === "export") {
-        const message = displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err);
-        setToast(message);
-        throw new Error(message);
+        // 错误只在确认框里写一次，不再在页面顶部弹同一句。
+        throw new Error(displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err));
       }
-      // 框里已经写了这句，不再弹同一句。
-      if (!(err instanceof Error && err.message === THRESHOLD_REFRESHED)) setToast(displayAdminError(err));
       throw err;
     }
   };
