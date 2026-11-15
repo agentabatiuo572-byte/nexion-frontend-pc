@@ -111,6 +111,31 @@ function pendingLabel(fingerprint: string) {
   return "调整注册与登录风险设置";
 }
 
+/** 第一次提交被拒、页面重读之后交给原确认框的显示数据：打开时的规则、读到的最新规则（没读到是 null）。 */
+type C6Reread = { failure: unknown; opened: UserRegistrationRiskOverview; latest: UserRegistrationRiskOverview | null };
+
+function isVersionConflict(failure: unknown) {
+  return failure instanceof UsersRequestError && failure.code === "C6_CONFIG_VERSION_CONFLICT";
+}
+
+/** 被拒的原因写给运营看，不出现状态码和英文码。 */
+function rejectionText(failure: unknown) {
+  const status = failure instanceof UsersRequestError ? failure.status : 0;
+  if (isVersionConflict(failure)) return "刚被别人改过。";
+  if (status === 401) return "登录已失效，请重新登录。";
+  if (failure instanceof UsersRequestError && failure.code === "ADMIN_PASSWORD_CHANGE_REQUIRED") return "你的账号要先修改登录密码，改完再提交。";
+  if (status === 403) return "你的账号现在没有修改这一项的权限，请联系管理员核对。";
+  if (status === 429) return "提交太频繁，稍等一会儿再点确认。";
+  return errorMessage(failure);
+}
+
+/** 被拒后最新规则没读到：框留着、输入留着，但不能再提交。 */
+function staleText(failure: unknown) {
+  const conflict = isVersionConflict(failure);
+  return <><b>{conflict ? "刚被别人改过，这次没有保存，最新的规则也没读到。" : "这次没有保存，最新的规则也没读到。"}</b>{!conflict && <><br />{rejectionText(failure)}</>}<br />关掉这个框，在页面上重新加载后再打开。</>;
+}
+const STALE_TOAST = "最新的规则没读到，现在不能提交。关掉这个框，重新加载后再打开。";
+
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const reach = useReach();
   const router = useRouter();
@@ -176,7 +201,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     const auth = useAdminAuth.getState();
     return auth.session?.adminId === owner && (auth.session.role === "super" || auth.session.role === "superadmin" || auth.session.authorities.includes("user_c6_write"));
   };
-  const perform = async (original: C6Pending, retry = true, onRejected?: (latest: UserRegistrationRiskOverview | null) => void) => {
+  const perform = async (original: C6Pending, retry = true, onRejected?: (latest: UserRegistrationRiskOverview | null, failure: unknown) => void) => {
     if (mutation.current || !canSubmit()) return false;
     mutation.current = true;
     setBusy(true);
@@ -204,12 +229,14 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           overviewRef.current = null;
           setOverview(null);
           await loadData(true);
-          onRejected?.(overviewRef.current);
+          onRejected?.(overviewRef.current, err);
         }
       } else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
       const message = row && !rejected ? "结果未知 · 已保留原请求，在页面上方读回核对或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
-      setError(message);
-      toast(message, row && !rejected ? "warn" : "error");
+      // 第一次提交被拒时原框还开着，原因写在框里，不再弹同一句；最新规则没读到时页面照旧停在「没有保存」。
+      const keptOpen = Boolean(row && rejected && !retry);
+      if (!keptOpen || !overviewRef.current) setError(message);
+      if (!keptOpen) toast(message, row && !rejected ? "warn" : "error");
       return false;
     } finally {
       mutation.current = false;
@@ -218,7 +245,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   };
   // Each open form owns at most one original command. A settled form cannot
   // silently become a new mutation, even if its callback is still being invoked.
-  const commandRun = (target: C6Original["target"], kind: C6Original["kind"], label: string, successMessage: (value: string) => string, basis: UserRegistrationRiskOverview, rebase: (latest: UserRegistrationRiskOverview) => void) => {
+  const commandRun = (target: C6Original["target"], kind: C6Original["kind"], label: string, successMessage: (value: string) => string, basis: UserRegistrationRiskOverview, rebase: (after: C6Reread) => void) => {
     let original: C6Pending | undefined;
     let settled = false;
     return {
@@ -238,10 +265,11 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         // getPendingReason freezes its inputs when no verdict is received.
         try { original = prepareC6Command(request); }
         catch (failure) { toast(errorMessage(failure), "error"); return false; }
-        return perform(original, false, latest => {
+        return perform(original, false, (latest, failure) => {
           original = undefined;
           settled = true;
-          if (latest) rebase(latest);
+          // 没读到最新规则时框按打开时的内容重画一次，只为写上不能提交的原因。
+          rebase({ failure, opened: basis, latest });
         });
       },
     };
@@ -323,7 +351,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const ruleText = (rule: ReturnType<typeof lockRule>, param?: UserRegistrationRiskParam) => rule ? `输错 ${rule.attempts} 次 · 锁 ${rule.duration} ${rule.unit}` : text(param?.value);
 
-  const openLock = (key: string, basis: UserRegistrationRiskOverview, rebasing = false) => {
+  const openLock = (key: string, basis: UserRegistrationRiskOverview, after?: C6Reread) => {
+    const rebasing = !!after;
     const lockParams = basis.params!.filter(param => param.group === "lock");
     const param = lockParams.find(param => param.key === key);
     if (!param) return;
@@ -354,7 +383,19 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         : `保存后，从第一次输错起 ${d} 分钟内输错 ${a} 次，就锁 ${d} 分钟；这段时间也是长锁的计数窗口。`;
     };
     if (!rebasing && (!canSubmit() || mutation.current || pendingFor(key as C6Original["target"]) || overviewRef.current !== basis)) return;
-    const original = commandRun(key as C6Original["target"], "lock", `调整${name}`, value => `${name} 已更新为 ${value}`, basis, latest => openLock(key, latest, true));
+    const original = commandRun(key as C6Original["target"], "lock", `调整${name}`, value => `${name} 已更新为 ${value}`, basis, next => openLock(key, next.latest ?? next.opened, next));
+    // 被拒后读到了最新规则：和打开时不一样的值标「刚改过」，问号里写打开时的值。
+    const reread = after?.latest ? after : undefined;
+    const openedLock = (k: string) => {
+      const opened = reread?.opened.params?.find(row => row.group === "lock" && row.key === k);
+      return ruleText(lockRule(opened, k === "lockLong" ? "小时" : "分钟"), opened);
+    };
+    const nowText = ruleText(lockRule(param, durationUnit), param);
+    const otherKey = isLong ? "lockShort" : "lockLong";
+    const otherText = ruleText(isLong ? shortRule : longRule, isLong ? shortParam : longParam);
+    const changedNow = !!reread && openedLock(key) !== nowText;
+    const changedOther = !!reread && openedLock(otherKey) !== otherText;
+    const justChanged = (was: string) => <> <StatusTag tone="warn" explain={`你打开时：${was}`}>刚改过</StatusTag></>;
     openActionConfirm({ briefKind: "config",
       getPendingReason: original.getPendingReason,
       action: `调整登录锁定 · ${name}`,
@@ -364,12 +405,18 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: `确认调整${name}`,
       reasonPlaceholder: "例如：近期批量试密码增多，依据风控工单调整锁定规则",
+      blockedReason: after && !after.latest ? staleText(after.failure) : undefined,
       facts: (
-        <Facts>
-          <Fact k="现在">{ruleText(lockRule(param, durationUnit), param)}</Fact>
-          <Fact k={isLong ? "短锁（不改）" : "长锁（不改）"}>{ruleText(isLong ? shortRule : longRule, isLong ? shortParam : longParam)}</Fact>
-          <Fact k="已锁的账户">这次修改不改它们的解锁时间和已累计次数</Fact>
-        </Facts>
+        <>
+          <Facts>
+            <Fact k="现在">{nowText}{changedNow && justChanged(openedLock(key))}</Fact>
+            <Fact k={isLong ? "短锁（不改）" : "长锁（不改）"}>{otherText}{changedOther && justChanged(openedLock(otherKey))}</Fact>
+            <Fact k="已锁的账户">这次修改不改它们的解锁时间和已累计次数</Fact>
+          </Facts>
+          {reread && (isVersionConflict(reread.failure)
+            ? <Notice tone="warn" title="刚被别人改过，这次没有保存">{changedNow || changedOther ? "上面已换成最新的规则，变了的标「刚改过」。" : "上面的规则和你打开时一样。"}你填的还在，核对后再点确认。</Notice>
+            : <Notice tone="danger" title="这次没有保存">{rejectionText(reread.failure)}</Notice>)}
+        </>
       ),
       statedBrief: (value) => ({
         impact: impactFor(value.attempts, value.duration),
@@ -380,7 +427,15 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         kind: "multi-field",
         hint: "次数和时长一起保存",
         fields: [
-          { key: "attempts", label: "输错几次后锁定", inputKind: "number", current: String(currentAttempts), min: toNumber(param.min, 0), max: toNumber(param.max, 0), step: 1, required: true, help: `${attemptMin}–${attemptMax} 次，${relation}` },
+          { key: "attempts", label: "输错几次后锁定", inputKind: "number", current: String(currentAttempts), min: toNumber(param.min, 0), max: toNumber(param.max, 0), step: 1, required: true, help: `${attemptMin}–${attemptMax} 次，${relation}`,
+            // 另一级刚被别人改过、你填的次数按最新的不成立时，说清为什么现在保存不了（不改校验，点确认仍按原来的提示拦下）。
+            warning: changedOther ? (value) => {
+              const attempts = value.attempts?.trim() ? Number(value.attempts) : NaN;
+              if (!Number.isInteger(attempts)) return undefined;
+              if (isLong && attempts <= shortAttempts) return `短锁刚改成 ${shortAttempts} 次，现在保存不了`;
+              if (!isLong && attempts >= longAttempts) return `长锁刚改成 ${longAttempts} 次，现在保存不了`;
+              return undefined;
+            } : undefined },
           { key: "duration", label: `锁定时长(${durationUnit})`, inputKind: "number", current: String(currentDuration), min: toNumber(param.secondaryMin, 0), max: toNumber(param.secondaryMax, 0), step: 1, required: true, help: `${durationMin}–${durationMax} ${durationUnit}` },
         ],
       },
@@ -421,19 +476,45 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         where="App 登录、验证码登录和两步验证输错时；用户只看到「暂时锁定」，看不到解锁时间"
         value={rule ? <span className="c6-rule">输错 <b>{rule.attempts}</b> 次<span aria-hidden>→</span>锁 <b>{rule.duration}</b> {rule.unit}</span> : text(param.value)}
         action={canWrite && !param.readOnly
-          ? <Button size="sm" disabledReason={!key ? "这项缺少参数键，暂时不能调整" : unavailable(key as C6Original["target"])} onClick={() => openLock(key!, overview)}>调整</Button>
+          ? <Button size="sm" disabledReason={!key ? "这一项读不全，暂时不能调整" : unavailable(key as C6Original["target"])} onClick={() => openLock(key!, overview)}>调整</Button>
           : undefined}
       />
     );
   };
 
-  const restoreCaptcha = (basis: UserRegistrationRiskOverview, rebasing = false) => {
+  const restoreCaptcha = (basis: UserRegistrationRiskOverview, after?: C6Reread) => {
+    const rebasing = !!after;
     if (!canWrite) {
       toast("你只有查看权限，不能恢复人机验证");
       return;
     }
     if (!rebasing && (mutation.current || pendingFor("captchaOff") || overviewRef.current !== basis)) return;
-    const original = commandRun("captchaOff", "captcha-restore", "立即恢复人机验证", () => "人机验证已恢复", basis, latest => restoreCaptcha(latest, true));
+    const original = commandRun("captchaOff", "captcha-restore", "立即恢复人机验证", () => "人机验证已恢复", basis, next => restoreCaptcha(next.latest ?? next.opened, next));
+    const reread = after?.latest ? after : undefined;
+    const stale = after && !after.latest;
+    // 别人已经先恢复了：不再让人提交一次「开启 → 开启」，只说明不用再操作。
+    if (reread && !basis.stats?.captchaTemporarilyDisabled) {
+      openConfirm({ briefKind: "record",
+        action: "恢复人机验证",
+        title: "立即恢复人机验证",
+        detail: "人机验证已经开启。",
+        statedBrief: { impact: "人机验证已经开启，不用再提交。", check: "点「知道了」关掉这个框，不会发出修改。" },
+        content: (
+          <>
+            <Facts>
+              <Fact k="人机验证">开启 <StatusTag tone="warn" explain="你打开时：临时关闭">刚改过</StatusTag></Fact>
+            </Facts>
+            <Notice tone="ok" title="别人已经先恢复了人机验证，这次没有保存" />
+          </>
+        ),
+        reason: true,
+        okLabel: "知道了",
+        run: () => true,
+      });
+      return;
+    }
+    const restoreAt = formatCaptchaRestoreAt(basis.stats?.captchaRestoreAt);
+    const restoreChanged = !!reread && formatCaptchaRestoreAt(reread.opened.stats?.captchaRestoreAt) !== restoreAt;
     openConfirm({ briefKind: "record",
     getPendingReason: original.getPendingReason,
     action: "恢复人机验证",
@@ -442,30 +523,41 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     statedBrief: {
       impact: "提交后马上恢复按规则拖滑块，不用等原定的恢复时间。",
-      check: "打开后如果已被别人改过，这次不会保存，要重新加载后再提交。",
+      check: "打开后如果已被别人改过，这次不会保存，框里会换上最新的值。",
     },
     content: (
-      <Facts>
-        <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
-        <Fact k="原定恢复">{formatCaptchaRestoreAt(basis.stats?.captchaRestoreAt)}</Fact>
-      </Facts>
+      <>
+        {stale && <Notice tone="warn">{staleText(after.failure)}</Notice>}
+        <Facts>
+          <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
+          <Fact k="原定恢复">{restoreAt}{restoreChanged && <> <StatusTag tone="warn" explain={`你打开时：${formatCaptchaRestoreAt(reread!.opened.stats?.captchaRestoreAt)}`}>刚改过</StatusTag></>}</Fact>
+        </Facts>
+        {reread && (isVersionConflict(reread.failure)
+          ? <Notice tone="warn" title="刚被别人改过，这次没有保存">{restoreChanged ? "原定恢复时间变了，上面已换成最新的。" : "人机验证仍是临时关闭。"}你填的理由还在，核对后再点确认。</Notice>
+          : <Notice tone="danger" title="这次没有保存">{rejectionText(reread.failure)}</Notice>)}
+      </>
     ),
     reason: true,
     reasonPlaceholder: "例如：滑块服务已恢复，提前打开人机验证",
     okLabel: "确认恢复",
-    run: (reason) => {
+    // 共用的普通确认框不认 blockedReason，按钮还能点：点了只提示原因，不发请求。
+    run: stale ? () => { toast(STALE_TOAST, "warn"); return false; } : (reason) => {
       return original.run("", reason);
     },
     });
   };
 
-  const disableCaptcha = (basis: UserRegistrationRiskOverview, rebasing = false) => {
+  const disableCaptcha = (basis: UserRegistrationRiskOverview, after?: C6Reread) => {
+    const rebasing = !!after;
     if (!canWrite) {
       toast("你只有查看权限，不能关闭人机验证");
       return;
     }
     if (!rebasing && (mutation.current || pendingFor("captchaOff") || overviewRef.current !== basis)) return;
-    const original = commandRun("captchaOff", "captcha-disable", "临时关闭人机验证", value => `人机验证已临时关闭 · ${value}`, basis, latest => disableCaptcha(latest, true));
+    const original = commandRun("captchaOff", "captcha-disable", "临时关闭人机验证", value => `人机验证已临时关闭 · ${value}`, basis, next => disableCaptcha(next.latest ?? next.opened, next));
+    const reread = after?.latest ? after : undefined;
+    // 「紧急关闭」只在开启时出现；重读后发现别人已经关了，写清再确认会怎样。
+    const offNow = !!basis.stats?.captchaTemporarilyDisabled;
     openActionConfirm({ briefKind: "config",
     getPendingReason: original.getPendingReason,
     action: "紧急关闭人机验证",
@@ -480,18 +572,26 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       impact: "关闭期间发验证码不再要求拖滑块，强制验证除外；到点自动恢复。",
       check: "恢复时间只能选这四档；打开后如果已被别人改过，这次不会保存。",
     },
+    blockedReason: after && !after.latest ? staleText(after.failure) : undefined,
     facts: (
-      <Facts>
-        <Fact k="关闭期间仍会验证">H5 注册的强制验证</Fact>
-        <Fact k="关闭期间照常执行">{CAPTCHA_LIMITS_STILL_ON}</Fact>
-        <Fact k="提前恢复">有本页修改权限的人点「立即恢复」</Fact>
-      </Facts>
+      <>
+        <Facts>
+          <Fact k="关闭期间仍会验证">H5 注册的强制验证</Fact>
+          <Fact k="关闭期间照常执行">{CAPTCHA_LIMITS_STILL_ON}</Fact>
+          <Fact k="提前恢复">有本页修改权限的人点「立即恢复」</Fact>
+        </Facts>
+        {reread && (isVersionConflict(reread.failure)
+          ? <Notice tone="warn" title="刚被别人改过，这次没有保存">{offNow
+            ? "别人已临时关闭人机验证，原定恢复时间见下方「现在」。再点确认会从现在起按你选的时长重新算。"
+            : "人机验证仍是开启的。你选的还在，核对后再点确认。"}</Notice>
+          : <Notice tone="danger" title="这次没有保存">{rejectionText(reread.failure)}</Notice>)}
+      </>
     ),
     edit: {
       kind: "select", current: basis.stats?.captchaTemporarilyDisabled ? formatCaptchaRestoreAt(basis.stats.captchaRestoreAt) : "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS,
       label: "关闭多久", optionLabels: CAPTCHA_RECOVERY_LABELS,
       hint: "只能选这四档，不能永久关闭",
-      preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复，从服务器执行关闭时起算；按原请求重试不会重新计时。`,
+      preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复，从关闭生效时起算；按原请求重试不会重新计时。`,
     },
     run: (reason, nextValue) => {
       const value = (nextValue ?? "").trim();
