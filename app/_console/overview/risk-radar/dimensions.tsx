@@ -86,7 +86,7 @@ function bankrunDimension(data: B5Radar): Dimension {
     ),
     explain: <>
       <p>提现压力 = 近 24 小时提现申请 ÷ 可用储备，只算 USDT。提现不含已失败、已拒绝、已取消的单；可用储备是已确认的储备账本净额。</p>
-      <p>黄线、红线和「紧急停用开关」共用（那边叫挤兑红线），在这里改，那边跟着变。是否自动暂停提现由紧急停用开关按它自己的统计判断，这页亮红不一定马上停提。</p>
+      <p>黄线、红线和「紧急停用开关」共用（那边叫挤兑红线），在这里改，那边跟着变。是否自动暂停提现由紧急停用开关按它自己的统计判断，这页标红不一定马上暂停提现。</p>
       <p>出金压力 =（提现出金 + 佣金）÷ 近 24 小时全部流入，70% 是固定提醒线，只提醒，不自动处理。</p>
     </>,
   };
@@ -129,7 +129,7 @@ function backlogDimension(data: B5Radar): Dimension {
     body: (
       <div className="b5-backlog">
         <div className="b5-backlog-row" data-head="">
-          <span>状态</span><span>单数</span><span>超过 {w.slaHours} 小时</span><span>金额合计（各币种，未换算）</span>
+          <span>状态</span><span>单数（全部币种）</span><span>超过 {w.slaHours} 小时</span><span>USDT 金额</span>
         </div>
         {w.byState.map((row) => (
           <div className="b5-backlog-row" key={row.state}>
@@ -149,7 +149,7 @@ function backlogDimension(data: B5Radar): Dimension {
     ),
     explain: <>
       <p>已提交、审核通过、处理中这三类还没结束的提现。从提交起超过 {w.slaHours} 小时算超时，有超时的就标注意。</p>
-      <p>金额是各币种金额直接相加（每笔先按两位小数取整），没有换算成 USDT，只能看量级，不能当 USDT 金额用。</p>
+      <p>单数和超时含全部币种；金额只加 USDT 的单，按原金额不取整，别的币种不换算、不计入。所以金额和单数不是同一批单。</p>
     </>,
   };
 }
@@ -186,7 +186,7 @@ function switchesDimension(data: B5Radar): Dimension {
     ),
     explain: <>
       <p>和「紧急停用开关」读同一份开关设置。这页只能看，开关和恢复到紧急停用开关页办。</p>
-      <p>开关还没设置过时系统按关闭处理，也写已关停；设置值无效时整页读取会报错。地区限制不在这里，到「地区访问限制」看。</p>
+      <p>开关还没设置过时系统按关闭处理，也写已关停；设置有误时这页会读不出来。地区限制不在这里，到「地区访问限制」看。</p>
     </>,
   };
 }
@@ -220,7 +220,7 @@ function coverageDimension(data: B5Radar): Dimension {
       }>{facts}</Figure>
     ),
     explain: <>
-      <p>和「资金与应付款总览」同一个快照、同一组数：储备 ÷ 应付款，单位和那页一样。低于红线标告警，低于健康线标注意。</p>
+      <p>和「资金与应付款总览」同一组数：储备 ÷ 应付款。低于红线标告警，低于健康线标注意。</p>
       <p>这里的储备和提现压力用的可用储备算法不同，两个数不能直接比。</p>
     </>,
   };
