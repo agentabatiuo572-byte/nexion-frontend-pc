@@ -443,8 +443,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       detail: "银行卡支付参数要整组提交，这次只改单笔上限，其他参数按读回的值原样提交。",
       completionCopy: "只对之后的新付款单生效，已下的付款单按原上限。",
-      edit: { kind: "number", current: String(current), unit: "USD", min: 100, max: 10_000, step: 1, disallowCurrent: true, hint: "100–10,000 的整数",
-        preview: (value) => /^\d+$/.test(value) ? `改成 ${Number(value).toLocaleString("en-US")}：用户一笔最多充 ${Number(value).toLocaleString("en-US")} USD。` : undefined },
+      edit: { kind: "number", current: String(current), unit: "USDT", min: 100, max: 10_000, step: 1, disallowCurrent: true, hint: "100–10,000 的整数",
+        preview: (value) => /^\d+$/.test(value) ? `改成 ${Number(value).toLocaleString("en-US")}：用户一笔最多充 ${Number(value).toLocaleString("en-US")} USDT。` : undefined },
       run: (reason, value) => {
         const next = Number(value);
         if (!Number.isInteger(next) || next < 100 || next > 10_000) throw new Error("单笔上限须为范围内的整数");
@@ -492,7 +492,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     if (path === "/vietqr/config") {
       const current = await loadD1VietQrOverview("inflight");
       setVietQr(current);
-      return `读回：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USD（第 ${current.config.version} 版）。${kept}`;
+      return `读回：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USDT。${kept}`;
     }
     if (path.startsWith("/vietqr/orders/")) {
       const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 });
@@ -536,7 +536,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   const bankSummary = overviewLoading && !overview ? "正在读取"
     : !overview && !vietQr ? "读取失败"
       : [bankChannels.length ? (bankChannels.every(channel => channel.enabled) ? "启用" : bankChannels.some(channel => channel.enabled) ? "部分停用" : "停用") : null,
-        perTxLimit != null ? `单笔上限 ${perTxLimit.toLocaleString("en-US")} USD` : null].filter(Boolean).join(" · ") || "—";
+        perTxLimit != null ? `单笔上限 ${perTxLimit.toLocaleString("en-US")} USDT` : null].filter(Boolean).join(" · ") || "—";
 
   const reconRows = overview?.reconciliation ?? [];
   const hasDiff = (overview?.diffCount ?? 0) > 0;
@@ -578,8 +578,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
               action={canManageChannels ? <Button size="sm" disabledReason={readingReason ?? d1PendingObjectReason(`/topup/channels/${encodeURIComponent(channel.code)}/max-amount`)} onClick={() => updateChannelMax(channel)}>调整</Button> : undefined} />
           ))}
           <ConfigRow name="单笔上限" what="银行卡充值一笔的上限" when="确认后立即生效，只对之后的新付款单" where="App 充值页 › 银行卡支付「单笔限额」"
-            effect="改成 1,000：用户一笔最多充 1,000 USD"
-            value={perTxLimit != null ? `${perTxLimit.toLocaleString("en-US")} USD` : "—"}
+            effect="改成 1,000：用户一笔最多充 1,000 USDT"
+            value={perTxLimit != null ? `${perTxLimit.toLocaleString("en-US")} USDT` : "—"}
             action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? d1PendingObjectReason("/vietqr/config") : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
           <ConfigRow name="最低充值金额" what="银行卡充值的最低金额" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款"
             value="在「订单付款 › 付款手续费」里设置"
