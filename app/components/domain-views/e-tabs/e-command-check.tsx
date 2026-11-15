@@ -145,7 +145,7 @@ export const RECOVERY_LINE = {
 } as const;
 
 /** Device pages use the shared recovery panel, so their rows look exactly like the fund pages' rows. */
-export { RecoveryPanel, SettledLine, recoveryTitle, type RecoveryItem } from "../fund-command-check";
+export { RecoveryPanel, SettledLine, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 
 /**
  * Release of an approval request the backend has no record of (expired, never created).

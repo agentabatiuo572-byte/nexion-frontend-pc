@@ -60,7 +60,7 @@ import {
   riskBandTone,
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 
 /**

@@ -17,7 +17,7 @@ import {
   type JudgmentRow, type MoreMenuItem,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { fetchAccountDeletion, fetchAccountDeletions, updateAccountDeletion, AccountDeletionRequestError, type AccountDeletionRequest, type AccountDeletionStatus } from "@/lib/admin/account-deletion-client";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { nexGridBrandText, operatorNicknameText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";

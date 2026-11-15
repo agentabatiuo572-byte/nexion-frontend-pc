@@ -23,7 +23,7 @@ import { readTransferTargets } from "./m1-customer-transfer";
 import { M1StatisticDetails, maintenanceLabels, beijing, type MaintenanceChoice, type StatisticSource } from "./m1-statistic-details";
 import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
-import { RecoveryPanel, recoveryTitle } from "../fund-command-check";
+import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { PaymentSecurityBlock } from "@/app/components/payment-security/payment-security-block";
 import { BlockState, Button, Check, Conclusion, Drawer, Explain, Facts, Fact, Field, FilterBar, FilterField, Fold, Input, Modal, Notice, PageTabs, Panel, Pager, Select, StatBand, Stat, StatusTag, Table, Th, Td, Tr, Textarea, Timeline, type StateTone } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";

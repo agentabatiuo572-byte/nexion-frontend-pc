@@ -10,7 +10,7 @@ import "./dual-ledger.css";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowDownUp, Download, Gauge, Landmark, ReceiptText, Scale, SearchCheck, ShieldAlert, ShieldCheck, ShieldQuestion, SlidersHorizontal, TrendingUp, Wallet } from "lucide-react";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import {
   BlockState, Button, Cell, Conclusion, Donut, Explain, Fact, Facts, Figure, IrreversibleTag, KeyValues, NumberInput, DiffField,
   Notice, PageHeader, Panel, RdPage, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLine, TrendLines,

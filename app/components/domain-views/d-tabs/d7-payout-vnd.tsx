@@ -29,7 +29,8 @@ import {
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, RecoveryPanel, recoveryTitle, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";

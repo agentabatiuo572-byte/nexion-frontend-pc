@@ -11,7 +11,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useReach } from "@/lib/nav/use-reach";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 
 export type D1Section = "payments" | "bank" | "usdt" | "ledger";
 export const D1_SECTIONS: readonly D1Section[] = ["payments", "bank", "usdt", "ledger"];

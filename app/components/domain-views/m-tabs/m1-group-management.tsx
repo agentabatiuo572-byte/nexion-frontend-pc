@@ -8,7 +8,7 @@ import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCom
 import { Btn, Modal } from "../design-kit";
 import { BlockState, Button, Change, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, PageTabs, Panel, ReleaseModal, Select, StatusTag, Table, Th, Tr, Td, Textarea } from "@/app/components/rd";
 import { ChevronLeft, Network, SearchCheck, UsersRound } from "lucide-react";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../fund-command-check";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import "./m-support-admin.css";

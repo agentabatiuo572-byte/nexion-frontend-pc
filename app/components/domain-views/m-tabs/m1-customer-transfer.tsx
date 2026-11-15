@@ -11,7 +11,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Modal } from "../design-kit";
 import { BlockState, Button, Change, Fact, Facts, Field, Fold, Notice, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { SearchCheck } from "lucide-react";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../fund-command-check";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import "./m-support-workbench.css";
 
