@@ -194,14 +194,14 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (!section) return "版块内容已被修改，请刷新后重试";
     return proposing ? i4SectionPermission(key, section.highSensitivity) : i4DraftPermission();
   };
-  const runBackend = async (task: () => Promise<void>, ok: string, sectionKey: string): Promise<boolean> => {
+  const runBackend = async (task: () => Promise<void>, ok: string, sectionKey: string, requested: NonNullable<typeof conflictReview.review>["requested"]): Promise<boolean> => {
     try {
       await task();
       await rereadAfterResolution([sectionKey]);
       toast(ok);
       return true;
     } catch (error) {
-      if (await reviewConflict(error, { draftEditor, reason: draftEditor?.reason ?? "" })) ctx.closeActionConfirm();
+      if (await reviewConflict(error, requested)) ctx.closeActionConfirm();
       toast(`操作失败:${displayAdminError(error)}`); return false;
     }
     finally { syncCommands(); }
@@ -401,7 +401,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     try {
       await runBackend(() => draftEditor.mode === "create"
         ? actions.createI4TrustSectionDraft(draftEditor.sectionKey, payload, draftEditor.reason.trim(), draftEditor.published)
-        : actions.updateI4TrustSectionDraft(draftEditor.sectionKey, draftEditor.version, payload, draftEditor.reason.trim(), draftEditor.published), `${draftEditor.sectionKey} ${draftEditor.version} 草稿已保存`, draftEditor.sectionKey);
+        : actions.updateI4TrustSectionDraft(draftEditor.sectionKey, draftEditor.version, payload, draftEditor.reason.trim(), draftEditor.published), `${draftEditor.sectionKey} ${draftEditor.version} 草稿已保存`, draftEditor.sectionKey,
+        { sectionKey: draftEditor.sectionKey, draftEditor, reason: draftEditor.reason });
       const saved = pendingI4DraftCommands().find(row => row.sectionKey === draftEditor.sectionKey);
       if (saved) setEditorCommandKey(saved.commandKey);
     } finally { inFlight.current = false; setSavingDraft(false); }
@@ -419,7 +420,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     facts: <Facts><Fact k="版块">{sectionName(draft.sectionKey)}</Fact><Fact k="草稿">{draft.version} · {draft.fields.length} 项内容</Fact><Fact k="最近保存">{timeText(draft.updatedAt)} · {operatorText(draft.operator)}</Fact></Facts>,
     run: (reason) => runBackend(() => actions.deleteI4TrustSectionDraft(
       draft.sectionKey, draft.version, draft.revision, reason, draft,
-    ), `${draft.sectionKey} ${draft.version} 草稿已删除`, draft.sectionKey),
+    ), `${draft.sectionKey} ${draft.version} 草稿已删除`, draft.sectionKey, { sectionKey: draft.sectionKey, reason }),
   }, draft.sectionKey, original);
 
   const pubSection = (s: TrustSection, draft: TrustSectionVersion, original?: I4SectionCommand) => {
