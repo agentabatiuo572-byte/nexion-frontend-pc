@@ -647,5 +647,6 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i6-page .i6-issue-fix [data-pair] { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
 
 /* 刚被别人改过的核对框（I1–I4、I6 共用）：值保留换行，长串折行。 */
-.idom .i-conflict-label, .i-conflict .i-conflict-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.i-conflict .i-conflict-label { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.i-conflict .i-conflict-table th:first-child, .i-conflict .i-conflict-table td:first-child { width: 1%; white-space: nowrap; }
 .i-conflict .i-conflict-value { white-space: pre-wrap; overflow-wrap: anywhere; }

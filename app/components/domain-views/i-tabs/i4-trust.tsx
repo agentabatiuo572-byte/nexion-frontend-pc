@@ -680,7 +680,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const releasable = !pending && isRetryExpired(record) && sectionNotFound.includes(record.commandKey);
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
         name: `${sectionName(record.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[record.action]}`,
-        change: `${record.before} → ${record.after}`, submittedAt: timeText(new Date(record.createdAt).toISOString()),
+        change: `${record.before} → ${record.after === "archived" ? "已下架" : record.after}`, submittedAt: timeText(new Date(record.createdAt).toISOString()),
         tag: pending ? <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag> : record.receiptKnown ? <StatusTag tone="neutral" icon={Hourglass}>已提交，状态未查到</StatusTag> : unknownTag(),
         note: releasable ? "后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。"
           : !pending && record.receiptKnown ? "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" : undefined,
@@ -696,7 +696,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     catch (error) { toast(displayAdminError(error)); }
     finally { setSectionNotFound(keys => keys.filter(key => key !== record.commandKey)); syncCommands(); }
   };
-  const releaseModal = releasingSection && <ReleaseModal label={`${sectionName(releasingSection.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[releasingSection.action]} · ${releasingSection.before} → ${releasingSection.after}`}
+  const releaseModal = releasingSection && <ReleaseModal label={`${sectionName(releasingSection.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[releasingSection.action]} · ${releasingSection.before} → ${releasingSection.after === "archived" ? "已下架" : releasingSection.after}`}
     explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
     onCancel={() => setReleasingSection(null)} onConfirm={() => void releaseSection(releasingSection)} />;
 

@@ -845,6 +845,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     let note: ReactNode;
     let rebuildLabel = "按最新的重新确认";
     let rebuild: (() => void) | undefined;
+    const optionState = (value: unknown) => !value ? undefined : String(value).toUpperCase() === "ACTIVE" ? "启用" : "停用";
     const reopen = (task: () => void) => () => { prefill.current = { reason: conflict.requested.reason, business: conflict.requested.form }; task(); prefill.current = null; };
     if (path.startsWith("/copy-ab/copies/")) {
       const key = part(3);
@@ -860,7 +861,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         rows = [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`),
           conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi)];
         note = "你填的内容留在编辑框里，提交时按最新的版本。";
-        rebuild = copy ? () => setEditor((current) => current?.kind === "edit" && current.copy.key === key
+        rebuild = copy ? () => (prefill.current = { reason: conflict.requested.reason }) && setEditor((current) => current?.kind === "edit" && current.copy.key === key
           ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;
       } else {
         const version = part(5);
@@ -881,7 +882,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       if (original?.method === "PUT") {
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
-        rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", option?.status, body.status)];
+        rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", optionState(option?.status), optionState(body.status))];
         rebuild = option && reopen(() => editCopyVersionOption(option));
       } else {
         rows = [conflictRow("用到它的文案", "—", option ? `${option.usageCount} 条` : "—"), conflictRow("状态", "—", option?.status)];

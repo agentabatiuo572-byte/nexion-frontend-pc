@@ -325,10 +325,11 @@ export function unknownTag() {
 export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   if (!rows.length) return null;
   const pending = rows.filter((row) => row.kind === "pending").length;
-  const open = rows.length - pending;
-  const title = [open > 0 && `${open} 项操作结果未知`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
+  const submitted = rows.filter((row) => row.kind === "submitted").length;
+  const open = rows.length - pending - submitted;
+  const title = [open > 0 && `${open} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
   return (
-    <Notice tone={open > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
+    <Notice tone={open + submitted > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
       <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；24 小时内也可以「按原请求重试」，后端认得出是同一次提交，过了 24 小时只能查询。</p>
       <p>申请过期后，后端按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
       <p>PDF 上传不能重发，只能查询核对。</p>

@@ -48,7 +48,7 @@ export function IConflictModal({ review, subject, rows, columns, gone, note, reb
       <Button variant="primary" disabledReason={waiting ?? gone} onClick={onRebuild}>{rebuildLabel}</Button>
     </>}>
       <div className="rd-stack i-conflict">
-        <p><b>{subject}</b>被别人先改了，这次没有保存；你填的内容和理由还在。</p>
+        <p><b>{subject}</b>：别人先改了，这次没有保存；你填的内容和理由还在。</p>
         {review.reading
           ? <BlockState state="loading" title="正在读取最新的…" />
           : review.readError

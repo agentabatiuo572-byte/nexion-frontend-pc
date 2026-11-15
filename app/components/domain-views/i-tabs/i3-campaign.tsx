@@ -524,8 +524,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         const form = requested.form;
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
+        const part = (value?: string) => value === undefined ? { title: undefined, body: undefined } : splitNotificationBody(value);
         rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("名称", now?.name, form.name),
-          conflictRow("中文正文", now?.bodyZh, form.bodyZh), conflictRow("越南语正文", now?.bodyVi, form.bodyVi), conflictRow("英语正文", now?.bodyEn, form.bodyEn)];
+          conflictRow("中文标题", part(now?.bodyZh).title, form.titleZh), conflictRow("中文正文", part(now?.bodyZh).body, form.bodyZh),
+          conflictRow("越南语正文", part(now?.bodyVi).body, form.bodyVi), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn)];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
         note = "你填的内容留在表单里，保存时按最新的版本提交。";
@@ -534,7 +536,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
         rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("发送时间", now?.schedule, requested.scheduledAt),
-          conflictRow("中文正文", now?.bodyZh, requested.scheduleRow.bodyZh)];
+          conflictRow("中文内容", now?.bodyZh, requested.scheduleRow.bodyZh)];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再排期。`;
         note = "发送时间和理由留着；「已核对」要重新勾。";

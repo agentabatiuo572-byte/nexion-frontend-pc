@@ -662,7 +662,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     <Fact k="学完发">{liveStatus(c) === "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
       ? <Change from={`${uvtText(c.rewardRaw)} UVT/人`} to={`${uvtText(target.reward)} UVT/人`} /> : `${uvtText(target.reward)} UVT/人`}</Fact>
     {liveStatus(c) !== "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
-      && <Fact k="课程卡上" tone="warn">{`${uvtText(c.rewardRaw)} UVT/人，是主课程草稿的数；发布按 ${target.version} 的数`}</Fact>}
+      && <Fact k="课程卡上现在" tone="warn">{`${uvtText(c.rewardRaw)} UVT/人，发布后换成 ${target.version} 的数`}</Fact>}
     {target.quiz !== undefined && <Fact k="测验">{target.quiz} 题 · {String(target.pass ?? "—")} 分及格</Fact>}
     {approverFact(Number(target.reward))}
   </Facts>;
@@ -712,9 +712,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前发奖按现在的数。`}>批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       statedBrief: { impact: "批准后，还没发到账的奖励都按新数发；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
-      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max,
+      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/人", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max,
         amplifiesWhen: (value) => (i6RewardChange(value, c.rewardRaw)?.direction ?? 0) > 0,
-        hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT`,
+        hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT/人`,
         preview: (value: string) => {
           const change = i6RewardChange(value, c.rewardRaw);
           return change?.direction ? `批准后每位学完的用户领 ${uvtText(value)} UVT，${change.direction > 0 ? "比现在多" : "比现在少"} ${uvtText(change.amount)} UVT。` : undefined;
@@ -1058,6 +1058,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           ...LANGS.map((item) => conflictRow(item.label, now?.[item.key], input[item.key]))];
         note = "三种语言照你填的留着，保存时按最新版本提交。";
         rebuild = () => {
+          carry();
           setSelectedMessageKey(key); setMessageDrawer(true);
           const issue = INTEGRITY_ISSUES.find((row) => row.code === rejected?.snapshot?.integrityIssue?.code);
           setCopyEditor((current) => current ? { ...current, tried: false } : { mode: op === "integrity-fix" && issue ? "fix" : "edit", issue,
@@ -1091,7 +1092,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         rows = [conflictRow("中文标题", base?.titleZh, input.titleZh), conflictRow("越南语标题", base?.titleVi, input.titleVi), conflictRow("英语标题", base?.titleEn, input.titleEn),
           conflictRow("学完发", reward(base?.rewardNex), reward(input.rewardNex)), conflictRow("测验", quiz(base), quiz(input))];
         note = "你填的内容留在编辑框里，保存时按最新的草稿提交。";
-        rebuild = course && (!version || nowVersion) ? () => setCourseEditor((current) => {
+        rebuild = course && (!version || nowVersion) ? () => carry() ?? setCourseEditor((current) => {
           const fresh = version ? editCourseVersionState(course, nowVersion!) : editCrsState(course);
           return current ? fresh : { ...fresh, spec: { ...fresh.spec, current: courseCurrent(course, version ?? course.v, input) } };
         }) : undefined;
@@ -1599,11 +1600,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const unknownOf = (id: string) => courseRecords.find((record) => record.payload.kind === "proposal" && record.payload.input.obj === id && record.ticketStatus !== "pending");
   const weekly = operatorCopyText(I6_STATS.weeklyNexPayout);
   const weeklyValue = weekly.replace(/\s*UVT$/, "");
-  const unknownCount = courseRecords.filter((record) => record.ticketStatus !== "pending").length + ordinaryRecords.length;
+  const unknownCount = courseRecords.filter((record) => record.ticketStatus !== "pending" && !record.receiptKnown).length + ordinaryRecords.length;
+  const submittedCount = courseRecords.filter((record) => record.ticketStatus !== "pending" && record.receiptKnown).length;
   const pendingCourseCount = new Set([...courseApprovalRows.map(row => row.obj), ...courseRecords.filter(record => record.ticketStatus === "pending")
     .map(record => record.payload.kind === "proposal" ? record.payload.input.obj : "")].filter(Boolean)).size;
   const conclusion = unknownCount > 0
     ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里先查询原结果" }
+    : submittedCount > 0
+      ? { state: "neutral" as const, text: `${count(submittedCount)} 张课程申请已提交，审批状态还没查到`, hint: "在下面点「查询原结果」再查" }
     : pendingCourseCount > 0
       ? { state: "neutral" as const, text: `${count(pendingCourseCount)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
       : counts.draft > 0
@@ -1692,7 +1696,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       <StatusTag tone={status.tone} icon={status.text === "草稿" ? FilePen : undefined}>{status.text}</StatusTag>
                       {liveFeatured() === c.id && <StatusTag tone="progress" icon={Star}>首页推荐</StatusTag>}
                       {approval && <StatusTag tone="progress">待审批</StatusTag>}
-                      {unknown && <StatusTag tone="warn">结果未知</StatusTag>}
+                      {unknown && <StatusTag tone={unknown.receiptKnown ? "neutral" : "warn"}>{unknown.receiptKnown ? "已提交，状态未查到" : "结果未知"}</StatusTag>}
                     </span>
                   </div>
                 </header>
