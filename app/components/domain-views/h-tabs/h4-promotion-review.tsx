@@ -4,7 +4,8 @@ import { FileClock, GitCompare, History, ListChecks, Radio, Send, Settings2, Shi
 import { BlockState, Button as RdButton, IrreversibleTag, Panel, StatusTag, Steps, Table as RdTable, Td, Th, Timeline, Tr } from '@/app/components/rd';
 import { BudgetBar, TimeWindow, VersionLine } from './h4-promotion-board';
 import { H4SampleAccountSelect } from './h4-sample-account-select';
-import { promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
+import { promotionFieldLabel, promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
+import { promotionDraftChanges } from '@/lib/admin/promotion-conflict';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
 import { limitText } from '@/lib/admin/promotion-form';
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from '@/lib/admin/business-time';
@@ -32,7 +33,7 @@ const ACTIONS: Record<string, {
     'draft-versions': { label: '创建改版草稿', operation: 'createDraftVersion', authority: 'edit', version: false, copy: '复制当前配置建立候选草稿；旧版本继续运行，历史参与上限不重置。' },
     copies: { label: '复制为新活动', operation: 'copyPromotion', authority: 'edit', version: false, copy: '只复制配置。新活动具有独立身份，不复制审批、使用量或历史订单。' },
 };
-export default function PromotionReview({ activity, catalog, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false, detailActions, zoneSwitch, displayZone }: {
+export default function PromotionReview({ activity: requestedActivity, catalog, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false, detailActions, zoneSwitch, displayZone }: {
     activity: Promotion;
     catalog: Catalog;
     can: (v: string) => boolean;
@@ -51,6 +52,7 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     zoneSwitch?: ReactNode;
     displayZone?: string;
 }) {
+    const [activity, setActivity] = useState(requestedActivity);
     const [history, setHistory] = useState<{data: VersionPage | null; error: unknown; loading: boolean}>({data: null, error: null, loading: true});
     const historyScope = `${activity.activityId}:${activity.revision}:${activity.current?.revision}`;
     const requestedHistoryScope = useRef('');
@@ -71,14 +73,15 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     }, [historyScope]);
     const versions = {...history, reload: () => { void readVersions().catch(() => undefined); }};
     const [action, setAction] = useState<string | null>(null), [simulation, setSimulation] = useState<AdminSimulation | null>(null), [simOpen, setSimOpen] = useState(false), [reservations, setReservations] = useState(false);
-    const current = activity.current, active = versions.data?.items.find(v => v.version === activity.activeVersion), candidate = versions.data?.items.find(v => v.version === activity.draftVersion) || current;
+    // Settlement reads may update the page behind a confirmation, never its approved snapshot.
+    useEffect(() => { if (!action) setActivity(requestedActivity); }, [requestedActivity, action]);
+    const current = activity.current, active = versions.data?.items.find(v => v.version === activity.activeVersion), candidate = current || versions.data?.items.find(v => v.version === activity.draftVersion);
     const blockers = candidate?.policyResolutionErrors || [], impact = activity.impact;
     const missingRanks=[candidate?.draft.buyerAudience,candidate?.draft.inviterAudience].some(a=>a?.rankIds?.some(id=>!catalog.ranks.some(r=>r.id===id)));
     const cannotPublish=blockers.length>0||missingRanks;
     const activityStateAction = !!action && ['pause', 'resume', 'end', 'archive'].includes(action);
     const reloadForConfirmation = async () => {
         const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(activity.activityId)}`);
-        if (action && ACTIONS[action].version && latest.draftVersion !== candidate?.version) throw new Error("PROMOTION_VERSION_NOT_CURRENT");
         const changes = [
             ['活动名称', activity.name, latest.name],
             ['活动状态', labelState(activity.state), labelState(latest.state)],
@@ -87,9 +90,14 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
             ['未支付订单', activity.impact.unpaidOrders, latest.impact.unpaidOrders],
             ['未完成奖励', activity.impact.unfulfilledRewards, latest.impact.unfulfilledRewards],
         ].filter(([, before, after]) => before !== after).map(([label, before, after]) => `${label}：${before} → ${after}`);
+        // Approval/publishing and copying must disclose configuration changes too, not just lifecycle counts.
+        const contentChanges = activity.current && latest.current ? promotionDraftChanges(activity.current.draft, latest.current.draft)
+            .filter(change => change.changedByOther).map(change => `${promotionFieldLabel(change.field)}（${change.field}）：${JSON.stringify(change.opened) ?? '未配置'} → ${JSON.stringify(change.latest) ?? '未配置'}`) : [];
         await readVersions(latest);
+        setActivity(latest);
+        setSimulation(null);
         onReload(latest);
-        return `已加载最新活动资料。${changes.length ? changes.join('；') : '以上活动信息与在途数量未变化'}。活动记录版本：${activity.revision} → ${latest.revision}。请核对后再次确认。`;
+        return `已加载最新活动资料。${changes.length ? changes.join('；') : '以上活动信息与在途数量未变化'}。活动记录版本：${activity.revision} → ${latest.revision}。配置版本：v${activity.current?.version ?? '无'} → v${latest.current?.version ?? '无'}；版本记录：${activity.current?.revision ?? '无'} → ${latest.current?.revision ?? '无'}；${labelState(activity.current?.state ?? '')} → ${labelState(latest.current?.state ?? '')}。${contentChanges.join('；')}。请核对后再次确认。`;
     };
     const button = (key: string, disabled: boolean | string = false) => {
         const a = ACTIONS[key];
@@ -150,7 +158,7 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
         </aside>
     </div>}
     {!!versions.error && <ReadError target="活动历史版本" error={versions.error} retry={versions.reload}/>}
-    {action && <ConfirmCommand onReload={reloadForConfirmation} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate && ({ submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] }[action] ?? []).includes(candidate.state)) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={CONFIRM_LABELS[action]} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async (result, isCurrent) => { if (action === 'copies') await onCopyCreated(result, isCurrent); else { await onRefresh(); versions.reload(); } if (isCurrent()) setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
+    {action && <ConfirmCommand onReload={reloadForConfirmation} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate && activity.draftVersion === candidate.version && !['ENDED', 'ARCHIVED'].includes(activity.state) && ({ submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] }[action] ?? []).includes(candidate.state)) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state)) && (action !== 'archive' || activity.state === 'ENDED' && !impact.unpaidOrders && !impact.unfulfilledRewards) && (action !== 'draft-versions' || !activity.draftVersion && !['ENDED', 'ARCHIVED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={CONFIRM_LABELS[action]} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async (result, isCurrent) => { if (action === 'copies') await onCopyCreated(result, isCurrent); else { await onRefresh(); versions.reload(); } if (isCurrent()) setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
     {simOpen && candidate && <SimulationDialog activity={activity} version={candidate} catalog={catalog} can={can} onClose={() => setSimOpen(false)} onResult={s => { setSimulation(s); setSimOpen(false); }}/>}
     {reservations && <Dialog title="原订单预留" wide onClose={() => setReservations(false)} sub={`${impact.reservedOrders.length} 单 · 关闭不释放订单`}><Table headers={['订单', '锁定版本', '原付款截止', '预留奖励']} rows={impact.reservedOrders.map(r => [<span className="h4-mono">{r.orderNo}</span>, `v${r.version}`, formatTime(r.payBy, zone), r.reservedRewards])}/>{!impact.reservedOrders.length && <BlockState state="empty" title="没有在途预留"/>}</Dialog>}
   </>;

@@ -157,7 +157,7 @@ export function Dialog({ title, children, onClose, footer, wide = false, drawer 
     return <Modal title={title} sub={sub} tone={danger ? 'danger' : 'neutral'} wide={wide} onClose={onClose} footer={foot}><div className="h4-dialog-body">{children}</div></Modal>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
-export function ConfirmCommand({ title, intent, body, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote }: {
+export function ConfirmCommand({ title, intent, body, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, conflictReview, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
@@ -166,7 +166,9 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
     onSettled?: () => void;
     onSuccess: (result: CommandReceipt, isCurrent: () => boolean) => void | Promise<void>;
     onReload?: () => Promise<string>;
-    onVersionConflict?: () => void;
+    onVersionConflict?: (error: PromotionApiError) => void;
+    /** Editor-owned review survives closing and reopening this confirmation. */
+    conflictReview?: { reloadNeeded: boolean; note: string; error: unknown };
     writeAllowed: boolean;
     evidenceOptions?: Array<{
         value: string;
@@ -203,8 +205,11 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
         return () => window.removeEventListener("admin-h4-pending-changed", restore);
     }, [intent.targetId, intent.operation, body.expectedRevision, writeAllowed, record?.commandKey]);
     const [reloadNeeded, setReloadNeeded] = useState(false);
+    const needsReload = reloadNeeded || !!conflictReview?.reloadNeeded;
+    const visibleError = error || (!record && conflictReview?.error);
+    const visibleNote = record ? note : conflictReview?.note ?? note;
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
-    const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
+    const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
         // A normal success callback can close its own dialog; that is not a dismissed original.
         let notifyOriginal = !!record || !active.current;
@@ -222,11 +227,10 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
         }
         if (!record && e instanceof PromotionApiError && !e.unknownOutcome && !e.bodyUnreadable
             && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID'].includes(e.reasonCode || '')) {
-            if (onReload) {
-                setReloadNeeded(true);
-                try { setNote(await onReload()); setError(null); setReloadNeeded(false); }
-                catch (readError) { setError(readError); }
-            } else if (onVersionConflict) onVersionConflict();
+            // A rejection never authorizes a read-and-rebase or a second write.
+            setReloadNeeded(true);
+            setNote('');
+            onVersionConflict?.(e);
         }
     }
     finally {
@@ -267,11 +271,11 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
     } };
     const invalid = !policy.data || policy.loading || !!policy.error || reason.trim().length < policy.data.minChars || reason.trim().length > policy.data.maxChars || (requireEvidence && !evidence.length) || !!uploadState;
     const reasonLength = reason.trim().length;
-    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{reloadNeeded && onReload && <Button onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</Button>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原结果'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原请求重试</Button>}</> : <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || reloadNeeded || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
+    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{needsReload && onReload && <Button onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</Button>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原结果'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原请求重试</Button>}</> : <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || needsReload || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
     {record && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{children}</fieldset>
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}><RdField label="操作理由" required hint={policy.data ? `${policy.data.minChars}–${policy.data.maxChars} 字，和操作一起留痕` : '正在读取理由要求'}>{control => <Textarea {...control} value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars} count={policy.data ? `${reasonLength}/${policy.data.maxChars}` : undefined}/>}</RdField>{evidenceOptions.length > 0 && <fieldset className="h4-fieldset h4-evidence"><legend className="rd-form-label">关联证据{requireEvidence ? <span className="rd-form-required" aria-hidden>*</span> : null}</legend>{evidenceOptions.map(option => <RdCheck key={option.value} label={option.label} checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>)}</fieldset>}</fieldset>
     {requireEvidence && evidenceMode === 'upload' && <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{evidenceNote}<BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', uploadTarget, help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
-    {!writeAllowed && <RdNotice tone="warn" title="当前操作已停用">授权或依赖数据当前无法支持此操作。原输入与操作记录继续保留；查询原结果也要这项操作的权限，可能被拒。</RdNotice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!error && <RdNotice tone="danger" title="操作尚未完成">{displayAdminError(error)}{error instanceof PromotionApiError&&error.fieldErrors.map((f,i)=><p key={i} className="h4-input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</RdNotice>}{note && <RdNotice tone="neutral" title="查询结果">{note}</RdNotice>}<span hidden>{version}</span>
+    {!writeAllowed && <RdNotice tone="warn" title="当前操作已停用">授权或依赖数据当前无法支持此操作。原输入与操作记录继续保留；查询原结果也要这项操作的权限，可能被拒。</RdNotice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!visibleError && <RdNotice tone="danger" title="操作尚未完成">{displayAdminError(visibleError)}{visibleError instanceof PromotionApiError&&visibleError.fieldErrors.map((f,i)=><p key={i} className="h4-input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</RdNotice>}{visibleNote && <RdNotice tone="neutral" title="查询结果">{visibleNote}</RdNotice>}<span hidden>{version}</span>
   </Dialog>;
 }
