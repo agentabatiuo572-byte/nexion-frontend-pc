@@ -10,6 +10,21 @@ const ABNORMAL_CATEGORIES = ["multi-account", "arbitrage", "trial-cycle", "withd
 
 type Light = "green" | "yellow" | "red";
 
+/** Partial projections from the backend's identified producers, never raw evidence. */
+export type B5SignalFacts = {
+  tamperPath?: string;
+  attackEffect?: string;
+  rowId?: string;
+  cycleCount?: number;
+  windowDays?: number;
+  view?: string;
+  action?: string;
+  source?: string;
+  caseNo?: string;
+  walletShortfallUsdt?: string;
+  feeBufferShortfallUsdt?: string;
+};
+
 export type B5Radar = {
   generatedAt: string;
   bankrun: {
@@ -54,7 +69,9 @@ export type B5Radar = {
   pressureHistory: Array<{ label: string; ratio: number | null }>;
   alertSeverity: Array<{ level: "P0" | "P1" | "P2" | "P3"; count: number }>;
   alertVolume: Array<{ label: string; count: number }>;
-  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: true; handlingStatus: "open" | "handled" | "resolved"; handlingVersion: number; deliveryStatus: string }>;
+  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: true; handlingStatus: "open" | "handled" | "resolved"; handlingVersion: number; deliveryStatus: string;
+    // Optional for snapshots saved before f7fec2da; missing fields remain unknown.
+    signalType?: string | null; userNo?: string | null; facts?: B5SignalFacts | null; handledBy?: string | null; handledAt?: string | null }>;
   sources: string[];
 };
 
@@ -75,6 +92,26 @@ function arr(value: unknown, field: string): unknown[] {
 function text(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) invalid(field);
   return value.trim();
+}
+
+function optionalText(value: unknown, field: string): string | null {
+  return value == null ? null : text(value, field);
+}
+
+function signalFacts(value: unknown, field: string): B5SignalFacts | null {
+  if (value == null) return null;
+  const source = row(value, field);
+  const facts: B5SignalFacts = {};
+  for (const key of ["tamperPath", "attackEffect", "rowId", "view", "action", "source", "caseNo"] as const) {
+    if (source[key] !== undefined) facts[key] = text(source[key], `${field}.${key}`);
+  }
+  for (const key of ["cycleCount", "windowDays"] as const) {
+    if (source[key] !== undefined) facts[key] = whole(source[key], `${field}.${key}`);
+  }
+  for (const key of ["walletShortfallUsdt", "feeBufferShortfallUsdt"] as const) {
+    if (source[key] !== undefined) facts[key] = readB5Amount(source[key], `${field}.${key}`, true);
+  }
+  return facts;
 }
 
 function num(value: unknown, field: string): number {
@@ -235,12 +272,17 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       signalNo: text(item.signalNo, `recentAlerts.${index}.signalNo`),
       level: level as "P0" | "P1" | "P2" | "P3",
       message: text(item.message, `recentAlerts.${index}.message`),
+      signalType: optionalText(item.signalType, `recentAlerts.${index}.signalType`),
       userId: whole(item.userId, `recentAlerts.${index}.userId`),
+      userNo: optionalText(item.userNo, `recentAlerts.${index}.userNo`),
+      facts: signalFacts(item.facts, `recentAlerts.${index}.facts`),
       createdAt: isoLocalDateTime(item.createdAt, `recentAlerts.${index}.createdAt`),
       target,
       handlingStatusAvailable: true as const,
       handlingStatus: handlingStatus as "open" | "handled" | "resolved",
       handlingVersion: whole(item.handlingVersion, `recentAlerts.${index}.handlingVersion`),
+      handledBy: optionalText(item.handledBy, `recentAlerts.${index}.handledBy`),
+      handledAt: item.handledAt == null ? null : isoLocalDateTime(item.handledAt, `recentAlerts.${index}.handledAt`),
       deliveryStatus: text(item.deliveryStatus, `recentAlerts.${index}.deliveryStatus`),
     };
   });

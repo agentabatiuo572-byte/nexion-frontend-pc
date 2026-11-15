@@ -836,7 +836,7 @@ export default function RiskRadarPage() {
               <Facts>
                 <Fact k="风险信号">{alert.message}</Fact>
                 <Fact k="级别">{SEVERITY[alert.level].text}</Fact>
-                <Fact k="用户 · 信号号"><>#{alert.userId} · <span data-mono>{alert.signalNo}</span></></Fact>
+                <Fact k="用户 · 信号号"><>{alert.userNo ?? `#${alert.userId}`} · <span data-mono>{alert.signalNo}</span></></Fact>
                 <Fact k="发生时间">{stamp(alert.createdAt)}</Fact>
                 <Fact k="处理进度"><Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} /></Fact>
               </Facts>

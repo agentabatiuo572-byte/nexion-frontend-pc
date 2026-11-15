@@ -1,10 +1,10 @@
 /** Keep backlog DECIMAL lexemes before JSON.parse can round them through Number. */
 export function parseB5MoneyJson(value: string): unknown {
-  return JSON.parse(value.replace(/("(?:amountUsdt|totalAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'));
+  return JSON.parse(value.replace(/("(?:amountUsdt|totalAmountUsdt|walletShortfallUsdt|feeBufferShortfallUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'));
 }
 
-export function readB5Amount(value: unknown, field: string): string {
-  if (typeof value !== "string" || !/^\d+(?:\.\d+)?$/.test(value)) throw new Error(`B5_RESPONSE_INVALID:${field}`);
+export function readB5Amount(value: unknown, field: string, signed = false): string {
+  if (typeof value !== "string" || !(signed ? /^-?\d+(?:\.\d+)?$/ : /^\d+(?:\.\d+)?$/).test(value)) throw new Error(`B5_RESPONSE_INVALID:${field}`);
   return value;
 }
 

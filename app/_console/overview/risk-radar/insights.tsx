@@ -142,7 +142,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
             return (
               <Tr key={alert.signalNo}>
                 <Td><Cell main={<span className="b5-signal-main"><StatusTag tone={SEVERITY[alert.level].tone} icon={SEVERITY[alert.level].icon}>{SEVERITY[alert.level].text}</StatusTag>{alert.message}</span>}
-                  sub={<>用户 #{alert.userId} · <SignalNo value={alert.signalNo} /></>} /></Td>
+                  sub={<>用户 {alert.userNo ?? `#${alert.userId}`} · <SignalNo value={alert.signalNo} /></>} /></Td>
                 <Td><Cell num main={shortStamp(alert.createdAt)} /></Td>
                 <Td><Cell main={<StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>} sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 <Td>{reach(alert.target)
