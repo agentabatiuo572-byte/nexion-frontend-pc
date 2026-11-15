@@ -116,7 +116,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   const query = async (r: H3PendingCommand, quiet = false) => {
     requireActor(false);
     if (r.request.kind === "direct") {
-      await settled();
+      await settled(r.commandKey);
       if (!quiet) toast("已重新读取；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
       return undefined;
     }
