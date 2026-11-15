@@ -4716,3 +4716,7 @@ M3 群发已有待确认原命令时，「查询原操作结果」独立于「�
 ### 2026-11-15 D6 B38 核查支持边界
 
 backend04d11022 OpsVietnamPaymentService.updateFxQuote:182–190 使用 D6_FX_QUOTE_UPDATE，AdminCommandOrigin:65映射的是 D6_FX_QUOTE，supported:77–82不含D6，直接修改不连接。A2敏感汇率提案为受支持A2_COMMAND，保存原POST/admin/path/readAuthority，原完整proposal仍冻结；本地解除提案改受控查询，只有权威未锁终态清记录并重新读取，其他状态保留。旧无来源不补造。checkProposalInvestigation与结果/权限供视觉接证据和结果/交接人。
+
+### 2026-11-15 D7 B38 核查支持边界
+
+backend04d11022 AdminCommandOrigin:66有D7_PAYOUT_VND_CONFIG读权名称，但supported:77–82无D7；PayoutVndConfigService.evaluateUpdate:75起的直接保存为版本保护链，不具本受控来源。直接保存不接；A2放宽提案受支持，新记录保完整withdrawalRequest/origin并在重试中复用，原解除提案分支改checkProposalInvestigation，仅权威终态清记录再读配置/审批。旧无来源或其他未知/错误均保留。证据/结果/交接人和常驻查询入口交视觉。

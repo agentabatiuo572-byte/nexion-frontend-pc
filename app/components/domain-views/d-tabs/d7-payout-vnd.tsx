@@ -28,6 +28,7 @@ import {
   PAYOUT_VND_FIELDS, derivePayoutVndRates, isPayoutVndInverted, vndText,
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
@@ -538,13 +539,33 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /** 解除只放开本页的锁，不发请求，不写操作记录（OP-96）。 */
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const checkProposalInvestigation = async (record: NonNullable<ReturnType<typeof pendingConfigApproval>>, evidence?: FundCommandEvidence) => {
+    setRecovering(record.commandKey);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        if (session) releaseConfigApproval("D7", session.adminId, record.commandKey);
+        syncPending(); await reload(); await loadQueue();
+      } else if (!receipt) note(record.commandKey, displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      note(record.commandKey, error); throw cause;
+    } finally { setRecovering(""); }
+  };
   const releasePending = () => {
     if (!releasing) return;
-    if (releasing.kind === "direct") directCommands.forget(releasing.record.fingerprint, releasing.record.commandKey);
-    else if (session) releaseConfigApproval("D7", session.adminId, releasing.commandKey);
-    syncPending();
-    setReleasing(null);
+    if (releasing.kind === "approval") {
+      const original = session ? pendingConfigApproval("D7", session.adminId) : undefined;
+      if (original?.commandKey === releasing.commandKey) void checkProposalInvestigation(original).catch(() => undefined);
+      setReleasing(null); return;
+    }
+    // The version-guarded direct update has no supported command origin in this backend.
+    directCommands.forget(releasing.record.fingerprint, releasing.record.commandKey);
+    syncPending(); setReleasing(null);
     toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
