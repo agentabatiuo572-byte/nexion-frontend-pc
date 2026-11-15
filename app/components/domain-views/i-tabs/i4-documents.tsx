@@ -19,11 +19,11 @@ import {
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
 import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
-import { isIConflictRejection } from "@/lib/admin/i-conflict-review";
+import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 // 原请求由 i4-document-commands 保存；编辑器仅持有输入，未知时冻结。
-type Editor =
+export type I4DocumentEditor =
   | { mode: "upload"; document: TrustDocument; file: File | null; fields: TrustDocumentUpload }
   | { mode: "restore"; document: TrustDocument; reason: string };
 
@@ -39,7 +39,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [documents, setDocuments] = useState<TrustDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editor, setEditor] = useState<Editor | null>(null);
+  const [editor, setEditor] = useState<I4DocumentEditor | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [reasonMin, setReasonMin] = useState(8);
@@ -49,6 +49,9 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [editorBaselineReady, setEditorBaselineReady] = useState(true);
   /** 第一次提交被明确拒绝是因为资料刚被别人换过（不是结果未知）。 */
   const [conflicted, setConflicted] = useState(false);
+  // Visual worker: compare review.latest (all document facts) with review.requested
+  // and review.rejectedCommand.file. Only explicit review.confirm may adopt the baseline.
+  const conflictReview = useIConflictReview<TrustDocument, I4DocumentEditor, I4DocumentCommand>();
   const submitting = useRef(false);
   /** 只管显示：第一次读完之前画加载块，不画「没读到」。 */
   const [read, setRead] = useState(false);
@@ -144,11 +147,19 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       else if (isIConflictRejection(cause)) {
         setConflicted(true);
         setEditorBaselineReady(false);
-        await refresh();
+        await conflictReview.reject(cause, editor, async () => {
+          const document = (await refresh())?.find(row => row.slot === editor.document.slot);
+          if (!document) throw new Error("请先成功重新读取最新资料后再修改。");
+          return document;
+        });
       }
     } finally { submitting.current = false; setSaving(false); onPendingChange(); }
   };
   const readBack = async () => {
+    if (conflicted) {
+      await conflictReview.reread();
+      return;
+    }
     if (pendingKey) {
       const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
       if (original) {

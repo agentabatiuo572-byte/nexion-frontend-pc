@@ -74,7 +74,10 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
   } catch (error) {
     const failure = error as { status?: number; apiCode?: number };
     const rejected = retry ? isExplicitRejection(error) : !isOutcomeUnknownError(error) && isDeterministicRejection(failure.status ?? 0, failure.apiCode);
-    if (rejected) await finish(command);
+    if (rejected) {
+      await finish(command);
+      if (!retry && error instanceof Error) Object.assign(error, { rejectedCommand: command });
+    }
     if (!rejected && command.mode === "upload") throw new OutcomeUnknownError("上传结果未知，文件可能已经对外公开；请重新读取核对 SHA、大小和上传时间。");
     throw error;
   }
