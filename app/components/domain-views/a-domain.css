@@ -515,6 +515,7 @@
 .a4-redrive { display: flex; flex-direction: column; gap: 12px; }
 .a4-redrive-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .a4-redrive-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.a4-redrive-user { margin: 0; display: flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
 .a4-redrive-type { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
 .a4-redrive-head [data-mono] { color: var(--rd-text-3); font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
 .a4-layers { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
