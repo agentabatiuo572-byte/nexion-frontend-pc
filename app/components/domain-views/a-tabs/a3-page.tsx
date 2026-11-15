@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { Activity, Ban, CalendarClock, CircleHelp, CircleOff, Gauge, Hourglass, Megaphone, RefreshCw, ShieldAlert, ShieldCheck, Siren, SlidersHorizontal, ToggleLeft, TriangleAlert, type LucideIcon } from "lucide-react";
-import { BlockState, Button, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, KeepText, Modal, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, TodoItem, TodoList, useTabIds, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, KeepText, Modal, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, TodoItem, TodoList, useTabIds, type StateTone } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -545,11 +545,15 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         <Facts>
           <Fact k="原操作">{record.name} · {original.mode === "PUBLISHED" ? "发布" : "保存草稿"}</Fact>
           <Fact k="提交时间">{businessStamp(record.createdAt)}（{businessZone().label}）</Fact>
-          <Fact k="修改序号（每保存一次加 1）" tone={check.revision.matches ? undefined : "warn"}>{`提交时 ${check.revision.submitted}，保存成功应为 ${check.revision.expected}，现在 ${check.revision.current}`}</Fact>
           <Fact k={original.kind === "docs" ? "正文版本" : "文档版本"} tone={check.version.matches ? undefined : "warn"}>{sameOr(check.version.matches, check.version.submitted.replace(/^default-/, ""), check.version.current.replace(/^default-/, ""))}</Fact>
           <Fact k="保存为" tone={check.status.matches ? undefined : "warn"}>{sameOr(check.status.matches, SAVE_AS[check.status.submitted], SAVE_AS[check.status.current] ?? check.status.current)}</Fact>
           <Fact k="内容" tone={check.contentMatches ? undefined : "warn"}>{check.contentMatches ? original.kind === "docs" ? "全部语言相同" : "六页内容相同" : "和原提交不同"}</Fact>
         </Facts>
+        <Fold inset title="技术信息" summary={check.revision.matches ? "修改序号对得上" : "修改序号对不上"}>
+          <Facts>
+            <Fact k="修改序号" tone={check.revision.matches ? undefined : "warn"}>{`提交时 ${check.revision.submitted}，保存成功应为 ${check.revision.expected}，现在 ${check.revision.current}（每保存一次加 1）`}</Fact>
+          </Facts>
+        </Fold>
         <p><KeepText text="确认时会再读一次。只清本标签页的记录，不撤销原保存；你填的内容放回编辑器。" /><Explain label="为什么可以解除" content="原请求就算晚到也只会生效一次；内容被别人改过时，之后的保存会被拒绝并重新读取，不会悄悄覆盖。" /></p>
       </div>
     </Modal>;

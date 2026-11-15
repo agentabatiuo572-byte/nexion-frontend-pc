@@ -20,9 +20,11 @@ export type A3ContentSummary = { unsaved: number };
 export type A3Restored =
   | { kind: "docs"; document: PublishedContentDocument; baseline: PublishedContentDocument; reason: string }
   | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; reason: string };
-/** 读回和原提交对不上时的一句话（页面上方提示条和保存框里共用）。 */
+/** 读回和原提交对不上时的一句话（页面上方提示条和保存框里共用）；修改序号只在解除框的技术信息里。 */
 export const contentCheckLine = (check: A3ContentComparison) =>
-  `修改序号（每保存一次加 1）应为 ${check.revision.expected}，现在是 ${check.revision.current}；内容${check.contentMatches ? "相同" : "不同"}。核对后可以解除。`;
+  check.contentMatches
+    ? "内容和你提交的一样，但保存记录对不上，可能刚被别人改过。核对后可以解除。"
+    : "现在的内容和你提交的不一样，可能没保存上，也可能刚被别人改过。核对后解除，再重新保存。";
 type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; restored: A3Restored | null; onRestored: () => void };
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
 type Row = Record<string, unknown>;
