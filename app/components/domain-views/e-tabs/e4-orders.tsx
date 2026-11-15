@@ -460,7 +460,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
           // 只有一个去向时没得选，写成事实，不给下拉（OP-126）。
           const channel = channels.length === 1 ? channels[0] : undefined;
-          const reasonField = { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, wide: !!channel };
+          const reasonField = { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true };
           const amountField = { key: "refundAmountUsdt", label: "退款金额（USDT）", current: o.amt ?? "", inputKind: "text" as const, required: true };
           const amountFeedback = (value: Record<string, string>) => {
             const message = e4RefundAmountError(value.refundAmountUsdt ?? "", o.amt);
@@ -482,7 +482,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                     <Fact k="用户">{o.user}</Fact>
                     {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                     {/* 退款入口只在读到覆盖率时开。 */}
-                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">按全额退款估算 · 红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="这里按整单全额退款估算，少退时实际影响更小。批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">全额估算 · 红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="这里按整单全额退款估算，少退时实际影响更小。批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
                     {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
                   </Facts>
                   <Fold title="商品与购买设备" summary={purchaseDevices == null ? "明细未提供" : purchaseDevices.length ? `${purchaseDevices.length} 台` : "尚未生成"} inset>
