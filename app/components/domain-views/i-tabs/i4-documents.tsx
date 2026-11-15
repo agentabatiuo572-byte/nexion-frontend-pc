@@ -147,7 +147,8 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       setEditor(null); setPendingKey(null); setFresh(false);
       await refresh();
     } catch (cause) {
-      setEditorError(displayAdminError(cause));
+      setEditorError(editor.mode === "restore" && (cause as { reasonCode?: string }).reasonCode === "TRUST_DOCUMENT_ALREADY_DEFAULT"
+        ? "现在已经是默认文件了，不用再恢复。" : displayAdminError(cause));
       const pending = pendingI4DocumentCommands().find(row => row.document.slot === editor.document.slot);
       if (pending) setPendingKey(pending.commandKey);
       else if (isIConflictRejection(cause)) {
