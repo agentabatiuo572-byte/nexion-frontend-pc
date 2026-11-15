@@ -27,6 +27,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
+import type { A2OperationRow } from "@/lib/admin/a2-client";
 import { i4AppFieldIssue, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -60,6 +61,8 @@ const statusZh = (status?: string) => ({
   PENDING: "待处理", ACTIVE: "已启用", DISABLED: "已停用",
   pending_review: "待发布复核", PENDING_REVIEW: "待发布复核",
 } as Record<string, string>)[status ?? ""] ?? "未知状态";
+/** 审批单的结论，和全站同一套叫法；statusZh 只管内容版本的状态。 */
+const TICKET_STATUS: Record<A2OperationRow["status"], string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 /** 版本一行的状态：公开中的版本写「公开中」，被替代的写「历史版本」。 */
 const versionTone = (status: string, live: boolean): { text: string; tone: StateTone } => {
   const value = status.toLowerCase();
@@ -219,7 +222,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       target: TRUST_SECTION_VERSIONS.find(row => row.sectionKey === spec.obj && row.version === spec.after),
       otherIssues: othersBroken(spec.obj),
     });
-    toast(result.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(result.status)}`);
+    toast(result.status === "pending" ? "已提交，等待审批后执行" : `审批单${TICKET_STATUS[result.status]}`);
     if (confirmation) ctx.closeActionConfirm(confirmation.request);
     await rereadAfterResolution([spec.obj], []);
     return true;
@@ -650,7 +653,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     try {
       const ticket = await queryI4SectionCommand(record);
       if (!ticket && !record.receiptKnown && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
-      toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(ticket.status)}`
+      toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${TICKET_STATUS[ticket.status]}`
         : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
       if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey], [record.commandKey]);
     } catch (error) { toast(displayAdminError(error)); }

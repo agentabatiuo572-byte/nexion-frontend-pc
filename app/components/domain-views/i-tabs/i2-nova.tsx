@@ -177,7 +177,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const openedData = data;
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
-    const confirmation: ConfirmReq = { ...req, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
+    // 结果未知后框里冻结的是原请求，主按钮和别处一样叫「按原请求重试」（全站-结果未知叫法）。
+    const confirmation: ConfirmReq = { ...req, get okLabel() { return pendingKey ? "按原请求重试" : req.okLabel; }, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();
