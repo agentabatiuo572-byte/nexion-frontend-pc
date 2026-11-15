@@ -1,4 +1,5 @@
 "use client";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -142,7 +143,7 @@ export function F3Placements() {
             <Td><Cell main={<span data-mono>{row.memberUserId}</span>} /></Td>
             <Td>{legTag(row.leg)}</Td>
             <Td>{row.assignmentSource === "AUTO" ? "自动分组" : row.assignmentSource === "MANUAL" ? "人工分组" : "—"}</Td>
-            <Td><Cell num main={row.assignedAt?.replace("T", " ").slice(0, 16) || "—"} /></Td>
+            <Td><Cell num main={formatBusinessTimeCompact(row.assignedAtIso ?? row.assignedAt, "—")} /></Td>
             <Td>{row.assignedBy || "—"}</Td>
             <Td data-fit="">{row.leg ? <span className="f3-weak">已分组</span> : canWrite ? <span className="f3-row-actions">{(["A", "B"] as const).map(leg => <Button key={leg} size="sm" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>分到 {leg} 组</Button>)}</span> : <span className="f3-weak">只读</span>}</Td>
           </Tr>)}
