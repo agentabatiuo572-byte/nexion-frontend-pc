@@ -237,7 +237,7 @@ export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels,
             <section className="h7-form-section" aria-labelledby="h7-f-when">
               <h3 id="h7-f-when" className="h7-form-title">什么时候能领能用</h3>
               <div className="rd-form-grid" data-cols="2" data-dense="">
-                <Field label="开始日期" hint="不填＝立即" help={startAt ? `从 ${startAt}（${zone}）起` : "从保存时开始"}>
+                <Field label="开始日期" hint="不填＝立即" help={startAt ? `从 ${startAt}（${zone}）起` : undefined}>
                   {(control) => <Input {...control} type="date" value={value.startDate} onChange={(e) => set("startDate", e.target.value)} />}
                 </Field>
                 <Field label="结束日期" hint="不填＝长期" help={endAt ? `到 ${endAt}（${zone}）为止，已领没用的也不能再用` : "长期有效"}>

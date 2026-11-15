@@ -37,7 +37,7 @@ import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sen
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, endText, expiredTag,
-  faceValue, limitReached, pendingTag, periodText, skuText, startText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
+  faceValue, limitReached, pendingFacts, pendingTag, periodText, skuText, startText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
 import { H7VoucherForm, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
@@ -546,7 +546,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       {`${countText(activeN)} 张券在投放，共发出 ${countText(issuedSum)} 张，已用 ${countText(redeemedSum)} 张`}
       {expiredActive.length > 0 && `；${expiredActive.length} 张已过有效期但还是投放中，可以暂停`}
       {fullActive.length > 0 && `；${fullActive.length} 张已发完，用户领不到`}
-      {unknownCount > 0 && `；${unknownCount} 个操作结果未知，先查询原结果`}
+      {unknownCount > 0 && `；${unknownCount} 个操作结果未知`}
     </Conclusion>;
 
   return (
@@ -628,10 +628,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
               <VoucherFace v={v} size="large" />
               <div className="h7-detail-head">
                 <VoucherTags v={v} now={now} showPending={false} />
-                {serverPending && pendingTag(serverPending)}
                 <p className="h7-preview-sentence">{voucherSentence(v, skuLabels)}</p>
               </div>
             </div>
+            {serverPending && <Notice tone="warn" title={serverPending.action ? `${serverPending.action}在等批准` : "这张券有一张没结束的审批"}>
+              {`${pendingFacts(serverPending) ?? "没读出是哪张单、谁提交的，到「操作记录与审批」核对"}。审批结束前不能编辑、暂停、投放、删除或作废。`}
+            </Notice>}
             <section className="h7-detail-block" aria-label="使用情况">
               <h3 className="h7-form-title">使用情况</h3>
               <UsageBar v={v} />
