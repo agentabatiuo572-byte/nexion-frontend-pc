@@ -102,7 +102,7 @@ export default function H4Promotions({ ctx, legacy }: {
     };
     const afterDelete = (result: CommandReceipt) => { setDeletedId(result.targetId); setDeleting(null); setActivity(null); setActivityError(null); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); navigate('list', ''); reloadList(); };
     const pendingItems = pendingPromotionCommands();
-    const legacyUnknown = pendingH4Commands().filter(r => !r.asset && !h4CommandHasPendingTicket(r.commandKey)).length;
+    const legacyUnknown = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request) && !h4CommandHasPendingTicket(r.commandKey)).length;
     const uploadUnknown = pendingH4Commands().filter(r => !r.asset && r.scope.includes('/h4_media/')).length;
     const recoveredUploads = recoveredH4Uploads();
     const uploadFile = (record: H4Command) => { try { const b = JSON.parse('body' in record.request ? record.request.body : '{}'); return { name: String(b.fileName ?? '—'), size: typeof b.size === 'number' ? `${(b.size / 1048576).toFixed(2)} MB` : '' }; } catch { return { name: '—', size: '' }; } };
