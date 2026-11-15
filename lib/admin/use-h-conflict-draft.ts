@@ -17,7 +17,7 @@ export function useHConflictDraft(ready: boolean) {
   useEffect(() => {
     if (!pending || !ready || !saved.current) return;
     const key = saved.current.key, open = openers.current.get(key);
-    if (!open) return;
+    if (!open) { saved.current = undefined; setPending(false); return; }
     restoring.current = true;
     opening.current = key;
     try { open(); } finally { restoring.current = false; opening.current = undefined; }
@@ -42,28 +42,30 @@ export function useHConflictDraft(ready: boolean) {
         try { open(); } finally { opening.current = undefined; }
       };
     },
-    action<T extends ActionConfirmReq>(request: T): T {
+    action<T extends ActionConfirmReq>(request: T, recovering?: () => boolean): T {
       const key = opening.current;
       const draft = restoring.current ? saved.current : undefined;
       return { ...request, ...(draft ? { formKey: revision, initialReason: draft.reason,
         edit: request.edit ? { ...request.edit, initialValue: draft.value } : undefined,
         getPendingBusinessValue: () => request.getPendingBusinessValue?.() ?? draft.business,
       } : {}), run: async (reason: string, value?: string, business?: BusinessFormValue) => {
+        const original = recovering?.() ?? request.getPendingReason?.() !== undefined;
         try { return await request.run(reason, value, business); }
         catch (error) {
-          if (isHGrowthReadConflict(error)) retain(key, reason, value, business, request.rebaseValue);
+          if (!original && isHGrowthReadConflict(error)) retain(key, reason, value, business, request.rebaseValue);
           throw error;
         }
       } };
     },
-    confirm(request: ConfirmReq): ConfirmReq {
+    confirm(request: ConfirmReq, recovering?: () => boolean): ConfirmReq {
       const key = opening.current;
       const draft = restoring.current ? saved.current : undefined;
       return { ...request, ...(draft ? { initialReason: draft.reason, formKey: revision } : {}),
         run: async (reason, value) => {
+          const original = recovering?.() ?? request.getPendingReason?.() !== undefined;
           try { return await request.run(reason, value); }
           catch (error) {
-            if (isHGrowthReadConflict(error)) retain(key, reason, value, undefined, request.rebaseValue);
+            if (!original && isHGrowthReadConflict(error)) retain(key, reason, value, undefined, request.rebaseValue);
             throw error;
           }
         },

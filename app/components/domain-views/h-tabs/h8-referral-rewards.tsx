@@ -167,7 +167,6 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         currentRead.current.ready = false;
         setReadReady(false);
         await load();
-
       }
       throw error;
     }

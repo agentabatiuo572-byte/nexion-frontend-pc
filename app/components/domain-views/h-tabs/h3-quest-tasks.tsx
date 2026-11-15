@@ -92,7 +92,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
-    req = conflictDraft.action(req);
+    req = conflictDraft.action(req, () => !!confirmation.current?.commandKey);
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
     setMc({ ...req, getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
@@ -109,7 +109,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
-    req = { ...req, ...conflictDraft.confirm(req) };
+    req = { ...req, ...conflictDraft.confirm(req, () => !!confirmation.current?.commandKey) };
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
     shellCtx.openConfirm({ ...req, freezePendingInput: true,

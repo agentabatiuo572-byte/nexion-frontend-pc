@@ -113,7 +113,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
       return;
     }
-    const next = conflictDraft.action(req), values = next.getPendingBusinessValue?.();
+    const next = conflictDraft.action(req, () => !!mutations.record(req.target)), values = next.getPendingBusinessValue?.();
     setApprovalLabel(next.businessForm?.kind === "multi-field" && values ? next.businessForm.amplifies?.(values) ?? false : false);
     setMc(next);
   };
