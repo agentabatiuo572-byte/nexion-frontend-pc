@@ -87,7 +87,7 @@ type StateKey = "pending_lock" | "active" | "mature_unclaimed" | "claimed" | "ea
 /** 七种仓位状态：名字、色调、图标和它是什么意思（按后端现行行为写，见重构说明「后端事实」）。 */
 const POSITION_STATES: Record<StateKey, { label: string; tone: StateTone; icon: LucideIcon; meaning: string }> = {
   pending_lock: { label: "待确认", tone: "neutral", icon: Clock3, meaning: "历史记录里还在等锁仓确认的仓位，本金已计入锁定金额。" },
-  active: { label: "计算奖励中", tone: "progress", icon: CircleDashed, meaning: "锁仓中，按下单时的奖励率算奖励。过了到期时间的也可能还在这里：用户在 App 里打开质押仓位后才会变成到期未领。" },
+  active: { label: "计算奖励中", tone: "progress", icon: CircleDashed, meaning: "锁仓中、还没到期，按下单时的奖励率算奖励。" },
   mature_unclaimed: { label: "到期未领", tone: "warn", icon: Hourglass, meaning: "已到期，锁定金额和奖励等用户自己领取；系统不会自动发放，后台也不能代领。" },
   claimed: { label: "已领取", tone: "done", icon: CheckCheck, meaning: "用户已领取锁定金额和奖励。" },
   early_withdrawn: { label: "提前解锁", tone: "done", icon: LogOut, meaning: "到期前退出：按下单时的比例扣锁定金额，质押奖励不发放。" },
@@ -98,7 +98,7 @@ const positionStateLabel = (state: string): string => POSITION_STATES[state as S
 const rowState = (status: string) => POSITION_STATES[status.toLowerCase() as StateKey];
 
 const STAGES: readonly { key: string; title: string; explain: string; states: readonly StateKey[] }[] = [
-  { key: "locked", title: "还在锁定", explain: "待确认和计算奖励中的仓位，本金还没回到用户手里。用户在 App 里打开质押仓位后才会变成到期未领，所以过了到期时间的也会留在这里，单独标出。", states: ["pending_lock", "active"] },
+  { key: "locked", title: "还在锁定", explain: "待确认和计算奖励中的仓位，本金还没回到用户手里。", states: ["pending_lock", "active"] },
   { key: "due", title: "到期待领取", explain: "到期后由用户自己领取，系统不会自动发放；没领之前一直停在这里。", states: ["mature_unclaimed"] },
   { key: "ended", title: "已结束", explain: "领取、提前解锁、罚没或退款后就结束了。提前解锁只算本月（按业务日历的月份），其余不限时间。", states: ["claimed", "early_withdrawn", "slashed", "refunded"] },
 ];
@@ -286,7 +286,7 @@ export function G1Staking() {
         <Stat tone="role-1" icon={Wallet} label="锁定中的本金" value={usdtText(stats.usdtPoolUsd)} unit="USDT"
           explain="待确认、计算奖励中、到期未领三种仓位的锁定金额合计，只算四档 USDT 历史质押。这页只查这四档，不含 UVT 质押。" />
         <Stat tone={mature > 0 ? "warn" : "role-3"} icon={CalendarClock} label="到期未领" value={fmtCount(mature)} unit="笔"
-          explain="已到期、等用户自己领取的仓位。系统不会自动发放，后台也不能代领。只算状态已经是到期未领的；过了到期时间、状态还是计算奖励中的另写在下面一行，只在读到的仓位里数，没读全时写「至少」。" />
+          explain="过了到期时间、等用户自己领取的仓位，都算在这里。系统不会自动发放，后台也不能代领。" />
         <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 含四档以外产品"
           explain="「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和，不按已锁天数折算。还含四档以外的产品，和上面的仓位范围对不上，正在修。不是已产生或已发放的奖励，只作量级参考。" />
       </StatBand>}
