@@ -1,7 +1,7 @@
 import type { EventRuleView } from "./event-rules-client";
 
 export interface EventRuleField { key: string; label: string; type?: "text" | "regions" | "weekdays" | "voucher"; integer?: boolean; }
-export const EVENT_KIND_LABELS: Record<string, string> = { discount: "限时优惠", seasonal: "节日促销", referral: "邀请挑战", onboarding: "新用户冲刺", regional: "区域竞赛", boost: "奖励加成", wheel: "幸运转盘" };
+export const EVENT_KIND_LABELS: Record<string, string> = { discount: "限时特惠", seasonal: "季节活动", referral: "推荐有奖", onboarding: "新用户冲刺", regional: "区域 PK", boost: "加成活动", wheel: "幸运转盘" };
 export const EVENT_RULE_FIELDS: Record<string, EventRuleField[]> = {
   referral: [{ key: "targetInvites", label: "有效直接邀请好友数", integer: true }, { key: "windowDays", label: "参与期限（天）", integer: true }, { key: "giftProductNo", label: "赠送设备商品编号", type: "text" }, { key: "giftQuantity", label: "每人赠送设备数量", integer: true }, { key: "deviceBudget", label: "设备发放总量上限", integer: true }],
   onboarding: [{ key: "windowDays", label: "新用户参与期限（天）", integer: true }, { key: "minRank", label: "最低 V 等级", integer: true }, { key: "rewardNex", label: "每人 UVT 奖励" }, { key: "streakSavers", label: "每人补签卡数量", integer: true }, { key: "budgetNex", label: "UVT 发放预算" }],
