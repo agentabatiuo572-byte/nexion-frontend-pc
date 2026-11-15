@@ -65,7 +65,7 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
   const permission = i4DocumentPermission(command.document.slot);
   if (permission) throw new Error(permission);
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
-  if (retry && command.mode === "upload") throw new Error("上传结果未知，文件可能已经对外公开；请重新读取核对 SHA、大小和上传时间。");
+  if (retry && command.mode === "upload") throw new Error("上传结果未知，文件可能已经对外公开；请重新读取，核对文件指纹、大小和上传时间。");
   if (!pending.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   let updated: TrustDocument;
   try {
@@ -78,13 +78,13 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
       await finish(command);
       if (!retry && error instanceof Error) Object.assign(error, { rejectedCommand: command });
     }
-    if (!rejected && command.mode === "upload") throw new OutcomeUnknownError("上传结果未知，文件可能已经对外公开；请重新读取核对 SHA、大小和上传时间。");
+    if (!rejected && command.mode === "upload") throw new OutcomeUnknownError("上传结果未知，文件可能已经对外公开；请重新读取，核对文件指纹、大小和上传时间。");
     throw error;
   }
   if (updated.slot !== command.document.slot || (command.mode === "restore" ? updated.source !== "DEFAULT"
     : updated.source !== "UPLOADED" || updated.sha256 !== command.file!.sha256 || updated.sizeBytes !== command.file!.size
       || ["version", "language", "referenceNo", "verifyUrl"].some(key => (updated[key as keyof TrustDocument] ?? "") !== command.fields[key as keyof TrustDocumentUpload].trim()))) {
-    throw new OutcomeUnknownError("资料操作回执无法核实，文件可能已经对外公开；请保留原记录并重新读取核对。");
+    throw new OutcomeUnknownError("没能确认这次操作的结果，文件可能已经对外公开；记录会留着，请重新读取核对。");
   }
   await finish(command);
 }

@@ -18,6 +18,7 @@ import {
   type TrustDocument, type TrustDocumentSlot, type TrustDocumentUpload,
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
+import { IConflictModal, useIConflictView, type IConflictRow } from "./i-conflict";
 import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
 import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -29,6 +30,9 @@ export type I4DocumentEditor =
 
 const sizeText = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 const UPLOAD_PUBLIC = "上传成功后立即公开";
+const fingerprint = (sha256?: string) => sha256 ? <span title={sha256}>{`${sha256.slice(0, 12)}…`}</span> : "—";
+/** 读回的事实写成一句：哪份文件、指纹、谁什么时候换上的。 */
+const observedText = (document: TrustDocument) => `${document.source === "UPLOADED" ? "上传的" : "默认的"} ${document.fileName} · 指纹 ${document.sha256.slice(0, 12)}… · ${document.updatedAt ? `${timeText(document.updatedAt)} ${document.updatedBy ?? ""}`.trim() : "没有上传记录"}`;
 
 export function I4Documents({ onPendingChange, recovery }: { onPendingChange: () => void; recovery: I4DocumentCommand | null }) {
   const session = useAdminAuth((state) => state.session);
@@ -49,9 +53,10 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [editorBaselineReady, setEditorBaselineReady] = useState(true);
   /** 第一次提交被明确拒绝是因为资料刚被别人换过（不是结果未知）。 */
   const [conflicted, setConflicted] = useState(false);
-  // Visual worker: compare review.latest (all document facts) with review.requested
-  // and review.rejectedCommand.file. Only explicit review.confirm may adopt the baseline.
+  // 别人先换过：核对框把 review.latest 对着 review.requested 和 review.rejectedCommand.file 给运营看；
+  // 只有运营点「在最新的基础上继续」（review.confirm）才换基准、解锁提交。
   const conflictReview = useIConflictReview<TrustDocument, I4DocumentEditor, I4DocumentCommand>();
+  const conflictView = useIConflictView(conflictReview.review);
   const submitting = useRef(false);
   /** 只管显示：第一次读完之前画加载块，不画「没读到」。 */
   const [read, setRead] = useState(false);
@@ -74,8 +79,8 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
     setEditor(recovery.mode === "upload" ? { mode: "upload", document: recovery.document, file: null, fields: recovery.fields }
       : { mode: "restore", document: recovery.document, reason: recovery.fields.reason });
     const observed = recovery.observation;
-    setEditorError((recovery.mode === "upload" ? "上传结果未知，文件可能已经对外公开；请重新读取核对 SHA、大小和上传时间。" : "结果未知，请重新读取核对。")
-      + (observed ? ` SHA256 ${observed.sha256} · ${observed.sizeBytes} bytes · ${observed.updatedAt ? timeText(observed.updatedAt) : "—"} · ${observed.updatedBy ?? "—"}` : ""));
+    setEditorError((recovery.mode === "upload" ? "文件可能已经对外公开。" : "可能已经恢复。")
+      + (observed ? `上次读到现在用的：${observedText(observed)}` : ""));
     if (observed) void refresh();
   }, [recovery]);
   if (!canRead) return null;
@@ -150,7 +155,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         setEditorBaselineReady(false);
         await conflictReview.reject(cause, editor, async () => {
           const document = (await refresh())?.find(row => row.slot === editor.document.slot);
-          if (!document) throw new Error("请先成功重新读取最新资料后再修改。");
+          if (!document) throw new Error("四份资料这次没读到，点「重新读取」再试。");
           return document;
         });
       }
@@ -166,7 +171,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       if (original) {
         try {
           const current = await queryI4DocumentCommand(original);
-          setEditorError(`${original.mode === "upload" ? "上传结果未知，文件可能已经对外公开。" : "结果未知。"} SHA256 ${current.sha256} · ${current.sizeBytes} bytes · ${current.updatedAt ? timeText(current.updatedAt) : "—"} · ${current.updatedBy ?? "—"}`);
+          setEditorError(`${original.mode === "upload" ? "文件可能已经对外公开。" : "可能已经恢复。"}刚读到现在用的：${observedText(current)}`);
         } catch (cause) { setEditorError(displayAdminError(cause)); }
         onPendingChange();
       }
@@ -190,6 +195,48 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const setField = (key: keyof TrustDocumentUpload, value: string) =>
     !saving && !pendingKey && editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value } });
   const uploaded = documents.filter((document) => document.source === "UPLOADED").length;
+
+  /* ---------- 别人先换过：现在用的文件对着运营要传的，确认后在最新的基础上继续 ---------- */
+  const conflict = conflictReview.review;
+  const conflictUi = (() => {
+    if (!conflict || !conflictView.open || !editor || !conflicted) return null;
+    const { requested } = conflict;
+    const latest = conflict.latest;
+    const file = conflict.rejectedCommand?.file;
+    const upload = requested.mode === "upload";
+    const sourceText = (document?: TrustDocument) => !document ? "—" : document.source === "UPLOADED" ? "上传的文件" : "默认文件";
+    const same = (a?: string | null, b?: string | null) => (a ?? "").trim() === (b ?? "").trim();
+    const rows: IConflictRow[] = !latest ? [] : [
+      { label: "来源", left: sourceText(latest), right: upload ? "上传的文件" : "默认文件", changed: upload ? latest.source !== "UPLOADED" : latest.source !== "DEFAULT" },
+      { label: "文件", left: latest.fileName, right: upload ? file?.name ?? requested.file?.name ?? "—" : "随系统发布的默认文件", changed: false },
+      { label: "文件指纹", left: fingerprint(latest.sha256), right: upload ? fingerprint(file?.sha256) : "—", changed: upload && latest.sha256 !== file?.sha256 },
+      { label: "换上的人", left: latest.updatedBy ?? "—", right: "—" },
+      { label: "换上的时间", left: timeText(latest.updatedAt), right: "—" },
+      ...(upload ? [
+        ...(latest.slot === "whitepaper"
+          ? [{ label: "版本号", left: latest.version ?? "—", right: requested.fields.version.trim() || "—", changed: !same(latest.version, requested.fields.version) }]
+          : [{ label: "登记号", left: latest.referenceNo ?? "—", right: requested.fields.referenceNo.trim() || "—", changed: !same(latest.referenceNo, requested.fields.referenceNo) }]),
+        ...(!same(latest.language, requested.fields.language) ? [{ label: "文件语言", left: latest.language ?? "—", right: requested.fields.language.trim() || "—", changed: true }] : []),
+        ...(!same(latest.verifyUrl, requested.fields.verifyUrl) ? [{ label: "官方查询链接", left: latest.verifyUrl ?? "—", right: requested.fields.verifyUrl.trim() || "—", changed: true }] : []),
+      ] : []),
+    ];
+    const gone = latest && !upload && latest.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined;
+    const finish = (task: () => void) => {
+      if (!conflictReview.confirm(conflict, () => undefined)) return;
+      conflictView.show();
+      task();
+    };
+    return <IConflictModal review={conflict} subject={TRUST_DOCUMENT_NAMES[requested.document.slot]}
+      lead={upload ? "别人先换了文件，这次没上传；你选的文件和填的都还在。" : "别人先换了文件，这次没恢复；你填的理由还在。"}
+      rows={rows} columns={upload ? ["现在用的", "你要传的"] : ["现在用的", "你要恢复成"]} gone={gone}
+      note={upload ? "继续上传会替换现在这份；不想替换就放弃这次修改。" : "继续恢复会替换现在这份；不想替换就放弃这次修改。"}
+      rebuildLabel="在最新的基础上继续"
+      onReread={() => void conflictReview.reread()} onClose={conflictView.hide}
+      onRebuild={() => { conflictReview.confirm(conflict, (reviewed, document) => {
+        setEditor({ ...reviewed, document }); setEditorBaselineReady(true); setConflicted(false); setEditorError(null);
+      }); }}
+      onDiscard={() => finish(() => { setEditor(null); setPendingKey(null); setConflicted(false); setEditorError(null); })} />;
+  })();
 
   return (
     <section data-testid="trust-documents">
@@ -243,7 +290,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
@@ -252,17 +299,16 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
             ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : "恢复结果未知"}
               action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
               <p>{editorError}</p>
-              <p>{editor.mode === "upload" ? "可能已经成功。上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝。重新读取后，对照卡片上的文件指纹和上传时间。" : "可能已经成功。重新读取，看卡片是不是已经变回默认文件；没变可以按原请求重试。"}</p>
+              <p>{editor.mode === "upload" ? "上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝。重新读取后，对照文件指纹和上传时间。" : "重新读取，看卡片是不是已经变回默认文件；没变可以按原请求重试。"}</p>
             </Notice>
             : conflicted
               ? <Notice tone="warn" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}
-                action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
-                <p>{editorError}</p>
-                <p>这份资料刚被别人换过。重新读取后看现在用的文件，你填的内容和理由还在，再决定要不要提交。</p>
+                action={<Button size="sm" onClick={conflictView.show}>核对</Button>} actionBelow>
+                这份资料刚被别人换过。核对现在用的文件后，再决定要不要继续。
               </Notice>
               : <Notice tone="danger" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}>{editorError}</Notice>)}
           <Facts>
-            <Fact k="现在用的">{editor.document.source === "UPLOADED" ? "已上传的文件" : "默认文件"}</Fact>
+            <Fact k={conflicted ? "你打开时用的" : "现在用的"}>{editor.document.source === "UPLOADED" ? "已上传的文件" : "默认文件"}</Fact>
             <Fact k="文件"><span title={editor.document.fileName} data-user-content="">{editor.document.fileName}</span></Fact>
             {editor.mode === "restore" && <Fact k="恢复成">随系统发布的默认文件</Fact>}
             {pendingFile && <Fact k="原上传的文件"><span data-user-content="" title={`SHA256 ${pendingFile.sha256}`}>{`${pendingFile.name} · ${sizeText(pendingFile.size)} · 指纹 ${pendingFile.sha256.slice(0, 12)}…`}</span></Fact>}
@@ -298,6 +344,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
           </>}
         </div>}
       </Drawer>
+      {conflictUi}
     </section>
   );
 }

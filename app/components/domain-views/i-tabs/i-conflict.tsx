@@ -24,10 +24,12 @@ export function useIConflictView(review: IConflictReview<unknown, unknown> | nul
   };
 }
 
-export function IConflictModal({ review, subject, rows, columns, gone, note, rebuildLabel = "按最新的重新填写", onReread, onRebuild, onDiscard, onClose }: {
+export function IConflictModal({ review, subject, lead = "别人先改了，这次没保存，你填的都还在。", rows, columns, gone, note, rebuildLabel = "按最新的重新填写", onReread, onRebuild, onDiscard, onClose }: {
   review: IConflictReview<unknown, unknown>;
   /** 改的是哪一项，比如「文案 home.title」。 */
   subject: ReactNode;
+  /** 主语后面那句：这次没做成什么、什么还留着。 */
+  lead?: string;
   rows: IConflictRow[];
   columns: [left: string, right: string];
   /** 最新读取里这一项已经没有了（删掉、下架、状态变了）：写原因，不能重新填写，只能放弃。 */
@@ -48,7 +50,7 @@ export function IConflictModal({ review, subject, rows, columns, gone, note, reb
       <Button variant="primary" disabledReason={waiting ?? gone} onClick={onRebuild}>{rebuildLabel}</Button>
     </>}>
       <div className="rd-stack i-conflict">
-        <p><b>{subject}</b>：别人先改了，这次没有保存；你填的内容和理由还在。</p>
+        <p><b>{subject}</b>：{lead}</p>
         {review.reading
           ? <BlockState state="loading" title="正在读取最新的…" />
           : review.readError
