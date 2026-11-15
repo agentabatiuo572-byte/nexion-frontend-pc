@@ -6,13 +6,32 @@
  * 「按最新的重新填写」只重建编辑器或确认框（输入和理由留着），不发请求；运营核对后再点原来的提交。
  * 读取失败时不能继续；关掉框不丢记录，页面上留一条提醒可以再打开。
  */
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { History, RefreshCw } from "lucide-react";
-import { BlockState, Button, Modal, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Modal, Notice, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { IConflictReview } from "@/lib/admin/i-conflict-review";
 
-/** 一行对照：left、right 两列的表头由 columns 定（编辑类写「现在 / 你填的」，确认类写「你打开时 / 现在」）。 */
-export type IConflictRow = { label: string; left: ReactNode; right: ReactNode; changed?: boolean };
+/** 一行对照：left、right 两列的表头由 columns 定（编辑类写「现在 / 你填的」，确认类写「你打开时 / 现在」）。
+ * 框里只列 changed 的行，两边一样的只计数。group 是这一行归在哪一组（基本信息、发给谁、三语内容……）。 */
+export type IConflictRow = { label: string; left: ReactNode; right: ReactNode; changed?: boolean; group?: string;
+  /** 名称下面一行小字，比如内容项的标识。 */
+  hint?: string };
+
+/** 给一组行标上分组名。 */
+export function inGroup(group: string, rows: IConflictRow[]): IConflictRow[] {
+  return rows.map((row) => ({ ...row, group }));
+}
+
+/** 长文本先露三行，点「展开」看全文。 */
+function ConflictValue({ value }: { value: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const long = typeof value === "string" && value.length > 80;
+  if (!long) return <span className="i-conflict-value" data-user-content="">{value}</span>;
+  return <>
+    <span className="i-conflict-value" data-user-content="" data-clamp={open ? undefined : ""}>{value}</span>
+    <button type="button" className="i-conflict-more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "收起" : "展开全文"}</button>
+  </>;
+}
 
 /** 框开着还是收起：每次新的冲突都重新打开。 */
 export function useIConflictView(review: IConflictReview<unknown, unknown> | null) {
@@ -43,8 +62,14 @@ export function IConflictModal({ review, subject, lead = "别人先改了，这�
   onClose: () => void;
 }) {
   const waiting = review.reading ? "正在读取最新的" : review.readError ? "最新的没读到，重新读取后再继续" : undefined;
+  const shown = rows.filter((row) => row.changed);
+  const same = rows.length - shown.length;
+  const grouped = new Set(shown.map((row) => row.group)).size > 1;
+  // 「现在」那一列是别人改后的样子，表头标出来。
+  const latest = columns.indexOf("现在");
+  const head = (index: number) => <Th>{columns[index]}{index === latest && <span className="i-conflict-th-note">别人改后</span>}</Th>;
   return (
-    <Modal title="刚被别人改过" icon={History} onClose={onClose} footer={<>
+    <Modal title="刚被别人改过" icon={History} wide onClose={onClose} footer={<>
       <Button onClick={onClose}>稍后</Button>
       <Button disabledReason={waiting} onClick={onDiscard}>放弃这次修改</Button>
       <Button variant="primary" disabledReason={waiting ?? gone} onClick={onRebuild}>{rebuildLabel}</Button>
@@ -57,16 +82,22 @@ export function IConflictModal({ review, subject, lead = "别人先改了，这�
             ? <Notice tone="danger" title="最新的没读到" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={onReread}>重新读取</Button>}>{review.readError}</Notice>
             : gone
               ? <Notice tone="warn">{gone}</Notice>
-              : rows.length > 0 && <Table label="最新的和你的对照" className="i-conflict-table">
-                <thead><tr><Th>项目</Th><Th>{columns[0]}</Th><Th>{columns[1]}</Th></tr></thead>
-                <tbody>
-                  {rows.map((row) => <Tr key={row.label}>
-                    <Td><span className="i-conflict-label">{row.label}{row.changed && <StatusTag tone="warn">不一样</StatusTag>}</span></Td>
-                    <Td><span className="i-conflict-value" data-user-content="">{row.left}</span></Td>
-                    <Td><span className="i-conflict-value" data-user-content="">{row.right}</span></Td>
-                  </Tr>)}
-                </tbody>
-              </Table>}
+              : rows.length > 0 && <>
+                <p className="i-conflict-sum">{shown.length > 0 ? <><b>{shown.length} 项不一样</b>{same > 0 && `，另有 ${same} 项相同没列出`}</> : "逐项比过，两边一样。"}</p>
+                {shown.length > 0 && <Table label="最新的和你的对照" className="i-conflict-table">
+                  <thead><tr><Th>项目</Th>{head(0)}{head(1)}</tr></thead>
+                  <tbody>
+                    {shown.map((row, index) => <Fragment key={`${row.group ?? ""}:${row.label}:${row.hint ?? ""}`}>
+                      {grouped && row.group !== shown[index - 1]?.group && <tr className="i-conflict-group"><th colSpan={3} scope="colgroup">{row.group}</th></tr>}
+                      <Tr>
+                        <Td><span className="i-conflict-label">{row.label}</span>{row.hint && <span className="i-conflict-hint" data-mono="">{row.hint}</span>}</Td>
+                        <Td data-latest={latest === 0 ? "" : undefined}><ConflictValue value={row.left} /></Td>
+                        <Td data-latest={latest === 1 ? "" : undefined}><ConflictValue value={row.right} /></Td>
+                      </Tr>
+                    </Fragment>)}
+                  </tbody>
+                </Table>}
+              </>}
         {note && !review.reading && !review.readError && !gone && <p className="rd-note">{note}</p>}
       </div>
     </Modal>

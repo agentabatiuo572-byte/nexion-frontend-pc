@@ -18,7 +18,7 @@ import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetc
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
-import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
+import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -530,19 +530,21 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
         const part = (value?: string) => value === undefined ? { title: undefined, body: undefined } : splitNotificationBody(value);
-        rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("名称", now?.name, form.name),
-          conflictRow("中文标题", part(now?.bodyZh).title, form.titleZh), conflictRow("中文正文", part(now?.bodyZh).body, form.bodyZh),
-          conflictRow("越南语标题", part(now?.bodyVi).title, form.titleVi), conflictRow("越南语正文", part(now?.bodyVi).body, form.bodyVi),
-          conflictRow("英语标题", part(now?.bodyEn).title, form.titleEn), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn),
+        const routeName = (href: string) => DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+        const languageName = (value: string) => AUDIENCE_CATALOG?.languages.find((option) => option.value === value)?.label ?? value;
+        rows = [...inGroup("基本信息", [conflictRow("状态", stateText(now), "草稿"), conflictRow("名称", now?.name, form.name),
           conflictRow("通知类型", now ? kindLabel(now.kind) : undefined, kindLabel(form.kind)),
-          conflictRow("点了去哪", now?.ctaHref, form.ctaHref),
-          conflictRow("按钮文字", now?.ctaLabel, DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref)?.label),
           conflictRow("优先级", now ? TIER[now.tier].label : undefined, TIER[form.tier].label),
-          conflictRow("P 阶段从", now?.audienceTarget.phaseMin, form.phaseMin),
-          conflictRow("P 阶段到", now?.audienceTarget.phaseMax, form.phaseMax),
-          conflictRow("语言", now?.audienceTarget.language, form.language),
-          conflictRow("注册超过", now?.audienceTarget.registrationDaysMin, targetFromForm(form).registrationDaysMin),
-          conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)];
+          conflictRow("点了去哪", now && routeName(now.ctaHref), routeName(form.ctaHref)),
+          conflictRow("按钮文字", now?.ctaLabel, DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref)?.label),
+          conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)]),
+          ...inGroup("发给谁", [conflictRow("P 阶段从", now?.audienceTarget.phaseMin, form.phaseMin),
+            conflictRow("P 阶段到", now?.audienceTarget.phaseMax, form.phaseMax),
+            conflictRow("语言", now && languageName(now.audienceTarget.language), languageName(form.language)),
+            conflictRow("注册超过", now && `${now.audienceTarget.registrationDaysMin} 天`, `${targetFromForm(form).registrationDaysMin} 天`)]),
+          ...inGroup("三语内容", [conflictRow("中文标题", part(now?.bodyZh).title, form.titleZh), conflictRow("中文正文", part(now?.bodyZh).body, form.bodyZh),
+            conflictRow("越南语标题", part(now?.bodyVi).title, form.titleVi), conflictRow("越南语正文", part(now?.bodyVi).body, form.bodyVi),
+            conflictRow("英语标题", part(now?.bodyEn).title, form.titleEn), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn)])];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
         note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在表单里补上。";

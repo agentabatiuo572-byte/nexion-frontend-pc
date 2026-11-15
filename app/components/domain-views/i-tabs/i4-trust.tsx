@@ -15,7 +15,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  */
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { EyeOff, FilePen, History, Hourglass, LayoutList, Plus, RefreshCw, RotateCcw, Send, ShieldAlert, ShieldCheck, Undo2 } from "lucide-react";
+import { CircleSlash, EyeOff, FilePen, History, Hourglass, LayoutList, Plus, RefreshCw, RotateCcw, Send, ShieldAlert, ShieldCheck, Undo2 } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, Panel, ReleaseModal, StatusTag, Table, TableMessage, Td, Th, Tr, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
@@ -31,7 +31,7 @@ import { i4AppFieldIssue, i4OmittedTranslations, i4TrilingualFields } from "@/li
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
-import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
+import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { I4Documents } from "./i4-documents";
@@ -716,16 +716,22 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const nowCurrent = latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === nowSection?.version);
     const state = (row?: { version: string; status: string }) => row ? `${row.version} · ${isArchivedStatus(row.status) ? "已下架" : statusZh(row.status)}` : "—";
     const saved = (row?: TrustSectionVersion) => row ? `${row.updatedAt ? timeText(row.updatedAt) : "—"} · ${operatorText(row.operator)}` : "—";
-    const fieldRows = (left: { key: string; label: string; value: string }[], right: { key: string; label: string; value: string }[]) => {
+    // 内容项按语言分组；一边没有这一项时写「没有这一项」，和空内容「—」分开。
+    const fieldRows = (left: { key: string; label: string; value: string }[], right: { key: string; label: string; value: string }[]): IConflictRow[] => {
+      const groups = ["中文内容", "越南语内容", "英语内容", "其他内容"];
+      const groupOf = (fieldKey: string) => groups[["zh", "vi", "en"].indexOf(/[._-](zh|vi|en)$/i.exec(fieldKey)?.[1].toLowerCase() ?? "")] ?? "其他内容";
+      const absent = <StatusTag tone="neutral" icon={CircleSlash}>没有这一项</StatusTag>;
       const keys = [...new Set([...left.map((field) => field.key), ...right.map((field) => field.key)])];
-      return keys.flatMap((fieldKey) => {
+      return keys.flatMap((fieldKey): IConflictRow[] => {
         const a = left.find((field) => field.key === fieldKey), b = right.find((field) => field.key === fieldKey);
+        const group = groupOf(fieldKey);
+        if (!a || !b) return [{ label: b?.label || a?.label || fieldKey, hint: fieldKey, group, changed: true,
+          left: a ? <>{a.label || "—"}：{a.value || "—"}</> : absent, right: b ? <>{b.label || "—"}：{b.value || "—"}</> : absent }];
         return [
-          ...(!a || !b ? [conflictRow(fieldKey, a?.key, b?.key)] : []),
-          ...(a?.label !== b?.label ? [conflictRow(`${fieldKey} · 名称`, a?.label, b?.label)] : []),
-          ...(a?.value !== b?.value ? [conflictRow(`${b?.label || a?.label || fieldKey} (${fieldKey})`, a?.value, b?.value)] : []),
+          ...(a.label !== b.label ? [{ ...conflictRow("名称", a.label, b.label), hint: fieldKey, group }] : []),
+          ...(a.value !== b.value ? [{ ...conflictRow(b.label || a.label || fieldKey, a.value, b.value), hint: fieldKey, group }] : []),
         ];
-      });
+      }).sort((x, y) => groups.indexOf(x.group!) - groups.indexOf(y.group!));
     };
     let rows: IConflictRow[] = [];
     let columns: [string, string] = ["你打开时", "现在"];
@@ -741,12 +747,12 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       if (!gone && latestData && editorAtReject.mode === "edit" && nowDraft?.status.toLowerCase() !== "draft") gone = `${editorAtReject.version} 已经不是草稿了（被删除或已发布）。`;
       const base = editorAtReject.mode === "edit" ? nowDraft?.fields ?? [] : nowCurrent?.fields ?? [];
       const templateChanged = !!nowCurrent && !sameFieldSchema(nowCurrent.fields, editorAtReject.fields);
-      rows = [{ label: "版块现在", left: state(nowSection), right: `基于 ${editorAtReject.expectedSectionVersion}`, changed: nowSection?.version !== editorAtReject.expectedSectionVersion || nowSection?.status !== editorAtReject.expectedSectionStatus },
+      rows = [...inGroup("版块", [{ label: "版块现在", left: state(nowSection), right: `基于 ${editorAtReject.expectedSectionVersion}`, changed: nowSection?.version !== editorAtReject.expectedSectionVersion || nowSection?.status !== editorAtReject.expectedSectionStatus },
         conflictRow("版本号", nowDraft?.version ?? nowCurrent?.version, editorAtReject.version),
         conflictRow("版块说明", nowDraft?.description ?? nowCurrent?.description, editorAtReject.description),
         conflictRow("内容结构", nowDraft?.structure ?? nowCurrent?.structure, editorAtReject.structure),
         ...(nowDraft ? [conflictRow("草稿最近保存", saved(nowDraft), "你在改的")] : []),
-        ...(templateChanged ? [{ label: "内容模板", left: `${nowCurrent!.fields.length} 项内容`, right: `${editorAtReject.fields.length} 项内容`, changed: true }] : []),
+        ...(templateChanged ? [{ label: "内容模板", left: `${nowCurrent!.fields.length} 项内容`, right: `${editorAtReject.fields.length} 项内容`, changed: true }] : [])]),
         ...fieldRows(base, editorAtReject.fields)];
       note = templateChanged ? "内容模板变了：你填的内容和译文原样留着，不会自动删；保存前对照现在公开的版本核对。" : "你填的内容留在编辑框里，保存时按最新的版本提交。";
       rebuild = section && (editorAtReject.mode === "create" || nowDraft) ? () => setDraftEditor((current) => current && ({ ...current,
@@ -754,17 +760,17 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     } else if (rejected?.action === "delete") {
       const nowDraft = latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === rejected.version);
       if (!gone && latestData && nowDraft?.status.toLowerCase() !== "draft") gone = `${rejected.version ?? ""} 已经不是草稿了（被删除或已发布）。`;
-      rows = [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("内容", `${rejected.snapshot?.fields.length ?? "—"} 项`, `${nowDraft?.fields.length ?? "—"} 项`),
-        conflictRow("版块说明", rejected.snapshot?.description, nowDraft?.description), conflictRow("内容结构", rejected.snapshot?.structure, nowDraft?.structure),
+      rows = [...inGroup("草稿", [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("内容", `${rejected.snapshot?.fields.length ?? "—"} 项`, `${nowDraft?.fields.length ?? "—"} 项`),
+        conflictRow("版块说明", rejected.snapshot?.description, nowDraft?.description), conflictRow("内容结构", rejected.snapshot?.structure, nowDraft?.structure)]),
         ...fieldRows(rejected.snapshot?.fields ?? [], nowDraft?.fields ?? [])];
       rebuild = nowDraft ? () => { carry(); deleteSectionDraft(nowDraft); } : undefined;
     } else if (rejected && "before" in rejected) {
       const snap = rejected.snapshot;
-      rows = [{ label: "版块", left: snap ? state(snap.section) : rejected.before ?? "—", right: state(nowSection), changed: !!snap && state(snap.section) !== state(nowSection) }];
+      rows = [{ label: "版块", left: snap ? state(snap.section) : rejected.before ?? "—", right: state(nowSection), changed: !!snap && state(snap.section) !== state(nowSection), group: "版块" }];
       const target = rejected.action === "publish" ? latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === rejected.after) : undefined;
       if (rejected.action === "publish") {
-        rows.push(conflictRow(`草稿 ${rejected.after ?? ""} 最近保存`, saved(snap?.target), saved(target)),
-          conflictRow("版块说明", snap?.target?.description, target?.description), conflictRow("内容结构", snap?.target?.structure, target?.structure), ...fieldRows(snap?.target?.fields ?? [], target?.fields ?? []));
+        rows.push(...inGroup("版块", [conflictRow(`草稿 ${rejected.after ?? ""} 最近保存`, saved(snap?.target), saved(target)),
+          conflictRow("版块说明", snap?.target?.description, target?.description), conflictRow("内容结构", snap?.target?.structure, target?.structure)]), ...fieldRows(snap?.target?.fields ?? [], target?.fields ?? []));
         if (!gone && latestData && target?.status.toLowerCase() !== "draft") gone = `${rejected.after ?? "这份草稿"} 已经不是草稿了，不能再提交发布。`;
         note = "三语核对要重新勾。";
       }

@@ -289,7 +289,7 @@ export type CopyCreateSpec = Extract<BusinessFormSpec, { kind: "copy-create" }>;
 export type SaveMode = "存草稿" | "发布生效";
 
 const PHASES = ["P1", "P2", "P3", "P4", "P5", "P6"];
-const LANGUAGE_OPTIONS = [
+export const LANGUAGE_OPTIONS = [
   { value: "all", label: "全部语言" },
   { value: "zh", label: "中文" },
   { value: "en", label: "英语" },

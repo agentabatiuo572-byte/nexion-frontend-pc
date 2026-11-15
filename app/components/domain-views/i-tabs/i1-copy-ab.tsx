@@ -20,11 +20,11 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
-import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
+import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
-  audienceText, copyStatus, experimentState, missingLangs, moduleLabel, versionStatus,
+  audienceText, copyStatus, experimentState, LANGUAGE_OPTIONS, missingLangs, moduleLabel, versionStatus,
   type CopyCreateSpec, type CopyEditSpec, type ExperimentCopyOption, type PositionCopy, type SaveMode, type Texts,
 } from "./i1-parts";
 
@@ -862,21 +862,22 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       const copy = findCopy(key);
       subject = <>文案 <span data-mono="">{key}</span></>;
       if (ready && !copy) gone = "这条文案在最新读取里没有了，不能按最新的重做。";
-      const state = copy ? `${copy.version} · ${versionStatus(copy.status).text}${copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}` : "—";
+      const state = copy ? `${copy.version} · ${copyStatus(copy.status).text}${copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}` : "—";
       const editing = (original?.method === "PATCH" && path.endsWith("/draft")) || (original?.method === "POST" && /\/versions$/.test(path));
       if (editing) {
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
         const latestText = findVersion(key, copy?.draftVersion) ?? findVersion(key, copy?.version);
-        rows = [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`),
-          conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi),
-          conflictRow("投放模块", latestText?.surface, body.surface), conflictRow("文案位置", latestText?.copyPosition, body.copyPosition),
-          conflictRow("受众", latestText?.audience, body.audience),
-          conflictRow("最低阶段", audienceTargetFields(latestText?.audienceTarget).phaseMin, body.phaseMin),
-          conflictRow("最高阶段", audienceTargetFields(latestText?.audienceTarget).phaseMax, body.phaseMax),
-          conflictRow("语言", audienceTargetFields(latestText?.audienceTarget).language, body.language),
-          conflictRow("注册超过", audienceTargetFields(latestText?.audienceTarget).registrationDaysGt, body.registrationDaysGt),
-          conflictRow("分流比例", latestText?.trafficSplit, body.trafficSplit), conflictRow("版本说明", latestText?.versionNote, body.versionNote)];
+        const audienceNow = audienceTargetFields(latestText?.audienceTarget);
+        const languageName = (value: unknown) => typeof value !== "string" || !value ? undefined : LANGUAGE_OPTIONS.find((option) => option.value === value)?.label ?? value;
+        rows = [...inGroup("版本", [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`), conflictRow("版本说明", latestText?.versionNote, body.versionNote)]),
+          ...inGroup("三语内容", [conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi)]),
+          ...inGroup("投放", [conflictRow("投放模块", latestText?.surface && moduleLabel(latestText.surface), typeof body.surface === "string" && body.surface ? moduleLabel(body.surface) : undefined),
+            conflictRow("文案位置", latestText?.copyPosition && positionName(latestText.copyPosition), typeof body.copyPosition === "string" && body.copyPosition ? positionName(body.copyPosition) : undefined), conflictRow("分流比例", latestText?.trafficSplit && `${latestText.trafficSplit}%`, body.trafficSplit == null || body.trafficSplit === "" ? undefined : `${String(body.trafficSplit)}%`)]),
+          ...inGroup("受众", [conflictRow("受众", latestText?.audience, body.audience),
+            conflictRow("最低阶段", audienceNow.phaseMin, body.phaseMin), conflictRow("最高阶段", audienceNow.phaseMax, body.phaseMax),
+            conflictRow("语言", languageName(audienceNow.language), languageName(body.language)),
+            conflictRow("注册超过", audienceNow.registrationDaysGt && `${audienceNow.registrationDaysGt} 天`, body.registrationDaysGt == null ? undefined : `${String(body.registrationDaysGt)} 天`)])];
         note = original?.method === "PATCH" ? "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在编辑框里补上。" : "你填的内容留在编辑框里，提交时按最新的版本。";
         rebuild = copy ? () => (prefill.current = { reason: conflict.requested.reason }) && setEditor((current) => current?.kind === "edit" && current.copy.key === key
           ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;

@@ -651,3 +651,15 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i-conflict .i-conflict-label { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
 .i-conflict .i-conflict-table th:first-child, .i-conflict .i-conflict-table td:first-child { width: 1%; white-space: nowrap; }
 .i-conflict .i-conflict-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 项多时表在框里自己滚，表头和上面的结论一直看得见；「现在」那列是别人改后的样子，底色区分。 */
+.i-conflict .rd-table-scroll { max-height: min(52vh, 480px); overflow: auto; }
+.i-conflict .i-conflict-table thead th { position: sticky; top: 0; z-index: 1; background: var(--rd-panel); }
+.i-conflict .i-conflict-table td[data-latest] { background: var(--rd-warn-bg); }
+.i-conflict .i-conflict-table thead th:not(:first-child) { width: 50%; }  /* 两边等宽，左右好对照 */
+.i-conflict .i-conflict-th-note { margin-left: var(--rd-space-2); font-weight: 400; color: var(--rd-warn); }
+.i-conflict .i-conflict-group th { padding-top: var(--rd-space-3); font-weight: 600; color: var(--rd-text); text-align: left; background: var(--rd-panel-inner); }
+.i-conflict .i-conflict-sum { color: var(--rd-text-2); }
+.i-conflict .i-conflict-sum b { color: var(--rd-text); }
+.i-conflict .i-conflict-value[data-clamp] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.i-conflict .i-conflict-hint { display: block; max-width: 200px; white-space: normal; overflow-wrap: anywhere; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i-conflict .i-conflict-more { display: block; margin-top: var(--rd-space-1); padding: 0; border: 0; background: none; color: var(--rd-brand-ink); font: inherit; font-size: var(--rd-text-aux); cursor: pointer; }

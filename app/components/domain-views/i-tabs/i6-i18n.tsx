@@ -11,7 +11,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Archive, BadgeCheck, BookOpen, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Command, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ICtx } from "./types";
@@ -22,7 +22,7 @@ import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, releaseExpiredI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
-import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
+import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1080,6 +1080,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const quiz = (payload?: { quizQuestions?: unknown; passScore?: unknown }) => Array.isArray(payload?.quizQuestions)
       ? `${payload.quizQuestions.length} 题 · ${String(payload.passScore ?? "—")} 分及格` : "—";
     const courseContentRows = (left: Record<string, unknown> | undefined, right: Record<string, unknown> | undefined): IConflictRow[] => {
+      const label = (names: Record<string, string>, value: unknown) => value == null || value === "" ? undefined : names[String(value)] ?? String(value);
       const bodyRow = (label: string, left: unknown, right: unknown): IConflictRow[] => {
         const a = String(left ?? ""), b = String(right ?? "");
         if (a === b) return [];
@@ -1092,29 +1093,38 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       const leftQuiz = (left?.quizQuestions ?? []) as Course["quizQuestions"];
       const rightQuiz = (right?.quizQuestions ?? []) as Course["quizQuestions"];
       return [
-        conflictRow("中文标题", left?.titleZh, right?.titleZh), conflictRow("越南语标题", left?.titleVi, right?.titleVi), conflictRow("英语标题", left?.titleEn, right?.titleEn),
-        ...bodyRow("中文正文", left?.bodyZh, right?.bodyZh), ...bodyRow("越南语正文", left?.bodyVi, right?.bodyVi), ...bodyRow("英语正文", left?.bodyEn, right?.bodyEn),
-        conflictRow("分类", left?.category, right?.category), conflictRow("形式", left?.format, right?.format), conflictRow("难度", left?.difficulty, right?.difficulty),
-        conflictRow("预计时长", left?.duration, right?.duration), conflictRow("学完发", reward(left?.rewardNex), reward(right?.rewardNex)),
-        conflictRow("及格分", left?.passScore, right?.passScore), conflictRow("最多重试次数", left?.retryLimit, right?.retryLimit),
-        conflictRow("完成条件", COMPLETION_LABEL[String(left?.completionCondition)] ?? left?.completionCondition, COMPLETION_LABEL[String(right?.completionCondition)] ?? right?.completionCondition),
-        conflictRow("何时发奖", REWARD_EVENT_LABEL[String(left?.rewardEvent)] ?? left?.rewardEvent, REWARD_EVENT_LABEL[String(right?.rewardEvent)] ?? right?.rewardEvent),
-        conflictRow("测验", quiz(left), quiz(right)),
+        ...inGroup("三语内容", [conflictRow("中文标题", left?.titleZh, right?.titleZh), conflictRow("越南语标题", left?.titleVi, right?.titleVi), conflictRow("英语标题", left?.titleEn, right?.titleEn),
+          ...bodyRow("中文正文", left?.bodyZh, right?.bodyZh), ...bodyRow("越南语正文", left?.bodyVi, right?.bodyVi), ...bodyRow("英语正文", left?.bodyEn, right?.bodyEn)]),
+        ...inGroup("课程设置", [conflictRow("分类", label(CATEGORY_LABEL, left?.category), label(CATEGORY_LABEL, right?.category)),
+          conflictRow("形式", label(FORMAT_LABEL, left?.format), label(FORMAT_LABEL, right?.format)), conflictRow("难度", label(LEVEL_LABEL, left?.difficulty), label(LEVEL_LABEL, right?.difficulty)),
+          conflictRow("预计时长", left?.duration == null ? undefined : durationText(String(left.duration)), right?.duration == null ? undefined : durationText(String(right.duration)))]),
+        ...inGroup("奖励和测验规则", [conflictRow("学完发", reward(left?.rewardNex), reward(right?.rewardNex)),
+          conflictRow("完成条件", COMPLETION_LABEL[String(left?.completionCondition)] ?? left?.completionCondition, COMPLETION_LABEL[String(right?.completionCondition)] ?? right?.completionCondition),
+          conflictRow("何时发奖", REWARD_EVENT_LABEL[String(left?.rewardEvent)] ?? left?.rewardEvent, REWARD_EVENT_LABEL[String(right?.rewardEvent)] ?? right?.rewardEvent),
+          conflictRow("及格分", left?.passScore, right?.passScore), conflictRow("最多重试次数", left?.retryLimit, right?.retryLimit),
+          conflictRow("测验", quiz(left), quiz(right))]),
         ...Array.from({ length: Math.max(leftQuiz.length, rightQuiz.length) }, (_, index) => {
           const a = leftQuiz[index], b = rightQuiz[index];
-          return [
-            conflictRow(`第 ${index + 1} 题`, a?.questionId, b?.questionId),
+          // 一边没有这一题：整题一行，标「没有这一题」，不逐项列一排「—」。
+          if (!a || !b) {
+            const only = (a ?? b)!;
+            const summary = `${only.questionZh}（${only.optionsZh.length} 个选项）`;
+            const absent = <StatusTag tone="neutral" icon={CircleSlash}>没有这一题</StatusTag>;
+            return [{ label: "整题", group: `第 ${index + 1} 题`, changed: true, left: a ? summary : absent, right: b ? summary : absent }];
+          }
+          return inGroup(`第 ${index + 1} 题`, [
+            conflictRow("题目编号", a?.questionId, b?.questionId),
             ...LANGS.flatMap((lang) => {
               const suffix = lang.key === "zh" ? "Zh" : lang.key === "vi" ? "Vi" : "En";
               const questionKey = `question${suffix}` as "questionZh" | "questionVi" | "questionEn";
               const optionsKey = `options${suffix}` as "optionsZh" | "optionsVi" | "optionsEn";
               const aOptions = a?.[optionsKey] ?? [], bOptions = b?.[optionsKey] ?? [];
-              return [conflictRow(`第 ${index + 1} 题 · ${lang.label}题干`, a?.[questionKey], b?.[questionKey]),
+              return [conflictRow(`${lang.label}题干`, a?.[questionKey], b?.[questionKey]),
                 ...Array.from({ length: Math.max(aOptions.length, bOptions.length) }, (_, option) =>
-                  conflictRow(`第 ${index + 1} 题 · 选项 ${option + 1}（${lang.label}）`, aOptions[option], bOptions[option]))];
+                  conflictRow(`选项 ${option + 1} · ${lang.label}`, aOptions[option], bOptions[option]))];
             }),
-            conflictRow(`第 ${index + 1} 题 · 正确答案`, a ? a.correctOptionIndex + 1 : undefined, b ? b.correctOptionIndex + 1 : undefined),
-          ];
+            conflictRow("正确答案", a ? `选项 ${a.correctOptionIndex + 1}` : undefined, b ? `选项 ${b.correctOptionIndex + 1}` : undefined),
+          ]);
         }).flat(),
       ];
     };
@@ -1186,12 +1196,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const target = adjust ? undefined : conflict.latest?.versions?.find((row) => firstPublish ? row.status === "DRAFT" : row.version === (input.version ?? rejected?.version));
         const legacy = firstPublish && !target ? now : undefined;
         const openedTarget = rejected?.snapshot?.courseVersion;
-        rows = [{ label: "课程", left: opened ? state(opened) : `${String(input.expectedCurrentVersion ?? "—")}`, right: state(now), changed: !!opened && !!now && state(opened) !== state(now) },
-          conflictRow(adjust ? "现在的奖励" : "课程现在发", reward(opened?.rewardNex), reward(now?.rewardNex))];
+        rows = inGroup("课程", [{ label: "课程", left: opened ? state(opened) : `${String(input.expectedCurrentVersion ?? "—")}`, right: state(now), changed: !!opened && !!now && state(opened) !== state(now) },
+          conflictRow(adjust ? "现在的奖励" : "课程现在发", reward(opened?.rewardNex), reward(now?.rewardNex))]);
         if (!adjust) {
           const wanted = rollback ? "SUPERSEDED" : "DRAFT";
-          rows.push(conflictRow(`要发布的 ${String(target?.version ?? legacy?.version ?? input.version ?? "")}`, openedTarget ? `${reward(openedTarget.payload.rewardNex)} · ${quiz(openedTarget.payload)}` : firstPublish && opened ? `${reward(opened.rewardNex)} · ${quiz(opened)}` : "—",
-            target ? `${reward(target.payload.rewardNex)} · ${quiz(target.payload)}` : legacy ? `${reward(legacy.rewardNex)} · ${quiz(legacy)}` : "没有了"));
+          rows.push({ group: "课程", ...conflictRow(`要发布的 ${String(target?.version ?? legacy?.version ?? input.version ?? "")}`, openedTarget ? `${reward(openedTarget.payload.rewardNex)} · ${quiz(openedTarget.payload)}` : firstPublish && opened ? `${reward(opened.rewardNex)} · ${quiz(opened)}` : "—",
+            target ? `${reward(target.payload.rewardNex)} · ${quiz(target.payload)}` : legacy ? `${reward(legacy.rewardNex)} · ${quiz(legacy)}` : "没有了") });
           rows.push(...courseContentRows(openedTarget?.payload ?? (firstPublish ? opened : undefined), target?.payload ?? legacy));
           if (!gone && conflict.latest && (legacy ? legacy.status !== "draft" : target?.status !== wanted)) gone = `${String(input.version ?? "目标版本")} 现在不能${wanted === "DRAFT" ? "发布" : "回滚"}了（没有了或状态变了）。`;
         } else note = <>你填的新奖励 {reward(input.rewardNex)} 会带回确认框。</>;
