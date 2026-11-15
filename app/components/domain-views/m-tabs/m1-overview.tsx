@@ -527,7 +527,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       onClose();
     } catch {
       setWriteOutcomeUnknown(true);
-      ctx.toast("写入结果未确认,请使用同一命令重试");
+      ctx.toast("保存结果未知，请按原请求重试");
     } finally {
       commandInFlightRef.current = false;
       setSaving(null);
@@ -562,7 +562,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       onClose();
     } catch {
       setWriteOutcomeUnknown(true);
-      ctx.toast("写入结果未确认,请使用同一命令重试");
+      ctx.toast("保存结果未知，请按原请求重试");
     } finally {
       commandInFlightRef.current = false;
       setSaving(null);
@@ -602,7 +602,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       {writeOutcomeUnknown && (
         <div className="itint" role="alert" style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 13 }}>写入失败或结果未知,输入已保留。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>结果还没确认，请直接重试（不会重复执行）；要改别的，请取消后重新打开。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>结果未知，请按原请求重试（不会重复执行）；要改别的，请取消后重新打开。</div>
         </div>
       )}
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>

@@ -76,7 +76,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
       run: async reason => {
         if (!active(confirmationGeneration)) return false;
         const existing = selfAvatarCommands.list().find(row => row.actorId === actorId);
-        if (existing) { setPending(existing); setError("原头像保存结果尚未确认，请先查询原操作。"); return false; }
+        if (existing) { setPending(existing); setError("原头像保存结果未知，请先查询原结果。"); return false; }
         const fingerprint = `${actorId}:self-avatar-save`, commandKey = crypto.randomUUID();
         const input = { assetId: selected, expectedVersion, reason };
         selfAvatarCommands.remember(fingerprint, commandKey, { actorId, input });

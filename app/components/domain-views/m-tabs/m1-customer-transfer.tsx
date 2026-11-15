@@ -9,7 +9,9 @@ import { supportClient, verifySupportTransfer, isDefiniteSupportRefusal, Support
 import { supportGroupClient, canReplayGroupCommand } from "@/lib/admin/support-group-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Modal } from "../design-kit";
-import { BlockState, Button, Change, Fact, Facts, Field, Fold, Notice, Select, Textarea } from "@/app/components/rd";
+import { BlockState, Button, Change, Fact, Facts, Field, Fold, Notice, Select, StatusTag, Textarea } from "@/app/components/rd";
+import { SearchCheck } from "lucide-react";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../fund-command-check";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import "./m-support-workbench.css";
 
@@ -41,7 +43,13 @@ export async function readTransferTargets(agentAdminId: number, mode: "ALL" | "M
 /** Unconfirmed transfers of this operator; each row reopens the dialog on the original command. */
 export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
-  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <Notice tone="warn" key={record.commandKey} action={<Button type="button" size="sm" onClick={() => onOpen(record.payload.customers[0].id)}>查询原结果 {index + 1}</Button>}>有一次转绑结果未知。</Notice>)}</>;
+  const items: RecoveryItem[] = transferCommands.list().filter((record) => record.actorId === adminId).map((record) => ({ key: record.commandKey,
+    object: `正式转绑 · ${record.customerName ?? m1CustomerCode(record.payload.customers[0].id)}`,
+    tag: <StatusTag tone="warn">{canReplayGroupCommand(record) ? "结果未知" : "已过期"}</StatusTag>,
+    line: "查到结果前不能再转绑这位客户，先查询原结果。",
+    actions: <Button type="button" size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => onOpen(record.payload.customers[0].id)}>查询原结果</Button>,
+    detail: <p>{record.fromName ?? "原专属客服"} → {record.targetName ?? "目标专属客服"}；原理由已保留。</p> }));
+  return <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理" explain="转绑发出后没收到明确结果，可能已经生效。先查询原结果；查到前这位客户不能再转绑。" items={items} />;
 }
 
 /** BUG-114 / BUG-040: 正式转绑 for one customer, for every role that may do it. Authorization stays on the server; this only shows what it allows. */
@@ -142,13 +150,13 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   }
 
   const footer = pending
-    ? <><Button type="button" size="sm" disabled={saving} onClick={onClose}>稍后再查</Button>{notReceived && canReplayGroupCommand(pending) && <Button type="button" size="sm" disabled={saving} onClick={() => void send(pending, true)}>按原请求重试</Button>}<Button type="button" variant="primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</Button></>
+    ? <><Button type="button" size="sm" disabled={saving} onClick={onClose}>稍后再查</Button>{notReceived && canReplayGroupCommand(pending) && <Button type="button" size="sm" disabled={saving} onClick={() => void send(pending, true)}>按原请求重试</Button>}<Button type="button" variant="primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原结果"}</Button></>
     : <><Button type="button" size="sm" disabled={saving} onClick={onClose}>返回</Button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <Button type="button" size="sm" onClick={onOpenOwn}>查看我的客户资料</Button>}{targets && <Button type="button" variant="primary" disabled={saving} disabledReason={!chosen ? "请选择目标专属客服" : !reasonOk ? "请填写 8–200 字转绑理由" : undefined} onClick={() => void submit()}>{saving ? "提交中…" : "确认正式转绑"}</Button>}</>;
 
   return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="m1-transfer-form">
     {pending ? <>
       <Notice tone="warn">这次转绑结果未知，原操作已锁定，不能修改。</Notice>
-      <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="专属客服变更"><Change from={pending.fromName ?? "原专属客服"} to={pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`} /></Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold inset title="技术信息" summary="原命令号与绑定版本"><Facts><Fact k="原命令号"><span data-mono>{pending.commandKey}</span></Fact><Fact k="绑定版本">{String(pending.payload.customers[0].expectedVersion)}</Fact></Facts></Fold>
+      <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="专属客服变更"><Change from={pending.fromName ?? "原专属客服"} to={pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`} /></Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold inset title="技术信息" summary="原请求编号与绑定版本"><Facts><Fact k="原请求编号"><span data-mono>{pending.commandKey}</span></Fact><Fact k="绑定版本">{String(pending.payload.customers[0].expectedVersion)}</Fact></Facts></Fold>
     </> : denied ? <Notice tone="danger">{denied}</Notice>
       : loadError ? <BlockState state="error" title={loadError} onRetry={() => setReload((value) => value + 1)} retryLabel="重新加载" />
       : !detail || !targets ? <BlockState state="loading" title="正在加载客户归属和可接待的专属客服…" />
