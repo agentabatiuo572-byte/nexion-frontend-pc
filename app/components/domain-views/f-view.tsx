@@ -970,7 +970,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
       try {
         const ticket = await queryF2Proposal(session.adminId, original);
-        if (!ticket) setToast(displayAdminError(original.expiresAt <= Date.now() ? "F2_PROPOSAL_RETRY_EXPIRED" : "A2_PROPOSAL_NOT_FOUND"));
+        if (!ticket) setToast(displayAdminError("A2_PROPOSAL_NOT_FOUND"));
         return ticket;
       } finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
     },

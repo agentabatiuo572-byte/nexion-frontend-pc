@@ -10,6 +10,8 @@ import { CircleHelp, LockOpen, ShieldCheck, Zap } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
@@ -42,19 +44,21 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     }
     catch { return { pending: undefined, error: "原操作内容不完整，请到操作记录核对后处理。" }; }
   });
-  const [approvalRequired, setApprovalRequired] = useState(false);
-  const editor = opening.pending?.original.editor ?? { ...requested, approvalRequired: approvalRequired || requested.approvalRequired };
+  const [baseline, setBaseline] = useState(requested);
+  const [baselineReady, setBaselineReady] = useState(true);
+  const [baselineRevision, setBaselineRevision] = useState(0);
+  const editor = opening.pending?.original.editor ?? baseline;
   const form = opening.pending?.original.form ?? f1PolicyInitialForm(editor);
   const isCondition = editor.action === "threshold", remove = editor.action === "reward_remove";
   const fieldLabel = isCondition ? f1ConditionLabels[editor.field!] : "奖励";
-  const currentLabel = isCondition ? valueLabel(editor.row[editor.field!] ?? "")
+  const currentLabel = !baselineReady ? "—" : isCondition ? valueLabel(editor.row[editor.field!] ?? "")
     : editor.reward ? f1RewardPolicyLabel(editor.reward, ctx) : "尚未配置";
   // 记进操作记录的名字，和改版前一样。
   const action = remove && opening.pending ? `${editor.row.v} · 核对原移除操作` : isCondition ? `调整 ${editor.row.v} 晋升条件 · ${fieldLabel}`
     : `${editor.row.v} · ${remove ? "移除奖励" : editor.action === "reward_add" ? "新增奖励" : "编辑奖励"}`;
   const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${fieldLabel}`
     : remove ? `移除 ${editor.row.v} 的奖励` : editor.action === "reward_add" ? `给 ${editor.row.v} 添加奖励` : `编辑 ${editor.row.v} 的奖励`;
-  const disabledReason = opening.error ?? (!opening.pending && (ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
+  const disabledReason = opening.error ?? (!opening.pending && (!baselineReady || ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
     ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。"
     : opening.pending && !opening.pending.original.approval && opening.pending.expiresAt <= Date.now()
       ? "原操作已过期，请到操作记录核对，勿重复提交。" : undefined);
@@ -68,6 +72,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     const current = requireSession(mode !== "lookup");
     if (requested.recoveryCommandKey && pending()?.commandKey !== requested.recoveryCommandKey) throw new Error("原移除操作已处理，请关闭弹窗后核对当前奖励。");
     if (mode === "submit") {
+      if (!baselineReady) throw new Error("请先成功重新读取会员等级。");
       const error = f1PolicyInputError(editor, values, ctx.voucherOptions, ctx.skuOptions);
       if (error) throw new Error(error);
     }
@@ -76,13 +81,31 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     let result;
     try { result = await submitF1Policy(current, editor, values, reason, mode); }
     catch (error) {
+      const failure = error as { httpStatus?: number; apiCode?: number };
       if (previous && !pending()) {
         onClose();
         await ctx.refreshF1();
       } else if (pending()) {
         setOpening({ pending: pending(), error: undefined });
-      } else if (!previous && (error as { backendMessage?: string }).backendMessage === "A2_CONFIRMATION_REQUIRED") {
-        setApprovalRequired(true);
+      } else if (!previous && isDeterministicRejection(failure.httpStatus ?? 0, failure.apiCode)) {
+        // A first rejected write has no retained command. Rebase the open dialog,
+        // including reward valuation and the revision used by a later proposal.
+        setBaselineReady(false);
+        setBaselineRevision(value => value + 1);
+        ctx.invalidateF1();
+        const active = await fetchF1VRankOverview().catch(() => null);
+        requireSession(false);
+        const row = active?.rows.find(item => item.v === editor.row.v);
+        const reward = editor.reward && active?.rewards[editor.row.v]?.find(item => item.id === editor.reward!.id);
+        if (active && row && (!editor.reward || reward)) {
+          setBaseline({ ...editor, row, reward, valuation: active.rewardValuationUsdtPerUvt, approvalRequired: false });
+          ctx.acceptF1PolicyOverview(active);
+          setBaselineReady(true);
+        } else {
+          // Keep the existing read-failure lock; neither direction nor submission
+          // may use the rejected snapshot if its replacement could not be read.
+          ctx.invalidateF1("请先成功重新读取会员等级。");
+        }
       }
       throw error;
     } finally { onPendingChange(); }
@@ -106,7 +129,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     ];
   const businessForm: BusinessFormSpec = {
     kind: "multi-field", fields,
-    amplifies: (values) => f1PolicyNeedsApproval(editor, values),
+    amplifies: (values) => baselineReady && f1PolicyNeedsApproval(editor, values),
     feedback: (values) => {
       const error = f1PolicyInputError(editor, values, ctx.voucherOptions, ctx.skuOptions);
       return { message: error ?? "", invalid: !!error };
@@ -159,6 +182,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     coverage={ctx.f1Coverage}
     coverageLead={isCondition ? "放宽门槛会让更多人升级、拿到升级奖励" : "增加资金奖励会让平台多付钱"}
     businessForm={businessForm}
+    businessFormRevision={baselineRevision}
     getPendingReason={() => pending()?.original.reason}
     getPendingBusinessValue={() => pending()?.original.form}
     inlineApproval={{
@@ -167,7 +191,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       initialRecovery: "retry",
       expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
       disabledReason,
-      resolve: (values) => f1PolicyNeedsApproval(editor, values) ? {
+      resolve: (values) => baselineReady && f1PolicyNeedsApproval(editor, values) ? {
         heading: isCondition ? "放宽晋升条件 · 批准后生效" : "增加资金奖励 · 批准后生效",
         disabledReason: ctx.f1Coverage && ctx.f1Coverage.coverageRatio < ctx.f1Coverage.redlinePct ? "当前兑付覆盖率低于红线，暂时无法提交审批。" : undefined,
         completionCopy: isCondition
@@ -195,7 +219,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         </Field>;
         if (isCondition) {
           const changed = (values.value ?? "").trim() !== "" && (values.value ?? "").trim() !== (editor.row[editor.field!] ?? "");
-          const state = changed && !inputError ? loosen
+          const state = baselineReady && changed && !inputError ? loosen
             ? <StatusTag tone="warn" icon={LockOpen}>放宽，要批准</StatusTag>
             : <StatusTag tone="neutral" icon={ShieldCheck}>收紧或不变，立即生效</StatusTag> : undefined;
           return <>
