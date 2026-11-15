@@ -83,6 +83,7 @@ export async function queryI6CourseProposal(saved: HIRewardCommand): Promise<A2O
   const record = originalI6Proposal(saved), input = record.payload.input;
   const ticket = await fetchA2ProposalByKey(record.commandKey, true);
   if (!ticket) {
+    if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
     commands.remember(record.fingerprint, record.commandKey, { ...record, ticketStatus: undefined });
     return null;
   }
@@ -139,6 +140,7 @@ export function retryI6CourseProposal(record: HIRewardCommand) { return sendI6Co
 /** Only a visual confirmation may call this; direct writes never use the proposal-not-found release rule. */
 export async function releaseExpiredI6CourseProposal(saved: HIRewardCommand): Promise<void> {
   const record = originalI6Proposal(saved);
+  if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
   if (!isRetryExpired(record)) throw new Error("原操作仍在重试期限内，请先查询原结果。");
   if (await queryI6CourseProposal(record)) throw new Error("已经查到原审批单，请按当前审批单处理。");
   commands.forget(record.fingerprint, record.commandKey);

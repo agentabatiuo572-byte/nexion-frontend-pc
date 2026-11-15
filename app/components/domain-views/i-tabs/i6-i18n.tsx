@@ -1278,7 +1278,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
                 <span className="i6-pending-act">
                 <Button size="sm" disabled={!!lookupKey && lookupKey !== record.commandKey} loading={lookupKey === record.commandKey} onClick={() => void lookupExpired(record)}>查询原结果</Button>
-                {expired && notFoundKeys.includes(record.commandKey) && record.ticketStatus !== "pending" && <Button size="sm" variant="primary" disabled={!!lookupKey} onClick={() => setReleasing(record)}>确认解除</Button>}
+                {!record.receiptKnown && expired && notFoundKeys.includes(record.commandKey) && record.ticketStatus !== "pending" && <Button size="sm" variant="primary" disabled={!!lookupKey} onClick={() => setReleasing(record)}>确认解除</Button>}
                 {!queryOnly && <Button size="sm" variant="primary" disabled={!!lookupKey}
                   onClick={() => openActionConfirm({ briefKind: "record",
                   action: `核对原操作 · ${label}`,
@@ -1302,7 +1302,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 })}>按原请求重试</Button>}
                 </span>
                 {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
-                {expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
+                {!record.receiptKnown && expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
               </li>;
             })}
             {approvals.map((row) => <li key={row.id}>

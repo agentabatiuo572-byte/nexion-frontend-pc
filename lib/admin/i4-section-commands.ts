@@ -72,6 +72,7 @@ export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
   const ticket = await fetchA2ProposalByKey(original.commandKey, true);
   if (!ticket) {
+    if (original.receiptKnown || original.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
     pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
     return null;
   }
@@ -155,7 +156,10 @@ export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: stri
 
 /** Only call after an operator confirmation; direct writes never use this release rule. */
 export async function releaseExpiredI4SectionCommand(saved: I4SectionCommand): Promise<void> {
-  if (!isRetryExpired(saved)) throw new Error("原操作仍在重试期限内，请先查询原结果。");
-  if (await queryI4SectionCommand(saved)) throw new Error("已经查到原审批单，请按当前审批单处理。");
-  pending.forget(saved.fingerprint, saved.commandKey);
+  const record = pendingI4SectionCommands().find(row => row.commandKey === saved.commandKey);
+  if (!record) throw new Error("原操作已处理，请重新读取后再操作。");
+  if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+  if (!isRetryExpired(record)) throw new Error("原操作仍在重试期限内，请先查询原结果。");
+  if (await queryI4SectionCommand(record)) throw new Error("已经查到原审批单，请按当前审批单处理。");
+  pending.forget(record.fingerprint, record.commandKey);
 }

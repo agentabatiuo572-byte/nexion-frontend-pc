@@ -639,9 +639,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     inFlight.current = true; setRecovering(record.commandKey);
     try {
       const ticket = await queryI4SectionCommand(record);
-      if (!ticket && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
+      if (!ticket && !record.receiptKnown && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
       toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(ticket.status)}`
-        : isRetryExpired(record) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。");
+        : !record.receiptKnown && isRetryExpired(record) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。");
       if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey]);
     } catch (error) { toast(displayAdminError(error)); }
     finally { inFlight.current = false; setRecovering(null); syncCommands(); }
@@ -680,7 +680,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           }}>按原请求重试</Button></> })),
     ...sectionCommands.map(record => {
       const pending = record.ticketStatus === "pending";
-      const releasable = !pending && isRetryExpired(record) && sectionNotFound.includes(record.commandKey);
+      const releasable = !record.receiptKnown && !pending && isRetryExpired(record) && sectionNotFound.includes(record.commandKey);
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
         name: `${sectionName(record.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[record.action]}`,
         change: `${record.before} → ${record.after === "archived" ? "已下架" : record.after}`, submittedAt: timeText(new Date(record.createdAt).toISOString()),

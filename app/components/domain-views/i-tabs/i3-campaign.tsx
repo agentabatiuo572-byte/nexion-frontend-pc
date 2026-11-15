@@ -745,13 +745,13 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       </> })),
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
-      note: absentCaps[row.commandKey]
+      note: !row.receiptKnown && absentCaps[row.commandKey]
         ? `按原请求查不到这张审批单，说明没建成；${isRetryExpired(row) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
         : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。" : undefined,
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={!row.request ? "原操作记录不完整，只能查询核对，不能重试。" : capPermission} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
-        {isRetryExpired(row) && absentCaps[row.commandKey] && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(row)}>确认解除</Button>}
+        {!row.receiptKnown && isRetryExpired(row) && absentCaps[row.commandKey] && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(row)}>确认解除</Button>}
       </> })),
   ];
   const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
