@@ -188,7 +188,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
           {!expired && ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查询原结果，查不到再按原请求重试。" : "重发原内容，已成功的不会重复执行。"}有结论前这单不能再操作。{ctx.e4RetryRejected.includes(record.commandKey) && "解除待确认只清本页记录，不替后端结案。"}
+        <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查询原结果，查不到再按原请求重试。" : "重发原内容，已成功的不会重复执行。"}有结论前这单不能再操作。{ctx.e4RetryRejected.includes(record.commandKey) && "解除待确认只清本页的记录，不改原操作的结果。"}
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} /></p>
         {!expired && ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "原命令继续保留", "原操作继续保留", "请查询原操作"]} /></p>}
@@ -205,7 +205,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                 {refundWait > 0 && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "failed", state: "provisioning_failed" })}>看开通失败的订单</Button>}
               </>}>{waitTitle}</Conclusion>
           : error ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单列表没读到；按计数没有要处理的订单</Conclusion>
-          : ctx.e4Pending.length + ctx.e4ReceiptAttempts.length > 0 ? <Conclusion state="warn">除了上方结果未知的 {ctx.e4Pending.length + ctx.e4ReceiptAttempts.length} 单，没有要处理的订单</Conclusion>
+          : ctx.e4Pending.length + ctx.e4ReceiptAttempts.length > 0 ? <Conclusion state="warn">除了上方结果未知的 {new Set([...ctx.e4Pending, ...ctx.e4ReceiptAttempts].map((record) => record.orderNo)).size} 单，没有要处理的订单</Conclusion>
           : <Conclusion state="ok" hint={counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : undefined} explain={searchNote || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">
@@ -511,7 +511,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
-      {orderPending && <Notice tone="warn">这单有结果未知的操作，先到页面上方查询原结果，不要重复处理。</Notice>}
+      {orderPending && <Notice tone="warn">{ctx.canQueryE4 ? "这单有结果未知的操作，先到页面上方查询原结果，不要重复处理。状态变了也不算确认。" : "这单有结果未知的操作，不要重复处理，状态变了也不算确认。请有操作记录读取权限的同事核对。"}</Notice>}
       {pendingApproval && <Notice tone="warn" title="这单已有待审批操作">批准后才执行原操作。审批结束后才能发起新操作。<E4PendingApprovalDetails approval={pendingApproval} /></Notice>}
       {e4DetailError && <Notice tone="danger" title="详情加载失败" actionBelow action={<Button size="sm" onClick={() => ctx.openOrder(o)}>重试</Button>}>
         {e4DetailError} · 为避免按旧数据操作，已暂停处理。
