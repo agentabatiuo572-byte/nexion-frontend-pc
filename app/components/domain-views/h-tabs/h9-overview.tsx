@@ -83,7 +83,7 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
           surface={values && !tick ? "warn" : undefined}
           head={<>网络脉搏注册人数{values ? tick ? <StatusTag tone="progress">按跳动增长</StatusTag> : <StatusTag tone="warn">部分位置不显示</StatusTag> : unreadTag}</>}
           label="现在约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"}
-          explain={tick ? "按读取这页的时刻和后端公式推算的参考数，不是 App 此刻的数；App 上还会加一个固定的随机偏移，两边可能差几人。" : "只配了月增长率：网络脉搏卡片照常显示这个数，网络快照等位置会显示「不可用」。"}>
+          explain={tick ? "按读取这页的时刻推算的参考数，不是 App 此刻的数；App 上还会加一个固定的随机偏移，两边可能差几人。" : "只配了月增长率：网络脉搏卡片照常显示这个数，网络快照等位置会显示「不可用」。"}>
           <dl className="rd-stat-rows">
             <div className="rd-stat-row"><dt>增长方式</dt><dd data-empty={values ? undefined : ""}>{!values ? "—" : tick ? `每 ${count(tick.intervalSec)} 秒 +${count(tick.stepMin)}–${count(tick.stepMax)} 人` : `每月 +${values.registeredUsersMonthlyGrowthPct}%`}</dd></div>
           </dl>

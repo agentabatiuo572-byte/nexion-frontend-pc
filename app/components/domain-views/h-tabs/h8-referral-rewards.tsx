@@ -27,6 +27,7 @@ import {
   type H8ReferralRewardOverview,
 } from "@/lib/admin/h-client";
 import type { ActionConfirmReq, HCtx } from "./types";
+import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -199,7 +200,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const isEnabled = param.key === "enabled";
     const numeric = param.kind === "number";
     const rawCurrent = String(snapshot.params[param.key]);
-    if (fixedValue !== undefined && fixedValue === rawCurrent) { ctx.toast("和现在一样"); return; }
+    if (fixedValue !== undefined && fixedValue === rawCurrent) { ctx.toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样"); return; }
     const current = isEnabled
       ? ENABLED_LABELS[rawCurrent] ?? ENABLED_LABELS.false
       : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
@@ -534,11 +535,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   </>;
   const savedUnreadNotice = savedUnread && <H8SavedUnreadNotice name={paramTitle(savedUnread.param)}
     value={valueText(savedUnread.param, savedUnread.value)} reloading={loading} hasData={!!data} onReload={() => void load("", false, true)} />;
-  const staleNotice = stale && data && <Notice tone="warn" title={`没有保存：${stale.param ? paramTitle(stale.param) : "结算申请"}已被别人改过`}
+  const staleNotice = stale && <Notice tone="warn" title={`没有保存：${stale.param ? paramTitle(stale.param) : "结算申请"}已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
-    {stale.param
-      ? <>现在是 {valueText(stale.param, String(data.params[stale.param.key]))}，你这次要改成 {valueText(stale.param, stale.value)}。核对后重新调整。</>
-      : "奖励配置或当月加成已变化，页面已读到最新值；核对后重新提交结算。"}
+    {!data ? "最新值没读到；重新加载成功后，会带着你填的内容重新打开。"
+      : stale.param
+      ? <>现在是 {valueText(stale.param, String(data.params[stale.param.key]))}，你要改成 {valueText(stale.param, stale.value)}。已读到最新值，核对后再提交。</>
+      : "奖励配置或当月加成已变化。已读到最新值，你填的还在，核对后再提交。"}
   </Notice>;
 
   const confirmModal = mc && (
@@ -570,6 +572,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           await mc.run(reason, newValue, businessValue);
           setMc(null);
         } catch (failure) {
+          // 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。
+          if (failure instanceof HApprovalRequired) {
+            const { param, value, reason, snapshot } = failure.input as { param: H8Param; value: string; reason: string; snapshot: H8ReferralRewardOverview };
+            setMc(null);
+            ctx.openConfirm(hApprovalReconfirm(failure, { action: mc.action, title: mc.title, reason, approver: APPROVER, holds: "奖励配置",
+              change: <Change from={valueText(param, String(snapshot.params[param.key]))} to={valueText(param, value)} /> }));
+            return;
+          }
           ctx.toast(failure instanceof Error ? displayAdminError(failure) : "操作失败");
           throw failure;
         }
@@ -594,6 +604,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     <Conclusion state="unknown">读不到奖励设置，现在判断不了奖励开没开、有多少在等结算</Conclusion>
     {recoveryNotice}
     {savedUnreadNotice}
+    {staleNotice}
     <BlockState state="error" title="新人礼与邀请奖励读取失败"
       detail={<>页面不显示任何旧数据。<Explain label="失败原因" content={error ?? "没有收到数据。"} /></>}
       retryLabel="重新加载" onRetry={() => void load()} />
@@ -649,7 +660,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <Stat key={param.key} tone="role-4"
         head={<span className="h8-card-head"><who.icon size={14} aria-hidden />{param.label}<small>{who.per}</small></span>}
         label="实际发放" value={amountText(effective, decimals)} unit={param.unit}
-        explain={`实际发放 = 基础额 × 第 ${data.rhythmMonth} 月${multiplierName}，6 位小数四舍五入。这是一份奖励的配置额，不是某个用户已经到账的钱。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
+        explain={`实际发放 = 基础额 × 第 ${data.rhythmMonth} 月${multiplierName}，6 位小数四舍五入。调高每位多拿、平台多付，要批准；调低之后结算的按新额发。这是一份奖励的配置额，不是某个用户已经到账的钱。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
         <div className="h8-formula" aria-label={`基础额 ${amountText(base, decimals)} ${param.unit} 乘 ${multiplierName} ${multiplierText(multiplier)}`}>
           <span className="h8-formula-term"><small>基础额</small><Amount value={base} unit={param.unit} decimals={decimals} /></span>
           <span className="h8-formula-term"><small>第 {data.rhythmMonth} 月{multiplierName}</small><b>{multiplierText(multiplier)}</b></span>

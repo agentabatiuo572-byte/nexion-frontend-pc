@@ -7,7 +7,7 @@ import {
   AlertTriangle, ArrowUpDown, BarChart3, CalendarCheck, CircleSlash, Dices, Gift, Lock, Pencil, RefreshCw, ShieldCheck, Sparkles, Trophy, Users,
 } from "lucide-react";
 import {
-  BlockState, Button, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel, ReleaseModal,
+  BlockState, Button, Change, ChartLegend, ColumnChart, Conclusion, ConfigList, ConfigRow, Fact, Facts, Notice, PageHeader, PageTabs, Panel, ReleaseModal,
   SegmentBar, Stat, StatBand, StatusTag, StepBar, useTabIds,
 } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
@@ -15,7 +15,8 @@ import {
   fetchH5CheckIn,
 } from "@/lib/admin/h-client";
 import { h5Amount, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
-import { useH5Mutations, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
+import { useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
+import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -26,6 +27,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, HCtx } from "./types";
+import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import {
   CheckInStrip, H5RecoveryNotice, MilestoneTrack, acknowledgedTag, amountText, countText, dayNumber, expiredTag, legacyRewardName, pendingTag,
   positiveInteger, rewardKindText, streakRewardView, unknownTag,
@@ -551,7 +553,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }} />;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.name}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
-    {`你打开时是 ${shownReward(stale.before)}，这次要改成 ${shownReward(stale.after)}。页面已读到最新值，以下面显示的为准，核对后重新调整。`}
+    {`你打开时是 ${shownReward(stale.before)}，要改成 ${shownReward(stale.after)}。${error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}`}
   </Notice>;
 
   const header = (
@@ -599,6 +601,16 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           else await mc.run(reason, newValue, businessValue);
           setMc(null);
         } catch (err) {
+          // 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。
+          if (err instanceof HApprovalRequired) {
+            const change = err.input as H5Change;
+            const op = change.target.startsWith("streak:") ? "h5_streak_milestone" : change.target.startsWith("power:") ? "h5_power_up_config" : "h5_earn_milestone";
+            setMc(null);
+            ctx.openConfirm(hApprovalReconfirm(err, { action: change.action, title: change.name, reason: change.reason,
+              change: <Change from={shownReward(change.before)} to={shownReward(change.after)} />, approver: FUND_APPROVER, rights: FUND_APPROVER_RIGHTS, holds: "这一项",
+              extra: <Fact k="审批单名称">{`「${findHighOp(op)!.action}」`}</Fact> }));
+            return;
+          }
           toast(err instanceof Error ? displayAdminError(err) : "操作失败");
           throw err;
         }
@@ -612,6 +624,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <div className="h5-page">
         {header}
         {recovery}
+        {staleNotice}
         <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} />
         {confirmModal}
         {releaseModal}
@@ -915,7 +928,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <Panel title="连签人数分布" icon={BarChart3} tone="role-3"
           sub={distribution.length ? `${countText(distributionTotal)} 人 · 按连签天数${distribution.length >= 30 ? " · 只列前 30 组" : ""}` : `近 7 天补救记录 ${stats.weekRevive == null ? "—" : `${countText(stats.weekRevive)} 条`}`}
           explain={<>
-            <p>每个有连签记录的人按现在记下的连签天数分组，是此刻的快照，不是流失统计。</p>
+            <p>每个有连签记录的人按现在记下的连签天数分组，是此刻的分布，不是流失统计。</p>
             <p>断签的人下次签到才从第 1 天重新算，在那之前还算在原来的天数里；用补救卡也会改天数。最多列 30 组，天数更长的不列。</p>
             <p>近 7 天补救记录是这 7 天里和补救卡有关的权益记录条数，不去重、不等于真的接上连签的人数。</p>
           </>}>

@@ -152,7 +152,7 @@ export function PromotionOverview({ page, pendingCount, catalog, onOpenRewards, 
                 {short.map(({ item, budget }) => <li key={`b-${item.activityId}-${budget.asset}-${budget.productNo ?? ''}`}><button type="button" onClick={() => onOpenDetail(item.activityId)}><StatusTag tone="warn" icon={Wallet}>预算快用完</StatusTag><span className="h4-todo-title">{item.name || '未命名草稿'}</span><span className="h4-todo-sub">{budgetName(budget, catalog)} 剩余 {amountText(budget.available, budget.asset === 'DEVICE')}，总额 {amountText(budget.total, budget.asset === 'DEVICE')} {budgetUnit(budget.asset)}</span></button></li>)}
             </ul>
         </Panel>}
-        <p className="h4-asof">数据时间 <span className="h4-num">{formatTime(page.asOf, 'Asia/Shanghai')}</span>（北京时间）<Explain label="数据时间怎么算" content="列表、统计和这一页的活动来自同一个查询快照；翻页沿用同一个快照，重新查询才会更新。"/></p>
+        <p className="h4-asof">数据时间 <span className="h4-num">{formatTime(page.asOf, 'Asia/Shanghai')}</span>（北京时间）<Explain label="数据时间怎么算" content="列表、统计和这一页的活动来自同一次查询；翻页不重新查，点「查询」才更新。"/></p>
     </>;
 }
 

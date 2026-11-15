@@ -10,7 +10,7 @@ import { Button, Explain, Notice, SegmentBar, StatusTag } from "@/app/components
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
-import { h7Stamp } from "@/lib/admin/h7-voucher-time";
+import { h7DateFacts, h7Stamp } from "@/lib/admin/h7-voucher-time";
 export type { H7Voucher } from "@/lib/admin/h-client";
 
 export const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
@@ -32,6 +32,9 @@ export const countText = (value: number) => value.toLocaleString("en-US");
 /** 按真实毫秒显示北京时间；0 是立即／长期的合同哨兵。 */
 export function startText(ms: number) { return ms ? h7Stamp(ms) : "立即"; }
 export function endText(ms: number) { return ms ? h7Stamp(ms) : "长期有效"; }
+/** 改版前建的券起止不在北京时间整天的边界上（比如止于早上 8 点）：详情里写明不是整天。 */
+export function startDetailText(ms: number) { return ms && !h7DateFacts(ms).wholeDayBoundary ? `${h7Stamp(ms)}（不是当天 0 点）` : startText(ms); }
+export function endDetailText(ms: number) { return ms && !h7DateFacts(ms, true).wholeDayBoundary ? `${h7Stamp(ms)}（不是当天结束）` : endText(ms); }
 export function periodText(v: Pick<H7Voucher, "startAt" | "endAt">) {
   if (!v.startAt && !v.endAt) return "长期有效";
   if (!v.startAt) return `至 ${h7Stamp(v.endAt)}`;

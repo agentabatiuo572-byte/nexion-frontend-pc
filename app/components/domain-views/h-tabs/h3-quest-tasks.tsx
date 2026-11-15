@@ -25,6 +25,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
@@ -37,6 +38,7 @@ import {
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
 import { H3RegionPanel, REGION_APPROVER, useH3RegionPolicy } from "./h3-region-policy";
+import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 
 type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
@@ -301,7 +303,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const current = text(model?.promoBanner?.status, "").toLowerCase();
     if (!current) { toast(displayAdminError(new Error("PROMO_BANNER_NOT_CONFIGURED"))); return; }
     const next = conflictDraft.intent ?? (current === "active" ? "paused" : "active");
-    if (next === current) { toast("和现在一样，没有改动"); return; }
+    if (next === current) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样，没有改动"); return; }
     openActionConfirm({ rebaseValue: next, target: "promoBanner.status", briefKind: "record",
       action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       title: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
@@ -479,7 +481,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     const targetStatus = conflictDraft.intent ?? (status === "active" ? "paused" : "active");
-    if (targetStatus === status) { toast("和现在一样，没有改动"); return; }
+    if (targetStatus === status) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样，没有改动"); return; }
     const enabling = targetStatus === "active";
     openConfirm({ rebaseValue: targetStatus, briefKind: "config",
       target: taskCode,
@@ -574,7 +576,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     const nextEnabled = conflictDraft.intent === undefined ? !enabled : conflictDraft.intent === "true";
-    if (nextEnabled === enabled) { toast("和现在一样，没有改动"); return; }
+    if (nextEnabled === enabled) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样，没有改动"); return; }
     openConfirm({ rebaseValue: String(nextEnabled), briefKind: "record",
       target: binding.bindingCode,
       action: `${!nextEnabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
@@ -857,7 +859,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }} />;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.title}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
-    你打开时是 {shownValue(stale.before)}，这次要改成 {shownValue(stale.after)}。页面已读到最新值，以下面显示的为准，核对后重新调整。
+    你打开时是 {shownValue(stale.before)}，要改成 {shownValue(stale.after)}。{error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}
   </Notice>;
 
   const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
@@ -899,6 +901,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               await mc.run(reason, newValue, businessValue);
               setMc(null);
             } catch (error) {
+              // 直接保存被判定要走审批：换成审批确认，值和理由沿用，运营再确认一次才建单（H-改走审批）。
+              if (error instanceof HApprovalRequired) {
+                const { write, reason: kept } = error.input as { write: H3Write; reason: string };
+                setMc(null);
+                shellCtx.openConfirm(hApprovalReconfirm(error, { action: write.change.action, title: write.change.title, reason: kept,
+                  change: <Change from={shownValue(write.change.before)} to={shownValue(write.change.after)} />, approver: FUND_APPROVER, holds: "这一项" }));
+                return;
+              }
               toast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
@@ -911,6 +921,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <div className="h3-page">
       {header}
       {recovery}
+      {staleNotice}
       {confirmModal}
       {releaseModal}
       <BlockState state="error" title="用户任务读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改。`} retryLabel="重试读取" onRetry={() => void refresh().catch(cause => toast(displayAdminError(cause)))} />
@@ -1446,7 +1457,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               statedBrief: { impact: "只存一段文字，App 目前不显示。", check: "最多 128 字。" }, confirmLabel: "确认修改", hint: "最多 128 字",
             }))}>调整</Button> : undefined} />
           <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
-            sub="后端没给币种" what="卡上显示的设备日收益数字。" effect="只是展示，不改设备收益和用户钱包；后端没有币种字段，已提后端。"
+            sub="后端没给币种" what="卡上显示的设备日收益数字。" effect="只是展示，不改设备收益和用户钱包；币种等后端补上。"
             action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:5"]), () => openNumericConfig("promoBanner.targetDaily", "转化卡显示的日收益", text(promo.targetDaily), 0, 1000000, 0.01, undefined, {
               title: "改备用卡日收益", effect: immediate, facts: promoFacts("promoBanner.targetDaily", "日收益", decimalOf(promo.targetDaily), ""),
               statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–1,000,000。" }, confirmLabel: "确认修改", hint: "0–1,000,000",

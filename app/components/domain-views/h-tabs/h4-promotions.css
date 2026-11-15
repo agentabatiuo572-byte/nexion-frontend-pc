@@ -330,3 +330,17 @@
 @media (max-width: 1279px) {
   .h4-page .h4l-draw-body .h4l-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* 保存被别人先改过之后的三方对比（玩法规则、创世抽奖抽屉顶部） */
+.h4-dialog-body .h4-compare { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; min-width: 0; }
+.h4-dialog-body .h4-compare-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--rd-text-aux); color: var(--rd-text); }
+.h4-dialog-body .h4-compare-table th, .h4-dialog-body .h4-compare-table td { padding: 8px 10px; border-top: 1px solid var(--rd-line); text-align: left; vertical-align: top; overflow-wrap: anywhere; font-weight: normal; }
+.h4-dialog-body .h4-compare-table thead th { border-top: 0; padding-top: 0; color: var(--rd-text-3); white-space: nowrap; }
+.h4-dialog-body .h4-compare-table thead th:first-child, .h4-dialog-body .h4-compare-table tbody th { width: 30%; }
+.h4-dialog-body .h4-compare-table tbody th { display: table-cell; }
+.h4-dialog-body .h4-compare-name { display: block; margin-bottom: 4px; color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare-table td[data-changed] { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare-table td:not([data-changed]) { color: var(--rd-text-2); }
+.h4-dialog-body .h4-compare-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.h4-dialog-body .h4-compare-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.h4-dialog-body .h4-compare-choice p { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }

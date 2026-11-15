@@ -2,17 +2,20 @@
 
 import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, CircleCheck, Lock, Settings2, Sparkles } from "lucide-react";
 import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
 import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
+import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
 /** 每类玩法一句人话：用户做什么、拿到什么（字段见 H4EventRuleService 的规则闭集）。 */
 const PLAY_SENTENCE: Record<string, string> = {
@@ -56,11 +59,13 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
-  const choose = (row: EventRuleView) => { conflictReview.current = null; setStale(""); setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
+  const choose = (row: EventRuleView) => { conflictReview.current = null; setStale(""); setMerged(0); setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
   const conflictReview = useRef<HConflictReviewRequired | null>(null);
+  /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
+  const [merged, setMerged] = useState(0);
   const load = async (preserve = false) => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
@@ -130,6 +135,13 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
           await load();
           ctx.toast(isH4ApprovalReceipt(saved) ? saved.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
         } catch (cause) {
+          // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
+          if (cause instanceof HApprovalRequired) {
+            ctx.openActionConfirm(null);
+            ctx.openConfirm(hApprovalReconfirm(cause, { action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`, title: "保存玩法配置", reason,
+              approver: "另一位超级管理员", holds: "玩法", extra: <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact> }));
+            return;
+          }
           if (own === generation.current) setError(displayAdminError(cause));
           if (isHGrowthReadConflict(cause)) setStale(`${EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · ${base.eventCode}`);
           if (isHGrowthReadConflict(cause) && !originalKey) {
@@ -152,6 +164,30 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
     });
   };
   const close = () => { conflictReview.current = null; setSelected(null); setDraft(null); setError(""); };
+  // 三方对比：项名、显示写法照表单；数字原样写，不舍入。
+  const review = selected && draft ? conflictReview.current : null;
+  const compareGroups: H4ConflictGroup[] = review && selected ? h4ConflictGroups(review.fields,
+    path => path.startsWith("rules.") ? path.split(".").slice(0, 2).join(".") : path.split(".")[0],
+    key => key === "enabled" ? "开放状态" : key === "startsAt" ? "开始时间" : key === "endsAt" ? "结束时间"
+      : eventRuleFields({ kind: selected.kind, rules: eventRuleDraftRules(selected) }).find(field => `rules.${field.key}` === key)?.label ?? "其他参数",
+    (key, raw) => key === "enabled" ? raw === true ? "开启" : raw === false ? "关闭" : "—"
+      : key === "startsAt" || key === "endsAt" ? `${formatTime(raw as string | null, "Asia/Shanghai")}${raw ? "（北京时间）" : ""}`
+      : key === "rules.regions" ? eventRegionText(raw).split("\n").join("；") || "—"
+      : key === "rules.weekdays" ? Array.isArray(raw) && raw.length ? (raw as number[]).map(day => `周${"一二三四五六日"[day - 1] ?? "?"}`).join("、") : "—"
+      : raw === undefined || raw === null || raw === "" ? "—" : Array.isArray(raw) ? raw.join("、") : String(raw)) : [];
+  // 合并：最新配置为底，放回自己改过的项；回表单后照常保存（新确认框、新理由）。
+  const mergeConflict = () => {
+    if (!selected || !draft) return;
+    const latest = selected, mine = draft, next: EventRuleChange = { enabled: latest.enabled, startsAt: latest.startsAt, endsAt: latest.endsAt, rules: eventRuleDraftRules(latest) };
+    const kept = compareGroups.filter(group => group.byMe);
+    for (const group of kept) {
+      if (group.key.startsWith("rules.")) next.rules[group.key.slice(6)] = mine.rules[group.key.slice(6)];
+      else if (group.key === "enabled") next.enabled = mine.enabled;
+      else if (group.key === "startsAt" || group.key === "endsAt") next[group.key] = mine[group.key];
+    }
+    choose(latest); setDraft(next); setRegions(eventRegionText(next.rules.regions)); setMerged(kept.length);
+  };
+  const keepMine = () => { const current = conflictReview.current; if (!current) return; setError(""); current.confirm(); pendingChanged(v => v + 1); };
   if (!canRead) return <BlockState state="denied" title="没有查看玩法规则的权限" detail="七类玩法需要「活动中心查看」权限。" />;
 
   const ended = (row: EventRuleView) => !!(row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= Date.now());
@@ -161,9 +197,13 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const missing = (row: EventRuleView) => [...new Set(row.readiness.missing.map(eventRuleMissingLabel))];
 
   const editor = selected && draft && (() => {
-    const lockedForm = !canWrite || saving || h4Blocked(`H/h4_event_rule/${selected.eventCode}`);
+    const lockedForm = !canWrite || saving || h4Blocked(`H/h4_event_rule/${selected.eventCode}`) || !!review;
+    const saved = confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${selected.eventCode}`);
     const enableBlocked = !selected.readiness.ready ? `还没就绪：${missing(selected).join("、") || "参与条件与奖励配置"}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
-    return <div className="h4-dialog-body"><fieldset disabled={lockedForm} className="h4-fieldset">
+    return <div className="h4-dialog-body">
+      {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
+      {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新配置，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
+      <fieldset disabled={lockedForm} className="h4-fieldset">
       <Facts>
         <Fact k="玩法">{PLAY_SENTENCE[playKey({ kind: selected.kind, rules: draft.rules })] ?? "—"}</Fact>
         <Fact k="就绪" tone={selected.readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : selected.readiness.ready ? "配置已满足开启条件" : `待补齐：${missing(selected).join("、") || "参与条件与奖励配置"}`}</Fact>
@@ -217,7 +257,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
       {selected.kind === "boost" && draft.rules.action === "CHECKIN_MULTIPLIER" && <Notice tone="neutral">加成预算耗尽后恢复原有签到奖励，不影响用户继续签到。</Notice>}
       {selected.kind === "wheel" && <Notice tone="neutral">抽奖奖项、概率和奖池限制在「转盘奖池」里维护。</Notice>}
       {selected.kind === "regional" && <Notice tone="neutral">排名按加入活动后的有效支付订单金额统计；获胜地区内按个人有效支付金额比例分配奖池，并列第一的地区共同分享总奖池。</Notice>}
-      {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
+      {error && !review && <Notice tone={saved ? "warn" : "danger"} title={saved ? "已保存，但没读到最新配置" : stale ? "没有保存：最新配置也没读到" : "没有保存"}>{saved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
     </fieldset></div>;
   })();
 
@@ -249,11 +289,11 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
         </article>;
       })}</div>}
     {rows.length > 0 && error && !selected && <Notice tone="danger" title="玩法规则没有读到最新的">{error}</Notice>}
-    {stale && !selected && <Notice tone="warn" title={`没有保存：${stale} 已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>页面已读到最新配置，你这次改的内容没有提交。核对后重新打开再改。</Notice>}
+    {stale && !selected && <Notice tone="warn" title={`没有保存：${stale} 已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>{error ? "你这次改的没有提交。" : "已读到最新配置。你这次改的没有提交，关掉时已丢弃；要改就重新打开。"}</Notice>}
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : undefined} onClick={() => save()}>保存配置</Button>} />}>
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
   </Panel>;

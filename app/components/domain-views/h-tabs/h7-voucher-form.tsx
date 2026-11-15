@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import { BellOff, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
-import { h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
+import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
@@ -129,9 +129,15 @@ export function displayValue(key: string, state: H7FormValue, skuLabels: Record<
 export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: Record<string, string>, toMs: (date: string, end?: boolean) => number, issued: number, voucher?: H7Voucher) {
   const keys = Object.keys(FIELD_LABEL).filter((key) => !(key === "amountUSD" && after.type !== "fixed") && !(key === "percent" && after.type !== "percent"));
   return keys
-    .map((key) => ({ key, label: FIELD_LABEL[key], before: voucher && key === "startDate" ? startText(voucher.startAt) : voucher && key === "endDate" ? endText(voucher.endAt) : displayValue(key, before, skuLabels, toMs), after: displayValue(key, after, skuLabels, toMs) }))
+    // 编辑时起止按实际会提交的时刻写：没改日期的旧券保留原时刻（不算改动），改了日期按北京时间整天算。
+    .map((key) => ({ key, label: FIELD_LABEL[key], before: voucher && key === "startDate" ? startText(voucher.startAt) : voucher && key === "endDate" ? endText(voucher.endAt) : displayValue(key, before, skuLabels, toMs),
+      after: voucher && key === "startDate" ? startText(h7EditedDateMs(after.startDate, voucher.startAt)) : voucher && key === "endDate" ? endText(h7EditedDateMs(after.endDate, voucher.endAt, true)) : displayValue(key, after, skuLabels, toMs) }))
     .filter((row) => row.before !== row.after)
-    .map((row) => issued > 0 && AFFECTS_ISSUED.has(row.key) ? { ...row, note: "已发出还没用的券也按改后的值使用" } : row);
+    .map((row) => {
+      const legacy = !!voucher && (row.key === "startDate" && voucher.startAt > 0 && !h7DateFacts(voucher.startAt).wholeDayBoundary || row.key === "endDate" && voucher.endAt > 0 && !h7DateFacts(voucher.endAt, true).wholeDayBoundary);
+      const notes = [legacy && "改了日期，按北京时间整天算", issued > 0 && AFFECTS_ISSUED.has(row.key) && "已发出还没用的券也按改后的值使用"].filter(Boolean);
+      return notes.length ? { ...row, note: notes.join("；") } : row;
+    });
 }
 
 export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels, toMs, onClose, onReview }: {
@@ -171,7 +177,12 @@ export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels,
   const review = () => { setAttempted(true); if (missing.length === 0) onReview(value); };
   const issued = voucher?.issuedCount ?? 0;
   const zone = H7_TIME_ZONE.label;
-  const startAt = dateStamp(value.startDate, toMs), endAt = dateStamp(value.endDate, toMs, true);
+  // 编辑旧券时没改日期，保留原时刻；帮助行写实际的开始、截止时刻。
+  const exact = (ms: number) => ms ? h7Stamp(ms) : "";
+  const startAt = voucher ? exact(h7EditedDateMs(value.startDate, voucher.startAt)) : dateStamp(value.startDate, toMs);
+  const endAt = voucher ? exact(h7EditedDateMs(value.endDate, voucher.endAt, true)) : dateStamp(value.endDate, toMs, true);
+  const legacyKept = !!voucher && (voucher.startAt > 0 && !h7DateFacts(voucher.startAt).wholeDayBoundary && value.startDate === h7DateFacts(voucher.startAt).calendarDate
+    || voucher.endAt > 0 && !h7DateFacts(voucher.endAt, true).wholeDayBoundary && value.endDate === h7DateFacts(voucher.endAt, true).calendarDate);
   const changed = voucher ? changedRows(latest ?? initial, value, skuLabels, toMs, issued, voucher) : [];
   const touchesIssued = changed.some((row) => AFFECTS_ISSUED.has(row.key));
 
@@ -244,6 +255,7 @@ export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels,
                   {(control) => <Input {...control} type="date" value={value.endDate} onChange={(e) => set("endDate", e.target.value)} />}
                 </Field>
               </div>
+              {legacyKept && <Notice tone="neutral" title="这张券不按整天算">改版前建的券，按上面写的时刻开始和截止。不改日期就保留；改了日期，按北京时间整天算（00:00 开始、23:59 截止）。</Notice>}
             </section>
 
             <section className="h7-form-section" aria-labelledby="h7-f-issue">

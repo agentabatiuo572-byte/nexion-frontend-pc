@@ -6,6 +6,7 @@
  */
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
@@ -38,7 +39,8 @@ import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import type { EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, type H4Command } from "@/lib/admin/h4-mutations";
+import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
+import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
@@ -166,6 +168,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const { toast } = ctx;
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
+  /** 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。 */
+  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string) => {
+    const edit = "edit" in req ? req.edit : undefined;
+    const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value) : req.facts : "content" in req ? req.content : undefined;
+    return hApprovalReconfirm(error, { action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
+      change: edit && value !== undefined ? <Change from={`${edit.current || "—"}${edit.unit ? ` ${edit.unit}` : ""}`} to={`${value}${edit.unit ? ` ${edit.unit}` : ""}`} /> : undefined,
+      context: edit ? undefined : facts });
+  };
   const openActionConfirm = (req: ActionConfirmReq) => {
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
@@ -182,6 +192,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setStale(null);
         try { await req.run(reason, value, businessValue); }
         catch (cause) {
+          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value)); return; }
           if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
@@ -205,6 +216,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setStale(null);
         try { return await req.run(reason, value); }
         catch (cause) {
+          // 返回 false：原确认框不自己关，换成审批确认。
+          if (cause instanceof HApprovalRequired) { ctx.openConfirm(approvalReconfirm(cause, req, reason, value)); return false; }
           if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.closeConfirm?.(); await reload(); }
           throw cause;
         }
@@ -366,7 +379,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openEventFeatured = (event: LegacyEvent) => {
     if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const next = conflictDraft.intent === undefined ? !Boolean(event.featured) : conflictDraft.intent === "true";
-    if (next === Boolean(event.featured)) { toast("没有改动"); return; }
+    if (next === Boolean(event.featured)) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
     openConfirm({ rebaseValue: String(next), briefKind: "record",
       action: `${next ? "设为主推" : "取消主推"} · ${event.name}`,
       title: next ? "设为主推" : "取消主推",
@@ -610,7 +623,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const current = text(guard.value);
     const on = killOn(current);
     const next = conflictDraft.intent ?? (on ? "关" : "开");
-    if (killOn(next) === on) { toast("没有改动"); return; }
+    if (killOn(next) === on) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
     const closing = next === "关", approval = !on && !closing;
     openActionConfirm({ rebaseValue: next, blockedReason: killOn(next) === on ? "没有改动" : undefined, briefKind: "config",
       action: `转盘安全限制 · 实际奖品发放开关`,
@@ -891,6 +904,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const hiRecords = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request));
   const h4Pending = [...new Map(h4TicketObservations().map(row => [row.id, row])).values()];
   const unknownCount = hiRecords.filter(r => !h4CommandHasPendingTicket(r.commandKey)).length;
+  const confirmed = confirmedH4Saves();
   const recovery = <>
     {hiRecords.length > 0 && <Notice tone="warn" title={`${unknownCount ? `有 ${unknownCount} 个操作结果未知` : ""}${unknownCount && hiRecords.length > unknownCount ? "；" : ""}${hiRecords.length > unknownCount ? `${hiRecords.length - unknownCount} 个操作在等审批` : ""}`} actionBelow action={<ul className="h4-pending">
       {hiRecords.map((record) => {
@@ -922,7 +936,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           .catch(cause => { toast(displayAdminError(cause), "warn"); return refreshAll(); })
           .finally(() => setLookupKey(""));
       }} />}
-    {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>页面已读到最新值，你这次填的内容没有提交。核对现在的值后重新打开再改。</Notice>}
+    {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>{error ? "最新值没读到；重试读取成功后再核对，你填的还在。" : "已读到最新值，你填的还在，核对后再提交。"}</Notice>}
+    {confirmed.length > 0 && <Notice tone="warn" title="已保存，但没读到最新数据" action={<Button size="sm" loading={loading} onClick={() => void refreshAll()}>重新读取</Button>}>
+      {`${confirmed.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}已保存，不用重新提交。重新读取成功后才能再改。`}
+    </Notice>}
     {(h4Pending.length > 0 || h4Approvals === "error") && <Notice tone="warn" title={h4Approvals === "error" ? "审批进度没有读到" : `${h4Pending.length} 项修改在等审批`} actionBelow
       action={h4Approvals === "error" ? <Button size="sm" onClick={() => void reloadH4Approvals()}>重试</Button> : <ul className="h4-pending">
         {h4Pending.map((row) => {
@@ -1050,7 +1067,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     <div hidden={sub !== "wheel"} className="h4-tabpanel">
       <Panel id="h4l-wheel" title="转盘奖池" icon={Disc3} tone="role-1" sub={`${tiers.length} 档 · 合计 ${percentText(probabilitySum)}%`}
-        explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档。</p><p>App 每次抽奖前检查整个奖池：2–12 档，只认 UVT、USDT、代金券三种奖型，合计正好 100%，至少有一档不发真钱的 UVT 当安慰奖。有一项不合格，整个转盘报错。</p></>}
+        explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档：真钱档概率调高，用户中真钱的次数变多，平台多付；调低反之。</p><p>App 每次抽奖前检查整个奖池：2–12 档，只认 UVT、USDT、代金券三种奖型，合计正好 100%，至少有一档不发真钱的 UVT 当安慰奖。有一项不合格，整个转盘报错。</p></>}
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="抽不了的原因">
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
@@ -1109,7 +1126,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             explain="关掉后不再发真钱奖，抽中 USDT 改发 UVT 安慰奖。从关到开要另一位超级管理员批准。"
             action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelKill:1"]), () => openWheelKill(kill))}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
-            explain={<><p>每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。后端按美元记，真钱奖只有 USDT。</p><p>今天已发{USAGE_DAY}</p></>}
+            explain={<><p>每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。调高预算，平台每天最多多付；调低，更多真钱奖改发 UVT。后端按美元记，真钱奖只有 USDT。</p><p>今天已发{USAGE_DAY}</p></>}
             action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelBudget:1"]), () => openWheelBudget(budget))}>调整</Button>}>
             <div className="h4l-usage">
               {Number(budgetText) > 0 && <RatioBar label="今天已发占每日预算" quiet tone={budgetSpent ? "warn" : "role-1"} state={usedPayout === null ? wheelDailyUsageError ? "empty" : "loading" : "ready"}

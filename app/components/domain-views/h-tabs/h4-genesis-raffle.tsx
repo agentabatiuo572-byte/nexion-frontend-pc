@@ -2,16 +2,19 @@
 
 import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
+import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
 import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
+import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
@@ -34,6 +37,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
   const conflictReview = useRef<HConflictReviewRequired | null>(null);
+  /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
+  const [merged, setMerged] = useState(0);
   const load = async () => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchAdminRaffles(); if (own === generation.current) { setRows(values); return values; } return null; }
@@ -53,7 +58,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
     window.addEventListener("admin-h4-readback", readback);
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
-  const choose = (row: AdminRaffle | null) => { conflictReview.current = null; setStale(""); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
   const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean; reason: string }) => {
@@ -94,6 +99,13 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
           await load(); setDraft(null); setBase(null);
           ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "创世抽奖设置已保存");
         } catch (cause) {
+          // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
+          if (cause instanceof HApprovalRequired) {
+            ctx.openActionConfirm(null);
+            ctx.openConfirm(hApprovalReconfirm(cause, { action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, title: "保存抽奖配置", reason,
+              approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact> }));
+            return;
+          }
           if (own === generation.current) setError(displayAdminError(cause));
           if (isHGrowthReadConflict(cause)) setStale(savedDraft.titleZh || savedDraft.id);
           if (isHGrowthReadConflict(cause) && !originalKey) {
@@ -116,9 +128,42 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
     });
   };
   const close = () => { conflictReview.current = null; setDraft(null); setBase(null); setError(""); };
+  // 三方对比：奖项逐项逐字段列，名称、金额、名额原样写，不舍入。
+  const review = base && draft ? conflictReview.current : null;
+  const PRIZE_FIELD: Record<string, string> = { nameZh: "中文名称", nameEn: "英文名称", nameVi: "越南语名称", rewardType: "奖励类型", amount: "每名金额", productNo: "设备商品编号", quantity: "中奖名额", id: "奖项" };
+  const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
+    path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
+    key => {
+      const [, index, field] = key.split(".");
+      if (key.startsWith("prizes.")) return `奖项 ${Number(index) + 1} · ${PRIZE_FIELD[field] ?? "其他"}`;
+      return ({ enabled: "开放报名", titleZh: "抽奖名称 · 中文", titleEn: "抽奖名称 · 英文", titleVi: "抽奖名称 · 越南语", startsAt: "报名开始", drawAt: "开奖时间", id: "本期编号" } as Record<string, string>)[key] ?? "其他";
+    },
+    (key, raw) => key === "enabled" ? raw === true ? "开放" : raw === false ? "关闭" : "—"
+      : key === "startsAt" || key === "drawAt" ? raw ? `${formatTime(raw as string, "Asia/Shanghai")}（北京时间）` : "未配置"
+      : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
+      : key.startsWith("prizes.") && raw === undefined ? "没有这一项"
+      : raw === undefined || raw === null || raw === "" ? "—" : String(raw)) : [];
+  // 合并：最新的这一期为底，放回自己改过的项；奖项按位置逐字段放回，数量不同时奖项整份用你的。
+  const mergeConflict = () => {
+    if (!base || !draft) return;
+    const latest = base, mine = draft, kept = compareGroups.filter(group => group.byMe);
+    const prizeCountChanged = mine.prizes.length !== latest.prizes.length && kept.some(group => group.key.startsWith("prizes."));
+    const next: RaffleDraft = { id: latest.id, titleZh: latest.titleZh, titleEn: latest.titleEn, titleVi: latest.titleVi, startsAt: latest.startsAt, drawAt: latest.drawAt,
+      prizes: prizeCountChanged ? mine.prizes.map(prize => ({ ...prize })) : latest.prizes.map(prize => ({ ...prize })) };
+    let nextEnabled = latest.status === "OPEN";
+    for (const group of kept) {
+      const [top, index, field] = group.key.split(".");
+      if (top === "enabled") nextEnabled = enabled;
+      else if (top === "prizes") { if (!prizeCountChanged && next.prizes[Number(index)] && mine.prizes[Number(index)]) next.prizes[Number(index)] = { ...next.prizes[Number(index)], [field]: mine.prizes[Number(index)][field as keyof RafflePrize] }; }
+      else if (top === "titleZh" || top === "titleEn" || top === "titleVi" || top === "startsAt" || top === "drawAt") next[top] = mine[top];
+    }
+    choose(latest); setDraft(next); setEnabled(nextEnabled); setMerged(kept.length);
+  };
+  const keepMine = () => { const current = conflictReview.current; if (!current) return; setError(""); current.confirm(); pendingChanged(v => v + 1); };
+  const savedUnread = !!draft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${draft.id}`);
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
-  const formLocked = !write || saving || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`);
+  const formLocked = !write || saving || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`) || !!review;
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
   return <Panel id="h4l-raffle" title="创世抽奖" icon={Trophy} tone="role-4" sub={loading ? undefined : `最近 ${rows.length} 期`}
     explain={<><p>用户用创世抽奖券报名，到开奖时间系统自动开奖、发奖；这里没有人工开奖或补发。</p><p>从草稿开放报名要另一位超级管理员批准。还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定。只显示最近 50 期。</p></>}
@@ -146,14 +191,17 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
         </li>;
       })}</ol>}
     {rows.length > 0 && error && !draft && <Notice tone="danger" title="创世抽奖没有读到最新的">{error}</Notice>}
-    {stale && !draft && <Notice tone="warn" title={`没有保存：「${stale}」已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>页面已读到最新配置，你这次改的内容没有提交。核对后重新打开再改。</Notice>}
+    {stale && !draft && <Notice tone="warn" title={`没有保存：「${stale}」已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>{error ? "你这次改的没有提交。" : "已读到最新配置。你这次改的没有提交，关掉时已丢弃；要改就重新打开。"}</Notice>}
     {!loading && rows.length > 0 && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!draft} onClose={close} busy={saving} wide title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined}
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
         others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
-        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : saveBlocked ? "这一期不能再改" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
-      {draft && <div className="h4-dialog-body"><fieldset disabled={formLocked} className="h4-fieldset">
+        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
+      {draft && <div className="h4-dialog-body">
+        {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
+        {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
+        <fieldset disabled={formLocked} className="h4-fieldset">
         {base && <Field label="开放报名" explain={enableBlocked ? (base.totalEntries > 0 ? "已有人报名，不能再关闭。" : "已开奖或正在开奖。") : "开放要另一位超级管理员批准；还没人报名时可以关回草稿。"}>
           <Segments label="开放创世抽奖报名" value={String(enabled)} onChange={v => setEnabled(v === "true")} items={[
             { value: "false", label: "关闭", disabled: formLocked || enableBlocked },
@@ -185,7 +233,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
             <Button size="sm" icon={<Plus size={13} aria-hidden />} disabled={formLocked || locked || draft.prizes.length >= 20} onClick={() => setDraft({ ...draft, prizes: [...draft.prizes, { id: `prize-${Date.now().toString(36)}-${draft.prizes.length}`, nameZh: "", nameEn: "", nameVi: "", rewardType: "UVT", amount: "", quantity: 1 }] })}>添加奖项</Button>
           </div>
         </fieldset>
-        {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
+        {error && !review && <Notice tone={savedUnread ? "warn" : "danger"} title={savedUnread ? "已保存，但没读到最新的这一期" : stale ? "没有保存：最新的这一期也没读到" : "没有保存"}>{savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
       </fieldset></div>}
     </Drawer>
   </Panel>;

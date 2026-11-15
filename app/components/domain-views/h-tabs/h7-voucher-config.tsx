@@ -36,8 +36,8 @@ import { h7DateInput as toDateInput, h7DateMs as toMs, h7EditedDateMs, H7_TIME_Z
 import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sendH7VoucherMutation, type H7DirectContext, type H7DirectMutation } from "@/lib/admin/h7-voucher-mutation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
-  AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, endText, expiredTag,
-  faceValue, limitReached, pendingFacts, pendingTag, periodText, skuText, startText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
+  AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, expiredTag,
+  endDetailText, faceValue, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
 import { H7VoucherForm, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
@@ -653,8 +653,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <Fact k="适用商品">{v.applicableSkus.length ? v.applicableSkus.map((id) => skuLabels[id] ?? `已不在当前目录（${id}）`).join("、") : "全部商品"}</Fact>
                 <Fact k="发给谁">{AUDIENCE_LABEL[v.audience]}</Fact>
                 <Fact k="领取入口">{surfacesText(v.claimSurfaces)}</Fact>
-                <Fact k="开始">{startText(v.startAt)}</Fact>
-                <Fact k="结束">{endText(v.endAt)}</Fact>
+                <Fact k="开始">{startDetailText(v.startAt)}</Fact>
+                <Fact k="结束">{endDetailText(v.endAt)}</Fact>
                 <Fact k="发行上限">{v.issuanceLimit === 0 ? "不限量" : `${countText(v.issuanceLimit)} 张`}</Fact>
               </Facts>
             </section>
