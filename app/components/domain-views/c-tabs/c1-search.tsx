@@ -11,7 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, CircleHelp, Coins, Download, Lock, RefreshCw, ShieldAlert, ShieldCheck, Snowflake, Users, type LucideIcon } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
-  Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, KeepText, Modal, Notice, PageHeader,
+  BlockState, Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, KeepText, Modal, Notice, PageHeader,
   Pager, Panel, ReleaseBody, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
   useTableColumns, type StateTone,
 } from "@/app/components/rd";
@@ -715,12 +715,12 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   return <>
     <PageHeader pageId="C1" title="查找用户与查看资料" summary={<AutoGloss>按用户编码、昵称或推荐码找用户，点一行看完整资料。</AutoGloss>}
       guideExtra={canExport ? undefined : <p>你的账号不能导出名单，「导出名单」这件事不适用。</p>}
-      meta={<span className="rd-toolbar">
+      meta={canRead && <span className="rd-toolbar">
         <span>{readAt ? `${businessClock(readAt)} 读取（${businessZone().label}），` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={listLoading && !!shown} onClick={refresh}>刷新</Button>
       </span>}
       readOnly={readOnly}
-      actions={canExport ? (
+      actions={canExport && (canRead || pending) ? (
         <Button icon={<Download size={14} aria-hidden />} disabledReason={pending ? undefined : exportBlocked} onClick={openExport}>
           {pending ? (retryBlocked ? "查看原导出" : "继续原导出") : "导出名单"}
         </Button>
@@ -738,6 +738,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       </Notice>
     )}
 
+    {/* 没有用户资料读权：整页写缺什么、找谁开，不发列表和汇总请求，也不显示成「没有找到用户」（N03）。 */}
+    {!canRead ? <BlockState state="denied" title="你的账号不能查找用户" detail="需要「查看用户资料」的权限，请超级管理员在「运营账号与权限」里开通。" /> : <>
     <StatBand label="用户汇总" fit>
       <Stat icon={Users} tone="role-3" label="注册用户" value={overview ? countText(overview.totalUsers) : "—"} unit={overview ? "人" : undefined}
         sub={statFailed ? <>统计读取失败 <InlineRetry retrying={overviewLoading} onRetry={() => setOverviewReload((value) => value + 1)} /></> : undefined}
@@ -913,6 +915,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         {links}
       </nav>
     )}
+    </>}
 
     {dialog?.mode === "release" ? (
       // 解除在同一个框里换内容（PG-38）：「返回」回到原操作，× 关掉整个框。
