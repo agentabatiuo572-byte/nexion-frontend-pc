@@ -1273,7 +1273,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           }
         };
         const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
-          ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
+          ? `${record.payload.input.action.split(" · ")[0]} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
           : "原操作";
         const change = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? <Change from={approvalValue(record.payload.input.beforeValue)} to={approvalValue(record.payload.input.afterValue)} /> : null;
@@ -1322,7 +1322,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             })}
             {approvals.map((row) => <li key={row.id}>
               <StatusTag tone="progress">等另一位批准</StatusTag>
-              <span className="i6-pending-what">{row.action} · {courseTitle(row.obj)}{row.mine ? <small>你发起的</small> : null}</span>
+              <span className="i6-pending-what">{row.action.split(" · ")[0]} · {courseTitle(row.obj)}{row.mine ? <small>你发起的</small> : null}</span>
               <span className="i6-pending-change"><Change from={approvalValue(row.before)} to={approvalValue(row.after)} /></span>
               <span className="i6-pending-at">{row.rawTs ? `${formatBusinessTimeCompact(row.rawTs, row.ts)} 提交` : row.ts}</span>
               {reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>去审批中心看</Link> : <span />}
@@ -1330,7 +1330,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             {courseApprovals === "error" && <li><Notice tone="danger">审批进度读取失败，请点「刷新审批进度」重试。</Notice></li>}
             {ordinaryItems}
           </ul>
-          {releasing && <ReleaseModal label={<>{subject(releasing)}{change(releasing) && <> · {change(releasing)}</>}</>}
+          {releasing && <ReleaseModal label={<>{subject(releasing)}{change(releasing)}</>}
             explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
             onCancel={() => setReleasing(null)} onConfirm={() => {
               const record = releasing;
