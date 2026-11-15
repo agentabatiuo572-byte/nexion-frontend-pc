@@ -17,8 +17,9 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
+import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
@@ -178,6 +179,13 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const [focusExp, setFocusExp] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const data = content.copyAb;
+  const conflictReview = useIConflictReview<CopyAbOverview, { reason: string; value?: string; form?: Record<string, string> }>();
+  const reviewConflict = (error: unknown, reason: string, value?: string, form?: Record<string, string>) =>
+    conflictReview.reject(error, { reason, value, form }, async () => {
+      const latest = await fetchI1CopyOverview();
+      await actions.reloadIContent();
+      return latest;
+    });
   const [pending, setPending] = useState<I1Command[]>([]);
   const [retrying, setRetrying] = useState<string | null>(null);
   const retryInFlight = useRef(false);
@@ -185,7 +193,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const readBarrier = useRef(data);
   const latestRead = useRef(data);
   latestRead.current = data;
-  const newMutationReason = !data ? "数据还没读到" : errorText || requiresReload || contentLoading ? "数据没有读到最新，请重新加载" : undefined;
+  const newMutationReason = conflictReview.blockedReason() ?? (!data ? "数据还没读到" : errorText || requiresReload || contentLoading ? "数据没有读到最新，请重新加载" : undefined);
   const newMutationBlocked = useRef(newMutationReason);
   newMutationBlocked.current = newMutationReason;
   const syncPending = () => setPending(pendingI1Commands());
@@ -236,6 +244,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           if (!record) { ctx.closeActionConfirm(); return false; }
           return replay(record);
         }
+        if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
         if (newMutationBlocked.current || latestRead.current !== openedData) {
           ctx.closeActionConfirm();
           throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
@@ -248,6 +257,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
             setEditor(null);
             setCreatingExperiment(false);
           }
+          await reviewConflict(error, reason, value, form);
           syncPending();
           // The domain owns first-attempt rejection: keep the confirmation and its input even for business 403.
           throw new Error(`操作失败:${displayAdminError(error)}`);
@@ -268,6 +278,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           if (!record) { ctx.closeConfirm?.(); return false; }
           return replay(record);
         }
+        if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
         if (newMutationBlocked.current || latestRead.current !== openedData) {
           ctx.closeConfirm?.();
           throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
@@ -275,6 +286,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         try { return await req.run(reason, value); }
         catch (error) {
           if (isOutcomeUnknownError(error)) { pendingKey = (error as { commandKey?: string }).commandKey; savedValue = value; }
+          await reviewConflict(error, reason, value);
           syncPending();
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }

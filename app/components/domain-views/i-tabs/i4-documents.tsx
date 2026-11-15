@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
 import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
+import { isIConflictRejection } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 // 原请求由 i4-document-commands 保存；编辑器仅持有输入，未知时冻结。
@@ -45,6 +46,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [reasonPolicyReady, setReasonPolicyReady] = useState(false);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
+  const [editorBaselineReady, setEditorBaselineReady] = useState(true);
   const submitting = useRef(false);
   /** 只管显示：第一次读完之前画加载块，不画「没读到」。 */
   const [read, setRead] = useState(false);
@@ -52,7 +54,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setLoading(true); setError(null);
-    try { setDocuments(await fetchTrustDocuments()); setFresh(true); }
+    try { const latest = await fetchTrustDocuments(); setDocuments(latest); setFresh(true); return latest; }
     catch (cause) { setFresh(false); setError(displayAdminError(cause)); }
     finally { setLoading(false); setRead(true); }
   }, [canRead]);
@@ -74,7 +76,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
 
   const openUpload = (document: TrustDocument) => {
     if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
-    setPendingKey(null); setEditorError(null);
+    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true);
     setEditor({ mode: "upload", document, file: null, fields: {
       version: document.slot === "whitepaper" ? "" : document.version ?? "",
       language: document.language ?? "",
@@ -85,7 +87,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   };
   const openRestore = (document: TrustDocument) => {
     if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
-    setPendingKey(null); setEditorError(null);
+    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true);
     setEditor({ mode: "restore", document, reason: "" });
   };
   const preview = async (document: TrustDocument) => {
@@ -115,7 +117,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       } finally { submitting.current = false; setSaving(false); onPendingChange(); }
       return;
     }
-    if (!fresh || loading) { setEditorError("请先成功重新读取最新资料后再修改。"); return; }
+    if (!fresh || loading || !editorBaselineReady) { setEditorError("请先成功重新读取最新资料后再修改。"); return; }
     if (!reasonPolicyReady) { setEditorError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。"); return; }
     const fields = editor.mode === "upload" ? editor.fields : { version: "", language: "", referenceNo: "", verifyUrl: "", reason: editor.reason };
     if (editor.mode === "upload") {
@@ -137,6 +139,10 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       setEditorError(displayAdminError(cause));
       const pending = pendingI4DocumentCommands().find(row => row.document.slot === editor.document.slot);
       if (pending) setPendingKey(pending.commandKey);
+      else if (isIConflictRejection(cause)) {
+        setEditorBaselineReady(false);
+        await refresh();
+      }
     } finally { submitting.current = false; setSaving(false); onPendingChange(); }
   };
   const readBack = async () => {
@@ -150,7 +156,16 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         onPendingChange();
       }
     }
-    await refresh();
+    const latest = await refresh();
+    if (!pendingKey && editor) {
+      const document = latest?.find(row => row.slot === editor.document.slot);
+      if (document) {
+        // This existing action is the operator's reread. Keep file, metadata and reason,
+        // and show the fresh document in the existing facts before the next submission.
+        setEditor(current => current ? { ...current, document } : null);
+        setEditorBaselineReady(true);
+      } else setEditorBaselineReady(false);
+    }
   };
 
   const name = editor ? TRUST_DOCUMENT_NAMES[editor.document.slot] : "";
@@ -210,7 +225,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : !fresh ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；之后可以恢复成默认文件。</Notice>

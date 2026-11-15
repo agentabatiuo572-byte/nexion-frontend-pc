@@ -128,7 +128,7 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean): Pro
     const status = response.ok && envelope.code >= 400 && envelope.code < 500 ? envelope.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(envelope.message, "A2_REQUEST_FAILED")), { status, backendMessage: envelope.message });
     const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, envelope.code) && envelope.code < 500;
-    if (rejected && !unknown) { commands.forget(record.fingerprint, record.commandKey); throw failure; }
+    if (rejected && !unknown) { commands.forget(record.fingerprint, record.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : record }); }
     throw uncertain(failure.message);
   }
   if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw uncertain("原申请回执无法核实，请保留原记录并查询原结果。");

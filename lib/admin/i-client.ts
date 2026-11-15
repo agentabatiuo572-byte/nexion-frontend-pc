@@ -173,7 +173,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
     const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code! < 500;
-    if (rejected && !unknown) { uncertainCommandKeys.forget(command.fingerprint, command.commandKey); throw failure; }
+    if (rejected && !unknown) { uncertainCommandKeys.forget(command.fingerprint, command.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : command }); }
     throw uncertain(failure.message);
   }
   let valid = false;
@@ -309,7 +309,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
       : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
     if (rejected && response.headers.get("X-Nexion-Upstream-Outcome") !== "unknown") {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
-      throw failure;
+      throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw new OutcomeUnknownError(failure.message);
   }
@@ -350,6 +350,14 @@ async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?:
     throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   }
   return sendI4DraftCommand(command, false);
+}
+
+export async function fetchI1CopyOverview(): Promise<CopyAbOverview> {
+  return parseIOverview("I1", await apiRequest("/copy-ab/overview")) as CopyAbOverview;
+}
+
+export async function fetchI2NovaOverview(): Promise<NovaOverview> {
+  return parseIOverview("I2", await apiRequest("/nova/overview")) as NovaOverview;
 }
 
 export async function fetchI6LearningOverview(): Promise<I18nLearningOverview> {
@@ -473,7 +481,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
       : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
     if (rejected && response.headers.get("X-Nexion-Upstream-Outcome") !== "unknown") {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
-      throw failure;
+      throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey });
   }
@@ -653,7 +661,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
     if (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && !isIdempotencyOutcomeOpen(payload.message)) {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
-      throw failure;
+      throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }
@@ -807,7 +815,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
     const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
     if (rejected && !unknown) {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
-      throw failure;
+      throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }

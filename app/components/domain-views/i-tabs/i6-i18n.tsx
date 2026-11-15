@@ -21,6 +21,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -172,6 +173,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       updateI6FeaturedCourse: (id, reason) => backendActions.updateI6FeaturedCourse(id, reason, snapshot({ courseId: id, featured: true })),
     };
   }, [backendActions]);
+  const conflictReview = useIConflictReview<{
+    overview: Awaited<ReturnType<typeof fetchI6LearningOverview>>;
+    versions?: LearningCourseVersionView[]; messages?: I18nMessagePairView[];
+  }, { scope: string; reason: string; value?: string; form?: Record<string, string> }>();
   const readReady = useRef(false);
   const [, updateRecovery] = useState(0);
   const session = useAdminAuth((state) => state.session);
@@ -239,6 +244,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const newWriteProblem = (scope: string) => {
     const current = latest.current;
+    if (conflictReview.blockedReason()) return conflictReview.blockedReason();
     if (!readReady.current || current.contentLoading || current.contentError || !current.content.i18nLearning) return "请先成功重新读取数据，再发起新的修改。";
     if (pendingI6Commands().some(record => record.scope === "unknown" || record.scope === scope)) return "此对象有结果未知的原操作，请先查询原结果。";
     const proposal = scope.startsWith("course:") ? pendingHIRewardCommands().find(record => record.payload.kind === "proposal"
@@ -295,6 +301,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           const key = (error as { commandKey?: string }).commandKey;
           original = key ? pendingI6Commands().find(row => row.commandKey === key) : undefined;
           proposal = key ? pendingHIRewardCommands().find(row => row.commandKey === key) : undefined;
+          if (!original && !proposal) await conflictReview.reject(error, { scope, reason, value, form }, async () => {
+            const overview = await fetchI6LearningOverview();
+            const versions = scope.startsWith("course:") ? await actions.fetchI7CourseVersions(scope.slice(7)) : undefined;
+            const messages = scope.startsWith("message:") ? await actions.fetchI6MessageVersions(scope.slice(8)) : undefined;
+            await actions.reloadIContent();
+            return { overview, versions, messages };
+          });
           // Match I1: the domain owns the first rejection and keeps its confirmation, including business 403.
           throw new Error(`操作失败:${displayAdminError(error)}`);
         } finally { updateRecovery(current => current + 1); }

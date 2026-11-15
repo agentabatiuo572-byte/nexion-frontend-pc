@@ -90,6 +90,7 @@ async function send(original: I3CapCommand, retry: boolean): Promise<A2Operation
     const failure = error as { status?: number };
     if (retry ? isExplicitRejection(error) : !isOutcomeUnknownError(error) && isDeterministicRejection(failure.status ?? 0)) {
       pending.forget(original.fingerprint, original.commandKey);
+      if (!retry && error instanceof Error) Object.assign(error, { rejectedCommand: original });
     }
     throw Object.assign(error instanceof Error ? error : new Error("审批提交结果未知"), { commandKey: original.commandKey });
   }

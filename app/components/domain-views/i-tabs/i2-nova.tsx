@@ -26,8 +26,9 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
-import { pendingI2Commands, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
@@ -69,6 +70,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const canWriteI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_write");
   const canReadI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_read");
   const data = content.nova;
+  const conflictReview = useIConflictReview<NovaOverview, { reason: string; value?: string; form?: Record<string, string> }>();
+  const reviewConflict = (error: unknown, reason: string, value?: string, form?: Record<string, string>) =>
+    conflictReview.reject(error, { reason, value, form }, async () => {
+      const latest = await fetchI2NovaOverview();
+      await actions.reloadIContent();
+      return latest;
+    });
   const [pending, setPending] = useState<I2Command[]>([]);
   const [recovering, setRecovering] = useState<string | null>(null);
   const recoveryInFlight = useRef(false);
@@ -76,7 +84,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const readBarrier = useRef(data);
   const latestRead = useRef(data);
   latestRead.current = data;
-  const newMutationReason = !data ? "读到数据后才能新增" : contentError || contentLoading || requiresReload ? "最新数据没读到" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+  const newMutationReason = conflictReview.blockedReason() ?? (!data ? "读到数据后才能新增" : contentError || contentLoading || requiresReload ? "最新数据没读到" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined);
   const newMutationBlocked = useRef(newMutationReason);
   newMutationBlocked.current = newMutationReason;
   const syncPending = () => setPending(pendingI2Commands());
@@ -135,6 +143,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           if (!record) { ctx.closeActionConfirm(); return false; }
           return replay(record);
         }
+        if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
         if (newMutationBlocked.current || latestRead.current !== openedData) {
           ctx.closeActionConfirm();
           throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
@@ -142,6 +151,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         try { return await req.run(reason, value, businessForm); }
         catch (error) {
           if (isOutcomeUnknownError(error)) pendingKey = (error as { commandKey?: string }).commandKey;
+          await reviewConflict(error, reason, value, businessForm);
           syncPending();
           // First-attempt refusals stay in the original confirmation, including business 403s.
           throw new Error(`操作失败:${displayAdminError(error)}`);
@@ -161,6 +171,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           if (!record) { ctx.closeConfirm(); return false; }
           return replay(record);
         }
+        if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
         if (newMutationBlocked.current || latestRead.current !== openedData) {
           ctx.closeConfirm();
           throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
@@ -172,6 +183,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             setTplDrawer(false);
             setDistDrawer(false);
           }
+          await reviewConflict(error, reason, value);
           syncPending();
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
@@ -317,7 +329,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       }
     } catch (error) {
       if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
-      else setDrawerError(displayAdminError(error));
+      else { setDrawerError(displayAdminError(error)); await reviewConflict(error, "", undefined, form); }
       syncPending();
       // runBackend displays the refusal. Keep the drawer and its inputs; unknown requests freeze below.
     } finally {

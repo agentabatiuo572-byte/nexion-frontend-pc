@@ -14,9 +14,10 @@ import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Tra
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type I3Command, type NotificationAudienceTarget } from "@/lib/admin/i-client";
+import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget } from "@/lib/admin/i-client";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -160,6 +161,16 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [readAt, setReadAt] = useState<number | null>(null);
   const data = content.campaigns;
+  const conflictReview = useIConflictReview<NotificationCampaignOverview, {
+    reason: string; value?: string; business?: Record<string, string>; form?: NewForm;
+    editing?: CampaignRow | null; scheduleRow?: CampaignRow | null; scheduledAt?: string;
+  }>();
+  const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"]) =>
+    conflictReview.reject(error, requested, async () => {
+      const latest = await fetchI3CampaignOverview();
+      await actions.reloadIContent();
+      return latest;
+    });
   const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
   const CAMPAIGNS: CampaignRow[] = (data?.campaigns ?? []).map((row) => ({
     ...row,
@@ -172,7 +183,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const readBarrier = useRef(data);
   const latestRead = useRef(data);
   latestRead.current = data;
-  const newMutationReason = !data || errorText || contentLoading || requiresReload ? "最新数据没读到" : undefined;
+  const newMutationReason = conflictReview.blockedReason() ?? (!data || errorText || contentLoading || requiresReload ? "最新数据没读到" : undefined);
   const newMutationBlocked = useRef(newMutationReason);
   newMutationBlocked.current = newMutationReason;
   const syncPending = () => { setPending(pendingI3Commands()); setPendingCaps(pendingI3CapCommands()); };
@@ -194,6 +205,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原结果。" : undefined)
     || (pending.some((row) => !row.original || row.target === id) ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined);
   const requireNewMutation = (openedData = data) => {
+    if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
     if (newMutationBlocked.current || latestRead.current !== openedData) throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
   };
   const refreshAfterMutation = async () => {
@@ -250,6 +262,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         } catch (error) {
           const candidate = (error as { commandKey?: string }).commandKey;
           key = (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === candidate)?.commandKey;
+          await reviewConflict(error, { reason, value, business });
           syncPending();
           throw new Error(displayAdminError(error));
         }
@@ -269,7 +282,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           return replay(record);
         }
         try { requireNewMutation(openedData); return await req.run(reason, value); }
-        catch (error) { const candidate = (error as { commandKey?: string }).commandKey; key = pendingI3Commands().find((row) => row.commandKey === candidate)?.commandKey; syncPending(); throw new Error(displayAdminError(error)); }
+        catch (error) { const candidate = (error as { commandKey?: string }).commandKey; key = pendingI3Commands().find((row) => row.commandKey === candidate)?.commandKey; await reviewConflict(error, { reason, value }); syncPending(); throw new Error(displayAdminError(error)); }
       },
     });
   };
@@ -525,6 +538,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       }
     } catch (error) {
       if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
+      await reviewConflict(error, { reason: editing ? `编辑通知草稿 ${editing.id}` : `新建通知草稿 ${id}`, form, editing });
       syncPending();
       toast(displayAdminError(error));
     } finally {
@@ -551,6 +565,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       if (saved) setScheduleRow(null);
     } catch (error) {
       if (isOutcomeUnknownError(error)) setSchedulePendingKey((error as { commandKey?: string }).commandKey ?? null);
+      await reviewConflict(error, { reason: scheduleReason, scheduleRow, scheduledAt });
+      setScheduleVerified(false);
       syncPending();
       toast(displayAdminError(error));
     } finally {

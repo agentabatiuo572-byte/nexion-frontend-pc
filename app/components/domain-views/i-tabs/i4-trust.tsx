@@ -24,11 +24,12 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField } from "@/lib/admin/trust-section-validation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4TrustOverview, type I4DraftCommand } from "@/lib/admin/i-client";
+import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { i4AppFieldIssue, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { I4Documents } from "./i4-documents";
@@ -102,6 +103,15 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const [readAt, setReadAt] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const data = content.trustDisclosure;
+  const conflictReview = useIConflictReview<TrustDisclosureOverview, {
+    draftEditor?: DraftEditor | null; reason: string; value?: string; form?: Record<string, string>;
+  }>();
+  const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"]) =>
+    conflictReview.reject(error, requested, async () => {
+      const latest = await fetchI4TrustOverview();
+      await actions.reloadIContent();
+      return latest;
+    });
   const [draftCommands, setDraftCommands] = useState<I4DraftCommand[]>([]);
   const [sectionCommands, setSectionCommands] = useState<I4SectionCommand[]>([]);
   const [documentCommands, setDocumentCommands] = useState<I4DocumentCommand[]>([]);
@@ -161,6 +171,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   };
   const newSectionReason = (key: string, proposing = false): string | undefined => {
     const current = latest.current;
+    if (conflictReview.blockedReason()) return conflictReview.blockedReason();
     if (!current.data || current.contentLoading || current.errorText || current.mustRead) return "请先成功重新读取最新内容后再修改。";
     if (pendingI4DraftCommands().some(row => row.sectionKey === key) || pendingI4SectionCommands().some(row => row.sectionKey === key)) return "此对象有原操作尚未核清，请先查询原结果。";
     if (current.data.pendingTrustSectionKeys.includes(key)) return PENDING_REASON;
@@ -174,7 +185,10 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       await rereadAfterResolution();
       toast(ok);
       return true;
-    } catch (error) { toast(`操作失败:${displayAdminError(error)}`); return false; }
+    } catch (error) {
+      await reviewConflict(error, { draftEditor, reason: draftEditor?.reason ?? "" });
+      toast(`操作失败:${displayAdminError(error)}`); return false;
+    }
     finally { syncCommands(); }
   };
   const proposeTrustSection = async (_attemptKey: string, fingerprint: string, spec: ProposeSpec) => {
@@ -222,6 +236,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           const retained = saved();
           if (retained) throw new OutcomeUnknownError("request" in retained && retained.receiptKnown
             ? "申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。" : "结果未知，请查询原结果或按原请求重试。");
+          await reviewConflict(error, { reason, value, form });
           throw new Error(`提交失败：${displayAdminError(error)}`);
         }
         finally { originalKey = saved()?.commandKey; syncCommands(); }

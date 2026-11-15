@@ -120,7 +120,7 @@ async function send(original: I4SectionCommand, retry: boolean): Promise<A2Opera
     const failure = Object.assign(new Error(formatAdminApiError(envelope.message, "A2_REQUEST_FAILED")), { status, backendMessage: envelope.message });
     const rejected = retry ? isExplicitRejection(failure)
       : isDeterministicRejection(response.status, envelope.code) && envelope.code < 500;
-    if (rejected && !unknown) { pending.forget(original.fingerprint, original.commandKey); throw failure; }
+    if (rejected && !unknown) { pending.forget(original.fingerprint, original.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : original }); }
     throw new OutcomeUnknownError(failure.message);
   }
   if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw new OutcomeUnknownError("原申请回执无法核实，请保留原记录并查询原结果。");
