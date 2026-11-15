@@ -76,6 +76,17 @@ export type L4HistoryRow = {
   commissionPaidUsdt: number;
 };
 
+export type L4OperationsComparison = {
+  available: boolean;
+  reason: string | null;
+  previousPeriod: { from: string; to: string; fromAt: string; toAt: string };
+  device: { summary: Record<string, number | null> } | null;
+  tasks: { summary: Record<string, number | null> } | null;
+  network: { summary: Record<string, number | null> } | null;
+  quality: { sameActorRates: boolean; actorCoveragePct: number; incompleteRatesAreNull: boolean } | null;
+  excludedSnapshots: { field: string; reason: string }[];
+};
+
 export type L4OperationsData = {
   available: boolean;
   period: { key: L4Period; label: string; from: string; to: string };
@@ -95,6 +106,7 @@ export type L4OperationsData = {
   };
   phaseEffect: L4PhaseRow[];
   history: L4HistoryRow[];
+  comparison?: L4OperationsComparison;
   quality: {
     serverCanonical: boolean;
     sameActorRates: boolean;
@@ -304,6 +316,52 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   if ((!root.available && (!degradedValue?.code || !degradedValue.message))
       || (root.available && degradedValue)) return null;
 
+  let comparison: L4OperationsComparison | undefined;
+  if (root.comparison !== undefined) {
+    const block = record(root.comparison);
+    const previous = record(block.previousPeriod);
+    const from = isoDate(previous.from), to = isoDate(previous.to);
+    const fromAt = text(previous.fromAt), toAt = text(previous.toAt);
+    const localTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/;
+    if (typeof block.available !== "boolean" || !from || !to || from > to
+      || !localTime.test(fromAt) || !localTime.test(toAt) || !Array.isArray(block.excludedSnapshots)) return null;
+    const excludedSnapshots = list(block.excludedSnapshots).map(row => ({ field: text(row.field), reason: text(row.reason) }));
+    if (excludedSnapshots.length !== block.excludedSnapshots.length || excludedSnapshots.some(row => !row.field || !row.reason)) return null;
+    comparison = { available: block.available, reason: null, previousPeriod: { from, to, fromAt, toAt },
+      device: null, tasks: null, network: null, quality: null, excludedSnapshots };
+    if (!block.available) {
+      const reason = text(block.reason);
+      if (!reason || [block.device, block.tasks, block.network, block.quality].some(value => value !== null)) return null;
+      comparison.reason = reason;
+    } else {
+      if (block.reason !== null) return null;
+      const previousDevice = exactNumberSummary(record(block.device).summary, [
+        ["periodPurchasedDevices", { integer: true }], ["periodRetiredDevices", { integer: true }],
+        ["periodLockedDevices", { integer: true }], ["periodFirstYieldDevices", { integer: true }],
+        ["dailyYieldUsdt", {}], ["dailyYieldNex", {}], ["degradationLossUsdt", {}],
+      ]);
+      const previousTasks = exactNumberSummary(record(block.tasks).summary, [
+        ["dispatched", { integer: true }], ["completed", { integer: true }],
+        ["acceptanceRate", { nullable: true }], ["checkinActive", { integer: true }],
+      ]);
+      const previousNetwork = exactNumberSummary(record(block.network).summary, [
+        ["directRefs", { integer: true }], ["commissionEvents", { integer: true }], ["commissionPaidUsdt", {}],
+        ["teamGmvUsdt", {}], ["promotionRate", { percent: true, nullable: true }],
+        ["commissionTriggerRate", { percent: true, nullable: true }],
+      ]);
+      const previousQuality = record(block.quality);
+      const actorCoveragePct = number(previousQuality.actorCoveragePct, { percent: true });
+      if (!previousDevice || !previousTasks || !previousNetwork || typeof previousQuality.sameActorRates !== "boolean"
+        || actorCoveragePct === null || previousQuality.incompleteRatesAreNull !== true
+        || !previousQuality.sameActorRates && [previousTasks.acceptanceRate, previousNetwork.promotionRate,
+          previousNetwork.commissionTriggerRate].some(value => value !== null)) return null;
+      comparison.device = { summary: previousDevice };
+      comparison.tasks = { summary: previousTasks };
+      comparison.network = { summary: previousNetwork };
+      comparison.quality = { sameActorRates: previousQuality.sameActorRates, actorCoveragePct, incompleteRatesAreNull: true };
+    }
+  }
+
   return {
     available: root.available,
     period: { key: periodKey as L4Period, label: periodLabel, from: periodFrom, to: periodTo },
@@ -318,6 +376,7 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
     network: { summary: networkSummary, teamSizeDist, vRankDist, commissionStructure },
     phaseEffect: phaseEffect as L4PhaseRow[],
     history: history as L4HistoryRow[],
+    comparison,
     quality: {
       serverCanonical: true,
       sameActorRates: quality.sameActorRates,
