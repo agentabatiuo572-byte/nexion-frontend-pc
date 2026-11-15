@@ -53,8 +53,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
           : locator.originalPath.startsWith("/api/admin/emergency/kill-switches/") ? /^J1(?:[_:])/.test(String(row.scope))
             : locator.originalPath.startsWith("/api/admin/risk/multi-account/") ? /^K1(?:[_:])/.test(String(row.scope))
               : locator.originalPath === "/api/admin/bi/reports" || locator.originalPath.startsWith("/api/admin/bi/reports/") ? row.scope === "L_BI_REPORT_CREATE" || /^L_BI_REPORT_ACTION/.test(String(row.scope))
-                : locator.originalPath.startsWith("/api/admin/users/profiles/") || locator.originalPath.startsWith("/api/admin/devices/users/") ? /^C[1-6](?:[_:])/.test(String(row.scope))
-                  : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
+                : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
   if (!Number.isSafeInteger(row.originalRecordId) || Number(row.originalRecordId) < 1
     || typeof row.scope !== "string" || !scopeMatches
     || row.commandKey !== locator.commandKey || row.originalMethod !== locator.originalMethod || row.originalPath !== locator.originalPath

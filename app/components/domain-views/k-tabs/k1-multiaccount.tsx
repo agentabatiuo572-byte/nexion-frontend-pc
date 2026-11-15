@@ -731,7 +731,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       : extra.kind === "param" ? `${base}params/${target}` : extra.kind === "registration-param" ? `${base}registration-params`
         : extra.kind === "release-param" ? `${base}release-params/${target}` : extra.kind === "entry" ? `${base}releases/${target}/manual` : `${base}whitelist`;
     const method = ["cluster", "entry", "whitelist-add"].includes(extra.kind) ? "POST" : "PATCH";
-    pendingCommands.remember(scope, key, { ...extra, commandOrigin: retained ? original?.commandOrigin : fundCommandOrigin(method, path, "risk_k1_read") });
+    pendingCommands.remember(scope, key, { ...extra, commandOrigin: retained ? original?.commandOrigin : extra.kind === "registration-param" ? undefined : fundCommandOrigin(method, path, "risk_k1_read") });
     if (!pendingCommands.isDurablyStored(scope, key)) {
       pendingCommands.forget(scope, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -863,7 +863,16 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     } finally { setChecking(""); }
   };
   const checkPending = (record: K1PendingCommand) => checkInvestigation(record).catch(() => undefined);
-  const releasePending = (record: K1PendingCommand) => { setReleasing(null); void checkPending(record); };
+  const releasePending = (record: K1PendingCommand) => {
+    setReleasing(null);
+    if (record.kind === "registration-param") {
+      // This K1 route writes A3_PLATFORM_PARAM, which is outside controlled investigation support.
+      pendingCommands.forget(record.fingerprint, record.commandKey);
+      syncPending(); ctx.toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
+      return;
+    }
+    void checkPending(record);
+  };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
   const retainedEvidence = commandEvidence.list();
