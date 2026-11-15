@@ -868,7 +868,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         const latestText = findVersion(key, copy?.draftVersion) ?? findVersion(key, copy?.version);
         rows = [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`),
           conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi)];
-        note = "你填的内容留在编辑框里，提交时按最新的版本。";
+        note = original?.method === "PATCH" ? "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在编辑框里补上。" : "你填的内容留在编辑框里，提交时按最新的版本。";
         rebuild = copy ? () => (prefill.current = { reason: conflict.requested.reason }) && setEditor((current) => current?.kind === "edit" && current.copy.key === key
           ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;
       } else {
@@ -1173,7 +1173,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const createBlocked = newMutationReason ?? (ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : undefined);
 
   const conclusion = errorText
-    ? <Conclusion state="unknown" icon={ShieldAlert}>文案数据没有读到最新，下面是上次读到的内容</Conclusion>
+    ? <Conclusion state="unknown" icon={ShieldAlert}>文案暂时不能改，先重新加载</Conclusion>
     : crowded.length > 0
       ? <Conclusion state="danger" icon={TriangleAlert} hint="下架多出来的一条。">{crowded[0].name}有 <b>{COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === crowded[0].positionKey).length}</b> 条在投放，App 取不到这个位置的内容</Conclusion>
       : paused.length > 0
