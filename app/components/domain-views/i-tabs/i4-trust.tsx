@@ -24,7 +24,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField } from "@/lib/admin/trust-section-validation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
+import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
@@ -38,7 +38,7 @@ import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { I4Documents } from "./i4-documents";
 import { pendingI4DocumentCommands, queryI4DocumentCommand, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
 import {
-  APP_FIELD_LIMIT, APP_SECTION_ORDER, DraftEditorBody, FieldList, I4RecoveryNotice, LegacyText, SECTION_INFO, SectionCard,
+  APP_FIELD_LIMIT, APP_SECTION_ORDER, DraftEditorBody, FieldList, I4RecoveryNotice, LegacyText, SECTION_INFO, SectionCard, SnapshotLine, snapshotBlanking, snapshotReasonText, type SnapshotState,
   VersionCompare, appBlanking, changedKeys, isArchivedStatus, previewFields, isPublished, localeItems, operatorText, sectionName, timeText, versionProblems,
   unknownTag, type Lang, type SectionCardModel, type RecoveryRow,
 } from "./i4-parts";
@@ -284,8 +284,21 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   }, [actions]);
   // 读取时间只用来显示（北京时间）。
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
+  // App 实际公开的状态：打开、刷新、有版块换版时取样；读不到不挡整页，卡片退回按后台版本推断。
+  const [snapshot, setSnapshot] = useState<SnapshotState>({ loading: true });
+  const snapshotSeq = useRef(0);
+  const readSnapshot = () => {
+    const seq = ++snapshotSeq.current;
+    setSnapshot((old) => ({ ...old, loading: true }));
+    fetchI4PublishedSnapshot().then(
+      (view) => { if (seq === snapshotSeq.current) setSnapshot({ view, loading: false }); },
+      (cause) => { if (seq === snapshotSeq.current) setSnapshot({ loading: false, error: displayAdminError(cause) }); });
+  };
+  const publishedKey = TRUST_SECTIONS.map((s) => `${s.key}:${s.v}:${s.status}`).join("|");
+  useEffect(() => { if (publishedKey) readSnapshot(); }, [publishedKey]);
   const refresh = () => {
     setRefreshing(true);
+    readSnapshot();
     void actions.reloadIContent().finally(() => setRefreshing(false));
   };
 
@@ -306,7 +319,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   // ---------- 显示用：由读到的版本推出来，不发请求 ----------
   const currentVersionOf = (s: TrustSection) => TRUST_SECTION_VERSIONS.find((version) => version.sectionKey === s.key && version.version === s.v);
   const draftsOf = (key: string) => TRUST_SECTION_VERSIONS.filter((version) => version.sectionKey === key && version.status.toLowerCase() === "draft");
-  const blankingOf = (key: string, version?: TrustSectionVersion) => appBlanking(key, version?.operator ?? "", version?.fields ?? []);
+  const blankingOf = (key: string, version?: TrustSectionVersion) => snapshotBlanking(snapshot.view, key) ?? appBlanking(key, version?.operator ?? "", version?.fields ?? []);
+  const snapshotSection = (key: string) => snapshot.view?.available && snapshot.view.sourceEnvironment !== "SANDBOX" ? snapshot.view.sections.find((row) => row.sectionKey === key) : undefined;
   const permissionText = (s: TrustSection) => isSensitiveTrustSection(s) ? "信任中心管理权限" : "标准发布权限";
   /** 这一块让 App 信任中心打不开的原因（下架、当前版不完整）。 */
   const sectionProblems = (s: TrustSection) => isArchivedStatus(liveTrustStatus(s)) ? ["已下架"] : !isPublished(s.status) ? [statusZh(s.status)] : versionProblems(currentVersionOf(s));
@@ -889,8 +903,18 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       operator: current ? operatorText(current.operator) : undefined,
       preview,
       blankedAll: blanking.all,
-      appLabel: isArchived ? "下架前的内容" : blanking.all ? "后台存的内容" : "App 里",
+      appLabel: isArchived ? "下架前的内容" : blanking.all ? "后台存的内容" : "actual" in blanking ? "App 实际给出" : "预计 App 显示",
       appHidden: isArchived ? "已下架，App 信任中心整页打不开。" : blanking.all,
+      appTags: (() => {
+        const row = snapshotSection(s.key);
+        if (!row || blanking.all) return undefined;
+        const label = (key: string) => current?.fields.find((field) => field.key === key)?.label || key;
+        const cleared = row.fields.filter((field) => field.cleared);
+        return [
+          ...(cleared.length ? [{ text: `${cleared.length} 项被清空`, explain: cleared.map((field) => `${label(field.key)}：${snapshotReasonText(field.reason, s.key)}`).join("；") }] : []),
+          ...(row.version !== s.v ? [{ text: `App 给的是 ${row.version ?? "—"}`, explain: `后台当前版是 ${s.v}，App 取样时给的是 ${row.version ?? "—"}；刷新后再看。` }] : []),
+        ];
+      })(),
       draft: draftsOf(s.key).map((draft) => draft.version).join("、") || undefined,
       pending: isPending,
       problems: isArchived ? [] : sectionProblems(s),
@@ -940,6 +964,15 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const secProblems = sec ? sectionProblems(sec) : [];
   const detailPoints: JudgmentRow[] = sec ? [
     { label: "用户现在看到", value: isArchivedStatus(liveTrustStatus(sec)) ? `已下架（${sec.v}），App 信任中心整页打不开` : isPublished(sec.status) ? `${sec.v} 公开中` : `${sec.v}（${statusZh(liveTrustStatus(sec))}）`, state: secProblems.length ? "danger" : undefined, reason: secProblems.length ? secProblems.join("；") : undefined },
+    { label: "App 实际给出", ...(() => {
+      const view = snapshot.view, row = snapshotSection(sec.key), cleared = row?.fields.filter((field) => field.cleared).length ?? 0;
+      if (!view) return { value: snapshot.error ? "没读到，按后台版本推断" : "正在读取…", reason: snapshot.error || undefined };
+      if (!view.available) return { value: "整页打不开", state: "danger" as const, reason: snapshotReasonText(view.reason) };
+      if (view.sourceEnvironment === "SANDBOX") return { value: "测试环境的演示内容" };
+      if (!row) return { value: "—" };
+      if (secBlanking.all) return { value: `${row.version ?? "—"} · 文字没公开`, state: "warn" as const };
+      return { value: `${row.version ?? "—"} · ${cleared ? `${cleared} 项被清空` : "内容都给出了"}`, state: cleared || row.version !== sec.v ? "warn" as const : undefined, reason: row.version !== sec.v ? `后台当前版是 ${sec.v}` : undefined };
+    })() },
     { label: "App 里在哪", value: SECTION_INFO[sec.key]?.where ?? "待核实" },
     ...(secPending ? [{ label: "待审批", value: <>有申请等另一位批准，处理完或过期前不能改{pendingLink && <> · {pendingLink}</>}</>, state: "warn" as const }] : []),
     { label: "提交发布要", value: `${permissionText(sec)}，${APPROVER}批准` },
@@ -972,9 +1005,12 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       {releaseModal}
       {conflictUi}
       {conclusion}
+      <SnapshotLine state={snapshot} onRetry={readSnapshot}
+        clearedCount={orderedSections.reduce((sum, s) => sum + (snapshotBlanking(snapshot.view, s.key)?.all ? 0 : snapshotSection(s.key)?.fields.filter((field) => field.cleared).length ?? 0), 0)}
+        versionDiff={orderedSections.filter((s) => { const row = snapshotSection(s.key); return row && row.version !== s.v; }).length} />
 
       <Panel title="用户现在看到的" icon={LayoutList} tone="role-2" sub={`受管 ${I4_STATS.managedSections} 个 · 公开中 ${publicCount} 个`}
-        explain="按 App 合同里的顺序排。卡里是现在公开的中文内容；点卡片看三种语言、历史版本和草稿。">
+        explain="按 App 里的顺序排。卡里是当前版的中文内容，读到 App 实际公开的状态后，没公开的项不列出。点卡片看三种语言、历史版本和草稿。">
         {cards.length === 0
           ? <BlockState state="empty" title="没有读到信任版块" detail="没有读到版块，这页不补示例内容。" />
           : <div className="i4-cards">{cards.map((card) => <SectionCard key={card.key} card={card} />)}</div>}
@@ -1025,7 +1061,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         footer={secFooter}>
         {sec && <>
           <JudgmentPoints rows={detailPoints} />
-          {secBlanking.all && <Notice tone="neutral" title="App 公开时清空这块的文字">{secBlanking.all}</Notice>}
+          {secBlanking.all && <Notice tone="neutral" title={"actual" in secBlanking ? "App 没有公开这块的文字" : "App 公开时清空这块的文字"}>{secBlanking.all}</Notice>}
           <section className="rd-stack" aria-label="现在公开的内容">
             <div className="i4-detail-head"><h3>现在公开的内容 · {sec.v}</h3></div>
             <LocaleTabs label="查看语言" value={detailLang} onChange={setDetailLang} items={localeItems(secCurrent?.fields ?? [])} />
@@ -1069,7 +1105,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             </ul>
             <p className="rd-note">时间为{businessZone().label}；谁批准的在「操作记录与审批」里看{pendingLink && <>：{pendingLink}</>}。</p>
           </Fold>
-          <Fold inset title="技术信息" summary="版块标识、后台说明、修订号">
+          <Fold inset title="技术信息" summary={snapshot.view ? "版块标识、后台说明、修订号、App 取样" : "版块标识、后台说明、修订号"}>
             <Facts>
               <Fact k="版块标识"><span data-mono="">{sec.key}</span></Fact>
               <Fact k="后台说明"><LegacyText text={trustDescriptionText(sec.desc)} /></Fact>
@@ -1077,6 +1113,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
               <Fact k="确认级">{operatorCopyText(sec.roleGate).replace(/超管/g, "超级管理员")}（只是说明，权限以账号为准）</Fact>
               <Fact k="最近改动"><span data-user-content="">{sec.lastChange || "—"}</span></Fact>
               {secCurrent && <Fact k="修订号">{secCurrent.revision}</Fact>}
+              {snapshot.view && <>
+                <Fact k="App 取样时间">{timeText(snapshot.view.sampledAt)}（{businessZone().label}）</Fact>
+                <Fact k="App 数据来源"><span data-mono="">{snapshot.view.source || "—"} · {snapshot.view.sourceEnvironment || "—"}{snapshot.view.runId ? ` · ${snapshot.view.runId}` : ""}</span></Fact>
+                {(() => { const row = snapshot.view.sections.find((item) => item.sectionKey === sec.key); const codes = [...new Set([snapshot.view.reason, row?.reason, ...(row?.fields.map((field) => field.reason) ?? [])].filter(Boolean))]; return codes.length ? <Fact k="App 原因码"><span data-mono="">{codes.join("、")}</span></Fact> : null; })()}
+              </>}
             </Facts>
           </Fold>
         </>}

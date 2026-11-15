@@ -13,7 +13,7 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { APP_FIELD_LIMIT, i4AppFieldIssue, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
 
-import type { TrustSectionVersionView } from "@/lib/admin/i-client";
+import type { TrustPublishedSnapshotView, TrustSectionVersionView } from "@/lib/admin/i-client";
 
 export type TrustField = { key: string; label: string; value: string };
 export type Lang = "zh" | "vi" | "en";
@@ -101,6 +101,55 @@ export function versionProblems(version: { version: string; description: string;
   return problems;
 }
 
+// ---------- App 实际公开的状态（published-snapshot） ----------
+/** 原因码译成运营的话；原码只放技术信息。 */
+export function snapshotReasonText(code: string | null, sectionKey = ""): string {
+  switch (code) {
+    case "UNSUPPORTED_SECTION_CLAIM": return ["leadership", "auditsReserves"].includes(sectionKey) ? "这一版是系统迁移写入的，正式环境不公开" : "正式环境不公开运营写的财务、徽章和上市文字";
+    case "AUDIT_DOCUMENT_URL_MISSING": return "报告地址没填或不是有效链接，整块文字不公开";
+    case "AUDIT_HOMEPAGE_PROOF": return "首页证明一律不对外";
+    case "AI_CLIENT_COUNT_UNSUPPORTED": return "没有真实统计";
+    case "SUBHERO_CLAIM_UNSUPPORTED": return "宣传语没有依据";
+    case "SUBHERO_ADDITIONAL_LANGUAGE_UNSUPPORTED": return "跟英文宣传语一起不公开";
+    case "TRUST_SECTION_PUBLISHED_SNAPSHOT_INVALID": return "有版块没公开或当前版不完整";
+    case "TRUST_SECTION_SANDBOX_RUN_ID_REQUIRED": return "测试环境没配运行号";
+    default: return "其他原因";
+  }
+}
+const WHOLE_SECTION_REASONS = new Set(["UNSUPPORTED_SECTION_CLAIM", "AUDIT_DOCUMENT_URL_MISSING"]);
+export type SnapshotState = { view?: TrustPublishedSnapshotView; loading: boolean; error?: string };
+export type FieldBlanking = { all?: string; keys: Set<string>; reasons?: Map<string, string>; actual?: boolean };
+/** 一个版块在 App 上实际被扣下的部分；没读到快照或测试环境时返回 undefined，由调用方按后台版本推断。 */
+export function snapshotBlanking(view: TrustPublishedSnapshotView | undefined, sectionKey: string): FieldBlanking | undefined {
+  if (!view || view.sourceEnvironment === "SANDBOX" && view.available) return undefined;
+  if (!view.available) return { all: `App 信任中心整页打不开：${snapshotReasonText(view.reason)}。`, keys: new Set(), actual: true };
+  const section = view.sections.find((row) => row.sectionKey === sectionKey);
+  if (!section) return undefined;
+  const whole = section.fields.find((field) => field.reason && WHOLE_SECTION_REASONS.has(field.reason));
+  const reasons = new Map(section.fields.filter((field) => field.reason).map((field) => [field.key, snapshotReasonText(field.reason, sectionKey)]));
+  // 整块没公开时和推断写法一致：keys 留空，卡片照常灰显后台存的内容。
+  if (whole) return { all: `${snapshotReasonText(whole.reason, sectionKey)}。`, keys: new Set(), actual: true };
+  return { keys: new Set(reasons.keys()), reasons, actual: true };
+}
+/** 结论下面一行：App 此刻实际给出的是不是完整的、什么时候取的样。 */
+export function SnapshotLine({ state, clearedCount, versionDiff, onRetry }: { state: SnapshotState; clearedCount: number; versionDiff: number; onRetry: () => void }) {
+  const { view } = state;
+  const sampled = view ? <span className="i4-actual-time">取样 <span data-num="">{timeText(view.sampledAt)}</span>（{businessZone().label}）</span> : null;
+  const explain = <Explain label="App 实际公开怎么来的" content={<><p>取自 App 公开接口此刻给出的内容状态，在换成各语言文字之前；每种语言最终显示的文字以 App 为准。</p><p>打开这页、点刷新、有版块换版时重新取样。</p></>} />;
+  if (!view) return <div className="i4-actual" role="status">
+    {state.error ? <><StatusTag tone="warn">没读到</StatusTag><span>App 实际公开的内容没读到，卡上先按后台版本推断</span>{explain}<Button size="sm" onClick={onRetry}>重试</Button></>
+      : <><StatusTag tone="neutral">读取中</StatusTag><span>正在读取 App 实际公开的内容…</span></>}
+  </div>;
+  if (!view.available) return <div className="i4-actual" role="status"><StatusTag tone="danger">整页打不开</StatusTag><span>App 实际：信任中心整页打不开，{snapshotReasonText(view.reason)}</span>{sampled}{explain}</div>;
+  if (view.sourceEnvironment === "SANDBOX") return <div className="i4-actual" role="status"><StatusTag tone="neutral">测试环境</StatusTag><span>App 给的是演示内容，不是后台的版本</span>{sampled}{explain}</div>;
+  // 整块没公开的个数已在结论里，这里只补结论没说的：零散被清空的项、版本对不上的块。
+  const parts = [clearedCount > 0 && `另有 ${clearedCount} 项被清空`, versionDiff > 0 && `${versionDiff} 块 App 给的不是后台当前版`].filter(Boolean);
+  return <div className="i4-actual" role="status">
+    <StatusTag tone={versionDiff > 0 ? "warn" : "ok"}>{versionDiff > 0 ? "版本对不上" : "已核对"}</StatusTag>
+    <span>{["已和 App 实际公开的核对", ...parts].join("；")}</span>{sampled}{explain}
+  </div>;
+}
+
 export type SectionCardModel = {
   key: string;
   index: number;
@@ -116,6 +165,8 @@ export type SectionCardModel = {
   appLabel: string;
   /** 用户看不到这块内容的原因；有值时标题旁标「App 不显示」。 */
   appHidden?: string;
+  /** App 实际给出时的补充标记：被清空的项、版本对不上。 */
+  appTags?: Array<{ text: string; explain: string }>;
   draft?: string;
   pending: boolean;
   problems: string[];
@@ -143,6 +194,7 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
         <span className="i4-app-label">{card.appLabel}
           <Explain label={`${card.name}在 App 里的位置`} content={<><p>{info?.where ?? "App 里的位置待核实。"}</p>{card.appHidden && <p>{card.appHidden}</p>}</>} />
           {card.appHidden && <StatusTag tone="warn" explain={card.appHidden}>App 不显示</StatusTag>}
+          {card.appTags?.map((tag) => <StatusTag key={tag.text} tone="warn" explain={tag.explain}>{tag.text}</StatusTag>)}
         </span>
         {card.preview.length
           ? <dl className="i4-app-lines" data-user-content="" data-blank={card.appHidden ? "" : undefined}>{card.preview.map((field) => <div key={field.key}><dt>{field.label}</dt><dd title={field.value}>{field.value || "—"}</dd></div>)}</dl>
@@ -165,7 +217,7 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
 }
 
 /** 一种语言下的字段清单：名称、内容；App 公开时清空的、和对照版不同的都标出来。 */
-export function FieldList({ fields, lang, blanked, changed, label }: { fields: readonly TrustField[]; lang: Lang; blanked?: { all?: string; keys: Set<string> }; changed?: Set<string>; label: string }) {
+export function FieldList({ fields, lang, blanked, changed, label }: { fields: readonly TrustField[]; lang: Lang; blanked?: FieldBlanking; changed?: Set<string>; label: string }) {
   const shown = fieldsFor(fields, lang);
   if (!shown.length) return <p className="rd-note">这一版没有内容。</p>;
   return (
@@ -175,7 +227,7 @@ export function FieldList({ fields, lang, blanked, changed, label }: { fields: r
           <dt>{field.label}{changed?.has(field.key) && <StatusTag tone="progress">已改</StatusTag>}</dt>
           <dd>
             {field.value ? <span>{field.value}</span> : <span className="rd-weak">—</span>}
-            {!blanked?.all && blanked?.keys.has(field.key) && <span className="i4-field-note">App 公开时清空</span>}
+            {!blanked?.all && blanked?.keys.has(field.key) && <span className="i4-field-note">{blanked.actual ? `App 没公开：${blanked.reasons?.get(field.key) ?? "其他原因"}` : "App 公开时清空"}</span>}
           </dd>
         </div>
       ))}
