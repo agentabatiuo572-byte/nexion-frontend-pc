@@ -619,6 +619,7 @@ export async function rejectA2Operation(operationId: string, reason: string, com
 
 export type RetentionExecution = {
   retentionMonths: number;
+  /** Execution time; the expiry cutoff is stored separately in the backend audit, not in this view. */
   evaluatedAt: string;
   lockAcquired: boolean;
   archivedRows: number;
@@ -828,12 +829,13 @@ function normalizeRetentionExecution(value: unknown): RetentionExecution {
 }
 
 export async function fetchA2RetentionLatest(): Promise<RetentionExecution | null> {
-  const response = await a2Request<RetentionExecution | null>("/retention-runs/latest");
+  // Only an empty successful read means no manual run; unreadable stored rows reject the request.
+  const response = await a2Request<unknown>("/retention-runs/latest");
   return response == null ? null : normalizeRetentionExecution(response);
 }
 
 export async function runA2RetentionNow(reason: string, commandKey: string, expectedRetentionMonths?: number): Promise<RetentionExecution> {
-  return normalizeRetentionExecution(await a2Request<RetentionExecution>("/retention-runs", {
+  return normalizeRetentionExecution(await a2Request<unknown>("/retention-runs", {
     method: "POST", body: JSON.stringify({ reason, ...(expectedRetentionMonths === undefined ? {} : { expectedRetentionMonths }) }), commandKey,
   }));
 }

@@ -407,6 +407,12 @@ A2 承载各域操作记录、已提交的业务审批与后台记录机制设�
 
 「到期记录清理」单独一块：可清理、最早到期、未到期、无到期时间的旧版历史、上次手动清理。0与未取得的「—」弱化；预览读取失败、读取中、可清理0或有未决清理时不能执行。已有定时清理；手动每次最多2,000条，先归档再从在线列表移除，未到期及无到期时间旧记录不动；不是运营随意删除审计。需要 `platform_a2_write`，不可撤销，确认框列本次范围及理由。返回未取得清理锁时说明已有清理进行、本次没删，不报清理成功；显示实际归档／移除数。读取上次清理失败单独提示，不替代本次结果。
 
+**2026-11-17 A2 手动清理读取合同（hd-sync30 / f0497f79）**：POST `/api/admin/platform/audit/retention-runs` 与 GET `/retention-runs/latest` 的七个字段保持 `retentionMonths/evaluatedAt/lockAcquired/archivedRows/deletedRows/outboxRows/behaviorFactRows`，没有新增或改名的 HTTP `cutoff`。`evaluatedAt` 表示执行/判定时刻；截止点单独存于后端手动清理审计明细，前端不从月数反推。已有边界解析继续严格校验必填时间、锁标记和非负整数计数，兼容旧回包；未知输入在解析后才交给页面。只有成功空回包表示没有手动清理记录；有记录但读不出来时后端返回 `500 A2_RETENTION_RUN_UNREADABLE`，沿用已有读取失败位置和“上次清理结果读取失败”，不会显示为“还没有手动清理过”。查询最近一次清理不能证明是原命令的结果，原结果未知记录继续保留。
+
+**528b8c92 文档更正**：旧服务字段虽然叫 `cutoff`，实际存的也是 `runNowInternal` 的 `now`，所以历史 `evaluatedAt` 原本就是执行/判定时刻，不需要前端修正，也不重写历史。最新记录读取先解析已存 `evaluatedAt`，缺失才由后端回退该审计行的 `createdAt`，不会使用读取时刻；连 `createdAt` 也缺失的内部原因 `A2_RETENTION_EXECUTION_TIME_MISSING` 与解析失败统一对外为 `500 A2_RETENTION_RUN_UNREADABLE`，不新增第二个对外错误码。只有手动清理审计 `A2_AUDIT_RETENTION_MANUAL_EXECUTED` 增写独立 `cutoff`；系统清理审计 `A2_AUDIT_RETENTION_EXECUTED` 的明细保持原样，latest 只读手动行。
+
+**d0bcc4eb 最终边界与交付结论**：清理实际检查每行持久的 `expire_at <= now`；保留月数已在写审计时计入 `expire_at`，因此独立 `cutoff` 与 `evaluatedAt` 同为该次 `now`，不能再减一次月数，也不是“创建日期早于某日”的删除范围。f0497f79最初写的 `now.minusMonths(months)` 已由本提交更正，前端不接入该中间口径，不新增 HTTP 字段。A2-BE-04 **后端范围已交付（f0497f79、528b8c92、d0bcc4eb）**：执行/到期检查时间分别命名、手动审计保存边界、latest 可靠区分无记录与不可读；旧时间误判按528b8c92更正。三提交不改清理/归档条件、权限、锁、理由、事务、原键成功回放、TTL或 `retentionHash`；上一批 TreeMap 固定字段序继续保留，确认月数仅非空时参与摘要，旧键摘要不迁移。原请求和命令号仍原样重试，latest 的时间/数量不参与自动认定“是这次清理”。当前“上次手动清理 {evaluatedAt}”原句准确，无需界面改写；升级后端后的真实清理、旧行回读和异常恢复验证尚待隔离库执行，不以代码核实代替业务实测。
+
 **④ 谁能批准与第五轮规则（后端待办 B44）**
 
 前端处理审批先认 `platform_a2_operation_approve`，不是“超管恒可”或业务发起权等于批准权；再分别算该单批准、驳回所需的已知条件。发起人不得批准或驳回自己的单。撤回须本人及 `platform_a2_proposal_create`。
