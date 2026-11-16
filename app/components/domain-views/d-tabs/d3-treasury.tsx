@@ -928,7 +928,7 @@ export function D3Treasury() {
         >
           <div className="rd-stack">
             <Facts>{retry.rows.map((row) => <Fact key={row.key} k={row.label} lead={row.lead} tone={row.lead ? "role-1" : undefined} unit={row.unit}>{row.value}</Fact>)}</Facts>
-            <p className="rd-note">重发原内容，已成功的不会重复执行。</p>
+            <p className="rd-note">按原内容和理由重发，不会重复执行。</p>
           </div>
         </Modal>
       )}
