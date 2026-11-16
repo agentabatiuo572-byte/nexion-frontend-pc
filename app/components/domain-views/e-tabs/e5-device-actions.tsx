@@ -39,7 +39,7 @@ const EFFECTS: Record<E5Intent, string> = {
   deactivate: "有运行中任务时，本单完成并结算后自动停用；停用后不再接新任务，不退款。要再用只能申请强制激活。",
   pause: "暂停这位用户的全部设备（含手机），停跑期间不计收益、不补发。之后可以点「恢复该用户」。",
   resume: "只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。",
-  "force-activate": "待激活、已停用、已解绑的设备都能直接激活，仍受每人 6 台上限。批准前设备状态不变。",
+  "force-activate": "待激活、已停用、已解绑的设备都能直接激活，仍受每人 6 台上限。",
   unbind: "设备将不再属于原用户，不退款，购入时间不变。",
   legacy: "只取消这条结果不明的旧任务，不发 USDT 或 UVT 收益；任务记录保留，这条任务不会再执行。",
 };
@@ -316,7 +316,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
         {action === "legacy" && candidate && <><Fact label="原任务" value={candidate.taskNo} /><Fact label="案件" value={candidate.caseId} /></>}
       </Facts>{(action === "activate" || action === "force-activate") && <><E5Slots device={d} phones={phones} /><Facts><RdFact k="激活名额变化"><Change from={`${d.activeDevicesForUser}/${d.maxDevicesPerUser}`} to={`${d.activeDevicesForUser + 1}/${d.maxDevicesPerUser}`} /></RdFact></Facts></>}</>}
       blockedReason={locked(action) ?? ((action === "activate" || action === "force-activate") && full ? "已达 6 台激活上限（含手机）" : undefined)}
-      detail={proposal ? "提交后要另一位管理员批准，批准前设备状态不变；进度到「操作记录与审批」看。" : action === "resume" ? "一次最多恢复 200 台，实际恢复几台看提交结果。" : "提交后页面会显示结果。"}
+      detail={proposal ? "审批进度到「操作记录与审批」看。" : action === "resume" ? "一次最多恢复 200 台，实际恢复几台看提交结果。" : "提交后页面会显示结果。"}
       onClose={() => setAction(null)} onConfirm={async reason => {
         if (locked(action)) throw new Error(String(locked(action)));
         const auth = useAdminAuth.getState();
