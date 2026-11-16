@@ -264,6 +264,8 @@ export interface A2AuditLogRow {
 }
 
 export interface A2Overview {
+  /** Strict queue reads retain valid tickets and report malformed rows separately. */
+  operationQueueInvalidCount?: number;
   stats: A2Stats;
   operationQueue: A2OperationRow[];
   operationHistory: A2OperationHistory[];
@@ -560,15 +562,23 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue = false) {
+export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue = false): Promise<A2Overview> {
   const query = buildA2FilterQuery(filter).toString();
   const data = await a2Request<BackendOverview>(`/overview${query ? `?${query}` : ""}`);
-  if (requireQueue && (!data || !Array.isArray(data.operationQueue) || data.operationQueue.some(row =>
-    !row || typeof row.id !== "string" || !row.id || typeof row.obj !== "string" || typeof row.action !== "string"
-      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
-    throw new Error("F2_APPROVAL_RESPONSE_INVALID");
+  if (!requireQueue) return normalizeOverview(data);
+  if (!data || !Array.isArray(data.operationQueue)) throw new Error("F2_APPROVAL_RESPONSE_INVALID");
+  const operationQueue: A2OperationRow[] = [];
+  let operationQueueInvalidCount = 0;
+  for (const row of data.operationQueue) {
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.obj !== "string" || typeof row.action !== "string"
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")) {
+      operationQueueInvalidCount += 1;
+      continue;
+    }
+    try { operationQueue.push(fromTicket(row)); }
+    catch { operationQueueInvalidCount += 1; }
   }
-  return normalizeOverview(data);
+  return { ...normalizeOverview({ ...data, operationQueue: [] }), operationQueue, operationQueueInvalidCount };
 }
 
 export async function approveA2Operation(operationId: string, reason: string, commandKey?: string) {

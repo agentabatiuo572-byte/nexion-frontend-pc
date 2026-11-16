@@ -187,6 +187,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f5Proposals, setF5Proposals] = useState<FDomainAttempt[]>([]);
   const [f5AnomalyWrites, setF5AnomalyWrites] = useState<FDirectAttempt[]>([]);
   const [f5ApprovalRows, setF5ApprovalRows] = useState<A2OperationRow[]>([]);
+  const [f5ApprovalReadError, setF5ApprovalReadError] = useState<string | null>(null);
   const [f5ReadEpoch, setF5ReadEpoch] = useState(0);
   const f5Submission = useRef<F5ConfirmationSnapshot | undefined>(undefined);
   const f5Query = useRef<F5CommissionQuery>({});
@@ -338,7 +339,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (request !== f2Generation.current) return null;
       // Only successful lookups supersede the queue, including authoritative terminal states.
       const observedIds = new Set(observed.filter((_, index) => receipts[index].status === "fulfilled").map(row => row.ticket!.id));
-      if (audit.status === "fulfilled" && audit.value) setF2ApprovalRows(audit.value.operationQueue.filter(row => !observedIds.has(row.id)));
+      if (audit.status === "fulfilled" && audit.value) {
+        setF2ApprovalRows(audit.value.operationQueue.filter(row => !observedIds.has(row.id)));
+        if (audit.value.operationQueueInvalidCount) setF2ActivationPendingError(errorMessage(new Error("F2_APPROVAL_RESPONSE_INVALID")));
+      }
       else { setF2ApprovalRows([]); setF2ActivationPendingError(audit.status === "rejected" ? errorMessage(audit.reason) : "审批进度没读到"); }
       if (session) {
         if (receipts.some(row => row.status === "rejected")) setF2ActivationPendingError("审批进度没读到");
@@ -535,6 +539,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     else { setF5Page(null); setF5Error(errorMessage(overview.reason)); }
     const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
     setF5ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
+    setF5ApprovalReadError(queue.status === "rejected" ? errorMessage(queue.reason)
+      : audit?.operationQueueInvalidCount ? errorMessage(new Error("F2_APPROVAL_RESPONSE_INVALID")) : null);
     if (owner !== undefined) {
       setF5Proposals(listF5Proposals(owner));
       setF5AnomalyWrites(listF5AnomalyWrites(owner));
@@ -1153,6 +1159,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5Proposals,
     f5AnomalyWrites,
     f5ApprovalRows,
+    f5ApprovalReadError,
     f5ReadEpoch,
     prepareF5Confirmation: snapshot => { f5Submission.current = snapshot; },
     getF5Operation: snapshot => {

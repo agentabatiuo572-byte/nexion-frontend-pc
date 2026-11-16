@@ -209,6 +209,7 @@ export interface FViewCtx {
   f5Proposals: FDomainAttempt[];
   f5AnomalyWrites: FDirectAttempt[];
   f5ApprovalRows: A2OperationRow[];
+  f5ApprovalReadError: string | null;
   f5ReadEpoch: number;
   prepareF5Confirmation: (snapshot: F5ConfirmationSnapshot | undefined) => void;
   getF5Operation: (snapshot: F5ConfirmationSnapshot) => F5Recovery | undefined;
