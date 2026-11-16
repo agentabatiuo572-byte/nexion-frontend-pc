@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, Ban, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Ban, CalendarClock, Clock3, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
 import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, KeepText, Figure, Fold, Notice, PageHeader, Panel, RecordList, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -774,7 +774,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               explain={gateHelp(gate)}
               status={<>
                 {UNAVAILABLE_GATES[gate.key] ? <><StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag><span className="rd-note">{UNAVAILABLE_GATES[gate.key].note}</span></> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>}
-                {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="progress">恢复待审批</StatusTag> <span className="rd-note">审批号 {row.id}</span></span>)}
+                {restoreApprovals.filter((row) => row.obj === gate.key).map((row) => <span key={row.id}><StatusTag tone="warn" icon={Clock3}>恢复待审批</StatusTag> <span className="rd-note">审批号 <span className="rd-keep">{row.id}</span></span></span>)}
                 {UNAVAILABLE_GATES[gate.key] && restoreApprovals.some((row) => row.obj === gate.key) && reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=J&object=${encodeURIComponent(gate.key)}`}>核对原审批</Link>}
                 {gate.emergency && <StatusTag tone="warn" icon={Siren}>应急</StatusTag>}
                 {backfill && (backfill.overdue ? <StatusTag tone="danger">已逾期</StatusTag> : <StatusTag tone="warn">待补录</StatusTag>)}
