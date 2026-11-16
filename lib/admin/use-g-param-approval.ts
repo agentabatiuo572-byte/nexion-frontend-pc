@@ -67,7 +67,7 @@ export function canProposeGParam(page: Page, key: string, authorities: readonly 
   return authorities.includes(gParamAuthority(page, key))
     // royalty/airdropPct/emissionCurve/airdropLockDays: the backend admits the POST on the exact grant,
     // but not the by-key lookup (G4-BE-18), so they keep the global proposal grant until it does.
-    && (page === "G4" && ["supply", "price", "divBase"].includes(key)
+    && (page === "G4" && ["supply", "price", "divBase", "dividend"].includes(key)
       || authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write"));
 }
 
