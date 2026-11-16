@@ -381,7 +381,8 @@ function G2ExchangePage() {
       const message = messageOf(err);
       if (err instanceof G2OutcomeUnknownError) coveredErrors.current.add(message);
       setError(message);
-      toast(err instanceof G2OutcomeUnknownError ? message : `操作失败 · ${message}`);
+      // 结果未知时确认框开着、框里已写这句，不再弹一遍（同处理排队）。
+      if (!(err instanceof G2OutcomeUnknownError)) toast(`操作失败 · ${message}`);
       throw err;
     } finally {
       setDirectCommands(listG2ExchangeCommands(batchAdminId).filter(record => record.path !== "/exchange/queue/process"));
@@ -490,7 +491,7 @@ function G2ExchangePage() {
         : `这些操作先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
         <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
-        <p>要改成别的值，等原操作有结论后再在「额度和手续费」里发起新修改。处理排队的原批次只能查原结果，不会重发。</p>
+        <p>要改成别的值，等原操作有结论后再在「额度和手续费」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
       </>} />;
   };
 
@@ -520,7 +521,7 @@ function G2ExchangePage() {
           // POST 的原始错误仍是主证据；回读失败不能改写成确定失败。
         }
         requireBatchActor(batchAdminId);
-        const message = "处理结果未知。可以关掉确认框，在页面上方点「查询原结果」，查看原批次的结果。";
+        const message = "处理结果未知。在这里重试用的是同一批次编号，不会重复处理；也可以关掉确认框，到页面上方查询原结果。";
         // 确认框这时一直开着，这句只在框里写一次：不弹提示，页面上方也不再写。
         coveredErrors.current.add(message);
         setError(message);
@@ -777,7 +778,7 @@ function G2ExchangePage() {
           if (paramApproval.record(cap.key) || err instanceof G2OutcomeUnknownError) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) { await reload(true); openActionConfirm(null); }
-          if (!paramApproval.record(cap.key)) toast(err instanceof G2OutcomeUnknownError ? messageOf(err) : `操作失败 · ${messageOf(err)}`);
+          if (!paramApproval.record(cap.key) && !(err instanceof G2OutcomeUnknownError)) toast(`操作失败 · ${messageOf(err)}`);
           throw err;
         } finally {
           setDirectCommands(listG2ExchangeCommands(batchAdminId).filter(record => record.path !== "/exchange/queue/process"));
