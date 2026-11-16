@@ -17,6 +17,16 @@ function parse<T>(raw: string | undefined): T[] {
   try { const rows = JSON.parse(raw ?? "[]"); return Array.isArray(rows) ? rows as T[] : []; } catch { return []; }
 }
 
+/** Same authorized roster and enabled/status predicate as the live card; no additional read permission. */
+export function availableSupportRoster(ctx: MCtx) {
+  const ready = ctx.pget("I.support.agentsAvailable") === "1";
+  const failure = ctx.pget("I.support.agentsError");
+  const state = ready ? "ready" : failure === "permission" ? "permission" : failure && failure !== "none" ? "error" : "loading";
+  const rows = ready ? parse<{ adminId: number; name: string; enabled?: boolean; status?: string }>(ctx.pget("I.support.agents"))
+    .filter(row => row.enabled !== false && row.status !== "disabled") : [];
+  return { state, rows };
+}
+
 /**
  * M-40: what needs handling right now, above the business statistics. Built from the inbox and advisor
  * data the console already holds; each figure opens the list where it is handled. (Tickets are retired.)
@@ -26,13 +36,14 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
   const conversationsReady = ctx.pget("I.session.conversationsAvailable") === "1";
   // An unread roster is not an empty one (BUG-122): 0 only comes from a successful read.
-  const agentsReady = ctx.pget("I.support.agentsAvailable") === "1", agentsFailed = !agentsReady && ctx.pget("I.support.agentsError") !== "none";
+  const roster = availableSupportRoster(ctx);
+  const agentsReady = roster.state === "ready", agentsFailed = roster.state === "error";
   const facts = useMemo(() => {
     const convos = parse<SessionConvo>(ctx.pget("I.session.convos")).filter((row) => !row.archived && (row.pendingReplyCount ?? 0) > 0);
     const customers = (rows: SessionConvo[]) => new Set(rows.map((row) => String(row.customerId ?? row.id))).size;
     const waiting = convos.filter((row) => !row.ownerUnbound), unassigned = convos.filter((row) => row.ownerUnbound);
     const oldest = Math.min(...convos.map((row) => row.pendingReplySince ?? Infinity));
-    const agents = parse<{ enabled?: boolean; status?: string }>(ctx.pget("I.support.agents")).filter((row) => row.enabled !== false && row.status !== "disabled");
+    const agents = availableSupportRoster(ctx).rows;
     return {
       waiting: customers(waiting), unassigned: customers(unassigned), oldest: Number.isFinite(oldest) ? now - oldest : null,
       agents: agents.length,

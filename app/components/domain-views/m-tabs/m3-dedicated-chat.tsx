@@ -643,14 +643,14 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     if (saved && visible.some(convo => convo.id === saved && !convo.archived) && (!urlScoped || scoped.some(convo => convo.id === saved))) { setSelectedId(saved); followSelection.current = true; }
   }, [conversationsAvailable, visible, ctx, qualificationUnknown]);
   useEffect(() => {
-    if (!followSelection.current || !conversationsAvailable) return;
+    if (!followSelection.current || !conversationsAvailable || qualificationUnknown) return;
     const target = requestedCustomerId ? visible.find((convo) => customerIdOf(convo) === requestedCustomerId) : selectedId ? visible.find((convo) => convo.id === selectedId) : undefined;
     if (!target && requestedCustomerId === null && !selectedId) return;
     followSelection.current = false;
     if (!target || !canReviewAll) return;
     const fits = target.ownerAdminId === adminId ? scopeView === "mine" : scopeView === "team" && (!agentFilter || target.ownerAdminId === agentFilter);
     if (!fits) changeScope(target.ownerAdminId === adminId ? "mine" : "team");
-  }, [conversationsAvailable, visible, requestedCustomerId, selectedId, canReviewAll, adminId]);
+  }, [conversationsAvailable, qualificationUnknown, visible, requestedCustomerId, selectedId, canReviewAll, adminId]);
   // 网址里的客服已不在可见范围：回到全部专属客服，不留一个看着像空的筛选。
   useEffect(() => {
     if (agentFilter && conversationsAvailable && !qualificationUnknown && canReviewAll && visible.length > 0 && !teamAgents.some(([id]) => id === agentFilter)) changeScope("team");
@@ -934,7 +934,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     })
       .finally(() => { if (!controller.signal.aborted && requestStamp === identityRef.current) setDetailLoading(false); });
     return () => controller.abort();
-  }, [requestedCustomerId, requestedConvo, conversationsAvailable, detailRetry, authEpoch, adminId, canReviewAll, revokeCustomer]);
+  }, [requestedCustomerId, requestedConvo, conversationsAvailable, qualificationUnknown, detailRetry, authEpoch, adminId, canReviewAll, revokeCustomer]);
   useEffect(() => {
     if (!selected?.customerId || !conversationsAvailable || qualificationUnknown) { setProfileDetail(null); return; }
     if (selectedUnbound) { setProfileDetail(null); setProfileError(""); return; }

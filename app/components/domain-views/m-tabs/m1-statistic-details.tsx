@@ -31,7 +31,7 @@ async function maintenancePage(source: Extract<StatisticSource, { kind: "mainten
     const current = await supportClient.snapshot({ mode: scope.mode, groupId: scope.groupId ?? undefined, agentId: scope.agentAdminId ?? undefined, filter: "STOPPED", pageNum: page, pageSize: PAGE_SIZE, signal });
     const list = current.customers;
     if (!list.available || list.filter !== "STOPPED" || list.records.some(row => row.maintenanceEnabled)) throw new Error("STOPPED_LIST_UNAVAILABLE");
-    if (current.overview.scope.actorId !== scope.actorId || list.total !== overview.counts.stoppedMaintenanceCustomers || list.total !== current.overview.counts.stoppedMaintenanceCustomers) throw changed();
+    if (current.overview.scope.actorId !== scope.actorId || list.total !== current.overview.counts.stoppedMaintenanceCustomers) throw changed();
     return { headings: ["客户编号", "客户名称", "当前归属客服编号"], rows: list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.displayName ?? "") || "未登记", String(row.agentAdminId ?? "未知")]), total: list.total, next: page * PAGE_SIZE < list.total, summary: "当前暂停主动维护 " + list.total + " 人", note: "按当前归属逐页核对 · 本页核对时间（北京时间） " + beijing(current.overview.evaluatedAt) };
   }
   const byCustomer = metric === "SUCCESSFUL_CUSTOMER";
