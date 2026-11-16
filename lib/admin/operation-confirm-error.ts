@@ -33,6 +33,9 @@ export function operationConfirmErrorMessage(error: unknown): string {
       + `或到「操作记录与审批」核对。命令号：${uncertain.commandKey}`;
   }
   if (uncertain) {
+    // 有自己恢复入口的页面可以在错误上带一句 confirmCopy（只改这页的说法）；没带的照旧指向操作记录与审批。
+    const own = (error as Error & { confirmCopy?: unknown }).confirmCopy;
+    if (typeof own === "string" && own) return own;
     // 刻意不承诺「系统会复用同一命令号自动去重」:携带命令号的错误族里,只有走持久 store 的面
     // (F1 直写 / H8 / K1 / K6 …)真会复用,A3 等仍是每次现铸 —— 对它们做这个承诺就是骗运营去重试。
     // 「保留输入原样重试」对所有域都成立;是否去重交由运营核对审计后决定。

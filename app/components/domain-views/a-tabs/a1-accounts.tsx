@@ -441,6 +441,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         else { needsRecheck.current = true; setRecheckIntent(record.intent); }
         await refreshOverview(true);
       }
+      // The shared confirm sends people to the audit log; A1 direct records are queried right on this page.
+      if (isA1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。原请求已保留，不要改内容；可以查询原结果，24 小时内也可以按原请求重试。" });
       throw error;
     } finally { setMutatingAction(null); }
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
