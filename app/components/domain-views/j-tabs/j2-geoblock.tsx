@@ -13,7 +13,8 @@ import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
 import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Panel, ReleaseModal, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -215,6 +216,22 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     }
   }, [contentLoading, openActionConfirm]);
   const queryOriginal = async (record: { commandKey: string }) => {
+    const saved = [...listJ2PendingCommands(), ...listJ2LegacyCommands()].find(row => row.commandKey === record.commandKey);
+    if (saved) {
+      try {
+        if (fundCommandSettled(await queryJ2Command(saved))) {
+          const active = activeConfirmation.current;
+          if (active?.slot === saved.fingerprint) {
+            activeConfirmation.current = null;
+            openActionConfirm(null);
+          }
+          setEditor(null);
+          syncPending();
+          await actions.reloadJEmergency().catch(() => undefined);
+          return;
+        }
+      } catch { /* Preserve the original and continue with the existing current-settings read. */ }
+    }
     try {
       await actions.reloadJEmergency();
       setPendingNotes((notes) => ({ ...notes, [record.commandKey]: "页面已刷新，请核对现在的名单、规则和最近修改。" }));

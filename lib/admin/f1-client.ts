@@ -2267,14 +2267,14 @@ export async function updateF1VRankThreshold(rank: string, field: string, value:
 }
 
 /** F1's confirmation owns the durable original body and key; do not mint another key here. */
-export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string, operator: string, commandKey: string) {
+export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string, operator: string, commandKey: string, expectedRevision?: string) {
   const base = `/ranks/${encodeURIComponent(values.rank)}`;
   const threshold = values.action === "threshold";
   const path = threshold ? `${base}/thresholds/${encodeURIComponent(values.field!)}`
     : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`;
   const data = await f1Request<unknown>(path, {
     method: threshold ? "PATCH" : values.action === "reward_add" ? "POST" : values.action === "reward_remove" ? "DELETE" : "PUT",
-    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), reason, operator }),
+    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), expectedRevision, reason, operator }),
     stableIdempotencyKey: commandKey, expectsData: true,
   });
   try { assertF1Overview(data); }

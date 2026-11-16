@@ -30,7 +30,7 @@ export type J2CommandBody = {
   source?: string; expectedSource?: string;
 };
 export type J2PendingCommand = SlotAttemptRecord & {
-  geo: { path: string; method: string; body: string; context: J2CommandContext };
+  geo: { path: string; method: string; body: string; context: J2CommandContext; commandOrigin?: FundCommandOrigin };
 };
 export type J3ConfigBody = {
   threshold: number; feedK4: boolean; expectedThreshold: number; expectedFeedK4: boolean;
@@ -58,13 +58,14 @@ type EmergencyPendingCommand = SlotAttemptRecord & {
 };
 const J3_CONFIG_SLOT = "PUT /tamper/alert-config";
 const isJ2WriteSlot = (slot: string) => /^(?:PUT \/geo-block\/(?:country-lists\/(?:blocked|limited)|endpoints\/[^/]+|edge-judge)|POST \/geo-block\/emergency-blocks)$/.test(slot);
+const isJ2CountrySlot = (slot: string) => /^PUT \/geo-block\/countries\/[^/]+$/.test(slot);
 const isJ4WriteSlot = (slot: string) => /^(?:POST \/sop\/playbooks|PUT \/sop\/playbooks\/[^/]+|POST \/sop\/playbooks\/[^/]+\/(?:drills|executions\/[^/]+\/(?:cancel|resume|rollback)))$/.test(slot);
 export const j4ProposalSlot = (code: string) => `J4 PROPOSE ${code}`;
 const isJ4Slot = (slot: string) => isJ4WriteSlot(slot) || slot.startsWith("J4 PROPOSE ");
 // One instance owns every J emergency slot, including J4 proposals.
 const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
   storageKey: "nexion-admin-j-emergency-commands-v1",
-  retainExpiredRecords: (record) => isJ2WriteSlot(record.fingerprint) || record.fingerprint === J3_CONFIG_SLOT || isJ4Slot(record.fingerprint),
+  retainExpiredRecords: (record) => isJ2WriteSlot(record.fingerprint) || isJ2CountrySlot(record.fingerprint) || record.fingerprint === J3_CONFIG_SLOT || isJ4Slot(record.fingerprint),
   isValidRecord: (record) => {
     if (typeof record.inputFingerprint !== "string" || !record.inputFingerprint) return false;
     if (record.sop || record.sopProposal) {
@@ -139,6 +140,9 @@ const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
       if (`${method} ${path}` !== record.fingerprint || !isJ2WriteSlot(record.fingerprint)
         || typeof body !== "string" || body !== record.inputFingerprint
         || typeof context.label !== "string") return false;
+      const origin = record.geo.commandOrigin;
+      if (origin !== undefined && (origin.originalMethod !== method || origin.originalPath !== `/api/admin/emergency${path}`
+        || origin.readAuthority !== "emergency_j2_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
       const input = JSON.parse(body);
       if (!input || typeof input !== "object" || Array.isArray(input)
         || typeof input.reason !== "string" || typeof input.operator !== "string"
@@ -171,6 +175,8 @@ const emergencyAttempts = createSlotAttemptStore({
 export const listJ2PendingCommands = () => emergencyCommands.list().filter((record): record is J2PendingCommand => !!record.geo);
 // Old J2 records lack the reason/body: preserve them for read-only investigation.
 export const listJ2LegacyCommands = () => emergencyCommands.list().filter((record) => isJ2WriteSlot(record.fingerprint) && !record.geo);
+// The single-country API has no current page action; expose its retained read-only records to the data layer.
+export const listJ2CountryCommands = () => emergencyCommands.list().filter((record) => isJ2CountrySlot(record.fingerprint));
 export const getJ2PendingCommand = (slot: string) => listJ2PendingCommands().find((record) => record.fingerprint === slot);
 export const getJ3PendingCommand = () => emergencyCommands.list().find((record): record is J3PendingCommand => !!record.tamper);
 export const getJ3LegacyCommand = () => emergencyCommands.list().find((record) => record.fingerprint === J3_CONFIG_SLOT && !record.tamper);
@@ -305,6 +311,26 @@ export async function retryJ2Command(record: J2PendingCommand) {
   await apiRequest(saved.geo.path, { method: saved.geo.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.geo.body }, saved.geo.context);
 }
 
+/** Read the original geo command, including rollout-era records whose origin only exists on the server. */
+export async function queryJ2Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  const saved = emergencyCommands.list().find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved || !(isJ2WriteSlot(saved.fingerprint) || isJ2CountrySlot(saved.fingerprint))) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  let receipt;
+  if (saved.geo?.commandOrigin) {
+    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.geo.commandOrigin }, evidence);
+  } else {
+    const actorId = useAdminAuth.getState().session?.adminId;
+    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
+    // The accepted slot fixes method/path; the receipt must prove the original operator and server hash.
+    const [method, path] = saved.fingerprint.split(" ");
+    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
+      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j2_read") : await discoverECommand(locator);
+  }
+  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
+
 function emergencyInputFingerprint(body: BodyInit | null | undefined) {
   if (typeof body !== "string") return body == null ? "" : String(body);
   try {
@@ -359,7 +385,8 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (!saved) {
         if (!geoContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
         const commandKey = providedCommandKey || idempotencyKey();
-        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, geo: { path, method, body: init.body, context: geoContext } });
+        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, geo: { path, method, body: init.body, context: geoContext,
+          commandOrigin: fundCommandOrigin(method as "PUT" | "POST", `/api/admin/emergency${path}`, "emergency_j2_read") } });
         headers.set("Idempotency-Key", commandKey);
       }
       const original = getJ2PendingCommand(writeSlot)!;

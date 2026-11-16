@@ -26,6 +26,7 @@ export type F1PolicyEditor = {
 type OriginalCommand = {
   editor: F1PolicyEditor; form: F1PolicyForm; values: F1PolicyValues; reason: string; operator: string;
   approval: boolean; proposal?: Parameters<typeof createA2OperationProposal>[0];
+  directExpectedRevision?: string;
 };
 
 export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean };
@@ -125,6 +126,7 @@ function originalF1Policy(owner: number, record: F1PolicyRecord) {
     || !original.form || !original.values || typeof original.approval !== "boolean" || typeof original.operator !== "string"
     || original.values.rank !== original.editor.row.v || original.values.action !== original.editor.action
     || original.values.field !== original.editor.field || original.values.rewardId !== original.editor.reward?.id
+    || original.directExpectedRevision !== undefined && (original.directExpectedRevision !== original.values.expectedRevision || !/^[0-9a-f]{64}$/.test(original.directExpectedRevision))
     || original.approval && !original.proposal) throw new Error("原操作内容不完整，请到操作记录核对后处理。");
   return { ...record, original };
 }
@@ -176,7 +178,7 @@ export async function submitF1Policy(
       ...(editor.action === "reward_add" || editor.action === "reward_update" ? { reward } : {}),
     };
     const approval = f1PolicyNeedsApproval(editor, form), operator = session.operator || session.username;
-    original = { editor, form, values, reason, operator, approval };
+    original = { editor, form, values, reason, operator, approval, ...(approval ? {} : { directExpectedRevision: values.expectedRevision }) };
     if (approval) {
       const definition = findHighOp("f1_rank_policy_change")!;
       original.proposal = {
@@ -236,7 +238,8 @@ export async function submitF1Policy(
         if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
         if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);
         posting = true;
-        await writeF1VRankPolicy(original.values, original.reason, original.operator, key);
+        // Older saved values include the proposal revision, but their direct body never sent it.
+        await writeF1VRankPolicy(original.values, original.reason, original.operator, key, original.directExpectedRevision);
         posting = false;
         attempts.remember(fingerprint, key, { ...record(), received: true });
       }
