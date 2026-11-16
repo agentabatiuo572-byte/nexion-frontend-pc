@@ -367,7 +367,11 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         setRecovery(null); dropCheck(record.commandKey);
         setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
       }
-      toast(displayAdminError(error), "error");
+      // The editor holds no operator changes during a retry; the saved original was just closed and the page reread.
+      const code = (error as { reasonCode?: string }).reasonCode;
+      toast(!commands.find(record.fingerprint) && (code === "DEVELOPER_DOCS_VERSION_CONFLICT" || code === "HOW_CONTENT_VERSION_CONFLICT")
+        ? `原请求没有保存：${original.kind === "docs" ? "文档" : "说明内容"}已被别人改过。记录已解除，已读到最新内容；需要的话重新修改后再保存。`
+        : displayAdminError(error), "error");
     } finally { setMutating(null); }
   };
   const contentRetry = (record: A3Command) => a3Deduplicates(record) && !isRetryExpired(record)

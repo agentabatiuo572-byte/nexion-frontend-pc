@@ -332,7 +332,10 @@ export default function A6Roles() {
         return false;
       }
       if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id);
-      setToast(displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
+      // Start/stop without earlier ticket evidence also asked for the original result above.
+      setToast(record.original.kind === "a6-status" && !record.ticket && !record.receipt
+        ? "没查到审批单，也没查到原结果，原记录仍保留；请稍后再查，或在 24 小时内按原请求重试。"
+        : displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
     }
     setConfirmReq(null);
     // A terminal ticket is authoritative about the decision; the current grants still require a real GET.
