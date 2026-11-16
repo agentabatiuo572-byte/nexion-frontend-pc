@@ -51,9 +51,9 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
   if (receipt.businessState !== undefined) {
-    // H3 redrive stores a view, not ApiResult: every refusal throws; completion proves requeue only.
+    // These A4 writers store views and throw refusals; cleanup completion may also mean no lock was acquired.
     if (receipt.businessState === "UNKNOWN" && receipt.businessCode === null && receipt.originalStatus === "SUCCEEDED"
-      && receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")) return "SUCCEEDED";
+      && (receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:") || receipt.scope === "A4_EVENT_RETENTION_RUN")) return "SUCCEEDED";
     if (receipt.businessState === "UNKNOWN") return "UNRESOLVED";
     // These code-zero replies carry source/item results that the receipt does not project.
     // OpsNovaService:188–231 may skip refused items; OpsI18nLearningService:215–223 may repair zero items.
@@ -171,10 +171,13 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/devices\/users\/[^/]+\/tradein\/(?:replace|recycle)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `E3_TRADEIN_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
     : /^\/api\/admin\/platform\/events\/params\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH"
       && ["day0", "event_retention", "sampling"].includes(decodeURIComponent(locator.originalPath.split("/").at(-1)!))
+      && row.originalTarget === decodeURIComponent(locator.originalPath.split("/").at(-1)!)
       && row.scope === normalizeScope(`A4_PARAM:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : /^\/api\/admin\/platform\/events\/schema-registrations\/[^/]+\/lifecycle$/.test(locator.originalPath) ? locator.originalMethod === "POST"
+      && row.originalTarget === decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim().toLowerCase()
       && row.scope === normalizeScope(`A4_EVENT_LIFECYCLE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim().toLowerCase()}`)
     : /^\/api\/admin\/platform\/events\/outbox\/[^/]+\/redrive$/.test(locator.originalPath) ? locator.originalMethod === "POST"
+      && row.originalTarget === decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()
       && row.scope === normalizeScope(`A4_H3_OUTBOX_REDRIVE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()}`)
     : locator.originalPath === "/api/admin/platform/config" ? locator.originalMethod === "PUT" && ["platform.global_rate_limit_per_minute", "withdrawal.strong_review_threshold_usdt"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
     : locator.originalPath === "/api/admin/risk/multi-account/registration-params" ? locator.originalMethod === "PATCH" && ["auth.risk.h5_register_captcha", "auth.risk.h5_register_device_limit", "auth.risk.h5_freeze_newcomer_gift"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
