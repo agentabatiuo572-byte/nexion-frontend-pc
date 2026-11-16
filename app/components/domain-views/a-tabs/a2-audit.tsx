@@ -1860,7 +1860,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
+                      <Td sticky="start"><Cell main={w.objDisplayName ? `${shortCodes(name)} · ${w.objDisplayName}` : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
+                        sub={<>{w.objDisplayName && w.objDisplayName !== w.obj && <>账号 <span data-mono>{w.obj}</span> · </>}{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
                       <Td grow><Cell main={change.main} sub={change.sub} title={`${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
