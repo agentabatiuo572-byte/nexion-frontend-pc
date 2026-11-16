@@ -250,7 +250,6 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       summary={summary}
       actions={canCreateSomething && data ? <Button icon={<FilePlus2 size={14} aria-hidden />} onClick={() => { setRefTab("tasks"); requestAnimationFrame(() => scrollTo(createRef.current)); }}>新建导出</Button> : undefined}
       meta={<span className="rd-toolbar">
-        <span>不自动刷新</span>
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={readOnly}
