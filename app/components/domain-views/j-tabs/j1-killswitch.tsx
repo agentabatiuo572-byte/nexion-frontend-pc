@@ -60,6 +60,8 @@ const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-rad
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const READING = "正在读取最新状态，读完再操作";
 const LOCKED = "这项有结果未知的操作，先到页面上方查询原结果";
+/** 查到的原恢复申请已经有结论时怎么说。 */
+const TICKET_DONE: Record<string, string> = { approved: "已批准", rejected: "已被驳回", withdrawn: "已撤回", expired: "已过期" };
 const BLOCKED_RESUME = "系统现在不允许恢复资金业务，暂不能申请。到「资金储备与应付款」核对覆盖率和估值，系统允许后再申请。";
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const STALE = "这个值刚被别人改过，本次没有保存。";
@@ -349,35 +351,35 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       let ticket = null;
       if (previous) {
         try { ticket = await fetchA2ProposalByKey(key); }
-        catch { throw new A2OutcomeUncertainError("暂时无法核对原恢复申请，请稍后重试。", key); }
+        catch { throw new A2OutcomeUncertainError("暂时查询不了原恢复申请，请稍后再查。", key); }
         if (!ticket && previous.expiresAt <= Date.now()) {
-          throw new A2OutcomeUncertainError("原申请命令已过期，请到操作记录核对。", key);
+          throw new A2OutcomeUncertainError("原申请已超过 24 小时，请到操作记录与审批核对。", key);
         }
         if (!ticket && (data?.activeGates.find((gate) => gate.key === g.key)?.coveragePrecheckRequired ?? g.key !== "trial") && !covPass) {
-          throw new A2OutcomeUncertainError("暂未查到原恢复申请，当前只能核对已有申请，暂不能继续提交资金业务恢复。", key);
+          throw new A2OutcomeUncertainError("暂未查到原恢复申请；系统现在不允许恢复资金业务，暂不能重新提交。", key);
         }
       }
       if (!ticket) {
         if (useAdminAuth.getState().session?.adminId !== session.adminId) {
-          throw new A2OutcomeUncertainError("会话已变更，请使用原账号核对恢复申请。", key);
+          throw new A2OutcomeUncertainError("登录账号变了，请用原账号查询恢复申请。", key);
         }
         ticket = await createA2OperationProposal(input, key, true);
       }
       if (ticket.operationCode !== "j1_gate_resume" || ticket.obj !== g.key) {
-        throw new A2OutcomeUncertainError("恢复申请回执不完整，请到操作记录核对。", key);
+        throw new A2OutcomeUncertainError("没能确认恢复申请的结果，请到操作记录与审批核对。", key);
       }
       setRestoreApprovals((rows) => [...rows.filter((row) => row.obj !== g.key), ...(ticket.status === "pending" ? [ticket] : [])]);
       restoreAttempts.forget(slot, key);
       toast(ticket.status === "pending"
         ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，业务仍已关停；另一位超级管理员批准后生效`
-        : `已核对原恢复申请 ${ticket.id}，请到操作记录与审批查看结果`, "success");
+        : `原恢复申请 ${ticket.id} ${TICKET_DONE[ticket.status] ?? "已有结论"}，请看业务卡的最新状态`, "success");
       if (ticket.status !== "pending") {
-        void actions.reloadJEmergency().catch(() => toast(`已核对原恢复申请 ${ticket.id}，请刷新确认最新开关状态`, "warn"));
+        void actions.reloadJEmergency().catch(() => toast(`原恢复申请 ${ticket.id} ${TICKET_DONE[ticket.status] ?? "已有结论"}，请刷新确认最新开关状态`, "warn"));
       }
     } catch (error) {
       if (error instanceof Error && "backendMessage" in error && ["IDEMPOTENCY_REQUEST_IN_PROGRESS",
         "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-        throw new A2OutcomeUncertainError("原申请结果待核实，请稍后查询。", key);
+        throw new A2OutcomeUncertainError("原申请结果未知，请稍后查询。", key);
       }
       // 重试被拒不能证明首次提交的结果，原申请继续保留以供核对。
       if (!previous && !isA2OutcomeUncertainError(error)) restoreAttempts.forget(slot, key);
@@ -747,7 +749,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ) : killed > 0 ? (
         <Conclusion state="warn" hint={<>{nextStepHelp}{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="恢复审批怎么走" explain={approvalHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
-        <Conclusion state="warn" hint="到上方查询原结果。" explainTitle="结果未知的操作怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未知</Conclusion>
+        // 结果未知的几项由上方的提醒逐条说，这里不再数一遍，也不报绿（同 J2）。
+        <Conclusion state="neutral" explainTitle="为什么不是绿色" explain="上方有结果未知的操作。业务卡读到的是现在的状态，不能当成那次操作的结果。">业务开关：可用业务全部开启</Conclusion>
       ) : restoreApprovals.length > 0 ? (
         <Conclusion state="warn" hint="到业务卡上核对原审批。">业务开关：可用业务全部开启，<b>{restoreApprovals.length}</b> 项恢复申请待审批</Conclusion>
       ) : (
