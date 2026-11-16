@@ -450,10 +450,10 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           await ctx.biActions?.createReport({
             exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
             timeRange: complete ? "当前同批用户时段" : "当前数据",
-            fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
+            fields: complete ? "四步人数和转化率、注册周留存率" : "注册、资料、订单、钱包四项累计人数",
             piiLevel: "NONE",
             maskPolicy: "NONE",
-            recipient: "BI 管理员",
+            recipient: "数据分析管理员",
             ticket: "L2-FUNNEL",
             cohort: complete ? ctx.l2Query?.cohort : undefined,
             phase: complete ? ctx.l2Query?.phase : undefined,
@@ -489,7 +489,6 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           <Button icon={<Download size={14} aria-hidden />} disabledReason={exportBlocked} onClick={exportFunnel}>{exportLabel}</Button>
         </span>
       ) : undefined}
-      meta={<span className="rd-toolbar-note">不自动刷新</span>}
       readOnly={ctx.canExport ? undefined : "你可以调整筛选、保存本机视图；导出需要报表管理权限。"}
     />
   );
