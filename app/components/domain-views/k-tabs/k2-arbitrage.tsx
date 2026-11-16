@@ -293,8 +293,8 @@ function columnValue(row: K2Row, column: Column): { main: string[]; sub?: string
   const raw = cell(row, column.main);
   const sub = column.sub !== undefined ? plainText(cell(row, column.sub)) : undefined;
   if (column.kind === "amounts") return {
-    main: row.structured?.amounts !== undefined
-      ? row.structured.amounts.length ? row.structured.amounts.map((amount) => `${amount.amountRaw ?? "—"} ${amount.currency}`) : ["—"]
+    main: row.structured !== undefined
+      ? row.structured.amounts?.length ? row.structured.amounts.map((amount) => `${amount.amountRaw ?? "—"} ${amount.currency}`) : ["—"]
       : raw.split(/\s+\+\s+/).map(groupDigits), sub,
   };
   if (column.kind === "settled") {
