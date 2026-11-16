@@ -992,6 +992,7 @@ export type CopyVersionRow = {
   trafficSplit: string;
   versionNote: string;
   estimatedAudience?: number;
+  translations?: Record<string, string | null> | null;
 };
 
 export type CopyExperimentRow = {
