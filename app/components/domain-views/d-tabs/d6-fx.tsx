@@ -17,7 +17,7 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -449,7 +449,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       status: pending.proposal ? undefined : { tone: expired ? "warn" as const : "neutral" as const, label: expired ? "已过期" : "不能查询", line: "直接修改查不了原结果，到下面的调整历史核对。" },
       canQuery: !!pending.proposal && canQueryOriginal, copy: { where: "操作记录与审批和调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
-        {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} busy={retrying}
+        {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
         {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
@@ -467,7 +467,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>到操作记录与审批核对</Link>} />;
   const releaseModal = <>
     {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
-    {pending && closing && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt}
+    {pending && closing && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(pending, evidence); setClosing(false); }} />}
   </>;
 

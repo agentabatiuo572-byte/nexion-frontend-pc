@@ -36,7 +36,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandRecord, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
 import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
@@ -784,7 +784,7 @@ export function D3Treasury() {
           const expired = item.expiresAt <= Date.now();
           return { key: item.commandKey, title: item.label, record: item.investigationRecord, outcome: investigationResults[item.commandKey], createdAt: item.investigationRecord.createdAt, expired, canRetry: !expired && item.allowed,
             actions: <>
-              <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
+              <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={expired} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
               <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
             </>,
             detail: <>
@@ -933,7 +933,7 @@ export function D3Treasury() {
         </Modal>
       )}
 
-      {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
+      {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} known={closureKnown(investigationResults[closing.commandKey])} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
 
       <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={() => void saveConfig()} />

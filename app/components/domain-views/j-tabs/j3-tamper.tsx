@@ -23,7 +23,7 @@ import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmerg
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine } from "../recovery-panel";
-import { CommandClosureModal } from "../e-tabs/e-command-check";
+import { CommandClosureModal, closureKnown } from "../e-tabs/e-command-check";
 import { PROCESSED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
@@ -335,10 +335,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
     <FundRecoveryPanel rows={recoveryRows} heading="修改告警设置 · 结果未知" />
-    {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt}
+    {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt} known={closureKnown(outcome)}
       facts={<>
         <Fact k="改动">{savedChange(saved!)}</Fact>
-        <Fact k="系统记录">结果未知，原修改还锁着</Fact>
+        <Fact k="系统记录">{receipt?.originalStatus === "SUCCEEDED" ? "已处理，看不出成没成，原修改还锁着" : receipt?.originalStatus === "FAILED" ? "记为失败，原修改还锁着" : "结果未知，原修改还锁着"}</Fact>
         {receipt?.investigation && <Fact k="上次核查">{formatBusinessTimeCompact(receipt.investigation.investigatedAt, "—")}，记为「{receipt.investigation.conclusion === "SUCCEEDED" ? "已执行" : receipt.investigation.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
       </>}
       onClose={() => setClosing(false)}

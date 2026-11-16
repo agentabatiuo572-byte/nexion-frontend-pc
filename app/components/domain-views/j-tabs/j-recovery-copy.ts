@@ -13,10 +13,10 @@ export const SETTLED_OTHER = "后台已处理原请求，记录已解除；页�
 
 /** 回执是「已处理」、记录还没解除时这一行怎么说。 */
 export function processedStatus({ expired, canRetry, canClose, legacy }: { expired: boolean; canRetry: boolean; canClose: boolean; legacy?: boolean }): { tone: StateTone; label: string; line: string } {
-  const line = !expired && canRetry ? "后台已处理，看不出成没成；重试原请求可确认，不会重复执行。"
-    : expired ? canClose ? "后台已处理，看不出成没成；已过 24 小时，请按证据核查结案。" : "后台已处理，看不出成没成；请有调查权限的超级管理员核查结案。"
+  const line = !expired && canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。"
+    : expired ? canClose ? "后台已处理，看不出成没成；已过 24 小时，请核查结案。" : "后台已处理，看不出成没成；请有调查权限的超级管理员核查结案。"
       : legacy ? "后台已处理，看不出成没成；旧记录过 24 小时后可核查结案。"
-        : "后台已处理，看不出成没成；请有修改权限的人重试原请求确认。";
+        : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。";
   return { tone: "warn", label: "已处理", line };
 }
 

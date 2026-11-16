@@ -36,8 +36,8 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
     : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", title: "已处理", text: expired
-    ? "后台已处理，看不出成没成；已过 24 小时，需要按证据核查结案。"
-    : "后台已处理，看不出成没成；重试原请求可确认，不会重复执行。" };
+    ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。"
+    : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
   return { tone: "warn", title: "结果仍未知", text: expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。"
     : "原操作处理到一半中断了，按原请求重试也是同样结果；需要按证据核查结案。" };
 }

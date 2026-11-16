@@ -90,7 +90,7 @@ function shown(row: FundRecoveryRow): Shown {
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (fundCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", label: "已处理", line: row.expired ? `后台已处理，看不出成没成；${closure}`
-    : row.canRetry ? "后台已处理，看不出成没成；重试原请求可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人重试原请求确认。" };
+    : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
 

@@ -30,7 +30,7 @@ import {
 } from "@/lib/admin/payout-vnd-contract";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
@@ -702,7 +702,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
       status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
       actions: <>
-        {canQueryOriginal && <FundCheckButtons record={approval} lookupWithoutOrigin outcome={investigationResults[approval.commandKey]} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
+        {canQueryOriginal && <FundCheckButtons record={approval} lookupWithoutOrigin outcome={investigationResults[approval.commandKey]} expired={expired} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
         {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} disabledReason={canManage ? undefined : NO_WRITE} onClick={() => void retryApproval()}>按原请求重试</Button>}
       </>,
@@ -717,7 +717,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const releaseModal = <>
     {releasing && <ReleaseModal label="参数修改" onCancel={() => setReleasing(null)} onConfirm={releasePending}
       explain="重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。" />}
-    {closing && approval && <FundClosureModal label="放宽提交" createdAt={approval.createdAt}
+    {closing && approval && <FundClosureModal label="放宽提交" createdAt={approval.createdAt} known={closureKnown(investigationResults[approval.commandKey])}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(approval, evidence); setClosing(false); }} />}
   </>;
 
