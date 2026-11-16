@@ -124,7 +124,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       effect: approvalTag(), confirmLabel: "提交审批",
       statedBrief: {
         impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。票数改成 0 后这个等级不再显示在这页，也不能在这页改回。",
-        check: "调高票数时先看兑付覆盖率；填 0 到 1,000,000，带小数的后端只取整数部分。",
+        check: "调高票数时先看兑付覆盖率；填 0 到 1,000,000，带小数时只取整数部分。",
       },
       completionCopy: approvalCopy("F4 写权限"),
       detail: `${vote.v} 当前 ${vote.votes} 票。票数越多，这个等级每人分到的团队激励池越多；池的总额不会因此变大。`,
@@ -144,7 +144,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整团队激励池每月上限", op: "param", paramKey: "F.pool.monthlyCap",
               edit: { kind: "text", current: data.monthlyCapLabel },
               title: "调整团队激励池每月上限", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: "后端不在保存时检查格式，格式不对会让池变成不能结算，请写数字，可带 K、M。" },
+              statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: "保存时不检查格式，写错会让池不能结算。请写数字，可带 K、M。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池每月最多发多少 · 当前 ${capEff}。` };
       break;
@@ -153,10 +153,10 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式",
                 hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
-                preview: (value) => `这样写是：${describeSettleCron(value, data.settlementZone) ?? "自定义时间，页面读不出，后端按原文解析"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? (value.trim() ? "每周自动结算一次，结算刚结束的那一周。" : "")}` },
+                preview: (value) => `这样写是：${describeSettleCron(value, data.settlementZone) ?? "自定义时间，页面读不出，系统按原文执行"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? (value.trim() ? "每周自动结算一次，结算刚结束的那一周。" : "")}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
               facts: <Facts><Fact k="现在是">{settleCronText}</Fact>{cadence && <Fact k="会结算哪些周" tone={cadence.tone === "warn" ? "warn" : undefined}>{cadence.text}</Fact>}<Fact k="按哪个时区">{data.settlementZone ? `${data.settlementZone.label}（${data.settlementZone.offset}）` : "—"}</Fact></Facts>,
-              statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "后端只接受 5 段或 6 段的定时表达式，其余拒绝。" },
+              statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "只能写 5 段或 6 段，其余提交会被拒绝。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池自动结算时间 · 当前 ${settleCronText}。` };
       break;
@@ -179,7 +179,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。新额度不能低于本月已用。",
-      check: "后端只接受 0–1,000,000 的整数；批准时额度已被别人改过，或新额度低于本月已用，会被拒绝并给出最新值。",
+      check: "只能填 0–1,000,000 的整数；批准时额度已被别人改过，或新额度低于本月已用，会被拒绝并给出最新值。",
     },
     completionCopy: approvalCopy("F4 写权限"),
     facts: <KeyValues rows={[
@@ -255,7 +255,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: `取消 ${member.userId} 的周榜资格`, effect: approvalTag(), confirmTone: "danger", confirmLabel: "提交取消资格",
     statedBrief: {
       impact: "批准后这个人移出周榜排名和周榜派奖；不冻结账号，不追回已发的奖励。不会在下周自动恢复：之后每一周的周榜都一直不算这个人。",
-      check: "后端在提交和执行时都要找到这个人本周的风险记录或生效中的关联账户簇，找不到会被拒绝。",
+      check: "提交和执行时都要找到这个人本周的风险记录或生效中的关联账户簇，找不到会被拒绝。",
     },
     completionCopy: approvalCopy("榜单处置权限"),
     facts: <KeyValues rows={[
@@ -303,7 +303,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整本周榜单奖池", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd",
               edit: { kind: "text", current: data.configValues["F.leaderboard.poolUsd"] ?? "" },
               title: "调整周榜奖池覆盖额", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: "后端保存时不检查金额格式，请填数字。" },
+              statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: "保存时不检查金额格式，请填数字。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `本周榜单奖池总额 · 当前 ${lbPool}。` };
       break;
@@ -312,7 +312,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整上榜最低奖励", op: "param", paramKey: "F.leaderboard.minUsd",
               edit: { kind: "number", current: lbMinUsd, unit: "USDT" },
               title: "调整上榜门槛", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，本期已解锁奖励低于新门槛的人不参与四个榜的排名和派奖；已发的不变。", check: "后端只接受 0 或正数。" },
+              statedBrief: { impact: "批准后，本期已解锁奖励低于新门槛的人不参与四个榜的排名和派奖；已发的不变。", check: "只能填 0 或正数。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `上榜最低奖励 · 当前 ${lbMinUsd} USDT · 低于这个金额不参与排名。` };
       break;
@@ -321,7 +321,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct",
               edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top1MaxPct", data.configValues["F.pool.top1MaxPct"], value) },
               title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
+              statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `第 1 名最多能分到排行榜奖池的百分比 · 当前 ${top1MaxPct}%。` };
       break;
@@ -330,7 +330,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct",
               edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top5MaxPct", data.configValues["F.pool.top5MaxPct"], value) },
               title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
+              statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "只能填 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `前 5 名合计最多能分到排行榜奖池的百分比 · 当前 ${top5MaxPct}%。` };
       break;

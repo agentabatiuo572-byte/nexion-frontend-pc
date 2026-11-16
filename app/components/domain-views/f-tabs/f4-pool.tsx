@@ -157,7 +157,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
         explain="这几项一起决定池能不能结算、每周放多少钱。任一项没设或格式不对，池就不能结算。头部占比两项只限制排行榜派奖，放在「排行榜」。">
         <ConfigList label="团队激励池设置">
           {paramRow({ name: "奖池比例", value: ratioEff, allowed: canFund,
-            what: "每周已付款成交额里放进团队激励池的百分比，后端接受 0–30%。",
+            what: "每周已付款成交额里放进团队激励池的百分比，可填 0–30%。",
             when: "批准后，还没结算的估算和之后的结算按新比例算；已发的不重算。",
             effect: "调高会多发钱，提交前看兑付覆盖率。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.ratio", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
@@ -165,12 +165,12 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             what: "团队激励池一个月最多发多少，按自然月累计。",
             when: "批准后影响这个月还没结算的部分，已发的不追回。",
             effect: "本周估算不会超过「上限 − 本月已发」。",
-            note: "后端会把格式不对的值也存下来，存下后池就不能结算，请按「1000」「50K」这类写法填。",
+            note: "格式不对的值也会存下来，存下后池就不能结算，请按「1000」「50K」这类写法填。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.monthlyCap", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
           {paramRow({ name: "自动结算时间", value: settleCronText, sub: cadence ? <span className="f4-cadence" data-tone={cadence.tone}>{cadence.text}</span> : undefined, allowed: canWrite,
             what: "到这个时间自动结算最近一个已结束的周。",
             when: `批准后的下一次命中就按新时间。按${data.settlementZone?.label ?? "—"}解析；「下次自动结算」换算成了${zoneNote()}。`,
-            note: settleCron ? `后端保存的写法：${settleCron}` : undefined,
+            note: settleCron ? `保存的原文：${settleCron}` : undefined,
             effect: "不影响已经结算的周。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.settleCron", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
           {paramRow({ name: "参与等级", value: unlockLabel, allowed: canWrite,

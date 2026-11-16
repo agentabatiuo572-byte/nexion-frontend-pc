@@ -95,7 +95,6 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
 
   const header = (
     <PageHeader pageId="F4" title="奖励池、名额与排行榜" summary="看团队激励池怎么分、购机名额和大使申请、排行榜。"
-      meta="打开时读取 · 不自动刷新"
       readOnly={readOnly ? "当前账号只能查看这页" : undefined}
       actions={<>
         <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>

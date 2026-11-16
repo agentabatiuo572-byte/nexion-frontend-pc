@@ -130,7 +130,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             what: "只给周榜用的奖池金额，大于 0 时代替四榜奖池里的周榜金额。",
             when: "批准后从还没结算的周起用；已发的不改。暂停期间读暂停时的奖池。",
             effect: "填 0 不是关掉周榜奖池，而是改回用四榜奖池里的周榜金额。",
-            note: "后端保存时不检查金额格式，格式不对时按四榜奖池的周榜金额发。",
+            note: "保存时不检查金额格式，写错时按四榜奖池的周榜金额发。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.poolUsd", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
           {paramRow({ name: "上榜门槛", value: data.configValues["F.leaderboard.minUsd"] !== undefined ? `${decimalText(lbMinUsd)} USDT` : "未设置（按 0 USDT）", allowed: canWrite,
             what: "本期已解锁奖励低于这个金额的人不参与排名，四个榜共用。",
@@ -145,7 +145,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
           {paramRow({ name: "前 5 名最高占比", value: data.configValues["F.pool.top5MaxPct"]?.trim() ? `${top5MaxPct}%` : "未设置（按 60%）", allowed: canFund,
             what: "排行榜派奖时前 5 名合计最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
-            effect: "超出上限的部分不再分给别人。和第 1 名上限各自独立，后端不检查两者的大小关系。",
+            effect: "超出上限的部分不再分给别人。和第 1 名上限各自独立，系统不检查两者的大小关系。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.top5MaxPct", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
         </ConfigList>
       </Panel>
