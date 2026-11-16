@@ -167,7 +167,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
           <Fact k="理由">{retrying.original.request?.reason ?? "—"}</Fact>
           <Fact k="提交时间">{businessStamp(retrying.original.createdAt)}（{businessZone().label}）</Fact>
         </Facts>
-        <p>用原内容和原理由再提交一次，不能改；后端认得出是同一次提交，不会建第二张审批单。</p>
+        <p>用原内容和原理由再提交一次，不能改，不会建第二张审批单。</p>
         {retryError && <Notice tone="danger" title="重试没有成功">{retryError}</Notice>}
       </div>
     </Modal>}

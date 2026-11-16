@@ -331,7 +331,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   };
   const recovery = recoveryCount > 0 && (
     <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原申请还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原申请怎么处理" content={<>
-      <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二张审批单。</p>
+      <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。成员分组是直接保存，查询只读回现在的分组。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原申请">
