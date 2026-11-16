@@ -18,6 +18,8 @@ import {
   assertF4Overview,
   assertF4MaterialPacket,
   assertF5Overview,
+  F5_KINDS,
+  F5_STATUSES,
 } from "@/lib/admin/f-overview-contract";
 
 interface ApiResult<T> {
@@ -2028,7 +2030,7 @@ export type F5CommissionRead = { status: "found"; record: F5CommissionRecord } |
 
 export async function fetchF5CommissionByBusinessId(commissionId: string): Promise<F5CommissionRead> {
   const id = commissionId.trim().toUpperCase();
-  if (!/^CM-\d+$/.test(id)) throw new Error(formatAdminApiError("COMMISSION_ID_INVALID"));
+  if (!/^CM-\d+$/.test(id)) throw new Error(formatAdminApiError("COMMISSION_ID_INVALID", "COMMISSION_ID_INVALID"));
   let data: unknown;
   try { data = await f1Request<unknown>(`/commissions/${encodeURIComponent(id)}`); }
   catch (error) {
@@ -2044,9 +2046,9 @@ export async function fetchF5CommissionByBusinessId(commissionId: string): Promi
     || row.commissionId !== `CM-${row.eventId}` || BigInt(row.commissionId.slice(3)) !== BigInt(id.slice(3))
     || typeof row.userId !== "number" || !Number.isSafeInteger(row.userId) || row.userId <= 0
     || row.user !== `U${String(row.userId).padStart(8, "0")}`
-    || typeof row.kind !== "string" || !["network", "binary", "peer", "cultivation", "leadership", "genesis", "direct_purchase", "direct_device_earning"].includes(row.kind)
+    || typeof row.kind !== "string" || !F5_KINDS.includes(row.kind)
     || typeof row.currency !== "string" || !["USDT", "UVT"].includes(row.currency)
-    || typeof row.status !== "string" || !["cooling", "unlocked", "withdrawn", "reversed", "frozen", "rejected", "recovery_pending", "unknown"].includes(row.status)
+    || typeof row.status !== "string" || ![...F5_STATUSES, "unknown"].includes(row.status)
     || typeof row.version !== "number" || !Number.isSafeInteger(row.version) || row.version < 0) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:commission");
   const amounts: { amount: string; amountUSDT?: string; amountNEX?: string } = { amount: "" };
   for (const key of ["amount", "amountUSDT", "amountNEX"] as const) {
