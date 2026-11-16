@@ -99,6 +99,7 @@ export function h5StreakReward(value: string): { type: string; amount?: bigint; 
   if (!pattern.test(text)) return { type, issue: "STREAK_REWARD_AMOUNT_INVALID" };
   const amount = h5Amount(text.match(/[0-9]+(?:\.[0-9]+)?/)![0]);
   if (amount === undefined || amount >= BigInt("1000000000000000000")) return { type, issue: "STREAK_REWARD_AMOUNT_PRECISION_INVALID" };
+  if (amount <= BigInt(0)) return { type, issue: "STREAK_REWARD_AMOUNT_INVALID" };
   if (type === "SPIN" && (amount % BigInt(1000000) !== BigInt(0) || amount > BigInt("2147483647000000"))) return { type, issue: "STREAK_SPIN_INTEGER_REQUIRED" };
   return { type, amount };
 }
