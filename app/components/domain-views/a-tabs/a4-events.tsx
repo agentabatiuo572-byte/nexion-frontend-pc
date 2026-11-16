@@ -761,11 +761,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认清理",
       statedBrief: {
         impact: "直接执行，删了不能恢复。",
-        check: "按执行那一刻的留存期算；已有清理在进行时，这次不删任何数据。",
+        check: "已有清理在进行时，这次不删任何数据。",
       },
       facts: <Facts>
         <Fact k="会删掉" tone="danger">{reviewedCutoff ? `约 ${reviewedCutoff} 之前的记录` : "留存期以前的记录"}</Fact>
-        <Fact k="怎么算">执行那一刻按当时的留存期往前推，现在是 {reviewedMonths || "—"}</Fact>
+        <Fact k="怎么算">按留存期 {reviewedMonths || "—"}，从执行那一刻往前推</Fact>
+        <Fact k="执行前核对">留存期被改过就不清理，要按新的月数重新确认</Fact>
         <Fact k="删哪些">用户行为事件里已发出、已结束和已终止（死信）的发送记录；用户行为记录只按时间删</Fact>
         <Fact k="不会删">等发送和等重试的事件，以及任务事件、资金账目</Fact>
         <Fact k="一次最多">每张表 2000 条，剩下的下次再清</Fact>
