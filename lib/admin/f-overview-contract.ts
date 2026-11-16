@@ -170,6 +170,26 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
 export function assertF2Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F2");
   domain(row, "F2");
+  if (row.payoutStatistics !== undefined) {
+    const currencies = new Set<string>();
+    array(row, "payoutStatistics", "F2").forEach((value, index) => {
+      const path = `payoutStatistics[${index}]`;
+      const statistic = record(value, "F2", path);
+      const currency = text(statistic.currency, "F2", `${path}.currency`);
+      if (!["USDT", "UVT"].includes(currency) || currencies.has(currency)) invalid("F2", `${path}.currency`);
+      currencies.add(currency);
+      for (const key of ["available", "statusMarkerOnly", "cashSettlementTimeAvailable"]) if (typeof statistic[key] !== "boolean") invalid("F2", `${path}.${key}`);
+      for (const key of ["window", "statusScope", "basis"]) text(statistic[key], "F2", `${path}.${key}`);
+      const statuses = array(statistic, "paidOrSettledStatuses", "F2");
+      if (statuses.length !== 2 || statuses[0] !== "PAID" || statuses[1] !== "SETTLED") invalid("F2", `${path}.paidOrSettledStatuses`);
+      for (const key of ["allStatusAmountRaw", "paidOrSettledAmountRaw"]) {
+        if (statistic[key] !== null && (typeof statistic[key] !== "string" || f4Decimal(statistic[key]) === null || statistic[key].startsWith("-"))) invalid("F2", `${path}.${key}`);
+      }
+      for (const key of ["allStatusEventCount", "paidOrSettledEventCount"]) if (statistic[key] !== null) nonNegativeInteger(statistic[key], "F2", `${path}.${key}`);
+      if (statistic.available === false && ["allStatusAmountRaw", "allStatusEventCount", "paidOrSettledAmountRaw", "paidOrSettledEventCount"].some(key => statistic[key] !== null)) invalid("F2", `${path}.unavailable`);
+    });
+    if (currencies.size !== 2) invalid("F2", "payoutStatistics.currencies");
+  }
   if (row.sevenLayerRevision !== undefined) {
     const revision = nonNegativeInteger(row.sevenLayerRevision, "F2", "sevenLayerRevision");
     if (!Number.isSafeInteger(revision)) invalid("F2", "sevenLayerRevision");

@@ -987,6 +987,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       });
     },
     f2Metrics: f2Overview?.metrics ?? [],
+    f2PayoutStatistics: f2Overview?.payoutStatistics,
     f2DirectPolicy,
     f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,

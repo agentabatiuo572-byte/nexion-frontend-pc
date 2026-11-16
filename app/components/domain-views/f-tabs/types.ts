@@ -21,6 +21,7 @@ import type {
   F1VRankRow,
   F1VRankOverview,
   F2Metric,
+  F2PayoutStatistic,
   F2PolicyParam,
   F2RateTier,
   F2UnilevelRate,
@@ -130,6 +131,7 @@ export interface FViewCtx {
   proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
+  f2PayoutStatistics?: F2PayoutStatistic[];
   f2DirectPolicy: DirectReferralPolicy | null;
   f2SevenLayerRevision: number | null;
   f2DirectPolicyLoading: boolean;

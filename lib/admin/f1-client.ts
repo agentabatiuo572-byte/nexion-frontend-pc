@@ -140,6 +140,7 @@ interface BackendF2PolicyParam {
 }
 
 interface BackendF2Overview {
+  payoutStatistics?: F2PayoutStatistic[];
   sevenLayerRevision?: number | string;
   metrics?: BackendF2Metric[] | null;
   unilevelRates?: BackendF2UnilevelRate[] | null;
@@ -620,7 +621,23 @@ export interface F2PolicyParam {
   unit?: string;
 }
 
+export interface F2PayoutStatistic {
+  currency: "USDT" | "UVT";
+  available: boolean;
+  window: string;
+  statusScope: string;
+  allStatusAmountRaw: string | null;
+  allStatusEventCount: number | null;
+  paidOrSettledStatuses: string[];
+  paidOrSettledAmountRaw: string | null;
+  paidOrSettledEventCount: number | null;
+  statusMarkerOnly: boolean;
+  cashSettlementTimeAvailable: boolean;
+  basis: string;
+}
+
 export interface F2RatesOverview {
+  payoutStatistics?: F2PayoutStatistic[];
   sevenLayerRevision: number | null;
   metrics: F2Metric[];
   unilevel: F2UnilevelRate[];
@@ -1323,14 +1340,17 @@ function queryString(params: object) {
 }
 
 function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2RatesOverview {
-  const metrics = (data?.metrics ?? []).map((item) => ({
-    id: asText(item.id, "metric"),
-    name: asText(item.label, "指标"),
-    value: asText(item.value, "-"),
-    sub: asText(item.sub, ""),
-    tone: asText(item.tone, ""),
-    configKey: asText(item.configKey, ""),
-  }));
+  const metrics = (data?.metrics ?? []).map((item) => {
+    const statistic = data?.payoutStatistics?.find(row => row.currency === (item.id === "weeklyUsdtRoyalty" ? "USDT" : item.id === "weeklyNexPayout" ? "UVT" : ""));
+    return {
+      id: asText(item.id, "metric"),
+      name: asText(item.label, "指标"),
+      value: statistic ? statistic.allStatusAmountRaw ?? "—" : asText(item.value, "-"),
+      sub: asText(item.sub, ""),
+      tone: asText(item.tone, ""),
+      configKey: asText(item.configKey, ""),
+    };
+  });
   const unilevel = (data?.unilevelRates ?? []).map((item) => ({
     l: asText(item.level, "L?"),
     usdt: item.usdtPctMissing === true || item.usdtPct === null ? null : toNumber(item.usdtPct),
@@ -1368,6 +1388,7 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
     };
   });
   return {
+    payoutStatistics: data?.payoutStatistics,
     sevenLayerRevision: data?.sevenLayerRevision === undefined ? null : toNumber(data.sevenLayerRevision),
     metrics,
     unilevel,
@@ -1849,7 +1870,7 @@ async function f1Request<T>(
     } else if (/^\/rates(?:\?|$)/.test(path) && !isWrite) {
       const raw = await response.text();
       // Keep each rate/coefficient lexeme; missing flags remain independent booleans.
-      result = JSON.parse(raw.replace(/("(?:usdtPct|nexReward)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:usdtPct|nexReward|allStatusAmountRaw|paidOrSettledAmountRaw)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
