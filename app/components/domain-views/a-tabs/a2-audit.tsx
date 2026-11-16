@@ -1,7 +1,7 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES } from "@/lib/admin/audit-action-names";
-import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
@@ -591,7 +591,8 @@ const G_PARAM_NAMES: Record<string, string> = {
 };
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
-function objectText(w: { action: string; obj: string }) {
+function objectText(w: { action: string; obj: string; objDisplayName?: string }) {
+  if (w.objDisplayName) return a2ObjectText(w);
   if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
   return w.obj;
@@ -1859,7 +1860,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={shortCodes(name)} title={`${name}\n对象：${w.obj}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
+                      <Td sticky="start"><Cell main={shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
                       <Td grow><Cell main={change.main} sub={change.sub} title={`${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>

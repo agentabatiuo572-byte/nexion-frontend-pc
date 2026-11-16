@@ -481,6 +481,8 @@
 
 #### [G7] 锁定计划
 
+**2026-11-16 待审批读取（hd-sync15 / 8a4513d5）**：参数可选 pendingApproval/pendingOperationId 在既有读取边界校验；真锁接现有标签、单号和新写禁用，原请求恢复保持可用。false 仅有该参数精确写权时收敛已知锁，无权 false/null、缺字段或读取失败不解除。批准、驳回、撤回后成功读取解除；保存响应复用概览也含字段，旧缓存回执不补字段、原号重放后仍重读。
+
 **2026-11-14 后端 111e00cd 同步**：df086fa8将锁检查移入once回调，成功原键先回放，不被后发锁遮住；需新执行时的锁拒绝按共用isExplicitRejection解除。删除recoveryLocked/G7DirectRecoveryLockedError特例，保留完整原请求、认证失败记录、24小时后只查及回执强校验。4e088aac已修快捷金额列表保存，原PUT入口和列表回执校验保持，不改成审批。正常票operationCode为g7_repurchase_param，旧无命令票仍可null。出处 OpsRepurchaseAdminService.update/updateInternal、OpsAuditCenterService.ticketMetadata。
 
 **2026-11-13 恢复逻辑复修**：概览加载中或读取失败时，未过期且仍有对应写权的直接写原记录可打开同一个恢复确认框。动作、原值、目标值、理由和核对编号来自保存记录；过期或失去写权只查询。成功或明确拒绝后关闭原框并重读，重读成功前不允许新修改；恢复遇审批锁仍保留原记录。
