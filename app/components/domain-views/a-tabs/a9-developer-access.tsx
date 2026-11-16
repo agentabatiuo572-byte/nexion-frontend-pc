@@ -33,7 +33,7 @@ import {
   type DeveloperAccessRequest,
 } from "@/lib/admin/developer-access-client";
 import { canReviewDeveloperAccess, developerAccessResourceGuard } from "@/lib/admin/developer-access-policy";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
@@ -171,6 +171,7 @@ export function A9DeveloperAccess() {
     const identity = `${action}:${row.requestNo}`;
     const saved = previous && developerAccessAttempts.list().find(record => record.commandKey === previous.commandKey && record.fingerprint === identity);
     if (previous && (!saved || !isOwnAttempt(saved))) return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_ORIGINAL_REQUEST_REQUIRED") };
+    if (saved && isRetryExpired(saved)) return { kind: "failed", message: RETRY_EXPIRED_TEXT };
     const rechecked = dialog?.rechecked && !dialog.needsRead && dialog.row === row;
     if (!previous && ((!rechecked && (!ready || !data?.records.some(item => item.requestNo === row.requestNo && item.status === row.status)))
       || developerAccessAttempts.list().some(record => isOwnAttempt(record) && record.fingerprint.endsWith(`:${row.requestNo}`)))) return { kind: "skipped" };
@@ -223,6 +224,7 @@ export function A9DeveloperAccess() {
   const restoreReview = (previous: DeveloperAccessAttempt, current?: DeveloperAccessRequest) => {
     const action = previous.fingerprint.split(":")[0] as ReviewAction;
     if (!isOwnAttempt(previous) || !reviewPermissions[action]) return;
+    if (isRetryExpired(previous)) { toast(RETRY_EXPIRED_TEXT, "warn"); return; }
     const row = previous.row ?? (current && { ...current, status: previous.inputFingerprint.split(":")[2] as DeveloperAccessRequest["status"] });
     if (!row) return;
     setDialogFailure(null);
@@ -241,8 +243,7 @@ export function A9DeveloperAccess() {
     setDialog({ row, action, mode: "new" });
   };
 
-  // All three transitions retain their command receipts without a time limit.
-  // A current state beyond the original source settles the request; an unchanged source does not.
+  // States only move forward. An unchanged source settles non-execution only after the retry window.
   const findOriginal = async (record: DeveloperAccessAttempt) => {
     if (!isOwnAttempt(record)) return;
     const requestNo = record.fingerprint.split(":")[1];
@@ -257,11 +258,11 @@ export function A9DeveloperAccess() {
       if (!current) throw new Error("DEVELOPER_ACCESS_REQUEST_NOT_FOUND");
       const sourceStatus = record.fingerprint.startsWith("revoke:") ? "APPROVED" : "PENDING";
       if (sourceStatus === "APPROVED" && !["APPROVED", "REVOKED", "EXPIRED"].includes(current.status)) throw new Error("DEVELOPER_ACCESS_REQUEST_STATE_CONFLICT");
-      if (current.status !== sourceStatus) {
+      if (current.status !== sourceStatus || isRetryExpired(record)) {
         developerAccessAttempts.forget(record.fingerprint, record.commandKey);
         setAttemptsTick(value => value + 1);
         setDialog(state => state?.previous?.commandKey === record.commandKey ? null : state);
-        toast(`${developerStatusText(current.status)} ${requestNo}`, "success");
+        toast(current.status === sourceStatus ? "没有执行" : `${developerStatusText(current.status)} ${requestNo}`, "success");
       } else toast(pendingReason(record)!, "warn");
       setReloadKey(value => value + 1);
     } catch (cause) { toast(displayAdminReadError(cause), "error"); }
@@ -282,7 +283,8 @@ export function A9DeveloperAccess() {
   const attempts = developerAccessAttempts.list().filter(isOwnAttempt);
   const attemptFor = (row: DeveloperAccessRequest) => attempts.find((record) => record.fingerprint.endsWith(`:${row.requestNo}`));
   const pendingReason = (record: DeveloperAccessAttempt | undefined) => record
-    ? `这条申请有一个结果未知的${reviewActionLabel[record.fingerprint.split(":")[0] as ReviewAction]}，先按原请求重试，不要另外提交。` : undefined;
+    ? isRetryExpired(record) ? RETRY_EXPIRED_TEXT
+      : `这条申请有一个结果未知的${reviewActionLabel[record.fingerprint.split(":")[0] as ReviewAction]}，先按原请求重试，不要另外提交。` : undefined;
 
   const rowActions = (row: DeveloperAccessRequest) => {
     const guard = developerAccessResourceGuard(row.status);
@@ -378,7 +380,8 @@ export function A9DeveloperAccess() {
     const [action, requestNo] = record.fingerprint.split(":") as [ReviewAction, string];
     const current = records.find((item) => item.requestNo === requestNo);
     const row = record.row ?? current;
-    const reason = !reviewPermissions[action] ? `这个账号现在没有${reviewActionLabel[action]}的权限`
+    const reason = isRetryExpired(record) ? RETRY_EXPIRED_TEXT
+      : !reviewPermissions[action] ? `这个账号现在没有${reviewActionLabel[action]}的权限`
       : !row ? "先点「查看申请现状」，读到这条申请后才能重试"
         : undefined;
     return (
@@ -569,7 +572,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
       onClose={onClose}
       footer={<Decision others={<Button variant="secondary" disabled={busy} onClick={onClose}>取消</Button>}
         primary={<Button variant={look.danger && !retrying ? "danger" : "primary"} loading={busy} loadingText="正在提交…"
-          disabledReason={state.needsRead ? "先重新读取申请状态" : !previous && !canReviewDeveloperAccess(row.status, action) ? displayAdminError("DEVELOPER_ACCESS_REQUEST_STATE_CONFLICT") : length > 500 ? reasonError : short ? (length === 0 ? "先填写备注" : `备注还差 ${8 - length} 字`) : undefined} onBlockedClick={onTouch} onClick={onConfirm}>
+          disabledReason={previous && isRetryExpired(previous) ? RETRY_EXPIRED_TEXT : state.needsRead ? "先重新读取申请状态" : !previous && !canReviewDeveloperAccess(row.status, action) ? displayAdminError("DEVELOPER_ACCESS_REQUEST_STATE_CONFLICT") : length > 500 ? reasonError : short ? (length === 0 ? "先填写备注" : `备注还差 ${8 - length} 字`) : undefined} onBlockedClick={onTouch} onClick={onConfirm}>
           {retrying ? "按原请求重试" : look.confirm}
         </Button>} />}>
       {retrying && <Notice tone="warn">{mode === "recovery"
