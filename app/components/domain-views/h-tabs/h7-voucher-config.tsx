@@ -490,7 +490,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <H7RecoveryNotice title={[unknownCount && `${unknownCount} 个操作结果未知`, pendingCount && `${pendingCount} 个申请在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原操作（哪张券、做了什么、理由）保存在这个浏览器标签页里。</p>
-        <p>结果未知：提交时没收到确定结果。没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行或建第二张审批单；过了 24 小时只能查询。</p>
+        <p>结果未知：提交时没收到确定结果。没过 24 小时可以「按原请求重试」，不会重复执行或建第二张审批单；过了 24 小时只能查询。</p>
         <p>新增、编辑、暂停、投放的「查询原结果」只是重读现在的券，证明不了原操作成没成。删除和作废查的是原审批单。</p>
         <p>结果确认之前，这张券不能再改。</p>
       </>}
