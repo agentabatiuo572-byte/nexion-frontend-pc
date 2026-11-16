@@ -727,6 +727,8 @@ P1–P6逐档维护，有值按原文本CAS，缺值用__MISSING__而非0。提�
 
 #### [H4] 活动中心 CMS
 
+2026-11-17（79815419）：wheelAwardsToday.byAsset保留count（发奖行），新增realOutflowCount，amount只SUM(real_outflow=1的reward_amount)，amountBasis明示过滤；coupon创建AVAILABLE券并非钱包出账，其面额不再计实付款。新旧版本字段可选兼容，未自行相加资产或用概率估算实付。
+
 2026-11-17（db343ba3）：wheelAwardsToday按转盘UTC日提供available/reason、basis/spinDate、byAsset.count/amount。spin写入及wallet/voucher同事务，提交行才算发奖；本版本amount包含coupon面额，不能解释为实付款。读层保留原精度与空值，未新建显示区域；原真钱统计仍取独立日用量接口。79815419真实出账修正另记。
 
 2026-11-17（e147302f）：统计新增h4Stats.wheelSpinsToday（UTC spin_date行数，源不可用null）、regionRestrictionCount（无来源null）及regionRestrictionsAvailable=false/原因。wheelEvByAsset分资产提供金额×概率÷100逐档6位期望值，不是实发；USDT卡只消费USDT组，不混币、不舍入，缺字段旧后端沿用旧scalar。原“保留2位”解释待视觉同步；地区限制数尚无真实数据源，H4-BE-08仅次数/真钱/库存已交付。
@@ -953,6 +955,8 @@ H4 已确认保存后重读失败，现有表单与保存按钮禁用；保存�
 **2026-11-16 文字核对（hd-issues-vb）**：转盘奖池问号先说共用奖池和多付钱，再列 App 检查的四项（2–12 档；奖型只有 UVT、USDT、代金券；概率合计正好 100%；至少一档不发真钱的 UVT 安慰奖）。促销首屏有结果未知时，数量只在上方提醒里写一次，结论不再重复。促销保存冲突框「不保存，返回活动」一步放弃（见 growth-promotions/ADMIN-PRD）。抽奖冲突对比的奖项名，最新一份中文名为空时用你填的或打开时的名字。
 
 #### [H5] 签到与UVT奖励
+
+2026-11-17（79815419）：两个配置统计来源纠正为nx_growth_checkin_rule.current_value，rule_key=p15/p2；fallback=ZERO_FALLBACK披露缺表/缺值/空白/异常/解析失败会返回0。PC只在同读规则行可解析且确为零时保留配置0%，其余被披露的回退0%保留空值，不把读失败当真实零；原非零值和旧后端无metadata读取不变。后端仍未逐项给出本次读取是否失败，不能宣称可用性已完整交付。
 
 2026-11-17（48c621f0）：stats.statBasis新增九项机器口径，非纯注释，但不改变查询或数值。todaySign去重签到人，signRate除去重nx_user_streak用户（非注册总数）；两实际幸运比例是当天签到行中reward_multiplier≥1.5/≥2，非互斥命中人群。以上按GROWTH_TEAM业务日；weekRevive数近7天补救相关权益行，weekMsTrigger/weekMsNex数近7天收益里程碑行/奖励UVT，均非自然周/连签奖。前端接元数据、兼容旧后端；H5-BE-05按准确口径披露交付，统计降级可用性尚未解决，2倍精确命中之类措辞交视觉。
 

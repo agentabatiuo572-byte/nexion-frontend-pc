@@ -1,3 +1,5 @@
+import { f4Decimal } from "./f4-money";
+
 /** H5's wire boundary; nullable statistics and retired-business availability stay nullable. */
 export type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean | number };
 export type StreakMilestone = { id: number; day: string; reward: string; kind?: string };
@@ -5,7 +7,7 @@ export type PowerUp = { id: number; day: number; label: string; sub?: string; do
 export type EarnMilestone = { id: number; key: string; threshold: string; nex: string; weekTrigger?: number | null };
 export type H5StatisticBasis = {
   source: string; windowType: string; window: string | null; aggregate: string; condition: string;
-  denominator: string | null; unit: string | null; availability: string;
+  denominator: string | null; unit: string | null; availability: string; fallback?: string | null;
 };
 export type H5Model = {
   stats: { statBasis?: Record<string, H5StatisticBasis> | null; todaySign?: number | null; signRate?: string | null; lucky15Actual?: string | null; lucky2Actual?: string | null; lucky15Config?: string | null; lucky2Config?: string | null; weekRevive?: number | null; weekMsTrigger?: number | null; weekMsNex?: string | null };
@@ -59,17 +61,28 @@ export function parseH5Model(value: unknown): H5Model {
         window: row.window == null ? null : string(row.window),
         denominator: row.denominator == null ? null : string(row.denominator),
         unit: row.unit == null ? null : string(row.unit),
+        fallback: row.fallback == null ? row.fallback as null | undefined : string(row.fallback),
       }];
     }));
+  const ruleRows = rows("rules");
+  const optionalConfig = (key: "lucky15Config" | "lucky2Config", ruleKey: "p15" | "p2") => {
+    const value = optionalText(key);
+    if (value !== "0%" || !statBasis?.[key]?.fallback?.startsWith("ZERO_FALLBACK")) return value;
+    // The new metadata explicitly admits zero on read failure. Only a readable
+    // zero rule can establish that this zero is a configuration value.
+    const rule = ruleRows.find(row => row.key === ruleKey);
+    const raw = typeof rule?.cur === "string" ? f4Decimal(rule.cur.trim().replace(/[%,]/g, "")) : null;
+    return raw !== null && /^0(?:\.0*)?$/.test(raw) ? value : null;
+  };
   return {
     stats: {
       statBasis,
       todaySign: optionalCount("todaySign"), signRate: optionalText("signRate"),
       lucky15Actual: optionalText("lucky15Actual"), lucky2Actual: optionalText("lucky2Actual"),
-      lucky15Config: optionalText("lucky15Config"), lucky2Config: optionalText("lucky2Config"),
+      lucky15Config: optionalConfig("lucky15Config", "p15"), lucky2Config: optionalConfig("lucky2Config", "p2"),
       weekRevive: optionalCount("weekRevive"), weekMsTrigger: optionalCount("weekMsTrigger"), weekMsNex: optionalText("weekMsNex"),
     },
-    rules: rows("rules").map(r => ({ key: string(r.key), name: string(r.name), sub: string(r.sub), cur: string(r.cur),
+    rules: ruleRows.map(r => ({ key: string(r.key), name: string(r.name), sub: string(r.sub), cur: string(r.cur),
       hot: typeof r.hot === "boolean" ? r.hot : integer(r.hot) })),
     streakMilestones: rows("streakMilestones").map(r => ({ id: integer(r.id), day: string(r.day), reward: string(r.reward), kind: string(r.kind) })),
     streakDistribution: rows("streakDistribution").map(r => ({ day: string(r.day), count: integer(r.count), height: integer(r.height) })),
