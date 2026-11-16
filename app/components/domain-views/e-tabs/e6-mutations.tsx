@@ -17,7 +17,7 @@ import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5De
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
@@ -286,12 +286,13 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
       const riskShown = r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] ? RISK_STATUS[riskReceipts[r.commandKey].status] : undefined;
       const note = <>
         {noteOf(r) && <span>{noteOf(r)}</span>}
-        {(r.payload.kind === "device" || r.payload.kind === "risk" && outcomes[r.commandKey]) && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={expired} />}
+        {(r.payload.kind === "device" || r.payload.kind === "risk" && outcomes[r.commandKey]) && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={expired} summarized={!refused} />}
         {riskShown && <div className="e-check-outcome"><StatusTag tone={riskShown.tone}>{riskShown.title}</StatusTag><p>{riskShown.text}</p></div>}
         {r.payload.kind === "device" && !m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <ClosureContact />}
         {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <ClosureContact />}
       </>;
       return { key: waiting ? `waiting:${r.commandKey}` : r.commandKey, object: r.label, createdAt: r.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
+        result: (r.payload.kind === "device" || r.payload.kind === "risk") && !refused ? commandOutcomeSummary(outcomes[r.commandKey], expired) : undefined,
         note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
         noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
         actions: <>

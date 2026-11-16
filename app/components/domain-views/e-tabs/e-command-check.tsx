@@ -5,14 +5,16 @@ import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Mod
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { SETTLED_REJECTED, receiptCodeTech, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
 export type SettledCommand = { key: string; label: string; status: ECommandInvestigation["originalStatus"] };
-type Conclusion = Exclude<ECommandEvidence["conclusion"], "REJECTED">;
+type Conclusion = ECommandEvidence["conclusion"];
 
-const CONCLUSION_TEXT: Partial<Record<ECommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
+const CONCLUSION_TEXT: Partial<Record<ECommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知", REJECTED: "后台拒绝" };
 const CONCLUSION_HELP: Record<Conclusion, string> = {
+  REJECTED: "按后台当时的拒绝结案，记录解除。这不等于没有执行；要重做，请按现在的状态重新发起。",
   SUCCEEDED: "原操作有完成记录，或填的成功记录编号指向这次操作时才能确认；确认后解除锁定，不再重试。",
   NOT_EXECUTED: "原操作确认已整体撤销、没有生效时才能选；确认后解除锁定，可以重新发起。",
   STILL_UNKNOWN: "只留下这次核查记录，原操作继续锁定，之后可以再次核查。",
@@ -31,6 +33,10 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
     ? "原请求可能没送到，查不到不等于没执行。记录保留，请到操作记录与审批核对。"
     : "原请求可能没送到，查不到不等于没执行。记录保留，可以按原请求重试，不会重复执行。" };
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在处理", text: "原操作还在执行，稍后再查；不要重复提交。" };
+  if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", title: "已结案", text: "核查确认是后台拒绝，记录已解除。" };
+  if (receiptRejected(receipt)) return { tone: "warn", title: "后台拒绝", text: expired
+    ? "后台拒绝了，不保证没有改动；已过 24 小时，需要核查结案。"
+    : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "原操作以失败结束", text: expired
     ? "这次操作记为失败。记录继续保留，请到操作记录与审批核对。"
     : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
@@ -42,14 +48,30 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
     : "原操作处理到一半中断了，按原请求重试也是同样结果；需要按证据核查结案。" };
 }
 
-/** One line under a pending notice: what the backend says about the original command. */
-export function CommandOutcomeLine({ outcome, expired }: { outcome?: CommandOutcome; expired: boolean }) {
+/** The row's collapsed tag and sentence once the original has been looked up (RecoveryItem.result). */
+export function commandOutcomeSummary(outcome: CommandOutcome | undefined, expired: boolean) {
+  if (!outcome) return undefined;
+  const shown = view(outcome, expired);
+  return { tag: <StatusTag tone={shown.tone}>{shown.title}</StatusTag>, line: shown.text };
+}
+
+/**
+ * One block under a pending notice: what the backend says about the original command.
+ * `summarized` means the row already shows the tag and sentence (commandOutcomeSummary); only the longer notes stay here.
+ */
+export function CommandOutcomeLine({ outcome, expired, summarized }: { outcome?: CommandOutcome; expired: boolean; summarized?: boolean }) {
   if (!outcome) return null;
   const shown = view(outcome, expired);
-  const last = "receipt" in outcome ? outcome.receipt?.investigation : null;
+  const receipt = "receipt" in outcome ? outcome.receipt : null;
+  const last = receipt?.investigation;
+  const more = receiptExplain(receipt);
+  const code = receiptCodeTech(receipt);
+  if (summarized && !more && !last && !code) return null;
   return <div className="e-check-outcome" role="status">
-    <StatusTag tone={shown.tone}>{shown.title}</StatusTag>
-    <p>{shown.text}</p>
+    {!summarized && <><StatusTag tone={shown.tone}>{shown.title}</StatusTag>
+    <p>{shown.text}</p></>}
+    {more && <p>{more}</p>}
+    {code && <p className="e-check-last"><Explain label="技术信息" content={code}>技术信息</Explain></p>}
     {last && <p className="e-check-last">最近一次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：记为「{CONCLUSION_TEXT[last.conclusion] ?? "已有结论"}」{last.requestedConclusion !== last.conclusion && `，申请的「${CONCLUSION_TEXT[last.requestedConclusion as Conclusion] ?? last.requestedConclusion}」证据不足`}。</p>}
   </div>;
 }
@@ -62,7 +84,7 @@ export function ClosureContact() {
 /** Settled commands leave the pending list; this keeps the authoritative outcome visible until dismissed. */
 export function SettledCommandNotices({ items, onDismiss }: { items: SettledCommand[]; onDismiss: (key: string) => void }) {
   return <>{items.map(item => {
-    const text = item.status === "CONFIRMED_REJECTED" ? { title: "已有结论", body: "刷新页面查看现在的结果。" }
+    const text = item.status === "CONFIRMED_REJECTED" ? { title: "核查确认是后台拒绝", body: SETTLED_REJECTED.replace(/^核查确认是后台拒绝，/, "") }
       : item.status === "CONFIRMED_NOT_EXECUTED" ? { title: "核查确认未执行", body: "原操作没有执行，记录已解除，可以重新发起。" }
       : item.status === "CONFIRMED_SUCCEEDED" ? { title: "核查确认已执行", body: "超级管理员按证据确认原操作已执行，记录已解除，不再重试。结果以刷新后的状态为准。" }
         : { title: "原操作已完成", body: "原操作已执行，记录已解除，不要再做一次。结果以刷新后的状态为准。" };
@@ -76,11 +98,14 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
   commandKey: string;
   createdAt: number;
   facts?: ReactNode;
-  /** The lookup found SUCCEEDED or FAILED: the backend refuses STILL_UNKNOWN for these. */
-  known?: boolean;
+  /** The lookup found SUCCEEDED or FAILED (closureKnown): the backend refuses STILL_UNKNOWN; the found result decides the rest. */
+  known?: boolean | ClosureBasis;
   onClose: () => void;
   onSubmit: (evidence: ECommandEvidence) => Promise<void>;
 }) {
+  const basis: ClosureBasis | undefined = known === true ? { rejected: false, success: "audit" } : known || undefined;
+  const choices: Conclusion[] = basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : []), "NOT_EXECUTED"]
+    : ["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"];
   const [conclusion, setConclusion] = useState<Conclusion | "">("");
   const [reference, setReference] = useState("");
   const [auditId, setAuditId] = useState("");
@@ -98,7 +123,7 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
       if (block || !conclusion) return;
       setBusy(true); setError("");
       try {
-        await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(conclusion === "SUCCEEDED" && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
+        await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(conclusion === "SUCCEEDED" && basis?.success !== "receipt" && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
       } catch (failure) {
         const shown = displayAdminError(failure);
         setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT ? "没有结案：证据和后台的处理记录对不上，记录继续保留。" : shown);
@@ -111,15 +136,16 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
         {facts}
         <Fact k="首次提交">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span></>} /></Fact>
       </Facts>
-      <Notice tone="warn">{known ? "这次请求后台有处理记录：证据对得上才确认并解除锁定，对不上会退回，记录保留。" : "按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。"}<span className="rd-keep">确认后不能撤销或改结论。</span></Notice>
+      <Notice tone="warn">{basis?.rejected ? "后台当时拒绝了这次操作，可以按「后台拒绝」结案；其他结论要证据对得上，对不上会退回，记录保留。"
+        : basis ? "这次请求后台有处理记录：证据对得上才确认并解除锁定，对不上会退回，记录保留。" : "按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。"}<span className="rd-keep">确认后不能撤销或改结论。</span></Notice>
       <Field label="核查结论" required help={conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
-          options={(known ? ["SUCCEEDED", "NOT_EXECUTED"] as const : ["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"] as const).map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
+          options={choices.map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
       </Field>
       <Field label="核查依据" required hint="最多 512 字" error={touched && (!referenceLength || referenceLength > 512) ? referenceLength ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
-        <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder="写明核对了什么、在哪里看到，例如：操作记录里 10:42 这次操作的成功记录" value={reference} onChange={event => setReference(event.target.value)} />
+        <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder={conclusion === "REJECTED" ? "写明核对了什么，例如：查询原结果是后台拒绝，操作记录里没有这次的成功记录" : "写明核对了什么、在哪里看到，例如：操作记录里 10:42 这次操作的成功记录"} value={reference} onChange={event => setReference(event.target.value)} />
       </Field>
-      {conclusion === "SUCCEEDED" && <Field label="成功记录编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "成功记录编号须为正整数" : undefined}>
+      {conclusion === "SUCCEEDED" && basis?.success !== "receipt" && <Field label="成功记录编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "成功记录编号须为正整数" : undefined}>
         <Input aria-label="成功记录编号" className="e-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
       <Check label="我已核对证据，知道结论确认后不能撤销" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />

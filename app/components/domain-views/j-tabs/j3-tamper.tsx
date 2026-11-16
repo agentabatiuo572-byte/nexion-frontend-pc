@@ -22,9 +22,9 @@ import { useReach } from "@/lib/nav/use-reach";
 import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
-import { SettledLine } from "../recovery-panel";
+import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
 import { CommandClosureModal, closureKnown } from "../e-tabs/e-command-check";
-import { PROCESSED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
+import { PROCESSED_IN_DIALOG, REJECTED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
@@ -120,7 +120,7 @@ function outcomeText(outcome: FundInvestigationOutcome) {
   if ("error" in outcome) return `原结果没查到：${outcome.error}`;
   const status = outcome.receipt?.originalStatus;
   return !status ? "没有查到原修改的记录，查不到不等于没执行。"
-    : status === "SUCCEEDED" ? PROCESSED_IN_DIALOG
+    : status === "SUCCEEDED" ? receiptRejected(outcome.receipt) ? REJECTED_IN_DIALOG : PROCESSED_IN_DIALOG
     : status === "PROCESSING" ? "原修改还在执行，稍后再查。"
       : status === "FAILED" ? "系统记录原修改失败了。"
         : "系统也没有结果，需要有调查权限的超级管理员核查结案。";
@@ -321,7 +321,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     status: saved.legacy ? expired
       ? { tone: "neutral", label: "已过期", line: "改版前的旧记录查不了原结果；到操作记录与审批核对后，可以确认解除。" }
       : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" }
-      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit }) : undefined,
+      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt }) : undefined,
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
@@ -338,7 +338,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt} known={closureKnown(outcome)}
       facts={<>
         <Fact k="改动">{savedChange(saved!)}</Fact>
-        <Fact k="系统记录">{receipt?.originalStatus === "SUCCEEDED" ? "已处理，看不出成没成，原修改还锁着" : receipt?.originalStatus === "FAILED" ? "记为失败，原修改还锁着" : "结果未知，原修改还锁着"}</Fact>
+        <Fact k="系统记录">{receiptFact(receipt, "原修改还锁着")}</Fact>
         {receipt?.investigation && <Fact k="上次核查">{formatBusinessTimeCompact(receipt.investigation.investigatedAt, "—")}，记为「{receipt.investigation.conclusion === "SUCCEEDED" ? "已执行" : receipt.investigation.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
       </>}
       onClose={() => setClosing(false)}

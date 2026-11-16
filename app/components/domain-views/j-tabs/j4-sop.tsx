@@ -28,6 +28,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/li
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal, RECOVERY_LINE } from "../e-tabs/e-command-check";
 import { processedStatus } from "./j-recovery-copy";
+import { receiptFact } from "../recovery-panel";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -344,7 +345,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return {
       key: record.commandKey, title: <span title={`${label} · 改版前的旧记录`}>{label} · 改版前的旧记录</span>, record: investigationRecord(record), outcome,
       createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
-      status: processed ? processedStatus({ expired, canRetry: false, canClose: fundInvestigationAccess(investigationRecord(record)).canSubmit, legacy: true })
+      status: processed ? processedStatus({ expired, canRetry: false, canClose: fundInvestigationAccess(investigationRecord(record)).canSubmit, legacy: true, receipt: outcome.receipt })
         : outcome ? undefined : expired
           ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
           : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原请求，不能重试，先查询原结果。" },
@@ -366,7 +367,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     syncPending();
   };
   const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
-  const closingStatus = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.originalStatus : undefined;
   const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
   const submitClosure = async (evidence: FundCommandEvidence) => {
     if (!closing) return;
@@ -378,7 +378,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   };
   const closureFacts = closing && <>
     {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
-    <Fact k="系统记录">{closingStatus === "SUCCEEDED" ? "已处理，看不出成没成，原操作还锁着" : closingStatus === "FAILED" ? "记为失败，原操作还锁着" : "结果未知，原操作还锁着"}</Fact>
+    <Fact k="系统记录">{receiptFact(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null, "原操作还锁着")}</Fact>
     {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
   </>;
   const recovery = <>

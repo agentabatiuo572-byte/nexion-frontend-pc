@@ -63,7 +63,7 @@ import {
   riskBandTone,
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { RecoveryPanel, SETTLED_REJECTED, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 
 /**
@@ -933,14 +933,15 @@ export default function UserDetailPage() {
       syncPending(); setActionConfirm(null); setReleasing(null);
       const status = result.receipt?.originalStatus;
       toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
-        : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
+        : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除，不要再做一次。");
       await load(); await loadPaymentMethods();
       return;
     }
     await load();
     const status = result?.receipt?.originalStatus;
     const found = !result ? "查询失败，这不代表没执行。" : !result.receipt ? "没有查到原结果，查不到不等于没执行。"
-      : status === "PROCESSING" ? "原操作还在执行，稍后再查。" : status === "FAILED" ? "系统记录这次失败了。" : status === "UNKNOWN" ? "系统也没有原结果。" : "原结果还没有确定结论。";
+      : status === "PROCESSING" ? "原操作还在执行，稍后再查。" : status === "FAILED" ? "系统记录这次失败了。" : status === "UNKNOWN" ? "系统也没有原结果。"
+        : receiptRejected(result.receipt) ? `后台拒绝了这次操作，不保证没有改动；${Date.now() < command.expiresAt ? "24 小时内按原请求重试可看原因。" : "已过 24 小时，到操作记录核对。"}` : "原结果还没有确定结论。";
     setPendingNotes((current) => ({ ...current, [command.fingerprint]: `${found}已重读现在的值，记录继续保留。` }));
   };
 

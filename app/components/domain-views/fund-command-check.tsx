@@ -5,7 +5,7 @@ import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, Irrevers
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { SettledLine, useFreshFirst } from "./recovery-panel";
+import { SETTLED_REJECTED, SettledLine, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 export { closureKnown } from "./recovery-panel";
 
@@ -49,7 +49,7 @@ export type FundRecoveryRow = {
   copy?: FundCheckCopy;
 };
 
-type Shown = { tone: StateTone; label: string; line: string };
+type Shown = { tone: StateTone; label: string; line: string; more?: string };
 const INTRO = "这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
 /** 查不了时缺的是什么：这页的查看权限、操作记录与审批的查看权限，还是不是原操作人。 */
@@ -62,7 +62,12 @@ export function fundReadBlock(record: FundCommandRecord) {
   return "只有原操作人或有调查权限的超级管理员能查询";
 }
 
-function shown(row: FundRecoveryRow): Shown {
+/** 一条记录现在的标签和那句话；没有用这个面板的页面（A3）也用它，同一个状态一个说法。 */
+export function fundRecoveryStatus(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "canRetry" | "canQuery" | "status" | "copy">): Shown {
+  return shown(row);
+}
+
+function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "canRetry" | "canQuery" | "status" | "copy">): Shown {
   const where = row.copy?.where ?? "操作记录与审批";
   if (row.status) return row.status;
   const access = row.record ? fundInvestigationAccess(row.record) : null;
@@ -84,21 +89,28 @@ function shown(row: FundRecoveryRow): Shown {
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: "稍后再查，执行完之前不要重试。" };
   // 过了 24 小时不能重试：有调查权限的给核查结案，没有的写清找谁。
   const closure = access?.canSubmit ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
+  const more = receiptExplain(receipt, where);
+  if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", label: "已结案", line: "核查确认是后台拒绝，记录已解除。" };
+  if (receiptRejected(receipt)) return { ...rejectedStatus({ expired: row.expired, canRetry: row.canRetry, canClose: !!access?.canSubmit }), more };
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? `系统记录这次失败了；${closure}`
     : row.canRetry ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
   if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: !access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
-  if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", line: row.expired ? `后台已处理，看不出成没成；${closure}`
+  if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
     : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
 
-/** 已处理完或记为失败的记录：后端只认能对上的成功记录，当时被拒或失败的现在结不了案。 */
-export const CLOSURE_KNOWN = "成功记录对得上才解除，对不上会退回，记录保留。操作记录里没有这次成功记录的，现在结不了案。";
-export const CLOSURE_CONFLICT = "没有结案：证据和后台的处理记录对不上，记录继续保留。核对成功记录编号后可以再提交。";
+/** 被退回时的一句；只有填了成功记录编号的「已执行」才有「核对编号再提交」这条出路。 */
+export function closureConflict(withAudit: boolean) {
+  return `没有结案：证据和后台的处理记录对不上，记录继续保留。${withAudit ? "核对成功记录编号后可以再提交。" : ""}`;
+}
 
-const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
+/** 选「后台拒绝」时的说明：按原记录自己的回包结案，不用填编号；记录解除不等于没执行，也不能重发原来那一次。 */
+export const REJECTED_HELP = "按后台当时的拒绝结案，记录解除。这不等于没有执行；要重做，请按现在的状态重新发起。";
+
+const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知", REJECTED: "后台拒绝" };
 
 function RecoveryRow({ row }: { row: FundRecoveryRow }) {
   const [open, setOpen] = useState(false);
@@ -109,12 +121,12 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
   const error = row.outcome && "error" in row.outcome ? row.outcome.error : "";
   const last = receipt?.investigation;
   const origin = row.record?.commandOrigin;
-  const tech = [row.record ? `原请求编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", row.tech ?? ""].filter(Boolean).join(" ｜ ");
+  const tech = [row.record ? `原请求编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", receiptCodeTech(receipt), row.tech ?? ""].filter(Boolean).join(" ｜ ");
   const id = `fund-row-${row.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return <li className="fund-row">
     <div className="fund-row-line">
       <button type="button" className="fund-row-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
-        <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title">{row.title}</span>
+        <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title" ref={fullTitle}>{row.title}</span>
       </button>
       <StatusTag tone={view.tone}>{view.label}</StatusTag>
       <span className="fund-row-text">{view.line}</span>
@@ -123,6 +135,7 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
     {open && <div className="fund-row-detail" id={id}>
       {(row.createdAt !== undefined || checkedAt) && <p>{[row.createdAt !== undefined ? `${formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")} 发出` : "", checkedAt ? `${formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询` : ""].filter(Boolean).join("，")}（{businessZone().label}）。</p>}
       {row.detail}
+      {view.more && <p>{view.more}</p>}
       {error && <p>{error}</p>}
       {last && <p>上次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：结论「{CONCLUSION_TEXT[last.conclusion] ?? "已有结论"}」{last.requestedConclusion !== last.conclusion && `（申请的是「${CONCLUSION_TEXT[last.requestedConclusion as FundCommandEvidence["conclusion"]] ?? last.requestedConclusion}」，证据不够）`}。</p>}
       {tech && <p className="fund-row-tech"><Explain label="技术信息" content={tech}>技术信息</Explain></p>}
@@ -131,12 +144,29 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
 }
 
 /** 一个面板列出这页所有结果未知的操作；默认露三条，其余点开。 */
-export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, heading }: {
+/** 查到整批的逐笔结果、记录解除后的一句：只写有的几组；一笔都没成功时不说「已执行」。 */
+function batchSettledText(batch: FundCommandBatch) {
+  const groups = [batch.rejected.length ? `${batch.rejected.length} 笔大额转人工` : "", batch.conflicts.length ? `${batch.conflicts.length} 笔未执行` : ""].filter(Boolean).join("，");
+  return batch.accepted.length ? `这批已有结果，记录已解除：${batch.accepted.length} 笔成功${groups ? `，${groups}` : ""}。` : `这批已有结果，记录已解除：没有一笔成功${groups ? `，${groups}` : ""}。`;
+}
+
+function settledText(item: FundSettled) {
+  if (item.status === "CONFIRMED_REJECTED") return SETTLED_REJECTED;
+  if (item.status === "CONFIRMED_NOT_EXECUTED") return "核查确认没有执行，记录已解除，可以重新发起。";
+  // 核查确认的整批不看逐笔：受控结论不要求逐笔齐全，残缺的逐笔不当成这批的结果。
+  if (item.batch && item.status !== "CONFIRMED_SUCCEEDED") return batchSettledText(item.batch);
+  if (item.proposal) return "审批申请已提交，记录已解除；到操作记录与审批看审批进度，不要再提交一次。";
+  return item.status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。";
+}
+
+export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settledAction, heading }: {
   rows: readonly FundRecoveryRow[];
   /** 「到操作记录与审批核对」这类去处，整块只放一次。 */
   link?: ReactNode;
   settled?: readonly FundSettled[];
   onDismissSettled?: (key: string) => void;
+  /** 已解除的提示行末尾的按钮，例如「查看逐笔结果」。 */
+  settledAction?: (item: FundSettled) => ReactNode;
   /** 默认「N 项操作结果未知」；有待审批等别的状态时页面自己写。 */
   heading?: string;
 }) {
@@ -144,9 +174,7 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, headi
   const { ordered, box } = useFreshFirst(rows);
   const visible = all ? ordered : ordered.slice(0, 3);
   return <>
-    {settled?.map(item => <SettledLine key={item.key} label={item.label} text={item.status === "CONFIRMED_REJECTED" || item.batch ? "刷新页面查看现在的结果。" : item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
-      : item.proposal ? "审批申请已提交，记录已解除；到操作记录与审批看审批进度，不要再提交一次。"
-      : item.status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"}
+    {settled?.map(item => <SettledLine key={item.key} label={item.label} text={settledText(item)} action={settledAction?.(item)}
       onDismiss={onDismissSettled && (() => onDismissSettled(item.key))} />)}
     {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? `${rows.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
       <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} />)}</ul>
@@ -180,17 +208,27 @@ export function FundCheckButtons({ record, outcome, expired, busy, checking, onC
   </>;
 }
 
-/** 核查结案：资金操作只能按证据确认「已执行」，或留下「仍未知」的核查记录；后端决定证据够不够。 */
+/** 结案框里能选的结论：查到的原结果决定（见 closureKnown）；后端给不出的不列。 */
+type Closable = "SUCCEEDED" | "STILL_UNKNOWN" | "REJECTED";
+const CHOICE_LABEL: Record<Closable, string> = { REJECTED: "后台拒绝", SUCCEEDED: "已执行", STILL_UNKNOWN: "仍未知" };
+
+/**
+ * 核查结案：没有确定结果时只能按证据确认「已执行」，或留下「仍未知」的核查记录；
+ * 查到后台拒绝的，可以按「后台拒绝」结案（后端只看原记录自己的回包，不要编号）。后端决定证据够不够。
+ */
 export function FundClosureModal({ label, createdAt, facts, known, onClose, onSubmit }: {
   label: string;
   createdAt: number;
   facts?: ReactNode;
-  /** 查到已处理完或记为失败：后端不收「仍未知」，只能按证据确认「已执行」。 */
-  known?: boolean;
+  /** 查到已处理完或记为失败（closureKnown）：后端不收「仍未知」，按查到的原结果给结论。 */
+  known?: boolean | ClosureBasis;
   onClose: () => void;
   onSubmit: (evidence: FundCommandEvidence) => Promise<void>;
 }) {
-  const [conclusion, setConclusion] = useState<"SUCCEEDED" | "STILL_UNKNOWN" | "">(known ? "SUCCEEDED" : "");
+  const basis: ClosureBasis | undefined = known === true ? { rejected: false, success: "audit" } : known || undefined;
+  const choices: Closable[] = basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : [])] : ["SUCCEEDED", "STILL_UNKNOWN"];
+  const fixed = choices.length === 1 ? choices[0] : undefined;
+  const [conclusion, setConclusion] = useState<Closable | "">(fixed ?? "");
   const [reference, setReference] = useState("");
   const [auditId, setAuditId] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
@@ -198,19 +236,28 @@ export function FundClosureModal({ label, createdAt, facts, known, onClose, onSu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const length = reference.trim().length;
+  // 原回包本身能证明做成的（receipt），后端不看编号；只有要靠成功记录的才填。
+  const needsAudit = conclusion === "SUCCEEDED" && basis?.success !== "receipt";
   const auditValid = !auditId.trim() || /^[1-9]\d{0,17}$/.test(auditId.trim());
-  const block = !conclusion ? "请选择核查结论" : !length ? "请写明核查依据" : length > 512 ? "核查依据最多 512 字"
-    : conclusion === "SUCCEEDED" && !auditId.trim() ? "选「已执行」要填成功记录编号" : !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
-  return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!known && !!conclusion || !!reference || !!auditId} onClose={onClose}
+  const block = !choices.length ? "这条现在结不了案" : !conclusion ? "请选择核查结论" : !length ? "请写明核查依据" : length > 512 ? "核查依据最多 512 字"
+    : needsAudit && !auditId.trim() ? "选「已执行」要填成功记录编号" : needsAudit && !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
+  const notice = !basis ? <>系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。这类操作现在不能按「没有执行」结案。<span className="rd-keep">提交后不能撤销或改结论。</span></>
+    : !choices.length ? "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把原请求编号交给技术同事核对。"
+    : basis.rejected ? choices.length > 1 ? "后台当时拒绝了这次操作，按「后台拒绝」结案即可解除。操作记录里确有这次的成功记录时，才选「已执行」。" : "后台当时拒绝了这次操作，可以按「后台拒绝」结案。"
+    : basis.success === "receipt" ? "后台按这次操作自己的处理记录核对：对得上才解除，对不上会退回，记录保留。"
+    : "成功记录对得上才解除，对不上会退回，记录保留。操作记录里没有这次成功记录的，现在结不了案。";
+  const help = conclusion === "REJECTED" ? REJECTED_HELP : conclusion === "STILL_UNKNOWN" ? "只留下这次核查记录，继续锁着，之后可以再核查。"
+    : conclusion === "SUCCEEDED" && !fixed ? "操作记录里有这次请求的成功记录时选。确认后解除，不会再执行。" : undefined;
+  return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!fixed && !!conclusion || !!reference || !!auditId} onClose={onClose}
     footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabledReason={block} onClick={async () => {
       setTouched(true);
       if (block || !conclusion) return;
       setBusy(true); setError("");
       try {
-        await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(conclusion === "SUCCEEDED" && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
+        await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(needsAudit && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
       } catch (failure) {
         const shown = displayAdminError(failure);
-        setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT ? CLOSURE_CONFLICT : `结案没有提交成功：${shown} 原记录不变，可以修改后再提交。`);
+        setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT ? closureConflict(needsAudit) : `结案没有提交成功：${shown} 原记录不变，可以修改后再提交。`);
       }
       finally { setBusy(false); }
     }}>提交核查结论</Button></>}>
@@ -219,22 +266,20 @@ export function FundClosureModal({ label, createdAt, facts, known, onClose, onSu
         <Fact k="原操作">{label}</Fact>
         {facts}
         <Fact k="首次提交">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}</Fact>
-        {known && <Fact k="核查结论">已执行</Fact>}
+        {fixed && basis && <Fact k="核查结论">{CHOICE_LABEL[fixed]}</Fact>}
       </Facts>
-      {known ? <Notice tone="warn">{CLOSURE_KNOWN}</Notice>
-        : <Notice tone="warn">系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。资金操作现在不能按「没有执行」结案。<span className="rd-keep">提交后不能撤销或改结论。</span></Notice>}
-      {!known && <Field label="核查结论" required error={touched && !conclusion ? "请选择核查结论" : undefined}
-        help={conclusion === "SUCCEEDED" ? "操作记录里有这次请求的成功记录时选。确认后解除，不会再执行。" : conclusion === "STILL_UNKNOWN" ? "只留下这次核查记录，继续锁着，之后可以再核查。" : undefined}>
-        <Segments label="核查结论" value={conclusion} onChange={value => setConclusion(value as "SUCCEEDED" | "STILL_UNKNOWN")}
-          items={[{ value: "SUCCEEDED", label: "已执行" }, { value: "STILL_UNKNOWN", label: "仍未知" }]} />
+      <Notice tone="warn">{notice}</Notice>
+      {fixed && basis ? help && <p className="rd-note">{help}</p>
+        : choices.length > 1 && <Field label="核查结论" required error={touched && !conclusion ? "请选择核查结论" : undefined} help={help}>
+          <Segments label="核查结论" value={conclusion} onChange={value => setConclusion(value as Closable)} items={choices.map(value => ({ value, label: CHOICE_LABEL[value] }))} />
+        </Field>}
+      {choices.length > 0 && <Field label="核查依据" required hint="最多 512 字" error={touched && (!length || length > 512) ? length ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
+        <Textarea rows={3} maxLength={512} count={`${length}/512`} disabled={busy} placeholder={conclusion === "REJECTED" ? "写明核对了什么，例如：查询原结果是后台拒绝，操作记录里没有这次的成功记录" : "写明核对了什么、在哪看到的，例如：操作记录里 10:42 这次操作的成功记录"} value={reference} onChange={event => setReference(event.target.value)} />
       </Field>}
-      <Field label="核查依据" required hint="最多 512 字" error={touched && (!length || length > 512) ? length ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
-        <Textarea rows={3} maxLength={512} count={`${length}/512`} disabled={busy} placeholder="写明核对了什么、在哪看到的，例如：操作记录里 10:42 这次放行的成功记录" value={reference} onChange={event => setReference(event.target.value)} />
-      </Field>
-      {conclusion === "SUCCEEDED" && <Field label="成功记录编号" required help={known ? "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。" : "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。没有这个编号，系统只会记为「仍未知」。"} error={touched && (!auditId.trim() || !auditValid) ? auditId.trim() ? "成功记录编号须为正整数" : "选「已执行」要填成功记录编号" : undefined}>
+      {needsAudit && <Field label="成功记录编号" required help={basis ? "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。" : "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。没有这个编号，系统只会记为「仍未知」。"} error={touched && (!auditId.trim() || !auditValid) ? auditId.trim() ? "成功记录编号须为正整数" : "选「已执行」要填成功记录编号" : undefined}>
         <Input aria-label="成功记录编号" className="fund-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
-      <Check label="我已核对依据，知道提交后不能撤销" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />
+      {choices.length > 0 && <Check label="我已核对依据，知道提交后不能撤销" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />}
       {error && <Notice tone="danger">{error}</Notice>}
     </div>
   </Modal>;

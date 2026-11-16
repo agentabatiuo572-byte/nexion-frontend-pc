@@ -20,7 +20,7 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E5_STATES, e5StateNote } from "./e5-device-state";
-import { ClosureContact, CommandClosureModal, closureKnown, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, closureKnown, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import type { EViewCtx } from "./types";
 
 function Fact({ label, value, mono, copy }: { label: string; value?: ReactNode; mono?: boolean; copy?: boolean }) {
@@ -190,10 +190,11 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       const releasable = proposal && expired && record.proposalAbsent && !record.receivedTicketId && !record.proposalStatus;
       const retryable = !refused && !expired && !(proposal && record.receivedTicketId);
       const note = busy === record.commandKey && !retryable ? "正在查询…" : direct(record)
-        ? <>{outcomes[record.commandKey] ? <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={expired} /> : readResults[record.commandKey]}{!canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <ClosureContact />}{errorKey === record.commandKey && error && error !== E5_UNKNOWN && <span role="alert">{error}</span>}</>
+        ? <>{outcomes[record.commandKey] ? <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={expired} summarized={!refused} /> : readResults[record.commandKey]}{!canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <ClosureContact />}{errorKey === record.commandKey && error && error !== E5_UNKNOWN && <span role="alert">{error}</span>}</>
         : errorKey === record.commandKey && error && error !== E5_UNKNOWN ? error : queryNotes[record.commandKey];
       return { key: proposal && record.proposalStatus === "pending" ? `waiting:${record.commandKey}` : record.commandKey, createdAt: record.createdAt,
         object: <span title={`${record.label} · ${record.device.serial}`}>{record.label} · {record.device.serial.slice(-8)}</span>, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line, note,
+        result: direct(record) && !refused ? commandOutcomeSummary(outcomes[record.commandKey], expired) : undefined,
         noteKey: [readResults[record.commandKey], outcomes[record.commandKey] ? JSON.stringify(outcomes[record.commandKey]) : "", errorKey === record.commandKey ? error : ""].join("|").replace(/^\|+$/, ""),
         actions: <>
           {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}

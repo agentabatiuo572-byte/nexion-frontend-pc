@@ -222,6 +222,10 @@
 .fund-row-line { display: grid; grid-template-columns: minmax(200px, 280px) 104px minmax(0, 1fr) auto; align-items: center; gap: var(--rd-space-3); min-height: 40px; padding: 4px 0; }
 .fund-row-toggle { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--rd-weight-semibold); text-align: left; cursor: pointer; }
 .fund-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 展开的那一行标题折行写全（例如「提交调整申请 · U00000006 · +120.00 USDT」的币种）。 */
+.fund-row-toggle[aria-expanded="true"] { align-items: flex-start; }
+.fund-row-toggle[aria-expanded="true"] .fund-row-title { white-space: normal; overflow-wrap: anywhere; }
+.fund-row-toggle[aria-expanded="true"] .fund-row-chevron { margin-top: 3px; }
 .fund-row-chevron { flex: none; color: var(--rd-text-3); transition: transform .15s; }
 .fund-row-toggle[aria-expanded="true"] .fund-row-chevron { transform: rotate(90deg); }
 .fund-row-line > .rd-tag { justify-self: start; }
@@ -233,4 +237,6 @@
 .fund-rows-foot { display: flex; align-items: center; gap: var(--rd-space-3); margin-top: var(--rd-space-1); }
 .fund-settled { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; color: var(--rd-ok, var(--rd-text-2)); font-size: var(--rd-text-aux); }
 .fund-settled span { color: var(--rd-text-2); }
+.fund-settled > .rd-btn { flex: none; }
+.fund-settled .rd-btn-face { color: inherit; }
 .fund-check-audit { width: 200px; max-width: 100%; font-variant-numeric: tabular-nums; }
