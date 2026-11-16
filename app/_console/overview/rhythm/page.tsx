@@ -61,15 +61,18 @@ export default function RhythmPage() {
   const canCross = useReach();
   const canJump = (superAdmin || authorities.includes("overview_b4_jump")) && canCross("/growth/phase");
   const canReadNames = authorities.includes("growth_h1_read");
-  const [phaseNames, setPhaseNames] = useState<Record<string, string>>({});
+  const [legacyPhaseNames, setLegacyPhaseNames] = useState<Record<string, string>>({});
+  const useLegacyNames = !!data && data.filters.phaseNames === undefined;
+  const phaseNames = data?.filters.phaseNames === undefined ? legacyPhaseNames
+    : Object.fromEntries(Object.entries(data.filters.phaseNames).map(([phase, name]) => [phase, name?.trim() ?? ""]));
   useEffect(() => {
     let alive = true;
-    setPhaseNames({});
-    if (canReadNames) void fetchH1Phases().then((catalog) => {
-      if (alive) setPhaseNames(Object.fromEntries(catalog.attribution.map((item) => [item.phase, item.name])));
-    }).catch(() => { if (alive) setPhaseNames({}); }); // Optional catalog: B4 still works with phase codes.
+    setLegacyPhaseNames({});
+    if (useLegacyNames && canReadNames) void fetchH1Phases().then((catalog) => {
+      if (alive) setLegacyPhaseNames(Object.fromEntries(catalog.attribution.map((item) => [item.phase, item.name])));
+    }).catch(() => { if (alive) setLegacyPhaseNames({}); }); // Old backends: names remain optional, with phase codes as fallback.
     return () => { alive = false; };
-  }, [canReadNames]);
+  }, [canReadNames, useLegacyNames]);
 
   async function downloadDistribution() {
     if (!canExport || busy || loading || !data?.available || !data.distribution.length) return;
