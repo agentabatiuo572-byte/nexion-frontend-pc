@@ -16,7 +16,7 @@ export function PhoneCalibrationReview({ proposal }: { proposal: PhoneProposalVi
     <header><h4>待发布的手机算力规则</h4><p>只影响后续校准。已分配的算力、已激活设备和历史结算保持不变。</p></header>
     {/* 生效时间按业务时区写并标出时区，和审批页的「生效时间」同一个口径，不按浏览器时区（F04）。 */}
     <div className="ui-review-facts">
-      <div><small>基准版本与生效时间</small>版本 {proposal.expectedRevision}<br />{proposal.effectiveAt === 0 ? "审批通过后立即生效" : `${businessStamp(proposal.effectiveAt)}（${businessZone().label}）`}</div>
+      <div><small>基准版本与生效时间</small>第 {proposal.expectedRevision} 版<br />{proposal.effectiveAt === 0 ? "审批通过后立即生效" : `${businessStamp(proposal.effectiveAt)}（${businessZone().label}）`}</div>
       <div><small>T1–T5 平台算力分界</small>{proposal.thresholds.join(" / ")}<p>分界值归入较高档位。</p></div>
       <div><small>Android 芯片档</small>{proposal.androidSocRules.length} 档 · {chips} 颗芯片<p>{proposal.androidSocRules.length === 0
         ? "这次申请没有 Android 芯片档，Android 新校准均进入待核验。" : "芯片连同全部标识整体归档；范围是运营预设，不是厂商指标。"}</p></div>
@@ -24,9 +24,9 @@ export function PhoneCalibrationReview({ proposal }: { proposal: PhoneProposalVi
         <p>{inherited ? "这次申请没有改 iPhone 机型规则，发布时保留当时已发布的版本。"
           : proposal.iosModelRules.length === 0 ? "这次申请没有 iPhone 机型规则，iOS 新校准均进入待核验。" : "范围是运营预设，不是 Apple 性能指标。"}</p></div>
     </div>
-    {!inherited && <h5>iPhone 机型变化{baseline ? `（对比当前已发布 v${baseline.revision}）` : ""}</h5>}
+    {!inherited && <h5>iPhone 机型变化{baseline ? `（对比当前已发布第 ${baseline.revision} 版）` : ""}</h5>}
     {inherited ? null : !baseline ? <p role="status">{stale
-        ? `申请基于版本 ${proposal.expectedRevision}，当前已发布版本 ${proposal.baseline!.revision}，无法对比差异；以下是申请里的全部 iPhone 机型。`
+        ? `申请基于第 ${proposal.expectedRevision} 版，现在已是第 ${proposal.baseline!.revision} 版，无法对比差异；以下是申请里的全部 iPhone 机型。`
         : "当前已发布的规则加载失败，无法对比差异；以下是申请里的全部 iPhone 机型。"}</p>
       : iosChanges.length === 0 ? <p>iPhone 机型规则没有变化。</p>
       : <div className="ui-table-scroll"><table>
@@ -49,7 +49,7 @@ export function PhoneCalibrationReview({ proposal }: { proposal: PhoneProposalVi
         <td>{formatRange(rule)}</td><td>{rule.enabled ? "启用" : "停用"}</td>
       </tr>)}</tbody>
     </table></div>}
-    <h5>Android 芯片档{baseline ? `变化（对比当前已发布 v${baseline.revision}）` : ""}</h5>
+    <h5>Android 芯片档{baseline ? `变化（对比当前已发布第 ${baseline.revision} 版）` : ""}</h5>
     {baseline ? androidChanges.length === 0 ? <p>Android 芯片档没有变化。</p>
       : <div className="ui-table-scroll"><table>
         <thead><tr>{["变化", "芯片档", "明细"].map(label => <th key={label}>{label}</th>)}</tr></thead>
