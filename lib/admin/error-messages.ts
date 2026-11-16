@@ -1453,7 +1453,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RULE_STATE_INVALID: "目标规则状态无效，请刷新页面后重试。",
   RULE_NOT_FOUND: "提现规则不存在或已删除，请刷新页面后重试。",
   WITHDRAW_RULE_RELOAD_FAILED: "规则写入后的最新状态加载失败，请刷新页面核对结果。",
-  OBJECT_LOCKED_BY_A2: "这一项正在等审批，批准、驳回或撤回后才能再操作。",
+  OBJECT_LOCKED_BY_A2: "这一项在等审批，批准、驳回或撤回后才能改。",
   D2_DEVELOPMENT_SIMULATION_STATE_INVALID: "这笔不满足开发账号的 H1 冷却条件，不能模拟。请核对测试用户与冷却来源，已到期时刷新查看系统复查结果。",
   D2_COOLDOWN_ALREADY_DUE: "这笔提现已到复查时间，无需模拟到期；请刷新查看系统复查结果。",
   D2_DEVELOPMENT_SIMULATION_CONFLICT: "模拟到期未完成，请刷新详情核对复查条件后重试。",
