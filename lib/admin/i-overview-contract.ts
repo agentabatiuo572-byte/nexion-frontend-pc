@@ -77,6 +77,12 @@ function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
       if (typeof version[key] !== "string") fail(moduleId);
     }
     if (version.copyPosition != null && typeof version.copyPosition !== "string") fail(moduleId);
+    for (const key of ["createdAt", "updatedAt"]) {
+      const timestamp = version[key];
+      // LocalDateTime.toString may omit zero seconds; null is unknown, absent is legacy.
+      if (timestamp !== undefined && timestamp !== null && (typeof timestamp !== "string"
+        || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/.test(timestamp))) fail(moduleId);
+    }
     if (version.audienceTarget != null) {
       const target = record(moduleId, version.audienceTarget);
       array(moduleId, target.locales);

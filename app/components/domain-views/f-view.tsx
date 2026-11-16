@@ -717,12 +717,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const ambassadorId = key.match(/^F\.ambassador\.(\d+)\.status$/)?.[1];
     if (ambassadorId && value === "approved" && expectedMaterialRevision === undefined) throw new Error("缺少材料版本，请重新打开申请核对后提交。");
     const usdtLevel = key.match(/^F\.unilevel\.(L[2-7])$/)?.[1];
-    const currentUsdt = usdtLevel ? f2Overview?.unilevel.find((row) => row.l === usdtLevel)?.usdt : undefined;
+    const currentUsdt = usdtLevel ? f2Overview?.unilevel.find((row) => row.l === usdtLevel)?.usdtText : undefined;
     // F2 548c8078 always parses percentage points. Keep '%' for older percentRatio
     // backends too; both persist the same ratio without changing the entered text.
     const commandValue = usdtLevel ? `${value}%` : value;
     const nexLevel = key.match(/^F\.unilevel\.nex\.(L[1-7])$/)?.[1];
-    const beforeF2 = nexLevel ? f2Overview?.unilevel.find(row => row.l === nexLevel)?.nex
+    const beforeF2 = nexLevel ? f2Overview?.unilevel.find(row => row.l === nexLevel)?.nexText
       : f2Overview?.configValues[key];
     const f4Snapshot = f4Submission.current ?? mc?.f4Snapshot;
     const beforeF4Overview = f4Snapshot?.overview ?? f4Overview;
@@ -740,12 +740,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       else if (key === "F.leaderboard.paused") beforeF4 = beforeF4Overview.leaderboardPaused === undefined ? undefined : beforeF4Overview.leaderboardPaused ? "on" : "off";
     }
     // Match dd6c94ea: USDT compares percentage points; UVT compares coefficients.
-    const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > currentUsdt
+    const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > Number(currentUsdt)
       : nexLevel && beforeF2 != null ? Number(value) > Number(beforeF2) : undefined;
     await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [commandValue, reason] : [commandValue, reason, expectedMaterialRevision]), {
       action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
       obj: ambassadorId ?? key,
-      before: sourceDomain === "F4" ? beforeF4 ?? "—" : usdtLevel && currentUsdt != null ? `${currentUsdt}%` : sourceDomain === "F2" && beforeF2 != null && beforeF2 !== "__UNCONFIGURED__" ? String(beforeF2) : "—",
+      before: sourceDomain === "F4" ? beforeF4 ?? "—" : usdtLevel ? currentUsdt != null ? `${currentUsdt}%` : "—" : sourceDomain === "F2" && beforeF2 != null && beforeF2 !== "__UNCONFIGURED__" ? String(beforeF2) : "—",
       after: commandValue,
       type: op === "f_unilevel_rule" && rateAmplifies !== undefined ? rateAmplifies ? "fund" : "param"
         : ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",

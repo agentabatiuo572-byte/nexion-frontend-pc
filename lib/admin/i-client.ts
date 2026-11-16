@@ -1065,6 +1065,8 @@ export type CopyVersionRow = {
   status: string;
   chain: string;
   ts: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   zh: string;
   en: string;
   vi: string;

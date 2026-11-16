@@ -106,7 +106,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 
   const openRate = (level: Layer) => {
     const rate = layerRate(rates, level);
-    const current = rate?.usdt != null ? String(rate.usdt) : "";
+    const current = rate?.usdtText ?? "";
     openConfirm({
       slot: `f-config:F.unilevel.${level}`,
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true,
@@ -114,7 +114,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
         validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
-        preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={Number(next || current || 0)} field="usdt" /> : null },
+        preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" /> : null },
       facts: (next) => {
         const total = totalFacts(rates, level, next === undefined ? undefined : Number(next));
         const anyPaused = LAYERS.some((item) => m.paused(item) === "on");
@@ -136,17 +136,17 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   };
   const openNex = (level: Layer) => {
     const rate = layerRate(rates, level);
-    const current = rate?.nex != null ? String(rate.nex) : "";
+    const current = rate?.nexText ?? "";
     openConfirm({
       slot: `f-config:F.unilevel.nex.${level}`,
       action: `调整 ${level} UVT 奖励系数`, title: `调整 ${level}（${LAYER_WHO[level]}）的 UVT 系数`, briefKind: "config", amplify: true,
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "UVT / 1 USDT", amplifiesWhen: "increase",
         hint: "这一层每发 1 USDT 奖励，另发多少 UVT",
-        preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={Number(next || current || 0)} field="nex" /> : null },
+        preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={next || current ? Number(next || current) : null} field="nex" /> : null },
       facts: (next) => <Facts>
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
-        <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
+        <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null || !(next ?? current).trim() ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
       </Facts>,
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
@@ -219,11 +219,11 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
               <tr key={level} data-paused={pausedRaw === "on" ? "" : undefined}>
                 <Td><span className="f2-layer"><span className="f2-layer-chip" data-direct={direct ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span></Td>
                 <Td align="right">{rate?.usdt != null ? <span className="f2-rate">
-                  <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt ?? 0} total={barMax || 1} valueText={`${num(rate.usdt)}%`} tone={pausedRaw === "on" ? "role-other" : "role-4"} />
-                  <strong>{rate.usdt === null ? "未配置" : `${num(rate.usdt)}%`}</strong>
+                  <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt ?? 0} total={barMax || 1} valueText={`${num(rate.usdtText)}%`} tone={pausedRaw === "on" ? "role-other" : "role-4"} />
+                  <strong>{rate.usdt === null ? "未配置" : `${num(rate.usdtText)}%`}</strong>
                 </span> : <span className="f2-muted">未配置</span>}</Td>
                 <Td align="right">{rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
-                <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nex)}</span> : num(rate.nex)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">—</span>}</Td>
+                <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">—</span>}</Td>
                 <Td><span className="f2-tags">
                   {!rate ? <StatusTag tone="neutral" explain="这一层还没有规则，目前要由后端初始化；没有规则时这一层不发。">没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的${rate.usdt === null ? "USDT 比例" : "UVT 系数"}后端没给，这页无法判断这一层怎么发；目前要由后端补齐。`}>规则不完整</StatusTag>

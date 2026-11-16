@@ -62,11 +62,11 @@ export function layerRate(rates: F2UnilevelRate[], level: Layer) {
 }
 
 /** 七层按比例的对比柱图：确认框里看「现在」和「改后」每层各占订单多少。 */
-export function LayerCompare({ rates, level, next, field }: { rates: F2UnilevelRate[]; level: Layer; next: number; field: "usdt" | "nex" }) {
+export function LayerCompare({ rates, level, next, field }: { rates: F2UnilevelRate[]; level: Layer; next: number | null; field: "usdt" | "nex" }) {
   const data = LAYERS.flatMap((layer) => {
     const row = layerRate(rates, layer);
     const before = row ? (field === "usdt" ? row.usdt : row.usdt === null || row.nex === null ? null : sampleUsdt(row.usdt)! * row.nex) : null;
-    const after = layer === level && row ? (field === "usdt" ? next : row.usdt === null ? null : sampleUsdt(row.usdt)! * next) : before;
+    const after = layer === level && row ? (field === "usdt" ? next : row.usdt === null || next === null ? null : sampleUsdt(row.usdt)! * next) : before;
     return before === null || after === null ? [] : [{ key: layer, tick: layer, values: [before, after] }];
   });
   const unit = field === "usdt" ? "%" : " UVT";
@@ -84,7 +84,7 @@ export function LayerCompare({ rates, level, next, field }: { rates: F2UnilevelR
 export function rateMeaning(value: string) {
   const pct = Number(value);
   if (!value.trim() || !Number.isFinite(pct)) return null;
-  return `${num(value)}%，每 100 USDT 订单发 ${num(pct)} USDT`;
+  return `${num(value)}%，每 100 USDT 订单发 ${num(value)} USDT`;
 }
 
 export function totalFacts(rates: F2UnilevelRate[], level: Layer, next?: number) {
