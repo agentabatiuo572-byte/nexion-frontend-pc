@@ -10,11 +10,11 @@
  * - TraceDrawer：一次执行的只读追溯（触发依据、逐步确认、逐步结果、通知和审计记录、恢复情况）。
  */
 import { useState, type ReactNode } from "react";
-import { Ban, CircleHelp, Clock3, FlaskConical, ListChecks, Pencil, Plus, Search, Siren, SkipForward, Trash2, Undo2, Workflow } from "lucide-react";
+import { Ban, CircleHelp, Clock3, FlaskConical, ListChecks, Pencil, Plus, Search, Siren, SkipForward, Trash2, Undo2, Users, Workflow } from "lucide-react";
 import { Button, Checkbox, Drawer, Fact, Facts, Field, Input, Modal, NumberInput, Notice, Panel, SearchSelect, Select, StatusTag, Textarea, Check } from "@/app/components/rd";
 import { businessZone, formatBusinessTime, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import type { J4ActionOption, J4RollbackOption, JNotifyTemplateOption, Playbook, PlaybookStep, SopExecution } from "@/lib/admin/j-client";
+import type { J4ActionOption, J4RollbackOption, J4StepImpact, JNotifyTemplateOption, Playbook, PlaybookStep, SopExecution } from "@/lib/admin/j-client";
 
 export const count = (value: number) => value.toLocaleString("en-US");
 
@@ -75,9 +75,21 @@ export function UndoTag({ info }: { info: StepInfo }) {
   return <StatusTag tone="warn" icon={Ban} explain={info.undoText}>这页收不回</StatusTag>;
 }
 
+/** 这一步的规模（后端 6c8eb9ae）：后端没有影响人数，只给对象和两种有限的数——账户组里有多少个账户、实际发出多少条通知，都不是人数。
+ * 旧后端没有这一块时不显示，页面和以前一样。`sharedTotal`：一次执行里有几步发通知、各步条数没分开记时，只指向总条数，不在每一步重复写。 */
+export function StepScale({ impact, sharedTotal, className = "j4-step-scale" }: { impact?: J4StepImpact; sharedTotal?: boolean; className?: string }) {
+  if (!impact) return null;
+  const known = impact.scope.type === "cluster" && impact.scope.targetUserCount != null ? `账户组里有 ${count(impact.scope.targetUserCount)} 个账户`
+    : impact.scope.type === "campaign" && impact.actualNotifications != null ? `发出 ${count(impact.actualNotifications)} 条通知`
+    : impact.scope.type === "campaign" && sharedTotal ? "各步条数没分开记，总数见「发送数」" : "";
+  return <p className={className}><Users size={14} aria-hidden /><span>影响人数：系统算不出</span>{known && <span className="j4-step-scale-known">{known}</span>}</p>;
+}
+/** 后端给了规模但这一步没记对象（旧演练记录）：照实写没有对象信息。 */
+export const noTargetInfo = (impact: J4StepImpact | undefined) => Boolean(impact && !impact.scope.value.trim());
+
 /** 一个预案的步骤时间线。`confirm` 传了就在每一步右边放勾选（发起正式执行时逐步确认）。 */
 export function StepTimeline({ steps, notify, confirm, label = "执行步骤" }: {
-  steps: Pick<PlaybookStep, "dom" | "ax" | "ref" | "approve">[];
+  steps: Array<Pick<PlaybookStep, "dom" | "ax" | "ref" | "approve" | "impact">>;
   notify?: { campaignNo?: string; template?: string };
   confirm?: { checked: (index: number) => boolean; onChange: (index: number, next: boolean) => void; disabled?: boolean };
   label?: string;
@@ -93,11 +105,12 @@ export function StepTimeline({ steps, notify, confirm, label = "执行步骤" }:
             <div className="j4-step-body">
               <div className="j4-step-head">
                 <span className="j4-step-title">{info.title}</span>
-                {info.target && <span className="j4-step-target" data-mono="">{info.target}</span>}
+                {info.target ? <span className="j4-step-target" data-mono="">{info.target}</span> : noTargetInfo(step.impact) && <span className="j4-step-target" data-empty="">没有对象信息</span>}
                 <UndoTag info={info} />
                 {step.approve && <StatusTag tone="neutral" icon={ListChecks} explain="预案定义里这一步标了「需确认」。提交执行时每一步都要你逐项勾选；批准后系统按顺序自动执行，执行中途不会停下来等人确认。">需确认</StatusTag>}
               </div>
               <p className="j4-step-impact">{info.impact}</p>
+              <StepScale impact={step.impact} />
               {info.page && <p className="j4-step-page">在「{info.page}」执行</p>}
             </div>
             {confirm && (
@@ -512,6 +525,7 @@ export function TraceDrawer({ execution, onClose }: { execution: SopExecution | 
   const sent = dispatch.notificationCount;
   const failure = dispatch.failure ? failureText(dispatch.failure) : null;
   const drill = e?.mode === "drill";
+  const sharedTotal = sent != null && actions.filter((action) => String(action.domain ?? "").toUpperCase() === "I3").length > 1;
   return (
     <Drawer open={Boolean(e)} onClose={onClose} title="执行追溯" sub={e ? <span data-mono="">{e.executionId || "执行编号缺失"}</span> : undefined} wide
       explain="打开时那一行的快照，只读；刷新页面后重新打开才是最新的。">
@@ -554,8 +568,9 @@ export function TraceDrawer({ execution, onClose }: { execution: SopExecution | 
                 return (
                   <li key={`${String(action.domain)}-${String(action.step ?? index)}`}>
                     <span className="j4-trace-n">第 {String(action.step ?? index + 1)} 步</span>
-                    <span><b className="j4-step-title">{info.legacy ? operatorCopyText(String(action.action || "未记录动作")) : info.title}</b>{info.target && <span className="j4-step-target" data-mono="">{info.target}</span>}<span className="j4-added-page">{info.page}</span></span>
+                    <span><b className="j4-step-title">{info.legacy ? operatorCopyText(String(action.action || "未记录动作")) : info.title}</b>{info.target ? <span className="j4-step-target" data-mono="">{info.target}</span> : noTargetInfo(action.impact) && <span className="j4-step-target" data-empty="">没有对象信息</span>}<span className="j4-added-page">{info.page}</span></span>
                     {stepStatusTag(status)}
+                    {!drill && <StepScale impact={action.impact} sharedTotal={sharedTotal} className="j4-step-scale j4-trace-scale" />}
                     {(fail || Boolean(action.ownershipToken)) && <span className="j4-trace-more">
                       {fail && <span className="j4-trace-fail">{fail.text} <span data-mono="">{fail.code}</span></span>}
                       {action.ownershipToken ? <span className="j4-muted">开关凭证 <span data-mono="">{String(action.ownershipToken)}</span></span> : null}
