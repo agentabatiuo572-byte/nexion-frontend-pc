@@ -5,9 +5,9 @@ import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, Irrevers
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { SETTLED_REJECTED, SettledLine, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, SETTLED_REJECTED, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-export { closureKnown } from "./recovery-panel";
+export { closureKnown, closureConflict } from "./recovery-panel";
 
 /**
  * 资金类「结果未知」记录的恢复面板：D2、D3、D5、D6、D7、J1、K1、L1、E4 共用一个样子。
@@ -107,34 +107,6 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
     : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
-
-/**
- * 后台退回（INVESTIGATION_KNOWN_RESULT_CONFLICT）时的一句：按提交的结论说为什么、下一步做什么。
- * 后端退回的几种情况（AdminCommandInvestigationService.investigate）：已有结果却选「仍未知」；证明不了没执行却选「未执行」；
- * 原回包不是带业务码的拒绝却选「后台拒绝」；选「已执行」但原回包和成功记录都证明不了。
- * audit：「已执行」时填了成功记录编号；canAudit：框里有这一栏但没填。
- */
-export function closureConflict(conclusion: FundCommandEvidence["conclusion"], { audit, canAudit }: { audit: boolean; canAudit: boolean }) {
-  const why = conclusion === "SUCCEEDED" ? audit ? "成功记录编号对不上这次操作，记录继续保留。核对编号后再提交。"
-    : canAudit ? "没有成功记录编号，证明不了已执行，记录继续保留。填上编号后再提交。" : "后台的处理记录证明不了已执行，记录继续保留。重新查询原结果后再处理。"
-    : conclusion === "REJECTED" ? "后台的记录不支持「后台拒绝」，记录继续保留。重新查询原结果，按查到的结论再结案。"
-      : conclusion === "NOT_EXECUTED" ? "后台证明不了这次没有执行，记录继续保留。换一个有证据的结论再提交。"
-        : "这条原操作已经有结果，记录继续保留。重新查询原结果，按查到的结论再结案。";
-  return `没有结案：${why}`;
-}
-
-/** 结案框里「首次提交」一栏的时间，带时区（和面板展开后的发出时间同一个写法）。 */
-export function closureTime(createdAt: number) {
-  return `${formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}（${businessZone().label}）`;
-}
-
-/** 没选结论时的示例占位：不给某一个结论专用的例子。 */
-export const CLOSURE_PLACEHOLDER = "写明核对了什么、在哪看到的";
-export const CLOSURE_PLACEHOLDER_BY: Partial<Record<FundCommandEvidence["conclusion"], string>> = {
-  REJECTED: "写明核对了什么，例如：查询原结果是后台拒绝，操作记录里没有这次的成功记录",
-  SUCCEEDED: "写明核对了什么、在哪看到的，例如：操作记录里 10:42 这次操作的成功记录",
-};
-export const CLOSURE_ACK = "我已核对依据，知道提交后不能撤销或改结论";
 
 /** 选「后台拒绝」时的说明：按原记录自己的回包结案，不用填编号；记录解除不等于没执行，也不能重发原来那一次。 */
 export const REJECTED_HELP = "按后台当时的拒绝结案，记录解除。这不等于没有执行；要重做，请按现在的状态重新发起。";

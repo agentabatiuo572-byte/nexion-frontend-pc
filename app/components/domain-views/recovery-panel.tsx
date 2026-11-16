@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, X } from "lucide-react";
 import { Button, Explain, IconButton, Notice, type StateTone } from "@/app/components/rd";
-import { eCommandCanConcludeRejected, eCommandResult, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { eCommandCanConcludeRejected, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 /** 两分钟内发出的才算运营刚做完操作产生的记录；页面分批读进来的旧记录不算。 */
 const FRESH_MS = 2 * 60 * 1000;
@@ -90,6 +91,34 @@ export function receiptCodeTech(receipt: ECommandInvestigation | null | undefine
 export function receiptFact(receipt: ECommandInvestigation | null | undefined, held: string) {
   return `${receiptRejected(receipt) ? "后台拒绝了" : receipt?.originalStatus === "SUCCEEDED" ? "已处理，看不出成没成" : receipt?.originalStatus === "FAILED" ? "记为失败" : "结果未知"}，${held}`;
 }
+
+/**
+ * 后台退回（INVESTIGATION_KNOWN_RESULT_CONFLICT）时的一句：按提交的结论说为什么、下一步做什么。
+ * 后端退回的几种情况（AdminCommandInvestigationService.investigate）：已有结果却选「仍未知」；证明不了没执行却选「未执行」；
+ * 原回包不是带业务码的拒绝却选「后台拒绝」；选「已执行」但原回包和成功记录都证明不了。
+ * audit：「已执行」时填了成功记录编号；canAudit：框里有这一栏但没填。
+ */
+export function closureConflict(conclusion: ECommandEvidence["conclusion"], { audit, canAudit }: { audit: boolean; canAudit: boolean }) {
+  const why = conclusion === "SUCCEEDED" ? audit ? "成功记录编号对不上这次操作，记录继续保留。核对编号后再提交。"
+    : canAudit ? "没有成功记录编号，证明不了已执行，记录继续保留。填上编号后再提交。" : "后台的处理记录证明不了已执行，记录继续保留。重新查询原结果后再处理。"
+    : conclusion === "REJECTED" ? "后台的记录不支持「后台拒绝」，记录继续保留。重新查询原结果，按查到的结论再结案。"
+      : conclusion === "NOT_EXECUTED" ? "后台证明不了这次没有执行，记录继续保留。换一个有证据的结论再提交。"
+        : "这条原操作已经有结果，记录继续保留。重新查询原结果，按查到的结论再结案。";
+  return `没有结案：${why}`;
+}
+
+/** 结案框里「首次提交」一栏的时间，带时区（和面板展开后的发出时间同一个写法）。 */
+export function closureTime(createdAt: number) {
+  return `${formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}（${businessZone().label}）`;
+}
+
+/** 没选结论时的示例占位：不给某一个结论专用的例子。 */
+export const CLOSURE_PLACEHOLDER = "写明核对了什么、在哪看到的";
+export const CLOSURE_PLACEHOLDER_BY: Partial<Record<ECommandEvidence["conclusion"], string>> = {
+  REJECTED: "写明核对了什么，例如：查询原结果是后台拒绝，操作记录里没有这次的成功记录",
+  SUCCEEDED: "写明核对了什么、在哪看到的，例如：操作记录里 10:42 这次操作的成功记录",
+};
+export const CLOSURE_ACK = "我已核对依据，知道提交后不能撤销或改结论";
 
 /** 核查确认是后台拒绝之后的一句：记录解除了，但不等于没执行，也不能重发原来那一次。 */
 export const SETTLED_REJECTED = "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。";
