@@ -292,8 +292,13 @@ const plainText = (value: string) => value === "未关联 K1 簇" ? "未关联�
 function columnValue(row: K2Row, column: Column): { main: string[]; sub?: string } {
   const raw = cell(row, column.main);
   const sub = column.sub !== undefined ? plainText(cell(row, column.sub)) : undefined;
-  if (column.kind === "amounts") return { main: raw.split(/\s+\+\s+/).map(groupDigits), sub };
+  if (column.kind === "amounts") return {
+    main: row.structured?.amounts !== undefined
+      ? row.structured.amounts.length ? row.structured.amounts.map((amount) => `${amount.amountRaw ?? "—"} ${amount.currency}`) : ["—"]
+      : raw.split(/\s+\+\s+/).map(groupDigits), sub,
+  };
   if (column.kind === "settled") {
+    if (row.structured?.settledCount !== undefined) return { main: [row.structured.settledCount === null ? "—" : `${row.structured.settledCount} 笔`], sub };
     const settled = raw.match(/已结算\s*(\d+)\s*笔/);
     return { main: [settled ? `${settled[1]} 笔` : raw], sub };
   }
