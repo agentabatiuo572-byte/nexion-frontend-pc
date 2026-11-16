@@ -602,7 +602,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const targetKey = selected?.id ?? (requestedCustomerId ? `first:${requestedCustomerId}` : "");
   const draft = drafts[targetKey] ?? "";
   const recoveryBlocksTarget = recoveries.some(({ locator }) => Boolean(locator.conversationId && locator.conversationId === selected?.id) || Boolean(locator.customerId && locator.customerId === (selected?.customerId ?? requestedCustomerId)));
-  const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3 && !heldByOther && (selected ? selected.detailReady === true && selected.writeState?.canReply !== false && closedCandidatesReady && (canSendTo(selected, adminId) || holdAllowsOther && canSendTo({ ...selected, ownerAdminId: adminId }, adminId)) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.assignmentId && (firstDetail.agentAdminId === adminId || holdAllowsOther)));
+  const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3 && !heldByOther && (selected ? selected.detailReady === true && selected.writeState?.canReply === true && closedCandidatesReady && (canSendTo(selected, adminId) || holdAllowsOther && canSendTo({ ...selected, ownerAdminId: adminId }, adminId)) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.assignmentId && (firstDetail.agentAdminId === adminId || holdAllowsOther)));
   // 没有本人客户、没有可分配的客服时入口直接禁用，不打开弹窗再说做不了。读不到不拦，弹窗里有失败和重试。
   // 结果跟着已有的更新走：会话快照、名册变了，或切回这个页面，都重读一次（ST-54）。
   useEffect(() => {
@@ -1016,6 +1016,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const sendRow = pending ? pendingMessages.list().find(row => row.commandKey === pending.key) : firstPending ? pendingMessages.list().find(row => row.commandKey === firstPending.key) : undefined;
   const sendRetryExpired = Boolean(sendRow && isRetryExpired(sendRow));
   const refreshChangedPeer = async (identity: string) => {
+    if (selected) messagePages.invalidateWriteState(selected.id);
     try {
       followSelection.current = true;
       await ctx.refreshConversations();
@@ -1763,9 +1764,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           {detailError && <Notice tone="danger" action={<><Button size="sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</Button><a className="rd-link" href="/service/overview">返回我的客户</a></>}>客户资料加载失败：{detailError}</Notice>}
           {requestedCustomerId && !selected && firstDetail && firstDetail.agentAdminId !== adminId && !holdAllowsOther && !heldByOther && <Notice tone="warn">{canReviewAll && canWriteM3 && hold === undefined ? "正在核对接待状态…" : "这位客户由专属客服负责，你只能查看。"}</Notice>}
           {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <Notice tone="warn">还没读到这位客户的归属，暂不能发送，请刷新客户资料。</Notice>}
-          {selected && !writable && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || selected.status !== "open") && (recoveryBlocksTarget
+          {selected && !writable && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || !selected.writeState || selected.status !== "open") && (recoveryBlocksTarget
             ? <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息发送结果未知，暂时不能再发。</Notice>
             : !canWriteM3 ? <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>
+            : !selected.writeState ? <Notice tone="warn" action={<Button size="sm" onClick={() => void refreshChangedPeer(identityRef.current)}>重新读取会话</Button>}>还没核对到这条会话能否回复，请重新读取。</Notice>
             : selected.status !== "open" ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
             : selectedUnbound ? <Notice tone="warn">该客户还没有专属客服，等待主管分配后回复。</Notice>
             : selected.writeState?.canReply === false ? threadNotice(selected.writeState)
