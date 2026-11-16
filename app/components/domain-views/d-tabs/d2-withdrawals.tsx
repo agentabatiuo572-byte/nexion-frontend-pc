@@ -1119,7 +1119,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
    * 转成页面上方的待确认条，这笔单在确认前不能再操作（OP-93）。
    * 🔴 新号被确定性拒绝必须丢号:4xx 被驳回后运营会改输入重提,若还留着旧号 = 同号不同载荷 → 这张单子这个动作 24h 内做不了。
    *    结果未知则必须保号 —— 丢了重试就是铸新号 = 重复出金。
-   *    重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留（CP-33）。只有成功才解除。
+   *    原号重试回放原业务回包；成功或 isExplicitRejection 认定的明确拒绝解除，其余保留。
    */
   const sendCommand = async <T,>(scope: string, extra: D2PendingExtra, send: (key: string) => Promise<T>, done: (result: T) => Promise<unknown>) => {
     const retained = pendingKeys.get(scope);
@@ -1511,7 +1511,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     return Boolean(record.action) && hasAuthority(ACTION_AUTHORITY[record.action as D2ReviewAction]) && (record.kind !== "batch" || canBatch);
   };
 
-  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
+  /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。成功或明确拒绝才解除待确认。 */
   const retryPending = async (record: D2PendingCommand) => {
     // 过期和查不到记录都不发送，也不解除：解除只在后端明确拒绝之后（OP-96、OP-153）。
     if (record.expiresAt <= Date.now()) { notePending(record, RETRY_EXPIRED); return; }

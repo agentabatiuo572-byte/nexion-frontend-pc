@@ -720,7 +720,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   /**
    * 写操作共用一条路：先把原操作存好再发（OP-92）。明确失败丢号并抛给框，框里写原因、留输入；结果未知保号，
    * 关框，转成页面上方的待确认条，确认前这个对象不能再操作（OP-93）。
-   * 重试的是保留下来的原命令时，明确失败也证明不了原命令的结果，继续保留。只有成功才解除。
+   * 原号重试回放原业务回包；成功或明确拒绝解除，其余保留。
    */
   const sendCommand = async (extra: K1PendingExtra, send: (key: string) => Promise<unknown>, done: () => Promise<void>) => {
     const scope = `${extra.kind}|${extra.target}`;
@@ -807,7 +807,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
   };
 
-  /** 按原操作重试：同命令号、同内容、同理由。只有成功才解除，被明确拒绝后才给「解除待确认」。 */
+  /** 按原操作重试：同命令号、同内容、同理由。成功或明确拒绝解除，其余继续保留。 */
   const retryPending = async (record: K1PendingCommand) => {
     // 到期和读不到记录都不是结果，不解除，也不重发（OP-96）。解除只在重试被后端明确拒绝之后。
     if (retryBlocked(record)) {

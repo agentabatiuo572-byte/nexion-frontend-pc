@@ -213,7 +213,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   /**
    * 写操作共用一条路（D2 同款）：先把原操作存好再发。确定失败丢号、留在确认框；结果未知保号、关框，转成待确认条。
-   * 重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留，只有成功才解除。
+   * 原号重试回放原业务回包；成功或明确拒绝解除，其余保留。
    */
   const sendCommand = async (scope: string, extra: J1Extra, after?: () => void) => {
     const retained = pendingKeys.get(scope);

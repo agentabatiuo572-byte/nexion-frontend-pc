@@ -45,7 +45,7 @@
 
 ### 2026-11-15 J1 B38 受控核查
 
-直接 J1 scopes 与 A2 恢复提案受 `AdminCommandOrigin.supported:77–82` 支持。发出前保存原 method/path/adminId/readAuthority，重试保留原来源，不从后来账号重建；查询纯读 `commands/investigations/by-command-key`，证据可交同一 `checkInvestigation`。仅 `SUCCEEDED/CONFIRMED_SUCCEEDED` 或后端允许新操作的 `CONFIRMED_NOT_EXECUTED` 且未锁终态清记录并重读 J1。NOT_FOUND/FAILED/UNKNOWN/PROCESSING/错误均保留。旧记录缺 origin 不猜。依据 backend `04d11022` AdminCommandInvestigationService.discover/investigate/requireReader。现有解除说明、核查表单与独立恢复原请求重试入口由视觉补齐。
+直接 J1 scopes 与 A2 恢复提案受 `AdminCommandOrigin.supported:77–82` 支持。发出前保存原 method/path/adminId/readAuthority，重试保留原来源，不从后来账号重建；查询纯读 `commands/investigations/by-command-key`，证据可交同一 `checkInvestigation`。仅 `CONFIRMED_SUCCEEDED` 或后端允许新操作的 `CONFIRMED_NOT_EXECUTED` 且未锁终态清记录并重读 J1；A2_COMMAND建单原回执属于已核实的成功白名单。2026-11-16 hd-patch-rcpt纠正：J1直写raw SUCCEEDED可存业务拒绝，不能结案；24h内原请求原号重试回放成功或明确拒绝才清，过期拒绝无权威解除通道。NOT_FOUND/FAILED/UNKNOWN/PROCESSING/错误均保留。旧记录缺 origin 不猜。依据 backend `04d11022` AdminCommandInvestigationService.discover/investigate/requireReader。现有解除说明、核查表单与独立恢复原请求重试入口由视觉补齐。
 
 ### 2026-11-15 K1 B38 核查
 
