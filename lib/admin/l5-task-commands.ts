@@ -1,5 +1,7 @@
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import type { LExportTask, L5TaskActionRequest } from "./l-client";
+import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { isOriginalCommandOrigin, queryOriginalCommand } from "./original-command-query";
 
 export type PendingL5Task = PendingMutationRecord & {
   owner: string;
@@ -7,7 +9,28 @@ export type PendingL5Task = PendingMutationRecord & {
   request: L5TaskActionRequest;
   task: LExportTask;
   requester: string;
+  commandOrigin?: FundCommandOrigin;
 };
+
+export function lReportReadAuthority(reportType: string) {
+  return ({ KPI_SERIES: "bi_l1_read", FUNNEL_COHORT: "bi_l2_read", FINANCE_AGG: "bi_l3_read", OPERATIONS_AGG: "bi_l4_read", REGULATORY: "bi_l5_read" } as const)[reportType.trim().toUpperCase() as "KPI_SERIES"] ?? null;
+}
+
+function taskRoute(task: LExportTask, action: PendingL5Task["action"]) {
+  const readAuthority = lReportReadAuthority(task.reportType);
+  if (!readAuthority) throw new Error("L5_EXPORT_TYPE_NOT_AVAILABLE");
+  return { originalMethod: "POST", originalPath: `/api/admin/bi/reports/${encodeURIComponent(task.id)}/${action}`, readAuthority } as const;
+}
+
+export function l5TaskCommandOrigin(task: LExportTask, action: PendingL5Task["action"]) {
+  const route = taskRoute(task, action);
+  return fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority);
+}
+
+export async function queryL5TaskCommand(record: PendingL5Task, evidence?: FundCommandEvidence) {
+  const receipt = await queryOriginalCommand(record, taskRoute(record.task, record.action), record.owner, evidence);
+  return { receipt, settled: fundCommandSettled(receipt) };
+}
 
 // The exact body and its original task facts belong to one store, including
 // expired evidence. Reading a current task never settles an earlier command.
@@ -30,6 +53,8 @@ export const l5TaskCommands = createPendingMutationStore<PendingL5Task>({
       && ["masked", "partial", "decrypted", "—"].includes(task.mask)
       && Array.isArray(task.acts) && task.acts.every(action => ["approve", "download", "retry"].includes(action))
       && typeof record.requester === "string" && record.requester.length > 0
-      && record.fingerprint === JSON.stringify({ reportId: task.id, action: record.action, request });
+      && record.fingerprint === JSON.stringify({ reportId: task.id, action: record.action, request })
+      && (record.commandOrigin === undefined || !!lReportReadAuthority(task.reportType)
+        && isOriginalCommandOrigin(record.commandOrigin, taskRoute(task, record.action)) && record.commandOrigin.originalAdminId === record.owner);
   },
 });

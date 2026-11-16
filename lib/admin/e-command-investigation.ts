@@ -137,7 +137,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
           : locator.originalPath === "/api/admin/emergency/geo-block/emergency-blocks" ? row.scope === "J2_EMERGENCY_BLOCK"
           : locator.originalPath.startsWith("/api/admin/emergency/kill-switches/") ? /^J1(?:[_:])/.test(String(row.scope))
             : locator.originalPath.startsWith("/api/admin/risk/multi-account/") ? /^K1(?:[_:])/.test(String(row.scope))
-              : locator.originalPath === "/api/admin/bi/reports" || locator.originalPath.startsWith("/api/admin/bi/reports/") ? row.scope === "L_BI_REPORT_CREATE" || /^L_BI_REPORT_ACTION/.test(String(row.scope))
+              : locator.originalPath === "/api/admin/bi/reports" ? locator.originalMethod === "POST" && row.scope === "L_BI_REPORT_CREATE"
+              : /^\/api\/admin\/bi\/reports\/[^/]+\/(?:approve|rerun|generate|download)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `L_BI_REPORT_ACTION_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
                 : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
   if (!Number.isSafeInteger(row.originalRecordId) || Number(row.originalRecordId) < 1
     || typeof row.scope !== "string" || !scopeMatches
@@ -197,6 +198,7 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^L_BI_REPORT_ACTION_(?:APPROVE|RERUN|GENERATE|DOWNLOAD)$/.test(original.scope)
     || /^(?:F1_VRANK_(?:THRESHOLD_UPDATE|REWARD_ADD|REWARD_UPDATE|REWARD_REMOVE)|F_TEAM_CONFIG_UPDATE|F4_AMBASSADOR_POLICY_UPDATE|F5_COMMISSION_(?:REVERSE|REISSUE|SUSPENSION|ANOMALY_CONFIG))$/.test(original.scope)
     || /^F4_MATERIAL_REVIEW:[1-9]\d*:[1-9]\d*$/.test(original.scope)
     || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope);
