@@ -5,7 +5,7 @@
  * 共用的 PublishedContentEditor（F1、I5 也在用）不动；这里按它 developerDocs 分支和 published-how-content-editor.tsx 的逻辑重画界面：
  * 读取、刷新（说明有改动时原生确认）、新增语言的格式检查、理由长度、「没有变化不提交」、请求体都和旧写法一样。
  * 新的只有：编辑和「App 上的样子」并排、保存时选「保存草稿」还是「发布」（等于旧的状态下拉选好再保存）、理由放进确认框。
- * 两个保存都不带幂等键、后端不去重：结果未知时只能刷新核对，不能原样重发（R1）。
+ * 新内容命令由页面共用store保存原body/key；旧未发键记录仍只读核对，不给它补键重发。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
@@ -153,6 +153,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setReadReady(false); setLoading(true);
+    if (!commands.find("docs")) setMode(null);
     if (!conflictDraft.current) setError(null);
     try {
       const value = await fetchDeveloperDocsAdmin();
@@ -368,6 +369,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     if (!conflictDraft.current && confirmDiscard && JSON.stringify(previous.document) !== JSON.stringify(previous.baseline)
       && !window.confirm("刷新会丢弃尚未保存的说明内容，是否继续？")) return;
     setReadReady(false); busyRef.current = true; setLoading(true);
+    if (!commands.find("how")) setMode(null);
     if (!conflictDraft.current) setError(null);
     try {
       const value = await fetchHowContentAdmin();

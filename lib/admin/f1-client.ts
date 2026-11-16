@@ -942,7 +942,7 @@ export interface F4LeadershipPoolOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number; reliable?: boolean };
+  coverage?: { coverageRatio: number; redlinePct: number; reliable?: boolean; coverageRatioText?: string; redlinePctText?: string };
   sources: string[];
 }
 
@@ -1617,9 +1617,10 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // A01/A18 have no execution-time B1 check. Missing values never become zero.
+    // 41a552fa rechecks approved payouts before writing. Missing values never become zero.
     coverage: finiteDashboardNumber(data?.coverage?.coverageRatio) !== null && finiteDashboardNumber(data?.coverage?.redlinePct) !== null
-      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct), reliable: data!.coverage!.reliable === true }
+      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct), reliable: data!.coverage!.reliable === true,
+        coverageRatioText: f4Decimal(data!.coverage!.coverageRatio!) ?? undefined, redlinePctText: f4Decimal(data!.coverage!.redlinePct!) ?? undefined }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1820,7 +1821,7 @@ async function f1Request<T>(
       result = JSON.parse(raw.replace(/("(?:poolUsd|perVoteUsd|totalVotes)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else if (path === "/leadership-pool" && !isWrite) {
       const raw = await response.text();
-      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();

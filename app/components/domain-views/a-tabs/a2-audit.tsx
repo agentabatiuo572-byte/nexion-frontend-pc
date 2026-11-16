@@ -1185,7 +1185,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         result = await send(key);
       } catch (cause) {
         const unknown = isA2OutcomeUncertainError(cause);
-        if (!unknown && (!retained || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope);
+        const payoutCoverageRefused = extra.kind === "approve"
+          && ["f4_pool_settle", "f4_leaderboard_period_payout"].includes(extra.operationCode ?? "")
+          && isExplicitRejection(cause)
+          && ["COVERAGE_SNAPSHOT_UNAVAILABLE", "COVERAGE_BELOW_REDLINE"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
+        if (!unknown && (!retained || payoutCoverageRefused || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope);
         syncPending();
         await refreshAfterWrite();
         if (unknown) { toast(UNKNOWN_TOAST, "warn"); return "unknown"; }
@@ -1328,6 +1332,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const why = ((record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
       if ((cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true) { toast(why, "warn"); return; }
+      if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
+        toast(why, "error");
+        return;
+      }
       if (isExplicitRejection(cause)) {
         notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);

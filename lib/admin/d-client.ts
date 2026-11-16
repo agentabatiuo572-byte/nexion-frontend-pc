@@ -458,12 +458,14 @@ export interface D3MaturityForecast {
 export interface D3NetExposure {
   window: "7d" | "30d" | "90d";
   valuationReliable: boolean;
+  historyMethod?: string;
   series: Array<{
     date: string;
     reserveUsdt: number;
     liabilitiesUsdt: number;
     netExposureUsdt: number;
     negative: boolean;
+    backcast?: boolean;
   }>;
   asOf: string;
 }
@@ -1823,8 +1825,9 @@ function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
   const window = d3String(raw.window, "exposure.window");
   if (window !== "7d" && window !== "30d" && window !== "90d") d3Invalid("exposure.window");
   const asOf = d3String(raw.asOf, "exposure.asOf");
+  const historyMethod = raw.historyMethod === undefined ? undefined : d3String(raw.historyMethod, "exposure.historyMethod");
   const valuation = treasuryValuation(raw, () => d3Invalid("exposure.valuationStatus"));
-  if (valuation === "VALUATION_UNAVAILABLE") return { window, asOf, valuationReliable: false, series: [] };
+  if (valuation === "VALUATION_UNAVAILABLE") return { window, asOf, historyMethod, valuationReliable: false, series: [] };
   const legacy = valuation === "LEGACY";
   const series = d3Array(raw.series, "exposure.series").map((item, index) => {
       const row = d3Object(item, `exposure.series[${index}]`);
@@ -1835,6 +1838,7 @@ function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
         liabilitiesUsdt: d3Number(legacy ? row.liabilitiesUsdt : row.valuedLiabilitiesUsdt, `exposure.series[${index}].liabilitiesUsdt`),
         netExposureUsdt,
         negative: legacy ? d3Boolean(row.negative, `exposure.series[${index}].negative`) : netExposureUsdt < 0,
+        backcast: row.backcast === undefined ? undefined : d3Boolean(row.backcast, `exposure.series[${index}].backcast`),
       };
       if (normalized.reserveUsdt < 0 || normalized.liabilitiesUsdt < 0
           || !d3Near(normalized.reserveUsdt - normalized.liabilitiesUsdt, normalized.netExposureUsdt)
@@ -1842,7 +1846,7 @@ function normalizeD3Exposure(raw: Record<string, unknown>): D3NetExposure {
       return normalized;
     });
   d3AssertDateSeries(series, Number(window.slice(0, -1)), "exposure.series");
-  return { window, asOf, valuationReliable: true, series };
+  return { window, asOf, historyMethod, valuationReliable: true, series };
 }
 
 function normalizeD3ForecastConfig(raw: Record<string, unknown>): D3ForecastConfig {

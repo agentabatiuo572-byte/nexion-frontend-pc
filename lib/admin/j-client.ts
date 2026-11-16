@@ -874,6 +874,7 @@ export type SopExecution = {
   operator: string;
   roleGate: string;
   executionId?: string;
+  executionGeneration?: number;
   rollbackStatus?: string;
   rollbackAt?: string;
   rollbackReason?: string;
@@ -1477,6 +1478,9 @@ function normalizeSopPlaybook(raw: unknown): Playbook {
 
 function normalizeSopExecution(raw: unknown): SopExecution {
   const row = rec(raw);
+  const executionGeneration = row.executionGeneration;
+  if (executionGeneration !== undefined && (typeof executionGeneration !== "number"
+    || !Number.isSafeInteger(executionGeneration) || executionGeneration < 0)) contractError("sop.execution.executionGeneration");
   return {
     timestamp: requiredText(row.timestamp, "sop.execution.timestamp"),
     ts: requiredText(row.timestamp, "sop.execution.timestamp"),
@@ -1489,6 +1493,7 @@ function normalizeSopExecution(raw: unknown): SopExecution {
     operator: str(row.operator),
     roleGate: str(row.roleGate),
     executionId: str(row.executionId),
+    executionGeneration,
     rollbackStatus: str(row.rollbackStatus),
     rollbackAt: str(row.rollbackAt),
     rollbackReason: str(row.rollbackReason),

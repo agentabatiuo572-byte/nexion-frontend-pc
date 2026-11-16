@@ -36,7 +36,7 @@ const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
 export function isExplicitRejection(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if (isDOutcomeUnknownError(error) || isA2OutcomeUncertainError(error) || isOutcomeUnknownError(error)) return false;
-  const value = error as { status?: unknown; reasonCode?: unknown; backendMessage?: unknown; unknownOutcome?: unknown };
+  const value = error as { status?: unknown; reasonCode?: unknown; backendMessage?: unknown; unknownOutcome?: unknown; f4PayoutCoverageRefusal?: unknown };
   if (value.unknownOutcome === true) return false;
   const code = typeof value.reasonCode === "string" ? value.reasonCode : typeof value.backendMessage === "string" ? value.backendMessage : "";
   // These receipts exist, but their original actor cannot be verified. The
@@ -47,6 +47,8 @@ export function isExplicitRejection(error: unknown): boolean {
   // 441c412b OpsRiskService.requireK3CoveragePrecheck rejects before either rule UPDATE,
   // inside the idempotency callback. Only this exact 503 is a business verdict.
   if (value.status === 503 && code === "K3_COVERAGE_UNAVAILABLE") return true;
+  // 41a552fa: only the A2 client's identified F4 approved-payout pre-write refusal.
+  if (value.status === 503 && code === "COVERAGE_SNAPSHOT_UNAVAILABLE" && value.f4PayoutCoverageRefusal === true) return true;
   return typeof value.status === "number" && value.status >= 400 && value.status < 500
     && (!NOT_A_VERDICT.has(value.status) || value.status === 403 && BUSINESS_REJECTION_BEFORE_WRITE.has(code))
     && code !== "" && !code.startsWith("IDEMPOTENCY_");

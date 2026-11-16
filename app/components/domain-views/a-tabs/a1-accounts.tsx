@@ -31,7 +31,7 @@ import { groupPendingCommands, isInvitePending, type GroupPendingRecord } from "
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx, ActionConfirmReq } from "./types";
 import type { BusinessFormValue } from "../design-kit";
-import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
+import { avatarDrafts, avatarDraftFingerprint, queryAvatarCancellation } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS } from "@/lib/admin/account-avatar-contract";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
@@ -1266,6 +1266,16 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       actions: <>
         <Button size="sm" onClick={() => void (async () => {
           requireActor(null, false);
+          if (draft.cancelKey) {
+            const state = await queryAvatarCancellation(draft);
+            if (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED") {
+              recoveryStarted(); setAvatarRecovery(null); reloadPending();
+              if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+              requireActor(null, false);
+              toast(errorMessage(new Error(state === "SUCCEEDED" ? "A1_ORIGINAL_OPERATION_CONFIRMED" : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
+            } else toast(errorMessage(new Error("IDEMPOTENCY_RESULT_UNKNOWN")));
+            return;
+          }
           if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
           toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
         })().catch(error => toast(errorMessage(error)))}>查询原结果</Button>

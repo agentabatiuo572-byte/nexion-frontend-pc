@@ -471,7 +471,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
   };
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean; f4Payout?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -496,9 +496,12 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     throw error;
   }
   const result = (await response.text().then(text => JSON.parse(text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null)) as ApiResult<T> | null;
+  // 41a552fa checks coverage before the first F4 payout write. Other 503s remain unknown.
+  const f4PayoutCoverageRefusal = init?.f4Payout === true && response.status === 503
+    && result?.code === 503 && result.message === "COVERAGE_SNAPSHOT_UNAVAILABLE";
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
-      || result.code >= 500 || init.strictOutcome === true && result.code !== 0 && result.code < 400)) {
+      || result.code >= 500 && !f4PayoutCoverageRefusal || init.strictOutcome === true && result.code !== 0 && result.code < 400)) {
     throw new A2OutcomeUncertainError("提交结果暂未确认，请到操作记录里核对。", init.commandKey);
   }
 
@@ -526,7 +529,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     // 🔴 带在途命令号时,只有**确定性拒绝**(4xx / 2xx 但业务码非 0)才算「这次没生效」。
     //   5xx 归确定失败 = 调用方 forget 命令号 = 下次重试铸新号 = 后端去重失效 = 资金动作双发。
     //   口径单源见 outcome-classification.ts(2026-08-06 全家族统一)。
-    if (init?.commandKey && !f5StatusRejected && outcomeStaysUnknown(response.status, result?.code)) {
+    if (init?.commandKey && !f5StatusRejected && !f4PayoutCoverageRefusal && outcomeStaysUnknown(response.status, result?.code)) {
       throw new A2OutcomeUncertainError(
         formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`),
         init.commandKey,
@@ -540,6 +543,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
       details: result?.data,
       backendMessage: result?.message,
       f5StatusRejected,
+      ...(f4PayoutCoverageRefusal ? { f4PayoutCoverageRefusal: true } : {}),
     });
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {
@@ -598,6 +602,7 @@ export async function approveA2Operation(operationId: string, reason: string, co
     method: "POST",
     body: JSON.stringify({ reason }),
     f5Status: operationCode === "f_commission_status",
+    f4Payout: operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout",
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
   });
   return fromTicket(row);

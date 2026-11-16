@@ -210,6 +210,7 @@ export function clearPendingCommandRecords(storage?: Storage, previousOwner?: st
       const retained = Object.fromEntries(Object.entries(records).filter(([, row]) => {
         const slot = String(row.fingerprint ?? "");
         return key === "nexion-a1-support-avatar-account-create"
+          || key === "nexion-admin-a3-pending-commands-v1" && row.contentCommandActor !== undefined
           || key === "nexion-admin-a6-pending-commands-v1"
           || key === "nexion-admin-a7-pending-commands-v1"
           || key === "nexion-admin-a9-developer-access-attempts-v1" && (row.adminId !== undefined

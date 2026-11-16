@@ -37,6 +37,7 @@ export interface BLedger {
   queueBacklogUsd: number;
   avgRiskScore: number;
   coverageSeries: number[];
+  coverageSeriesPoints?: Array<{ at: string; coverageRatio: string; backcast: boolean }>;
   coverageSeriesIntervalHours: number | null;
   accounts: BLedgerAccount[];
   prev: {
@@ -310,6 +311,15 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   const prev = requiredRow(raw.prev, "dualLedger.prev");
   const coverageSeries = requiredArr<unknown>(snapshot.coverageSeries, "dualLedger.snapshot.coverageSeries")
     .map((item, index) => requiredNum(item, `dualLedger.snapshot.coverageSeries.${index}`));
+  const coverageSeriesPoints = snapshot.coverageSeriesPoints === undefined ? undefined
+    : requiredArr<unknown>(snapshot.coverageSeriesPoints, "dualLedger.snapshot.coverageSeriesPoints").map((item, index) => {
+      const field = `dualLedger.snapshot.coverageSeriesPoints.${index}`;
+      const point = requiredRow(item, field);
+      const coverageRatio = requiredText(point.coverageRatio, `${field}.coverageRatio`);
+      if (typeof point.at !== "string" || !point.at.trim() || typeof point.backcast !== "boolean"
+        || !/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(coverageRatio)) throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+      return { at: point.at, coverageRatio, backcast: point.backcast };
+    });
   const intervalHours = snapshot.coverageSeriesIntervalHours;
   return {
     reserveUsd,
@@ -327,6 +337,7 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     queueBacklogUsd,
     avgRiskScore: requiredNum(snapshot.avgRiskScore, "dualLedger.snapshot.avgRiskScore"),
     coverageSeries,
+    coverageSeriesPoints,
     coverageSeriesIntervalHours: typeof intervalHours === "number" && Number.isSafeInteger(intervalHours) && intervalHours > 0
       ? intervalHours : null,
     accounts,
@@ -551,9 +562,13 @@ function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
   dashboardSubscribers.get(sessionKey)?.forEach((subscriber) => subscriber(dashboard));
 }
 
+function readBDomainResponse(response: Response) {
+  return response.text().then(raw => JSON.parse(raw.replace(/("coverageRatio"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
+}
+
 export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
   const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
@@ -584,7 +599,7 @@ export async function acknowledgeBDomainAlert(
     body: JSON.stringify({ reason, operator }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
@@ -614,7 +629,7 @@ export async function updateB5BankRunThresholds(
     body: JSON.stringify({ ...values, reason, operator }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     throw new Error(formatAdminApiError(result?.message, `B5_BANKRUN_${response.status}`));
