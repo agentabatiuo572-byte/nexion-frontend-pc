@@ -250,7 +250,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
       || row.businessCode === undefined
       || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
-      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
+      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   }
