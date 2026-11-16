@@ -10,7 +10,6 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { count, decimalText } from "./f4-shared";
-import "./f4-payout-preview.css";
 
 type Read<T> = { state: "loading" } | { state: "failed" } | { state: "ok"; data: T; at: number };
 
@@ -57,7 +56,7 @@ export function F4PayoutPreviewFacts({ pool }: { pool: string }) {
   const preview = read.state === "ok" ? read.data : undefined;
   const totals = preview?.payableAmount !== undefined && preview.amountBeforeCaps !== undefined && preview.reducedByCaps !== undefined
     ? alignedAmounts([preview.payableAmount, preview.amountBeforeCaps, preview.reducedByCaps]) : undefined;
-  const pending = read.state === "loading" ? "正在读取…" : read.state === "failed" ? "读不到" : undefined;
+  const pending = read.state === "loading" ? "正在加载…" : read.state === "failed" ? "读不到" : undefined;
   const notPaying = preview && !preview.available ? NOT_PAYING[preview.reason] ?? "这次不会发钱。" : undefined;
   return (
     <div className="f4-payout">
@@ -109,7 +108,7 @@ export function F4PayoutRules({ top1MaxPct, top5MaxPct }: { top1MaxPct: string; 
 /** 取消资格确认框的「依据」一行：后端提交和执行时核的是同一份依据。 */
 export function F4DisqualifyEvidenceFact({ memberUserId }: { memberUserId: number }) {
   const read = useRead<F4LeaderboardDisqualificationReadiness>(() => fetchF4LeaderboardDisqualificationReadiness(50));
-  if (read.state !== "ok") return <Fact k="依据" tone={read.state === "failed" ? "warn" : undefined}>{read.state === "loading" ? "正在读取…" : "读不到，提交后由系统核对"}</Fact>;
+  if (read.state !== "ok") return <Fact k="依据" tone={read.state === "failed" ? "warn" : undefined}>{read.state === "loading" ? "正在加载…" : "读不到，提交后由系统核对"}</Fact>;
   const row = read.data.rows.find((item) => item.memberUserId === memberUserId);
   if (!row) return <Fact k="依据" tone="warn">读不到：本周候选名单里没有这个人</Fact>;
   if (!row.disqualificationAvailable) return <Fact k="依据" tone="warn">没有找到，提交会被拒绝<Explain label="要什么依据" content="本周的风险记录，或这个人在生效中的关联账户簇里。提交和批准时系统都会核对。" /></Fact>;
