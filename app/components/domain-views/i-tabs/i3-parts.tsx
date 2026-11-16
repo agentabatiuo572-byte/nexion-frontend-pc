@@ -5,7 +5,7 @@
  * 只排版，不发请求、不判权限；数据和按钮由 i3-campaign.tsx 传进来。
  */
 import { useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Hourglass, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
 import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -194,7 +194,7 @@ export function CapCard({ tier, cap, policy, locked, pending, action }: { tier: 
       <div className="i3-cap-head">
         <TierTag tier={tier} />
         {locked && <StatusTag tone="neutral" icon={Lock} explain="这一档是固定的，不能调整。">锁定</StatusTag>}
-        {pending && <StatusTag tone="progress" icon={Hourglass} explain="批准前上限不变。">{`等批准 → ${pending}`}</StatusTag>}
+        {pending && <StatusTag tone="warn" icon={Clock3} explain="批准前上限不变。">{`等批准 → ${pending}`}</StatusTag>}
       </div>
       <div className="i3-cap-value">
         {critical
@@ -253,7 +253,7 @@ export type I3PendingCapRow = { key: string; tier: string; change: string; submi
 export function I3PendingCapNotice({ rows, link }: { rows: I3PendingCapRow[]; link?: ReactNode }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="progress" title={<>{`${rows.length} 张保留上限申请等另一位批准`}<Explain label="等批准的申请" content={<>
+    <Notice tone="warn" title={<>{`${rows.length} 张保留上限申请等另一位批准`}<Explain label="等批准的申请" content={<>
       <p>批准前上限不变。批准后按新上限立刻清理一次。</p>
       <p>这里只列你在这个标签页提交的申请；别人提交的到「操作记录与审批」看。</p>
     </>} /></>} action={link}>
@@ -263,7 +263,7 @@ export function I3PendingCapNotice({ rows, link }: { rows: I3PendingCapRow[]; li
             <span className="i3-recovery-name">调整保留上限</span>
             <span className="i3-recovery-object">{`${row.tier} · ${row.change}`}</span>
             <span className="i3-recovery-time">{`${businessStamp(row.submittedAt)} 提交`}</span>
-            <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag>
+            <StatusTag tone="warn" icon={Clock3}>等另一位批准</StatusTag>
             <span className="i3-recovery-actions">{row.actions}</span>
           </li>
         ))}

@@ -1527,6 +1527,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   NOTIFICATION_SCHEDULE_REQUIRED: "请选择发送时间后再确认排期。",
   NOTIFICATION_SCHEDULE_INVALID: "发送时间格式不正确，请重新选择完整的日期和时间。",
   NOTIFICATION_SCHEDULE_MUST_BE_FUTURE: "发送时间必须晚于服务器当前时间，请重新核对日期和时间。",
+  NOTIFICATION_CAP_APPROVAL_REQUIRED: "保留上限要另一位管理员批准才能改，请点那一档的「调整」提交审批。",
   NOTIFICATION_CAP_INVALID: "通知保留上限须为 1–10000 的整数，请核对条数。",
   NOTIFICATION_CAP_EXPECTED_REQUIRED: "缺少保留上限的原值，请重新读取规则后再发起新修改。",
   NOTIFICATION_CAP_NOT_FOUND: "没有找到这一档保留规则，请重新读取后核对。",
