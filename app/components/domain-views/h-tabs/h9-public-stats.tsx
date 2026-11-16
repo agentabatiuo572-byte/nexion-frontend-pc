@@ -47,7 +47,7 @@ import { H9GlobeDisplay } from "./h9-globe-display";
 import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
 import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
-import { canRetryH9Command, pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
+import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useSearchParams } from "next/navigation";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -185,6 +185,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     ready.current = false;
     setLoading(true);
     ctx.openActionConfirm(null);
+    const original = pendingH9Command("main");
+    if (original) {
+      try { await queryH9Command("main", original); }
+      catch { /* Auxiliary receipt errors must not disable the current configuration read. */ }
+      syncPending();
+    }
     try {
       const next = await fetchH9PublicStats();
       setData(next);

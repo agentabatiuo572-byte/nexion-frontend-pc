@@ -9,7 +9,7 @@ import { Plus, RefreshCw, Trophy } from "lucide-react";
 import { BlockState, Button, Change, Explain, Fact, Input, Notice, NumberInput, Panel, RatioBar, Segments, StatusTag, Table, TableMessage, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { fetchDeviceRankConfig, prepareDeviceRankConfig, updateDeviceRankConfig } from "@/lib/admin/device-rank-client";
 import { deviceRankConfigError, type DeviceRankConfig, type DeviceRankTierDraft } from "@/lib/admin/device-rank-config";
-import { canRetryH9Command, pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
+import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
@@ -45,6 +45,12 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
     ready.current = false;
     ctx.openActionConfirm(null);
     setLoading(true);
+    const original = pendingH9Command("rank");
+    if (original) {
+      try { await queryH9Command("rank", original); }
+      catch { /* Auxiliary receipt errors must not disable the current configuration read. */ }
+      syncPending();
+    }
     try { accept(await fetchDeviceRankConfig()); }
     catch (cause) { setData(null); setError(cause instanceof Error ? cause.message : "配置读取失败，请重试。"); onData({ state: "failed" }); }
     finally { setLoading(false); }

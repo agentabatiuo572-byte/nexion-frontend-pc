@@ -133,6 +133,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/content\/trust-documents\/(?:whitepaper|incorporation|msb|ein)(?:\/restore-default)?$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "I4_TRUST_DOCUMENT"
     : locator.originalPath === "/api/admin/content/i18n-learning/rescan" ? row.scope === "I6_I18N_RESCAN"
     : /^\/api\/admin\/growth\/quest-events\/wheel-tiers\/[^/]+\/retire$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === normalizeScope(`GROWTH:H4:WHEEL_TIER_RETIRE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`)
+    : locator.originalPath === "/api/admin/growth/public-stats" ? locator.originalMethod === "PATCH" && row.scope === "GROWTH:H9:PUBLIC_STATS_UPDATE:PUBLIC_STATS"
+    : locator.originalPath === "/api/admin/growth/device-rank-config" ? locator.originalMethod === "PATCH" && /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(String(row.scope))
     : courseParts ? !!courseScope && row.scope === normalizeScope(courseScope)
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_ARCHIVE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+\/(?:draft|publish)$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_${locator.originalPath.split("/").at(-1)!.toUpperCase()}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`)
@@ -216,7 +218,8 @@ export async function investigateECommand(record: PendingMutationRecord, locator
     || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope)
     || /^I4_TRUST_SECTION_(?:PUBLISH|ROLLBACK|ARCHIVE|DRAFT_CREATE|DRAFT_UPDATE|DRAFT_DELETE)$/.test(original.scope) || original.scope === "I4_TRUST_DOCUMENT"
     || /^I7_COURSE_(?:(?:CREATE|DRAFT_UPDATE|DELETE|PUBLISH|ARCHIVE|VERSION_(?:CREATE|UPDATE|DELETE|PUBLISH|ROLLBACK)):|FEATURED$)/.test(original.scope)
-    || original.scope.startsWith("GROWTH:H4:WHEEL_TIER_RETIRE:");
+    || original.scope.startsWith("GROWTH:H4:WHEEL_TIER_RETIRE:")
+    || original.scope === "GROWTH:H9:PUBLIC_STATS_UPDATE:PUBLIC_STATS" || /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(original.scope);
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {

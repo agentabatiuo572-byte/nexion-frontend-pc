@@ -3,6 +3,8 @@ import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
 export type H9CommandKind = "main" | "rank";
 export type H9CommandDisplay = {
@@ -13,7 +15,7 @@ export type H9CommandDisplay = {
   extraFacts?: { label: string; value?: string; before?: string; after?: string }[];
 };
 type Original = { path: "/public-stats" | "/device-rank-config"; method: "PATCH"; body: string; reason: string; expectedVersion: number; display: H9CommandDisplay };
-export type H9Command = PendingMutationRecord & { adminId?: number; original?: Original; inputFingerprint?: string };
+export type H9Command = PendingMutationRecord & { adminId?: number; original?: Original; inputFingerprint?: string; commandOrigin?: FundCommandOrigin };
 
 // Each existing key has exactly one store. Old key-only evidence is retained, but never replayed.
 const stores = {
@@ -48,6 +50,9 @@ export function pendingH9Command(kind: H9CommandKind): H9Command | undefined {
   if (!adminId) return undefined;
   const saved = stores[kind].list().find(r => r.adminId === adminId
     || r.adminId === undefined && hasPersistedPendingCommandOwner(String(adminId)));
+  const origin = saved?.commandOrigin;
+  if (saved && origin && (origin.originalMethod !== "PATCH" || origin.originalPath !== `/api/admin/growth${pathFor(kind)}`
+    || origin.originalAdminId !== String(saved.adminId) || origin.readAuthority !== "growth_h9_read")) return { ...saved, original: undefined, commandOrigin: undefined };
   return saved ? { ...saved, original: originalFrom(saved.original, kind) } : undefined;
 }
 
@@ -64,7 +69,22 @@ export function createH9Command(kind: H9CommandKind, body: string, display: H9Co
   const now = Date.now();
   return { adminId, fingerprint: slotFor(kind), commandKey: `${kind === "main" ? "h9-public-stats" : "device-rank"}-${crypto.randomUUID()}`,
     createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS,
-    original: { path: pathFor(kind), method: "PATCH", body, reason: input.reason, expectedVersion: input.expectedVersion, display } };
+    original: { path: pathFor(kind), method: "PATCH", body, reason: input.reason, expectedVersion: input.expectedVersion, display },
+    commandOrigin: fundCommandOrigin("PATCH", `/api/admin/growth${pathFor(kind)}`, "growth_h9_read") };
+}
+
+/** Legacy slots locate their original route, but only server-owned origin proves who sent it. */
+export async function queryH9Command(kind: H9CommandKind, saved: H9Command, evidence?: FundCommandEvidence) {
+  const record = pendingH9Command(kind);
+  if (!record || record.commandKey !== saved.commandKey) throw new Error("H9_ORIGINAL_RESOLVED");
+  const owner = record.adminId ?? useAdminAuth.getState().session?.adminId;
+  requireActor(owner);
+  const locator = { commandKey: record.commandKey, originalMethod: "PATCH" as const,
+    originalPath: `/api/admin/growth${pathFor(kind)}`, originalAdminId: String(owner) };
+  const receipt = record.commandOrigin ? await checkFundCommand(record, evidence)
+    : evidence ? await investigateECommand(record, locator, evidence, "growth_h9_read") : await discoverECommand(locator);
+  if (fundCommandSettled(receipt)) stores[kind].forget(record.fingerprint, record.commandKey);
+  return receipt;
 }
 
 export const canRetryH9Command = (record: H9Command) => !!record.original && !isRetryExpired(record) && Date.now() >= record.createdAt;
