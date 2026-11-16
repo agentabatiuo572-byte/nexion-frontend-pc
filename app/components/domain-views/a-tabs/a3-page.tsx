@@ -313,8 +313,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             toast(record.original.mode === "PUBLISHED" ? record.original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
             return;
           }
-          if (!a3Deduplicates(record)) setChecks(value => ({ ...value, [record.commandKey]: result.comparison }));
-          toast(a3Deduplicates(record) ? displayAdminError(new Error("A3_ORIGINAL_CURRENT_ONLY")) : "已读到现在的内容。", "warn");
+          setChecks(value => ({ ...value, [record.commandKey]: result.comparison }));
+          toast("已读到现在的内容。", "warn");
           return;
         }
       }

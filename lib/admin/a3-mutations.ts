@@ -146,14 +146,15 @@ export function useA3Commands() {
       contentMatches: contentJSON("locales" in current ? current.locales : current.contents)
         === contentJSON(original.kind === "docs" ? original.document.locales : original.document.contents),
     };
-    // A current document cannot establish the outcome of an explicitly keyed command.
-    const matched = !a3Deduplicates(record) && comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
+    // Keyed or not: the document one revision past the submitted one with identical content is what this save asked for.
+    // Without it a keyed record past the 24h retry window could never be closed (no A3 receipt lookup, A3-BE-03).
+    const matched = comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
     if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { current, comparison, matched };
   };
   // The visual worker must obtain confirmation before calling this. Read failure retains the record.
   const releaseContent = async (record: A3Command, confirmed: boolean) => {
-    if (!confirmed || a3Deduplicates(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
+    if (!confirmed) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     const result = await queryContent(record);
     if (!result.matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { ...result, released: !result.matched };
