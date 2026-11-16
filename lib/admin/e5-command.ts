@@ -50,7 +50,7 @@ export function e5LegacyCommands(): { commandKey: string; fingerprint: string }[
     for (const value of Object.values(table)) {
       if (!value || typeof value !== "object") continue;
       const row = value as Record<string, unknown>;
-      if (isPendingCommandOwnedBy(row, key) && typeof row.commandKey === "string" && typeof row.fingerprint === "string"
+      if (isPendingCommandOwnedBy(row) && typeof row.commandKey === "string" && typeof row.fingerprint === "string"
         && (key.includes("e5-device") || /e5_device_|device-activate|device-deactivate|device-batch/.test(row.fingerprint)))
         rows.push({ commandKey: row.commandKey, fingerprint: row.fingerprint });
     }

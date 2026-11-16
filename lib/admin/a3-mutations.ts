@@ -173,7 +173,7 @@ export function useA3Commands() {
     return { ...result, released: !result.matched };
   };
   const send = async (record: A3Command, retry = false) => {
-    if (!isPendingCommandOwnedBy(record, "nexion-admin-a3-pending-commands-v1")) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+    if (!isPendingCommandOwnedBy(record)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.commandOrigin && record.commandOrigin.originalAdminId !== String(useAdminAuth.getState().session?.adminId)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.original.kind === "param" && find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     if (retry && (!a3Deduplicates(record) || isRetryExpired(record))) throw new Error("A3_ORIGINAL_QUERY_ONLY");
@@ -191,7 +191,7 @@ export function useA3Commands() {
       });
       const result: unknown = await response.json().catch(() => null);
       const body = object(result) ? result : null;
-      if (!isPendingCommandOwnedBy(record, "nexion-admin-a3-pending-commands-v1")) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
+      if (!isPendingCommandOwnedBy(record)) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       if (!response.ok || body?.code !== 0) {
         const reasonCode = typeof body?.message === "string" ? body.message : undefined;

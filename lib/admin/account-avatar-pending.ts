@@ -36,7 +36,7 @@ export function rememberAvatarDraft(draft: AvatarDraft, recovering = false): Ava
 }
 /** Only a retained original cancellation receipt settles the cancel; image/current-account reads do not. */
 export async function queryAvatarCancellation(draft: AvatarDraft) {
-  if (!isPendingCommandOwnedBy(draft, "nexion-account-avatar-drafts-v1")) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  if (!isPendingCommandOwnedBy(draft)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
   if (draft.scope !== "admin" || !draft.asset || !draft.cancelKey) throw new Error("A1_AVATAR_CANCEL_QUERY_ONLY");
   const state = await fetchDirectCommandReceipt(`A1:AVATAR_CANCEL:${draft.actorId}:${draft.asset.assetId}`, draft.cancelKey, draft.actorId);
   if (state === "SUCCEEDED") avatarDrafts.forget(draft.fingerprint, draft.commandKey);
