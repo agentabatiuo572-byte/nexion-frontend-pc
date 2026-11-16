@@ -18,6 +18,7 @@ import {
   assertF4Overview,
   assertF4MaterialPacket,
   assertF5Overview,
+  assertF5ActionAvailability,
   F5_KINDS,
   F5_STATUSES,
 } from "@/lib/admin/f-overview-contract";
@@ -373,7 +374,15 @@ interface BackendF5Filter {
   label: string;
 }
 
-interface BackendF5CommissionEvent {
+export interface F5ActionAvailability {
+  canUnlock?: boolean;
+  unlockBlockedReason?: string | null;
+  canReverse?: boolean;
+  reverseBlockedReason?: string | null;
+  groupStatus?: string;
+}
+
+interface BackendF5CommissionEvent extends F5ActionAvailability {
   unlockAt?: number | null;
   settlementNo?: string | null;
   sourceRef?: string | null;
@@ -976,7 +985,7 @@ export interface F5CommissionFilter {
   lbl: string;
 }
 
-export interface F5CommissionEvent {
+export interface F5CommissionEvent extends F5ActionAvailability {
   /** Grouped reads project settlement release_at; the shifted network event deadline is not returned. */
   unlockAt?: number;
   settlementNo?: string;
@@ -1684,6 +1693,8 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       amountUSDT: item.amountUSDT == null ? undefined : f4Decimal(item.amountUSDT)!, amountNEX: item.amountNEX == null ? undefined : f4Decimal(item.amountNEX)!,
       recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : f4Decimal(item.recoveryPendingUSDT)!, recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : f4Decimal(item.recoveryPendingNEX)!,
       reversalRecorded: item.reversalRecorded ?? undefined,
+      canUnlock: item.canUnlock, unlockBlockedReason: item.unlockBlockedReason,
+      canReverse: item.canReverse, reverseBlockedReason: item.reverseBlockedReason, groupStatus: item.groupStatus,
     };
   });
   const pagination = data.pagination;
@@ -2028,7 +2039,7 @@ export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): P
 }
 
 /** Current reward facts for approval review; never a snapshot of the proposal or an execution preview. */
-export type F5CommissionRecord = {
+export type F5CommissionRecord = F5ActionAvailability & {
   commissionId: string;
   eventId: number;
   userId: number;
@@ -2056,6 +2067,7 @@ export async function fetchF5CommissionByBusinessId(commissionId: string): Promi
   // This endpoint uses eventView, as does the list. Validate the facts consumed here once at the read boundary.
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:commission");
   const row = data as Record<string, unknown>;
+  assertF5ActionAvailability(row);
   if (typeof row.commissionId !== "string" || !/^CM-\d+$/.test(row.commissionId)
     || typeof row.eventId !== "number" || !Number.isSafeInteger(row.eventId) || row.eventId <= 0
     || row.commissionId !== `CM-${row.eventId}` || BigInt(row.commissionId.slice(3)) !== BigInt(id.slice(3))
@@ -2074,7 +2086,10 @@ export async function fetchF5CommissionByBusinessId(commissionId: string): Promi
     amounts[key] = decimal;
   }
   return { status: "found", record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
-    user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts } };
+    user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts,
+    canUnlock: row.canUnlock as boolean | undefined, unlockBlockedReason: row.unlockBlockedReason as string | null | undefined,
+    canReverse: row.canReverse as boolean | undefined, reverseBlockedReason: row.reverseBlockedReason as string | null | undefined,
+    groupStatus: row.groupStatus as string | undefined } };
 }
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {

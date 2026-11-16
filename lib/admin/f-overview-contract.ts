@@ -358,6 +358,18 @@ export function assertF4MaterialPacket(value: unknown): asserts value is JsonRec
   }
 }
 
+/** Shared by the list and exact business-id read, before either projection is consumed. */
+export function assertF5ActionAvailability(event: JsonRecord) {
+  for (const [available, reason] of [["canUnlock", "unlockBlockedReason"], ["canReverse", "reverseBlockedReason"]]) {
+    if (event[available] === undefined) continue;
+    if (typeof event[available] !== "boolean") invalid("F5", available);
+    if (event[available]) {
+      if (event[reason] !== null) invalid("F5", reason);
+    } else text(event[reason], "F5", reason);
+  }
+  if (event.groupStatus !== undefined && typeof event.groupStatus !== "string") invalid("F5", "groupStatus");
+}
+
 export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F5");
   domain(row, "F5");
@@ -420,6 +432,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const eventIds: number[] = [];
   events.forEach((value, index) => {
     const event = record(value, "F5", `commissionEvents[${index}]`);
+    assertF5ActionAvailability(event);
     for (const field of ["commissionId", "kind", "user", "currency", "settledAt", "status", "cooldownLabel", "state", "auditKey"]) {
       text(event[field], "F5", `commissionEvents[${index}].${field}`);
     }
