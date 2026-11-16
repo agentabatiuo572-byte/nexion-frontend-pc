@@ -186,7 +186,7 @@ export function AlertDistribution({ data }: { data: B5Radar }) {
 /** 处理人和处理时间：只有标过进度的信号才有；没标过的不占位。 */
 const handlerText = (alert: Alert) => alert.handledBy ? maskAuditActor(alert.handledBy) : null;
 
-export function SignalsTable({ alerts, canTriage, updating, reach, selected, onOpen, onTriage, onStatus }: {
+export function SignalsTable({ alerts, canTriage, updating, reach, selected, onOpen, onTriage, triageState, onStatus }: {
   alerts: B5Radar["recentAlerts"];
   canTriage: boolean;
   updating: string;
@@ -194,6 +194,8 @@ export function SignalsTable({ alerts, canTriage, updating, reach, selected, onO
   selected: string | null;
   onOpen: (alert: Alert) => void;
   onTriage: (path: string) => boolean;
+  /** 分诊记录中：active 是正在记的这条，blocked 是其余能记分诊的链接（显示成禁用，点了不动）。 */
+  triageState: (path: string) => "active" | "blocked" | undefined;
   onStatus: (alert: Alert, target: "handled" | "resolved") => void;
 }) {
   return (
@@ -206,7 +208,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, selected, onO
               <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。</p>
               <p>标过进度的写最近一次是谁、什么时候标的。第二行是这条信号最近一次的发送状态，不一定是发给你的。</p>
             </>} /></Th>
-            <Th>去处理 <Explain label="去处理的说明" content="有分诊权限的，点链接先记一条分诊记录再打开对应页面；没记上就留在这页，重新点一次。没有分诊权限的只打开页面。" /></Th>
+            <Th>去处理 <Explain label="去处理的说明" content="能记分诊的链接，点一下先记一条分诊记录再打开；没记上就留在这页，重新点一次。按住 Ctrl／Cmd 或用中键点，在新标签打开，不记分诊。不能分诊的链接只打开页面。" /></Th>
             {canTriage && <Th align="right">操作</Th>}
           </tr>
         </thead>
@@ -226,7 +228,9 @@ export function SignalsTable({ alerts, canTriage, updating, reach, selected, onO
                   main={<><StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>{handler && <span className="b5-handler">{handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt).slice(5)}</span>}</span>}</>}
                   sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 <Td>{reach(alert.target)
-                  ? <Link className="rd-link" href={alert.target} prefetch={false} onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}>{page}</Link>
+                  ? <Link className="rd-link" href={alert.target} prefetch={false} aria-disabled={triageState(alert.target) ? true : undefined}
+                    title={triageState(alert.target) === "blocked" ? "正在记录另一条分诊，记完再点" : undefined}
+                    onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}>{page}{triageState(alert.target) === "active" && <span className="b5-muted"> · 正在记录…</span>}</Link>
                   : <span className="b5-muted">没有{page}权限</span>}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
@@ -249,7 +253,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, selected, onO
  * 一条风险信号的详情：是什么事 → 现在谁在跟 → 我能做什么（底栏）。排查用的原始代码收进「技术信息」。
  * 去处理和标记进度用表格里同一套处理：链接先分诊再跳转，标记打开原来的确认框。
  */
-export function SignalDrawer({ alert, nav, canTriage, updating, reach, onClose, onTriage, onStatus }: {
+export function SignalDrawer({ alert, nav, canTriage, updating, reach, onClose, onTriage, triageState, onStatus }: {
   alert: Alert | null;
   nav: DrawerNav;
   canTriage: boolean;
@@ -257,6 +261,8 @@ export function SignalDrawer({ alert, nav, canTriage, updating, reach, onClose, 
   reach: (path: string) => boolean;
   onClose: () => void;
   onTriage: (path: string) => boolean;
+  /** 分诊记录中：active 是正在记的这条，blocked 是其余能记分诊的链接（显示成禁用，点了不动）。 */
+  triageState: (path: string) => "active" | "blocked" | undefined;
   onStatus: (alert: Alert, target: "handled" | "resolved") => void;
 }) {
   if (!alert) return <Drawer open={false} onClose={onClose} title="风险信号">{null}</Drawer>;
@@ -270,11 +276,12 @@ export function SignalDrawer({ alert, nav, canTriage, updating, reach, onClose, 
       sub={<><span className="rd-drawer-ref" data-mono>{alert.signalNo}</span><StatusTag tone={level.tone} icon={level.icon}>{level.text}</StatusTag></>}
       footer={<Decision explain={<>
         <p>标记只记录进度，不会解除风控、不会放行提现。真正的处置到「{page}」办。</p>
-        {canTriage && <p>有分诊权限时，点「去{page}」先记一条分诊记录再打开；没记上就留在这页。</p>}
+        {canTriage && <p>能记分诊时，点「去{page}」先记一条分诊记录再打开；没记上就留在这页。按住 Ctrl／Cmd 或用中键点，在新标签打开，不记分诊。</p>}
       </>}
         others={reach(alert.target)
           ? <Link className="rd-btn" data-variant={next && canTriage ? "secondary" : "primary"} data-size="md" href={alert.target} prefetch={false}
-            onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}><span className="rd-btn-face">去{page}</span></Link>
+            aria-disabled={triageState(alert.target) ? true : undefined} title={triageState(alert.target) === "blocked" ? "正在记录另一条分诊，记完再点" : undefined}
+            onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}><span className="rd-btn-face">{triageState(alert.target) === "active" ? "正在记录…" : `去${page}`}</span></Link>
           : <span className="b5-muted">没有{page}权限</span>}
         primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
       <Panel plain headingLevel={3} title="是什么事">

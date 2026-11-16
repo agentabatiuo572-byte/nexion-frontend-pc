@@ -334,14 +334,17 @@ export default function RiskRadarPage() {
       setStatusUnknown(false);
       setToast(`已标记为${STATUS_TEXT[targetStatus]}：${original.facts.message}`);
     } catch (cause) {
+      // 框还开着、红框里已写这句时不再弹；框已关或结果未知才弹。
+      let shownInDialog = false;
       if (!statusOriginal && isBCommandRejection(cause, false)) {
         setStatusOriginal(null); setStatusUnknown(false); setNeedsFreshRadar(true);
         await radar.reload();
+        shownInDialog = true;
       }
       else if (isExplicitRejection(cause)) { await refreshAfterWrite(); setStatusUnknown(false); }
       else setStatusUnknown(!!original);
       setStatusError(displayAdminError(cause));
-      setToast(displayAdminError(cause));
+      if (!shownInDialog) setToast(displayAdminError(cause));
     } finally { setUpdatingSignal(""); syncPending(value => value + 1); }
   };
 
@@ -480,7 +483,11 @@ export default function RiskRadarPage() {
       setThresholdUnknown(!!original && !rejected);
       // 版本冲突已重读：框里写一句就够，不再弹同一句。
       if (rereadAfterConflict) setThresholdError("当前阈值已更新，请核对后再保存。");
-      else { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
+      else {
+        setThresholdError(displayAdminError(cause));
+        // 框还开着、红框里已写这句时不再弹；框已关或结果未知（框里写的是另一句）才弹。
+        if (!rejected || thresholdOriginal || pendingApproval) setToast(displayAdminError(cause));
+      }
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
   const saveSubscription = async () => {
@@ -514,8 +521,8 @@ export default function RiskRadarPage() {
       }
       setSubscriptionUnknown(!!original && !rejected);
       setSubscriptionSaveError(displayAdminError(cause));
-      // 版本冲突由框里「别人刚保存过订阅」说明，不再弹「请重新读取」。
-      if (!(rejected && !subscriptionOriginal && cause instanceof B5RequestError && cause.backendMessage === "B5_SUBSCRIPTION_VERSION_CONFLICT")) setToast(displayAdminError(cause));
+      // 框还开着、红框里已写这句时不再弹（版本冲突由框里「别人刚保存过订阅」说明）；框已关或结果未知才弹。
+      if (!rejected || subscriptionOriginal) setToast(displayAdminError(cause));
     } finally { setSavingSubscription(false); syncPending(value => value + 1); }
   };
   const recoverWrite = (record: ReturnType<typeof pendingB5Commands>[number]) => {
@@ -561,6 +568,7 @@ export default function RiskRadarPage() {
   const { issues, quiet } = data ? buildDimensions(data) : { issues: [], quiet: [] };
   const triageButton = (key: DimensionKey, variant: "primary" | "secondary" | "ghost", size: "md" | "sm") => canTriageDimension(key)
     ? <Button key="triage" variant={variant} size={size} loading={triaging === key} loadingText="正在记录…" icon={<ArrowUpRight size={14} aria-hidden />}
+      disabledReason={triaging && triaging !== key ? "正在记录另一条分诊，记完再点" : undefined}
       onClick={() => void triage(key)}>{TRIAGE_LABEL[key]}</Button>
     : null;
   const thresholdButton = (size: "md" | "sm") => canThreshold
@@ -630,6 +638,7 @@ export default function RiskRadarPage() {
   const readOnly = !canThreshold && !canSubscribe && !canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : undefined;
   const openCount = (data?.recentAlerts ?? []).filter((alert) => alert.handlingStatus === "open").length;
   const queueTriage = (target: string) => { const dimension = QUEUE_TRIAGE[target]; if (!dimension || !canTriageDimension(dimension)) return false; void triage(dimension); return true; };
+  const triageState = (target: string) => { const dimension = QUEUE_TRIAGE[target]; if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined; return triaging === dimension ? "active" as const : "blocked" as const; };
   const openSignalStatus = (alert: B5Radar["recentAlerts"][number], target: "handled" | "resolved") => { const saved = pendingWrites.find(record => record.fingerprint === `signal-status:${alert.signalNo}`); if (saved) { recoverWrite(saved); return; } if (newWriteBlocked) return; setStatusOriginal(null); setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); };
   const signalList = data?.recentAlerts ?? [];
   const signalIndex = signalList.findIndex((alert) => alert.signalNo === openSignal);
@@ -689,7 +698,7 @@ export default function RiskRadarPage() {
                   近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理 · 北京时间
                 </TabNote>
                 <SignalsTable alerts={data.recentAlerts} canTriage={canTriage} updating={updatingSignal} reach={canCross}
-                  selected={openSignal} onOpen={(alert) => setOpenSignal(alert.signalNo)} onTriage={queueTriage} onStatus={openSignalStatus} />
+                  selected={openSignal} onOpen={(alert) => setOpenSignal(alert.signalNo)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
               </Panel>
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
@@ -706,7 +715,7 @@ export default function RiskRadarPage() {
         <SignalDrawer alert={tab === "signals" && signalIndex >= 0 ? signalList[signalIndex] : null} canTriage={canTriage} updating={updatingSignal} reach={canCross}
           nav={{ hasPrev: signalIndex > 0, hasNext: signalIndex >= 0 && signalIndex < signalList.length - 1,
             onPrev: () => setOpenSignal(signalList[signalIndex - 1]?.signalNo ?? null), onNext: () => setOpenSignal(signalList[signalIndex + 1]?.signalNo ?? null) }}
-          onClose={() => setOpenSignal(null)} onTriage={queueTriage} onStatus={openSignalStatus} />
+          onClose={() => setOpenSignal(null)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
 
         </>}
 
@@ -831,7 +840,7 @@ export default function RiskRadarPage() {
                   <Check name="email" label="邮件" checked={false} disabled help="邮件服务没接通，暂不可用。" />
                   <Check name="webhook" label="外部通知" checked={subscription.webhook}
                     disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription || (subscriptionWebhookMode !== "controlled-proxy" && !subscription.webhook)}
-                    help={subscriptionWebhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}
+                    help={subscriptionWebhookMode === "controlled-proxy" ? "发送通道已配好，可以开启。" : subscription.webhook ? "发送通道还没配好，只能关闭。" : "发送通道还没配好，暂不能开启。"}
                     onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />
                 </CheckGroup>
                 {subscription.webhook && (
