@@ -297,7 +297,7 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
   votes.forEach((value, index) => {
     const vote = record(value, "F4", `voteWeights[${index}]`);
     text(vote.v, "F4", `voteWeights[${index}].v`);
-    positiveInteger(vote.votes, "F4", `voteWeights[${index}].votes`);
+    nonNegativeInteger(vote.votes, "F4", `voteWeights[${index}].votes`);
   });
   object(row, "config", "F4");
   common(row, "F4");
