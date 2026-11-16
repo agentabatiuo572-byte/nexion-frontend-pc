@@ -954,7 +954,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       guideExtra={guideExtra}
       meta={<span className="rd-toolbar">
         <span>
-          {readAt && params ? `${readAt} 读取（${zone}）· ` : ""}打开时读取
+          {readAt && params && `${readAt} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" />
         </span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
       </span>}
