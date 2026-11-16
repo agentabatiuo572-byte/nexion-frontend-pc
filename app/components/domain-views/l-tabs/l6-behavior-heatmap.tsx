@@ -28,7 +28,7 @@ import {
 } from "./l6-live-data";
 import {
   BOUNCE_WARN, ClickPanel, CSV_COLUMNS, DEPTH_HINT, DEPTHS, DEVICES, HeatTable, LOCALES, n, pct, RankPanels, ScopeFold, SummaryBand, TrendPanel,
-  WINDOWS, type SortKey,
+  WINDOWS, zoneWord, type SortKey,
 } from "./l6-behavior-views";
 import type { LCtx } from "./types";
 
@@ -294,7 +294,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       summary={summary}
       actions={actions}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}不自动刷新</span>
+        {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
         <Button variant="ghost" size="sm" loading={parentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={!ctx.canExport ? "当前角色只有查看权限，不能导出" : undefined}
@@ -313,7 +313,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       sort={<span className="l6-now rd-filter-result">
         现在看：{refreshing ? `${scope} · 正在读取` : scope}
         <Explain label="这几个条件管什么" content={<>
-          <p>时间范围从读取那一刻往前滚动 24 小时、7 天、30 天，不是自然日、周、月；时区 {heatmapData.available ? heatmapData.businessTimeZone : businessZone().label}。</p>
+          <p>时间范围从读取那一刻往前滚动 24 小时、7 天、30 天，不是自然日、周、月；时区 {heatmapData.available ? zoneWord(heatmapData.businessTimeZone) : businessZone().label}。</p>
           <p>页面层级：{DEPTH_HINT[depth]}。按一级、二级汇总时一行是一组页面，同一人在一组里只算一次。</p>
           <p>设备、语言只按 App 记下的标记筛，「全部语言」里也包含这三种以外的语言。条件不保存，刷新页面回到近 7 天、全部。</p>
           <p>页头「导出近 7 天全端」不跟这些条件。</p>
