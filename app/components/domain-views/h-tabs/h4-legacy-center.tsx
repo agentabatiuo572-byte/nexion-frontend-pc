@@ -987,7 +987,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           </li>;
         })}
       </ul>}>
-      {h4Approvals === "error" ? "看不到哪些修改在等批。" : "另一位超级管理员批准前，这些对象不变，本页不能再改；别处直接调低或关闭仍会生效，之后批准可能被拒。"}
+      {h4Approvals === "error" ? "看不到哪些修改在等批。" : "批准、驳回或撤回之前，这些对象不能再改，调低和关闭也不行。"}
     </Notice>}
   </>;
 
@@ -1177,7 +1177,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="三语内容与 App 上的样子" sub={contentEvent?.id}
       explain="改一格保存一格，下次读取 App 就用新内容，不用发布。中文和越南语的名称、说明、奖项名都填齐，活动才能开放；英文没填时 App 用原文。">
-      {contentEvent && <EventPreview canEdit={canModuleWrite}
+      {contentEvent && <EventPreview canEdit={canModuleWrite} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}
         onEdit={(field, locale) => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName))} />}

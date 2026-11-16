@@ -3,7 +3,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
   Notice, PageHeader, Panel, RatioBar, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds,
@@ -1053,7 +1053,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
                   what={definition.what} when={firstConfig ? "首次配置要另一位超级管理员批准后才生效" : "保存后立即生效"} effect={definition.effect}
                   value={otpValueText(definition, param?.value)}
                   sub={firstConfig === "required" ? <StatusTag tone="warn" icon={AlertTriangle} explain="这项还没有正式配置，App 按系统默认值处理；这里显示的是风控参数里存的值，不一定等于默认值。首次配置要另一位超级管理员批准。">未正式配置</StatusTag>
-                    : firstConfig === "pending" ? <StatusTag tone="progress" explain="首次配置已提交，等另一位超级管理员批准；批准前 App 仍按系统默认值处理。">首次配置待审批</StatusTag> : undefined}
+                    : firstConfig === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="首次配置已提交，等另一位超级管理员批准；批准前 App 仍按系统默认值处理。">首次配置待审批</StatusTag> : undefined}
                   action={canWrite ? <Button size="sm" aria-label={`${firstConfig === "required" ? "首次配置" : "调整"}${definition.label}`} disabledReason={!param ? "这项没有读到，请刷新后重试" : firstConfig === "pending" ? "首次配置待审批，批准或驳回后才能再改" : pendingFor(definition.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : firstConfig && !["platform_a2_proposal_create", "platform_a2_write"].some(hasAuthority) ? errorText(new Error("K2_OTP_MAKER_FORBIDDEN")) : newWriteBlockedReason} onClick={() => adjExtraParam(definition)}>{firstConfig === "required" ? "首次配置" : "调整"}</Button> : undefined} />
               );
             })}

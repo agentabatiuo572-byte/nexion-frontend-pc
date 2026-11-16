@@ -369,3 +369,4 @@
 .h4-dialog-body .h4-compare .rd-fold { margin: 0; }
 .h4-page .footerbar .h4-conflict-hint { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
 .h4-dialog-body .h4-compare-table[data-promotion] thead th:first-child, .h4-dialog-body .h4-compare-table[data-promotion] tbody th { width: 24%; }
+.h4l-locale-rows .h4l-locale-edit { margin-bottom: -6px; }  /* 被审批锁住时换成灰按钮：字和左边的值对齐，不把这一行撑高 */

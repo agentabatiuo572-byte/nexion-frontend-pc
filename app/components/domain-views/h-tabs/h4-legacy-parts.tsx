@@ -7,7 +7,7 @@
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, Clock3, Flag, Gift, Hourglass, CircleHelp, Smartphone, Star, Users } from "lucide-react";
-import { Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
@@ -93,7 +93,7 @@ export function unknownTag(kind: "approval" | "direct") {
     : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；现在读到的值证明不了原操作的结果。"}>结果未知</StatusTag>;
 }
 export function pendingTag(object: string) {
-  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准前${object}不变，本页不能再改它；别处直接调低或关闭仍会生效，之后批准可能被拒。`}>待审批</StatusTag>;
+  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准、驳回或撤回之前，${object}不能再改，调低和关闭也不行。`}>待审批</StatusTag>;
 }
 export function expiredTag(kind: "approval" | "direct") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "approval"
@@ -166,11 +166,13 @@ export function EventCard({ event, zh, gaps, rule, pending, primary, menu, onCon
   );
 }
 
-export function EventPreview({ names, original, onEdit, canEdit }: {
+export function EventPreview({ names, original, onEdit, canEdit, lockedReason }: {
   names: Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>;
   original: Record<"name" | "description" | "rewardName", string>;
   onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => void;
   canEdit: boolean;
+  /** 活动被审批锁住时的原因：入口照常显示，灰着并写原因，和活动卡上的其他入口一样。 */
+  lockedReason?: string;
 }) {
   const [locale, setLocale] = useState<LocaleCode>("zh");
   const shown = (field: "name" | "description" | "rewardName") => names[locale][field] || names.en[field] || original[field];
@@ -190,7 +192,9 @@ export function EventPreview({ names, original, onEdit, canEdit }: {
           return <li key={field}>
             <span className="h4l-locale-key">{FIELD_NAME[field]}</span>
             <span className="h4l-locale-value" data-empty={value ? undefined : ""}>{value ? old.text : missing ? "未填写，开放前必须补齐" : `未填写，App 显示原文：${original[field] || "—"}`}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
-            {canEdit && <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>}
+            {canEdit && (lockedReason
+              ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
+              : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
           </li>;
         })}
       </ul>
