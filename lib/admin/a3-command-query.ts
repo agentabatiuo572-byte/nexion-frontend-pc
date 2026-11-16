@@ -24,6 +24,8 @@ export async function queryA3ConfigCommand(record: FundCommandRecord, original: 
     ? "/api/admin/platform/config" : "/api/admin/platform/config/experience", readAuthority: "platform_a3_read" } as const;
   const receipt = await queryOriginalCommand(record, route, owner, evidence);
   const scope = original.kind === "flag" ? `A3_FEATURE_FLAG:${original.row.key}`.toUpperCase() : "A3_PLATFORM_EXPERIENCE";
-  if (receipt && receipt.scope !== scope) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  // The stored scope is uppercase; the server-bound target preserves the physical key's case.
+  const target = original.kind === "flag" ? `feature.${original.row.key}` : "A3_PLATFORM_EXPERIENCE";
+  if (receipt && (receipt.scope !== scope || receipt.originalTarget !== target)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   return { receipt, settled: fundCommandSettled(receipt) };
 }

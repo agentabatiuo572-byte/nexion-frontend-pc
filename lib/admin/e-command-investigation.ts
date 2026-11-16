@@ -181,7 +181,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
       && row.scope === normalizeScope(`A4_H3_OUTBOX_REDRIVE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()}`)
     : locator.originalPath === "/api/admin/platform/config" ? locator.originalMethod === "PUT" && (
       ["platform.global_rate_limit_per_minute", "withdrawal.strong_review_threshold_usdt"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
-      || /^A3_FEATURE_FLAG:[A-Z0-9_.-]{1,80}$/.test(String(row.scope)))
+      || typeof row.originalTarget === "string" && /^feature\.[A-Za-z0-9_.-]{1,80}$/.test(row.originalTarget)
+        && row.scope === normalizeScope(`A3_FEATURE_FLAG:${row.originalTarget.slice("feature.".length)}`))
     : locator.originalPath === "/api/admin/platform/config/experience" ? locator.originalMethod === "PUT" && row.scope === "A3_PLATFORM_EXPERIENCE" && row.originalTarget === "A3_PLATFORM_EXPERIENCE"
     : locator.originalPath === "/api/admin/risk/multi-account/registration-params" ? locator.originalMethod === "PATCH" && ["auth.risk.h5_register_captcha", "auth.risk.h5_register_device_limit", "auth.risk.h5_freeze_newcomer_gift"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
     : /^\/api\/admin\/teams\/ranks\/[^/]+\/thresholds\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === "F1_VRANK_THRESHOLD_UPDATE"
