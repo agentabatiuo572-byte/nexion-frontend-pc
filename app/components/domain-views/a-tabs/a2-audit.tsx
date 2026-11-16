@@ -2477,7 +2477,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <JudgmentPoints rows={[
             { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
-            { label: "对象", value: <span className="a2-code">{shownLog.obj}</span> },
+            // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
+            { label: "对象", value: shownLog.obj },
             { label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> },
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
