@@ -684,7 +684,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       || !independent && JSON.stringify(current) !== JSON.stringify(target))
       throw new Error("这门课刚被改过，这次没有提交；关掉后重新打开核对。");
     const rawReward = independent ? target.payload.rewardNex : target.rewardNex;
-    if (i6Amount(rawReward) === undefined)
+    if (rawReward !== null && i6Amount(rawReward) === undefined)
       throw new Error("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。");
     const snapshot = { course: current, courseVersion: independent ? target : undefined };
     if (Number(rawReward) > 0) {
@@ -693,7 +693,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       const values = { courseId: c.id, version: target.version, expectedRevision: independent ? target.revision : null,
         expectedCurrentVersion: c.v, expectedCurrentRevision: c.revision, expectedCurrentStatus: c.status };
       await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, `i7_course_${kind}`, values,
-        `${c.v} · ${c.status} · ${c.rewardRaw} UVT`, `${values.version} · published · ${rawReward} UVT`, reason) }, undefined, undefined, snapshot);
+        `${c.v} · ${c.status} · ${c.rewardRaw === null ? "—" : `${c.rewardRaw} UVT`}`, `${values.version} · published · ${rawReward} UVT`, reason) }, undefined, undefined, snapshot);
       await reloadCourseApprovals();
       toast("已提交，等待审批后执行");
       return;
@@ -737,7 +737,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     catch (error) { toast(displayAdminError(error), "warn"); return; }
     if (!target) { toast("这门课没读到，请刷新后再核对。", "warn"); return; }
     const rawReward = "payload" in target ? target.payload.rewardNex : target.rewardNex;
-    if (i6Amount(rawReward) === undefined) { toast("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。", "warn"); return; }
+    if (rawReward !== null && i6Amount(rawReward) === undefined) { toast("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。", "warn"); return; }
     const reward = Number(rawReward);
     confirmI6(`course:${c.id}`, { briefKind: "content",
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
@@ -762,7 +762,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   // 课程奖励调整沿用原专用审批。
   const adjRwd = (c: Course) => {
     if (rewardApprovalBlocked) { toast(rewardApprovalBlocked, "warn"); return; }
-    if (c.rewardRaw === null) { toast("当前课程奖励未读到，请重新读取后调整。", "warn"); return; }
     if (pendingHIRewardCommand(hiCourseRewardScope(c.id))) { toast("此对象有原操作尚未核清，请先查询原结果。", "warn"); return; }
     confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
@@ -799,12 +798,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const def = findHighOp("i7_course_reward_adjust")!;
         const session = useAdminAuth.getState().session;
         if (!session) throw new Error("请先登录后再提交。");
-        const input = hiRewardProposal(session, "i7_course_reward_adjust", { courseId: c.id, rewardNex: i6Amount(v) }, `${c.rewardRaw} UVT/课`, `${v} UVT/课`, reason);
+        const beforeValue = c.rewardRaw === null ? "—" : `${c.rewardRaw} UVT/课`;
+        const input = hiRewardProposal(session, "i7_course_reward_adjust", { courseId: c.id, rewardNex: i6Amount(v) }, beforeValue, `${v} UVT/课`, reason);
         return submitHIRewardCommand(hiCourseRewardScope(c.id), { kind: "proposal", input: {
           ...input,
           action: `课程奖励调整 · ${nexGridBrandText(c.title)}`,
           obj: c.id,
-          beforeValue: `${c.rewardRaw} UVT/课`,
+          beforeValue,
           afterValue: `${v} UVT/课`,
           type: "fund",
           amplifies: (i6RewardChange(v, c.rewardRaw)?.direction ?? 0) > 0,

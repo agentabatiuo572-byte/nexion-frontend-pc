@@ -1392,6 +1392,8 @@ export type I18nMessagePairView = {
   status: string;
   version: string;
   placeholders: string[];
+  versionCreatedAt?: string;
+  versionUpdatedAt?: string;
 };
 export type LearningCourseView = {
   id: string;
@@ -1440,7 +1442,8 @@ export type I18nLearningOverview = {
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
   featuredCourseId: string;
-  metrics: LearningMetricView[];
+  metrics?: LearningMetricView[];
+  lastScanAt?: string;
   categories: string[];
   formats: string[];
   levels: string[];

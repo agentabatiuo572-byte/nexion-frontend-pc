@@ -47,6 +47,7 @@ export function parseI6Message(value: unknown): I18nMessagePairView {
   const row = object(value);
   texts(row, ["messageKey", "namespace", "zh", "en", "vi", "status", "version"]);
   strings(row.placeholders);
+  for (const key of ["versionCreatedAt", "versionUpdatedAt"]) if (row[key] !== undefined && typeof row[key] !== "string") invalid();
   return row as I18nMessagePairView;
 }
 
@@ -93,7 +94,8 @@ export function parseI6Overview(value: unknown): I18nLearningOverview {
   if (row.focusMessage != null) parseI6Message(row.focusMessage);
   list(row.courses).forEach(parseI6Course);
   for (const item of list(row.hardcodedFindings)) texts(object(item), ["location", "rawCopy", "suggestedKey", "status"]);
-  for (const item of list(row.metrics)) texts(object(item), ["key", "value"]);
+  if (row.metrics !== undefined) for (const item of list(row.metrics)) texts(object(item), ["key", "value"]);
+  if (row.lastScanAt !== undefined && typeof row.lastScanAt !== "string") invalid();
   const range = object(row.rewardRange);
   if (![range.min, range.max].every(amount => typeof amount === "number" && Number.isFinite(amount)) || Number(range.min) > Number(range.max)) invalid();
   texts(row, ["featuredCourseId"]);

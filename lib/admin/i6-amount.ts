@@ -10,7 +10,8 @@ export function i6Amount(value: unknown): string | undefined {
 }
 
 export function i6RewardChange(next: string, current: string | null) {
-  const a = i6Amount(next), b = i6Amount(current);
+  // An authoritative null means no configured reward; only direction uses the zero baseline.
+  const a = i6Amount(next), b = i6Amount(current === null ? "0" : current);
   if (!a || !b) return undefined;
   const scale = Math.max((a.split(".")[1] ?? "").length, (b.split(".")[1] ?? "").length);
   const scaled = (value: string) => { const [whole, fraction = ""] = value.split("."); return BigInt(whole + fraction.padEnd(scale, "0")); };
