@@ -314,8 +314,14 @@ export default function A6Roles() {
       ? await commands.queryReceipt(record).catch(() => null) : null;
     requireActor();
     if (!ticket) {
+      // A6 may return its trusted business refusal after writes began and rolled back.
+      // Keep the original; the minimal status supplies neither its reason nor a governed conclusion.
+      if (state === "REJECTED") {
+        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+        return false;
+      }
       if ((!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
-        && (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED")) {
+        && (state === "SUCCEEDED" || state === "FAILED")) {
         setConfirmReq(null); setReleasing(null);
         commands.forget(record);
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);

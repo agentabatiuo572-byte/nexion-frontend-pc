@@ -77,7 +77,10 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
 export function eCommandSettled(receipt: ECommandInvestigation | null) {
   if (receipt?.originalStatus === "CONFIRMED_REJECTED" && !receipt.locked) return true;
   const result = eCommandResult(receipt);
-  return result === "SUCCEEDED" || result === "NOT_EXECUTED";
+  // A6's only trusted-refusal producer throws inside the business transaction;
+  // its FAILED reply is saved only after rollback. A committed nonzero reply is different.
+  return result === "SUCCEEDED" || result === "NOT_EXECUTED" || result === "REJECTED" && receipt?.originalStatus === "FAILED"
+    && /^A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d*)$/.test(receipt.scope);
 }
 
 /** A batch is resolved only when every original target has exactly one retained item result. */
@@ -165,6 +168,11 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     }
   }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : locator.originalPath === "/api/admin/platform/accounts/permissions" ? locator.originalMethod === "POST" && row.scope === "A1_PERMISSION_REGISTER"
+    : locator.originalPath === "/api/admin/platform/roles" ? locator.originalMethod === "POST" && /^A6_ROLE_CREATE:[A-Z0-9_-]{1,64}$/.test(String(row.scope))
+    : /^\/api\/admin\/platform\/roles\/[1-9]\d*$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === `A6_ROLE_UPDATE:${locator.originalPath.split("/").at(-1)}`
+    : locator.originalPath === "/api/admin/platform/menus" ? locator.originalMethod === "POST" && /^A7_MENU_CREATE:[A-Z0-9_-]{1,64}$/.test(String(row.scope))
+    : /^\/api\/admin\/platform\/menus\/[1-9]\d*$/.test(locator.originalPath) ? ["PATCH", "DELETE"].includes(locator.originalMethod) && row.scope === `A7_MENU_${locator.originalMethod === "DELETE" ? "DELETE" : "UPDATE"}:${locator.originalPath.split("/").at(-1)}`
     : locator.originalMethod === "POST" && locator.originalPath === "/api/admin/platform/events/retention-runs" ? row.scope === "A4_EVENT_RETENTION_RUN"
     : locator.originalPath === "/api/admin/content/knowledge/faqs" ? locator.originalMethod === "POST" && row.scope === "M4_SUPPORT_FAQ_CREATE"
     : /^\/api\/admin\/content\/knowledge\/faqs\/[^/]+(?:\/status)?$/.test(locator.originalPath) ? row.scope === normalizeScope(`M4_SUPPORT_FAQ_${locator.originalMethod === "DELETE" ? "DELETE" : locator.originalPath.endsWith("/status") ? "STATUS" : "UPDATE"}:${decodeURIComponent(locator.originalPath.split("/").at(locator.originalPath.endsWith("/status") ? -2 : -1)!)}`) && ["PATCH", "DELETE"].includes(locator.originalMethod)
@@ -250,7 +258,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
       || row.businessCode === undefined
       || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
-      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
+      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   }

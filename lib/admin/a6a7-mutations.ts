@@ -13,6 +13,7 @@ import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord 
 import { normalizeA6Detail, normalizeA8Permission } from "./rbac-contracts";
 import { useAdminAuth } from "../store/admin-auth";
 import { fetchDirectCommandReceipt } from "./direct-command-receipt";
+import { discoverECommand, investigateECommand, type ECommandEvidence, type ECommandLocator } from "./e-command-investigation";
 
 export type A6Original =
   | { kind: "a6-create"; input: A6RoleCreateInput }
@@ -31,6 +32,7 @@ export type RbacCommand = PendingMutationRecord & {
   actorId: number; original: Original; body: string; reason: string; operator: string; name: string; change: string;
   /** A POST receipt proves creation; only ticket is the last authoritative current-state lookup. */
   receipt?: RbacTicket; ticket?: RbacTicket; proposalNotFound?: boolean;
+  directRejection?: true;
 };
 
 export const rbacProposal = (original: Original) => ["a6-status", "a6-delete", "a6-grants"].includes(original.kind);
@@ -115,7 +117,8 @@ function validRecord(record: RbacCommand) {
       && record.fingerprint === `${record.actorId}:${rbacObject(record.original)}` && record.body === wire(record.original, record.reason, record.operator).body
       && (record.ticket === undefined || (checkTicket(record.original, record.ticket), true))
       && (record.receipt === undefined || (checkTicket(record.original, record.receipt), true))
-      && (record.proposalNotFound === undefined || typeof record.proposalNotFound === "boolean");
+      && (record.proposalNotFound === undefined || typeof record.proposalNotFound === "boolean")
+      && (record.directRejection === undefined || record.directRejection === true);
   } catch { return false; }
 }
 
@@ -188,18 +191,40 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     if (!scope) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     const state = await fetchDirectCommandReceipt(scope, record.commandKey, record.actorId);
     requireOriginalActor(record);
+    const current = saved(record.commandKey);
+    if (state === "REJECTED" && current) {
+      commands.remember(record.fingerprint, record.commandKey, { ...current, directRejection: true, proposalNotFound: false });
+      sync();
+    }
     return state;
+  };
+  const queryInvestigation = async (record: RbacCommand, evidence?: ECommandEvidence) => {
+    requireOriginalActor(record);
+    // A6 delete/grants retain their existing A2 proposal recovery, not a direct-command origin.
+    if (record.original.kind === "a6-delete" || record.original.kind === "a6-grants") throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    const request = wire(record.original, record.reason, record.operator);
+    const locator: ECommandLocator = { commandKey: record.commandKey, originalAdminId: String(record.actorId),
+      originalMethod: request.method as ECommandLocator["originalMethod"], originalPath: `/api/admin/platform${request.path}` };
+    const receipt = evidence ? await investigateECommand(record, locator, evidence, `platform_${domain}_read`) : await discoverECommand(locator);
+    requireOriginalActor(record);
+    const original = record.original;
+    const scope = original.kind === "a6-create" ? `A6_ROLE_CREATE:${original.input.roleCode.trim().toUpperCase()}`
+      : original.kind === "a6-update" || original.kind === "a6-status" ? `A6_ROLE_UPDATE:${original.role.id}`
+        : original.kind === "a7-create" ? `A7_MENU_CREATE:${original.input.menuCode.trim().toUpperCase()}`
+          : `A7_MENU_${original.kind === "a7-delete" ? "DELETE" : "UPDATE"}:${original.node.id}`;
+    if (receipt && receipt.scope !== scope) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+    return receipt;
   };
   const observe = (record: RbacCommand, ticket: RbacTicket | null) => {
     const current = saved(record.commandKey);
     if (!current) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
     commands.remember(record.fingerprint, record.commandKey, { ...current, ticket: ticket ?? current.ticket,
-      proposalNotFound: !ticket && !current.ticket && !current.receipt });
+      proposalNotFound: !ticket && !current.ticket && !current.receipt && !current.directRejection });
     sync();
   };
   const releaseExpiredProposal = async (record: RbacCommand, confirmed: boolean) => {
     const current = saved(record.commandKey);
-    if (!confirmed || !current || !rbacProposal(current.original) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    if (!confirmed || !current || !rbacProposal(current.original) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt || current.directRejection) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     if (await queryProposal(current)) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     // A status PATCH can also return a direct no-op when the target status already matches.
     // Missing the proposal alone cannot settle that union: confirm the requested status too.
@@ -267,5 +292,5 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("RBAC_MUTATION_OUTCOME_UNKNOWN", { cause: error });
     }
   };
-  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, forget, observe, releaseExpiredProposal };
+  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, queryInvestigation, forget, observe, releaseExpiredProposal };
 }

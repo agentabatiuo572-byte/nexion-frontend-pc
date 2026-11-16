@@ -209,7 +209,8 @@ export default function A7Menus() {
     requireActor();
     const state = await commands.queryReceipt(record).catch(() => null);
     requireActor();
-    const settled = state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED";
+    // A minimal rejection omits its reason; rejection audits may already have committed.
+    const settled = state === "SUCCEEDED" || state === "FAILED";
     if (settled) {
       freshOverview.current = null;
       setConfirmReq(null); setMode(null);
@@ -217,7 +218,7 @@ export default function A7Menus() {
     }
     if (!await refresh()) throw new Error("RBAC_FRESH_READ_REQUIRED");
     requireActor();
-    setToast(settled ? state === "SUCCEEDED" ? record.original.kind === "a7-delete" ? "查到原结果：已删除。" : "查到原结果：已保存。"
+    if (state !== "REJECTED") setToast(settled ? state === "SUCCEEDED" ? record.original.kind === "a7-delete" ? "查到原结果：已删除。" : "查到原结果：已保存。"
       : "查到原结果：没有执行，记录已解除。"
       : "没查到原结果，记录保留。");
   };

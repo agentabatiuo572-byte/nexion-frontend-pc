@@ -126,6 +126,9 @@ function validateG1Position(value: unknown, path: string): void {
   text(module, position.nickname, `${path}.nickname`, true);
   text(module, position.note, `${path}.note`, true);
   if (position.storedStatus !== undefined) text(module, position.storedStatus, `${path}.storedStatus`);
+  for (const key of ["amountMissing", "estimatedInterestMissing"]) {
+    if (position[key] !== undefined) bool(module, position[key], `${path}.${key}`);
+  }
 }
 
 export function assertG1PositionContract<T>(value: T): T {
