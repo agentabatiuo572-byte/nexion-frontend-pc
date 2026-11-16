@@ -238,7 +238,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     || row.commandKey !== locator.commandKey || row.originalMethod !== locator.originalMethod || row.originalPath !== locator.originalPath
     || !Number.isSafeInteger(row.originalAdminId) || Number(row.originalAdminId) < 1
     || String(row.originalAdminId) !== locator.originalAdminId
-    || typeof row.requestHash !== "string" || !/^[a-fA-F0-9]{64}$/.test(row.requestHash)
+    || typeof row.requestHash !== "string" || !(/^[a-fA-F0-9]{64}$/.test(row.requestHash)
+      || row.scope === "A3_PLATFORM_EXPERIENCE" && /^[0-9a-f]{1,8}$/.test(row.requestHash))
     || row.originalTarget !== null && typeof row.originalTarget !== "string"
     || row.originalTargets !== null && typeof row.originalTargets !== "string"
     || !["PROCESSING", "UNKNOWN", "SUCCEEDED", "FAILED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus))
