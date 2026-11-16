@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
-  ArrowDown, ArrowUp, CalendarDays, ChartColumn, Check, CircleHelp, CircleSlash, Download, FileDown, Gauge, Hourglass, ListChecks,
+  ArrowDown, ArrowUp, CalendarDays, ChartColumn, Check, CircleHelp, CircleSlash, Download, FileDown, Gauge, ListChecks,
   RefreshCw, Route, ShieldAlert, ShieldCheck, SlidersHorizontal, TriangleAlert, UsersRound,
 } from "lucide-react";
 import {
@@ -20,13 +20,15 @@ import type { JCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
-import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
+import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
+import { SettledLine } from "../recovery-panel";
+import { CommandClosureModal } from "../e-tabs/e-command-check";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { expiredTag } from "../g-tabs/g-recovery";
-import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 /** Old page records lack expected values: retain them for read-only investigation, never resend them. */
 const commandAttempt = createSlotAttemptStore({
@@ -93,6 +95,40 @@ function savedChange(saved: SavedConfig) {
   return parts.join("，");
 }
 
+/** 恢复面板一行的标题：只写改了的那一项。 */
+function savedTitle(saved: SavedConfig) {
+  const input = saved.command?.tamper.input;
+  if (!input) return `告警设置 · 阈值改成 ${saved.threshold} 次`;
+  const parts = [
+    input.expectedThreshold !== input.threshold ? `阈值 ${input.expectedThreshold} → ${input.threshold} 次` : "",
+    input.expectedFeedK4 !== input.feedK4 ? `风险评分${feedText(input.expectedFeedK4)} → ${feedText(input.feedK4)}` : "",
+  ].filter(Boolean);
+  return `告警设置 · ${parts.join("，") || "阈值和风险评分不变"}`;
+}
+
+/** 查询、结案都按原记录的出处定位；升级期间没存出处的完整记录按当前账号查，和 queryJ3Command 一致。 */
+function investigationRecord(command: J3PendingCommand, adminId: string): FundCommandRecord {
+  return { ...command, commandOrigin: command.tamper.commandOrigin
+    ?? { originalMethod: "PUT", originalPath: "/api/admin/emergency/tamper/alert-config", readAuthority: "emergency_j3_read", originalAdminId: adminId } };
+}
+
+type J3Settled = { key: string; label: string; status: string };
+const SETTLED_TEXT: Record<string, string> = {
+  CONFIRMED_NOT_EXECUTED: "核查确认原修改没有执行，记录已解除，可以重新修改。",
+  CONFIRMED_SUCCEEDED: "核查确认原修改已生效，记录已解除；页面显示的是现在的设置。",
+};
+const SETTLED_DONE = "原修改已生效，记录已解除；页面显示的是现在的设置。";
+
+/** 修改框里「查询原结果」没有结论时的一句。 */
+function outcomeText(outcome: FundInvestigationOutcome) {
+  if ("error" in outcome) return `原结果没查到：${outcome.error}`;
+  const status = outcome.receipt?.originalStatus;
+  return !status ? "没有查到原修改的记录，查不到不等于没执行。"
+    : status === "PROCESSING" ? "原修改还在执行，稍后再查。"
+      : status === "FAILED" ? "系统记录原修改失败了。"
+        : "系统也没有结果，需要有调查权限的超级管理员核查结案。";
+}
+
 /** 后端小时桶「2026-11-13 14:00」、日桶「2026-11-13」，横轴只写时分或月日。 */
 const tickOf = (label: string) => (/^\d{4}-\d{2}-\d{2} /.test(label) ? label.slice(11) : /^\d{4}-/.test(label) ? label.slice(5) : label);
 
@@ -114,6 +150,11 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const [accountLoading, setAccountLoading] = useState(false);
   const [saved, setSaved] = useState<SavedConfig | null>(null);
   const [releasing, setReleasing] = useState<SavedConfig["legacy"] | null>(null);
+  const adminId = useAdminAuth((state) => String(state.session?.adminId ?? ""));
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [settled, setSettled] = useState<J3Settled[]>([]);
+  const [checking, setChecking] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [readAt, setReadAt] = useState<number | null>(null);
   const accountsRef = useRef<HTMLDivElement>(null);
   const retryableReport = pendingReport?.window === window ? pendingReport : null;
@@ -198,20 +239,34 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   };
 
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
+  /** 只记下查到的结论给运营看；解除与否由 queryJ3Command 按后端结论决定。 */
+  const recordOutcome = (command: J3PendingCommand, outcome: FundInvestigationOutcome, label: string) => {
+    setOutcomes((current) => ({ ...current, [command.commandKey]: outcome }));
+    if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+      setSettled((current) => [...current.filter((item) => item.key !== command.commandKey), { key: command.commandKey, label, status: outcome.receipt!.originalStatus }]);
+    }
+  };
   const queryOriginal = async () => {
     if (saved?.command) {
+      const command = saved.command;
+      setChecking(true);
       try {
-        if (fundCommandSettled(await queryJ3Command(saved.command))) {
+        const receipt = await queryJ3Command(command);
+        recordOutcome(command, { receipt }, savedTitle(saved));
+        if (fundCommandSettled(receipt)) {
           setConfigOpen(null);
           syncSaved();
           await actions.reloadJEmergency().catch(() => undefined);
           return;
         }
-      } catch { /* An auxiliary lookup failure must not prevent the current-settings read. */ }
+      } catch (error) {
+        // An auxiliary lookup failure must not prevent the current-settings read.
+        recordOutcome(command, { error: j3ErrorText(error) }, savedTitle(saved));
+      } finally { setChecking(false); }
     }
     void actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
-      if (now) toast(`现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此认定原请求成没成。`, "info");
+      if (now) toast(`现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。`, "info");
     }).catch(() => undefined);
   };
   const closeConfig = () => { setConfigOpen(null); syncSaved(); };
@@ -249,28 +304,55 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       </>} />
   );
 
+  const command = saved?.command;
+  const expired = !!saved && isRetryExpired(saved);
+  const record = command ? investigationRecord(command, adminId) : null;
+  const outcome = command ? outcomes[command.commandKey] : undefined;
+  const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+  const canClose = !!record && receipt?.originalStatus === "UNKNOWN" && fundInvestigationAccess(record).canSubmit;
+  const recoveryRows: FundRecoveryRow[] = saved ? [{
+    key: command?.commandKey ?? "j3-legacy",
+    title: savedTitle(saved),
+    record: record ?? undefined,
+    outcome,
+    createdAt: saved.createdAt,
+    expired,
+    canRetry: canConfigure && !expired && !!command,
+    canQuery: true,
+    status: saved.legacy ? expired
+      ? { tone: "neutral", label: "已过期", line: "改版前的旧记录查不了原结果；到操作记录与审批核对后，可以确认解除。" }
+      : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" } : undefined,
+    actions: <>
+      <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
+      {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
+      {canConfigure && !expired && !!command && <Button size="sm" disabled={checking} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+      {saved.legacy && expired && <Button size="sm" onClick={() => setReleasing(saved.legacy)}>确认解除</Button>}
+    </>,
+    detail: <p>{savedChange(saved)}。</p>,
+  }] : [];
+
   const savedNotice = <>
-    {saved && (
-    <Notice tone="warn" title={<>修改告警设置 · 结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。处理完之前不能发起新的修改。" /></>}>
-      <ul className="j3-recovery" aria-label="结果未知的修改">
-        <li>
-          <span className="j3-recovery-name">告警设置</span>
-          <span className="j3-recovery-change">{savedChange(saved)}</span>
-          <span className="j3-recovery-time">{businessStamp(saved.createdAt)} 提交（{businessZone().label}）</span>
-          <span className="j3-recovery-state">{!isRetryExpired(saved) ? <StatusTag tone="warn" icon={CircleHelp} explain={saved.command ? undefined : "旧记录没存原请求，不能重试，只能查询原结果。"}>结果未知</StatusTag> : saved.legacy
-            ? <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。">已过期</StatusTag>
-            : expiredTag("direct")}</span>
-          <span className="j3-recovery-actions">
-            <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
-            {canConfigure && !isRetryExpired(saved) && !!saved.command && <Button size="sm" onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
-            {saved.legacy && isRetryExpired(saved) && <Button size="sm" onClick={() => setReleasing(saved.legacy)}>确认解除</Button>}
-          </span>
-        </li>
-      </ul>
-    </Notice>
-    )}
-    {releasing && <ReleaseModal label="告警设置 · 旧记录"
-      explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
+    {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_DONE}
+      onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
+    <FundRecoveryPanel rows={recoveryRows} heading="修改告警设置 · 结果未知" />
+    {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt}
+      facts={<>
+        <Fact k="改动">{savedChange(saved!)}</Fact>
+        <Fact k="系统记录">结果未知，原修改还锁着</Fact>
+        {receipt?.investigation && <Fact k="上次核查">{formatBusinessTimeCompact(receipt.investigation.investigatedAt, "—")}，记为「{receipt.investigation.conclusion === "SUCCEEDED" ? "已执行" : receipt.investigation.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
+      </>}
+      onClose={() => setClosing(false)}
+      onSubmit={async (evidence) => {
+        const next = await queryJ3Command(command, evidence);
+        recordOutcome(command, { receipt: next }, savedTitle(saved!));
+        setClosing(false);
+        if (fundCommandSettled(next)) {
+          syncSaved();
+          await actions.reloadJEmergency().catch(() => undefined);
+        }
+      }} />}
+    {releasing && <ReleaseModal label="告警设置 · 改版前的旧记录"
+      explain={<><p>改版前的旧记录没存原修改的内容，不能重试，也不能核查结案。</p><p>先到「操作记录与审批」核对原修改有没有生效。</p></>}
       onCancel={() => setReleasing(null)} onConfirm={() => {
         if (releasing.store === "emergency") releaseExpiredJLegacyCommand(releasing.record);
         // The old page and client saved the same operation in both stores.
@@ -293,6 +375,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
 
   const modal = configOpen && (configOpen.original?.command || alert) && (
     <J3ConfigModal ctx={ctx} original={configOpen.original} onClose={closeConfig}
+      onOutcome={(pending, result) => recordOutcome(pending, result, configOpen.original ? savedTitle(configOpen.original) : "修改告警设置")}
       onPending={() => { const next = readSavedConfig(); setSaved(next); if (next?.command) setConfigOpen({ original: next }); }} />
   );
 
@@ -568,7 +651,8 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
 }
 
 /** Recovery facts and requests come only from the submission-time record, including after a failed overview read. */
-function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; original: SavedConfig | null; onClose: () => void; onPending: () => void }) {
+function J3ConfigModal({ ctx, original, onClose, onPending, onOutcome }: { ctx: JCtx; original: SavedConfig | null; onClose: () => void; onPending: () => void;
+  onOutcome: (pending: J3PendingCommand, outcome: FundInvestigationOutcome) => void }) {
   const [current] = useState(() => original?.command?.tamper.context ?? ctx.emergency.tamper!.alertConfig);
   const sevenDayAlertAccounts = current.sevenDayAlertAccounts;
   const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? current.threshold));
@@ -636,19 +720,27 @@ function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; origi
   };
   const queryOriginal = async () => {
     setReadBack("正在读取…");
+    let found = "";
     if (pending) {
       try {
-        if (fundCommandSettled(await queryJ3Command(pending))) {
+        const receipt = await queryJ3Command(pending);
+        onOutcome(pending, { receipt });
+        if (fundCommandSettled(receipt)) {
           onClose();
           await ctx.actions.reloadJEmergency().catch(() => undefined);
           return;
         }
-      } catch { /* Preserve the original and continue with the existing read-only fallback. */ }
+        found = outcomeText({ receipt });
+      } catch (error) {
+        // Preserve the original and continue with the existing read-only fallback.
+        onOutcome(pending, { error: j3ErrorText(error) });
+        found = outcomeText({ error: j3ErrorText(error) });
+      }
     }
     void ctx.actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
-      setReadBack(now ? `现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此认定原请求成没成。` : "没读到告警设置，请稍后再查。");
-    }).catch((error) => setReadBack(`读取失败 · ${j3ErrorText(error)}`));
+      setReadBack(<>{found && <>{found}<br /></>}{now ? `现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。` : "没读到告警设置，请稍后再查。"}</>);
+    }).catch((error) => setReadBack(`${found ? `${found} ` : ""}读取失败 · ${j3ErrorText(error)}`));
   };
 
   const canRetry = useAdminAuth((state) => state.session?.authorities.includes("emergency_j3_alert_config") ?? false);
