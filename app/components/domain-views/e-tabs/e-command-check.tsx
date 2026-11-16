@@ -14,7 +14,7 @@ type Conclusion = ECommandEvidence["conclusion"];
 const CONCLUSION_TEXT: Record<Conclusion, string> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
 const CONCLUSION_HELP: Record<Conclusion, string> = {
   SUCCEEDED: "原操作有完成记录，或填的成功记录编号指向这次操作时才能确认；确认后解除锁定，不再重试。",
-  NOT_EXECUTED: "原操作的事务已确认回滚时才能确认；确认后解除锁定，可以重新发起。",
+  NOT_EXECUTED: "原操作确认已整体撤销、没有生效时才能选；确认后解除锁定，可以重新发起。",
   STILL_UNKNOWN: "只留下这次核查记录，原操作继续锁定，之后可以再次核查。",
 };
 
@@ -83,7 +83,7 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, onClo
   const referenceLength = reference.trim().length;
   const auditValid = !auditId.trim() || /^[1-9]\d{0,17}$/.test(auditId.trim());
   const block = !conclusion ? "请选择核查结论" : !referenceLength ? "请写明核查依据" : referenceLength > 512 ? "核查依据最多 512 字"
-    : !auditValid ? "审计编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
+    : !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
   return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!!conclusion || !!reference || !!auditId} onClose={onClose}
     footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabledReason={block} onClick={async () => {
       setTouched(true);
@@ -109,8 +109,8 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, onClo
       <Field label="核查依据" required hint="最多 512 字" error={touched && (!referenceLength || referenceLength > 512) ? referenceLength ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
         <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder="写明核对了什么、在哪里看到，例如：操作记录里这条命令 10:42 的成功记录" value={reference} onChange={event => setReference(event.target.value)} />
       </Field>
-      {conclusion === "SUCCEEDED" && <Field label="成功审计编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "审计编号须为正整数" : undefined}>
-        <Input aria-label="成功审计编号" className="e-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
+      {conclusion === "SUCCEEDED" && <Field label="成功记录编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "成功记录编号须为正整数" : undefined}>
+        <Input aria-label="成功记录编号" className="e-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
       <Check label="我已核对证据，知道结论确认后不能撤销" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />
       {error && <Notice tone="danger">{error}</Notice>}
