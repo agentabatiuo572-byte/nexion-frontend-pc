@@ -2082,7 +2082,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   "STREAK_REWARD_TEXT_TOO_LONG": "连签奖励最多 128 个字符，请缩短后再提交。",
   "STREAK_REWARD_AMBIGUOUS": "一档连签奖励只能填写一种权益，请分别核对种类和数量后再提交。",
   "STREAK_BADGE_NOT_CONFIGURED": "这一档没有关联有效徽章，不能改为徽章奖励。请联系值班同事核对原徽章编码。",
-  "STREAK_REWARD_AMOUNT_INVALID": "奖励数量或格式无效。请完整填写一种奖励，如 +5 UVT、+1 USDT 或转盘票 ×2。",
+  "STREAK_REWARD_AMOUNT_INVALID": "奖励要写一种，数量大于 0，如 +5 UVT、+1 USDT 或转盘票 ×2。",
   "STREAK_REWARD_AMOUNT_PRECISION_INVALID": "UVT 或 USDT 奖励最多 12 位整数和 6 位有效小数，不能舍入保存。请核对数量。",
   "STREAK_SPIN_INTEGER_REQUIRED": "转盘票数量须为 1–2147483647 的整数，请核对后再提交。",
   "POWER_UP_EXPECTED_STATE_REQUIRED": "成长权益缺少原天数或原值，本次未保存。请重新读取该档后再修改。",
