@@ -39,7 +39,10 @@ import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessT
 import { platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
 import { fmtNum } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
-import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { queryUserDetailCommand, userDetailCommandOrigin, userDetailCommandRoute } from "@/lib/admin/user-detail-command-query";
+import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
+import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -70,6 +73,7 @@ import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/component
  */
 type C1CommandKind = "nickname" | "unbind" | "rebind" | "replace" | "recycle";
 type C1Command = PendingMutationRecord & {
+  commandOrigin?: FundCommandOrigin;
   kind: C1CommandKind;
   label: string;
   adminKey: string;
@@ -101,6 +105,8 @@ const c1UserCommands = createPendingMutationStore<C1Command>({
   // 过期不能重试，记录也不删（OP-96）：到期不等于原操作没生效，对象继续锁着。
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.kind === "string" && typeof record.userId === "string" && typeof record.reason === "string" && record.reason.length > 0
+    && isOriginalCommandOrigin(record.commandOrigin, userDetailCommandRoute(record))
+    && (record.commandOrigin === undefined || record.commandOrigin.originalAdminId === record.adminKey)
     || typeof record.inputFingerprint === "string" && LEGACY_SLOT.test(record.fingerprint),
 });
 /** 旧记录读出来补上目标，缺的理由不补（C1-H04）。 */
@@ -771,7 +777,8 @@ export default function UserDetailPage() {
 
   const syncPending = useCallback(() => {
     // 换人时这张表整张清掉（claimPendingCommandOwner），留下的旧记录就是当前账号的。
-    const live = c3UserId ? c1UserCommands.list().map(c1Command).filter((command) => command.userId === c3UserId && (command.legacy || command.adminKey === adminKey)) : [];
+    const live = c3UserId ? c1UserCommands.list().map(c1Command).filter((command) => command.userId === c3UserId
+      && (command.legacy ? hasPersistedPendingCommandOwner(adminKey) : command.adminKey === adminKey)) : [];
     setPendingCommands(live);
     setCorrections(adminKey ? pendingCorrections(adminKey, [userKey, c3UserId, profile?.userNo ?? ""]) : []);
   }, [c3UserId, adminKey, userKey, profile?.userNo]);
@@ -839,10 +846,13 @@ export default function UserDetailPage() {
 
   /** 结果未知时转成页面上方的待确认条，这个对象在确认前不能再操作（OP-93）。做法同提现审核的 sendCommand。 */
   const execute = async (command: C1CommandInput) => {
+    if (String(useAdminAuth.getState().session?.adminId) !== command.adminKey) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     const slot = commandSlot(command);
-    const retained = c1UserCommands.get(slot);
+    const saved = c1UserCommands.list().find(record => record.fingerprint === slot && record.adminKey === command.adminKey);
+    const retained = saved?.commandKey;
     const commandKey = retained ?? `${COMMAND_PREFIX[command.kind]}-${crypto.randomUUID()}`;
-    c1UserCommands.remember(slot, commandKey, { ...command, rejection: undefined });
+    c1UserCommands.remember(slot, commandKey, { ...command, rejection: undefined,
+      commandOrigin: retained ? saved?.commandOrigin : userDetailCommandOrigin(command) });
     if (!c1UserCommands.isDurablyStored(slot, commandKey)) {
       if (!retained) c1UserCommands.forget(slot, commandKey);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -858,7 +868,7 @@ export default function UserDetailPage() {
       } catch (cause) {
         const unknown = outcomeUnknown(cause);
         // 新号被明确拒绝才丢号。结果未知必须保号；重试的是原命令时，明确失败也证明不了原命令的结果，继续保留。
-        if (!unknown && !retained) c1UserCommands.forget(slot);
+        if (!unknown && !retained) c1UserCommands.forget(slot, commandKey);
         syncPending();
         if (unknown) {
           toast.warn("结果未知，不要重复操作", "到页面上方查询原结果，或按原请求重试。");
@@ -872,7 +882,7 @@ export default function UserDetailPage() {
         }
         throw new Error(message);
       }
-      c1UserCommands.forget(slot);
+      c1UserCommands.forget(slot, commandKey);
       syncPending();
       const text = command.kind === "nickname" ? `昵称已重置为 ${userNicknameText(nextNickname, profile?.phoneMasked)}`
         : command.kind === "unbind" ? "支付方式已从 UVEL 账户解绑"
@@ -916,6 +926,14 @@ export default function UserDetailPage() {
 
   /** 读回只给现在的事实，变了也可能是别人改的，不能当成原命令的回执，待确认保留（OP-93、OP-95）。 */
   const verifyPending = async (command: C1Command) => {
+    const result = await queryUserDetailCommand(command).catch(() => null);
+    if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) return;
+    if (result?.settled) {
+      c1UserCommands.forget(command.fingerprint, command.commandKey);
+      syncPending(); setActionConfirm(null); setReleasing(null);
+      await load(); await loadPaymentMethods();
+      return;
+    }
     await load();
     setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已读取现在的值，核对上面的内容。现在的状态可能是别人改的，记录继续保留。" }));
   };

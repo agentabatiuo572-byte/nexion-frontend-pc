@@ -10,7 +10,9 @@ import { F1OutcomeUncertainError, isF1OutcomeUncertainError } from "@/lib/admin/
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
+import { f4MaterialCommandOrigin, queryF4MaterialCommand } from "@/lib/admin/f4-material-command";
+import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
+import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { ambassadorApprovalBlocker, ambassadorBucketLabel, ambassadorMaterialStateLabel, F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { fetchF4AmbassadorMaterials, F4MaterialReviewNotAppliedError, reviewF4AmbassadorMaterials, type F4AmbassadorApplication, type F4AmbassadorMaterialPacket, type F4AmbassadorMaterialProposal, type F4AmbassadorReview, type F4AmbassadorReviewInput } from "@/lib/admin/f1-client";
@@ -22,13 +24,15 @@ import { count, decimalText, stamp, unknownTag, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
 
-type PendingReview = PendingMutationRecord & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication };
+type PendingReview = PendingMutationRecord & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication; commandOrigin?: FundCommandOrigin };
 const reviewAttempts = createPendingMutationStore<PendingReview>({
   storageKey: "uvel-f4-ambassador-material-reviews", retainExpiredRecords: true,
   isValidRecord: (record) => Number.isSafeInteger(record.actorId) && Number.isSafeInteger(record.applicationId)
     && record.fingerprint === `${record.actorId}|${record.applicationId}`
     && Number.isSafeInteger(record.input?.expectedMaterialRevision) && ["BUSINESS", "FINANCE"].includes(record.input?.stage)
-    && ["PASSED", "NEEDS_MORE"].includes(record.input?.decision) && typeof record.input?.reason === "string",
+    && ["PASSED", "NEEDS_MORE"].includes(record.input?.decision) && typeof record.input?.reason === "string"
+    && isOriginalCommandOrigin(record.commandOrigin, { originalMethod: "POST", originalPath: `/api/admin/teams/ambassador-applications/${record.applicationId}/materials/review`, readAuthority: "network_f4_read" })
+    && (record.commandOrigin === undefined || record.commandOrigin.originalAdminId === String(record.actorId)),
 });
 
 function money(value: number | string | null | undefined) {
@@ -120,11 +124,12 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const queryOriginal = async () => {
     const original = pendingRef.current;
     if (!original || original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
-    const state = await fetchDirectCommandReceipt(`F4_MATERIAL_REVIEW:${original.actorId}:${original.applicationId}`, original.commandKey, original.actorId).catch(() => null);
-    if (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED") {
+    const { outcome } = await queryF4MaterialCommand(original);
+    if (original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+    if (outcome) {
       reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
       setPacket(null); setConfirmation(null);
-      if (state === "SUCCEEDED") ctx.toast("材料核验已记录");
+      if (outcome === "SUCCEEDED") ctx.toast("材料核验已记录");
       else setRecoveryNotice(displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
       await refresh(); await ctx.refreshF4();
       return true;
@@ -281,9 +286,10 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         if (!useAdminAuth.getState().session?.authorities.includes(authority)) throw new Error("ADMIN_PERMISSION_DENIED");
         if (original && isRetryExpired(original)) { setPending({ ...original }); throw new F1OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey); }
         if (!original && (!packet || loading || error || final)) throw new Error("材料没读到，刷新后再试");
-        const attempt = original ?? { actorId, applicationId: application.id, input: { ...confirmation, reason }, fingerprint,
+        const attempt: PendingReview = original ?? { actorId, applicationId: application.id, input: { ...confirmation, reason }, fingerprint, commandOrigin: f4MaterialCommandOrigin(application.id),
           commandKey: createA2CommandKey("f4-material-review"), createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
-        reviewAttempts.remember(fingerprint, attempt.commandKey, { actorId, applicationId: application.id, input: attempt.input, application });
+        reviewAttempts.remember(fingerprint, attempt.commandKey, { actorId, applicationId: application.id, input: attempt.input, application,
+          commandOrigin: attempt.commandOrigin });
         if (!reviewAttempts.isDurablyStored(fingerprint, attempt.commandKey)) {
           if (!original) reviewAttempts.forget(fingerprint, attempt.commandKey);
           throw new Error(original ? "F4_OPERATION_RETRY_STORAGE_UNAVAILABLE" : "F4_OPERATION_STORAGE_UNAVAILABLE");

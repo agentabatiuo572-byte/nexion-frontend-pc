@@ -36,7 +36,8 @@ export function eCommandResult(receipt: ECommandInvestigation | null): "SUCCEEDE
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
   if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
-  const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS"
+  const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
+    || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
     || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
   return successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
 }
@@ -100,6 +101,22 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     if (event && (event[2] ? locator.originalMethod === "PATCH" : locator.originalMethod === "DELETE")) novaScope = `I2_NOVA_SOCIAL_EVENT_${event[2] ? "STATUS" : "DELETE"}:${BigInt(event[1])}`;
   }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : locator.originalPath === "/api/admin/content/knowledge/faqs" ? locator.originalMethod === "POST" && row.scope === "M4_SUPPORT_FAQ_CREATE"
+    : /^\/api\/admin\/content\/knowledge\/faqs\/[^/]+(?:\/status)?$/.test(locator.originalPath) ? row.scope === normalizeScope(`M4_SUPPORT_FAQ_${locator.originalMethod === "DELETE" ? "DELETE" : locator.originalPath.endsWith("/status") ? "STATUS" : "UPDATE"}:${decodeURIComponent(locator.originalPath.split("/").at(locator.originalPath.endsWith("/status") ? -2 : -1)!)}`) && ["PATCH", "DELETE"].includes(locator.originalMethod)
+    : /^\/api\/admin\/users\/profiles\/[^/]+\/nickname\/reset$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "USER_NICKNAME_RESET"
+    : /^\/api\/admin\/users\/profiles\/[^/]+\/payment-methods\/[1-9]\d*\/(?:unbind|rebind-notification)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && new RegExp(`^USER_PAYMENT_METHOD_${locator.originalPath.endsWith("/unbind") ? "UNBIND" : "REBIND_NOTICE"}:(?:PRODUCTION|SANDBOX)$`).test(String(row.scope))
+    : /^\/api\/admin\/devices\/users\/[^/]+\/tradein\/(?:replace|recycle)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `E3_TRADEIN_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
+    : locator.originalPath === "/api/admin/platform/config" ? locator.originalMethod === "PUT" && ["platform.global_rate_limit_per_minute", "withdrawal.strong_review_threshold_usdt"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
+    : locator.originalPath === "/api/admin/risk/multi-account/registration-params" ? locator.originalMethod === "PATCH" && ["auth.risk.h5_register_captcha", "auth.risk.h5_register_device_limit", "auth.risk.h5_freeze_newcomer_gift"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
+    : /^\/api\/admin\/teams\/ranks\/[^/]+\/thresholds\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === "F1_VRANK_THRESHOLD_UPDATE"
+    : /^\/api\/admin\/teams\/ranks\/[^/]+\/rewards(?:\/[^/]+)?$/.test(locator.originalPath) ? row.scope === ({ POST: "F1_VRANK_REWARD_ADD", PUT: "F1_VRANK_REWARD_UPDATE", DELETE: "F1_VRANK_REWARD_REMOVE" } as Record<string, string>)[locator.originalMethod]
+    : /^\/api\/admin\/teams\/commissions\/config\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === "F_TEAM_CONFIG_UPDATE"
+    : locator.originalPath === "/api/admin/teams/ambassador-policy" ? locator.originalMethod === "PUT" && row.scope === "F4_AMBASSADOR_POLICY_UPDATE"
+    : /^\/api\/admin\/teams\/ambassador-applications\/[1-9]\d*\/materials\/review$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `F4_MATERIAL_REVIEW:${locator.originalAdminId}:${locator.originalPath.split("/").at(-3)}`
+    : /^\/api\/admin\/teams\/commissions\/[^/]+\/reverse$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "F5_COMMISSION_REVERSE"
+    : locator.originalPath === "/api/admin/teams/commissions/reissue" ? locator.originalMethod === "POST" && row.scope === "F5_COMMISSION_REISSUE"
+    : /^\/api\/admin\/teams\/commissions\/users\/[^/]+\/suspend$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "F5_COMMISSION_SUSPENSION"
+    : locator.originalPath === "/api/admin/teams/commissions/anomaly-config" ? locator.originalMethod === "PUT" && row.scope === "F5_COMMISSION_ANOMALY_CONFIG"
     : copyPath ? row.scope === copyScope
     : novaPath ? !!novaScope && row.scope === normalizeScope(novaScope)
     : locator.originalPath === "/api/admin/withdraw/limits" ? ["D5_WITHDRAWAL_LIMITS_UPDATE", "D5_WITHDRAWAL_LIMITS"].includes(String(row.scope))
@@ -128,7 +145,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
           : locator.originalPath === "/api/admin/emergency/geo-block/emergency-blocks" ? row.scope === "J2_EMERGENCY_BLOCK"
           : locator.originalPath.startsWith("/api/admin/emergency/kill-switches/") ? /^J1(?:[_:])/.test(String(row.scope))
             : locator.originalPath.startsWith("/api/admin/risk/multi-account/") ? /^K1(?:[_:])/.test(String(row.scope))
-              : locator.originalPath === "/api/admin/bi/reports" || locator.originalPath.startsWith("/api/admin/bi/reports/") ? row.scope === "L_BI_REPORT_CREATE" || /^L_BI_REPORT_ACTION/.test(String(row.scope))
+              : locator.originalPath === "/api/admin/bi/reports" ? locator.originalMethod === "POST" && row.scope === "L_BI_REPORT_CREATE"
+              : /^\/api\/admin\/bi\/reports\/[^/]+\/(?:approve|rerun|generate|download)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `L_BI_REPORT_ACTION_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
                 : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
   if (!Number.isSafeInteger(row.originalRecordId) || Number(row.originalRecordId) < 1
     || typeof row.scope !== "string" || !scopeMatches
@@ -188,6 +206,13 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^(?:M4_SUPPORT_FAQ_CREATE|M4_SUPPORT_FAQ_(?:UPDATE|STATUS|DELETE):.+)$/.test(original.scope)
+    || original.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(original.scope)
+    || /^E3_TRADEIN_(?:RECYCLE|REPLACE)$/.test(original.scope)
+    || /^A3_PLATFORM_PARAM:/.test(original.scope)
+    || /^L_BI_REPORT_ACTION_(?:APPROVE|RERUN|GENERATE|DOWNLOAD)$/.test(original.scope)
+    || /^(?:F1_VRANK_(?:THRESHOLD_UPDATE|REWARD_ADD|REWARD_UPDATE|REWARD_REMOVE)|F_TEAM_CONFIG_UPDATE|F4_AMBASSADOR_POLICY_UPDATE|F5_COMMISSION_(?:REVERSE|REISSUE|SUSPENSION|ANOMALY_CONFIG))$/.test(original.scope)
+    || /^F4_MATERIAL_REVIEW:[1-9]\d*:[1-9]\d*$/.test(original.scope)
     || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope);
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.

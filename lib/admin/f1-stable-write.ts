@@ -4,6 +4,8 @@ import { createPendingMutationStore, createSlotAttemptStore, type SlotAttemptRec
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
+import type { FundCommandOrigin } from "./fund-command-investigation";
+import { isOriginalCommandOrigin } from "./original-command-query";
 
 /** F 直写通道「提交结果未知」:命令号已随请求出手,必须保留原号供原样重试,后端按号去重。
  *  不用构造器参数属性:node 的 strip-only 类型剥离不支持该语法,本文件要被 node --test 直接 import。 */
@@ -26,6 +28,7 @@ export function isF1OutcomeUncertainError(error: unknown): error is F1OutcomeUnc
 }
 
 export interface FDirectAttempt extends SlotAttemptRecord {
+  commandOrigin?: FundCommandOrigin;
   adminId?: number;
   f4Request?: F4AmbassadorPolicyUpdate & { reason: string; operator: string };
   f4Snapshot?: F4ConfirmationSnapshot;
@@ -35,7 +38,11 @@ export interface FDirectAttempt extends SlotAttemptRecord {
 export const fDirectCommands = createPendingMutationStore<FDirectAttempt>({
   storageKey: "nexion-admin-f-direct-commands-v1",
   retainExpiredRecords: row => /^(?:\d+:)?f4-ambassador-policy$/.test(row.fingerprint) || /^(?:\d+:)?f5-anomaly-config$/.test(row.fingerprint),
-  isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0,
+  isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0
+    && (row.commandOrigin === undefined || isOriginalCommandOrigin(row.commandOrigin, {
+      originalMethod: "PUT", originalPath: /f4-ambassador-policy$/.test(row.fingerprint) ? "/api/admin/teams/ambassador-policy" : "/api/admin/teams/commissions/anomaly-config",
+      readAuthority: /f4-ambassador-policy$/.test(row.fingerprint) ? "network_f4_read" : "network_f5_read",
+    }) && row.commandOrigin.originalAdminId === String(row.adminId)),
 });
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-direct-commands-v1" }, fDirectCommands);
 

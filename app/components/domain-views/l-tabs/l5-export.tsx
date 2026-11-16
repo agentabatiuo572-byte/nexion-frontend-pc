@@ -24,7 +24,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { l5TaskCommands, type PendingL5Task } from "@/lib/admin/l5-task-commands";
+import { l5TaskCommands, l5TaskCommandOrigin, lReportReadAuthority, queryL5TaskCommand, type PendingL5Task } from "@/lib/admin/l5-task-commands";
 import { num, rec, rows, str } from "./live-data";
 import {
   fetchL5ExportAudits,
@@ -301,7 +301,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       const request = { includeSensitive: action === "approve" || task.pii, includeDecrypted: false as const, reason: reason.trim(), operator: currentAdminOperator() };
       const fingerprint = JSON.stringify({ reportId: task.id, action, request });
       const commandKey = `l5-task-${crypto.randomUUID()}`;
-      l5TaskCommands.remember(fingerprint, commandKey, { owner, action, request, task, requester });
+      l5TaskCommands.remember(fingerprint, commandKey, { owner, action, request, task, requester, commandOrigin: l5TaskCommandOrigin(task, action) });
       record = l5TaskCommands.list().find(item => item.commandKey === commandKey);
     }
     if (!record || !l5TaskCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
@@ -347,11 +347,19 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   };
   const queryTask = async (record: PendingL5Task) => {
     const auth = useAdminAuth.getState().session;
-    if (actionBusy.current || !auth || String(auth.adminId) !== record.owner
-      || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) return;
+    if (actionBusy.current || !auth || String(auth.adminId) !== record.owner) return;
     actionBusy.current = true;
     setBusyTask(record.task.id);
     try {
+      const original = await queryL5TaskCommand(record).catch(() => null);
+      if (String(useAdminAuth.getState().session?.adminId) !== record.owner) return;
+      if (original?.settled) {
+        l5TaskCommands.forget(record.fingerprint, record.commandKey);
+        syncCommands(); refreshRequired.current = true; ctx.closeActionConfirm?.();
+        await currentContext.current.reloadBi?.();
+        return;
+      }
+      if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) return;
       const current = await fetchL5ExportTask(record.task.id);
       toast(`${record.task.id} · ${taskStatus(current).label} · ${formatAdminApiError("L5_TASK_QUERY_UNSETTLED", "L5_TASK_QUERY_UNSETTLED")}`);
       await currentContext.current.reloadBi?.();
@@ -364,7 +372,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   };
   const recoveryRows: L5RecoveryItem[] = pendingCommands.map(record => {
     const expired = isRetryExpired(record);
-    const canRead = session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("bi_l5_read");
+    const authority = lReportReadAuthority(record.task.reportType);
+    const canRead = !!authority && session?.authorities.includes(authority) || session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("bi_l5_read");
     const canWrite = record.action === "approve" ? ctx.canApproveExportTasks : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
     return {
       key: record.commandKey, reportId: record.task.id, title: taskTitle(record.task, exportTypeText),

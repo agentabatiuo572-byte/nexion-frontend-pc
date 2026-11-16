@@ -490,6 +490,9 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 
 #### [A3] 系统配置
 
+**2026-11-17 原参数回执（8dab2e94/064c4ff8，hd-sync24b）**：A3 两个平台参数、K1 三个注册参数保存原方法/路径/操作人与精确读权，按原命令号发现服务端 scope/hash/目标，匹配 scope 使用服务端 normalizeScope；原目标仍为 canonical 小写物理键，不改请求和哈希。服务端成功审计把持久 scope 的大写后缀还原为物理键后精确匹配，不凭现值认原结果。参数回调可正常返回业务拒绝，原始 SUCCEEDED 保留；受控确定结论才解除、独立重读。K1 数据层已接，注册恢复查询/受控界面交视觉。A3_FEATURE_FLAG、日历/体验/两内容保存未在本次支持原来源，既有行为保留；A3-BE-03 总项继续开放。
+
+
 2026-11-16 内容原命令（后端 `6843af70`，A3-BE-02）：W06/W07在原控制器进入持久幂等回调，scope分别A3_DEVELOPER_DOCS_UPDATE:{actor}、A3_HOW_CONTENT_UPDATE:{actor}，hash绑定actor及反序列化请求体；显式Idempotency-Key优先，旧调用未发时auto:hash。PC新内容记录保存contentCommandActor并实际发送原key，按本人/内容种类保留与互锁，换账号只隔离新记录；24小时内现有「按原请求重试」发送原path/method/body/key，成功和明确拒绝才清。旧PC记录没有这个标记时不补key、不升级成可重发。原revision/内容/理由校验只在新执行，成功回执先回放；回放之后独立读取当前内容，不把旧响应写成当前编辑数据。
 
 内容记录结果未知后（协调人决定，478e19c8、d7305cfd）：「查询原结果」读现在的内容和原提交对比，修订号正好比提交时大一、内容完全一致算已保存并结案。新记录 24 小时内原请求还可能落地，对不上不能解除，只能「按原请求重试」（页面提示现在的值证明不了原操作的结果，记录保留）；过了 24 小时不能重试，对不上时才可核对后解除。旧版本留下的不带命令号的记录任何时候对不上都可以核对后解除。新记录的「按原请求重试」：已成功回放原结果、没执行就执行一次、别人已存过新内容明确拒绝并结案重读；旧版本留下的不带命令号的记录没有重试。A3仍无原号只读回执/受控核查，A3-BE-03继续开放。新PC须在含6843af70的后端之后上线，旧后端忽略key不能当成已支持去重。
@@ -4822,3 +4825,7 @@ backend04d11022 AdminCommandOrigin:66有D7_PAYOUT_VND_CONFIG读权名称，但su
 ### 2026-11-15 用户详情 B38 支持核实
 
 调查报告以页号估算的 C1/C2 支持不等于现页命令scope。backend04d11022 OpsUserPaymentMethodService.unbind:57–65/notifyRebind:68–76/resetNickname:79–97 真实scope为 USER_PAYMENT_METHOD_UNBIND:{环境}、USER_PAYMENT_METHOD_REBIND_NOTICE:{环境}、USER_NICKNAME_RESET；OpsDeviceService.executeUserTradeinAction:3176–3197委托executeTradeinAction:3103–3120，真实scope E3_TRADEIN_RECYCLE/REPLACE。AdminCommandOrigin.supported:77–82均不支持，因此本页五类未知操作不连接通用核查，不伪来源/证据；原处理不改，后端支持待办保留。既有支付安全原回执/通知校正流程不在本项改动范围。
+
+### 2026-11-17 用户详情五命令来源交付（234baa67/89684bd4，hd-sync24b）
+
+本节替代2026-11-15「五类不支持」的历史结论。支付解绑、换绑提醒和昵称重置按原 user_c1hub_read，C2设备回收/置换按原 user_c2_read，保存真实POST路径、原adminId与命令号；回执目标分别必须匹配原methodId/userId/deviceId。现有读取先原号再现状，辅助查询失败不中断原读取；旧完整无origin记录由持久owner及服务端证明原人，不补历史hash/origin。支付/昵称回调拒绝全部抛异常，正常返回仅成功，精确范围SUCCEEDED可解除；解绑只保证平台解绑和撤销请求入列、提醒只保证入队，不把异步支付商撤销或通知送达说成已完成。设备回调可正常返回非零，raw事务完成保留，只有原号回放确定业务结果或受控终态才解除并独立重读。受控表单与旧本地解除问题交视觉/协调，不以当前值代原命令结论；已有支付安全/通知校正不改。

@@ -1,6 +1,10 @@
 import type { SupportFaq } from "../../app/components/domain-views/m-tabs/data";
+import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { isOriginalCommandOrigin, queryOriginalCommand } from "./original-command-query";
+import type { PendingMutationRecord } from "./pending-mutation-store";
 
 export type M4FaqCommand = {
+  commandOrigin?: FundCommandOrigin;
   actorId: number;
   kind: "create" | "edit" | "publish" | "unpublish" | "delete";
   row: SupportFaq;
@@ -26,7 +30,22 @@ export function isM4FaqCommand(value: unknown): value is M4FaqCommand {
     || !faq(command.row) || (command.kind === "create" ? command.before !== null : !faq(command.before))
     || !command.request || typeof command.request.body !== "string") return false;
   const path = `/knowledge/faqs${command.kind === "create" ? "" : `/${encodeURIComponent(command.row.id)}`}`;
+  if (!isOriginalCommandOrigin(command.commandOrigin, { originalMethod: command.request.method, originalPath: `/api/admin/content${command.request.path}`, readAuthority: "service_m4_read" })
+    || command.commandOrigin && command.commandOrigin.originalAdminId !== String(command.actorId)) return false;
   return command.kind === "create" ? command.request.method === "POST" && command.request.path === path
     : command.kind === "delete" ? command.request.method === "DELETE" && command.request.path === path
       : command.request.method === "PATCH" && (command.request.path === path || command.request.path === `${path}/status`);
+}
+
+export function m4FaqCommandOrigin(request: M4FaqCommand["request"]) {
+  return fundCommandOrigin(request.method, `/api/admin/content${request.path}`, "service_m4_read");
+}
+
+export async function queryM4FaqCommand(record: PendingMutationRecord & { faq?: M4FaqCommand }, evidence?: FundCommandEvidence) {
+  if (!record.faq) return { receipt: null, settled: false };
+  const command = record.faq;
+  const receipt = await queryOriginalCommand({ ...record, commandOrigin: command.commandOrigin }, {
+    originalMethod: command.request.method, originalPath: `/api/admin/content${command.request.path}`, readAuthority: "service_m4_read",
+  }, String(command.actorId), evidence);
+  return { receipt, settled: fundCommandSettled(receipt) };
 }
