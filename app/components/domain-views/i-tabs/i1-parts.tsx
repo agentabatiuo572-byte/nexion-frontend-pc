@@ -377,7 +377,7 @@ function copyFormIssues(spec: CopyEditSpec | CopyCreateSpec, state: BusinessForm
   return { fields, other, blocked: list.length ? `还缺：${[...new Set(list)].join("、")}` : undefined };
 }
 
-export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDelivery, onClose, onSubmit }: {
+export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDelivery, publishBlockedReason, onClose, onSubmit }: {
   spec: CopyEditSpec | CopyCreateSpec;
   title: string;
   sub?: ReactNode;
@@ -386,6 +386,7 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDeliv
   stale?: ReactNode;
   /** 这条文案现在是已发布：存草稿会让它暂停投放（B01）。 */
   pausesDelivery?: boolean;
+  publishBlockedReason?: (form: BusinessFormValue) => string | undefined;
   onClose: () => void;
   onSubmit: (form: BusinessFormValue, mode: SaveMode) => void;
 }) {
@@ -418,7 +419,7 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDeliv
           others={<Button onClick={close}>取消</Button>}
           primary={<>
             {!isCreate && <Button disabledReason={draftCheck.blocked} onBlockedClick={() => setAttempted(true)} onClick={() => onSubmit(form, "存草稿")}>存草稿</Button>}
-            <Button variant="primary" disabledReason={publishCheck.blocked} onBlockedClick={() => setAttempted(true)} onClick={() => onSubmit(form, "发布生效")}>{isCreate ? "新增并发布" : "发布"}</Button>
+            <Button variant="primary" disabledReason={publishCheck.blocked ?? publishBlockedReason?.(form)} onBlockedClick={() => setAttempted(true)} onClick={() => onSubmit(form, "发布生效")}>{isCreate ? "新增并发布" : "发布"}</Button>
           </>} />}>
         <div className="rd-form-stack" data-business-form={spec.kind}>
           {stale}

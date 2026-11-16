@@ -2949,6 +2949,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ORDER_DEVICE_ACTIVATION_REQUIRED: "关联设备还没真正激活，暂时不能把订单标为已激活。",
   COPY_VERSION_DELETE_FORBIDDEN: "已发布或已归档版本属于审计历史,不能删除。",
   COPY_POSITION_EXISTS: "这个文案位置标识已存在，请换一个标识。",
+  COPY_POSITION_ALREADY_PUBLISHED: "这个位置已有发布中的内容",
   COPY_POSITION_NOT_FOUND: "文案位置不存在或已删除，请重新加载后选择现有位置。",
   COPY_POSITION_IN_USE: "当前文案、草稿或内容历史仍引用这个位置，不能删除或停用；请先核对引用。",
   COPY_POSITION_KEY_INVALID: "位置标识须为 2–96 位，以小写字母开头，只能使用小写字母、数字、点、下划线和短横线。",

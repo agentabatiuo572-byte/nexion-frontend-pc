@@ -455,6 +455,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const othersPublishedAt = (positionKey: string | undefined, exceptKey: string) => positionKey
     ? COPY_POOL.filter((copy) => copy.key !== exceptKey && isPublished(copy) && copy.copyPosition === positionKey)
     : [];
+  const publishBlockedReason = (positionKey: string | undefined, exceptKey: string) =>
+    othersPublishedAt(positionKey?.trim(), exceptKey.trim()).length > 0 ? "这个位置已有发布中的内容" : undefined;
   const crowdNotice = (positionKey: string | undefined, exceptKey: string) => {
     const others = othersPublishedAt(positionKey, exceptKey);
     if (others.length === 0) return null;
@@ -539,6 +541,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: draft ? (pauses ? LIVE : OFFLINE("保存草稿，线上不变")) : LIVE,
       confirmLabel: draft ? "确认存草稿" : "确认发布",
+      blockedReason: draft ? undefined : publishBlockedReason(form.copyPosition, c.key),
       statedBrief: draft
         ? { impact: pauses ? `保存草稿 ${target}，这条文案的状态变成草稿。` : "只保存草稿，这条文案现在没有在投放。", check: "核对三种语言和位置；存草稿不更新多语言与课程的词条。" }
         : { impact: `${target} 替换现在发布的 ${c.version}，同时更新多语言与课程里的同名词条。`, check: "核对三种语言、位置和占位符。" },
@@ -602,6 +605,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     amplifies: false,
     effect: LIVE,
     confirmLabel: "确认新增",
+    blockedReason: publishBlockedReason(form.copyPosition, form.copyKey ?? ""),
     statedBrief: { impact: "新建这条文案并直接发布第一个版本，同时在多语言与课程里建同名词条。", check: "核对文案标识、位置和三种语言；文案标识建好后不能改。" },
     facts: <Facts>
       <Fact k="文案">{form.description?.trim() || "—"} · <span data-mono="">{form.copyKey?.trim() || "—"}</span></Fact>
@@ -756,6 +760,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认回滚",
+      blockedReason: publishBlockedReason(target?.copyPosition, copy.key),
       statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档，位置和模块按 ${v} 的；草稿和实验记录保留，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时会被拒绝。" },
       facts: <Facts>
         <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
@@ -1079,6 +1084,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认采纳",
+      blockedReason: publishBlockedReason(winnerVersion?.copyPosition, exp?.copyKey ?? ""),
       statedBrief: { impact: "按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳；采纳不重跑发布时的内容检查，先核对内容对比；没有显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
@@ -1325,7 +1331,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const hasUnusedActiveVersion = ACTIVE_VERSION_OPTIONS.some((option) => !usedVersionKeys.has(option.value));
     const locked = lockReason(`copy:${copy.key}`);
     const items: MoreMenuItem[] = [];
-    if (status === "archived") items.push({ key: "rollback", label: `回滚到 ${row.v}`, disabledReason: locked, onSelect: () => rollbackTo(copy, row.v) });
+    if (status === "archived") items.push({ key: "rollback", label: `回滚到 ${row.v}`, disabledReason: locked ?? publishBlockedReason(row.copyPosition, copy.key), onSelect: () => rollbackTo(copy, row.v) });
     if (status === "published") {
       items.push(existingDraft
         ? { key: "draft", label: `继续草稿 ${existingDraft.v}`, disabledReason: locked, onSelect: () => editCopy(copy, existingDraft) }
@@ -1552,11 +1558,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           basedOn={<Fact k="基于">{editor.base ? `${editor.base.v} · ${versionStatus(editor.base.st).text}` : editor.copy.version}</Fact>}
           stale={editorStale}
           pausesDelivery={isPublished(editor.copy)}
+          publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, editor.copy.key)}
           onClose={() => setEditor(null)}
           onSubmit={(form, mode) => submitCopyEdit(editor.copy, editor.base, { ...form, saveMode: mode }, mode)} />
       )}
       {editor?.kind === "create" && (
-        <CopyEditorDrawer spec={editor.spec} title="新增文案" stale={editorStale} onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
+        <CopyEditorDrawer spec={editor.spec} title="新增文案" stale={editorStale} publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, form.copyKey ?? "")} onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
       )}
       {creatingExperiment && (
         <ExperimentDrawer copies={EXPERIMENT_COPY_OPTIONS} versionText={(copyKey, version) => findVersion(copyKey, version)?.zh}
