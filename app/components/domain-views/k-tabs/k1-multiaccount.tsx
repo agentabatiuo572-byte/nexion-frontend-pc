@@ -1732,7 +1732,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Field label="失效日期" required error={fieldError(expiryProblem, Boolean(whitelistDraft.expireText), "expire")}>
               {(control) => <Input {...control} disabled={busy} type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} onBlur={() => touch("expire")} />}
             </Field>
-            <p className="rd-note">新增、重新启用或延长有效期时，保存会检查兑付覆盖率，低于红线或读不到时不能保存。</p>
+            <p className="rd-note">新增、重新启用或延长有效期时，保存会检查兑付覆盖率，低于红线或无法读取时不能保存。</p>
           </DraftModal>
         );
       })()}
