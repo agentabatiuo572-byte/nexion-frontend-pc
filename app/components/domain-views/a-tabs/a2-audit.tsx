@@ -10,6 +10,7 @@ import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
+import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
 
 /**
  * A2 操作记录与审批（列表页·队列模式，PG-44）。三个页签：待审批（默认）、操作记录（含审批结果）、机制设置。
@@ -227,6 +228,9 @@ function fundTicket(w: { operationCode?: string | null; obj?: string; after?: st
   return undefined;
 }
 const REISSUE_INLINE = 5;
+/** 申请单上能按记录号读的奖励记录：补发按原顺序，冲正和状态变更一笔；暂停、恢复只有用户和类型，不读。 */
+const f5RecordIds = (fund: FundTicket | undefined): string[] => fund?.kind === "f5Reissue" ? fund.ids
+  : (fund?.kind === "f5Status" || fund?.kind === "f5Reverse") && fund.eventId ? [fund.eventId] : [];
 const kindNames = (kinds: readonly string[]) => kinds.map((kind) => F5_KIND_LABELS[kind] ?? "未知奖励类型").join("、");
 const userCode = (id: string) => `U${id.padStart(8, "0")}`;
 /** 兑付覆盖率：批准时后端到底查不查，按各类的回放方法核过的（8cf61c07）。认不出的类型只写页面自己拦的那一步。 */
@@ -1270,6 +1274,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* 读回后这一条不在了就关抽屉（第五节）。 */
   const ticket = ticketId ? pendingQueue.find((w) => w.id === ticketId) ?? null : null;
   useEffect(() => { if (ticketId && !mainLoading && !ticket) setTicketId(null); }, [ticketId, mainLoading, ticket]);
+  // 选中一张 F5 补发、冲正、状态变更单时重读这几笔奖励现在的样子（只显示，不挡批准）。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ticket) readF5Current(f5RecordIds(fundTicket(ticket)), true); }, [ticketId]);
   const log = logId ? logRows.find((l) => l.id === logId) ?? null : null;
   useEffect(() => { if (logId && !recordsLoading && !log) setLogId(null); }, [logId, recordsLoading, log]);
   const history = historyId ? historyRows.find((h) => h.id === historyId) ?? null : null;
@@ -1575,13 +1582,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.obj === "current" && !w.objDisplayName) return "当前设置";
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
-  /** 补发的记录号超过 5 笔时收进折叠，不拼成一长串（同「完整变更内容」的成组记录）。 */
-  const reissueList = (w: A2OperationRow) => {
+  /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */
+  const reissueList = (w: A2OperationRow, open = false) => {
     const fund = fundTicket(w);
-    if (fund?.kind !== "f5Reissue" || fund.ids.length <= REISSUE_INLINE) return null;
-    return <Fold inset title={`这次补发的 ${fund.ids.length} 笔`} summary="申请单里只有记录号">
-      <p className="rd-note" data-mono>{fund.ids.join("、")}</p>
-    </Fold>;
+    if (fund?.kind !== "f5Reissue" || fund.ids.length < 2) return null;
+    return <F5ReissueReadings ids={fund.ids} open={open} />;
   };
 
   /** 框里的关键信息：退款单第一行是退款金额（VS-102）。动作名在标题下面，这里不再写「操作」，单号只写一次（建议 8）。 */
@@ -1610,7 +1615,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /**
    * F4 派奖、F4 本周结算、F5 奖励状态变更的批准框：先写这一次批的是什么、批准后会怎样，再放这一次的结果，规则收进折叠。
-   * 句子和发起人那边（f4-confirmations、f5-audit）同一套说法；没有的事实不写（F5 单子里没有用户和金额）。
+   * 句子和发起人那边（f4-confirmations、f5-audit）同一套说法；没有的事实不写；F5 单子里没有用户和金额，按记录号读现在的样子（a2-f5-current）。
    */
   type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string; coverageLead?: string; coverageUnknown?: string;
     coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; review?: boolean; extra?: ReactNode };
@@ -1687,8 +1692,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         coverageUnknown: cover?.lead ? `${cover.lead}，兑付覆盖率暂时读不到` : undefined,
         coverageCheck: cover?.check,
         facts: <>
+          {fund.ids.length === 1 && <F5CurrentFact id={fund.ids[0]} />}
           <Fact k="补发后">团队购买、团队平衡重新冷却；其余四类马上解锁</Fact>
-          <Fact k="金额">申请单里没有，到「奖励记录核对」按记录号查</Fact>
           <Fact k="能不能撤回">不能；新记录可以再冲正</Fact>
         </>,
         lead: undefined,
@@ -1702,12 +1707,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       check: "核对这笔奖励和发起理由，理由写清收回的原因。",
       detail: "余额不够时：属于结算组的奖励扣不够的记为待追回；其他奖励整次失败，什么都不改。",
       coverageLead: undefined, coverageUnknown: undefined, coverageCheck: undefined,
-      facts: <><Fact k="状态"><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact><Fact k="凭证单号">申请单里没有，批准时系统再核对</Fact></>,
+      facts: <>{fund.eventId && <F5CurrentFact id={fund.eventId} />}<Fact k="状态"><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact><Fact k="凭证单号">申请单里没有，批准时系统再核对</Fact></>,
       lead: undefined,
     };
     const from = F5_STATE_FROM[fund.state] ?? "批准时的状态";
     const to = F5_STATE_NAME[fund.state] ?? fund.state;
-    const state = <Fact k="状态"><Change from={from} to={to} /></Fact>;
+    const state = <>{fund.eventId && <F5CurrentFact id={fund.eventId} />}<Fact k="状态"><Change from={from} to={to} /></Fact></>;
     if (fund.state === "unlocked") return {
       irreversible: true,
       impact: "批准后这笔改为已解锁，释放到用户钱包。",
@@ -1882,6 +1887,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const confirmDecision = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
     const blocked = decideBlock(w, kind);
     if (blocked) { toast(blocked, "warn"); return; }
+    if (kind === "approve" && ticketId !== w.id) readF5Current(f5RecordIds(fundTicket(w)), true);
     openActionConfirm(kind === "approve" ? approveRequest(w) : kind === "reject" ? rejectRequest(w) : withdrawRequest(w));
   };
 
@@ -2376,6 +2382,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownTiming = shown ? g3PolicyExecutionTiming(shown) ?? phoneScheduledAt(shown) : undefined;
   const shownAmount = shown ? refundAmount(shown) : undefined;
   const shownCanApprove = shown ? canDecide(shown, "approve") : false;
+  const shownF5Ids = shown ? f5RecordIds(fundTicket(shown)) : [];
   const shownCanReject = shown ? canDecide(shown, "reject") : false;
   // 有结果未确认的操作时抽屉顶上已有一条提示，这里不再写一遍（DT-12）。
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
@@ -2390,6 +2397,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     { label: "要做什么", value: actionName(shown) },
     { label: "对象", value: objectNode(shown) },
+    ...(shownF5Ids.length === 1 ? [{ label: "这笔奖励", value: <F5CurrentValue id={shownF5Ids[0]} /> }] : []),
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
@@ -2468,7 +2476,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
           <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
-          {reissueList(shown)}
+          {reissueList(shown, true)}
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}
