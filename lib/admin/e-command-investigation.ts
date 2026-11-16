@@ -37,6 +37,8 @@ export function eCommandResult(receipt: ECommandInvestigation | null): "SUCCEEDE
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
   if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
   const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS"
+    // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
+    || receipt.scope === "I4_TRUST_DOCUMENT"
     || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
   return successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
 }
@@ -108,6 +110,10 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : locator.originalPath === "/api/admin/content/campaigns" ? row.scope === "I3_NOTIFICATION_CAMPAIGN_CREATE"
     : /^\/api\/admin\/content\/campaigns\/[^/]+$/.test(locator.originalPath) ? row.scope === "I3_NOTIFICATION_CAMPAIGN_DELETE"
     : /^\/api\/admin\/content\/campaigns\/[^/]+\/(?:draft|schedule|send-now|cancel)$/.test(locator.originalPath) ? row.scope === normalizeScope(`I3_NOTIFICATION_CAMPAIGN_${({ draft: "DRAFT_UPDATE", schedule: "SCHEDULE", "send-now": "SEND_NOW", cancel: "CANCEL" })[locator.originalPath.split("/").at(-1)! as "draft"]}`)
+    : /^\/api\/admin\/content\/trust-disclosure\/trust-sections\/[^/]+\/versions$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "I4_TRUST_SECTION_DRAFT_CREATE"
+    : /^\/api\/admin\/content\/trust-disclosure\/trust-sections\/[^/]+\/versions\/[^/]+$/.test(locator.originalPath) ? ["PATCH", "DELETE"].includes(locator.originalMethod) && row.scope === `I4_TRUST_SECTION_DRAFT_${locator.originalMethod === "PATCH" ? "UPDATE" : "DELETE"}`
+    : /^\/api\/admin\/content\/trust-disclosure\/trust-sections\/[^/]+\/(?:publish|rollback|archive)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `I4_TRUST_SECTION_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
+    : /^\/api\/admin\/content\/trust-documents\/(?:whitepaper|incorporation|msb|ein)(?:\/restore-default)?$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "I4_TRUST_DOCUMENT"
     : locator.originalPath === "/api/admin/content/i18n-learning/rescan" ? row.scope === "I6_I18N_RESCAN"
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_ARCHIVE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+\/(?:draft|publish)$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_${locator.originalPath.split("/").at(-1)!.toUpperCase()}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`)
@@ -188,7 +194,8 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
-    || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope);
+    || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope)
+    || /^I4_TRUST_SECTION_(?:PUBLISH|ROLLBACK|ARCHIVE|DRAFT_CREATE|DRAFT_UPDATE|DRAFT_DELETE)$/.test(original.scope) || original.scope === "I4_TRUST_DOCUMENT";
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {

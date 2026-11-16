@@ -302,7 +302,8 @@ function readI4DraftCommand(row: IContentPending): I4DraftCommand | undefined {
         || !Array.isArray(input.fields) || !input.fields.every(field => field && typeof field === "object" && ["key", "label", "value"].every(key => typeof field[key] === "string"))
         || (action === "edit" && input.version !== parts[5])) return fallback;
     }
-    return { ...fallback, original: { owner, method, path, body }, reason: input.reason,
+    const commandOrigin = readICommandOrigin(row.i4, method, path, owner, "content_i4_read");
+    return { ...fallback, original: { owner, method, path, body, commandOrigin }, reason: input.reason,
       version: action === "create" ? String(input.version) : parts[5],
       input: action === "delete" ? undefined : input as I4DraftCommand["input"],
       snapshot: row.i4?.snapshot ? parseI4SectionVersion(row.i4.snapshot) : undefined };
@@ -311,6 +312,17 @@ function readI4DraftCommand(row: IContentPending): I4DraftCommand | undefined {
 
 export function pendingI4DraftCommands(): I4DraftCommand[] {
   return uncertainCommandKeys.list().flatMap(row => { const value = readI4DraftCommand(row); return value ? [value] : []; });
+}
+
+export async function queryI4DraftCommand(saved: I4DraftCommand, evidence?: FundCommandEvidence) {
+  const command = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  let receipt: FundCommandInvestigation | null = null;
+  try {
+    receipt = await queryIContentCommand(command, "content_i4_read", evidence);
+    if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
+  } catch { /* Auxiliary receipt failures leave the existing overview read available. */ }
+  return { settled: false as const, receipt, overview: await fetchI4TrustOverview() };
 }
 
 export function i4DraftPermission(): string | undefined {
@@ -379,7 +391,8 @@ async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?:
   if (!owner) throw new Error("请先登录后再提交。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const commandKey = idempotencyKey();
-  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot };
+  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot,
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i4_read") };
   const command = readI4DraftCommand({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i4 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   if (pendingI4DraftCommands().some(row => row.sectionKey === command.sectionKey)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");

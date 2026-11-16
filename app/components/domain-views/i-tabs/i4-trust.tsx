@@ -24,7 +24,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField } from "@/lib/admin/trust-section-validation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
+import { pendingI4DraftCommands, queryI4DraftCommand, retryI4DraftCommand, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
@@ -654,7 +654,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     try {
       if (retry) { await retryI4DraftCommand(record); await rereadAfterResolution([record.sectionKey], [record.commandKey]); toast(`${record.sectionKey} ${record.version} 草稿已${record.action === "delete" ? "删除" : "保存"}`); }
       else {
-        const current = await fetchI4TrustOverview();
+        const result = await queryI4DraftCommand(record);
+        if (result.settled) { await rereadAfterResolution([record.sectionKey], [record.commandKey]); return; }
+        const current = result.overview;
         const row = current.trustSectionVersions.find(row => row.sectionKey === record.sectionKey && row.version === record.version);
         toast(`${sectionName(record.sectionKey)} ${record.version} · ${row ? `${statusZh(row.status)} · ${row.revision}` : "暂无版本"}。当前读取不能证明原操作结果，原记录继续保留。`);
         await actions.reloadIContent();
@@ -696,7 +698,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         note: upload ? "上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝，结果还是查不清。点「查询原结果」，对照现在用的文件指纹和上传时间。" : undefined,
         actions: <Button size="sm" onClick={() => {
           setDocumentRecovery({ ...record });
-          void queryI4DocumentCommand(record).then(current => { setDocumentRecovery({ ...record, observation: current }); syncCommands(); }, error => toast(displayAdminError(error)));
+          void queryI4DocumentCommand(record).then(result => { setDocumentRecovery({ ...record, observation: result.current }); syncCommands(); }, error => toast(displayAdminError(error)));
         }}>查询原结果</Button> };
     }),
     ...draftCommands.map(record => ({ key: record.commandKey, kind: "unknown" as const, name: `${sectionName(record.sectionKey)} · ${{ create: "新建草稿", edit: "编辑草稿", delete: "删除草稿" }[record.action]}`,
