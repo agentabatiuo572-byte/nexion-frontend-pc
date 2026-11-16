@@ -1066,7 +1066,7 @@ flowchart LR
 
 #### [F5] 奖励记录核对
 
-**2026-11-17 F5-BE-08 查询子范围（95af393c，hd-sync27）**：新增 GET /api/admin/commissions/{CM-id}，只需 network_f5_read，按同一 eventView 返回当前用户、金额、币种、类型、状态、版本及现有来源/结算/追回字段；不受列表默认时间窗或分页限制。PC fetchF5CommissionByBusinessId 返回 found/typed record 或精确 not-found（404 COMMISSION_EVENT_NOT_FOUND），无权、旧端无路由、读取错误继续抛错，不补空对象或零金额。多笔补发逐个读取原业务编号，失败逐笔保留未知；暂停/恢复单只有用户/类型，单笔查询不能提供它的全部范围/合计。A2 只有批准权限不能代替 network_f5_read，批准框接线与读取状态显示留视觉。F5-BE-08 若以“审批框自带完整资金证据”验收，尚未完整交付；本次仅按业务编号读单笔后端能力已交付，不把当前事实当建单时或批准时快照。
+**2026-11-17 F5-BE-08 查询子范围（95af393c，hd-sync27）**：新增 GET /api/admin/commissions/{CM-id}，只需 network_f5_read，按同一 eventView 返回当前用户、金额、币种、类型、状态、版本及现有来源/结算/追回字段；不受列表默认时间窗或分页限制。PC fetchF5CommissionByBusinessId 返回 found/typed record 或精确 not-found（404 COMMISSION_EVENT_NOT_FOUND），无权、旧端无路由、读取错误继续抛错，不补空对象或零金额。多笔补发逐个读取原业务编号，失败逐笔保留未知；暂停/恢复单只有用户/类型，单笔查询不能提供它的全部范围/合计。A2 只有批准权限不能代替 network_f5_read，批准框接线与读取状态显示留视觉。F5-BE-08 原要求明确允许“审批描述补事实，或者按奖励号读单笔接口”，95af393c 已按后一方案完整交付后端范围；上述暂停范围与 A2 接线是前端接入边界，不追加到原后端待办关闭条件。当前事实不当建单时或批准时快照。
 
 2026-11-17 恢复和异常样本说明更正（hd-vis-a2f）：恢复用户奖励（非好友类）「批准后」的问号改为「会。暂停时冻结的记录保留到期时间，解冻后接着冷却，到期自动解锁。以前暂停时清掉了到期时间的旧记录不能解冻，要联系值班人员核对。」（F5CommissionMapper.freezeOpenEventsForSuspension 只改状态、记冻结前状态，不清到期时间；空到期时间的旧记录解冻回 409 F5_COOLDOWN_DEADLINE_UNRECOVERABLE；后端 8cf61c07）。旧句「…逐笔解冻后也不会自动到期，要再提前解锁。已报给技术同事修复」已不成立，删去。异常样本说明保留「金额偏离按奖励类型算，USDT 和 UVT 混在一起算；层比例把两种币相加再比」（anomalyViews、layerRatioAnomalies 仍如此），删去没有登记出处的「已报给技术同事核对」；这项算法口径还没有提给后端。
 
