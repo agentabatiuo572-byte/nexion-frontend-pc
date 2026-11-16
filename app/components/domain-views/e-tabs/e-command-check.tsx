@@ -5,7 +5,7 @@ import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Mod
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { SETTLED_REJECTED, receiptCodeTech, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
+import { SETTLED_REJECTED, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
@@ -65,13 +65,11 @@ export function CommandOutcomeLine({ outcome, expired, summarized }: { outcome?:
   const receipt = "receipt" in outcome ? outcome.receipt : null;
   const last = receipt?.investigation;
   const more = receiptExplain(receipt);
-  const code = receiptCodeTech(receipt);
-  if (summarized && !more && !last && !code) return null;
+  if (summarized && !more && !last) return null;
   return <div className="e-check-outcome" role="status">
     {!summarized && <><StatusTag tone={shown.tone}>{shown.title}</StatusTag>
     <p>{shown.text}</p></>}
     {more && <p>{more}</p>}
-    {code && <p className="e-check-last"><Explain label="技术信息" content={code}>技术信息</Explain></p>}
     {last && <p className="e-check-last">最近一次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：记为「{CONCLUSION_TEXT[last.conclusion] ?? "已有结论"}」{last.requestedConclusion !== last.conclusion && `，申请的「${CONCLUSION_TEXT[last.requestedConclusion as Conclusion] ?? last.requestedConclusion}」证据不足`}。</p>}
   </div>;
 }

@@ -133,6 +133,7 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
       <span className="fund-row-actions">{row.actions}</span>
     </div>
     {open && <div className="fund-row-detail" id={id}>
+      <p className="fund-row-full">{row.title}</p>
       {(row.createdAt !== undefined || checkedAt) && <p>{[row.createdAt !== undefined ? `${formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")} 发出` : "", checkedAt ? `${formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询` : ""].filter(Boolean).join("，")}（{businessZone().label}）。</p>}
       {row.detail}
       {view.more && <p>{view.more}</p>}

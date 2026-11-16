@@ -73,9 +73,14 @@ export function receiptExplain(receipt: ECommandInvestigation | null | undefined
     : "后台记下这次处理完了，但没记成没成。按原请求重试会原样返回当时的结果，不会重复执行；过期后请核查结案。";
 }
 
-/** 技术信息里加一项：原回包的业务码（后端只给数字，不给原因文字）。 */
+/** 原回包的业务码（后端只给数字，不给原因文字），只放技术信息；0 和没有码时不写。接受查询结果或回执本身。 */
+export function businessCodeOf(value: { receipt: ECommandInvestigation | null } | { error: string } | ECommandInvestigation | null | undefined) {
+  const receipt = value && "receipt" in value ? value.receipt : value && "originalStatus" in value ? value : null;
+  return receipt?.businessCode != null && receipt.businessCode !== 0 ? receipt.businessCode : undefined;
+}
 export function receiptCodeTech(receipt: ECommandInvestigation | null | undefined) {
-  return receipt?.businessCode != null && receipt.businessCode !== 0 ? `业务码 ${receipt.businessCode}` : "";
+  const code = businessCodeOf(receipt);
+  return code === undefined ? "" : `业务码 ${code}`;
 }
 
 /** 结案框里「系统记录」一行：按查到的原结果写，held 是记录现在的样子（例如「原修改还锁着」）。 */
@@ -101,9 +106,11 @@ export function SettledLine({ label, text, action, onDismiss }: { label: ReactNo
   </p>;
 }
 
-/** 标题列放不下时末尾是省略号：悬停看全文，展开这一行时标题折行显示全文。 */
+/** 标题列放不下时末尾是省略号：悬停看全文；被截断的，展开后第一行写全（.fund-row-full）。 */
 export function fullTitle(element: HTMLSpanElement | null) {
-  if (element) element.title = element.textContent ?? "";
+  if (!element) return;
+  element.title = element.textContent ?? "";
+  element.toggleAttribute("data-truncated", element.scrollWidth > element.clientWidth);
 }
 
 export type RecoveryItem = {
@@ -162,7 +169,7 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
           <span className="fund-row-text">{item.result?.line ?? item.line}</span>
           <span className="fund-row-actions">{item.actions}</span>
         </div>
-        {expanded && <div className="fund-row-detail" id={id}>{item.detail}{item.note && <div role="status">{item.note}</div>}{item.tech}</div>}
+        {expanded && <div className="fund-row-detail" id={id}><p className="fund-row-full">{item.object}</p>{item.detail}{item.note && <div role="status">{item.note}</div>}{item.tech}</div>}
       </li>;
     })}</ul>
     {(items.length > 3 || foot) && <div className="fund-rows-foot">

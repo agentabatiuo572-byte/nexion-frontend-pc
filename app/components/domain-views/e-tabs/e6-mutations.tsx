@@ -18,6 +18,7 @@ import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskRec
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
 import { ClosureContact, CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { SETTLED_REJECTED, businessCodeOf } from "../recovery-panel";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
@@ -253,7 +254,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     setAnswered(values => ({ ...values, [record.commandKey]: m.notes[record.commandKey] }));
     if (receipt && eCommandSettled(receipt)) {
       const status = receipt.originalStatus;
-      settle(record, status === "CONFIRMED_REJECTED" ? "刷新页面查看现在的结果。" : status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
+      settle(record, status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
     } else setOutcomes(values => ({ ...values, [record.commandKey]: { receipt } }));
   };
   const riskDone = (status: PhoneRiskReceipt["status"] | "RETRIED") => toast(status === "CONFIRMED_NOT_EXECUTED"
@@ -266,7 +267,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   };
   const noteOf = (r: E6Pending) => m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !GENERIC_NOTES.includes(m.notes[r.commandKey]) ? m.notes[r.commandKey]
     : m.rejected.includes(r.commandKey) ? r.retryRejection : undefined;
-  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
+  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}{businessCodeOf(outcomes[r.commandKey]) !== undefined && <p>业务码：<code>{businessCodeOf(outcomes[r.commandKey])}</code></p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
   const items: RecoveryItem[] = [
     ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
       line: "原操作在设备管理，到那里查询和处理。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
