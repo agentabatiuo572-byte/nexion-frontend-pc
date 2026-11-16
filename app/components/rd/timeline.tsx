@@ -2,11 +2,11 @@
 
 /** CP-46 / VS-109：只读时间线，最新在上；审计主体统一在渲染边界打码。
  * <Timeline entries={[{ id: "1", action: "提交提现", actor: "admin:42", at: "2026-11-06T09:00:00+08:00" }]} />
- * at 传原始时间，组件按业务时区写成「2026-11-06 09:00:00」（TX-26），时区只写在第一条有时间的记录上（TX-25）。加载、失败由外层 BlockState 处理。
+ * at 传原始时间，组件按业务时区写到分钟「2026-11-06 09:00」，时区只写在第一条有时间的记录上（TX-25）；先后按原始时间排，同一分钟的也不乱。加载、失败由外层 BlockState 处理。
  */
 import { useSyncExternalStore, type ReactNode } from "react";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
-import { businessZone, formatBusinessTimeFull, parseBusinessTime, subscribeBusinessZone } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, parseBusinessTime, subscribeBusinessZone } from "@/lib/admin/business-time";
 
 export interface TimelineEntry {
   id: string;
@@ -34,7 +34,7 @@ export function Timeline({ entries, label = "操作记录" }: { entries: readonl
             <div className="rd-timeline-event">{entry.action}</div>
             {entry.detail && <div className="rd-timeline-detail">{entry.detail}</div>}
             <div className="rd-record-meta">
-              <time dateTime={entry.at}>{formatBusinessTimeFull(entry.at)}{entry === zoned && `（${zone.label}）`}</time>
+              <time dateTime={entry.at}>{formatBusinessTimeCompact(entry.at)}{entry === zoned && `（${zone.label}）`}</time>
               <span>{maskAuditActor(entry.actor)}</span>
               {entry.role && <span>{entry.role}</span>}
               {entry.ip && <span>{entry.ip}</span>}
