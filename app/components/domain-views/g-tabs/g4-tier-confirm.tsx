@@ -156,7 +156,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
           action: deleting ? `删除创世节点价格档位 · ${basis.tierId}` : basis.tierId ? `调整创世节点价格档位 · ${basis.tierId}` : "新增创世节点价格档位",
           obj: "tiers", beforeValue: "—", afterValue: "—",
           operator: session.operator || session.username, operatorRole: roleLabel(session.role),
-          type: "fund", amplifies: true, sos: false, roleGate: "另一位有权超管", reason, sourceDomain: "G4",
+          type: "fund", amplifies: true, sos: false, roleGate: "另一位超级管理员", reason, sourceDomain: "G4",
           target: { domain: "G", type: "genesis_catalog", id: "tiers" },
           command: { domain: "G", op: "g4_genesis_tier_change", params: {
             ...(basis.tierId ? { tierId: basis.tierId } : {}),

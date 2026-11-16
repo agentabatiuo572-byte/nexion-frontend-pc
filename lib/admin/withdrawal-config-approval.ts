@@ -93,6 +93,15 @@ export function storeH8ConfigApproval(adminId: number, field: string, commandKey
   const slot = approvalSlot("H8", adminId, { objectId: "current", field });
   attempts.remember(slot, commandKey, extra);
   if (!attempts.isDurablyStored(slot, commandKey)) throw new Error(storageErrorCode);
+  let stored: typeof extra;
+  try {
+    stored = JSON.parse(window.sessionStorage.getItem("nexion-admin-withdrawal-config-proposals")!)[commandKey];
+  } catch {
+    throw new Error(storageErrorCode);
+  }
+  if (Object.entries(extra).some(([key, value]) => JSON.stringify(stored[key as keyof typeof extra]) !== JSON.stringify(value))) {
+    throw new Error(storageErrorCode);
+  }
 }
 
 type ThresholdApprovalValues = {

@@ -87,7 +87,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   };
   return (
     <Modal
-      title={retrying || unknown ? <>重试原操作 · {req.title ?? req.action}</> : req.title ?? req.action}
+      title={retrying || unknown ? <>按原请求重试 · {req.title ?? req.action}</> : req.title ?? req.action}
       icon={req.confirmTone === "danger" ? "alert" : "shield"}
       tone={req.confirmTone === "danger" ? "danger" : "neutral"}
       sub={req.effect}

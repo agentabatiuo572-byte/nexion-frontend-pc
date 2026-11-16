@@ -20,7 +20,8 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, releaseExpiredI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
-import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -29,6 +30,17 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
 import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, nsLabel, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
+
+/** 查到原审批单时说结论：还在等批准，或已有结果、执行情况到操作记录看。 */
+const ticketText = (ticket: A2OperationRow) => ({
+  pending: "已提交，等待审批后执行",
+  approved: "原审批单已批准，执行结果到操作记录与审批查看",
+  rejected: "原审批单已被驳回，没有执行",
+  withdrawn: "原审批单已撤回，没有执行",
+  expired: "原审批单已过期，没有执行",
+} as Record<string, string>)[ticket.status] ?? "已查到原审批单，结果到操作记录与审批查看";
+/** 结果未知不是失败，不加「操作失败」。 */
+const failText = (error: unknown) => isOutcomeUnknownError(error) || isA2OutcomeUncertainError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
 
 const COURSE_APPROVAL_OPS = new Set(["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback", "i7_course_reward_adjust"]);
 /** 有奖励的课程激活和调奖：后端要另一位超级管理员，并有审批批准权限（A:124、G:717）。 */
@@ -319,7 +331,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             if (original) { await retryI6Command(original); toast(`${original.label} · 已核对原操作`); }
             else {
               const ticket = await retryI6CourseProposal(proposal!);
-              toast(ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+              toast(ticketText(ticket));
             }
             resolved = true;
             await finishRecovery(undefined, finish);
@@ -362,7 +374,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             return { overview, versions, messages };
           })) ctx.closeActionConfirm();
           // Match I1: the domain owns the first rejection and keeps its confirmation, including business 403.
-          throw new Error(`操作失败:${displayAdminError(error)}`);
+          throw new Error(failText(error));
         } finally { updateRecovery(current => current + 1); }
       },
     };
@@ -435,14 +447,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const featuredCourse = COURSES.find((course) => course.id === TUTORIAL_FEATURED_DEFAULT);
   const TUTORIAL_METRICS = (data?.metrics ?? []).map((m) => ({ k: m.key, v: m.value }));
   const runBackend = <T,>(task: Promise<T>, ok: string | ((result: T) => string)) => {
-    return task
-      .then(async (result) => {
-        toast(typeof ok === "string" ? ok : ok(result));
-      })
-      .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
-        throw error;
-      });
+    // 失败时确认框还开着，错误写在框里，不再弹一遍。
+    return task.then(async (result) => {
+      toast(typeof ok === "string" ? ok : ok(result));
+    });
   };
 
   const allCourses = COURSES;
@@ -483,10 +491,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rescan = () => {
     const blocked = newWriteProblem("rescan");
     if (blocked) { toast(blocked, "warn"); return; }
-    let original: I6Command | undefined, resolved = false;
+    let original: I6Command | undefined, resolved = false, remark = "";
     const confirmation: ConfirmReq = { briefKind: "record",
       freezePendingInput: true, replayPendingInput: true,
-      getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason : undefined,
+      getPendingReason: () => original && pendingI6Commands().some(row => row.commandKey === original!.commandKey) ? remark : undefined,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
       title: "重新检查全部文案",
       detail: <>按 6 类重新检查全部已登记文案：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。不改文案，结果覆盖下面的问题报告。</>,
@@ -494,7 +502,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       statedBrief: { impact: "重新算一遍问题报告，文案和 App 都不变。", check: "检查完看问题报告，有问题的逐条修。" },
       remarkHint: "选填，不会保存",
       okLabel: "开始检查",
-      run: async () => {
+      run: async (reason) => {
+        remark = reason;
         if (resolved) { ctx.closeConfirm(confirmation); return false; }
         try {
           if (original) await runBackend(retryI6Command(original), "检查完成，请看下表的问题");
@@ -508,7 +517,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         } catch (error) {
           if (original && !pendingI6Commands().some(row => row.commandKey === original!.commandKey)) { resolved = true; await finishRecovery(undefined, () => ctx.closeConfirm(confirmation)); }
           else original = pendingI6Commands().find(row => row.scope === "rescan");
-          throw new Error(`操作失败:${displayAdminError(error)}`);
+          throw new Error(failText(error));
         } finally { updateRecovery(value => value + 1); }
       },
     };
@@ -1281,7 +1290,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       toast(`${record.label} · 已按原请求完成`);
       await finishRecovery(record.commandKey);
     } catch (error) {
-      toast(`操作失败:${displayAdminError(error)}`, "warn");
+      toast(failText(error), "warn");
       if (!pendingI6Commands().some((row) => row.commandKey === record.commandKey)) await finishRecovery(record.commandKey);
     } finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
   };
@@ -1324,9 +1333,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           try {
             const ticket = await queryI6CourseProposal(record);
             if (!ticket && isRetryExpired(record)) setNotFoundKeys((keys) => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
-            toast(ticket?.status === "pending" ? "已提交，等待审批后执行"
-              : ticket ? "已查询到原审批单，请在操作记录核对执行状态"
-                : isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。", "warn");
+            toast(ticket ? ticketText(ticket)
+              : isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。", "warn");
             if (ticket && ticket.status !== "pending") await finishRecovery(record.commandKey);
             else await reloadCourseApprovals();
           } catch (error) {
@@ -1368,7 +1376,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   run: async () => {
                     try {
                       const ticket = await retryI6CourseProposal(record);
-                      toast(ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+                      toast(ticketText(ticket));
                       await finishRecovery(record.commandKey);
                     } catch (error) {
                       if (!pendingHIRewardCommands().some(row => row.commandKey === record.commandKey)) await finishRecovery(record.commandKey);

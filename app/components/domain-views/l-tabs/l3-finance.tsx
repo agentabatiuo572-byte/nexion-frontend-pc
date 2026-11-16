@@ -182,7 +182,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           await ctx.biActions?.createReport({
             exportType: "财务当前汇总",
             timeRange,
-            fields: "资金池概览/负债科目/七日到期排程/钱包账单分类计数",
+            fields: "资金池概况、应付款科目、未来 7 天到期、钱包账单分类笔数",
             piiLevel: "NONE",
             maskPolicy: "NONE",
             recipient: "财务管理员",
@@ -395,7 +395,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       summary={summary}
       actions={actions}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}不自动刷新</span>
+        {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={!ctx.canExport && !ctx.canExportFinanceDetail ? "当前角色仅可查看 · 没有财务报表导出权限" : undefined}

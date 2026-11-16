@@ -240,7 +240,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
 
   const savedNotice = <>
     {saved && (
-    <Notice tone="warn" title={<>修改告警设置 · 结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。处理完之前不能发起新的修改。" /></>}>
+    <Notice tone="warn" title={<>修改告警设置 · 结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。处理完之前不能发起新的修改。" /></>}>
       <ul className="j3-recovery" aria-label="结果未知的修改">
         <li>
           <span className="j3-recovery-name">告警设置</span>
@@ -657,7 +657,7 @@ function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; origi
       {unknownAt !== null && (
         <Notice tone="warn" title="这次修改结果未知">
           <p>{businessStamp(unknownAt)}（{businessZone().label}）提交后没收到确定结果，可能已经生效。下面是这次提交的内容，不能再改。</p>
-          <p>可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。</p>
+          <p>可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。</p>
           {readBack && <p>{readBack}</p>}
         </Notice>
       )}

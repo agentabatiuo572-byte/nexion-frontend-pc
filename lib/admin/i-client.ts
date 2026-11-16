@@ -544,6 +544,7 @@ export type I2Command = PendingMutationRecord & {
   target: string;
   reason: string;
   change: string;
+  cadence?: { tick: string; cooldown: string };
 };
 
 /** The fingerprint contains the original JSON bytes, including legacy records. Parse only at this storage boundary. */
@@ -562,7 +563,7 @@ function readI2Command(row: IContentPending): I2Command | undefined {
     if (typeof input.reason !== "string" || typeof input.operator !== "string") return fallback;
     const parts = path.split("/").slice(2).map(decodeURIComponent);
     const [family, key, operation] = parts;
-    let action: string, object: string, target: string, change = "";
+    let action: string, object: string, target: string, change = "", cadence: I2Command["cadence"];
     if (family === "channels") {
       const creating = method === "POST" && parts.length === 1;
       if (creating || method === "PATCH" && parts.length === 2) {
@@ -570,7 +571,7 @@ function readI2Command(row: IContentPending): I2Command | undefined {
           || typeof input.ctr !== "number" || typeof input.enabled !== "boolean" || creating && typeof input.key !== "string") return fallback;
         action = creating ? "新增频道" : "编辑频道";
         object = String(input.name); target = `channel:${key ?? input.key}`;
-        change = `${input.tick} · ${input.cooldown}`;
+        cadence = { tick: input.tick as string, cooldown: input.cooldown as string };
       } else if (method === "PATCH" && operation === "status" && parts.length === 3 && typeof input.enabled === "boolean") {
         action = input.enabled ? "启用频道" : "停用频道"; object = key; target = `channel:${key}`;
         change = input.enabled ? "已停用 → 已启用" : "已启用 → 已停用";
@@ -605,7 +606,7 @@ function readI2Command(row: IContentPending): I2Command | undefined {
       } else if (method === "DELETE" && parts.length === 2) action = "删除事件";
       else return fallback;
     } else return fallback;
-    return { ...row, original: { owner, method, path, body }, action, object, target, reason: input.reason, change };
+    return { ...row, original: { owner, method, path, body }, action, object, target, reason: input.reason, change, cadence };
   } catch { return fallback; }
 }
 

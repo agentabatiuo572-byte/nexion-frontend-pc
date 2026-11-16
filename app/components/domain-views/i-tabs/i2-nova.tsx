@@ -127,6 +127,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     syncPending();
     await actions.reloadIContent();
   };
+  /** 结果未知不是失败，不加「操作失败」。 */
+  const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
   const replay = async (record: I2Command) => {
     try {
       await retryI2Command(record);
@@ -134,10 +136,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       syncPending();
       if (!pendingI2Commands().some((row) => row.commandKey === record.commandKey)) {
         await refreshAfterMutation(record);
-        toast(`操作失败:${displayAdminError(error)}`);
+        toast(failText(error));
         return false;
       }
-      throw new Error(`操作失败:${displayAdminError(error)}`);
+      throw new Error(failText(error));
     }
     await refreshAfterMutation(record);
     toast(`${record.action} · ${record.object}`);
@@ -165,7 +167,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           if (await reviewConflict(error, reason, value, businessForm)) ctx.closeActionConfirm();
           syncPending();
           // First-attempt refusals stay in the original confirmation, including business 403s.
-          throw new Error(`操作失败:${displayAdminError(error)}`);
+          throw new Error(failText(error));
         }
       },
     };
@@ -199,7 +201,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           }
           if (await reviewConflict(error, reason, value)) ctx.closeConfirm();
           syncPending();
-          throw new Error(`操作失败:${displayAdminError(error)}`);
+          throw new Error(failText(error));
         }
       },
     };
@@ -243,13 +245,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
 
+  // 失败时确认框或抽屉还开着，错误写在那里，不再弹一遍。
   const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
       .then(() => refreshAfterMutation())
-      .then(() => { toast(ok); onSuccess?.(); })
-      .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
-        throw error;
-      });
+      .then(() => { toast(ok); onSuccess?.(); });
 
   // ── 频道抽屉(新增 / 编辑复用同一抽屉)──
   const [novaDrawer, setNovaDrawer] = useState(false);
@@ -800,7 +799,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const unknownChange = (row: I2Command) => {
     if (row.action !== "编辑频道" && row.action !== "新增频道") return row.change;
-    const [tick = "", cooldown = ""] = row.change.split(" · ");
+    const { tick = "", cooldown = "" } = row.cadence ?? {};
     return `扫描间隔 ${durationText(tick).text} · 个人间隔 ${durationText(cooldown).text}`;
   };
   const unknownNotice = pending.length > 0 && (

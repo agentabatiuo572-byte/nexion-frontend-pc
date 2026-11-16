@@ -166,7 +166,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
   };
   const issueNotice = pending ? <H9RecoveryNotice explain={<>
         <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。{error}</p>
-        <p>点「查询原结果」读现在的设置；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的档位和理由，后端认得出是同一次提交，不会重复保存。</p>
+        <p>点「查询原结果」读现在的设置；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的档位和理由，不会重复保存。</p>
       </>} rows={[{ key: pending.commandKey, name: "设备预估排名", change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
         actions: <>
           <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原结果</Button>

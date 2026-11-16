@@ -89,6 +89,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
     const readback = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail.rules) setRows(detail.rules);
+      setReadFailed(Boolean(detail.ruleError));
       setSelected(null); setDraft(null); setError(detail.ruleError);
     };
     window.addEventListener("admin-h4-pending-changed", changed);
@@ -100,7 +101,6 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
     if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
     const base = rebased?.base ?? selected, input = rebased?.draft ?? draft;
     if (base && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${base.eventCode}`)) return;
-    setReadFailed(false);
     if (!base || !input || !rebased && saving || !canWrite) return;
     const next = { ...input, rules: { ...input.rules } };
     try { if (base.kind === "regional" && !rebased) next.rules.regions = parseEventRegions(regions); }

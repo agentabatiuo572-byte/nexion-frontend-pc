@@ -15,7 +15,7 @@ import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_V
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { businessStamp, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { A2OutcomeUncertainError, fetchA2ProposalByKey, fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
 import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-multiaccount";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
@@ -94,7 +94,7 @@ const PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved
 /** 待审批的原动作、提交人和时间只写在选中组里，列表只留标签（DT-16）。 */
 function PendingClusterApproval({ approval }: { approval: NonNullable<K1Cluster["pendingApproval"]> }) {
   return approval.action && approval.submittedBy && approval.submittedAt ? <span className="rd-approval-meta">
-    {approval.action} · {approval.submittedBy} · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeFull(approval.submittedAt, "—")}（{businessZone().label}）</time>
+    {approval.action} · {approval.submittedBy} · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeCompact(approval.submittedAt, "—")}（{businessZone().label}）</time>
   </span> : null;
 }
 /** 谁批、批准前怎样每次都一样，收进生效标签的提示图标，不占事实行（VS-105）。 */
@@ -785,7 +785,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           () => reloadAfter(`${name}已更新为 ${record.value}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
       case "registration-param":
         return sendCommand(record, (key) => updateK1RegistrationParam({ key: target, value: record.expectedValue! }, record.value!, reason, key),
-          () => reloadAfter(`${name}已更新`, `${name}已保存，但暂时无法读回；请刷新本页核对`));
+          () => reloadAfter(`${name}已更新`, `${name}已保存，但暂时读不到最新值；请刷新本页核对`));
       case "release-param": {
         const effect = target === "duplicateAccountPendingFrom" ? "后续新增收益按新审核起点处理"
           : target === "duplicateAccountFreezeFrom" ? "后续新增收益和当前提现资格按新锁定起点判断"
@@ -1379,7 +1379,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     <>
       <PageHeader pageId="K1" title="多账户风险排查" summary="找出可能是同一人的账户，判断后处置。"
         meta={<span className="rd-toolbar">
-          {shownReadAt && <span>读取于 {shownReadAt}（{businessZone().label}）· 手动刷新<Explain label="数据时间说明" content={tab === "earnings" ? "打开和点「刷新」时读取，不自动刷新。" : <>打开和点「刷新」时读取，不自动刷新。<br />上次成功检查 {overview?.lastSuccessfulCheckAt ? formatBusinessTimeFull(overview.lastSuccessfulCheckAt, "—") : "暂无成功检查记录"}</>} /></span>}
+          {shownReadAt && <span>读取于 {shownReadAt}（{businessZone().label}）· 手动刷新<Explain label="数据时间说明" content={tab === "earnings" ? "打开和点「刷新」时读取，不自动刷新。" : <>打开和点「刷新」时读取，不自动刷新。<br />上次成功检查 {overview?.lastSuccessfulCheckAt ? formatBusinessTimeCompact(overview.lastSuccessfulCheckAt, "—") : "暂无成功检查记录"}</>} /></span>}
         </span>}
         actions={!(tab === "earnings" ? protectedEntriesError : overviewFailed) ? <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading || protectedEntriesLoading} onClick={() => { reloadOverview(); void refreshProtectedEntries(); }}>刷新</Button> : undefined}
         readOnly={anyWrite ? undefined : "你只能查看；处置和调整需要风控权限"} />
@@ -1512,7 +1512,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <tbody>
                 {protectedEntries.map((entry) => (
                   <Tr key={entry.entryNo}>
-                    <Td><Cell mono full main={entry.entryNo} sub={formatBusinessTimeFull(entry.createdAt, "—")} /></Td>
+                    <Td><Cell mono full main={entry.entryNo} sub={formatBusinessTimeCompact(entry.createdAt, "—")} /></Td>
                     <Td><Cell mono main={entry.userNo && reach(`/users/search/${entry.userId}`, "user_c1hub_read")
                       ? <Link className="rd-link" href={`/users/search/${entry.userId}`}>{entry.userNo}</Link>
                       : entry.userNo ?? "用户编码未提供"} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
@@ -1781,7 +1781,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         );
       })()}
 
-      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除只移除本页这条记录，不撤销原操作；系统仍可能锁住这项设置。" />}
+      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认；解除后这项设置仍可能被系统锁住。" />}
       {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>

@@ -497,7 +497,6 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i4-vlist-actions { grid-area: actions; }
 .i4-editor-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--rd-space-3); }
 .i4-editor-pair .rd-textarea, .i4-editor-pair textarea { min-height: var(--rd-control-h); }
-=======
 /* ============================ I6 多语言与课程（.i6-page 一段：三语齐全图、文案列表、详情抽屉、课程卡、课程编辑、App 里的样子） ============================ */
 .i6-page .i6-tabpane { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
 .i6-page .i6-tabpane[hidden] { display: none; }
@@ -507,8 +506,8 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 /* 三语齐不齐：左边三种语言各一条比例条，右边按模块列缺几条 */
 .i6-page .i6-cov { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.1fr); gap: var(--rd-space-4) var(--rd-space-7); align-items: start; }
 @container idom (max-width: 900px) { .i6-page .i6-cov { grid-template-columns: 1fr; } }
-.i6-page .i6-cov-langs { --rd-track-w: 100%; display: grid; gap: var(--rd-space-3); }
-.i6-page .i6-cov-lang { display: grid; grid-template-columns: 56px minmax(80px, 1fr) 72px 72px; align-items: center; gap: var(--rd-space-3); min-height: 28px; }
+.i6-page .i6-cov-langs { --rd-track-w: 100%; display: grid; gap: var(--rd-space-2); }
+.i6-page .i6-cov-lang { display: grid; grid-template-columns: 56px minmax(80px, 1fr) 72px 72px; align-items: center; gap: var(--rd-space-3); min-height: 24px; }
 .i6-page .i6-cov-lang[data-total] { padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .i6-page .i6-cov-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .i6-page .i6-cov-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }

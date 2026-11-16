@@ -397,7 +397,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
         () => providedCommandKey || idempotencyKey(),
       );
       if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
-        emergencyAttempts.forget(writeSlot);
+        if (!saved) emergencyAttempts.forget(writeSlot);
         throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
       headers.set("Idempotency-Key", commandKey);

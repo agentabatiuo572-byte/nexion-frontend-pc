@@ -517,7 +517,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         const message = displayAdminError(error);
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
-        const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : refusedWrite(error) ? `后台拒绝了这次操作${detail}` : `结果未确认${detail.replace(/。$/, "")}。再点确认会按原操作重试`;
+        const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : refusedWrite(error) ? `后台拒绝了这次操作${detail}` : `结果未知${detail.replace(/。$/, "")}。再点确认会按原请求重试`;
         if (meta?.onFailure) meta.onFailure(failure); else setToast(failure, rejected || refusedWrite(error) ? "error" : "warn");
         return false;
       }
@@ -1536,7 +1536,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
           placeholder="回车发送，Shift+回车换行"
           style={{ maxHeight: 80 }}
         />
-        <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? isRetryExpired(pendingDock) ? "查询原操作" : "查询结果并重试会话回复" : "发送会话回复"} disabled={(!canWrite && !pendingDock) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
+        <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? isRetryExpired(pendingDock) ? "查询原结果" : "查询结果并重试会话回复" : "发送会话回复"} disabled={(!canWrite && !pendingDock) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
     </div>
   );

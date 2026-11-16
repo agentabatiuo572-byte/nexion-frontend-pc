@@ -87,7 +87,7 @@ const FIELD_COPY: Record<ScalarKey, { name: string; what: string }> = {
 
 const RECOVERY_EXPLAIN = <>
   <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。</p>
-  <p>点「查询原结果」读现在的值；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的值和理由，后端认得出是同一次提交，不会重复保存。有结论前这一块不能发起新的保存。</p>
+  <p>点「查询原结果」读现在的值；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的值和理由，不会重复保存。有结论前这一块不能发起新的保存。</p>
 </>;
 
 type SaveIssue = { kind: SaveIssueKind; message: string; module: H9Module; change: string; at: number };

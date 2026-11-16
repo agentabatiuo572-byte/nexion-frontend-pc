@@ -57,6 +57,8 @@ export function g4Count(value: string) {
   const fraction = (match[3] ?? "").replace(/0+$/, "");
   return `${match[1]}${BigInt(match[2]).toLocaleString("en-US")}${fraction ? `.${fraction}` : ""}`;
 }
+/** 这三项是 UTC 时间。 */
+const TIME_KEYS = new Set(["presale.startAt", "presale.endAt", "holder.effectiveAt"]);
 const sideText = (value: string) => value === "BUY" ? "模拟买入" : value === "SELL" ? "模拟卖出" : "方向未知";
 export const G4_CONFIGS = [
   { key: "eligibility.enabled", label: "启用购买资格限制", kind: "select", options: ["true", "false"] },
@@ -85,14 +87,14 @@ const CONFIG_HELP: Record<string, { what: string; hint?: string; unit?: string; 
   "presale.showCountdown": { what: "App 上显示不显示预售倒计时", effect: "暂未开放或暂停时 App 本来就不显示" },
   "presale.unitPrice": { what: "预售规则里写的单价", hint: "最多 6 位小数", unit: "USDT", effect: "目前只作为预售规则展示，实际认购价仍按价格档位；填 0 时 App 的预售规则显示不可用", note: "改它不会改变用户实际付的价格。" },
   "presale.maxPerUser": { what: "预售期间每人最多买几个", hint: "0–1,000,000 的整数", unit: "个", effect: "和资格的每人上限取较小的那个；不回写已下的订单" },
-  "presale.startAt": { what: "预售从什么时候开始（UTC）", hint: "例如 2026-08-01T00:00:00Z", effect: "要早于结束时间；另一端还没填时可以先单独保存" },
-  "presale.endAt": { what: "预售到什么时候结束（UTC，不含这一刻）", hint: "例如 2026-08-31T00:00:00Z", effect: "要晚于开始时间；另一端还没填时可以先单独保存" },
+  "presale.startAt": { what: "预售从什么时候开始（UTC）", effect: "要早于结束时间；另一端还没填时可以先单独保存" },
+  "presale.endAt": { what: "预售到什么时候结束（UTC，不含这一刻）", effect: "要晚于开始时间；另一端还没填时可以先单独保存" },
   "holder.allocationNexPerHolding": { what: "每个节点给持有人预留多少 UVT", hint: "最多 6 位小数", unit: "UVT", effect: "只改预留规则，不铸币、不入账；填 0 时 App 的持有人权益显示不可用" },
   "holder.priorityTop1Percent": { what: "持有排名前多少算「前 1%」的门槛", hint: "1–100 的整数", effect: "保存时不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
   "holder.priorityTop3Percent": { what: "持有排名前多少算「前 3%」的门槛", hint: "1–100 的整数", effect: "保存时不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
   "holder.priorityTop5Percent": { what: "持有排名前多少算「前 5%」的门槛", hint: "1–100 的整数", effect: "保存时不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
   "holder.policyVersion": { what: "持有人规则的版本号", effect: "只改版本号，不迁移历史数据" },
-  "holder.effectiveAt": { what: "持有人规则从什么时候起生效（UTC）；还没到时 App 显示规则未生效", hint: "例如 2026-08-01T00:00:00Z", effect: "只保存时间，不另排定时任务" },
+  "holder.effectiveAt": { what: "持有人规则从什么时候起生效（UTC）；还没到时 App 显示规则未生效", effect: "只保存时间，不另排定时任务" },
 };
 
 /** 原操作提醒里写一项认购设置的值：和页面同一种写法（带单位、开关写已开启／已关闭、UTC 时间）。 */
@@ -142,10 +144,13 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
     const expectedValue = configured == null ? "" : String(configured);
     const help = CONFIG_HELP[definition.key];
     const currentShown = configShown(definition.key, definition.kind, configured, help?.unit);
+    // 三个时间用日期时间选择，按 UTC 选到分钟；提交前拼成和原来手写一样的 UTC 时间文本，校验和请求不变。
+    const isTime = TIME_KEYS.has(definition.key);
+    const configuredAt = configured == null || configured === "" || Number.isNaN(Date.parse(String(configured))) ? "" : new Date(String(configured)).toISOString().slice(0, 16);
     ctx.openActionConfirm({ briefKind: "config", directObject: `operations/config/${encodeURIComponent(definition.key)}`,
       action: `修改创世认购设置 · ${definition.label}`,
       title: `调整${definition.label}`,
-      detail: definition.kind === "text" && /At$/.test(definition.key) ? "只改设置，不会产生用户资产或成交。时间请按 UTC 填写（例如 2026-08-01T00:00:00Z），开始时间要早于结束时间。" : "只改设置，不会产生用户资产或成交。",
+      detail: isTime ? "只改设置，不会产生用户资产或成交。时间按 UTC 选，开始要早于结束。" : "只改设置，不会产生用户资产或成交。",
       effect: <StatusTag tone="progress" filled explain="确认后立即保存，不走审批。App 下次读取时用新设置，已打开的 App 页面不会自动刷新。">立即生效</StatusTag>,
       confirmLabel: "确认修改",
       facts: <Facts>
@@ -155,16 +160,19 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
         <Fact k="改了会怎样"><KeepText text={help?.effect ?? "—"} /></Fact>
         <Fact k="付不付钱">不付钱；只改设置，不产生用户资产或成交</Fact>
       </Facts>,
-      statedBrief: { impact: "确认后立即保存，App 下次读取时用新设置。", check: "核对新值；时间按 UTC 填写；理由写清依据或工单号。" },
+      statedBrief: { impact: "确认后立即保存，App 下次读取时用新设置。", check: isTime ? "核对新时间是 UTC；理由写清依据或工单号。" : "核对新值；理由写清依据或工单号。" },
       amplifies: false,
-      edit: definition.kind === "select"
+      businessForm: isTime ? { kind: "multi-field", fields: [{ key: "at", label: "改成（UTC）", inputKind: "datetime-local", current: configuredAt, required: true, wide: true, help: "按 UTC 选，到分钟" }] } : undefined,
+      edit: isTime ? undefined : definition.kind === "select"
         ? { kind: "select", current: String(current), options: [...(definition.options ?? [])], optionLabels: { true: "已开启", false: "已关闭" } }
         : definition.kind === "number"
           ? { kind: "number", current: String(current), min: 0, unit: help?.unit, hint: help?.hint }
           : { kind: "text", current: String(current), hint: help?.hint },
-      run: async (reason, value) => {
+      run: async (reason, edited, businessValue) => {
         ensureNew();
         if (String(latest.current.data!.config[definition.key] ?? "") !== expectedValue) throw new Error("这项设置已变化，请关闭后按当前值重新操作。");
+        const picked = businessValue?.at ?? "";
+        const value = isTime ? picked && `${picked.length === 16 ? `${picked}:00` : picked}Z` : edited;
         if (value == null || value === "") return;
         let normalized = value;
         if (definition.key === "presale.startAt" || definition.key === "presale.endAt" || definition.key === "holder.effectiveAt") {

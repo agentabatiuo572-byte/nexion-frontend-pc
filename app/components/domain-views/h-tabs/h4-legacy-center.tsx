@@ -1100,8 +1100,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     <div hidden={sub !== "wheel"} className="h4-tabpanel">
       <Panel id="h4l-wheel" title="转盘奖池" icon={Disc3} tone="role-1" sub={`${tiers.length} 档 · 合计 ${percentText(probabilitySum)}%`}
-        explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档：真钱档概率调高，用户中真钱的次数变多，平台多付；调低反之。</p><p>奖池有一项不合格，App 整个转盘都抽不了。调整时保持合计 100%，并至少留一档不发真钱的 UVT 安慰奖。</p>
-          <details className="h4l-explain-more"><summary>App 检查的四项</summary><ul><li>2–12 档</li><li>奖型只有 UVT、USDT、代金券</li><li>概率合计正好 100%</li><li>至少一档不发真钱的 UVT 安慰奖</li></ul></details></>}
+        explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这个奖池。真钱档概率调高，用户中真钱的次数变多，平台多付。</p><p>下面有一项不满足，App 整个转盘都抽不了：</p>
+          <ul className="h4l-explain-list"><li>2–12 档</li><li>奖型只有 UVT、USDT、代金券</li><li>概率合计正好 100%</li><li>至少一档不发真钱的 UVT 安慰奖</li></ul></>}
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="抽不了的原因">
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",

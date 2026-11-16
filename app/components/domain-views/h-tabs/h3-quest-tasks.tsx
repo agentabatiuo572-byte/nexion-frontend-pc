@@ -246,7 +246,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       detail: detail ?? <>当前值 <b>{current}</b>。</>,
       ...shown,
       amplifies,
-      edit: { kind: "text", current, hint, preview },
+      edit: { kind: "text", current, disallowCurrent: true, hint, preview },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(key, value, casExpected(current), reason, label);
@@ -389,7 +389,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只改这个任务这一种语言的名称，其他语言不动；已填的不能清空。", check: "核对语言和拼写；理由写清依据。" },
       confirmLabel: "确认修改",
-      edit: { kind: "text", current, hint: "最多 512 字" },
+      edit: { kind: "text", current, disallowCurrent: true, hint: "最多 512 字" },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(`content.mission.${code}.name.${locale}`, value, casExpected(current), reason, `${source} ${locale.toUpperCase()} 文案`);
@@ -851,7 +851,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
-      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行。过了 24 小时只能查询。</p>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，不会重复执行。过了 24 小时只能查询。</p>
       <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
       <p>结果确认之前，这页不能再改同一项。</p>
     </>} /></>}>

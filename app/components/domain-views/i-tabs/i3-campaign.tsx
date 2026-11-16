@@ -252,7 +252,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     } catch (error) {
       syncPending();
       const retained = [...pendingI3Commands(), ...pendingI3CapCommands()].some((row) => row.commandKey === record.commandKey);
-      if (!retained) await refreshAfterMutation(record);
+      if (!retained) {
+        toast(displayAdminError(error), "warn");
+        await refreshAfterMutation(record);
+      }
       throw new Error(displayAdminError(error));
     }
     await refreshAfterMutation(record);

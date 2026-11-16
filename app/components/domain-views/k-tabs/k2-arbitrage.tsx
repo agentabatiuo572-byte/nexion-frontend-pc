@@ -666,7 +666,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     ctx.openActionConfirm({ briefKind: "security",
       ...recovery(attempt),
       action: `冻结关联账户 · ${r.cells[0]}`,
-      title: retained ? "重试原操作 · 冻结关联账户" : "冻结关联账户",
+      title: retained ? "按原请求重试 · 冻结关联账户" : "冻结关联账户",
       detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
       effect: <StatusTag tone="progress" filled explain="另一位管理员批准后才执行，不能自己批。批准前账户、登录和提现都不变。">批准后生效</StatusTag>,
       confirmLabel: "提交审批",
@@ -707,7 +707,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     ctx.openActionConfirm({ briefKind: "config",
       ...recovery(attempt),
       action: `调整检测阈值 · ${p.name}`,
-      title: `${retained ? "重试原操作 · " : ""}调整${help?.label ?? p.name}`,
+      title: `${retained ? "按原请求重试 · " : ""}调整${help?.label ?? p.name}`,
       detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。`,
       effect: IMMEDIATE,
       confirmLabel: "确认修改",
@@ -756,7 +756,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       formKey: ++formRevision.current,
       initialReason: draft?.reason,
       action: `调整验证码设置 · ${definition.label}`,
-      title: `${retained ? "重试原操作 · " : ""}${firstConfig ? "首次配置" : "调整"}${definition.label}`,
+      title: `${retained ? "按原请求重试 · " : ""}${firstConfig ? "首次配置" : "调整"}${definition.label}`,
       detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。`,
       effect: firstConfig
         ? <StatusTag tone="progress" filled explain="首次配置要另一位超级管理员批准后才写入，不能自己批。批准前 App 仍按系统默认值处理。">批准后生效</StatusTag>
@@ -853,7 +853,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   });
   const pendingNotices = (
     <KRecoveryNotice key="k2-recovery" title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原结果，24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原结果。</p><p>待审批：你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。别的管理员提交的冻结不列在这里，表里同样标「待审批」，详情里写谁、什么时候提交。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
+      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原结果，24 小时内也可以按原请求重试，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原结果。</p><p>待审批：你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。别的管理员提交的冻结不列在这里，表里同样标「待审批」，详情里写谁、什么时候提交。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
       lead={reach("/platform/audit", "platform_a2_read") ? <>也可以<Link className="rd-link" href="/platform/audit">到「操作记录与审批」核对</Link>。</> : undefined} />
   );
   const rereadNotice = rereadPending && overview && !ctx.contentError

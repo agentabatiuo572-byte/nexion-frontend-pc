@@ -255,7 +255,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         impact: published ? "删除后所有位置都不再读到这条问答，本页也找不回来；账号和资金不受影响。" : "这是草稿，用户本来就看不到；删除后本页找不回来，账号和资金不受影响。",
         check: "核对问题和回答，确认不再需要。只想先不让用户看到，用「下架」，以后还能重新发布。",
       },
-      facts: <>{original && <Notice tone="warn" title="结果未知">{isRetryExpired(original) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "可能已经删除。按原请求重试不会重复执行。"}</Notice>}<Facts>
+      facts: <>{original && <Notice tone="warn" title="结果未知">{isRetryExpired(original) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "可能已经删除。按原请求重试不会重复执行。"}</Notice>}<Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
         <Fact k="给谁看">{surfaceName(faq.surface)} · {languageName(faq.language)}</Fact>
         <Fact k="状态">{published ? "已发布，删除后几分钟内从 App 消失" : "草稿"}</Fact>
@@ -314,7 +314,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const pendingRows = pendingCommands.map((record) => ({ key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
     submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>读回核对</Button>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
       {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
     </>,
   }));
@@ -557,7 +557,7 @@ function FaqModal({
         {latestChanges.length > 0 && <ul className="m5-plain-list">{latestChanges.map((line) => <li key={line}>{line}</li>)}</ul>}
       </Notice>}
       {(unknown || recovery) && <Notice tone="warn" title="结果未知">
-        <p>{recovery && isRetryExpired(recovery) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "可能已经保存。内容已锁定为原请求，按原请求重试不会重复执行。"}</p>
+        <p>{recovery && isRetryExpired(recovery) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "可能已经保存。内容已锁定为原请求，按原请求重试不会重复执行。"}</p>
       </Notice>}
       <div className="m4-form">
         <div className="m4-form-fields">

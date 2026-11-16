@@ -626,3 +626,5 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-monitor dd { margin: 0; color: var(--rd-text); }
 .h3-block-gap { margin-top: var(--rd-space-4); }
 .h3-phone-hero .h3-phone-cat { align-self: flex-start; }
+/* H8 问号里的短列表（生效时间会被哪些保存改掉）。问号气泡不在 .h8-page 里，类名不加前缀。 */
+.h8-list { margin: 4px 0; padding-left: 18px; list-style: disc; }

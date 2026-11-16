@@ -835,11 +835,12 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       </span>} />
   );
 
+  // 公司资料在三种状态里带同一个 key、都是根片段的直接子元素：读取结束换分支时不重新挂载，抽屉里填到一半的内容、文件和理由留着。
   if (contentLoading && !data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="信任中心数据加载中…" /><I4Documents onPendingChange={syncCommands} recovery={documentRecovery} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="信任中心数据加载中…" /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} /></>;
   }
   if (!data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心读取失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents onPendingChange={syncCommands} recovery={documentRecovery} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心读取失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} /></>;
   }
 
   // ---------- 首屏结论 ----------
@@ -1016,7 +1017,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           : <div className="i4-cards">{cards.map((card) => <SectionCard key={card.key} card={card} />)}</div>}
       </Panel>
 
-      <I4Documents onPendingChange={syncCommands} recovery={documentRecovery} />
+      <I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} />
 
       <Fold title="全部版本" icon={History} tone="role-3" summary={`${TRUST_SECTION_VERSIONS.length} 个版本${drafts.length ? ` · ${drafts.length} 个草稿` : ""}`}
         explain="每块的历史版本和草稿。谁批准的在「操作记录与审批」里看。">

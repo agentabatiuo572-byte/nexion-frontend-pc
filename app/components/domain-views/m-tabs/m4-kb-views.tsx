@@ -189,7 +189,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
       {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure}</p></Notice>}
       {(unknown || retry) && <Notice tone="warn" title="结果未知">
-        <p>{retry?.expired ? `原请求超过 24 小时，不能再重试，只能读回核对。` : `可能已经${action}。按原请求重试不会重复执行。`}</p>
+        <p>{retry?.expired ? `原请求超过 24 小时，不能再重试，只能查询原结果。` : `可能已经${action}。按原请求重试不会重复执行。`}</p>
       </Notice>}
     </Modal>
   );
@@ -204,7 +204,7 @@ export type M4PendingRow = { key: string; question: string; change: ReactNode; s
 export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到结果，可能已经生效。24 小时内可以按原请求重试，系统认得出是同一次提交，不会重复执行。「读回核对」只看现在的列表，证明不了原操作有没有执行，记录也不会因此消失。有结论前这条问答不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。「查询原结果」只看现在的列表，证明不了原操作有没有执行，记录也不会因此消失。有结论前这条问答不能再改。" /></>}>
       <ul className="m4-pending" aria-label="结果未知的操作">
         {rows.map((row) => (
           <li key={row.key}>
@@ -212,7 +212,7 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
             <span className="m4-pending-change">{row.change}</span>
             <span className="m4-pending-time">{businessStamp(row.submittedAt)} 提交</span>
             <span className="m4-pending-state">{row.expired
-              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试，只能读回核对。">已过期</StatusTag>
+              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试，只能查询原结果。">已过期</StatusTag>
               : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
             <span className="m4-pending-actions">{row.actions}</span>
           </li>

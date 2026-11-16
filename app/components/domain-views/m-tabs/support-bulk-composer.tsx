@@ -156,7 +156,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     const chosen = ++imageSelection.current, saved = stamp.current; setUploadError("");
     try {
       const original = uploads.list().find(r => r.actorId === actorId);
-      if (original && (isRetryExpired(original) || original.assetExpiresAt === undefined || Date.now() >= original.assetExpiresAt)) throw new Error("原图片上传已超过图片有效期或 24 小时，只能核对原结果，不能重新上传。");
+      if (original && (isRetryExpired(original) || original.assetExpiresAt === undefined || Date.now() >= original.assetExpiresAt)) throw new Error("原图片上传已超过图片有效期或 24 小时，不能重新上传；请联系管理员核对。");
       const policy = await supportClient.attachmentPolicy();
       if (saved !== stamp.current || chosen !== imageSelection.current) return;
       if (!policy.available || !policy.allowedMimeTypes.includes(file.type as "image/png" | "image/jpeg") || policy.maxBytes !== null && file.size > policy.maxBytes) throw new Error("请选择符合当前格式及大小要求的图片。");
@@ -178,7 +178,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     if (!old && current.ttlSeconds === null) { setUploadError("图片有效期没读到，请重读发送规则后再上传。"); return; }
     const assetExpiresAt = old?.assetExpiresAt ?? Date.now() + current.ttlSeconds! * 1000;
     uploads.remember(fingerprint, current.key, { actorId, clientUploadId: current.id, hash: current.hash, fileName: current.file.name, fileMime: current.file.type, assetExpiresAt });
-    if (!uploads.isDurablyStored(fingerprint, current.key)) { if (!old) uploads.forget(fingerprint, current.key); setUploadError(old ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); return; }
+    if (!uploads.isDurablyStored(fingerprint, current.key)) { if (!old) uploads.forget(fingerprint, current.key); setUploadError(old ? "浏览器没能记下这次操作，这次没有发出；之前那次上传结果仍未知，允许本站保存数据后，用同一张图片重试。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); return; }
     setUploading(true); setUploadError("");
     try {
       const asset = await supportEnhancements.bulkUpload(current.file, current.id, current.key);
