@@ -52,7 +52,7 @@ export function F5AnomalyList({ rows, sigma, ratio, canWrite, onAdjust }: { rows
     <Panel flush icon={ShieldAlert} tone="role-4" title="异常样本" sub={`${rows.length} 条 · 金额偏离超过 ${sigma ?? "3"} 倍标准差 · 层比例偏离超过 ${ratio ?? "20"}%`}
       explain={<>
         <p>从全部奖励里最近的 200 条挑出来，不跟筛选变。三种：同一类奖励里金额偏离平均太多的；同一用户在这 200 条里出现 10 次以上的；团队购买奖励某一层的金额占比，和设置的比例差太多的。</p>
-        <p>金额偏离按奖励类型算，USDT 和 UVT 混在一起算；层比例把两种币相加再比。这两种算法已报给技术同事核对，这里照系统的结果列出。</p>
+        <p>金额偏离按奖励类型算，USDT 和 UVT 混在一起算；层比例把两种币相加再比。这里照系统的结果列出。</p>
         <p>关联风险群只是文字说明，没有可以点进去的风险群编号。</p>
       </>}
       actions={canWrite ? <Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} onClick={onAdjust}>调整标准</Button> : undefined}>

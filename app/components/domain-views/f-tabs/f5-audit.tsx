@@ -361,7 +361,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="状态"><Change from="暂停中" to="恢复" /></Fact>
         {friend
           ? <Fact k="批准后">没有其他冻结条件的好友奖励回到冷却中，到期时间不重新计算；还有其他冻结条件的继续冻结</Fact>
-          : <Fact k="批准后" tone="warn">只解除暂停；之前冻结的这类记录不会自动解冻，要在「奖励流水」逐笔解冻<Explain label="解冻后会不会自动到期" content="暂停时被冻结的旧记录，到期时间已被清空，逐笔解冻后也不会自动到期，要再提前解锁。已报给技术同事修复。" /></Fact>}
+          : <Fact k="批准后" tone="warn">只解除暂停；之前冻结的这类记录不会自动解冻，要在「奖励流水」逐笔解冻<Explain label="解冻后会不会自动到期" content="会。暂停时冻结的记录保留到期时间，解冻后接着冷却，到期自动解锁。以前暂停时清掉了到期时间的旧记录不能解冻，要联系值班人员核对。" /></Fact>}
         <Fact k="谁来批准">{approverText("暂停奖励权限")}</Fact>
       </Facts>,
       submit: async (reason) => {
