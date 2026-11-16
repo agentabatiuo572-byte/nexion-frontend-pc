@@ -124,7 +124,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       title: `调整 ${vote.v} 的票数`,
       effect: approvalTag(), confirmLabel: "提交审批",
       statedBrief: {
-        impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。票数改成 0 后这个等级不再显示在这页，也不能在这页改回。",
+        impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。改成 0 后这一级不再分池，仍留在这页，之后可以改回。",
         check: "调高票数时先看兑付覆盖率；填 0 到 1,000,000，带小数时只取整数部分。",
       },
       completionCopy: approvalCopy("F4 写权限"),
@@ -255,7 +255,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     paramKey: `F.leaderboard.week.user.${member.memberUserId}.status`, fixedVal: "disqualified",
     title: `取消 ${member.userId} 的周榜资格`, effect: approvalTag(), confirmTone: "danger", confirmLabel: "提交取消资格",
     statedBrief: {
-      impact: "批准后这个人移出周榜排名和周榜派奖；不冻结账号，不追回已发的奖励。不会在下周自动恢复：之后每一周的周榜都一直不算这个人。",
+      impact: "批准后，批准那一周的周榜不算这个人，也不分那一周的周榜奖；下一周不会自动接着排除，要排除就再提交一次。不冻结账号，不追回已发的奖励。",
       check: "提交和执行时都要找到这个人本周的风险记录或生效中的关联账户簇，找不到会被拒绝。",
     },
     completionCopy: approvalCopy("榜单处置权限"),
@@ -264,7 +264,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       <Fact k="本周名次">{"computePoints" in member ? `第 ${member.rank} 名 · ${count(member.computePoints as number)} 点` : `第 ${member.rank} 名 · ${prizeText(member.gmvLabel)} USDT`}</Fact>
       <F4DisqualifyEvidenceFact memberUserId={member.memberUserId} />
     </Facts>,
-    detail: `把成员 ${member.memberUserId} 移出本周榜单，排名和奖池发放都不再算他。`,
+    detail: "只管批准那一周的周榜；日榜、月榜、总榜照常算这个人。",
   };
       break;
     }
