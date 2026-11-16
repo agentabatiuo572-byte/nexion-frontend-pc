@@ -107,6 +107,8 @@ interface BackendF2UnilevelRate {
   level?: string | null;
   usdtPct?: number | string | null;
   nexReward?: number | string | null;
+  usdtPctMissing?: boolean;
+  nexRewardMissing?: boolean;
   label?: string | null;
   direct?: boolean | string | null;
   configKey?: string | null;
@@ -577,6 +579,10 @@ export interface F2UnilevelRate {
   l: string;
   usdt: number | null;
   nex: number | null;
+  usdtText: string | null;
+  nexText: string | null;
+  usdtPctMissing?: boolean;
+  nexRewardMissing?: boolean;
   ui: string;
   direct: boolean;
   configKey: string;
@@ -1318,8 +1324,12 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
   }));
   const unilevel = (data?.unilevelRates ?? []).map((item) => ({
     l: asText(item.level, "L?"),
-    usdt: item.usdtPct === null ? null : toNumber(item.usdtPct),
-    nex: item.nexReward === null ? null : toNumber(item.nexReward),
+    usdt: item.usdtPctMissing === true || item.usdtPct === null ? null : toNumber(item.usdtPct),
+    nex: item.nexRewardMissing === true || item.nexReward === null ? null : toNumber(item.nexReward),
+    usdtText: item.usdtPctMissing === true || item.usdtPct === null ? null : String(item.usdtPct),
+    nexText: item.nexRewardMissing === true || item.nexReward === null ? null : String(item.nexReward),
+    usdtPctMissing: item.usdtPctMissing,
+    nexRewardMissing: item.nexRewardMissing,
     ui: asText(item.label, ""),
     direct: toBoolean(item.direct),
     configKey: asText(item.configKey, ""),
@@ -1825,6 +1835,11 @@ async function f1Request<T>(
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (/^\/rates(?:\?|$)/.test(path) && !isWrite) {
+      const raw = await response.text();
+      // Keep each rate/coefficient lexeme; missing flags remain independent booleans.
+      result = JSON.parse(raw.replace(/("(?:usdtPct|nexReward)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("h1BinaryDailyCap"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;

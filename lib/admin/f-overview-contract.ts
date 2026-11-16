@@ -204,6 +204,9 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
     // Explicit null is missing, while an absent field is still a bad contract.
     if (rate.usdtPct !== null) nonNegative(rate.usdtPct, "F2", `${path}.usdtPct`);
     if (rate.nexReward !== null) nonNegative(rate.nexReward, "F2", `${path}.nexReward`);
+    for (const field of ["usdtPctMissing", "nexRewardMissing"]) {
+      if (rate[field] !== undefined && typeof rate[field] !== "boolean") invalid("F2", `${path}.${field}`);
+    }
     stringFields(rate, ["label", "configKey", "nexConfigKey"], path);
     booleanFields(rate, ["direct"], path);
   });
