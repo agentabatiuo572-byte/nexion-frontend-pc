@@ -188,7 +188,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
   const items: RecoveryItem[] = [
     ...E3_PROPOSALS.map(p => {
-      const state = p.state === "pending" ? { tag: "待审批", tone: "progress" as const, line: "等另一位管理员批准，批准前按现在的规则执行。" }
+      const state = p.state === "pending" ? { tag: "待审批", tone: "warn" as const, line: "等另一位管理员批准，批准前按现在的规则执行。" }
         : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.unknown }
           : p.state === "submitted" ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created }
             : p.state === "expired" ? e3Proposals.missing.includes(p.commandKey) ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing }
@@ -211,7 +211,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     }),
   ];
   const recovery = <>
-    <RecoveryPanel title={recoveryTitle(items.length - E3_PROPOSALS.filter(p => p.state === "pending" || p.state === "rejected").length, E3_PROPOSALS.filter(p => p.state === "pending").length, E3_PROPOSALS.filter(p => p.state === "rejected").length)} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+    <RecoveryPanel title={recoveryTitle(items.length - E3_PROPOSALS.filter(p => p.state === "pending" || p.state === "rejected").length, E3_PROPOSALS.filter(p => p.state === "pending").length, E3_PROPOSALS.filter(p => p.state === "rejected").length)} tone="warn"
       explain={`有结论前，这几项不能再改。点行首的箭头看改了什么、提交时间（${zone}）和理由。`} items={items} />
     {releasing && <MissingProposalReleaseModal label={changeText(releasing)} createdAt={releasing.createdAt} onCancel={() => setReleasing(null)} onConfirm={() => E3_RECOVERY.release(releasing)} />}
   </>;
@@ -299,7 +299,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
       `${changeText(p)}。等另一位管理员批准，批准前按现在的值执行。`).join("\n");
     if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原结果。" : "这一项有一次提交结果未知，先在页面上方查询原结果。"}>结果未知</StatusTag>;
-    if (p) return <StatusTag tone="progress" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
+    if (p) return <StatusTag tone="warn" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
     return e3Proposals.locked(keys) && <StatusTag tone="warn" explain={`${LEGACY_LOCKED}。`}>结果未知</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
@@ -370,7 +370,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     <div className="rd-split" data-detail="">
       <Panel title="产能随月龄变化" icon={Gauge} tone="role-4" sub={`画到第 ${cyc} 个月`} data-proof="e3-capacity-curve"
         explain={<><p>参与逐月下降的商品，产能从 100% 起每月乘以（1 + 这一段的每月变化 ÷ 100），不低于下限 {floor}%。图上显示两位小数，实际按六位算。</p><p>「曲线画几个月」只决定图画多长，不截断用户的产能。</p></>}
-        actions={pendingCurve && <StatusTag tone="progress" icon={Clock3}>有待批准的修改</StatusTag>}>
+        actions={pendingCurve && <StatusTag tone="warn" icon={Clock3}>有待批准的修改</StatusTag>}>
         <div className="e3p-curve">
           <TrendLines label={`产能随月龄变化：第 0 月 100%，第 ${s1} 月 ${capText(curve[s1] ?? 0)}，第 ${s2} 月 ${capText(curve[s2] ?? 0)}，第 ${cyc} 月 ${capText(curve[cyc] ?? 0)}，下限 ${floor}%`}
             ticks={curve.map((_, m) => `${m} 月`)} format={(v) => capText(v / scale)} axisFormat={(v) => `${Number((v / scale).toFixed(1))}%`} height={300}

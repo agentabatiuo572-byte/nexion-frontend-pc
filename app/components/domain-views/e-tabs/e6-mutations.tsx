@@ -275,7 +275,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
       const expired = isRetryExpired(r), refused = m.rejected.includes(r.commandKey), waiting = !!r.ticketId && !r.terminal, end = r.terminal ? PROPOSAL_END[r.terminal] : undefined;
       const state = end ? { tag: end.tag, tone: end.tone, line: end.text, more: "按「准备新变更」清掉这条后，这一项可以重新提交。" }
         : waiting ? m.notes[r.commandKey] === TICKET_UNREAD ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created, more: `审批单 ${r.ticketId} 已经建了，批没批准还没查到；点「查询审批结果」再查，不会再建一张。` }
-          : { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
+          : { tag: "待审批", tone: "warn" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
           : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
             : r.payload.kind === "proposal" ? r.absent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
               : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
@@ -315,7 +315,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   const release = m.release?.section === section ? m.release : null;
   return <>
     {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
-    <RecoveryPanel title={recoveryTitle(items.length - items.filter(item => item.key.startsWith("waiting:")).length - records.filter(r => r.terminal).length, items.filter(item => item.key.startsWith("waiting:")).length, records.filter(r => r.terminal).length)} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+    <RecoveryPanel title={recoveryTitle(items.length - items.filter(item => item.key.startsWith("waiting:")).length - records.filter(r => r.terminal).length, items.filter(item => item.key.startsWith("waiting:")).length, records.filter(r => r.terminal).length)} tone="warn"
       explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
     {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}

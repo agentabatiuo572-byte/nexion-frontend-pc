@@ -199,7 +199,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         const expiredMissing = expired && ctx.e4ExpiredNotFound.includes(record.commandKey);
         return { key: record.fingerprint, title: record.label, record: created ? undefined : record, outcome, createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
           canQuery: ctx.canQueryE4, copy: { missingOrigin: expired ? "这条记录早于执行核查，查询原结果只查审批单。超过 24 小时不能再重试。" : "这条记录早于执行核查，查询原结果只查审批单。" },
-          status: waiting ? { tone: "progress", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
+          status: waiting ? { tone: "warn", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
             : created ? { tone: "warn", label: "进度没读到", line: `${ticket}已建好，审批进度没读到，再查一次，不要重新提交。` }
               : expiredMissing ? { tone: "neutral", label: "没有建成", line: "超过 24 小时也查不到审批单，申请没有建成，可以解除这条记录。" } : undefined,
           actions: <>

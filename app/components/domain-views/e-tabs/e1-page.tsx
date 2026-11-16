@@ -356,7 +356,7 @@ export function E1Page() {
   const sent = (at: number) => `${formatBusinessTimeCompact(new Date(at).toISOString(), "—")} 提交`;
   const recovery: RecoveryItem[] = [
     ...receipts.filter(row => row.status === "pending").map(row => ({ key: `receipt:${row.id}`, object: row.action,
-      tag: <StatusTag tone="progress">待审批</StatusTag>,
+      tag: <StatusTag tone="warn">待审批</StatusTag>,
       line: row.reading ? "正在查询审批进度…" : RECOVERY_LINE.pending,
       note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
       actions: <Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button>,
