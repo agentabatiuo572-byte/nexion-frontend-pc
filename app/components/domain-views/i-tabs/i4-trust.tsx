@@ -897,7 +897,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const blanking = blankingOf(s.key, current);
     const isArchived = isArchivedStatus(liveTrustStatus(s));
     const isPending = pendingTrustSectionKeys.has(s.key);
-    const preview = previewFields(s.key, (current?.fields ?? []).filter((field) => !blanking.keys.has(field.key)));
+    const publicFields = snapshot.view?.available && snapshot.view.sourceEnvironment !== "SANDBOX"
+      ? new Set(snapshotSection(s.key)?.fields.filter((field) => !field.cleared).map((field) => field.key) ?? []) : undefined;
+    const preview = previewFields(s.key, (current?.fields ?? []).filter((field) => !blanking.keys.has(field.key) && (!publicFields || publicFields.has(field.key))));
     const menu = sectionMenu(s);
     return {
       key: s.key,
