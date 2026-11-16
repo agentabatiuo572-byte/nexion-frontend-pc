@@ -9,7 +9,7 @@ import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-m
  * 唯一的业务请求是 GET /api/admin/market/staking（挂载读一次、「刷新」「重新读取」重读），本页没有写操作。
  * 版面：结论（还有没有没结清的历史仓位）→ 四个数 → 四档历史产品卡 → 历史仓位（三段状态带选一种状态 + 一张表，点行看仓位详情）。没有任何要处理的事时收短：不出四个 0，空块一行写完。
  */
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { Ban, CalendarClock, CheckCheck, CircleCheck, CircleDashed, CircleSlash, Clock3, Coins, Hourglass, Layers, LogOut, PauseCircle, RefreshCw, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import {
@@ -22,6 +22,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { PaginationExemption } from "../design-kit";
 import {
   fetchG1StakingOverview,
+  fetchG1StakingPosition,
   type G1Overview,
   type G1Pool,
   type G1PositionGroup,
@@ -81,6 +82,10 @@ function minText(value: string | null) {
 }
 
 const errorText = (error: unknown) => displayAdminReadError(error);
+/** 后端按编号精确读一条只认这种写法：STK- 开头，区分大小写。 */
+const POSITION_NO = /^STK-[A-Za-z0-9-]{1,80}$/;
+/** 按编号单独去后端读一条：清单里没有时才读，结果只对这一个编号有效。 */
+type Lookup = { key: string } & ({ state: "loading" } | { state: "found"; record: G1PositionRow; at: number } | { state: "not-found" } | { state: "error"; message: string });
 const DENIED = new Set<string>([ADMIN_ERROR_MESSAGES.ADMIN_PERMISSION_DENIED, ADMIN_ERROR_MESSAGES.ACCESS_DENIED]);
 
 type StateKey = "pending_lock" | "active" | "mature_unclaimed" | "claimed" | "early_withdrawn" | "slashed" | "refunded";
@@ -113,7 +118,32 @@ export function G1Staking() {
   const [state, setState] = useState<StateKey | null>(null);
   const [query, setQuery] = useState("");
   const [current, setCurrent] = useState<G1PositionRow | null>(null);
+  const [lookup, setLookup] = useState<Lookup | null>(null);
+  const queryRef = useRef("");
   const reach = useReach();
+
+  const lookupPosition = useCallback(async (key: string) => {
+    setLookup({ key, state: "loading" });
+    try {
+      const result = await fetchG1StakingPosition(key);
+      if (queryRef.current !== key) return;
+      if (result.status === "found") {
+        setLookup({ key, state: "found", record: result.record, at: Date.now() });
+        setCurrent(result.record);
+      } else setLookup({ key, state: "not-found" });
+    } catch (err) {
+      // 403 是这个账号不能查；其余 404 是后端还没有按编号查的功能（查无是上面的 not-found，不会走到这里）。
+      const status = (err as { httpStatus?: number }).httpStatus;
+      const message = status === 403 ? "这个账号没有按编号查仓位的权限。" : status === 404 ? "现在还不能按编号查仓位，只能在已读到的清单里找。" : errorText(err);
+      if (queryRef.current === key) setLookup({ key, state: "error", message });
+    }
+  }, []);
+  const changeQuery = (value: string) => {
+    queryRef.current = value.trim();
+    setQuery(value);
+    setLookup(null);
+    setCurrent(null);
+  };
 
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -229,6 +259,10 @@ export function G1Staking() {
     ? loaded.filter((row) => [row.userNo, row.nickname, row.positionNo].some((text) => text.toLowerCase().includes(needle)))
     : group?.rows ?? [];
   const index = current ? rows.findIndex((row) => row.positionNo === current.positionNo) : -1;
+  // 清单里没找到、输入的又是完整仓位编号时，可以去后端按编号查这一笔（不受每种状态 50 笔的限制）。
+  const exactKey = needle && rows.length === 0 && POSITION_NO.test(query.trim()) ? query.trim() : null;
+  const exact = exactKey && lookup?.key === exactKey ? lookup : null;
+  const exactRead = exact?.state === "found" && current === exact.record ? exact : null;
 
   // 七组都返回了而且都是 0：没有任何历史仓位，仓位块一行写完，不摆七个 0。
   const noPositions = STATE_ORDER.every((key) => groupByStatus.get(key)?.count === 0);
@@ -253,8 +287,7 @@ export function G1Staking() {
 
   const selectState = (key: StateKey) => {
     setState(key);
-    setQuery("");
-    setCurrent(null);
+    changeQuery("");
   };
   const selectable = STATE_ORDER.filter((key) => groupByStatus.has(key));
   const onLaneKey = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -312,7 +345,7 @@ export function G1Staking() {
                     <dl className="rd-stat-rows">
                       <div className="rd-stat-row"><dt>参考年奖励率</dt><dd>{pool.apyDisplay}</dd></div>
                       <div className="rd-stat-row"><dt>提前解锁扣款</dt><dd>{pool.penalty}%</dd></div>
-                      <div className="rd-stat-row"><dt>最低锁仓额<Explain label="最低锁仓额的口径" content="没有单独配置时显示产品的默认值，已舍到两位小数；单独配置过的按原值显示。" /></dt><dd>{minText(pool.minDisplayValue)}</dd></div>
+                      <div className="rd-stat-row"><dt>最低锁仓额<Explain label="最低锁仓额的口径" content="单独配置过的显示配置值，没配置的显示产品默认值，都按原值、不舍入；读不到时写「—」。" /></dt><dd>{minText(pool.minDisplayValue)}</dd></div>
                     </dl>
                   </Stat>
                 );
@@ -353,14 +386,15 @@ export function G1Staking() {
           ))}
         </div>
 
-        <FilterBar onClear={() => setQuery("")} canClear={Boolean(needle)} clearLabel="清除"
+        <FilterBar onClear={() => changeQuery("")} canClear={Boolean(needle)} clearLabel="清除"
           sort={<span className="rd-filter-result" role="status">{needle
             ? `在已读到的 ${fmtCount(loaded.length)} 笔里找到 ${fmtCount(rows.length)} 笔`
             : group
               ? `${positionStateLabel(shownState)} · 共 ${fmtCount(group.count)} 笔${group.count > group.rows.length ? `，列出最近更新的 ${fmtCount(group.rows.length)} 笔` : ""}`
               : ""}</span>}>
           <FilterField grow>
-            <Input type="search" aria-label="按用户或仓位编号找仓位" placeholder="输入用户编号、昵称或仓位编号，在七种状态里一起找" value={query} onChange={(event) => { setQuery(event.target.value); setCurrent(null); }} />
+            <Input type="search" aria-label="按用户或仓位编号找仓位" placeholder="输入用户编号、昵称或仓位编号，在七种状态里一起找" value={query} onChange={(event) => changeQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter" && exactKey && !event.nativeEvent.isComposing) { event.preventDefault(); void lookupPosition(exactKey); } }} />
           </FilterField>
         </FilterBar>
         {needle && cut.length > 0 && (
@@ -379,9 +413,24 @@ export function G1Staking() {
           </tr></thead>
           <tbody>
             {rows.length === 0 && (
-              <TableMessage columns={6}>{needle
-                ? `已读到的记录里没有「${query.trim()}」；每种状态只读到最近更新的 50 笔，更早的不在这里。`
-                : "暂无这个状态的仓位"}</TableMessage>
+              exactKey ? (
+                <TableMessage columns={6} role={exact?.state === "error" ? "alert" : "status"}>
+                  <span className="g1-exact">
+                    {exact?.state === "found" ? <span>清单里没有，按编号查到了这一笔：{positionStateLabel(exact.record.status.toLowerCase())}。</span>
+                      : exact?.state === "not-found" ? <span>没有这个仓位：「{exactKey}」。请核对完整编号。</span>
+                        : exact?.state === "error" ? <span>按编号没读到：{exact.message}</span>
+                          : exact?.state === "loading" ? <span>正在按编号查「{exactKey}」…</span>
+                            : <span>已读到的清单里没有「{exactKey}」，可以按完整编号去查这一笔。</span>}
+                    {exact?.state === "found"
+                      ? <Button size="sm" onClick={() => setCurrent(exact.record)}>查看详情</Button>
+                      : exact?.state !== "not-found" && <Button size="sm" loading={exact?.state === "loading"} onClick={() => void lookupPosition(exactKey)}>{exact?.state === "error" ? "重新查询" : "按编号查询"}</Button>}
+                  </span>
+                </TableMessage>
+              ) : (
+                <TableMessage columns={6}>{needle
+                  ? `已读到的记录里没有「${query.trim()}」；每种状态只读到最近更新的 50 笔，更早的不在这里。`
+                  : "暂无这个状态的仓位"}</TableMessage>
+              )
             )}
             {rows.map((row) => {
               const meta = rowState(row.status);
@@ -422,6 +471,7 @@ export function G1Staking() {
               <Fact k="开始时间">{timeText(current.lockedAt)}</Fact>
               <Fact k="预计质押奖励" unit="USDT">{rowAmount(current.estimatedInterest)}</Fact>
               <Fact k="备注">{noteText(current.note)}</Fact>
+              <Fact k="读取">{exactRead ? `${businessClock(exactRead.at)} 按编号单独读取` : readAt ? `${businessClock(readAt)} 随这页读取` : "随这页读取"}（{businessZone().label}）</Fact>
             </Facts>
           </Drawer>
         );
