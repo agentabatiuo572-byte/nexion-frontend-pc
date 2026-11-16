@@ -42,7 +42,7 @@ import { a4Slot, queryA4DirectCommand, queryA4RetentionCommand, useA4Commands, t
 import { canInvestigateECommand, eCommandResult, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, closureKnown } from "../fund-command-check";
-import { SettledLine } from "../recovery-panel";
+import { SETTLED_REJECTED, SettledLine, receiptExplain, receiptFact, receiptRejected, rejectedStatus } from "../recovery-panel";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 
 import { fetchA2ProposalByKey, fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -147,7 +147,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [querying, setQuerying] = useState<string | null>(null);
   // 清理按原号查到的结论：只用来显示；记录解不解除由 queryA4RetentionCommand 按后端结论决定。
   const [retentionOutcomes, setRetentionOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
-  const [retentionSettled, setRetentionSettled] = useState<{ key: string; status: ECommandInvestigation["originalStatus"] }[]>([]);
+  const [retentionSettled, setRetentionSettled] = useState<{ key: string; label: string; retention: boolean; status: ECommandInvestigation["originalStatus"] }[]>([]);
   const [retentionClosing, setRetentionClosing] = useState<A4Command | null>(null);
   const overviewReady = useRef(false);
   const redrivePreviewSequence = useRef(0);
@@ -1024,23 +1024,29 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     }
     setRetentionOutcomes((all) => ({ ...all, [record.commandKey]: { receipt } }));
     // 只有核查确认才有这行提示；不写「查询后自动解除」。
-    if (eCommandSettled(receipt) && receipt!.originalStatus.startsWith("CONFIRMED_")) setRetentionSettled((all) => [...all.filter((item) => item.key !== record.commandKey), { key: record.commandKey, status: receipt!.originalStatus }]);
+    if (eCommandSettled(receipt) && receipt!.originalStatus.startsWith("CONFIRMED_")) setRetentionSettled((all) => [...all.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: "立即清理", retention: true, status: receipt!.originalStatus }]);
     return receipt;
+  };
+  /** 调参数、推进生命周期、重新排队查到确定结论、记录解除后：关掉原确认框，清掉旧的查找结果，重读。查询和核查结案共用。 */
+  const afterDirectSettled = async (record: A4Command) => {
+    commands.sync(); ctx.closeActionConfirm?.(); overviewReady.current = false;
+    if (record.original.kind === "lifecycle") resetSchemaLookup(record.original.schema.eventName);
+    if (record.original.kind === "redrive") { setRedrivePreview(null); setRedriveResult(null); }
+    await refreshOverview(true);
+    if (record.original.kind === "redrive" && canReadOutbox) await outbox.load(outbox.applied);
   };
   const queryOriginal = async (record: A4Command) => {
     currentRegistryActor(false);
     setQuerying(record.commandKey);
     try {
+      // 调参数、推进生命周期、重新排队：后端查得到原结果时把结论写在这一行；查不到（旧后端、旧记录）照旧只读现在的数据。
+      let found = false;
       if (record.original.kind !== "retention") {
         const result = await queryA4DirectCommand(record);
-        if (result.settled) {
-          commands.sync(); ctx.closeActionConfirm?.(); overviewReady.current = false;
-          if (record.original.kind === "lifecycle") resetSchemaLookup(record.original.schema.eventName);
-          if (record.original.kind === "redrive") { setRedrivePreview(null); setRedriveResult(null); }
-          await refreshOverview(true);
-          if (record.original.kind === "redrive" && canReadOutbox) await outbox.load(outbox.applied);
-          return;
-        }
+        found = !!result.receipt;
+        if (result.receipt) setRetentionOutcomes((all) => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+        if (result.settled) setRetentionSettled((all) => [...all.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: record.name, retention: false, status: result.receipt!.originalStatus }]);
+        if (result.settled) { await afterDirectSettled(record); return; }
       }
       switch (record.original.kind) {
         case "retention": {
@@ -1072,7 +1078,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           setRedrivePreview(preview); break;
         }
       }
-      toast(displayAdminError(new Error("A4_ORIGINAL_CURRENT_ONLY")));
+      if (!found) toast(displayAdminError(new Error("A4_ORIGINAL_CURRENT_ONLY")));
     } catch (error) { toast(displayAdminError(error)); }
     finally { setQuerying(null); }
   };
@@ -1087,12 +1093,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       case "redrive": redriveAuditedH3DeadEvent(record); break;
     }
   };
-  // 清理能按原号查到这次的结论；其余直接操作只能读现在的数据。句子和资金页、J2 的定稿一致。
+  // 按原号查到结论的（清理，以及有原请求出处的其余三类）写在这一行；句子和资金页、J2 的定稿一致。
   const canCloseRetention = canInvestigateECommand("platform_a4_read");
-  const retentionShown = (record: A4Command): { tone: StateTone; label: string; line: string } | undefined => {
+  const canRetryRecord = (record: A4Command) => record.original.kind === "retention" ? canRunRetention : record.original.kind === "redrive" ? canRedriveH3Dead : canWrite;
+  const retentionShown = (record: A4Command): { tone: StateTone; label: string; line: string; more?: string } | undefined => {
     const outcome = retentionOutcomes[record.commandKey];
-    if (record.original.kind !== "retention" || !outcome) return undefined;
+    if (!outcome) return undefined;
     const expired = isRetryExpired(record);
+    const canRetry = canRetryRecord(record);
     if ("error" in outcome) return outcome.error === ADMIN_ERROR_MESSAGES.COMMAND_INVESTIGATION_FORBIDDEN
       ? { tone: "danger", label: "没有查询权限", line: "请原操作人或有调查权限的超级管理员查询。" }
       : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
@@ -1101,10 +1109,11 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: "稍后再查，执行完之前不要重试。" };
     const closure = canCloseRetention ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
     if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: expired ? `系统记录这次失败了；${closure}`
-      : canRunRetention ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : "系统记录这次失败了；请有清理权限的人按原请求重试。" };
+      : canRetry ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : "系统记录这次失败了；请有操作权限的人按原请求重试。" };
+    if (receiptRejected(receipt)) return { ...rejectedStatus({ expired, canRetry, canClose: canCloseRetention }), more: receiptExplain(receipt) };
     // 后台只记「已处理」，看不出这次删没删（包括有别的清理在进行、一条没删）：记录保留，靠按原请求重试或核查结案确认。
-    if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", label: "已处理", line: !expired
-      ? canRunRetention ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。"
+    if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", label: "已处理", more: receiptExplain(receipt), line: !expired
+      ? canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。"
       : `后台已处理，看不出成没成；${closure}` };
     if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: !canCloseRetention ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
       : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
@@ -1114,14 +1123,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const shown = retentionShown(record);
     const outcome = retentionOutcomes[record.commandKey];
     const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
-    const closable = record.original.kind === "retention" && canCloseRetention && (status === "UNKNOWN" || isRetryExpired(record) && (status === "FAILED" || status === "SUCCEEDED"));
+    const closable = (record.original.kind === "retention" || !!record.commandOrigin) && canCloseRetention && (status === "UNKNOWN" || isRetryExpired(record) && (status === "FAILED" || status === "SUCCEEDED"));
     return {
       key: record.commandKey, name: record.name,
       change: record.original.kind === "redrive"
         ? <><span data-mono>{record.original.snapshot.eventId}</span> · 理由「{record.reason}」</> : record.change,
       submittedAt: record.createdAt,
-      tag: shown ? <StatusTag tone={shown.tone}>{shown.label}</StatusTag> : isRetryExpired(record)
-        ? <StatusTag tone="neutral" icon={Hourglass} explain={record.original.kind === "retention"
+      tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : isRetryExpired(record)
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={record.original.kind === "retention" || record.commandOrigin
           ? "超过 24 小时不能再重试。先查询这次清理的原结果；查到的，按证据核查结案。" : "原操作超过 24 小时，不能再重试，只能查询当前数据核对。"}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain={record.original.kind === "redrive"
           ? "提交时没收到确定结果，可能已经重新排队。先查询原结果，核对这条事件现在的状态；按原请求重试不会再排一次。" : undefined}>结果未知</StatusTag>,
@@ -1139,20 +1148,32 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const closingReceipt = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null;
   const recoveryNotice = (
     <>
-      {retentionSettled.map((item) => <SettledLine key={item.key} label="立即清理"
-        text={item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认这次清理没有执行，记录已解除。" : "核查确认这次清理已正常结束，记录已解除。"}
+      {retentionSettled.map((item) => <SettledLine key={item.key} label={item.label}
+        text={item.status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : !item.retention
+          ? item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : item.status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"
+          : item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认这次清理没有执行，记录已解除。" : "核查确认这次清理已正常结束，记录已解除。"}
         onDismiss={() => setRetentionSettled((all) => all.filter((row) => row.key !== item.key))} />)}
       <A4RecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。</p><p>登记：查到审批单后清掉。</p><p>清理：按原请求重试拿到结果，或核查结案后清掉。</p><p>其他操作：查询只能看现在的数据，按原请求重试拿到结果后才清掉。</p></>} />
-      {retentionClosing && <FundClosureModal label="立即清理" createdAt={retentionClosing.createdAt} known={closureKnown(closingOutcome)}
+        explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。</p><p>登记：查到审批单后清掉。</p><p>清理：按原请求重试拿到结果，或核查结案后清掉。</p><p>调参数、推进生命周期、重新排队：查到做成了就清掉；没有结论的，24 小时内按原请求重试，过期后核查结案。旧记录只能读现在的数据。</p></>} />
+      {retentionClosing && <FundClosureModal label={retentionClosing.original.kind === "retention" ? "立即清理" : retentionClosing.name} createdAt={retentionClosing.createdAt} known={closureKnown(closingOutcome)}
         facts={<>
-          <Fact k="清理范围">{retentionClosing.change}</Fact>
-          <Fact k="系统记录">{closingReceipt?.originalStatus === "FAILED" ? "记为失败，记录保留" : closingReceipt?.originalStatus === "SUCCEEDED" ? "已处理，看不出成没成，记录保留" : "结果仍未知，记录保留"}</Fact>
-          {closingReceipt?.investigation && <Fact k="上次核查">{formatBusinessTimeCompact(closingReceipt.investigation.investigatedAt, "—")}，记为「{closingReceipt.investigation.conclusion === "SUCCEEDED" ? "已执行" : closingReceipt.investigation.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
+          <Fact k={retentionClosing.original.kind === "retention" ? "清理范围" : "改动"}>{retentionClosing.change}</Fact>
+          <Fact k="系统记录">{receiptFact(closingReceipt, "记录保留")}</Fact>
+          {closingReceipt?.investigation && <Fact k="上次核查">{formatBusinessTimeCompact(closingReceipt.investigation.investigatedAt, "—")}，记为「{closingReceipt.investigation.conclusion === "SUCCEEDED" ? "已执行" : closingReceipt.investigation.conclusion === "NOT_EXECUTED" ? "未执行" : closingReceipt.investigation.conclusion === "REJECTED" ? "后台拒绝" : "仍未知"}」</Fact>}
         </>}
         onClose={() => setRetentionClosing(null)}
         onSubmit={async (evidence) => {
           const record = retentionClosing;
+          if (record.original.kind !== "retention") {
+            const result = await queryA4DirectCommand(record, evidence);
+            setRetentionOutcomes((all) => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+            setRetentionClosing(null);
+            if (result.settled) {
+              setRetentionSettled((all) => [...all.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: record.name, retention: false, status: result.receipt!.originalStatus }]);
+              await afterDirectSettled(record);
+            }
+            return;
+          }
           const next = await queryRetention(record, evidence);
           setRetentionClosing(null);
           if (eCommandSettled(next)) {
@@ -1461,7 +1482,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   /* ── 统计参数与清理 ── */
   const lastCleanup = retentionRun
     ? retentionRun.lockAcquired
-      ? <>上次删除了 {minute(retentionRun.evaluatedAt)} 之前的记录</>
+      // 后端这个时间是执行清理的时间，不是删到哪一天之前；截止点不返回。
+      ? <>上次清理：{minute(retentionRun.evaluatedAt)}</>
       : <>{minute(retentionRun.evaluatedAt)} 那次有别的清理在进行，没有删除</>
     : retentionRunError ? <span className="a4-warn">上次清理结果读取失败</span> : <span className="a4-dim">没有读到上次手动清理的结果</span>;
   const paramMeta: Record<string, { what: string; when: string; effect: string; open: () => void }> = {
@@ -1493,7 +1515,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             effect="删掉已结束和已终止的事件发送记录、到期的用户行为记录，不归档、不能恢复；还在等发送或发送失败的事件和资金账目不删。每张表一次最多 2000 条。"
             note="上次清理只读得到最近一次手动清理。读不到不代表从没清理过。"
             value={lastCleanup}
-            sub={retentionRun?.lockAcquired ? `发送记录 ${retentionRun.outboxRows} 条 · 行为记录 ${retentionRun.behaviorFactRows} 条 · 按 ${retentionRun.retentionMonths} 个月` : undefined}
+            sub={retentionRun?.lockAcquired ? `删除发送记录 ${retentionRun.outboxRows} 条 · 行为记录 ${retentionRun.behaviorFactRows} 条 · 按 ${retentionRun.retentionMonths} 个月` : undefined}
             action={!canRunRetention ? undefined : (describedBy) => <Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-describedby={describedBy}
               disabledReason={!canRunRetention ? "你没有清理事件的权限（要有事件修改和操作审批的写权限）" : !overview ? "事件数据还没读到" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined}
               onClick={() => runRetention()}>立即清理</Button>} />

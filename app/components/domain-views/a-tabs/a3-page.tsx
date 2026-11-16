@@ -31,6 +31,10 @@ import {
   type A3SystemHealth,
 } from "@/lib/admin/a3-client";
 import { GRecoveryNotice, expiredTag, unknownTag, type GRecoveryRow } from "../g-tabs/g-recovery";
+import { FundClosureModal, closureKnown, fundRecoveryStatus } from "../fund-command-check";
+import { SETTLED_REJECTED, receiptFact } from "../recovery-panel";
+import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
+import type { FundCommandEvidence, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import type { ACtx } from "./types";
 import { A3Calendar, type A3CalendarSummary } from "./a3-calendar";
 import { A3Experience } from "./a3-experience";
@@ -105,6 +109,9 @@ const HEALTH_HELP: Record<string, string> = {
   "后台服务 JVM": "当前这台后台服务已运行多久、内存用了多少。超过 85% 是警告，超过 95% 是严重异常。只代表这一台，不是整个集群。",
 };
 
+/** 查不到原结果、已过 24 小时：不能再说「24 小时内可以重试」。 */
+const CURRENT_ONLY_EXPIRED = "已重新读取。现在的值证明不了原操作的结果，原记录继续保留；已超过 24 小时，不能再重试，请到操作记录与审批核对。";
+
 export function A3Page({ ctx }: { ctx: ACtx }) {
   const reach = useReach();
   const { toast, openActionConfirm } = ctx;
@@ -124,6 +131,9 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const [recovery, setRecovery] = useState<A3Command | null>(null);
   const [readNonce, setReadNonce] = useState({ experience: 0, docs: 0, how: 0 });
   const [querying, setQuerying] = useState<string | null>(null);
+  /** 平台参数、功能开关、体验配置按原号查到的结论（查不到的旧后端不记）；过期后核查结案用。 */
+  const [originalOutcomes, setOriginalOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [originalClosing, setOriginalClosing] = useState<A3Command | null>(null);
   /** 说明内容读回后和原提交对不上的对比，按命令号存；有它才给「解除待确认」（决定 F1-说明解除）。 */
   const [checks, setChecks] = useState<Record<string, A3ContentComparison>>({});
   const [releasing, setReleasing] = useState<{ record: A3Command; busy: boolean } | null>(null);
@@ -297,6 +307,15 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     });
   };
 
+  /** 按原号查到的结论：和资金页同一组标签和句子。 */
+  const originalShown = (record: A3Command, outcome: FundInvestigationOutcome) => fundRecoveryStatus({
+    record: record.commandOrigin ? record : undefined, outcome, expired: isRetryExpired(record), canQuery: true,
+    canRetry: a3Deduplicates(record) && !isRetryExpired(record) && (record.original.kind === "experience" ? canWriteExperience : session?.role === "superadmin"),
+  });
+  const originalLine = (record: A3Command, outcome: FundInvestigationOutcome) => {
+    const shown = originalShown(record, outcome);
+    return `${shown.label}：${shown.line}`;
+  };
   const queryOriginal = async (record: A3Command) => {
     setQuerying(record.commandKey);
     if (record.original.kind === "docs" || record.original.kind === "how") setRecovery(record);
@@ -304,25 +323,32 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       switch (record.original.kind) {
         case "param": case "flag": {
           const result = await commands.queryOriginal(record).catch(() => null);
+          if (result?.receipt) setOriginalOutcomes(value => ({ ...value, [record.commandKey]: { receipt: result.receipt } }));
           if (result?.settled) {
             const status = result.receipt?.originalStatus;
             notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
-              : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
+              : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除，不要再做一次。");
             ctx.closeActionConfirm?.(); await refreshOverview(true); return;
           }
           if (!await refreshOverview()) return;
+          if (result?.receipt) { toast(originalLine(record, { receipt: result.receipt }), "warn"); return; }
           break;
         }
         case "schedule": case "cancel": await fetchBusinessCalendar(); setCalendarNonce(value => value + 1); break;
         case "experience": {
           const result = await commands.queryOriginal(record).catch(() => null);
+          if (result?.receipt) setOriginalOutcomes(value => ({ ...value, [record.commandKey]: { receipt: result.receipt } }));
           if (result?.settled) {
+            const status = result.receipt?.originalStatus;
+            notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+              : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "原操作已执行，记录已解除，不要再做一次。");
             ctx.closeActionConfirm?.();
             setReadNonce(value => ({ ...value, experience: value.experience + 1 }));
             return;
           }
           await fetchPlatformExperienceConfig();
           setReadNonce(value => ({ ...value, experience: value.experience + 1 }));
+          if (result?.receipt) { toast(originalLine(record, { receipt: result.receipt }), "warn"); return; }
           break;
         }
         case "docs": case "how": {
@@ -341,7 +367,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           return;
         }
       }
-      toast(displayAdminError(new Error("A3_ORIGINAL_CURRENT_ONLY")), "warn");
+      toast(isRetryExpired(record) ? CURRENT_ONLY_EXPIRED : displayAdminError(new Error("A3_ORIGINAL_CURRENT_ONLY")), "warn");
     } catch (error) { toast(displayAdminError(error), "error"); }
     finally { setQuerying(null); }
   };
@@ -416,17 +442,25 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     : <StatusTag tone="warn" icon={CircleHelp} explain={a3Deduplicates(record)
       ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原请求重试，不会重复保存；查询原结果和原提交一致就算已保存。"
       : "提交时没收到确定结果，可能已经保存。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
-  const recoveryRows: GRecoveryRow[] = commands.pending.map(record => ({
+  const recoveryRows: GRecoveryRow[] = commands.pending.map(record => {
+    const outcome = originalOutcomes[record.commandKey];
+    const shown = outcome && originalShown(record, outcome);
+    const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
+    const closable = !!record.commandOrigin && canInvestigateECommand("platform_a3_read") && (status === "UNKNOWN" || isRetryExpired(record) && (status === "SUCCEEDED" || status === "FAILED"));
+    return {
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
     key: record.commandKey, name: record.name, change: isContent(record) ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
-    tag: isContent(record) ? contentTag(record) : isRetryExpired(record) ? expiredTag("direct") : unknownTag("direct"),
+    tag: shown ? <StatusTag tone={shown.tone} explain={[shown.line, shown.more].filter(Boolean).join(" ")}>{shown.label}</StatusTag>
+      : isContent(record) ? contentTag(record) : isRetryExpired(record) ? record.original.kind === "schedule" || record.original.kind === "cancel" ? expiredTag("direct")
+        : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原结果；查到的，按证据核查结案。">已过期</StatusTag> : unknownTag("direct"),
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
       {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除原操作记录…</Button>}
       {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={mutating ? "正在提交" : (record.original.kind === "experience" || record.original.kind === "docs" || record.original.kind === "how" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
         onClick={() => void recoverOriginal(record)}>按原请求重试</Button>}
     </>,
-  }));
+  }; });
 
   /* ────────────────── 首屏：有没有不正常的 ────────────────── */
 
@@ -626,6 +660,23 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}
+      {originalClosing && <FundClosureModal label={originalClosing.name} createdAt={originalClosing.createdAt} known={closureKnown(originalOutcomes[originalClosing.commandKey])}
+        facts={<><Fact k="改动">{originalClosing.change}</Fact>
+          <Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(originalOutcomes[originalClosing.commandKey]), "记录保留")}</Fact></>}
+        onClose={() => setOriginalClosing(null)}
+        onSubmit={async (evidence: FundCommandEvidence) => {
+          const record = originalClosing;
+          const result = await commands.queryOriginal(record, evidence);
+          setOriginalOutcomes(value => ({ ...value, [record.commandKey]: { receipt: result.receipt } }));
+          setOriginalClosing(null);
+          if (!result.settled) return;
+          const status = result.receipt?.originalStatus;
+          notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+            : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "核查确认已执行，记录已解除，不要再做一次。");
+          ctx.closeActionConfirm?.();
+          if (record.original.kind === "experience") setReadNonce(value => ({ ...value, experience: value.experience + 1 }));
+          else await refreshOverview(true);
+        }} />}
 
       {loadError && overview && <Notice tone="warn" title="刚才刷新没成功" action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>{loadError} 下面是上次读到的值。</Notice>}
 
