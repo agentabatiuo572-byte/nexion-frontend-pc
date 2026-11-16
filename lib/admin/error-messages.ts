@@ -1563,6 +1563,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A2_OPERATION_ALREADY_TERMINAL: "该审批单已经处理完成，不能再次执行或取消；请刷新查看最新状态。",
   A2_REASON_POLICY_INVALID: "操作理由规则配置无效，当前无法提交；请联系值班人员核对理由长度和格式策略。",
   A2_RETENTION_RUN_INVALID: "留存清理任务返回的数据不完整或格式异常，结果尚未确认；请刷新「操作记录与审批」记录核对执行状态，持续出现时联系值班人员。",
+  A2_RETENTION_RUN_UNREADABLE: "上次清理结果读取失败",
   RETENTION_PARAMETERS_STALE: "保留月数已被改过，这次没有清理；请重新打开清理，按新的月数确认。",
   RETENTION_EXPECTED_MONTHS_REQUIRED: "这条清理记录来自旧版页面，不能再执行，这次没有清理；请重新打开清理并确认。",
   A2_RETENTION_PREVIEW_INVALID: "留存清理范围预览返回的数据不完整或格式异常，为避免误删已停止执行；请刷新页面重新加载范围，持续出现时联系值班人员。",
