@@ -1,3 +1,4 @@
+import { AUDIT_ACTION_NAMES } from "./audit-action-names";
 import { nexGridBrandText } from "./brand-copy.ts";
 import type { OpsSku } from "./platform-types";
 
@@ -166,6 +167,8 @@ export function a2ObjectText(row: { obj: string; objDisplayName?: string }): str
 /** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
 export function a2ActionText(action: string): string {
   return action.replace("A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED", "服务器恢复超级管理员")
+    // 有些申请的动作名存的是操作记录的代码（例如 A6 启停角色），显示成和操作记录一样的中文。
+    .replace(/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+(?= · |$)/, code => AUDIT_ACTION_NAMES[code] ?? code)
     // A1 建单时动作名带「(A1)」，名称和 A1 页面上的按钮叫法统一。
     .replace(/\s*\(A1\)$/, "")
     .replace(/^禁用账号(?= · |$)/, "停用账号")
