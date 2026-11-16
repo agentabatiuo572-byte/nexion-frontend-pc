@@ -72,7 +72,7 @@ function noteText(value: string, estimatedInterestMissing = false) {
   return operatorCopyText(value)
     .replace(/^D(\d+)\s*\/\s*(\d+)/, "已锁 $1 / $2 天")
     .replace(/累计奖励\s*/, "整期奖励估计 ")
-    .replace(/\$(-?[\d,]+(?:\.\d+)?)/g, (_, amount: string) => `${estimatedInterestMissing ? "—" : rowAmount(amount)} USDT`);
+    .replace(/\$(-?[\d,]+(?:\.\d+)?)/g, (_, amount: string) => estimatedInterestMissing ? "—" : `${rowAmount(amount)} USDT`);
 }
 
 /** 最低额是「1000 USDT」这种文本：数字按金额写法补千分位和两位小数，认不出的原样显示。 */
@@ -440,7 +440,7 @@ export function G1Staking() {
                   <Td><Cell mono full main={<span className="g1-no"><span className="g1-no-head">{row.positionNo.slice(0, -8)}</span><span className="g1-no-tail">{row.positionNo.slice(-8)}</span></span>} title={row.positionNo} /></Td>
                   <Td>{userCell(row)}</Td>
                   <Td><Cell main={operatorCopyText(row.tier)} sub={row.lockedApy} title={`${operatorCopyText(row.tier)}，下单时年奖励率 ${row.lockedApy}`} /></Td>
-                  <Td align="right"><Cell num main={rowAmount(row.amount)} /></Td>
+                  <Td align="right"><Cell num main={rowAmount(row.amount)} title={row.amount === null ? MISSING_AMOUNT : undefined} /></Td>
                   <Td><Cell num main={dateText(row.unlockAt)} sub={dateText(row.lockedAt)} title={`到期 ${timeText(row.unlockAt)}，开始 ${timeText(row.lockedAt)}`} /></Td>
                   <Td><Cell main={meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : <StatusTag tone="neutral">{operatorCopyText(row.statusLabel)}</StatusTag>} sub={noteText(row.note, row.estimatedInterestMissing)} title={noteText(row.note, row.estimatedInterestMissing)} /></Td>
                 </Tr>
@@ -456,12 +456,12 @@ export function G1Staking() {
         const nickname = operatorNicknameText(current.nickname);
         return (
           <Drawer open onClose={() => setCurrent(null)} title="仓位详情" sub={current.positionNo} icon={Layers} tone="role-2"
-            explain="奖励率、扣款和期限以开仓时的记录为准，后来改档位配置不影响它。时间是系统记录的原值，没有换算时区。金额没有记录时目前也显示 0，看到 0 先别当成真实金额。"
+            explain="奖励率、扣款和期限以开仓时的记录为准，后来改档位配置不影响它。时间是系统记录的原值，没有换算时区。金额读不到时写「—」，不是 0。"
             nav={{ onPrev: () => setCurrent(rows[index - 1]), onNext: () => setCurrent(rows[index + 1]), hasPrev: index > 0, hasNext: index >= 0 && index < rows.length - 1 }}
             footer={<Decision note="只能查看，这里不能手动改仓位。" primary={<Button onClick={() => setCurrent(null)}>关闭</Button>} />}>
             <JudgmentPoints rows={[
               { label: "状态", value: meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : operatorCopyText(current.statusLabel), reason: meta?.meaning },
-              { label: "锁定金额", value: `${rowAmount(current.amount)} USDT` },
+              { label: "锁定金额", value: current.amount === null ? "—" : `${rowAmount(current.amount)} USDT`, reason: current.amount === null ? MISSING_AMOUNT : undefined },
               { label: "到期", value: timeText(current.unlockAt) },
               { label: "用户", value: <>{nickname} · {reach("/users/search", "user_c1hub_read") ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(current.userNo)}`} prefetch={false}>{current.userNo}</Link> : current.userNo}</> },
             ]} />
@@ -470,7 +470,7 @@ export function G1Staking() {
               <Fact k="下单时奖励率">{current.lockedApy}</Fact>
               <Fact k="提前解锁扣款">{current.earlyPenalty}</Fact>
               <Fact k="开始时间">{timeText(current.lockedAt)}</Fact>
-              <Fact k="预计质押奖励" unit="USDT">{rowAmount(current.estimatedInterest)}</Fact>
+              <Fact k="预计质押奖励" unit={current.estimatedInterest === null ? undefined : "USDT"}>{current.estimatedInterest === null ? <>—<span className="g1-missing">{MISSING_AMOUNT}</span></> : rowAmount(current.estimatedInterest)}</Fact>
               <Fact k="备注">{noteText(current.note, current.estimatedInterestMissing)}</Fact>
               <Fact k="读取">{exactRead ? `${businessClock(exactRead.at)} 按编号单独读取` : readAt ? `${businessClock(readAt)} 随这页读取` : "随这页读取"}（{businessZone().label}）</Fact>
             </Facts>
@@ -481,4 +481,6 @@ export function G1Staking() {
   );
 }
 
+/** 后端标了缺失的单笔金额（amountMissing、estimatedInterestMissing）：写「—」，悬停或详情里说这一句。合计是后端另算的，不跟着说。 */
+const MISSING_AMOUNT = "系统读不到这笔金额，不是 0";
 const COUNT_EXPLAIN = "没结清 = 待确认 + 计算奖励中 + 到期未领，只算四档 USDT 历史质押，是仓位笔数，不是用户数。";
