@@ -626,7 +626,7 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 #### [E5] 设备管理
 
-2026-11-17 归属门禁接线（hd-sync25，后端4869903c/8539f20e）：E5Device接收可选ownershipStatus，缺失/null/空串保持未知，不默认OWNED；显式非OWNED不允许普通或强制激活，OWNED时按后端raw集合，含旧raw UNBOUND的强制激活。无归属保持现有simState/raw UNBOUND拒绝，其余普通仅INVENTORY、强制INVENTORY/DEACTIVATED/INACTIVE。列表、详情、提交前和状态说明共用canActivateE5Device。退款REFUNDED及促销撤销REVOKED的停用行复用现有「不能再激活」和通用停止原因，不改成解绑/置换事实。**交付缺口：4869903c只改DeviceOpsView和mapper，E5 devices()的StoreDeviceView.from仍未带归属，E5列表/详情实际仍走旧规则，不能宣称退款设备入口已全部关闭；需后端补DTO后复验。**旧OWNED/raw UNBOUND的「已解绑」标签仍保留，措辞交视觉；以下旧的一律不可激活规则按本条归属优先修正。
+2026-11-17 归属门禁接线（hd-sync25，后端4869903c/8539f20e）：E5Device接收可选ownershipStatus，缺失/null/空串保持未知，不默认OWNED；显式非OWNED不允许普通或强制激活，OWNED时按后端raw集合，含旧raw UNBOUND的强制激活。无归属保持现有simState/raw UNBOUND拒绝，其余普通仅INVENTORY、强制INVENTORY/DEACTIVATED/INACTIVE。列表、详情、提交前和状态说明共用canActivateE5Device。退款REFUNDED及促销撤销REVOKED的停用行复用现有「不能再激活」和通用停止原因，不改成解绑/置换事实。**读取交付已补齐：4869903c只改DeviceOpsView和mapper；3f224909将ownershipStatus接入StoreDeviceView及from，E5列表/复用列表的详情现在都能读取归属并使用上述判断，E5-BE-16源码范围已交付。**旧OWNED/raw UNBOUND的「已解绑」标签仍保留，措辞交视觉；以下旧的一律不可激活规则按本条归属优先修正。
 
 2026-11-16（hd-patch-e5u、hd-vis-e5）：运营解绑同时写状态和归属为 UNBOUND，后端 `64f53ce0` 激活前要求归属 OWNED，所以解绑之后不能通过后台恢复给原用户。入口（`canActivateE5Device`）：simState 为 UNBOUND 或原始状态为 UNBOUND 的设备既没有「激活」也没有「强制激活」；原始状态 DEACTIVATED、INACTIVE 的可以申请强制激活；INVENTORY 可以直接激活或强制激活；RECYCLED、RETIRED 不能。页面文字：解绑确认框后果「设备不再归原用户，后台不能再恢复；不退款，购入时间不变，解绑后没有收益。」，标题下加「不能撤销」；已解绑的状态下面一行「不能再激活」，详情「已不归原用户，不能再激活。」（不再按后来被回收、退役细分）；取消激活后果「停用后不接新任务、不占名额，不退款；之后用户能在 App 里重新激活，后台也能申请强制激活。」（App 合法再次激活见下文 `a9658470`）。置换回收写下的停跑原因（recycle、replace）和取消激活、解绑一样，不再当暂停原因列出（E6 同）。已经建好的强制激活申请，批准时设备已不归原用户会返回 409 `DEVICE_OWNERSHIP_NOT_OWNED`（中文：这次没有激活，请驳回），申请仍是待审批、对象仍锁，发起人按原申请查询当前状态，不能把批准失败当成建单失败。下文旧的「解绑后可申请强制激活回到原用户」说法作废。
 
