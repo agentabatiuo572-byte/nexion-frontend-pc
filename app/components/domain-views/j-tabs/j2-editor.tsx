@@ -1,17 +1,14 @@
 "use client";
 
 /**
- * J2 地区访问限制的三件页面专用小件，只管排版，不发请求：
+ * J2 地区访问限制的两件页面专用小件，只管排版，不发请求：
  * - CountryEditor：改名单、改入口规则、应急批量封锁的第一步。选国家时随时看到「加了哪些、去了哪些、没变多少」，
  *   点「下一步」才进共用确认框（理由、提交锁和请求都在共用确认框里，和改版前一样）。
  * - CountryDiff：确认框关键信息层里的差异对照，加和去各写后果。
- * - J2RecoveryNotice：结果未知的原操作逐条列出（改的是哪份名单、从哪些国家改成哪些、什么时候提交的）。
- *   行由页面用本机保存的原请求拼好传进来；现在旧逻辑不保存原请求内容，页面传空数组，等代码 worker 接。
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { Check, Hourglass, Minus, Plus, Replace, RotateCcw, Search, X } from "lucide-react";
-import { Button, Checkbox, Explain, Fold, Input, Modal, Notice, Segments, StatusTag } from "@/app/components/rd";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { Check, Minus, Plus, Replace, RotateCcw, Search, X } from "lucide-react";
+import { Button, Checkbox, Explain, Fold, Input, Modal, Segments, StatusTag } from "@/app/components/rd";
 import type { GeoCountryOption } from "@/lib/admin/j-client";
 
 export type GeoStatus = "blocked" | "limited";
@@ -228,55 +225,5 @@ export function CountryDiff({ initial, codes, names, statusOf, addTitle, addEffe
         : <p className="j2-diff-none">{keptTitle}：没有</p>)}
       {onBack && <div className="j2-diff-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={backDisabled} onClick={onBack}>返回修改</Button></div>}
     </div>
-  );
-}
-
-export type J2RecoveryRow = {
-  key: string;
-  /** 改的是哪一项：「封锁名单」「兑换的入口规则」「地区识别源」「应急批量封锁」。 */
-  name: string;
-  /** 从哪些国家改成哪些，写人话。 */
-  change: ReactNode;
-  /** 本机保存原请求的时间（毫秒）。 */
-  submittedAt: number;
-  expired: boolean;
-  onQuery: () => void;
-  onRetry?: () => void;
-  onRelease?: () => void;
-  /** 最近一次查询或重试的结果，只是当下的事实。 */
-  note?: ReactNode;
-};
-
-/**
- * 结果未知的原操作，概览读取中、读取失败也显示（页面在三个分支里都放它）。
- * 状态叫「结果未知」，按钮「查询原结果」「按原请求重试」；过期只能查询（全站-结果未知叫法）。
- */
-export function J2RecoveryNotice({ rows, unknownTag, expiredTag }: { rows: J2RecoveryRow[]; unknownTag: ReactNode; expiredTag: ReactNode }) {
-  if (rows.length === 0) return null;
-  return (
-    <Notice tone="warn" title={<>{rows.length} 项修改结果未知<Explain label="结果未知怎么处理" content={<>
-      <p>提交时没收到确定结果，可能已经生效。先点「查询原结果」看现在的名单和规则；24 小时内也可以按原请求重试，不会重复执行。</p>
-      <p>查到的是现在的状态，可能是别人改的，不能单凭它认定原操作成没成。按原请求重试成功或被明确拒绝后，记录才清除；改版前的旧记录过期后，核对过可以确认解除。</p>
-    </>} /></>}>
-      <ul className="j2-rec" aria-label="结果未知的修改">
-        {rows.map((row) => (
-          <li key={row.key}>
-            <span className="j2-rec-name">{row.name}</span>
-            <span className="j2-rec-change">{row.change}</span>
-            <span className="j2-rec-time">{businessStamp(row.submittedAt)} 提交</span>
-            <span className="j2-rec-state">{!row.expired ? unknownTag : row.onRelease
-              ? <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。">已过期</StatusTag>
-              : expiredTag}</span>
-            <span className="j2-rec-actions">
-              <Button size="sm" onClick={row.onQuery}>查询原结果</Button>
-              {!row.expired && row.onRetry && <Button size="sm" onClick={row.onRetry}>按原请求重试</Button>}
-              {row.expired && row.onRelease && <Button size="sm" onClick={row.onRelease}>确认解除</Button>}
-            </span>
-            {row.note && <span className="j2-rec-note">{row.note}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="j2-rec-zone">提交时间为{businessZone().label}</p>
-    </Notice>
   );
 }
