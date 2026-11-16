@@ -23,6 +23,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "staking") {
     return "/api/admin/market/staking";
   }
+  if (parts.length === 3 && parts[0] === "staking" && parts[1] === "positions" && isNonEmpty(parts[2])) {
+    return `/api/admin/market/staking/positions/${encodeURIComponent(parts[2])}`;
+  }
   if (parts.length === 2 && parts[0] === "staking" && parts[1] === "visibility") {
     return "/api/admin/market/staking/visibility";
   }
@@ -209,6 +212,9 @@ async function proxy(request: Request, context: RouteContext) {
 
   if (!targetPath) {
     return jsonError(404, "MARKET_ROUTE_NOT_FOUND");
+  }
+  if (path.length === 3 && path[0] === "staking" && path[1] === "positions" && request.method !== "GET") {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
   }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());

@@ -3197,6 +3197,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   STAKING_MIN_AMOUNT_NOT_MET: "质押金额低于这一档的最低锁仓额，不能开仓。",
   STAKING_WALLET_INSUFFICIENT: "用户钱包的 USDT 余额不够这次质押，不能开仓。",
   STAKING_POSITION_CONFLICT: "质押仓位写入冲突，这次开仓没有完成，请刷新后核对仓位。",
+  STAKING_POSITION_NO_INVALID: "仓位编号格式不正确，请核对完整的质押仓位编号后重新查询。",
+  STAKING_POSITION_NOT_FOUND: "没有查到这笔质押仓位，请核对完整仓位编号；查无记录不代表原操作没有执行。",
   STAKING_POSITION_NOT_CLAIMABLE: "这笔质押仓位现在不能领取：还没到到期时间，或已经领取、提前解锁或结束。",
   STAKING_POSITION_NOT_EARLY_WITHDRAWABLE: "这笔质押仓位不能提前解锁：只有计算奖励中、还没到到期时间的仓位可以提前解锁。",
   STAKING_POSITION_STATE_CONFLICT: "这笔质押仓位的状态刚被其他操作改过，这次没有完成，请刷新后核对仓位状态。",
