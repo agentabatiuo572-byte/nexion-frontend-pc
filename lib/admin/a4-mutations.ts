@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { isOriginalCommandOrigin, queryOriginalCommand } from "./original-command-query";
 import {
   createA4IdempotencyKey, redriveAuditedH3DeadOutboxEvent, runA4RetentionNow, transitionA4Lifecycle, updateA4DimensionParam,
   type A4DimensionParam, type A4H3DeadOutboxRedrivePreview, type A4SchemaRegistration,
@@ -12,7 +15,15 @@ export type A4Original =
   | { kind: "lifecycle"; schema: A4SchemaRegistration; target: Exclude<A4SchemaRegistration["lifecycleState"], "new"> }
   | { kind: "retention"; months: string; cutoff: string | null; expectedRetentionMonths?: number }
   | { kind: "redrive"; snapshot: A4H3DeadOutboxRedrivePreview };
-export type A4Command = PendingMutationRecord & { original: A4Original; reason: string; name: string; change: string };
+export type A4Command = PendingMutationRecord & { original: A4Original; reason: string; name: string; change: string; commandOrigin?: FundCommandOrigin };
+function directCommandRoute(original: A4Original) {
+  if (original.kind === "retention") return null;
+  return { originalMethod: original.kind === "param" ? "PATCH" as const : "POST" as const,
+    originalPath: original.kind === "param" ? `/api/admin/platform/events/params/${encodeURIComponent(original.param.key)}`
+      : original.kind === "lifecycle" ? `/api/admin/platform/events/schema-registrations/${encodeURIComponent(original.schema.eventName)}/lifecycle`
+        : `/api/admin/platform/events/outbox/${encodeURIComponent(original.snapshot.eventId)}/redrive`,
+    readAuthority: "platform_a4_read" as const };
+}
 export const a4Slot = (input: A4Original) => input.kind === "param" ? `param:${input.param.key}`
   : input.kind === "lifecycle" ? `lifecycle:${input.schema.eventName}` : input.kind === "redrive" ? `redrive:${input.snapshot.eventId}` : "retention";
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -41,8 +52,23 @@ function validOriginal(input: unknown): input is A4Original {
 const commands = createPendingMutationStore<A4Command>({
   storageKey: "nexion-admin-a4-pending-commands-v1", retainExpiredRecords: true,
   isValidRecord: record => validOriginal(record.original) && record.fingerprint === a4Slot(record.original)
+    && (record.commandOrigin === undefined || !!directCommandRoute(record.original) && isOriginalCommandOrigin(record.commandOrigin, directCommandRoute(record.original)!))
     && typeof record.reason === "string" && typeof record.name === "string" && typeof record.change === "string",
 });
+
+/** The cleanup command has a separate integration; these are the three other direct A4 writers. */
+export async function queryA4DirectCommand(record: A4Command, evidence?: FundCommandEvidence) {
+  const saved = commands.list().find(item => item.fingerprint === record.fingerprint && item.commandKey === record.commandKey);
+  if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
+  const route = directCommandRoute(saved.original);
+  if (!route) throw new Error("INVESTIGATION_SCOPE_UNSUPPORTED");
+  const owner = saved.commandOrigin?.originalAdminId ?? String(useAdminAuth.getState().session?.adminId ?? "");
+  const query = () => queryOriginalCommand(saved, route, owner, evidence);
+  const receipt = evidence ? await query() : await query().catch(() => null);
+  const settled = fundCommandSettled(receipt);
+  if (settled) commands.forget(saved.fingerprint, saved.commandKey);
+  return { receipt, settled };
+}
 
 export function useA4Commands() {
   const [pending, setPending] = useState<A4Command[]>([]);
@@ -59,7 +85,8 @@ export function useA4Commands() {
     const slot = a4Slot(input.original);
     if (find(slot)) throw new Error("A4_ORIGINAL_UNRESOLVED");
     const key = createA4IdempotencyKey(`a4-${input.original.kind}`);
-    commands.remember(slot, key, input);
+    const route = directCommandRoute(input.original);
+    commands.remember(slot, key, { ...input, ...(route ? { commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) } : {}) });
     if (!commands.isDurablyStored(slot, key)) {
       commands.forget(slot, key); sync();
       throw new Error("A4_ORIGINAL_STORAGE_FAILED");

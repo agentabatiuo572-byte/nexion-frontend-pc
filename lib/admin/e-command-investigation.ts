@@ -51,6 +51,9 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
   if (receipt.businessState !== undefined) {
+    // H3 redrive stores a view, not ApiResult: every refusal throws; completion proves requeue only.
+    if (receipt.businessState === "UNKNOWN" && receipt.businessCode === null && receipt.originalStatus === "SUCCEEDED"
+      && receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")) return "SUCCEEDED";
     if (receipt.businessState === "UNKNOWN") return "UNRESOLVED";
     // These code-zero replies carry source/item results that the receipt does not project.
     // OpsNovaService:188–231 may skip refused items; OpsI18nLearningService:215–223 may repair zero items.
@@ -62,6 +65,7 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
   }
   if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
   const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
+    || receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")
     || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
     // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
     || receipt.scope === "I4_TRUST_DOCUMENT"
@@ -165,6 +169,13 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/users\/profiles\/[^/]+\/nickname\/reset$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "USER_NICKNAME_RESET"
     : /^\/api\/admin\/users\/profiles\/[^/]+\/payment-methods\/[1-9]\d*\/(?:unbind|rebind-notification)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && new RegExp(`^USER_PAYMENT_METHOD_${locator.originalPath.endsWith("/unbind") ? "UNBIND" : "REBIND_NOTICE"}:(?:PRODUCTION|SANDBOX)$`).test(String(row.scope))
     : /^\/api\/admin\/devices\/users\/[^/]+\/tradein\/(?:replace|recycle)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `E3_TRADEIN_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
+    : /^\/api\/admin\/platform\/events\/params\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH"
+      && ["day0", "event_retention", "sampling"].includes(decodeURIComponent(locator.originalPath.split("/").at(-1)!))
+      && row.scope === normalizeScope(`A4_PARAM:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
+    : /^\/api\/admin\/platform\/events\/schema-registrations\/[^/]+\/lifecycle$/.test(locator.originalPath) ? locator.originalMethod === "POST"
+      && row.scope === normalizeScope(`A4_EVENT_LIFECYCLE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim().toLowerCase()}`)
+    : /^\/api\/admin\/platform\/events\/outbox\/[^/]+\/redrive$/.test(locator.originalPath) ? locator.originalMethod === "POST"
+      && row.scope === normalizeScope(`A4_H3_OUTBOX_REDRIVE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()}`)
     : locator.originalPath === "/api/admin/platform/config" ? locator.originalMethod === "PUT" && ["platform.global_rate_limit_per_minute", "withdrawal.strong_review_threshold_usdt"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
     : locator.originalPath === "/api/admin/risk/multi-account/registration-params" ? locator.originalMethod === "PATCH" && ["auth.risk.h5_register_captcha", "auth.risk.h5_register_device_limit", "auth.risk.h5_freeze_newcomer_gift"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
     : /^\/api\/admin\/teams\/ranks\/[^/]+\/thresholds\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === "F1_VRANK_THRESHOLD_UPDATE"
@@ -295,6 +306,7 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (evidence.conclusion === "REJECTED" && original.originalStatus !== "CONFIRMED_REJECTED" && !eCommandCanConcludeRejected(original))
     throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^(?:A4_PARAM:|A4_EVENT_LIFECYCLE:|A4_H3_OUTBOX_REDRIVE:)/.test(original.scope)
     || /^(?:M4_SUPPORT_FAQ_CREATE|M4_SUPPORT_FAQ_(?:UPDATE|STATUS|DELETE):.+)$/.test(original.scope)
     || original.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(original.scope)
     || /^E3_TRADEIN_(?:RECYCLE|REPLACE)$/.test(original.scope)

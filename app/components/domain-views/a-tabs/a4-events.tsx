@@ -38,7 +38,7 @@ import {
   type A4Overview,
   type A4RetentionExecution,
 } from "@/lib/admin/a4-client";
-import { a4Slot, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
+import { a4Slot, queryA4DirectCommand, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 
 import { fetchA2ProposalByKey, fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -1009,6 +1009,17 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     currentRegistryActor(false);
     setQuerying(record.commandKey);
     try {
+      if (record.original.kind !== "retention") {
+        const result = await queryA4DirectCommand(record);
+        if (result.settled) {
+          commands.sync(); ctx.closeActionConfirm?.(); overviewReady.current = false;
+          if (record.original.kind === "lifecycle") resetSchemaLookup(record.original.schema.eventName);
+          if (record.original.kind === "redrive") { setRedrivePreview(null); setRedriveResult(null); }
+          await refreshOverview(true);
+          if (record.original.kind === "redrive" && canReadOutbox) await outbox.load(outbox.applied);
+          return;
+        }
+      }
       switch (record.original.kind) {
         case "retention": if (!await refreshRetentionRun()) return; setTab("params"); break;
         case "param": if (!await refreshOverview(true)) return; setTab("params"); break;
