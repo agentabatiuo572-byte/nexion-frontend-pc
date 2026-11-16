@@ -158,7 +158,7 @@ function readI6Command(row: IContentPending): I6Command | undefined {
       if (snapshot.stats && (![snapshot.stats.managedKeys, snapshot.stats.totalKeys, snapshot.stats.integrityIssues, snapshot.stats.coursesOnline]
         .every(value => Number.isSafeInteger(value) && value >= 0) || typeof snapshot.stats.weeklyNexPayout !== "string")) return { ...fallback, scope, target, version };
     }
-    const commandOrigin = parts[2] === "courses" ? undefined : readICommandOrigin(row.i6, method, path, owner, "content_i6_read");
+    const commandOrigin = readICommandOrigin(row.i6, method, path, owner, parts[2] === "courses" ? "content_i7_read" : "content_i6_read");
     return { ...row, original: { owner, method, path, body, commandOrigin }, scope, operation, label: labels[operation], target, version, reason: input.reason, input, snapshot };
   } catch { return fallback; }
 }
@@ -238,7 +238,7 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   const owner = useAdminAuth.getState().session?.adminId;
   if (!owner) throw new Error("请先登录后再提交。");
   const i6 = { owner, path, method: init.method!, body: String(init.body), snapshot,
-    ...(!path.startsWith("/i18n-learning/courses/") ? { commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i6_read") } : {}) };
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") };
   const fingerprint = `${i6.method}:${path}:${i6.body}`, commandKey = idempotencyKey();
   const command = readI6Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i6 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
@@ -253,17 +253,15 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   return sendI6Command(command, false);
 }
 
-/** I18n receipts can settle originals; course writes retain their existing current-state readback. */
+/** Message and course receipts use their own exact read domain; current-state readback is only an observation. */
 export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvidence) {
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   let receipt: FundCommandInvestigation | null = null;
-  if (command.scope.startsWith("message:") || command.scope === "rescan") {
-    try {
-      receipt = await queryIContentCommand(command, "content_i6_read", evidence);
-      if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
-    } catch { /* Auxiliary receipt errors must not stop the existing current-content reads. */ }
-  }
+  try {
+    receipt = await queryIContentCommand(command, command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read", evidence);
+    if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
+  } catch { /* Auxiliary receipt errors must not stop the existing current-content reads. */ }
   const overview = parseI6Overview(await apiRequest("/i18n-learning/overview"));
   const messageVersions = command.scope.startsWith("message:")
     ? await iContentActions.fetchI6MessageVersions(command.target) : undefined;

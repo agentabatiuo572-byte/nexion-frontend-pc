@@ -101,6 +101,23 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     const event = novaPath?.match(/^social-events\/([1-9]\d*)(?:\/(status))?$/);
     if (event && (event[2] ? locator.originalMethod === "PATCH" : locator.originalMethod === "DELETE")) novaScope = `I2_NOVA_SOCIAL_EVENT_${event[2] ? "STATUS" : "DELETE"}:${BigInt(event[1])}`;
   }
+  const courseParts = locator.originalPath.match(/^\/api\/admin\/content\/i18n-learning\/courses\/(.+)$/)?.[1].split("/").map(decodeURIComponent);
+  let courseScope: string | undefined;
+  if (courseParts) {
+    const [course, action, version, versionAction] = courseParts;
+    const method = locator.originalMethod;
+    if (courseParts.length === 1) {
+      if (course === "featured" && method === "PATCH") courseScope = "I7_COURSE_FEATURED";
+      else if (method === "POST" || method === "DELETE") courseScope = `I7_COURSE_${method === "POST" ? "CREATE" : "DELETE"}:${course}`;
+    } else if (courseParts.length === 2) {
+      if (action === "draft" && method === "PATCH") courseScope = `I7_COURSE_DRAFT_UPDATE:${course}`;
+      else if (["publish", "archive"].includes(action) && method === "POST") courseScope = `I7_COURSE_${action.toUpperCase()}:${course}`;
+      else if (action === "versions" && method === "POST") courseScope = `I7_COURSE_VERSION_CREATE:${course}`;
+    } else if (action === "versions") {
+      if (courseParts.length === 3 && (method === "PATCH" || method === "DELETE")) courseScope = `I7_COURSE_VERSION_${method === "PATCH" ? "UPDATE" : "DELETE"}:${course}:${version}`;
+      else if (courseParts.length === 4 && ["publish", "rollback"].includes(versionAction) && method === "POST") courseScope = `I7_COURSE_VERSION_${versionAction.toUpperCase()}:${course}:${version}`;
+    }
+  }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
     : copyPath ? row.scope === copyScope
     : novaPath ? !!novaScope && row.scope === normalizeScope(novaScope)
@@ -115,6 +132,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/content\/trust-disclosure\/trust-sections\/[^/]+\/(?:publish|rollback|archive)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `I4_TRUST_SECTION_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
     : /^\/api\/admin\/content\/trust-documents\/(?:whitepaper|incorporation|msb|ein)(?:\/restore-default)?$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "I4_TRUST_DOCUMENT"
     : locator.originalPath === "/api/admin/content/i18n-learning/rescan" ? row.scope === "I6_I18N_RESCAN"
+    : courseParts ? !!courseScope && row.scope === normalizeScope(courseScope)
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_ARCHIVE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+\/(?:draft|publish)$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_${locator.originalPath.split("/").at(-1)!.toUpperCase()}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`)
     : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+\/versions\/[^/]+\/rollback$/.test(locator.originalPath) ? row.scope === normalizeScope(`I6_I18N_ROLLBACK:${decodeURIComponent(locator.originalPath.split("/").at(-4)!)}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`)
@@ -195,7 +213,8 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
     || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope)
-    || /^I4_TRUST_SECTION_(?:PUBLISH|ROLLBACK|ARCHIVE|DRAFT_CREATE|DRAFT_UPDATE|DRAFT_DELETE)$/.test(original.scope) || original.scope === "I4_TRUST_DOCUMENT";
+    || /^I4_TRUST_SECTION_(?:PUBLISH|ROLLBACK|ARCHIVE|DRAFT_CREATE|DRAFT_UPDATE|DRAFT_DELETE)$/.test(original.scope) || original.scope === "I4_TRUST_DOCUMENT"
+    || /^I7_COURSE_(?:(?:CREATE|DRAFT_UPDATE|DELETE|PUBLISH|ARCHIVE|VERSION_(?:CREATE|UPDATE|DELETE|PUBLISH|ROLLBACK)):|FEATURED$)/.test(original.scope);
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {
