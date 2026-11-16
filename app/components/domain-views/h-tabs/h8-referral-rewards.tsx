@@ -222,6 +222,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       // A resolved recovery must not retain a closure that can dispatch the old request.
       if (isHGrowthReadConflict(error)) setStale({ param: [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey), value: record.value });
       if (isHGrowthReadConflict(error) || recovering && !pendingH8RewardCommands(record.adminId).some(r => r.commandKey === record.commandKey)) {
+        // 框要关了：冲突有页面上的「已被别人改过」提示；原操作已有结论的，这里提示一次。
+        if (!isHGrowthReadConflict(error)) ctx.toast(displayAdminError(error));
         setMc(current => current?.commandKey === record.commandKey ? null : current);
         currentRead.current.ready = false;
         setReadReady(false);
@@ -644,7 +646,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               change: <Change from={valueText(param, String(snapshot.params[param.key]))} to={valueText(param, value)} /> }));
             return;
           }
-          ctx.toast(failure instanceof Error ? displayAdminError(failure) : "操作失败");
+          // 框还开着时错误写在框里，不再弹一遍；框被关掉的那几种在 sendCommand 里提示。
           throw failure;
         }
       }}
@@ -724,7 +726,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <Stat key={param.key} tone="role-4"
         head={<span className="h8-card-head"><who.icon size={14} aria-hidden />{param.label}<small>{who.per}</small></span>}
         label="实际发放" value={amountText(effective, decimals)} unit={param.unit}
-        explain={`实际发放 = 基础额 × 第 ${data.rhythmMonth} 月${multiplierName}，6 位小数四舍五入。调高每位多拿、平台多付，要批准；调低之后结算的按新额发。这是一份奖励的配置额，不是某个用户已经到账的钱。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
+        explain={`每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准，调低之后结算的按新额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
         <div className="h8-formula" aria-label={`基础额 ${amountText(base, decimals)} ${param.unit} 乘 ${multiplierName} ${multiplierText(multiplier)}`}>
           <span className="h8-formula-term"><small>基础额</small><Amount value={base} unit={param.unit} decimals={decimals} /></span>
           <span className="h8-formula-term"><small>第 {data.rhythmMonth} 月{multiplierName}</small><b>{multiplierText(multiplier)}</b></span>
@@ -782,7 +784,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人才进入结算"
-              effect={<><p>这几种保存会把它改成保存那一刻：改金额、改发放方式（和现在一样也算）、启用获批准；停用不改。</p><p>那一刻之前注册、还没结算的新人，不再进入结算。</p></>}
+              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样也算）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}
               value={gateUnset
                 ? <span className="h8-time" title={`后端原值 ${data.effectiveAt}`}>未设置<small>所有注册都算</small></span>
                 : <span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
