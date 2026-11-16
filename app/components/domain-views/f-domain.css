@@ -732,6 +732,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-page .f4-podium-card .rd-btn { align-self: flex-start; margin-top: var(--rd-space-2); }
 .f4-page .f4-board-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--rd-space-4); margin: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .f4-page .rd-block-state + .f4-board-facts { margin-top: var(--rd-space-4); }
+.f4-page .f4-board-facts > .f4-board-span { grid-column: span 2; }
 .f4-page .f4-board-facts > div { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
 .f4-page .f4-board-facts dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .f4-page .f4-board-facts dd { display: flex; align-items: baseline; gap: var(--rd-space-1); margin: 0; color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
