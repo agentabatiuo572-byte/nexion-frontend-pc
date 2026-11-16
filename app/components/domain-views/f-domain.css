@@ -434,6 +434,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 /* 选中一级的详情 */
 .f1-page .f1-detail-title { margin-left: 8px; font-weight: var(--rd-weight-regular); color: var(--rd-text-2); }
 .f1-page .f1-detail-split { margin-top: 4px; }
+.f1-page .f1-detail .rd-notice + .f1-detail-split { margin-top: var(--rd-space-3); }
 .f1-page .f1-detail-split > .rd-panel { display: flex; flex-direction: column; gap: 12px; }
 .f1-page .f1-th { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
 .f1-page .f1-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

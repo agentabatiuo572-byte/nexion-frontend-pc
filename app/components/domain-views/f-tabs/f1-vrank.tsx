@@ -475,7 +475,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
       sub={`${fmt(row.pop)} 人 · 占 ${share}`} icon={Layers3} tone="role-3"
       explain="五项门槛要同时满足才升到这一级；门槛为 0 表示不看这一项。用户每次被评估最多升一级，所以不能跳过这一级。">
       {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的门槛或奖励申请`}>
-        批准前这一级仍按现在的设置。这期间直接改动这一级的门槛或奖励，那张申请批准时会因版本对不上失败。
+        批准前这一级仍按现在的设置；这期间门槛和奖励都改不了，批准、驳回或撤回后再改。
       </Notice>}
       <div className="rd-split f1-detail-split">
         <Panel plain headingLevel={3} title="晋升条件" icon={Lock} tone="role-4" sub="五项同时满足"

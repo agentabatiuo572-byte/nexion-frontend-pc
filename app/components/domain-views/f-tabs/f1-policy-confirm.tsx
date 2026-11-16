@@ -24,6 +24,13 @@ import { SUPER_APPROVER, safeCustomLabel } from "./f1-shared";
 
 const typeLabels = { usdt: "USDT（资金）", uvt: "UVT（资金）", voucher: "券", sku: "商品", custom: "自定义奖品" };
 const REBASED = "没有保存：已按刚读到的值重算，核对后再提交。";
+// 后端这两句共用、不带对象；在 F1 里说清是这一级被占着，以及什么时候能改。
+const LOCKED = "没有保存：这一级有申请在等审批，批准、驳回或撤回后再改。";
+// 框里已经重读过、填的值保留：不再叫运营去重新读取。
+const REREAD: Record<string, string> = {
+  VRANK_POLICY_VERSION_CONFLICT: "没有保存：别人刚改过这一级，页面已重读；核对后再确认。",
+  VRANK_POLICY_REVISION_REQUIRED: "没有保存：页面已重读这一级的设置；核对后再确认。",
+};
 const valueLabel = (value: string) => value === "NONE" ? "未设置" : formatF1ExactAmount(value);
 const UNIT: Record<string, string> = { selfBuy: "点", teamGv: "点", directRefs: "人", legCount: "个" };
 const RANGE: Record<string, string> = { selfBuy: "0–9007199254740991 的整数", teamGv: "0–9007199254740991 的整数", directRefs: "0–2147483647 的整数", legCount: "0–2147483647 的整数" };
@@ -82,7 +89,8 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     let result;
     try { result = await submitF1Policy(current, editor, values, reason, mode); }
     catch (error) {
-      const failure = error as { httpStatus?: number; apiCode?: number };
+      const failure = error as { httpStatus?: number; apiCode?: number; backendMessage?: string };
+      const locked = failure.backendMessage === "OBJECT_LOCKED_BY_A2" || failure.backendMessage === "OBJECT_ALREADY_PENDING";
       if (previous && !pending()) {
         onClose();
         await ctx.refreshF1();
@@ -106,13 +114,16 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
           const rewardKey = (item?: typeof reward) => item ? JSON.stringify([item.type, item.amountText, item.voucherId, item.skuId, item.custom]) : "";
           const moved = isCondition ? (editor.row[editor.field!] ?? "") !== (row[editor.field!] ?? "")
             : rewardKey(editor.reward) !== rewardKey(reward || undefined) || editor.valuation !== active.rewardValuationUsdtPerUvt;
-          if (moved) throw new Error(REBASED);
+          if (moved && !locked) throw new Error(REBASED);
+          const reread = REREAD[failure.backendMessage ?? ""];
+          if (reread) throw Object.assign(new Error(reread), { httpStatus: failure.httpStatus, apiCode: failure.apiCode });
         } else {
           // Keep the existing read-failure lock; neither direction nor submission
           // may use the rejected snapshot if its replacement could not be read.
           ctx.invalidateF1("请先成功重新读取会员等级。");
         }
       }
+      if (locked) throw Object.assign(new Error(LOCKED), { httpStatus: failure.httpStatus, apiCode: failure.apiCode });
       throw error;
     } finally { onPendingChange(); }
     if (!result) return false;
@@ -175,7 +186,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     {!isCondition && <Fact k={remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>}
     {isCondition && (prev || next) && <Fact k="相邻等级">{[prev, next].filter(Boolean).join(" · ")}</Fact>}
     {opening.pending && <Fact k="原操作提交于">{businessStamp(opening.pending.createdAt)}（{businessZone().label}）</Fact>}
-    {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有一张申请还没批；这次改动了值，那张申请批准时会因版本对不上失败</Fact>}
+    {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有申请在等审批，现在保存或提交审批都会被拒；等它批准、驳回或撤回后再改</Fact>}
   </Facts>;
   const statedBrief = isCondition
     ? { impact: "保存后，之后每次评估用户时按新值算；不重算已有等级，不补发、不收回历史奖励。", check: "核对新值和相邻等级；理由写清依据或工单号。" }
