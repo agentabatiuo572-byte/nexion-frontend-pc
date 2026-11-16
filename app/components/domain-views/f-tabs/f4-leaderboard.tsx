@@ -96,7 +96,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
           {board.paused ? <StatusTag tone="warn" icon={Pause}>已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
         </div>
         {board.paused && <Notice tone="warn" title="排行榜已暂停">
-          {board.frozen ? `榜单停在 ${stamp(data.leaderboardSnapshotAt)}。` : "暂停时存的榜单不能显示。"}
+          {board.frozen ? `榜单停在 ${stamp(data.leaderboardSnapshotAt)}。` : ""}
           榜单奖励暂停发放，暂停期间到期的周期恢复后不会补发。
         </Notice>}
         {!available ? <BlockState state="error" title={board.paused ? "暂停时的榜单读不出来" : "这个榜暂时读不出来"} detail={unavailableText(board.paused, data.leaderboardSnapshotUnavailableReason)} />
