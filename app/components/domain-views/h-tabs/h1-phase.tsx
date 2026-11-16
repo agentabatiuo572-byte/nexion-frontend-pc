@@ -75,7 +75,7 @@ import {
   displayAdminReadError
 } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import {
   isRetryExpired,
   RETRY_EXPIRED_TEXT
@@ -821,7 +821,7 @@ export default function H1Phase({ ctx,
   const confirmPending = confirm ? pending.find((row) => row.scope === confirm.scope && row.state !== "approval" && row.commandKey !== sending) : undefined;
 
   return <>
-    <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeFull(readAt)} 读取` : undefined}
+    <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeCompact(readAt)} 读取（${businessZone().label}）` : undefined}
       actions={<>{reach("/overview/rhythm", "overview_b4_read") ? <Link className="rd-link" href="/overview/rhythm" prefetch={false}>去运营阶段状态 →</Link> : <span className="h1-access-note">运营阶段状态 · 无访问权限</span>}<Button icon={<RefreshCw size={14} />} loading={loading} onClick={async () => {
         if (await reload()) ctx.toast("已刷新",
           "success");
@@ -1000,7 +1000,7 @@ export default function H1Phase({ ctx,
           </Fact>
           <Fact k="原操作理由">{detail.reason}</Fact>
           <Fact k="发起人">{detail.operator}</Fact>
-          <Fact k="提交时间">{formatBusinessTimeFull(new Date(detail.createdAt).toISOString())}</Fact>
+          <Fact k="提交时间">{formatBusinessTimeCompact(new Date(detail.createdAt).toISOString())}（{businessZone().label}）</Fact>
         </Facts>
         <Fold inset title="技术信息" summary={`${detail.requests.length} 个原请求`}>
           <div className="h1-request-list">{detail.requests.map((request) => <Facts key={request.commandKey}>
