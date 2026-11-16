@@ -733,7 +733,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         explain="每天签到给多少、抽倍率的机会多大。改动都要提交审批，另一位管理员批准后才生效；批准前仍按现在的值发。">
         {signRules.length
           ? <ConfigList label="签到规则">{signRules.map(ruleRow)}</ConfigList>
-          : <BlockState state="empty" title="没有读到签到规则" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有签到规则" />}
       </Panel>
     ),
     streak: (
@@ -763,7 +763,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={blocked(`streak:${milestone.id}`)} onClick={conflictDraft.register(JSON.stringify(["openStreak:1", milestone.id]), () => openStreak(milestone))}>改奖励</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有连签奖励" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有连签奖励" />}
         <ChartLegend items={[
           { key: "fund", slot: 4, label: "UVT、USDT、转盘票：数量变多要批准" },
           { key: "badge", slot: "other", label: "徽章：只能改文字，立即生效" },
@@ -800,7 +800,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 : canWrite && retired ? <span className="h5-readonly">只读</span> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有成长权益" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有成长权益" />}
       </Panel>
     ),
     earn: (
@@ -825,7 +825,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={blocked(`earn:${milestone.key}`)} onClick={conflictDraft.register(JSON.stringify(["openEarn:1", milestone.id ?? milestone.key]), () => openEarn(milestone))}>调整</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有收益里程碑" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有收益里程碑" />}
       </Panel>
     ),
     idle: (
@@ -945,7 +945,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 series={[{ label: "人数", slot: 3 }]} format={(value) => `${countText(value)} 人`} axisFormat={(value) => countText(value)} />
               <p className="h5-note">{topGroup ? `最多的是连签 ${topGroup.day}，${countText(topGroup.count)} 人` : ""}{` · 近 7 天补救记录 ${stats.weekRevive == null ? "—" : `${countText(stats.weekRevive)} 条`}`}</p>
             </div>
-            : <BlockState state="empty" title="还没有人在连签" detail="也可能是读取失败，这页分不出来。" />}
+            : <BlockState state="empty" title="还没有人在连签" />}
         </Panel>
       </div>
 
