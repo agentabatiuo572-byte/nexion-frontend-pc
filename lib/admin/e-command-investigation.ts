@@ -77,7 +77,10 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
 export function eCommandSettled(receipt: ECommandInvestigation | null) {
   if (receipt?.originalStatus === "CONFIRMED_REJECTED" && !receipt.locked) return true;
   const result = eCommandResult(receipt);
-  return result === "SUCCEEDED" || result === "NOT_EXECUTED";
+  // A6's only trusted-refusal producer throws inside the business transaction;
+  // its FAILED reply is saved only after rollback. A committed nonzero reply is different.
+  return result === "SUCCEEDED" || result === "NOT_EXECUTED" || result === "REJECTED" && receipt?.originalStatus === "FAILED"
+    && /^A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d*)$/.test(receipt.scope);
 }
 
 /** A batch is resolved only when every original target has exactly one retained item result. */
@@ -255,8 +258,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
       || row.businessCode === undefined
       || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
-      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus))
-        && !(row.originalStatus === "FAILED" && /^A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d*)$/.test(String(row.scope))))
+      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   }
