@@ -37,12 +37,12 @@ export function M5Flow({ rules, policy }: { rules: M5RulesSummary; policy: M5Pol
     { key: "register", icon: UserPlus, when: "新用户注册", value: inherit, what: "继承邀请人的专属客服",
       explain: "用专属邀请码注册，或邀请人已有专属客服时，注册时就按「邀请来的用户归谁」归给那位客服。继承不到的进待分配，等第一次发消息再分。" },
     { key: "inquiry", icon: MessageSquareText, when: "第一次发消息", value: !ruleReady ? "—" : auto ? "自动分配" : "等主管分配", what: !ruleReady ? "分配方式没读到" : auto ? "在可接单的客服里按负载选" : "客服主管在客服工作台「待分配」里分",
-      explain: "按负载：当前绑定客户数加上 2 倍待回复会话数，最低的那位；一样低的随机选。只选没暂停接新单、绑定客户数没到上限的客服。欢迎语不算客户发消息。" },
+      explain: "选手上客户和待回复会话最少的客服（待回复算两倍），一样少的随机选。只选没暂停接新单、客户没到上限的客服。欢迎语不算客户发消息。" },
     { key: "alert", icon: BellRing, when: "等待提醒", value: policyReady ? minutes(policy.alert) : "—", what: "还没人接，标红提醒主管",
       explain: "只在专属会话的待分配和客服工作台里标红，不另发通知。" },
     { key: "fallback", icon: Timer, when: "超时兜底", value: !ruleReady ? "—" : auto ? "定时重试" : policyReady ? minutes(policy.fallback) : "—", muted: auto,
       what: auto ? "首次咨询没分成的，后台继续重试" : "按负载自动兜底分配，主管事后可以改派",
-      explain: "兜底由后台定时任务执行，大约每分钟查一次，所以不是精确到秒。没有合格的客服时客户继续留在待分配，不会假装分配成功。" },
+      explain: "系统约每分钟查一次，时间不精确到秒。没有能接的客服时，客户继续留在待分配。" },
   ];
   return (
     <div className="m5-flow" role="list" aria-label="一个新客户会经过什么">
@@ -73,7 +73,7 @@ export type M5PendingRow = { key: string; name: ReactNode; change: ReactNode; su
 export function M5PendingWrites({ rows }: { rows: readonly M5PendingRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内按原请求重试，后端认得出是同一次提交，不会重复执行。「读回核对」只看现状，证明不了原操作有没有执行。有结论前同一项不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。页面上的现状证明不了原操作有没有执行。有结论前同一项不能再改。" /></>}>
       <ul className="m5-pending" aria-label="结果未知的操作">
         {rows.map((row) => (
           <li key={row.key}>

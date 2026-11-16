@@ -128,7 +128,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
           <Field label="超时兜底" hint="2–1440 分钟" error={fallbackProblem || undefined} explain="只在「客服主管分配」模式下用：等待超过这么久按负载自动分配，主管事后可以改派。">
             {(control) => <NumberInput {...control} id="m-unbound-fallback" unit="分钟" min={2} max={1440} step={1} value={draft.fallback} disabled={!editable || saving} onChange={(event) => setDraft((old) => ({ ...old, fallback: event.target.value }))} />}
           </Field>
-          <Field label="默认接收组" explain="没有分组、也从没分过组的客户，自动分配或兜底时先进这个组。保存时只检查组启用着；分配时组还要有负责人，组里有没有能接的客服也要到那时才知道。">
+          <Field label="默认接收组" explain="没有分组、也从没分过组的客户，自动分配或兜底时先进这个组。保存时只要求组启用着；分配时组里还要有负责人和能接的客服才分得进去。">
             {(control) => <Select {...control} id="m-unbound-group" aria-label="默认接收组" value={draft.group} disabled={!editable || saving || groupsFailed} onChange={(value) => setDraft((old) => ({ ...old, group: value }))}
               options={[{ value: "", label: "不设置" }, ...(groupsFailed ? [...new Set([savedGroup, draft.group])].filter(Boolean).map((id) => ({ value: id, label: groupLabel(id) })) : groups.map((group) => ({ value: String(group.id), label: group.name })))]} />}
           </Field>

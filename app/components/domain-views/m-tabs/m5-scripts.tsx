@@ -193,7 +193,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       initialReason: state.original?.m5?.reason,
       edit: request.edit && { ...request.edit, initialValue: state.original?.m5 ? recoveredEditValue(state.original.m5) : request.edit.initialValue },
       getPendingReason: () => state.original?.m5 && mCommands.list().some(row => row.commandKey === state.original?.commandKey) ? state.original.m5.reason : undefined,
-      blockedReason: state.original && (isRetryExpired(state.original) ? RETRY_EXPIRED_TEXT : state.original.m5 && !canRetry(state.original.m5) ? "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。" : undefined),
+      blockedReason: state.original && (isRetryExpired(state.original) ? RETRY_EXPIRED_TEXT : state.original.m5 && !canRetry(state.original.m5) ? "这个账号没有这项操作的权限，请联系超级管理员。" : undefined),
       run: async (reason, value, businessValue) => state.original?.m5
         ? commitOriginal(state.original, true) : request.run(reason, value, businessValue),
     });
@@ -446,7 +446,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: on ? "确认停用" : "确认启用",
       statedBrief: on
-        ? { impact: "用户在 App 里不能再新建这类会话；进行中的会话和聊天记录保留，不会被关掉。", check: "只停这一类专属客服会话，不停全部客服；AI 会话由 AI 平台管。" }
+        ? { impact: "用户在 App 里不能再新建这类会话；进行中的会话和聊天记录保留，不会被关掉。", check: "只停这一类专属客服会话，不停全部客服。" }
         : { impact: "用户在 App 里又能新建这类会话；不会自动给谁发消息。", check: "核对客服人手够不够接。" },
       facts: <Facts><Fact k="会话类别">{cat.name}</Fact><Fact k="状态"><Change from={on ? "已启用" : "已停用"} to={on ? "已停用" : "已启用"} /></Fact></Facts>,
       reasonPlaceholder: on ? "例如：客服人手不足，暂停新建专属客服会话" : "例如：客服人手已补齐，恢复专属客服会话",
@@ -472,10 +472,10 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       title: masterOn ? "停用主动推送" : "启用主动推送",
       effect: <StatusTag tone="neutral" filled>只保存设置，目前不会推送</StatusTag>,
       confirmLabel: masterOn ? "确认停用" : "确认启用",
-      statedBrief: { impact: "主动推送目前没有执行器：保存这个开关不会给任何用户发消息，也不会停掉已经发出的消息。", check: "后端目前只接受停用，启用会被拒绝。" },
+      statedBrief: { impact: "主动推送还没上线：保存这个开关不会给任何用户发消息，也不会撤回已经发出的消息。", check: "现在只能停用，启用会被拒绝。" },
       facts: <Facts><Fact k="主动推送"><Change from={masterOn ? "已启用" : "已停用"} to={masterOn ? "已停用" : "已启用"} /></Fact></Facts>,
       briefKind: "record",
-      detail: <>主动推送目前没有执行器，保存这个开关不会推送任何消息。</>,
+      detail: <>主动推送还没上线，保存这个开关不会推送任何消息。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -495,7 +495,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       title: `调整${label}`,
       effect: <StatusTag tone="neutral" filled>只保存设置，目前不会推送</StatusTag>,
       confirmLabel: "确认保存",
-      statedBrief: { impact: "主动推送目前没有执行器：这个参数能保存，但现在不会给任何用户推送。", check: "核对新值和单位。" },
+      statedBrief: { impact: "主动推送还没上线：这个参数能保存，但现在不会给任何用户推送。", check: "核对新值和单位。" },
       reasonPlaceholder: "例如：先把参数定好，等主动推送上线后直接用",
       briefKind: "config",
       detail: ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE
@@ -522,7 +522,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       title: "调整主动推送受众",
       effect: <StatusTag tone="neutral" filled>只保存设置，目前不会推送</StatusTag>,
       confirmLabel: "确认保存",
-      statedBrief: { impact: "主动推送目前没有执行器：受众能保存，但现在不会给任何用户推送。这是整个主动推送的受众，不是某一条话术的。", check: "核对要选的人群。" },
+      statedBrief: { impact: "主动推送还没上线：受众能保存，但现在不会给任何用户推送。这是整个主动推送的受众，不是某一条话术的。", check: "核对要选的人群。" },
       reasonPlaceholder: "例如：先把受众定为新注册用户",
       briefKind: "config",
       detail: ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE
@@ -685,7 +685,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const roster = !hasM1ReadAuthority
     ? <BlockState state="denied" title="当前账号没有客服名册权限" detail="话术与模板照常能维护。" />
     : <>
-      <Notice tone="neutral">暂停接新单的客服，自动分配和人工转接都选不到；同时接待上限只管自动分配。</Notice>
+      <Notice tone="neutral">暂停接新单的客服，自动分配和人工转接都选不到，邀请来的新用户仍归他；同时接待上限只管自动分配。</Notice>
       <Panel flush icon={Headset} tone="role-3" title="客服接待名册" sub={agentPageAvailable ? `${agentTotal} 位` : undefined}
         explain="列出你能管的客服，每页 5 位。分组、在不在线到客服工作台的「客服与分组」看；接待资格和主管资格在账号管理里改，这里不改。">
         <Table label="客服接待名册" className="m5-roster">
@@ -761,9 +761,9 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     ]} />
     <div {...contentIds.panel("scripts")} hidden={contentView !== "scripts"} className="rd-tab-pane">
     <Panel flush icon={MessageSquareText} tone="role-2" title="专属客服话术" sub={sessionTemplatesAvailable ? countSub(scriptCount) : undefined}
-      explain="客服在专属会话里主动发话时可选的话术。只有已发布的能选到；草稿只在后台；归档后选不到，也不能再发布。不会自动发给客户。每页 5 条，按排序值和更新时间排，新建的不一定在最后一页。"
+      explain="客服在专属会话里主动发话时可选的话术。只有已发布的能选到，不会自动发给客户；归档后选不到，也不能再发布。新建的不一定在最后一页。"
       actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-script-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0 || blocked("I.session.script.__create")}
-        disabledReason={sessionTemplatesAvailable && audienceOptions.length === 0 ? "后端没给可选受众，暂时不能新建" : undefined} onClick={newScript}>新建话术</Button>}>
+        disabledReason={sessionTemplatesAvailable && audienceOptions.length === 0 ? "没有可选的受众，暂时不能新建" : undefined} onClick={newScript}>新建话术</Button>}>
       <Table label="专属客服话术" className="m5-content-table">
         <thead><tr>
           <Th className="m5-col-id">编号</Th>
@@ -850,16 +850,16 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       </ConfigList>
     </Panel>
     <Panel icon={Megaphone} tone="role-other" title={<span className="m5-title-tag">主动推送<StatusTag tone="neutral" icon={CircleOff}>目前不生效</StatusTag></span>}
-      explain="专属客服主动给用户发消息的参数。后端目前没有执行器：参数能保存，但不会给任何用户推送，也不能启用（已提后端）。和客服的「同时接待上限」不是一回事。">
+      explain="专属客服主动给用户发消息的参数。这项功能还没上线：参数能保存，但不会给任何用户推送，也不能启用。和客服的「同时接待上限」不是一回事。">
       <ConfigList label="主动推送">
-        <ConfigRow name="总开关" what="主动推送开不开" when="后端目前只接受停用" value={<StatusTag tone="done" icon={CircleOff}>{masterOn ? "已启用（未推送）" : "已停用"}</StatusTag>}
+        <ConfigRow name="总开关" what="主动推送开不开" when="现在只能停用" value={<StatusTag tone="done" icon={CircleOff}>{masterOn ? "已启用（未推送）" : "已停用"}</StatusTag>}
           action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof="session-policy-enabled" disabled={!sessionTemplatesAvailable || writePending || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)}
-            disabledReason={sessionTemplatesAvailable && !masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE ? "主动推送还没有执行器，后端不接受启用" : undefined} onClick={toggleAdvisorPush}>{masterOn ? "停用" : "启用"}</Button> : undefined} />
+            disabledReason={sessionTemplatesAvailable && !masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE ? "主动推送还没上线，现在不能启用" : undefined} onClick={toggleAdvisorPush}>{masterOn ? "停用" : "启用"}</Button> : undefined} />
         {policyRow("delayMs", "首推延迟", sessionTemplatesAvailable ? shown(delayText()) : "—", " 毫秒", "用户进会话后等多久发第一条")}
         {policyRow("cooldownHours", "冷却时间", shown(policyDisplay("cooldownHours")) === "—" ? "—" : `${policyDisplay("cooldownHours")} 小时`, " 小时", "同一用户两次主动推送至少隔多久")}
         {policyRow("maxPerSession", "单会话上限", shown(policyDisplay("maxPerSession")) === "—" ? "—" : `${policyDisplay("maxPerSession")} 条`, " 条", "一次会话里最多主动发几条")}
         <ConfigRow name="受众" what="主动推送发给哪类用户；是整体的，不是某一条话术的" when="保存后立即记下；主动推送上线前不会推送"
-          value={sessionTemplatesAvailable ? audienceOptions.length > 0 ? currentAudience || "—" : "后端没给可选受众" : "—"}
+          value={sessionTemplatesAvailable ? audienceOptions.length > 0 ? currentAudience || "—" : "没有可选的受众" : "—"}
           action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof="session-policy-audience" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0 || blocked(POLICY_KEY("audience"))} onClick={editAudience}>调整</Button> : undefined} />
       </ConfigList>
     </Panel>
@@ -962,7 +962,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>
-        <Fact k="坐席类型"><span data-proof="m5-seat-position-field">{seatLabel(position)}</span></Fact>
+        <Fact k="客服类型"><span data-proof="m5-seat-position-field">{seatLabel(position)}</span></Fact>
         <Fact k="现在服务">{agent.assignedUserCount} 位客户</Fact>
       </Facts>
       {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
@@ -974,7 +974,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       <CheckGroup legend="接待开关">
         <Check label="开放接待" help="关闭后不参与自动分配和邀请继承" checked={enabled} disabled={saving || Boolean(pending)} onChange={() => setEnabled((v) => !v)} />
         <Check label="允许被转交" help="关闭后转交会话时选不到他" checked={transferable} disabled={saving || Boolean(pending)} onChange={() => setTransferable((v) => !v)} />
-        <Check label="暂停接新单" help="自动分配和人工转接都选不到他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
+        <Check label="暂停接新单" help="自动分配和人工转接都选不到他，邀请来的新用户仍归他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
       </CheckGroup>
       <div className="m5-tag-checks">
         <CheckGroup legend="标签" explain="只能从名册里已有的标签里选，最多 10 个。" help={tagOptions.length === 0 ? "名册里还没有任何标签。" : undefined}>
@@ -1150,7 +1150,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>绑定理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:高价值用户进入专属客服服务名单,由客服主管分配跟进。" style={{ resize: "vertical" }} />
+            <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例：高价值用户进入专属客服服务名单，由客服主管分配跟进。" style={{ resize: "vertical" }} />
             <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>理由需填写 8-200 字。</span>
           </label>
         </div>
@@ -1183,7 +1183,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
                   <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{user.nickname || "未命名用户"}</span>
                   <span className="mono dim2" style={{ fontSize: 11.5 }}>{userNoOf(user)} · {user.phoneMasked || "未留手机号"}</span>
                 </span>
-                {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{boundToCurrent ? "已绑定" : "已绑定其他坐席"}</span>}
+                {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{boundToCurrent ? "已绑定" : "已绑定其他客服"}</span>}
                 {checked && <Icon name="check" size={15} />}
               </button>
             );
