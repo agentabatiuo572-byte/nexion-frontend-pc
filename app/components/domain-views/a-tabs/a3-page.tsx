@@ -204,10 +204,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         if (!retained && (!overviewReady.current || !current.current.overview?.featureFlags.find(row => row.key === f.key)?.writable
           || !(current.current.session?.role === "superadmin" || current.current.session?.authorities?.includes("platform_a3_write")))) throw new Error("A3_ORIGINAL_READ_REQUIRED");
         if (!retained && latest && latest.status !== cur) { flagChg(latest); throw new Error("A3_CONFLICT_RECHECK_REQUIRED"); }
+        if (current.current.session?.role !== "superadmin") throw new Error("A3_FLAG_ROLE_FORBIDDEN");
         const record = retained ?? commands.capture({ original: { kind: "flag", row: f, value: val },
           path: "/api/admin/platform/config", method: "PUT", body: JSON.stringify({ kind: "flag", flagKey: f.key, value: val, expectedValue: cur, reason, operator }),
           reason, name, change: `${STATE_NAME[cur] ?? cur} → ${STATE_NAME[val] ?? val}` });
-        if (current.current.session?.role !== "superadmin") throw new Error("A3_FLAG_ROLE_FORBIDDEN");
         setMutating(f.key);
         try {
           await commands.send(record, Boolean(retained));
@@ -272,10 +272,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         if (!retained && (!overviewReady.current || !current.current.overview?.platformParams.find(row => row.key === param.key)?.writable
           || !(current.current.session?.role === "superadmin" || current.current.session?.authorities?.includes("platform_a3_write")))) throw new Error("A3_ORIGINAL_READ_REQUIRED");
         if (!retained && latest && latest.value !== param.value) { paramChg(latest); throw new Error("A3_CONFLICT_RECHECK_REQUIRED"); }
+        if (current.current.session?.role !== "superadmin") throw new Error("A3_PARAM_ROLE_FORBIDDEN");
         const record = retained ?? commands.capture({ original: { kind: "param", row: param, value: normalizedValue },
           path: "/api/admin/platform/config", method: "PUT", body: JSON.stringify({ kind: "param", flagKey: param.key, value: normalizedValue, expectedValue: param.value, reason, operator }),
           reason, name, change: `${param.value} → ${normalizedValue} ${param.unit}` });
-        if (current.current.session?.role !== "superadmin") throw new Error("A3_PARAM_ROLE_FORBIDDEN");
         setMutating(param.key);
         try {
           await commands.send(record, Boolean(retained));
