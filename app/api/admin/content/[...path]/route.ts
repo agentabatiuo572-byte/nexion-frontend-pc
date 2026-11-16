@@ -57,7 +57,7 @@ async function proxy(request: Request, context: RouteContext) {
       || path.length === 6 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4]) && path[5] === "rollback")
     || path[1] === "courses" && /^[a-z0-9][a-z0-9-]{2,80}$/.test(path[2] ?? "")
     && (path.length === 3 || path.length === 4 && ["draft", "publish", "archive", "reward", "versions"].includes(path[3])
-      || path.length === 5 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4])
+      || path.length === 5 && path[3] === "versions" && (/^v[1-9][0-9]{0,8}$/i.test(path[4]) || request.method === "GET" && path[4] === "next")
       || path.length === 6 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4]) && ["publish", "rollback"].includes(path[5])));
   if (path.some((part, index) => !((novaResourceKey || i6ResourceKey) && index === 2)
     && (part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox")))) {

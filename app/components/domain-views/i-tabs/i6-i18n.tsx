@@ -966,10 +966,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     rewardEvent: String(payload?.rewardEvent ?? c.rewardEvent ?? "quiz.passed"),
   });
 
-  const newCourseVersion = (c: Course) => {
+  const newCourseVersion = async (c: Course) => {
+    let nextVersion: string | undefined;
+    try { nextVersion = await actions.fetchI7NextCourseVersion(c.id); }
+    catch (error) { toast(displayAdminError(error), "error"); return; }
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
-    setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
+    setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
       save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
         action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
         title: "保存新版本草稿",

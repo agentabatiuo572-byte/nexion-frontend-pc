@@ -1532,6 +1532,7 @@ export type IContentActions = {
   createI6Course: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   fetchI7CourseVersions: (courseId: string) => Promise<LearningCourseVersionView[]>;
+  fetchI7NextCourseVersion: (courseId: string) => Promise<string | undefined>;
   createI7CourseVersion: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   updateI7CourseVersion: (courseId: string, version: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   deleteI7CourseVersion: (courseId: string, version: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
@@ -1668,6 +1669,22 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
     if (!Array.isArray(value)) throw new Error("课程版本返回数据格式异常，请刷新重试");
     return value.map(parseI6CourseVersion);
   }),
+  fetchI7NextCourseVersion: async (courseId) => {
+    let value: unknown;
+    try {
+      value = await apiRequest<unknown>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/next`);
+    } catch (error) {
+      // Older servers have no hint endpoint. A missing course is still an authoritative refusal.
+      const failure = error as { status?: number; reasonCode?: string };
+      if (failure.status === 404 && failure.reasonCode !== "LEARNING_COURSE_NOT_FOUND") return undefined;
+      throw error;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("LEARNING_COURSE_VERSION_INVALID");
+    const { nextVersion } = value as { nextVersion?: unknown };
+    if (nextVersion === undefined) return undefined;
+    if (typeof nextVersion !== "string" || !/^v[1-9][0-9]{0,8}$/.test(nextVersion)) throw new Error("LEARNING_COURSE_VERSION_INVALID");
+    return nextVersion;
+  },
   createI7CourseVersion: (courseId, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
   updateI7CourseVersion: (courseId, version, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
   deleteI7CourseVersion: (courseId, version, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
