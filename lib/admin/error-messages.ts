@@ -2387,6 +2387,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   BUSINESS_CALENDAR_RESPONSE_INVALID: "业务日历回包不完整，无法确认当前时区和安排；请重新读取或联系平台值班人员。",
   A3_RESPONSE_INVALID: "系统配置读到的数据不完整，为免误判没有显示；请重试或联系值班人员。",
   A4_OVERVIEW_INVALID: "事件数据读到的不完整，为免误判没有显示；请重新加载或联系值班人员。",
+  A4_RETENTION_RUN_UNREADABLE: "上次清理结果读取失败",
   A4_EVENT_SCHEMA_NOT_FOUND: "这个事件还没有登记；请核对完整事件名，或先登记并等批准。",
   A4_MUTATION_OUTCOME_UNKNOWN: "结果未知，原请求已保存在本标签页。请查询原结果，或在 24 小时内按原请求重试。",
   A4_REGISTRY_RESULT_UNKNOWN: "结果未知，原申请已保存；批没批准还没查到。请查询原结果，或在 24 小时内按原请求重试。",
