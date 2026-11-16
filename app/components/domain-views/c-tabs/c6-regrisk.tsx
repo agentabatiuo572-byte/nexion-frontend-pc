@@ -143,6 +143,7 @@ function staleText(failure: unknown) {
   return <><b>{conflict ? "刚被别人改过，这次没有保存，最新的规则也没读到。" : "这次没有保存，最新的规则也没读到。"}</b>{!conflict && <><br />{rejectionText(failure)}</>}<br />关掉这个框，在页面上重新加载后再打开。</>;
 }
 const STALE_TOAST = "最新的规则没读到，现在不能提交。关掉这个框，重新加载后再打开。";
+const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试，只能查询原结果。";
 
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const reach = useReach();
@@ -212,7 +213,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const perform = async (original: C6Pending, retry = true, onRejected?: (latest: UserRegistrationRiskOverview | null, failure: unknown) => void) => {
     if (mutation.current || !canSubmit()) return false;
     if (original.expiresAt <= Date.now()) {
-      toast("原请求已超过 24 小时或没有保存完整，只能读回核对，不能重试。", "warn");
+      toast(C6_EXPIRED_TEXT, "warn");
       return false;
     }
     mutation.current = true;
@@ -244,7 +245,10 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           onRejected?.(overviewRef.current, err);
         }
       } else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
-      const message = row && !rejected ? "结果未知 · 已保留原请求，在页面上方读回核对或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
+      // 重试被 401／403／429 挡下：说这次为什么没执行，原操作仍是结果未知。
+      const retryRefused = row && !rejected && retry && err instanceof UsersRequestError && [401, 403, 429].includes(err.status);
+      const message = retryRefused ? `这次重试没有执行：${rejectionText(err)}原操作仍是结果未知，原请求已保留。`
+        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方查询原结果或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
       // 第一次提交被拒时原框还开着，原因写在框里，不再弹同一句；最新规则没读到时页面照旧停在「没有保存」。
       const keptOpen = Boolean(row && rejected && !retry);
       if (!keptOpen || !overviewRef.current) setError(message);
@@ -262,6 +266,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     let settled = false;
     return {
       getPendingReason: () => original && pendingC6Commands(owner).find(row => row.commandKey === original!.commandKey)?.reason,
+      getPendingExpired: () => !!original && (pendingC6Commands(owner).find(row => row.commandKey === original!.commandKey)?.expiresAt ?? Infinity) <= Date.now(),
       run: async (value: string, reason: string) => {
         if (settled) return false;
         if (original) return perform(original);
@@ -300,7 +305,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   // Restore from the saved request even when the overview cannot be loaded.
   const pendingNotices = pending.length > 0 && (
-    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能读回核对。「读回核对」只读当前规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能查询原结果。「查询原结果」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
       <ul className="c6-pending" aria-label="结果未知的操作">
         {pending.map((record) => {
           const complete = isCompleteC6Command(record);
@@ -310,13 +315,13 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               <span className="c6-pending-name">{record.label ?? pendingLabel(record.fingerprint)}</span>
               <span className="c6-pending-time">{businessStamp(record.createdAt)} 提交</span>
               <span>{!complete
-                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能读回核对</StatusTag>
+                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能查询原结果</StatusTag>
                 : expired
                   ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
               <span className="c6-pending-actions">
-                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>读回核对</Button>
-                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能读回核对" : undefined} onClick={() => void perform(record)}>按原请求重试</Button>}
+                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>查询原结果</Button>
+                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能查询原结果" : undefined} onClick={() => void perform(record)}>按原请求重试</Button>}
               </span>
             </li>
           );
@@ -518,7 +523,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
             <Facts>
               <Fact k="人机验证">开启 <StatusTag tone="warn" explain="你打开时：临时关闭">刚改过</StatusTag></Fact>
             </Facts>
-            <Notice tone="ok" title="别人已经先恢复了人机验证，这次没有保存" />
+            <Notice tone="ok" title="人机验证已经开启，这次没有保存">{isVersionConflict(reread.failure) ? "别人先恢复了，或已到原定时间自动恢复。" : rejectionText(reread.failure)}</Notice>
           </>
         ),
         reason: true,
@@ -540,8 +545,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       impact: "提交后马上恢复按规则拖滑块，不用等原定的恢复时间。",
       check: "打开后如果已被别人改过，这次不会保存，框里会换上最新的值。",
     },
-    content: (
+    get content() { return (
       <>
+        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原请求重试只发原来那一次，不会重复执行；也可以关掉后在页面上方查询原结果。</Notice>}
         {stale && <Notice tone="warn">{staleText(after.failure)}</Notice>}
         <Facts>
           <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
@@ -551,10 +557,11 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           ? <Notice tone="warn" title="刚被别人改过，这次没有保存">{restoreChanged ? "原定恢复时间变了，上面已换成最新的。" : "人机验证仍是临时关闭。"}你填的理由还在，核对后再点确认。</Notice>
           : <Notice tone="danger" title="这次没有保存">{rejectionText(reread.failure)}</Notice>)}
       </>
-    ),
+    ); },
     reason: true,
     reasonPlaceholder: "例如：滑块服务已恢复，提前打开人机验证",
-    okLabel: "确认恢复",
+    get okLabel() { return original.getPendingReason() !== undefined ? "按原请求重试" : "确认恢复"; },
+    getPendingBlockReason: () => original.getPendingExpired() ? C6_EXPIRED_TEXT : undefined,
     // 共用的普通确认框不认 blockedReason，按钮还能点：点了只提示原因，不发请求。
     run: stale ? () => { toast(STALE_TOAST, "warn"); return false; } : (reason) => {
       return original.run("", reason);
@@ -599,7 +606,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           ? <Notice tone="warn" title="刚被别人改过，这次没有保存">{offNow
             ? "别人已临时关闭人机验证，原定恢复时间见下方「现在」。再点确认会从现在起按你选的时长重新算。"
             : "人机验证仍是开启的。你选的还在，核对后再点确认。"}</Notice>
-          : <Notice tone="danger" title="这次没有保存">{rejectionText(reread.failure)}</Notice>)}
+          : <Notice tone="danger" title="这次没有保存">{rejectionText(reread.failure)}{offNow && "人机验证现在已临时关闭，再点确认会从现在起按你选的时长重新算。"}</Notice>)}
       </>
     ),
     edit: {
@@ -670,7 +677,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         </Conclusion>
       ) : (
         <Conclusion state="ok" icon={ShieldCheck}
-          explain="这句话看两件事：人机验证有没有被临时关闭，两级登录锁定规则有没有读到。下面的计数没有告警线，页面不判断数量是否异常。">
+          explain="这句话只看人机验证有没有被临时关闭，锁定规则看下方「App 登录锁定」。下面的计数没有告警线，页面不判断数量是否异常。">
           人机验证开启，App 登录按两级锁定规则执行
         </Conclusion>
       )}
