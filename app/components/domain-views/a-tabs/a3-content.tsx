@@ -491,7 +491,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
   const refPages = KEYS.filter((item) => refBlocksOf(document.contents[item]).length > 0);
   /** A3-PD01：检查全部页面/语言，草稿维护保留；发布不能把未解析占位符送到App。 */
   const publishBlockedReasons = Object.entries(document.contents).filter(([, entry]) => Object.values(row(entry.locales)).some(locale =>
-    blocks(row(locale).blocks).some(block => block.kind === "ruleRef" || [block.title, block.body, ...list(block.items)].some(value => text(value).includes("{value}")))
+    blocks(row(locale).blocks).some(block => [block.title, block.body, ...list(block.items)].some(value => text(value).includes("{value}")))
   )).map(([key]) => `${PAGE_LABELS[key] ?? key}：App 会打不开整页，{value} 没有换成数值`);
   const entry = row(document.contents[key]);
   const localeKeys = Object.keys(row(entry.locales));
