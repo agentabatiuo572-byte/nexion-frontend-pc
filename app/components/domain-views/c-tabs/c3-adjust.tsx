@@ -1030,7 +1030,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (isRetryExpired(record)) { notePending(record, `${RETRY_EXPIRED_TEXT}。`); return; }
     if (!canRetry(record)) { notePending(record, `${RETRY_NO_PERMISSION}。`); return; }
     if (!c3Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      notePending(record, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
+      notePending(record, "浏览器里查不到这条记录，本次没有发送。原记录继续保留，请到操作记录与审批核对。");
       return;
     }
     setRetryRejected((keys) => keys.filter((key) => key !== record.commandKey));
@@ -1040,14 +1040,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : record.kind === "reverse"
           ? await reverseCommand(record.target, record.reason ?? "", record.operator, true)
           : await reviewCommand(record.kind, record.target, record.reason ?? "", record.operator, true);
-      if (outcome === "unknown") notePending(record, "还是没有确认，待确认继续保留。");
+      if (outcome === "unknown") notePending(record, "重试结果仍未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       // 只有后端对这条命令下了结论才给「解除待确认」；登录、权限、限流、幂等层、本地异常都不算（F01、OP-153）。
       if (rejectsCommand(cause)) {
-        notePending(record, `重试没有成功：${errorMessage(cause)}这说明不了原操作的结果，待确认继续保留。`);
+        notePending(record, `重试没有成功：${errorMessage(cause)}这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((keys) => [...keys, record.commandKey]);
-      } else notePending(record, `这次没能确认结果：${errorMessage(cause)}待确认继续保留。`);
+      } else notePending(record, `这次没能确认结果：${errorMessage(cause)}原记录继续保留。`);
     }
   };
 
@@ -1055,19 +1055,19 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const verifyPending = async (record: C3Pending) => {
     if (record.kind === "create" || record.kind === "large") {
       const page = await fetchUserAssetAdjustments({ status: "PENDING_REVIEW", userId: record.target, pageNum: 1, pageSize: 5 }).catch(() => null);
-      if (!page) { notePending(record, "读回失败，这个用户的待审批暂时读不到。待确认继续保留。"); return; }
+      if (!page) { notePending(record, "读回失败，这个用户的待审批暂时读不到。原记录继续保留。"); return; }
       const [latest] = page.records;
       notePending(record, latest
-        ? `读回：这个用户现在有 ${page.total} 笔待审批的调整，最新一笔 ${text(latest.adjustmentNo)} · ${signedAmount(latest)} ${nexGridBrandText(text(latest.asset))} · ${formatBusinessTimeCompact(latest.createdAt, "—")}（${zone}）。这不能证明原操作的结果，待确认继续保留。`
-        : "读回：这个用户现在没有待审批的调整。这不能证明原操作的结果，待确认继续保留。");
+        ? `读回：这个用户现在有 ${page.total} 笔待审批的调整，最新一笔 ${text(latest.adjustmentNo)} · ${signedAmount(latest)} ${nexGridBrandText(text(latest.asset))} · ${formatBusinessTimeCompact(latest.createdAt, "—")}（${zone}）。这不能证明原操作的结果，原记录继续保留。`
+        : "读回：这个用户现在没有待审批的调整。这不能证明原操作的结果，原记录继续保留。");
       return;
     }
     const latest = await fetchUserAssetAdjustmentDetail(record.target).catch(() => null);
-    if (!latest?.adjustment) { notePending(record, "读回失败，这张单暂时读不到。待确认继续保留。"); return; }
+    if (!latest?.adjustment) { notePending(record, "读回失败，这张单暂时读不到。原记录继续保留。"); return; }
     const row = latest.adjustment;
     // 只改说法：没变、变了且和这次对得上、变了但对不上分开说。处理人是后端记的复核人（撤回不记复核人，只有提交人能撤回）。
     const verb = record.kind === "approve" ? "批准" : record.kind === "reject" ? "驳回" : record.kind === "withdraw" ? "撤回" : "冲正";
-    const tail = !isRetryExpired(record) && canRetry(record) ? "按原请求重试可确认，不会重复执行。" : "待确认继续保留。";
+    const tail = !isRetryExpired(record) && canRetry(record) ? "按原请求重试可确认，不会重复执行。" : "原记录继续保留。";
     const checker = text(row.checker, "").trim();
     const byMe = !!checker && checker.toLowerCase() === makerUsername;
     const label = statusOf(row).label;
@@ -1080,7 +1080,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       : record.kind === "withdraw" && status === "WITHDRAWN" ? `读回：这张单现在是「已撤回」，和这次撤回对得上。${tail}`
       : byMe && status === (record.kind === "approve" ? "APPROVED" : "REJECTED") ? `读回：这张单现在是「${label}」，处理人 ${checker}，和这次${verb}对得上。${tail}`
       : byMe && record.kind === "approve" && status === "REJECTED" ? `读回：这张单现在是「已驳回」，处理人 ${checker}。兑付覆盖率低于红线时，批准会被系统改成驳回，可能就是这次。${tail}`
-      : `读回：这张单现在是「${label}」${checker ? `，处理人 ${checker}` : ""}，不是这次的${verb}${byMe ? "" : "，可能是别人处理的"}。待确认继续保留。`);
+      : `读回：这张单现在是「${label}」${checker ? `，处理人 ${checker}` : ""}，不是这次的${verb}${byMe ? "" : "，可能是别人处理的"}。原记录继续保留。`);
     setCurrent({ row, source: isPendingRow(row) ? "queue" : "history" });
     setDetail(latest);
     setDetailError("");
