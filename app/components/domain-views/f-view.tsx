@@ -737,15 +737,17 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       else if (key.startsWith("F.quota.usage.")) beforeF4 = beforeF4Overview.quotaUsages.find(row => key === `F.quota.usage.${row.id}.status`)?.status;
       else if (key === "F.leaderboard.paused") beforeF4 = beforeF4Overview.leaderboardPaused === undefined ? undefined : beforeF4Overview.leaderboardPaused ? "on" : "off";
     }
-    // usdtPct and the backend's unilevelRuleValue oldValue are both percentage points.
-    const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > currentUsdt : undefined;
+    // Match dd6c94ea: USDT compares percentage points; UVT compares coefficients.
+    const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > currentUsdt
+      : nexLevel && beforeF2 != null ? Number(value) > Number(beforeF2) : undefined;
     await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [commandValue, reason] : [commandValue, reason, expectedMaterialRevision]), {
       action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
       obj: ambassadorId ?? key,
       before: sourceDomain === "F4" ? beforeF4 ?? "—" : usdtLevel && currentUsdt != null ? `${currentUsdt}%` : sourceDomain === "F2" && beforeF2 != null && beforeF2 !== "__UNCONFIGURED__" ? String(beforeF2) : "—",
       after: commandValue,
-      type: ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",
-      // F2 USDT and F3 edits compare current and proposed values in percentage points.
+      type: op === "f_unilevel_rule" && rateAmplifies !== undefined ? rateAmplifies ? "fund" : "param"
+        : ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",
+      // The server derives the final direction again when it creates the ticket.
       amplifies: ambassadorId ? value === "approved" : rateAmplifies ?? amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
       gate: { roles: [] },
       gateLabel: def.gateLabel,
