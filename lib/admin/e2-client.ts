@@ -264,18 +264,6 @@ export async function fetchE2TaskPricing(): Promise<E2TaskPricingSnapshot> {
   };
 }
 
-export async function updateE2TaskPricing(
-  patch: Partial<Pick<E2TaskPricingClass, "taskClass" | "minReward" | "maxReward" | "minVRAM" | "enabled">> & { queueSaturation?: number; expectedRevision?: string },
-  reason: string,
-  operator: string,
-) {
-  return e2ConfigRequest<{ effectiveAt: string; taskPricing: E2TaskPricingSnapshot }>("task-pricing", {
-    method: "PUT",
-    body: JSON.stringify({ ...patch, minVram: patch.minVRAM, minVRAM: undefined, reason, operator }),
-    idempotencyPrefix: "e2-task-pricing",
-  });
-}
-
 function toTaskPayload(task: OpsTask, reason: string, operator: string) {
   const error = task.simulation ? null : validateComputeTaskConfig(task);
   if (error) throw new Error(error);
