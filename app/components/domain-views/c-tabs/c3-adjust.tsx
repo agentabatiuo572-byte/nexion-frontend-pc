@@ -1435,11 +1435,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
         </p>,
-        tech: <Explain label="这次操作的技术信息" rows={[
+        tech: <p><Explain label="这次操作的技术信息" rows={[
           { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
           { k: "操作人", v: record.operator },
           { k: "理由", v: record.reason ?? record.input?.reason },
-        ]} />,
+        ]}>技术信息</Explain></p>,
       };
     })} />;
 
