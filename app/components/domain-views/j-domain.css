@@ -822,14 +822,4 @@
 .j4-trace .j4-trace-fail { color: var(--rd-danger); }
 .j4-trace .j4-trace-list:not([data-wide]) li { grid-template-columns: 56px auto auto minmax(0, 1fr); }
 
-/* 结果未知逐条提醒（界面备好，等接 R1） */
-.j4-page .j4-rec { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.j4-page .j4-rec li { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(0, 2fr) 136px 140px 208px; align-items: center; gap: 4px 12px; }
-.j4-page .j4-rec-actions { justify-content: flex-end; }
-.j4-page .j4-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
-.j4-page .j4-rec-time { font-size: var(--rd-text-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.j4-page .j4-rec-actions { display: inline-flex; gap: 8px; }
-.j4-page .j4-rec-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
-.j4-page .j4-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
-@container jdom (max-width: 900px) { .j4-page .j4-rec li { grid-template-columns: minmax(0, 1fr) auto; } }
 .j4-trace .rd-facts + .j4-trace-list, .j4-trace .rd-facts + p { margin-top: 12px; }

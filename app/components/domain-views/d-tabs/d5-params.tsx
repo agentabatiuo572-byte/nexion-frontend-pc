@@ -891,7 +891,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   };
   const releasePending = (record: ReleaseTarget) => {
     setReleasing(null);
-    // D5_WITHDRAWAL_LIMITS_UPDATE is not in AdminCommandOrigin.supported; retain its existing local handling.
+    // Local release only; evidence-based closure is the separate 核查结案 entry.
     tightenCommands.forget(record.slot, record.commandKey);
     syncPending();
     toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");

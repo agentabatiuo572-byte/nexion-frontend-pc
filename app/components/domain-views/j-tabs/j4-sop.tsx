@@ -256,6 +256,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   };
   const queryOriginal = async (record: { commandKey: string }, label: string) => {
     const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.commandKey === record.commandKey);
+    // 查到回执时行内已写结论，「只能核对当前预案」那句附注就不再显示。
+    let receiptFound = false;
     if (saved) {
       setChecking(saved.commandKey);
       try {
@@ -265,6 +267,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           await finishSettled(saved, label, receipt!);
           return;
         }
+        receiptFound = !!receipt;
       } catch (error) {
         // No receipt conclusion: retain the original and continue the current-state read.
         setOutcomes((previous) => ({ ...previous, [saved.commandKey]: { error: displayAdminError(error) } }));
@@ -272,7 +275,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     }
     try {
       await actions.reloadJEmergency();
-      noteError(record.commandKey, new Error("J4_CURRENT_STATE_ONLY"));
+      if (receiptFound) setNotes((previous) => ({ ...previous, [record.commandKey]: "" }));
+      else noteError(record.commandKey, new Error("J4_CURRENT_STATE_ONLY"));
     } catch (error) { noteError(record.commandKey, error); }
     syncPending();
   };
