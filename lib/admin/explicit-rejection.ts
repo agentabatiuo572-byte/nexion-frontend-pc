@@ -41,7 +41,8 @@ export function isExplicitRejection(error: unknown): boolean {
   const code = typeof value.reasonCode === "string" ? value.reasonCode : typeof value.backendMessage === "string" ? value.backendMessage : "";
   // These receipts exist, but their original actor cannot be verified. The
   // refusal to replay them does not establish whether the original write ran.
-  if (code === "ACCOUNT_LEGACY_COMMAND_REVIEW_REQUIRED" || code === "A6_RECEIPT_OWNER_UNVERIFIED") return false;
+  if (code === "ACCOUNT_LEGACY_COMMAND_REVIEW_REQUIRED" || code === "A6_RECEIPT_OWNER_UNVERIFIED"
+    || code === "TRUST_DOCUMENT_LEGACY_COMMAND_REVIEW_REQUIRED") return false;
   // ef4b1a5a refuses to expose an existing K4 batch receipt when its owner or content cannot be proved.
   if (code === "K4_SCORE_BATCH_RECEIPT_OWNER_UNPROVEN" || code === "K4_SCORE_BATCH_RECEIPT_UNREADABLE") return false;
   // J4 reconciliation can persist partial progress after RECOVERY_STARTED; it is not a nonexecution verdict.
