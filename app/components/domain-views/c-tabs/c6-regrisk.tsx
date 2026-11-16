@@ -677,7 +677,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         </Conclusion>
       ) : (
         <Conclusion state="ok" icon={ShieldCheck}
-          explain="这句话只看人机验证有没有被临时关闭，锁定规则看下方「App 登录锁定」。下面的计数没有告警线，页面不判断数量是否异常。">
+          explain="这句话只看人机验证有没有被临时关闭，锁定规则见下方。下面的计数没有告警线，页面不判断数量是否异常。">
           人机验证开启，App 登录按两级锁定规则执行
         </Conclusion>
       )}
