@@ -9,7 +9,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Calculator, Coins, Copy, FilePen, FileText, History, Inbox, Info, RefreshCw, Scale, User } from "lucide-react";
+import { Calculator, CircleHelp, Coins, Copy, FilePen, FileText, History, Hourglass, Inbox, Info, RefreshCw, Scale, User } from "lucide-react";
+import { RecoveryPanel, recoveryTitle } from "@/app/components/domain-views/recovery-panel";
 import {
   Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, IconButton,
   InlineRetry, Input, IrreversibleTag, JudgmentPoints, KeepText, Notice, NumberInput, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments,
@@ -1412,31 +1413,35 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       primary={shown.ledgerId != null && shown.ledgerId !== "" && canReadLedger ? <Link className="rd-btn" data-variant="secondary" href={`/finance/ledger?bizNo=${encodeURIComponent(shownNo)}`} prefetch={false}><span className="rd-btn-face">定位关联账单 →</span></Link> : undefined} />
   ) : undefined);
 
-  /* ── 待确认条 ── */
-  const pendingNotices = pending.map((record) => {
-    const expired = isRetryExpired(record);
-    return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
-        action={<>
+  /* ── 结果未知：收成一个面板，每条一行，默认露三条（提示不把正事挤出首屏） ── */
+  const pendingNotices = <RecoveryPanel title={recoveryTitle(pending.length)} explainLabel="结果未知怎么处理"
+    explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内按原请求重试不会多建单，也不会重复入账。"
+    items={pending.map((record) => {
+      const expired = isRetryExpired(record);
+      return {
+        key: record.fingerprint,
+        object: record.label,
+        createdAt: record.createdAt,
+        tag: expired ? <StatusTag tone="warn" icon={Hourglass}>已过期</StatusTag> : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>,
+        line: record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时，不能再重试。" : "可能已经生效，先查询原结果。",
+        note: pendingNotes[record.fingerprint],
+        actions: <>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
           {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>}
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
-        </>}>
-        <p>
+        </>,
+        detail: <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
           {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
-          <Explain label="这次操作的技术信息" rows={[
-            { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
-            { k: "操作人", v: record.operator },
-            { k: "理由", v: record.reason ?? record.input?.reason },
-          ]} />
-        </p>
-        {/* 按句整段换行，1024 下不折出「保留。」这种孤字。 */}
-        {pendingNotes[record.fingerprint] && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
-      </Notice>
-    );
-  });
+        </p>,
+        tech: <Explain label="这次操作的技术信息" rows={[
+          { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
+          { k: "操作人", v: record.operator },
+          { k: "理由", v: record.reason ?? record.input?.reason },
+        ]} />,
+      };
+    })} />;
 
   return <>
     <PageHeader pageId="C3" title="余额与资产调整" summary={<AutoGloss>补偿或纠错时增减用户余额，另一位同事批准后才入账。</AutoGloss>}
