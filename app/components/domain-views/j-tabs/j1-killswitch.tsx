@@ -128,7 +128,7 @@ const plainRuleText = (text: string) => operatorCopyText(text).replace(/\bR\d(?:
 const RULE_TEXT: Record<string, (rule: AutoRuleRow) => string> = {
   withdrawSurge: (rule) => `24 小时提现申请额达到真实储备的 ${ruleValue(rule)}（挤兑红线）时，关停提现。`,
   maturityGap: (rule) => `钱包余额和账本余额相差超过 ${ruleValue(rule)} 时，关停兑换。`,
-  tamperCluster: (rule) => `单个账户 24 小时内超过 ${rule.thr} 次，或全平台比上个周期突增时告警。`,
+  tamperCluster: (rule) => `单个账户 24 小时内被拦下的篡改请求达到 ${rule.thr} 次时告警。`,
   regulatoryDirective: () => "监管点名或法务事件时，在这页手动关停，要写原因。",
 };
 
@@ -502,7 +502,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
       detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
-      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批，由另一位超级管理员批准。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，用户仍可取消。恢复要回到这页提交审批，由另一位超级管理员批准。" : `全站马上停止${cap}。恢复要回到这页提交审批，由另一位超级管理员批准。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批，由另一位超级管理员批准。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，用户仍可取消。恢复要回到这页提交审批，由另一位超级管理员批准。" : gate.key === "genesis" ? `全站马上停止${cap}，节点收益也停发。恢复要回到这页提交审批，由另一位超级管理员批准。` : `全站马上停止${cap}。恢复要回到这页提交审批，由另一位超级管理员批准。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
