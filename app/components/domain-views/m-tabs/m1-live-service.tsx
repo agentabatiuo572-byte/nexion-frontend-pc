@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Clock3, ListChecks, MessageSquare, UserRoundPlus, Users } from "lucide-react";
-import { StatBand, Stat, Conclusion, InlineRetry } from "@/app/components/rd";
+import { StatBand, Stat, Conclusion, InlineRetry, Drawer, Button, Table, Th, Tr, Td } from "@/app/components/rd";
+import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import type { SessionConvo } from "./data";
 import type { MCtx } from "./types";
 
@@ -22,7 +23,7 @@ export function availableSupportRoster(ctx: MCtx) {
   const ready = ctx.pget("I.support.agentsAvailable") === "1";
   const failure = ctx.pget("I.support.agentsError");
   const state = ready ? "ready" : failure === "permission" ? "permission" : failure && failure !== "none" ? "error" : "loading";
-  const rows = ready ? parse<{ adminId: number; name: string; enabled?: boolean; status?: string }>(ctx.pget("I.support.agents"))
+  const rows = ready ? parse<{ adminId: number; name: string; enabled?: boolean; status?: string; assignedUserCount?: number; avatarAssetId?: string; avatarVersion?: number }>(ctx.pget("I.support.agents"))
     .filter(row => row.enabled !== false && row.status !== "disabled") : [];
   return { state, rows };
 }
@@ -33,11 +34,14 @@ export function availableSupportRoster(ctx: MCtx) {
  */
 export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5 }: { ctx: MCtx; alertMinutes?: number }) {
   const [now, setNow] = useState(() => Date.now());
+  const [rosterOpen, setRosterOpen] = useState(false);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
   const conversationsReady = ctx.pget("I.session.conversationsAvailable") === "1";
   // An unread roster is not an empty one (BUG-122): 0 only comes from a successful read.
   const roster = availableSupportRoster(ctx);
-  const agentsReady = roster.state === "ready", agentsFailed = roster.state === "error";
+  const agentsReady = roster.state === "ready", agentsFailed = roster.state === "error", agentsDenied = roster.state === "permission";
+  // 没有名单权限时重读也读不到：结论只按会话判断，不提示重读名单。
+  const unknown = !conversationsReady || !agentsReady && !agentsDenied;
   const facts = useMemo(() => {
     const convos = parse<SessionConvo>(ctx.pget("I.session.convos")).filter((row) => !row.archived && (row.pendingReplyCount ?? 0) > 0);
     const customers = (rows: SessionConvo[]) => new Set(rows.map((row) => String(row.customerId ?? row.id))).size;
@@ -52,11 +56,17 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
   const late = facts.oldest !== null && facts.oldest >= alertMinutes * 60000;
   const dash = (ready: boolean, value: number | string) => ready ? value : "—";
   return <section aria-label="实时服务" className="m1-live-service">
-    <Conclusion state={!conversationsReady || !agentsReady ? "unknown" : late ? "warn" : "neutral"} icon={conversationsReady && agentsReady && !late && (facts.waiting || facts.unassigned) ? ListChecks : undefined} hint={!conversationsReady || !agentsReady ? "重读会话或客服名单后再判断。" : facts.waiting || facts.unassigned ? "打开待回复或有留言待分配客户，继续处理会话。" : "可核对分配、客户和负责组资料。"} explain="待回复和有留言的待分配客户按还没归档的会话算，同一客户只算一次。可接待人数是名单上能接待的人，不是空闲人数。">{!conversationsReady || !agentsReady ? "部分服务数据暂时读不到" : facts.waiting || facts.unassigned ? "有客户正在等待处理" : "当前没有待回复客户"}</Conclusion>
+    <Conclusion state={unknown ? "unknown" : late ? "warn" : "neutral"} icon={!unknown && !late && (facts.waiting || facts.unassigned) ? ListChecks : undefined} hint={unknown ? "重读会话或客服名单后再判断。" : facts.waiting || facts.unassigned ? "打开待回复或有留言待分配客户，继续处理会话。" : "可核对分配、客户和负责组资料。"} explain="待回复和有留言的待分配客户按还没归档的会话算，同一客户只算一次。可接待人数是名单上能接待的人，不是空闲人数。">{unknown ? "部分服务数据暂时读不到" : facts.waiting || facts.unassigned ? "有客户正在等待处理" : "当前没有待回复客户"}</Conclusion>
     <StatBand label="实时服务"><Stat label="待回复客户" value={dash(conversationsReady, facts.waiting)} unit="位" icon={MessageSquare} lead href="/service/sessions?tab=pending" explain="已绑定、有留言等回复的客户，同一客户只算一次。" />
       <Stat label="最长等待" value={!conversationsReady ? "—" : facts.oldest === null ? "无" : durationText(facts.oldest)} icon={Clock3} tone={late ? "warn" : undefined} href="/service/sessions?tab=pending" explain="从最早一条待回复留言算起；页面每 30 秒更新一次等待时长。" />
       <Stat label="待分配（有留言）" value={dash(conversationsReady, facts.unassigned)} unit="位" icon={UserRoundPlus} href="/service/sessions?tab=unassigned" explain="有留言等回复、还没分配专属客服的客户；全部待分配客户在「待分配」页签。" />
-      <Stat label="可接待专属客服" value={dash(agentsReady, facts.agents)} unit="位" icon={Users} explain="名册中已启用且未停用的专属客服人数，不是空闲席位。" sub={agentsFailed ? <InlineRetry label="名单加载失败，重试" onRetry={() => void ctx.refreshContent().catch(() => ctx.toast("客服名单还是没有加载出来，请稍后重试。"))} /> : undefined} />
+      <Stat label="可接待专属客服" value={dash(agentsReady, facts.agents)} unit="位" icon={Users} explain="名册中已启用且未停用的专属客服人数，不是空闲席位。" onOpen={agentsReady ? () => setRosterOpen(true) : undefined} openLabel="查看可接待专属客服名单" sub={agentsFailed ? <InlineRetry label="名单加载失败，重试" onRetry={() => void ctx.refreshContent().catch(() => ctx.toast("客服名单还是没有加载出来，请稍后重试。"))} /> : agentsDenied ? "没有查看客服名单的权限" : undefined} />
     </StatBand>
+    {rosterOpen && agentsReady && <Drawer open title="可接待专属客服" sub={`共 ${roster.rows.length} 位`} explain="名册中已启用且未停用的专属客服，不是空闲人数。" onClose={() => setRosterOpen(false)} footer={<Button type="button" onClick={() => setRosterOpen(false)}>返回工作台</Button>}>
+      {roster.rows.length ? <Table label="可接待专属客服名单"><thead><Tr><Th scope="col">专属客服</Th><Th scope="col" align="right">现在服务</Th></Tr></thead><tbody>{roster.rows.map(row => <Tr key={row.adminId}>
+        <Td><span className="m1-live-roster-name"><SupportAvatar name={row.name} path={row.avatarAssetId ? advisorAvatarPath(row.adminId) : undefined} version={row.avatarVersion} size={24} /><span title={row.name}>{row.name}</span></span></Td>
+        <Td align="right">{row.assignedUserCount == null ? "—" : `${row.assignedUserCount} 位客户`}</Td>
+      </Tr>)}</tbody></Table> : <p className="rd-note">名册里现在没有可接待的专属客服。</p>}
+    </Drawer>}
   </section>;
 }
