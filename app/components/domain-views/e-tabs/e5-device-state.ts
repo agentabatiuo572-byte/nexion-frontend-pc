@@ -19,7 +19,7 @@ export const E5_STATES: Record<E5SimState, { label: string; tone: StateTone; rea
 /**
  * 停用、解绑这类设备：按归属说清还能不能再激活（和行上的入口用同一个判断）；读不到归属时保留旧说法。
  * 早期解绑、但仍归原用户的设备后端允许强制激活，所以不叫「已解绑」。
- * label 只用于显示；审批申请里的原状态仍用 E5_STATES，请求不变。
+ * 审批申请里的原状态和页面显示的用同一个 label。
  */
 function stoppedNote(d: Pick<E5Device, "simState" | "rawStatus" | "ownershipStatus">): { label: string; sub?: string; reason: string } {
   const raw = d.rawStatus.trim().toUpperCase();
