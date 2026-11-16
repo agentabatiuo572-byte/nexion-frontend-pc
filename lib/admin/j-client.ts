@@ -5,6 +5,7 @@ import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, RET
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
 
 type ApiResult<T> = {
   code?: number;
@@ -35,7 +36,7 @@ export type J3ConfigBody = {
   operator: string; reason: string;
 };
 export type J3PendingCommand = SlotAttemptRecord & {
-  tamper: { path: "/tamper/alert-config"; method: "PUT"; body: string; input: J3ConfigBody; context: TamperOverview["alertConfig"] };
+  tamper: { path: "/tamper/alert-config"; method: "PUT"; body: string; input: J3ConfigBody; context: TamperOverview["alertConfig"]; commandOrigin?: FundCommandOrigin };
 };
 export type J4CommandContext =
   | { kind: "create"; fields: Record<string, string> }
@@ -124,6 +125,9 @@ const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
           || typeof input.operator !== "string") return false;
         const alertConfig = normalizeTamperAlertConfig(context);
         if (alertConfig.threshold !== input.expectedThreshold || alertConfig.feedK4 !== input.expectedFeedK4) return false;
+        const origin = record.tamper.commandOrigin;
+        if (origin !== undefined && (origin.originalMethod !== "PUT" || origin.originalPath !== "/api/admin/emergency/tamper/alert-config"
+          || origin.readAuthority !== "emergency_j3_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
         record.tamper.context = alertConfig;
         return true;
       } catch { return false; }
@@ -270,6 +274,15 @@ export async function retryJ3Command(record: J3PendingCommand) {
   await apiRequest(saved.tamper.path, { method: saved.tamper.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.tamper.body }, undefined, saved.tamper.context);
 }
 
+/** Receipt lookup and controlled closure share the E4/D3 evidence contract, including after expiry. */
+export async function queryJ3Command(record: J3PendingCommand, evidence?: FundCommandEvidence) {
+  const saved = getJ3PendingCommand();
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  const receipt = await checkFundCommand({ ...saved, commandOrigin: saved.tamper.commandOrigin }, evidence);
+  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
+
 // Report generation is a read-only export (B4-PD02), so an unavailable file never locks future exports.
 export const finishJ3ReportAttempt = (commandKey: string) => emergencyCommands.forget("POST /tamper/reports", commandKey);
 
@@ -355,7 +368,8 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
         const commandKey = providedCommandKey || idempotencyKey();
         emergencyCommands.remember(writeSlot, commandKey, {
           inputFingerprint: init.body,
-          tamper: { path: "/tamper/alert-config", method: "PUT", body: init.body, input: JSON.parse(init.body), context: tamperContext },
+          tamper: { path: "/tamper/alert-config", method: "PUT", body: init.body, input: JSON.parse(init.body), context: tamperContext,
+            commandOrigin: fundCommandOrigin("PUT", "/api/admin/emergency/tamper/alert-config", "emergency_j3_read") },
         });
         headers.set("Idempotency-Key", commandKey);
       }

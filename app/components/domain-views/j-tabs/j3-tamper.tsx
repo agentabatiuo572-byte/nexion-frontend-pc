@@ -19,7 +19,8 @@ import {
 import type { JCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
+import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
+import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
@@ -197,7 +198,17 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   };
 
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
-  const queryOriginal = () => {
+  const queryOriginal = async () => {
+    if (saved?.command) {
+      try {
+        if (fundCommandSettled(await queryJ3Command(saved.command))) {
+          setConfigOpen(null);
+          syncSaved();
+          await actions.reloadJEmergency().catch(() => undefined);
+          return;
+        }
+      } catch { /* An auxiliary lookup failure must not prevent the current-settings read. */ }
+    }
     void actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
       if (now) toast(`现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此认定原请求成没成。`, "info");
@@ -623,8 +634,17 @@ function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; origi
       setSubmitting(false);
     }
   };
-  const queryOriginal = () => {
+  const queryOriginal = async () => {
     setReadBack("正在读取…");
+    if (pending) {
+      try {
+        if (fundCommandSettled(await queryJ3Command(pending))) {
+          onClose();
+          await ctx.actions.reloadJEmergency().catch(() => undefined);
+          return;
+        }
+      } catch { /* Preserve the original and continue with the existing read-only fallback. */ }
+    }
     void ctx.actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
       setReadBack(now ? `现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此认定原请求成没成。` : "没读到告警设置，请稍后再查。");

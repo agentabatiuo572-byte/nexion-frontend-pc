@@ -50,6 +50,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? /^D2(?:[_:])/.test(String(row.scope))
       : locator.originalPath.startsWith("/api/admin/treasury/") ? /^D3(?:[_:])/.test(String(row.scope))
         : locator.originalPath.startsWith("/api/admin/devices/orders/") ? /^E4(?:[_:])/.test(String(row.scope))
+          : locator.originalPath === "/api/admin/emergency/tamper/alert-config" ? row.scope === "J3_ALERT_CONFIG"
           : locator.originalPath.startsWith("/api/admin/emergency/kill-switches/") ? /^J1(?:[_:])/.test(String(row.scope))
             : locator.originalPath.startsWith("/api/admin/risk/multi-account/") ? /^K1(?:[_:])/.test(String(row.scope))
               : locator.originalPath === "/api/admin/bi/reports" || locator.originalPath.startsWith("/api/admin/bi/reports/") ? row.scope === "L_BI_REPORT_CREATE" || /^L_BI_REPORT_ACTION/.test(String(row.scope))
