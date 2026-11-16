@@ -367,9 +367,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     requireActor(record.intent, false);
     if (record.actorId !== currentAdminId) throw new Error("A1_SESSION_CHANGED");
     if (record.request.kind !== "proposal") {
-      const state = await queryA1DirectReceipt(record);
+      const state = await queryA1DirectReceipt(record).catch(() => null);
+      requireActor(record.intent, false);
       if (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED") {
-        requireActor(record.intent, false);
         recoveryStarted(); ctx.closeActionConfirm?.();
         a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
         if (state === "SUCCEEDED" && record.request.kind === "create") avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "admin", "new"));

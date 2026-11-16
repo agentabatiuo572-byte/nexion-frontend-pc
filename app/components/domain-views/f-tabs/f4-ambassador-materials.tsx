@@ -120,7 +120,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const queryOriginal = async () => {
     const original = pendingRef.current;
     if (!original || original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
-    const state = await fetchDirectCommandReceipt(`F4_MATERIAL_REVIEW:${original.actorId}:${original.applicationId}`, original.commandKey, original.actorId);
+    const state = await fetchDirectCommandReceipt(`F4_MATERIAL_REVIEW:${original.actorId}:${original.applicationId}`, original.commandKey, original.actorId).catch(() => null);
     if (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED") {
       reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
       setPacket(null); setConfirmation(null);
