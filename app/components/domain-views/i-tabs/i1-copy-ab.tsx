@@ -141,7 +141,7 @@ function PendingNotice({ items, onQuery, onRetry }: { items: readonly I1Pending[
   const [all, setAll] = useState(false);
   if (items.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>{`${items.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<><p>提交时没收到确定结果，可能已经执行。「查询原结果」只重读现在的内容，不能证明原操作成没成，记录继续保留。</p><p>24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复执行；过了 24 小时只能查询。</p></>} /></>} actionBelow>
+    <Notice tone="warn" title={<>{`${items.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<><p>提交时没收到确定结果，可能已经执行。「查询原结果」只重读现在的内容，不能证明原操作成没成，记录继续保留。</p><p>24 小时内可以「按原请求重试」，不会重复执行；过了 24 小时只能查询。</p></>} /></>} actionBelow>
       <ul className="i1-pending">
         {(all ? items : items.slice(0, 3)).map((item) => (
           <li key={item.id}>
