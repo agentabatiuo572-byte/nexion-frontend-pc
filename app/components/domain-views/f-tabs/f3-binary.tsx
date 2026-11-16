@@ -43,7 +43,12 @@ const fmtDecimal = (raw: string) => {
   const match = /^(\d+)(\.\d+)?$/.exec(raw.trim());
   return match ? `${match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${match[2] ?? ""}` : raw.trim();
 };
-const amountText = (raw: string | null | undefined, legacy: number) => raw === undefined ? fmtInt(legacy) : raw === null ? "—" : fmtDecimal(raw);
+/** 逐笔金额：去掉后端补的末尾 0，至少两位，不舍入。 */
+const fmtMoney = (raw: string) => {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw.trim());
+  return match ? `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(match[3] ?? "").replace(/0+$/, "").padEnd(2, "0")}` : raw.trim();
+};
+const amountText = (raw: string | null | undefined, legacy: number) => raw === undefined ? fmtInt(legacy) : raw === null ? "—" : fmtMoney(raw);
 /**
  * 后端把金额先取整、再压成「$1.2k」这样的短写（OpsTeamService.moneyCompact）。不反算精确值：
  * 整数原样写，压缩过的按缩写换成整数写「约 48,200」，都带币种。
@@ -152,7 +157,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const binaryPaused = pauseState === true;
   const capText = dailyCap?.amountUsdt != null ? `${fmtDecimal(dailyCap.amountUsdt)} USDT` : null;
   const residualPool = ctx.f3Amounts?.residualPoolUsdRaw === undefined ? compactMoney(cfg?.residualPool ?? "")
-    : ctx.f3Amounts.residualPoolUsdRaw === null ? null : `${fmtDecimal(ctx.f3Amounts.residualPoolUsdRaw)} USDT`;
+    : ctx.f3Amounts.residualPoolUsdRaw === null ? null : `${fmtMoney(ctx.f3Amounts.residualPoolUsdRaw)} USDT`;
+  // 新后端给原值；旧后端只有取整后的整数（和压缩过的残额）。
+  const legacyAmounts = ctx.f3Amounts?.monthlyMatchedUsdRaw === undefined;
   const rule: F3Rule = { threshold: thresholdText, rate: ratePercent === null ? null : `${ratePercent}%`, cap: capText, period: periodEff, residual: residualEff };
 
   // 后端结算时逐项核对这些设置（BinarySettlementPolicyProvider.lockPolicy），不认就拦下整期结算。
@@ -384,8 +391,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           结算设置有 {issues.length} 项后端不认，结算会被拦下：{issues.join("、")}</Conclusion>
       : latest
         ? <Conclusion state="neutral" icon={Scale}
-            explain={<><p>最近一期是结算记录里最晚的结算日，按最近 100 条记录算；金额是后端取整后的整数，被拦下的不算。</p><p>这一期还没结算时，页面算不出会发多少：金额在结算时按当时的订单额、比例和上限算。</p></>}>
-            最近一期 {latest.date}：{latest.owners.size} 位邀请人有结算记录，记账 {fmtInt(latest.paid)} USDT</Conclusion>
+            explain={<><p>{latest.paid === null
+              ? "最近一期是最近 100 条结算记录里最晚的结算日。这一期的金额合计系统没有算，每条记录的金额在下面「按邀请人」看。"
+              : "最近一期是结算记录里最晚的结算日，按最近 100 条记录算；金额是后端取整后的整数，被拦下的不算。"}</p><p>这一期还没结算时，页面算不出会发多少：金额在结算时按当时的订单额、比例和上限算。</p></>}>
+            最近一期 {latest.date}：{latest.owners.size} 位邀请人有结算记录{latest.paid === null ? "" : `，记账 ${fmtInt(latest.paid)} USDT`}</Conclusion>
         : <Conclusion state="neutral" icon={Scale} explain="结算记录在后端结算后才有；这一期会发多少，要到结算时按当时的订单额、比例和上限算。">
             团队平衡奖励在发放，{PERIOD_TEXT[periodEff]?.when ?? "按周期结算"}；还没有结算记录</Conclusion>;
 
@@ -401,13 +410,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <StatBand label="团队平衡奖励摘要">
         <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={amountText(ctx.f3Amounts?.monthlyMatchedUsdRaw, ctx.f3MonthlyMatchedUsd)} unit="USDT"
           sub={`今天 ${amountText(ctx.f3Amounts?.dailyMatchUsdRaw, ctx.f3DailyMatchUsd)} USDT`}
-          explain="本月（按业务日历）结算记录里匹配订单额的合计，后端取整成整数。这是两组匹配上的订单额，不是发出的奖励；奖励 = 匹配订单额 × 当时的比例。" />
+          explain={`本月（按业务日历从 1 日起）各种状态的结算记录里匹配订单额的合计，今天按业务日算${legacyAmounts ? "，后端取整成整数" : ""}。这是两组匹配上的订单额，不是发出的奖励；奖励 = 匹配订单额 × 当时的比例。`} />
         <Stat label="没匹配上的订单额" icon={Layers3} tone="role-2" value={residualPool ? residualPool.replace(/ USDT$/, "") : "—"} unit={residualPool ? "USDT" : undefined}
-          sub={residualPool ? residualLabel(residualEff) : "残额处理不认，后端没算"}
-          explain="每位邀请人取 A、B 两组扣掉已匹配后剩得多的那一组，再加起来；按现在的残额处理算范围，不是两组差额。后端先取整再缩写，不是精确值。" />
+          sub={residualPool ? residualLabel(residualEff) : legacyAmounts || !RESIDUAL_TEXT[residualEff] ? "残额处理不认，后端没算" : "现在没有可算的订单额"}
+          explain={`每位邀请人取 A、B 两组扣掉已匹配后剩得多的那一组，再加起来；按现在的残额处理算范围，不是两组差额。${legacyAmounts ? "后端先取整再缩写，不是精确值。" : "写「—」时不是 0：残额处理不认，或按现在的残额处理没有可算的订单额。"}`} />
         <Stat label="出过结算的邀请人" icon={Users} tone="role-3" value={fmtInt(ctx.f3ParticipantCount)} unit="人"
           sub={`被拦下的记录 ${fmtInt(ctx.f3BlockedCount)} 条`}
-          explain="所有结算记录里出现过的邀请人人数，不限今天，也不是现在过门槛的人数。被拦下的是记录条数，不是人数。" />
+          explain="所有结算记录里出现过的邀请人人数，不限今天，也不是现在过门槛的人数。被拦下是全部历史里被拦下、被拒、失败或冻结的记录条数，不是人数。" />
         <Stat label="近 7 天自动分组" icon={Shuffle} tone="role-3" value={fmtInt(ctx.f3AutoPlacement7dCount)} unit="人"
           sub={spillOn ? "自动分组已启用" : "自动分组已关闭"}
           explain="最近 7 天结算时自动补进 A 组或 B 组的成员数，按分组时间算；不含手动分组。" />
@@ -418,13 +427,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <F3RuleFlow rule={rule} capAction={capAction} />
         <p className="f3-example">
           {example
-            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}，整数）</>
+            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}{example.todayRaw === undefined ? "，整数" : ""}）</>
             : "还没有结算记录，第一笔结算后这里写出一条真实的例子。"}
-          <Explain label="这条例子怎么来的" content="取结算记录里最新的一条，金额是后端取整后的整数；这条记录用的是当时的门槛、比例和上限，不一定是现在的。" />
+          <Explain label="这条例子怎么来的" content={`取结算记录里最新的一条，金额是${example?.todayRaw === undefined ? "后端取整后的整数" : "这条记录的原值"}；这条记录用的是当时的门槛、比例和上限，不一定是现在的。`} />
         </p>
       </Panel>
 
-      <Panel title="各团队 A、B 两组" icon={ArrowLeftRight} tone="role-2" sub={`最近 ${fmtInt(rows.length)} 条结算记录 · 新到旧 · 金额是整数`}
+      <Panel title="各团队 A、B 两组" icon={ArrowLeftRight} tone="role-2" sub={`最近 ${fmtInt(rows.length)} 条结算记录 · 新到旧${legacyAmounts ? " · 金额是整数" : ""}`}
         explain={<>
           <p>一条结算记录是一位邀请人在一个结算日的结算。后端最多给最近 100 条，按结算日从新到旧，不是全部邀请人；同一位邀请人可能有几天的记录。</p>
           <p>每一行 A 组往左、B 组往右，按这一行较大的一组定长度，看哪边小、差多少；实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额要扣掉已结算的部分、受每期上限限制，可能比实色少；刻线是现在的门槛（当时的门槛可能不同）。行和行之间看数字比大小。</p>
@@ -473,7 +482,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           </Table></div>
           {pager.total > 0 && <Pager label="结算记录" total={pager.total} page={pager.page} pageSize={pager.pageSize} sizes={[10, 20, 50]}
             onPage={pager.setPage} onPageSize={pager.setPageSize} note={rows.length >= 100 ? "后端只给最近 100 条" : undefined} />}
-        </> : (
+        </> : (<>
           <Table label="按结算日汇总" className="f3-dates">
             <thead><tr>
               <Th>结算日</Th>
@@ -487,14 +496,16 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                 <Tr key={group.date}>
                   <Td><Cell main={group.date} num /></Td>
                   <Td align="right"><Cell main={`${fmtInt(group.owners.size)} 人`} num /></Td>
-                  <Td align="right"><Cell main={`${fmtInt(group.paid)} USDT`} num /></Td>
-                  <Td align="right"><Cell main={`${fmtInt(group.matched)} USDT`} num /></Td>
+                  <Td align="right"><Cell main={group.paid === null ? "—" : `${fmtInt(group.paid)} USDT`} num /></Td>
+                  <Td align="right"><Cell main={group.matched === null ? "—" : `${fmtInt(group.matched)} USDT`} num /></Td>
                   <Td align="right"><Cell main={`${fmtInt(group.blocked)} 条`} num /></Td>
                 </Tr>
               ))}
               {byDate.length === 0 && <TableMessage columns={5}>还没有结算记录</TableMessage>}
             </tbody>
           </Table>
+          {byDate.some((group) => group.paid === null || group.matched === null) && <p className="f3-dates-note">按结算日的金额合计系统没有算，写「—」，不是 0；人数和条数照实。</p>}
+        </>
         )}
       </Panel>
 
@@ -585,7 +596,8 @@ function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | 
     const delta = BigInt(aWhole + aFraction.padEnd(scale, "0")) - BigInt(bWhole + bFraction.padEnd(scale, "0"));
     smaller = delta === BigInt(0) ? null : delta < BigInt(0) ? "A" : "B";
     const digits = (delta < BigInt(0) ? -delta : delta).toString().padStart(scale + 1, "0");
-    diff = fmtDecimal(scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits);
+    const exact = scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits;
+    diff = row.aRaw === undefined ? fmtDecimal(exact) : fmtMoney(exact);
   }
   const a = aText === null ? null : Number(aText), b = bText === null ? null : Number(bText);
   const passA = threshold !== null && a !== null && a >= threshold, passB = threshold !== null && b !== null && b >= threshold;
@@ -600,9 +612,11 @@ function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | 
       <Td>
         <span className="f3-pair-cell">
           <span className="f3-pair-num" data-small={smaller === "A" ? "" : undefined}>{amountText(row.aRaw, row.a)}</span>
-          <F3PairBar a={a ?? row.a} b={b ?? row.b} max={Math.max(a ?? row.a, b ?? row.b)} threshold={threshold} label={`A 组 ${amountText(row.aRaw, row.a)} USDT，B 组 ${amountText(row.bRaw, row.b)} USDT`} />
+          {a === null || b === null
+            ? <span className="f3-pair-missing" title="这条记录没有两组的订单额">—</span>
+            : <F3PairBar a={a} b={b} max={Math.max(a, b)} threshold={threshold} label={`A 组 ${amountText(row.aRaw, row.a)} USDT，B 组 ${amountText(row.bRaw, row.b)} USDT`} />}
           <span className="f3-pair-num" data-small={smaller === "B" ? "" : undefined}>{amountText(row.bRaw, row.b)}</span>
-          <span className="f3-pair-note">{a === null || b === null ? "—" : smaller ? `${smaller} 组少 ${diff}` : "两组一样"} · {pass}</span>
+          <span className="f3-pair-note">{a === null || b === null ? "—" : `${smaller ? `${smaller} 组少 ${diff}` : "两组一样"} · ${pass}`}</span>
         </span>
       </Td>
       <Td align="right"><Cell num main={`${amountText(row.todayRaw, row.today)} USDT`} sub={`匹配 ${amountText(row.matchRaw, row.match)} USDT`} /></Td>
