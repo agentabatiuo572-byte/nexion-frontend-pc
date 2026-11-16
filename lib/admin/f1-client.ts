@@ -255,6 +255,7 @@ interface BackendF4Podium {
   tip?: string | null;
   className?: string | null;
   memberUserId?: number | string | null;
+  computePoints?: number | null;
 }
 
 interface BackendF4QuotaUsage { id?: number | string | null; quotaCode?: string | null; productNo?: string | null; userId?: number | string | null; orderNo?: string | null; quantity?: number | string | null; status?: string | null; occurredAt?: string | null }
@@ -747,6 +748,17 @@ export interface F4LeaderboardPeriod {
 }
 export type F4LeaderboardPeriods = Partial<Record<"today" | "week" | "month" | "all", F4LeaderboardPeriod>>;
 
+export interface F4ComputePointPodium extends F4Podium { computePoints: number }
+export interface F4ComputePointPeriod extends Omit<F4LeaderboardPeriod, "podium"> {
+  rankingMetric: "COMPUTE_POINTS";
+  minComputePoints: number;
+  businessTimezone: string;
+  fromInclusive: string | null;
+  toExclusive: string | null;
+  podium: F4ComputePointPodium[];
+}
+export type F4ComputePointPeriods = Partial<Record<"today" | "week" | "month" | "all", F4ComputePointPeriod>>;
+
 export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
 export type F4AmbassadorBucket = "venue" | "kol" | "print" | "dev";
 export interface F4AmbassadorReview {
@@ -894,6 +906,8 @@ export interface F4LeadershipPoolOverview {
   ambassadorKolBudgetPct: number;
   ambassadorNextQuotaReviewDate: string;
   leaderboardPeriods?: F4LeaderboardPeriods;
+  /** Point rankings await the page's point labels/units; never feed them to USDT slots. */
+  leaderboardComputePointPeriods?: F4ComputePointPeriods;
   leaderboardPoolLabel: string;
   leaderboardParticipantCount: number;
   leaderboardFraudHitCount: number;
@@ -1428,20 +1442,23 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     && Number.isSafeInteger(value) && value >= minimum;
   const label = (value: unknown): boolean => typeof value === "string"
     && /^\$-?\d[\d,]*(?:\.\d+)?$/.test(value);
-  const frozen = paused && data?.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true
+  const snapshotReady = paused && data?.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true
     && typeof data.leaderboardSnapshotId === "string" && !!data.leaderboardSnapshotId.trim()
-    && typeof data.leaderboardSnapshotAt === "string" && Number.isFinite(Date.parse(data.leaderboardSnapshotAt))
-    && integer(data.leaderboardParticipantCount) && label(data.leaderboardPoolLabel)
+    && typeof data.leaderboardSnapshotAt === "string" && Number.isFinite(Date.parse(data.leaderboardSnapshotAt));
+  const legacyFrozen = snapshotReady && integer(data.leaderboardParticipantCount) && label(data.leaderboardPoolLabel)
     && Array.isArray(data.podium) && data.podium.every((row) => row && integer(row.rank, 1) && row.rank <= 3
       && integer(row.memberUserId, 1) && typeof row.userId === "string" && !!row.userId.trim()
       && label(row.gmvLabel) && typeof row.tip === "string" && typeof row.className === "string");
   const leaderboardPeriods: F4LeaderboardPeriods = {};
-  if ((!paused || frozen) && data?.leaderboardPeriods && typeof data.leaderboardPeriods === "object") {
+  const leaderboardComputePointPeriods: F4ComputePointPeriods = {};
+  if ((!paused || snapshotReady) && data?.leaderboardPeriods && typeof data.leaderboardPeriods === "object") {
     const rawPeriods = data.leaderboardPeriods as Record<string, unknown>;
     for (const period of ["today", "week", "month", "all"] as const) {
       const raw = rawPeriods[period];
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
+      const points = row.rankingMetric === "COMPUTE_POINTS";
+      if (paused && !legacyFrozen && !points) continue;
       const max = period === "today" ? 20 : period === "week" ? 50 : 100;
       const poolUsd = finiteDashboardNumber(row.poolUsd);
       if (poolUsd === null || poolUsd < 0
@@ -1452,11 +1469,23 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
         || !Array.isArray(row.podium) || row.podium.length > Math.min(3, row.participantCount)
         || !row.podium.every((item, index) => item && item.rank === index + 1
           && integer(item.memberUserId, 1) && typeof item.userId === "string" && !!item.userId.trim()
-          && label(item.gmvLabel) && typeof item.tip === "string" && typeof item.className === "string")) continue;
+          && (points ? integer(item.computePoints, 1) && typeof item.gmvLabel === "string" : label(item.gmvLabel))
+          && typeof item.tip === "string" && typeof item.className === "string")) continue;
+      if (points) {
+        if (!integer(row.minComputePoints) || typeof row.businessTimezone !== "string" || !row.businessTimezone.trim()
+          || !(row.fromInclusive === null || typeof row.fromInclusive === "string" && !!row.fromInclusive.trim())
+          || !(row.toExclusive === null || typeof row.toExclusive === "string" && !!row.toExclusive.trim())) continue;
+        leaderboardComputePointPeriods[period] = { rankingMetric: "COMPUTE_POINTS", minComputePoints: row.minComputePoints,
+          businessTimezone: row.businessTimezone, fromInclusive: row.fromInclusive, toExclusive: row.toExclusive,
+          poolUsd, poolUsdText: f4Decimal(String(row.poolUsd)) ?? undefined, participantCount: row.participantCount,
+          topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4ComputePointPodium[] };
+        continue;
+      }
       leaderboardPeriods[period] = { poolUsd, poolUsdText: f4Decimal(String(row.poolUsd)) ?? undefined, participantCount: row.participantCount,
         topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4Podium[] };
     }
   }
+  const frozen = legacyFrozen || snapshotReady && Object.keys(leaderboardComputePointPeriods).length === 4;
   const metrics = (data?.metrics ?? []).map((item) => ({
     id: asText(item.id, "metric"),
     name: asText(item.label, "指标"),
@@ -1496,7 +1525,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     businessReview: row.businessReview, financeReview: row.financeReview, missingKinds: row.missingKinds,
     approvalBlockers: row.approvalBlockers, legacyApproved: row.legacyApproved,
   }));
-  const podium = (paused && !frozen ? [] : data?.podium ?? []).map((row) => ({
+  const podium = (paused && !frozen ? [] : data?.podium ?? []).filter(row => row.computePoints === undefined).map((row) => ({
     rank: toNumber(row.rank),
     userId: asText(row.userId, "usr_unknown"),
     gmvLabel: asText(row.gmvLabel, "-"),
@@ -1557,6 +1586,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     ambassadorKolBudgetPct: toNumber(data?.ambassadorKolBudgetPct),
     ambassadorNextQuotaReviewDate: asText(data?.ambassadorNextQuotaReviewDate),
     leaderboardPeriods,
+    leaderboardComputePointPeriods,
     leaderboardPoolLabel: asText(data?.leaderboardPoolLabel, asText(config.leaderboardPoolUsd)),
     leaderboardParticipantCount: toNumber(data?.leaderboardParticipantCount),
     leaderboardFraudHitCount: toNumber(data?.leaderboardFraudHitCount),

@@ -65,7 +65,7 @@ export function f4ProposalAuthority(spec: ProposeSpec) {
   const key = String(spec.command.params.key ?? "");
   if (key.startsWith("F.pool.votes.") || key.startsWith("F.quota.")) return "network_f4_write";
   if (key.startsWith("F.ambassador.")) return "network_f4_ambassador_approve";
-  if (["F.pool.monthlyCap", "F.pool.settleCron", "F.pool.unlockVRank", "F.leaderboard.minUsd"].includes(key)) return "network_f4_write";
+  if (["F.pool.monthlyCap", "F.pool.settleCron", "F.pool.unlockVRank", "F.leaderboard.minUsd", "F.leaderboard.minComputePoints"].includes(key)) return "network_f4_write";
   return key.startsWith("F.leaderboard.") && key !== "F.leaderboard.poolUsd" ? "network_f4_leaderboard_control" : "network_f4_pool_fund";
 }
 
