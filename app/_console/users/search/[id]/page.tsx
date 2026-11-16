@@ -911,13 +911,13 @@ export default function UserDetailPage() {
     c1UserCommands.forget(command.fingerprint, command.commandKey);
     syncPending();
     setReleasing(null);
-    toast.success("已移除本地待确认记录，后端结果和锁定状态不变");
+    toast.success("已解除原操作记录，后台的结果和锁定不变");
   };
 
   /** 读回只给现在的事实，变了也可能是别人改的，不能当成原命令的回执，待确认保留（OP-93、OP-95）。 */
   const verifyPending = async (command: C1Command) => {
     await load();
-    setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已重新读取这页，核对上面的内容。现在的状态可能是别人改的，待确认继续保留。" }));
+    setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已读取现在的值，核对上面的内容。现在的状态可能是别人改的，记录继续保留。" }));
   };
 
   const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
@@ -1211,7 +1211,7 @@ export default function UserDetailPage() {
         line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[command.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
+          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读取现在的值</Button>
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
