@@ -515,10 +515,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     if (others.length === 0) return null;
     return <Notice tone="warn" title={`${positionName(positionKey)}已被占用`}>一个位置只能有一条已发布的文案。「{others.map((copy) => copy.desc).join("、")}」正在这里发布，先下架它{canMove ? "，或换个位置" : "再来"}。</Notice>;
   };
-  // I6-BE-03：发布会把同名词条最新的草稿直接改成这版内容并发布，那边草稿里写的就没了。
+  // I6-BE-03（ad32f4ca）：同名词条有内容不同的未发布草稿时，发布、新建、回滚、采纳整笔被拒（I18N_DRAFT_OVERWRITE_CONFLICT）；这页读不到那份草稿。
   const i18nFact = (key: string) => (<>
     <Fact k="同时更新">词条 <span data-mono="">{key}</span>（{reach("/content/i18n") ? <Link className="rd-link" href="/content/i18n" prefetch={false}>多语言与课程</Link> : "多语言与课程"}）</Fact>
-    <Fact k="会盖掉" tone="warn">这个词条还没发布的草稿</Fact>
+    <Fact k="有草稿时" tone="warn">词条若有内容不同的未发布草稿，这次不执行</Fact>
   </>);
   const variantsText = (exp: ExpRow) => exp.variants.map((variant) => `${variant.name} ${variant.version || "—"} ${variant.split}%`).join(" · ");
 
