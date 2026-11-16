@@ -33,7 +33,7 @@ const REREAD: Record<string, string> = {
 };
 const valueLabel = (value: string) => value === "NONE" ? "未设置" : formatF1ExactAmount(value);
 const UNIT: Record<string, string> = { selfBuy: "点", teamGv: "点", directRefs: "人", legCount: "个" };
-const RANGE: Record<string, string> = { selfBuy: "0–9007199254740991 的整数", teamGv: "0–9007199254740991 的整数", directRefs: "0–2147483647 的整数", legCount: "0–2147483647 的整数" };
+const RANGE: Record<string, string> = { selfBuy: "填不小于 0 的整数", teamGv: "填不小于 0 的整数", directRefs: "填不小于 0 的整数", legCount: "填不小于 0 的整数" };
 
 export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx, "voucherLabels" | "skuLabels">): string {
   if (isF1FundReward(item.type)) return item.amountText ? `${formatF1ExactAmount(item.amountText)} ${item.type.toUpperCase()}` : `${item.type.toUpperCase()} 金额暂不可用`;

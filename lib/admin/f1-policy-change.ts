@@ -67,7 +67,8 @@ export function f1PolicyInputError(editor: F1PolicyEditor, form: F1PolicyForm, v
       if (value !== "NONE" && (!/^V[0-8]$/.test(value) || Number(value.slice(1)) >= Number(editor.row.v.slice(1)))) return "分支等级须低于当前等级。";
     } else {
       const max = editor.field === "selfBuy" || editor.field === "teamGv" ? BigInt("9007199254740991") : BigInt("2147483647");
-      if (!/^(0|[1-9]\d*)$/.test(value) || BigInt(value) > max) return `请输入 0–${max} 的整数。`;
+      if (!/^(0|[1-9]\d*)$/.test(value)) return "请填不小于 0 的整数。";
+      if (BigInt(value) > max) return `这个数太大，存不下；最多填 ${max.toLocaleString("en-US")}。`;
     }
     return undefined;
   }

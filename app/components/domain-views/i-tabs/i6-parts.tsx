@@ -161,6 +161,7 @@ export const blockedText = (missing: readonly Missing[]) => missing.length === 0
 
 /* ---------- App 里的样子 ---------- */
 
+/** 没设奖励（空）时 App 拿到的是 0，课程卡显示「0.00 UVT」，预览照 App 写。 */
 export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, quizCount, passScore, retries, caption }: {
   lang: Lang; title: string; body: string; category: string; format: string; level: string; duration: string; reward: string;
   quizCount: number; passScore: string; retries: string; caption?: ReactNode;
@@ -176,7 +177,7 @@ export function AppCoursePreview({ lang, title, body, category, format, level, d
           <span className="i6-phone-cat">{categoryLabel(category)} · {FORMAT_LABEL[format] ?? format} · {LEVEL_LABEL[level] ?? level}</span>
         </div>
         <h3 className="i6-phone-title" data-user-content="" data-empty={title.trim() ? undefined : ""}>{title.trim() ? nexGridBrandText(title) : `缺${langLabel}标题`}</h3>
-        <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">学完得 {reward.trim() && Number.isFinite(Number(reward)) ? uvtText(reward) : "—"} UVT</span></div>
+        <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">学完得 {!reward.trim() ? "0.00" : Number.isFinite(Number(reward)) ? uvtText(reward) : "—"} UVT</span></div>
         <p className="i6-phone-body" data-user-content="" data-empty={body.trim() ? undefined : ""}>{body.trim() ? nexGridBrandText(body) : `缺${langLabel}正文`}</p>
         <div className="i6-phone-quiz"><GraduationCap size={14} aria-hidden /><span>测验 {quizCount} 题</span><span>{passScore || "—"} 分及格</span><span>可重试 {retries || "—"} 次</span></div>
       </div>
