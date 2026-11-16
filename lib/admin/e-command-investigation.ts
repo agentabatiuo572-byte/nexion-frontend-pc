@@ -30,9 +30,11 @@ export type ECommandEvidence = {
   evidenceAuditId?: number;
 };
 
-/** A retained completed response settles the command; only confirmed nonexecution authorizes replacement. */
+/** These writers retain nonzero business responses under the raw SUCCEEDED transaction status. */
 export function eCommandSettled(receipt: ECommandInvestigation | null) {
-  return !!receipt && !receipt.locked && (["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(receipt.originalStatus)
+  const needsBusinessResult = !!receipt && /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(receipt.scope);
+  return !!receipt && !receipt.locked && (receipt.originalStatus === "CONFIRMED_SUCCEEDED"
+    || receipt.originalStatus === "SUCCEEDED" && !needsBusinessResult
     || receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed);
 }
 
@@ -172,7 +174,8 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (!canInvestigateECommand(authority)) throw Object.assign(new Error("COMMAND_INVESTIGATION_FORBIDDEN"), { status: 403, backendMessage: "COMMAND_INVESTIGATION_FORBIDDEN" });
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND";
+  const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope);
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {

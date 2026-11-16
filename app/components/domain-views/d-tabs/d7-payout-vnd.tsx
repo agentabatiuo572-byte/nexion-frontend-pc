@@ -87,9 +87,9 @@ const directCommands = createPendingMutationStore<DirectRecord>({
 export async function queryD7DirectCommand(record: DirectRecord, evidence?: FundCommandEvidence) {
   const saved = directCommands.list().find(row => row.commandKey === record.commandKey);
   if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  const receipt = await queryDConfigCommand(saved, "D7", evidence);
-  if (fundCommandSettled(receipt)) directCommands.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+  const result = await queryDConfigCommand(saved, "D7", evidence);
+  if (result.settled) directCommands.forget(saved.fingerprint, saved.commandKey);
+  return result;
 }
 
 function newCommandKey() {
@@ -509,7 +509,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const verifyDirect = async (record: DirectRecord) => {
     setRecovering(`verify:${record.commandKey}`);
     let settled = false;
-    try { settled = fundCommandSettled(await queryD7DirectCommand(record)); }
+    try { settled = (await queryD7DirectCommand(record)).settled; }
     catch { /* The current-values read remains available without a receipt conclusion. */ }
     if (settled) {
       syncPending();

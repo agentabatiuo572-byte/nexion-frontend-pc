@@ -439,9 +439,9 @@ const tightenCommands = createPendingMutationStore<TightenRecord>({
 export async function queryD5DirectCommand(record: TightenRecord, evidence?: FundCommandEvidence) {
   const saved = tightenCommands.list().find(row => row.commandKey === record.commandKey);
   if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  const receipt = await queryDConfigCommand(saved, "D5", evidence);
-  if (fundCommandSettled(receipt)) tightenCommands.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+  const result = await queryDConfigCommand(saved, "D5", evidence);
+  if (result.settled) tightenCommands.forget(saved.fingerprint, saved.commandKey);
+  return result;
 }
 
 function tightenKey() {

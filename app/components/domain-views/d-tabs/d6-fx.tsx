@@ -140,9 +140,9 @@ const pendingFx = createPendingMutationStore<PendingFx>({
 export async function queryD6DirectCommand(record: PendingFx, evidence?: FundCommandEvidence) {
   const saved = pendingFx.list().find(row => row.commandKey === record.commandKey && !row.proposal);
   if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  const receipt = await queryDConfigCommand(saved, "D6", evidence);
-  if (fundCommandSettled(receipt)) pendingFx.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+  const result = await queryDConfigCommand(saved, "D6", evidence);
+  if (result.settled) pendingFx.forget(saved.fingerprint, saved.commandKey);
+  return result;
 }
 
 function fxCommandKey() {
