@@ -542,7 +542,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     <H5RecoveryNotice title={[unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原修改（改的是哪一项、从多少到多少、理由）保存在这个浏览器标签页里。</p>
-        <p>结果未知：提交时没收到确定结果。先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，后端认得出是同一次提交，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
+        <p>结果未知：提交时没收到确定结果。先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
         <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
         <p>结果确认之前，这页不能再改同一项。</p>
       </>}
