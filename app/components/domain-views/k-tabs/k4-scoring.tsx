@@ -24,7 +24,7 @@ import {
   type K4UserOption,
   type K4WithdrawalAlert,
 } from "@/lib/admin/k-client";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isPendingCommandOwnedBy, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { k4Commands, k4Slot, k4Target, saveK4Operation, type K4Attempt, type K4Operation, type K4PendingCommand, type K4Snapshot } from "@/lib/admin/k4-command";
 import { openK4Confirmation } from "./k4-confirmations";
@@ -132,7 +132,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     setPending(records);
     setAlertUnknown(records.flatMap(record => record.alertId ? [record.alertId] : []));
     onCommandsChange();
-  }, [onCommandsChange]);
+  }, [onCommandsChange, session?.adminId]);
   useEffect(() => { syncPending(); }, [syncPending]);
   useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
 
@@ -477,6 +477,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   // 原操作提醒：每条写改的是什么、从多少到多少、什么时候提交的。按原请求重试只读保存的原记录，
   // 调用现成的 openOperation 打开原确认框；概览读不到、原来的按钮不在了也能打开。过期的只能查询。
   const queryOriginal = (record: K4PendingCommand) => {
+    if (!isPendingCommandOwnedBy(record)) return;
     void reloadCurrentScoring().catch(() => undefined);
     if (record.alertId) readWithdrawalAlerts();
     else if (record.operation && "user" in record.operation) void loadUser(record.operation.user.userNo);
