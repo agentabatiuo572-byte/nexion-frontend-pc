@@ -1,5 +1,6 @@
 // Generated from the reviewed promotion OpenAPI; run scripts/generate-promotion-types.mjs.
-// Source SHA256: 9c70f0f2652f8b8eea35098e7a273bc8b95026460c9658a60ccbb4bad2789a4a
+// Version expectations synced from backend d84f5b6f/d3025546; other reviewed types are retained.
+// Baseline source SHA256: 9c70f0f2652f8b8eea35098e7a273bc8b95026460c9658a60ccbb4bad2789a4a
 export type Id = string;
 export type EvidenceRef = (Id) | (string);
 export type Hash = string;
@@ -30,9 +31,9 @@ export type PurchaseRule = { "ruleId": Id; "productNo": Id; "minBuyQty": Quantit
 export type BudgetInput = ({ "asset": "USDT" | "UVT" | "DISCOUNT_USDT"; "total": PositiveAmount }) | ({ "asset": "DEVICE"; "productNo": Id; "total": number });
 export type PolicySet = { "firstPurchase": (PolicyRef) | (null); "settlement": PolicyRef; "stacking": PolicyRef; "refund": PolicyRef; "quote": PolicyRef; "authorization": PolicyRef };
 export type Draft = { "bannerAssetId"?: string | null; "category": "PROMOTION" | "REFERRAL"; "template": Template; "startsAt"?: (Time) | (null); "endsAt"?: (Time) | (null); "displayTimezone"?: (string) | (null); "title"?: (DraftLocalizedText) | (null); "terms"?: (DraftLocalizedText) | (null); "placement"?: ("home.purchase-promotion" | null) | (null); "minimumClientCapabilities"?: (Array<"PROMOTION_QUOTE_V1" | "ORDER_ITEM_QUANTITIES_V1" | "PROMOTION_REWARDS_V1">) | (null); "buyerAudience"?: (DraftAudience) | (null); "inviterAudience"?: (DraftAudience) | (null); "rules"?: (Array<DraftPurchaseRule>) | (null); "combinationMatch"?: ("ALL" | "ANY") | (null); "perPersonLimit"?: ({ "buyer": Limit; "directInviter": Limit }) | (null); "maxRewardUnitsPerOrder"?: (Limit) | (null); "budgets"?: (Array<DraftBudgetInput>) | (null); "shortagePolicy"?: ("RULE_STOP" | "ACTIVITY_PAUSE") | (null); "policies"?: (DraftPolicySet) | (null); "activityLimit"?: (Limit) | (null); "name"?: (string) | (null) };
-export type DraftWrite = { "expectedRevision": Revision; "reason": string; "draft": DraftPatch };
+export type DraftWrite = { "expectedRevision": Revision; "expectedVersion"?: Revision; "reason": string; "draft": DraftPatch };
 export type CreatePromotion = { "reason": string; "draft": Draft };
-export type Action = { "expectedRevision": Revision; "reason": string; "evidenceRefs": Array<EvidenceRef> };
+export type Action = { "expectedRevision": Revision; "expectedSourceVersion"?: Revision; "expectedSourceRevision"?: Revision; "reason": string; "evidenceRefs": Array<EvidenceRef> };
 export type PublishAction = { "expectedRevision": Revision; "reason": string; "evidenceRefs": Array<EvidenceRef>; "version": Revision };
 export type Version = { "activityId": Id; "version": Revision; "revision": Revision; "state": VersionState; "contentHash": Hash; "draft": Draft; "approvedBy": (Id) | (null); "approvedAt": (Time) | (null); "publishedBy": (Id) | (null); "publishedAt": (Time) | (null); "policyResolutionErrors": Array<string> };
 export type Promotion = { "activityId": Id; "eventCode": Id; "revision": Revision; "state": ActivityState; "activeVersion": (Revision) | (null); "draftVersion": (Revision) | (null); "current": (Version) | (null); "serverTime": Time; "fixture": boolean; "name": (string) | (null); "category": "PROMOTION" | "REFERRAL"; "template": Template; "startsAt": (Time) | (null); "endsAt": (Time) | (null); "displayTimezone": string | null; "updatedAt": Time; "draftVersionState": (VersionState) | (null); "impact": PromotionImpact; "reserved": number; "issued": number; "unresolved": number; "asOf": Time; "deleted"?: boolean };

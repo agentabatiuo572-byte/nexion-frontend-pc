@@ -1,3 +1,11 @@
+## 2026-11-16 · H4 复制源修订补齐（hd-sync19b / d3025546）
+
+复制还必须携所见 current.revision 作为 expectedSourceRevision；与源版本同时校验。同一草稿仅保存而版本号未变也会明确冲突，核对后采用重读 current 的版本及修订，不自动重发。后端 get 将 current 指向 draft 优先、否则 active，故来源与 newVersion 一致。H5 补充改为传播真实读取失败，不把失败当快照相符；PC既有未知/失败处理保持，不伪造通过。其他 A6/K4/F4 材料补充归并行 worker。
+
+## 2026-11-16 · H4 复制和保存版本合同（hd-sync19b / d84f5b6f）
+
+保存草稿在原 expectedRevision 之外携所打开候选的 expectedVersion；复制在活动 expectedRevision 之外携 draftVersion 优先、否则 activeVersion 的 expectedSourceVersion。缺失或不符均明确拒绝 PROMOTION_CONCURRENT_CHANGE，既有持久记录清除，保留编辑与冲突核对；核对后仅显式确认才用读到的新版本再提交，候选换版仍须回活动重开。审核、发布及其他动作的版本合同不变，原成功命令先恢复。未做真实双账号写验收。
+
 # 促销与裂变活动后台 PRD
 
 > 文档状态：R1 实施依据。本文定义后台功能契约与操作说明；业务裁决以同目录 `PRODUCT-PRD.md` 为唯一公共契约。未配置参数、待决策权益、尚未映射的权限均不得以示例或前端默认值代替。本文不证明功能已经通过验收或在生产启用。
