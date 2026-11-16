@@ -16,6 +16,10 @@ import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useRbacCommands, type A7Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { canInvestigateECommand, eCommandCanConcludeRejected, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { FundClosureModal, closureKnown } from "../fund-command-check";
+import { receiptFact } from "../recovery-panel";
+import { rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { CONSOLE_NAV, resolveVisibleDomains, type EffectiveMenuNode, type NavDomain } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
@@ -114,6 +118,7 @@ export default function A7Menus() {
   const role = useAdminAuth((s) => s.session?.role ?? s.role);
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const canWrite = role === "super" || role === "superadmin" || authorities.includes("platform_a7_write");
+  const canClose = canInvestigateECommand("platform_a7_read");
   const actorId = useAdminAuth((s) => s.session?.adminId);
   const commands = useRbacCommands("a7", actorId);
   const [overview, setOverview] = useState<A7MenuOverview | null>(null);
@@ -122,6 +127,9 @@ export default function A7Menus() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [mode, setMode] = useState<FormMode>(null);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
+  /** 查询原结果后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
+  const [outcomes, setOutcomes] = useState<Record<string, RbacOutcome>>({});
+  const [closing, setClosing] = useState<RbacCommand | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const freshOverview = useRef<A7MenuOverview | null>(null);
   const busy = useRef(false);
@@ -210,17 +218,20 @@ export default function A7Menus() {
     const state = await commands.queryReceipt(record).catch(() => null);
     requireActor();
     // A minimal rejection omits its reason; rejection audits may already have committed.
-    const settled = state === "SUCCEEDED" || state === "FAILED";
+    // Its detailed receipt says whether a governed conclusion has since settled it (eCommandSettled).
+    const receipt = state === "REJECTED" ? await commands.queryInvestigation(record).catch(() => undefined) : undefined;
+    requireActor();
+    const concluded = !!receipt && eCommandSettled(receipt);
+    const settled = state === "SUCCEEDED" || state === "FAILED" || concluded;
     if (settled) {
       freshOverview.current = null;
       setConfirmReq(null); setMode(null);
       commands.forget(record);
-    }
+    } else setOutcomes(all => ({ ...all, [record.commandKey]: { state: state ?? "ERROR", receipt } }));
     if (!await refresh()) throw new Error("RBAC_FRESH_READ_REQUIRED");
     requireActor();
-    if (state !== "REJECTED") setToast(settled ? state === "SUCCEEDED" ? record.original.kind === "a7-delete" ? "查到原结果：已删除。" : "查到原结果：已保存。"
-      : "查到原结果：没有执行，记录已解除。"
-      : "没查到原结果，记录保留。");
+    if (settled) setToast(concluded ? rbacSettledText(receipt!) : state === "SUCCEEDED" ? record.original.kind === "a7-delete" ? "查到原结果：已删除。" : "查到原结果：已保存。"
+      : "查到原结果：没有执行，记录已解除。");
   };
   const openOperation = (original: A7Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand, rechecked = false) => {
     let blockedReason: string | undefined;
@@ -256,6 +267,7 @@ export default function A7Menus() {
         if (stale) { await rereadBaseline(); throw new Error("RBAC_CONFLICT_RECHECK_REQUIRED"); }
         if (saved && !getRecord()) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
         const retry = !!saved;
+        if (saved) { const key = saved.commandKey; setOutcomes(all => { const next = { ...all }; delete next[key]; return next; }); }
         if (!saved) {
           requireNew(original);
           saved = commands.capture(original, reason, operator, String(view.action), original.kind === "a7-create" ? original.input.menuCode : original.node.menuCode);
@@ -367,27 +379,33 @@ export default function A7Menus() {
       {conclusion}
 
       {commands.records.length > 0 && (
-        <Notice tone="warn" title={`${commands.records.length} 个菜单原操作结果未知`}>
+        <Notice tone="warn" title={`${commands.records.length} 个菜单原操作${commands.records.some(record => outcomes[record.commandKey]) ? "要处理" : "结果未知"}`}>
           <ul className="a7-recovery" aria-label="结果未知的菜单原操作">
             {commands.records.map((record) => {
               const expired = isRetryExpired(record);
+              const outcome = outcomes[record.commandKey];
+              const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: canWrite, canClose: canClose });
+              // 过期后只有原回包是后台拒绝的能核查结案；后端不认这类操作的成功记录，结案框只给「后台拒绝」。
+              const closable = expired && canClose && !!outcome?.receipt && eCommandCanConcludeRejected(outcome.receipt);
               return (
                 <li key={record.commandKey}>
                   <span className="a7-recovery-name">{record.name}</span>
                   <span className="a7-recovery-change" data-mono>{record.change}</span>
                   <span className="a7-recovery-time">{businessStamp(record.createdAt)} 提交</span>
-                  {expired
+                  {shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
                     ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试，仍可以查询原结果。">已过期</StatusTag>
                     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>}
                   <span className="a7-recovery-actions">
                     <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
+                    {closable && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
                     {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
                   </span>
+                  {shown && <span className="a7-recovery-line" role="status">{shown.line}</span>}
                 </li>
               );
             })}
           </ul>
-          <p className="a7-recovery-zone">提交时间为{businessZone().label}。查到原结果就解除这条；没查到时记录保留，菜单树只供对照。</p>
+          <p className="a7-recovery-zone">提交时间为{businessZone().label}。菜单树是现在的样子，证明不了原操作的结果。</p>
         </Notice>
       )}
 
@@ -445,6 +463,29 @@ export default function A7Menus() {
           }}
         />
       )}
+
+      {closing && (() => {
+        const receipt = outcomes[closing.commandKey]?.receipt ?? null;
+        const basis = closureKnown({ receipt });
+        return <FundClosureModal label={closing.name} createdAt={closing.createdAt} known={basis && { ...basis, success: "never" }}
+          facts={<>
+            <Fact k="菜单"><span data-mono>{closing.change}</span></Fact>
+            <Fact k="系统记录">{receiptFact(receipt, "记录保留")}</Fact>
+          </>}
+          onClose={() => setClosing(null)}
+          onSubmit={async (evidence) => {
+            const record = closing;
+            const next = await commands.queryInvestigation(record, evidence);
+            requireActor();
+            setClosing(null);
+            if (!next || !eCommandSettled(next)) { setOutcomes(all => ({ ...all, [record.commandKey]: { state: "REJECTED", receipt: next } })); return; }
+            freshOverview.current = null;
+            setConfirmReq(null); setMode(null);
+            commands.forget(record);
+            setToast(rbacSettledText(next), "success");
+            if (!await refresh()) setToast(new PlatformMutationReadbackError(new Error("RBAC_FRESH_READ_REQUIRED")).message);
+          }} />;
+      })()}
 
       {confirmReq && (
         <OperationConfirmModal briefKind={confirmReq.briefKind}

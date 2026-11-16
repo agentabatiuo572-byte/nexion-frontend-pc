@@ -705,6 +705,7 @@
 .a6-page .a6-recovery-change { font-variant-numeric: tabular-nums; }
 .a6-page .a6-recovery-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
 .a6-page .a6-recovery-actions { display: inline-flex; gap: var(--rd-space-2); margin-left: auto; }
+.a6-page .a6-recovery-line { flex-basis: 100%; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .a6-page .a6-saved { flex-basis: 100%; display: flex; align-items: flex-start; gap: var(--rd-space-3); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .a6-page .a6-saved > .rd-btn { flex: none; }
 .a6-page .a6-saved > :first-child { flex: 1; min-width: 0; }
@@ -855,6 +856,7 @@
 .a7-page .a7-recovery-change { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .a7-page .a7-recovery-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
 .a7-page .a7-recovery-actions { display: inline-flex; gap: var(--rd-space-2); margin-left: auto; }
+.a7-page .a7-recovery-line { flex-basis: 100%; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .a7-page .a7-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 
 /* A3 上方结果未知提示条：说明内容读回对不上时，每条一行。 */
