@@ -104,6 +104,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/teams\/ranks\/[^/]+\/rewards(?:\/[^/]+)?$/.test(locator.originalPath) ? row.scope === ({ POST: "F1_VRANK_REWARD_ADD", PUT: "F1_VRANK_REWARD_UPDATE", DELETE: "F1_VRANK_REWARD_REMOVE" } as Record<string, string>)[locator.originalMethod]
     : /^\/api\/admin\/teams\/commissions\/config\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === "F_TEAM_CONFIG_UPDATE"
     : locator.originalPath === "/api/admin/teams/ambassador-policy" ? locator.originalMethod === "PUT" && row.scope === "F4_AMBASSADOR_POLICY_UPDATE"
+    : /^\/api\/admin\/teams\/ambassador-applications\/[1-9]\d*\/materials\/review$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `F4_MATERIAL_REVIEW:${locator.originalAdminId}:${locator.originalPath.split("/").at(-3)}`
     : /^\/api\/admin\/teams\/commissions\/[^/]+\/reverse$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "F5_COMMISSION_REVERSE"
     : locator.originalPath === "/api/admin/teams/commissions/reissue" ? locator.originalMethod === "POST" && row.scope === "F5_COMMISSION_REISSUE"
     : /^\/api\/admin\/teams\/commissions\/users\/[^/]+\/suspend$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "F5_COMMISSION_SUSPENSION"
@@ -197,6 +198,7 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
     || /^(?:F1_VRANK_(?:THRESHOLD_UPDATE|REWARD_ADD|REWARD_UPDATE|REWARD_REMOVE)|F_TEAM_CONFIG_UPDATE|F4_AMBASSADOR_POLICY_UPDATE|F5_COMMISSION_(?:REVERSE|REISSUE|SUSPENSION|ANOMALY_CONFIG))$/.test(original.scope)
+    || /^F4_MATERIAL_REVIEW:[1-9]\d*:[1-9]\d*$/.test(original.scope)
     || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope);
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
