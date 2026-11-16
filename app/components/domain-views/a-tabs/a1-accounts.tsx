@@ -1357,7 +1357,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onOpen={() => pickFilter("super")} openLabel="只看超级管理员" selected={filter === "super"} selectedText="已筛选" aria-pressed={filter === "super"} />
         <Stat icon={ShieldCheck} tone={unboundOps.length ? "warn" : "role-3"} label="未绑定两步验证" value={String(unboundOps.length)} unit="个"
           sub={`启用账号 ${enabledOps.length} 个`}
-          explain="启用中、还没绑定两步验证的账号，登录时要先绑定才能用后台。临时免验证开关打开时，superadmin 不验证也能登录，上线前要关掉。点这格只看这些账号。"
+          explain="启用中、还没绑定两步验证的账号，登录时要先绑定才能用后台，超级管理员也一样。点这格只看这些账号。"
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
           explain="资料、角色、两步验证、启停、撤销全部登录的申请都算在内。只有早期少数缺少申请内容的旧申请不计，所以可能比「操作记录与审批」里少几件。"

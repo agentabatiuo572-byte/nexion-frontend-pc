@@ -255,7 +255,7 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
         <SupportAvatar name={operatorDisplayName(account)} path={account.avatarAssetId ? `/api/admin/platform/accounts/${account.id}/avatar` : undefined} version={account.avatarVersion ?? undefined} size={56} />
         <JudgmentPoints title="账号要点" rows={[
           { label: "角色", value: roleName(roles, account.role) },
-          { label: "两步验证", value: account.tfa ? "已绑定" : "未绑定", state: account.tfa ? undefined : "warn", reason: account.tfa ? undefined : account.username === "superadmin" ? "临时免验证开关打开时，这个账号不用两步验证也能登录；正式上线前要关掉" : "下次登录先绑定，绑定前不能正常使用后台" },
+          { label: "两步验证", value: account.tfa ? "已绑定" : "未绑定", state: account.tfa ? undefined : "warn", reason: account.tfa ? undefined : "下次登录先绑定，绑定前不能正常使用后台" },
           { label: "状态", value: enabled ? "启用" : "已停用", state: enabled ? undefined : "neutral" },
           { label: "密码", value: credentialStatusText(account.credentialDeliveryStatus) },
           { label: "最近登录", value: `${minuteText(account.lastLogin)}${minuteText(account.lastLogin) === "—" ? "" : `（${businessZone().label}）`}` },
