@@ -404,14 +404,16 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       } else if (success) toast(success);
       await refreshOverview(true);
     } catch (error) {
+      const retentionRejected = original.kind === "retention" && ["RETENTION_PARAMETERS_STALE", "RETENTION_EXPECTED_MONTHS_REQUIRED"].includes((error as { reasonCode?: string }).reasonCode ?? "");
       if (!commands.find(record.fingerprint)) {
-        if (retained || original.kind === "retention" && ["RETENTION_PARAMETERS_STALE", "RETENTION_EXPECTED_MONTHS_REQUIRED"].includes((error as { reasonCode?: string }).reasonCode ?? "")) {
+        if (retained || retentionRejected) {
           ctx.closeActionConfirm?.();
           await refreshOverview(true);
         }
         else overviewReady.current = (error as { reasonCode?: string }).reasonCode !== "A4_EVENT_LIFECYCLE_STALE";
       }
-      toast(displayAdminError(error));
+      if (retentionRejected) toast(displayAdminError(error), "warn");
+      else toast(displayAdminError(error));
       throw error;
     } finally { setMutating(null); }
   };

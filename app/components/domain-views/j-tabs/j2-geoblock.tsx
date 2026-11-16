@@ -14,14 +14,18 @@ import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, Refres
 import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Panel, ReleaseModal, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
-import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
+import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
+import { SettledLine } from "../recovery-panel";
+import { CommandClosureModal } from "../e-tabs/e-command-check";
+import { SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { expiredTag, unknownTag } from "../g-tabs/g-recovery";
-import { CountryDiff, CountryEditor, CountryLabel, J2RecoveryNotice, STATUS_TEXT, countryName, type EditorResult, type EditorSpec, type GeoStatus, type J2RecoveryRow } from "./j2-editor";
+import { unknownTag } from "../g-tabs/g-recovery";
+import { CountryDiff, CountryEditor, CountryLabel, STATUS_TEXT, countryName, type EditorResult, type EditorSpec, type GeoStatus } from "./j2-editor";
 import type { JCtx } from "./types";
 
 const TRIGGER_BASES = ["", "监管点名", "挤兑风险", "安全事件", "其他"];
@@ -44,6 +48,17 @@ const HEALTH_RULE = "近 5 分钟全部样本不少于 20 个、有成功记录�
 
 /** 问号里分行写：名称加一句话，一段一行。 */
 const explainRows = (rows: { k: string; v: string }[]) => <>{rows.map((row) => <p key={row.k}><b>{row.k}：</b>{row.v}</p>)}</>;
+
+/** 查询、结案都按原记录的出处定位；没存出处的记录按原槽位和当前账号查，和 queryJ2Command 一致。 */
+function investigationRecord(record: SlotAttemptRecord & { geo?: J2PendingCommand["geo"] }, adminId: string): FundCommandRecord {
+  const [method, path] = record.fingerprint.split(" ");
+  return { ...record, commandOrigin: record.geo?.commandOrigin
+    ?? { originalMethod: method as "PUT" | "POST", originalPath: `/api/admin/emergency${path}`, readAuthority: "emergency_j2_read", originalAdminId: adminId } };
+}
+/** 改的是哪一项，按原槽位认。 */
+const slotName = (fingerprint: string) => fingerprint.includes("country-lists/blocked") ? "封锁名单" : fingerprint.includes("country-lists/limited") ? "受限名单"
+  : fingerprint.includes("endpoints/") ? "功能入口规则" : fingerprint.endsWith("edge-judge") ? "地区识别源" : "应急批量封锁";
+const NOW_ONLY = "已重读现在的名单和规则；这是现在的值，不能据此判断原修改成没成。";
 
 function createJ2CommandKey(scope: string) {
   return `j2-${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -181,6 +196,11 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ2LegacyCommands>>([]);
   const [releasing, setReleasing] = useState<ReturnType<typeof listJ2LegacyCommands>[number] | null>(null);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [settled, setSettled] = useState<{ key: string; label: string; status: string }[]>([]);
+  const [checking, setChecking] = useState<string | null>(null);
+  const [closing, setClosing] = useState<{ record: SlotAttemptRecord; label: string; change: ReactNode } | null>(null);
+  const adminId = String(session?.adminId ?? "");
   const currentState = useRef({ data, contentLoading, contentError, authorities });
   currentState.current = { data, contentLoading, contentError, authorities };
   const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
@@ -215,11 +235,21 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       }
     }
   }, [contentLoading, openActionConfirm]);
+  /** 只记下查到的结论给运营看；解除与否由 queryJ2Command 按后端结论决定。 */
+  const recordOutcome = (record: SlotAttemptRecord, outcome: FundInvestigationOutcome) => {
+    setOutcomes((current) => ({ ...current, [record.commandKey]: outcome }));
+    if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+      setSettled((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: slotName(record.fingerprint), status: outcome.receipt!.originalStatus }]);
+    }
+  };
   const queryOriginal = async (record: { commandKey: string }) => {
     const saved = [...listJ2PendingCommands(), ...listJ2LegacyCommands()].find(row => row.commandKey === record.commandKey);
     if (saved) {
+      setChecking(saved.commandKey);
       try {
-        if (fundCommandSettled(await queryJ2Command(saved))) {
+        const receipt = await queryJ2Command(saved);
+        recordOutcome(saved, { receipt });
+        if (fundCommandSettled(receipt)) {
           const active = activeConfirmation.current;
           if (active?.slot === saved.fingerprint) {
             activeConfirmation.current = null;
@@ -230,17 +260,36 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency().catch(() => undefined);
           return;
         }
-      } catch { /* Preserve the original and continue with the existing current-settings read. */ }
+      } catch (error) {
+        // Preserve the original and continue with the existing current-settings read.
+        recordOutcome(saved, { error: displayAdminError(error) });
+      } finally { setChecking(null); }
     }
     try {
       await actions.reloadJEmergency();
-      setPendingNotes((notes) => ({ ...notes, [record.commandKey]: "页面已刷新，请核对现在的名单、规则和最近修改。" }));
+      toast(NOW_ONLY, "info");
     } catch (error) {
       setPendingNotes((notes) => ({ ...notes, [record.commandKey]: displayAdminError(error) }));
     }
     syncPending();
   };
-  const recoveryRows: J2RecoveryRow[] = pending.map((record) => {
+  const queryButtons = (record: SlotAttemptRecord, label: string, change: ReactNode) => {
+    const outcome = outcomes[record.commandKey];
+    const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+    const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
+      && (receipt?.originalStatus === "UNKNOWN" || receipt?.originalStatus === "SUCCEEDED" && isRetryExpired(record));
+    return <>
+      <Button size="sm" loading={checking === record.commandKey} disabled={!!checking && checking !== record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {canClose && <Button size="sm" variant="danger-outline" disabled={!!checking} onClick={() => setClosing({ record, label, change })}>核查结案</Button>}
+    </>;
+  };
+  /** 回执是「已处理」而记录没解除：看不出成没成，靠重试原请求或核查结案确认。 */
+  const processedOf = (record: SlotAttemptRecord, expired: boolean, retry: boolean, legacy?: boolean) => {
+    const outcome = outcomes[record.commandKey];
+    if (!outcome || !("receipt" in outcome) || outcome.receipt?.originalStatus !== "SUCCEEDED") return undefined;
+    return processedStatus({ expired, canRetry: retry, canClose: fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit, legacy });
+  };
+  const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const input = JSON.parse(record.geo.body) as J2CommandBody;
     const names = Object.fromEntries(record.geo.context.overview.countryOptions.map((option) => [option.value, option.label]));
     const sourceLabels = Object.fromEntries(record.geo.context.overview.edge.sources.map((source) => [source.value, source.label]));
@@ -256,30 +305,74 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           const text = [added.length ? `加 ${label(added)}` : "", removed.length ? `去 ${label(removed)}` : ""].filter(Boolean).join("；") || "名单没变";
           return <span title={`${label(input.expectedCountries!)} → ${label(input.countries!)}`}>{text}</span>;
         })();
+    const expired = isRetryExpired(record);
+    const slotLabel = record.geo.context.label;
     return {
-      key: record.commandKey, name: record.geo.context.label, change,
-      submittedAt: record.createdAt, expired: isRetryExpired(record),
-      onQuery: () => void queryOriginal(record),
-      onRetry: canRetry(record) ? () => restoreOriginal(record) : undefined,
-      note: pendingNotes[record.commandKey],
+      key: record.commandKey, title: <span title={typeof change === "string" ? `${slotLabel} · ${change}` : undefined}>{slotLabel} · {change}</span>,
+      record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
+      createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record), canQuery: true,
+      status: processedOf(record, expired, canRetry(record)),
+      actions: <>
+        {queryButtons(record, slotLabel, change)}
+        {!expired && canRetry(record) && <Button size="sm" disabled={!!checking} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+      </>,
+      detail: <>
+        <p>{slotLabel}：{change}</p>
+        {pendingNotes[record.commandKey] && <p><KeepText text={pendingNotes[record.commandKey]} /></p>}
+      </>,
     };
   });
-  recoveryRows.push(...legacy.map((record) => ({
-    key: record.commandKey,
-    name: record.fingerprint.includes("country-lists/blocked") ? "封锁名单" : record.fingerprint.includes("country-lists/limited") ? "受限名单" : record.fingerprint.includes("endpoints/") ? "功能入口规则" : record.fingerprint.endsWith("edge-judge") ? "地区识别源" : "应急批量封锁",
-    change: "改版前的旧记录，没存原请求，不能重试",
-    submittedAt: record.createdAt, expired: isRetryExpired(record),
-    onQuery: () => void queryOriginal(record), note: pendingNotes[record.commandKey],
-    onRelease: isRetryExpired(record) ? () => setReleasing(record) : undefined,
-  })));
+  recoveryRows.push(...legacy.map((record): FundRecoveryRow => {
+    const expired = isRetryExpired(record);
+    const label = slotName(record.fingerprint);
+    const outcome = outcomes[record.commandKey];
+    return {
+      key: record.commandKey, title: `${label} · 改版前的旧记录`, record: investigationRecord(record, adminId), outcome,
+      createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
+      status: outcome ? processedOf(record, expired, false, true) : expired
+        ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
+        : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原修改的内容，不能重试，先查询原结果。" },
+      actions: <>
+        {queryButtons(record, label, "改版前的旧记录，没存原修改的内容")}
+        {expired && <Button size="sm" disabled={!!checking} onClick={() => setReleasing(record)}>确认解除</Button>}
+      </>,
+      detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
+    };
+  }));
   const countryWriteUnknown = [...pending, ...legacy].some((record) => record.fingerprint.includes("country-lists/") || record.fingerprint.endsWith("emergency-blocks"));
   const unknownOn = new Set([...pending, ...legacy].map((record) => record.fingerprint.includes("country-lists/")
     ? `list:${record.fingerprint.split("/").at(-1)}` : record.fingerprint.includes("endpoints/")
       ? `endpoint:${decodeURIComponent(record.fingerprint.split("/").at(-1)!)}` : record.fingerprint.endsWith("edge-judge") ? "edge" : "emergency"));
   const recovery = <>
-    <J2RecoveryNotice rows={recoveryRows} unknownTag={unknownTag("direct")} expiredTag={expiredTag("direct")} />
-    {releasing && <ReleaseModal label={`${recoveryRows.find((row) => row.key === releasing.commandKey)?.name} · 旧记录`}
-      explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
+    {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
+      onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
+    <FundRecoveryPanel rows={recoveryRows} heading={`${recoveryRows.length} 项修改结果未知`} />
+    {closing && <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt}
+      facts={<>
+        <Fact k="改动">{closing.change}</Fact>
+        <Fact k="系统记录">结果未知，原修改还锁着</Fact>
+        {(() => { const last = (outcomes[closing.record.commandKey] as { receipt?: { investigation: { investigatedAt: string; conclusion: string } | null } | null } | undefined)?.receipt?.investigation;
+          return last && <Fact k="上次核查">{formatBusinessTimeCompact(last.investigatedAt, "—")}，记为「{last.conclusion === "SUCCEEDED" ? "已执行" : last.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>; })()}
+      </>}
+      onClose={() => setClosing(null)}
+      onSubmit={async (evidence) => {
+        const record = closing.record;
+        const next = await queryJ2Command(record, evidence);
+        recordOutcome(record, { receipt: next });
+        setClosing(null);
+        if (fundCommandSettled(next)) {
+          const active = activeConfirmation.current;
+          if (active?.slot === record.fingerprint) {
+            activeConfirmation.current = null;
+            openActionConfirm(null);
+          }
+          setEditor(null);
+          syncPending();
+          await actions.reloadJEmergency().catch(() => undefined);
+        }
+      }} />}
+    {releasing && <ReleaseModal label={`${slotName(releasing.fingerprint)} · 改版前的旧记录`}
+      explain={<><p>改版前的旧记录没存原修改的内容，不能重试；核查结案是另一回事，要按证据。</p><p>先到「操作记录与审批」核对原修改有没有生效。</p></>}
       onCancel={() => setReleasing(null)} onConfirm={() => {
         releaseExpiredJLegacyCommand(releasing);
         setReleasing(null);
@@ -354,7 +447,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       } else if (isEmergencyOutcomeUncertain(error)) {
         try {
           await actions.reloadJEmergency();
-          toast("页面已刷新，请核对现在的名单、规则和最近修改。", "warn");
+          toast("结果未知，可能已经生效；先在上方查询原结果，不要重复提交。", "warn");
         } catch {
           toast("结果未知，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对最近修改。", "warn");
         }

@@ -24,6 +24,7 @@ import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, ty
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine } from "../recovery-panel";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
+import { PROCESSED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
@@ -113,17 +114,13 @@ function investigationRecord(command: J3PendingCommand, adminId: string): FundCo
 }
 
 type J3Settled = { key: string; label: string; status: string };
-const SETTLED_TEXT: Record<string, string> = {
-  CONFIRMED_NOT_EXECUTED: "核查确认原修改没有执行，记录已解除，可以重新修改。",
-  CONFIRMED_SUCCEEDED: "核查确认原修改已生效，记录已解除；页面显示的是现在的设置。",
-};
-const SETTLED_DONE = "原修改已生效，记录已解除；页面显示的是现在的设置。";
 
 /** 修改框里「查询原结果」没有结论时的一句。 */
 function outcomeText(outcome: FundInvestigationOutcome) {
   if ("error" in outcome) return `原结果没查到：${outcome.error}`;
   const status = outcome.receipt?.originalStatus;
   return !status ? "没有查到原修改的记录，查不到不等于没执行。"
+    : status === "SUCCEEDED" ? PROCESSED_IN_DIALOG
     : status === "PROCESSING" ? "原修改还在执行，稍后再查。"
       : status === "FAILED" ? "系统记录原修改失败了。"
         : "系统也没有结果，需要有调查权限的超级管理员核查结案。";
@@ -309,7 +306,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const record = command ? investigationRecord(command, adminId) : null;
   const outcome = command ? outcomes[command.commandKey] : undefined;
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
-  const canClose = !!record && receipt?.originalStatus === "UNKNOWN" && fundInvestigationAccess(record).canSubmit;
+  const canSubmit = !!record && fundInvestigationAccess(record).canSubmit;
+  const processed = receipt?.originalStatus === "SUCCEEDED";
+  const canClose = canSubmit && (receipt?.originalStatus === "UNKNOWN" || processed && expired);
   const recoveryRows: FundRecoveryRow[] = saved ? [{
     key: command?.commandKey ?? "j3-legacy",
     title: savedTitle(saved),
@@ -321,7 +320,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     canQuery: true,
     status: saved.legacy ? expired
       ? { tone: "neutral", label: "已过期", line: "改版前的旧记录查不了原结果；到操作记录与审批核对后，可以确认解除。" }
-      : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" } : undefined,
+      : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" }
+      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit }) : undefined,
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
@@ -332,7 +332,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   }] : [];
 
   const savedNotice = <>
-    {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_DONE}
+    {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
     <FundRecoveryPanel rows={recoveryRows} heading="修改告警设置 · 结果未知" />
     {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt}

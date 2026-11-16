@@ -760,6 +760,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     openActionConfirm({ briefKind: "config",
       action: `编辑转盘奖项 · ${tierName}`,
       title: "编辑转盘奖项",
+      statedBrief: { impact: "生效后下一次抽奖就按新内容发，已经抽中的不变。", check: "核对奖型、发真钱、每次数量和每日库存。" },
       effect: effectByDirection(),
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
       facts: tierFacts(tier, <ApprovalFact amplify="换奖型、提高数量、放宽库存，或收紧 UVT 库存使安慰奖变多" object="奖池" />),
