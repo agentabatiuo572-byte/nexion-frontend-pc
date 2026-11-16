@@ -11,9 +11,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
-import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Panel, ReleaseModal, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { fetchJ2GeoHitDetails, fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitDetailPage, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine } from "../recovery-panel";
@@ -180,6 +180,29 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       .catch((cause) => { if (!controller.signal.aborted) setHitSummary({ state: "error", message: displayAdminError(cause) }); });
     return () => controller.abort();
   }, [data]);
+  /** 逐条拦截记录（全部时间，分页）：打开「拦截记录」才读，和上面的近 24 小时合计分开。 */
+  const [hitsOpen, setHitsOpen] = useState(false);
+  const [logCountry, setLogCountry] = useState("");
+  const [logCountryText, setLogCountryText] = useState("");
+  const [logEndpoint, setLogEndpoint] = useState("");
+  const [logPage, setLogPage] = useState(1);
+  const [logSize, setLogSize] = useState(20);
+  const [logTick, setLogTick] = useState(0);
+  const [hitLog, setHitLog] = useState<{ loading: boolean; page: GeoHitDetailPage | null; error: string }>({ loading: false, page: null, error: "" });
+  useEffect(() => {
+    if (!data || !hitsOpen) return;
+    const controller = new AbortController();
+    setHitLog((prev) => ({ ...prev, loading: true, error: "" }));
+    fetchJ2GeoHitDetails({ countryCode: logCountry || undefined, endpointKey: logEndpoint || undefined, pageNum: logPage, pageSize: logSize }, controller.signal)
+      .then((page) => { if (!controller.signal.aborted) setHitLog({ loading: false, page, error: "" }); })
+      .catch((cause) => {
+        if (controller.signal.aborted) return;
+        // 403 是这个账号不能读；404 是后端还没有逐条记录（旧版本）。其余照通用说法。
+        const status = (cause as { status?: number }).status;
+        setHitLog({ loading: false, page: null, error: status === 403 ? "这个账号没有读逐条拦截记录的权限。" : status === 404 ? "现在还读不到逐条记录，上面的近 24 小时汇总不受影响。" : displayAdminError(cause) });
+      });
+    return () => controller.abort();
+  }, [data, hitsOpen, logCountry, logEndpoint, logPage, logSize, logTick]);
 
   const countryNames = useMemo(() => Object.fromEntries((data?.countryOptions ?? []).map((option) => [option.value, option.label])), [data]);
   const lookupOptions = useMemo(() => {
@@ -997,14 +1020,71 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const allHitsTo = allHits ? formatBusinessTimeCompact(allHits.capturedAt, "—") : "";
   const allHitsWindow = allHits && <KeepText text={`所有国家和地区：${allHitsFrom} 至 ${allHitsTo}（${businessZone().label}）。前 20 个国家：这页读取时往前 24 小时。`} phrases={[allHitsFrom, allHitsTo]} />;
   const endpointHits = geoEndpoints.filter((entry) => entry.configurable && entry.hits > 0).sort((a, b) => b.hits - a.hits);
+  const endpointLabels = Object.fromEntries(geoEndpoints.map((entry) => [entry.key, entry.label]));
+  const logQuery = logCountryText.trim().toLocaleLowerCase();
+  const logCountryOptions = logQuery
+    ? data.countryOptions.filter((option) => `${option.value} ${option.label}`.toLocaleLowerCase().includes(logQuery)).slice(0, 50)
+      .map((option) => ({ value: option.value, label: `${option.label}（${option.value}）` }))
+    : [];
+  const logFiltered = Boolean(logCountry || logEndpoint);
+  const setLogFilter = (country: string, endpoint: string) => { setLogCountry(country); setLogEndpoint(endpoint); setLogPage(1); };
+  const unknownText = <span className="j2-muted">未知</span>;
+  const logPageData = hitLog.page;
+  const hitLogSection = (
+    <section className="j2-hit-log" aria-label="逐条记录">
+      <h3 className="j2-sub-title">逐条记录 · 全部时间<Explain label="逐条记录是什么" content={<><p>每次被拦下的请求一行，从有记录起全部列出，新的在前。不限 24 小时，条数不算进上面的近 24 小时合计。</p><p>拦截发生在登录之前，看不到是哪位用户。入口、识别源没有记下的写「未知」。</p></>} /></h3>
+      <FilterBar onClear={() => { setLogCountryText(""); setLogFilter("", ""); }} canClear={logFiltered || Boolean(logCountryText)} clearLabel="清除">
+        <FilterField grow>
+          <SearchSelect id="j2-log-country" aria-label="按国家或地区筛逐条记录" placeholder="全部国家和地区，输入代码或名称筛" value={logCountryText}
+            onChange={(value) => { setLogCountryText(value); if (!value && logCountry) setLogFilter("", logEndpoint); }}
+            options={logCountryOptions} selected={logCountry || undefined} empty={logQuery ? "没有匹配的国家或地区" : "输入代码或名称"}
+            onSelect={(value) => { setLogCountryText(countryName(value, countryNames)); setLogFilter(value, logEndpoint); }} />
+        </FilterField>
+        <FilterField>
+          <Select aria-label="按功能入口筛逐条记录" value={logEndpoint} onChange={(value) => setLogFilter(logCountry, value)}
+            options={[{ value: "", label: "全部入口" }, ...geoEndpoints.map((entry) => ({ value: entry.key, label: entry.label }))]} />
+        </FilterField>
+      </FilterBar>
+      {hitLog.error
+        ? <BlockState state="error" title="逐条记录没读到" detail={hitLog.error} onRetry={() => setLogTick((tick) => tick + 1)} retrying={hitLog.loading} />
+        : <>
+          <Table label="逐条拦截记录" className="j2-log-table">
+            <thead><tr><Th>时间</Th><Th>国家或地区</Th><Th>功能入口</Th><Th>识别源</Th><Th align="right">次数</Th></tr></thead>
+            <tbody>
+              {!logPageData
+                ? <TableLoading columns={5} rows={4} />
+                : logPageData.records.length === 0
+                  ? <TableMessage columns={5}>{logPageData.total > 0
+                    ? <span className="j2-log-empty">第 {count(logPageData.pageNum)} 页没有记录，共 {count(logPageData.total)} 条<Button size="sm" onClick={() => setLogPage(1)}>回到第 1 页</Button></span>
+                    : logFiltered ? "这些条件下没有拦截记录" : "没有拦截记录"}</TableMessage>
+                  : logPageData.records.map((row) => (
+                    <Tr key={row.id}>
+                      <Td><Cell num main={formatBusinessTimeCompact(row.recordedAt, "—")} /></Td>
+                      <Td><CountryLabel cc={row.countryCode} names={{ ...countryNames, [row.countryCode]: countryNames[row.countryCode] ?? row.countryName }} /></Td>
+                      <Td>{row.endpointKey === null || row.endpointKey === "" ? unknownText : <Cell main={endpointLabels[row.endpointKey] ?? "未登记的入口"} title={endpointLabels[row.endpointKey] ? undefined : row.endpointKey} />}</Td>
+                      <Td>{row.source === null || row.source === "" ? unknownText : <Cell main={edgeSourceLabels[row.source] ?? "未登记的识别源"} title={edgeSourceLabels[row.source] ? undefined : row.source} />}</Td>
+                      <Td align="right"><span className="j2-num">{count(row.eventCount)}</span></Td>
+                    </Tr>
+                  ))}
+            </tbody>
+          </Table>
+          {logPageData && logPageData.records.length > 0 && (
+            <Pager label="逐条拦截记录" total={logPageData.total} page={logPage} pageSize={logSize} sizes={[20, 50, 100]} loading={hitLog.loading}
+              onPage={setLogPage} onPageSize={(size) => { setLogSize(size); setLogPage(1); }} />
+          )}
+          {logPageData && logPageData.records.length > 0 && <p className="j2-note">时间为{businessZone().label}</p>}
+        </>}
+    </section>
+  );
   const hitsFold = (
-    <Fold title="拦截记录" icon={ListOrdered} tone="role-other"
+    <Fold title="拦截记录" icon={ListOrdered} tone="role-other" open={hitsOpen} onOpenChange={setHitsOpen}
       summary={geoHits.length === 0 ? "近 24 小时没有拦截" : allHits
         ? `近 24 小时 · 共 ${count(allHits.totalBlockedEvents)} 次 · 前 20 个国家 ${count(totalHits)} 次 · 最多 ${countryNames[topHit.cc] ?? topHit.nm} ${count(topHit.ct)} 次`
         : `近 24 小时 · 前 20 个国家合计 ${count(totalHits)} 次 · 最多 ${countryNames[topHit.cc] ?? topHit.nm} ${count(topHit.ct)} 次`}
       explain={allHits
         ? <><p>滚动 24 小时，不是自然日。只算识别出国家、又被名单或入口规则拒绝的请求，按次数算，不是人数；识别不出地区被拒的不算。</p><p>按国家最多列 20 个；「共」是所有国家和地区的合计。{allHitsWindow}</p></>
         : "滚动 24 小时，不是自然日。只算识别出国家、又被名单或入口规则拒绝的请求；识别不出地区被拒的不算。按国家最多列 20 个，合计也只算这 20 个，所以可能比真实总数少。"}>
+      <h3 className="j2-sub-title">近 24 小时汇总</h3>
       {geoHits.length === 0
         ? <BlockState state="empty" compact title="近 24 小时没有拦截" detail="名单和入口规则都没有拦下请求。" />
         : <div className="j2-hits">
@@ -1019,6 +1099,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
               : <BarList label="近 24 小时各功能入口的拦截" slot={2} rows={endpointHits.map((entry) => ({ key: entry.key, label: entry.label, value: entry.hits, text: `${count(entry.hits)} 次` }))} />}
           </section>
         </div>}
+      {hitLogSection}
     </Fold>
   );
 
