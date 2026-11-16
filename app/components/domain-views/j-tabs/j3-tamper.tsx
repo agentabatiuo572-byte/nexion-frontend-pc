@@ -308,7 +308,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
   const canSubmit = !!record && fundInvestigationAccess(record).canSubmit;
   const processed = receipt?.originalStatus === "SUCCEEDED";
-  const canClose = canSubmit && (receipt?.originalStatus === "UNKNOWN" || processed && expired);
+  const canClose = canSubmit && (receipt?.originalStatus === "UNKNOWN" || (processed || receipt?.originalStatus === "FAILED") && expired);
   const recoveryRows: FundRecoveryRow[] = saved ? [{
     key: command?.commandKey ?? "j3-legacy",
     title: savedTitle(saved),

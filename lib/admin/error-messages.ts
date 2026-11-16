@@ -42,6 +42,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   COMMISSION_USER_KINDS_NOT_SUSPENDED: "这些奖励类型当前没有暂停，不能恢复。请重新查询暂停名单。",
   COMMISSION_USER_SUSPENDED: "这位用户的这类奖励正在暂停，这次提前解锁没有执行，奖励还在冷却中。要放钱，先在「暂停名单」恢复这类奖励，再重新提交或批准。",
   F5_COOLDOWN_DEADLINE_UNRECOVERABLE: "这笔是以前暂停时冻结的旧记录，到期时间已被清空，系统不替它补算，这次解冻没有执行，奖励仍是已冻结。请联系值班人员核对后处理。",
+  F5_COMMISSION_STATE_UNAVAILABLE: "这笔奖励的原始状态或结算组状态读不到，暂时不能提前解锁或冲正。请重新查询，仍读不到时联系值班人员核对。",
   COMMISSION_ANOMALY_SIGMA_RANGE_2_5_STEP_0_5: "金额偏离标准须在 2–5 之间，步长为 0.5，请重新填写。",
   LAYER_RATIO_ANOMALY_PCT_RANGE_10_50: "层比例偏离标准须在 10%–50% 之间，请重新填写。",
   F5_EXPORT_COUNT_INVALID: "奖励导出总数异常，未提供文件。请联系值班人员核对统计。",

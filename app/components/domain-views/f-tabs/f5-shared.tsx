@@ -138,6 +138,8 @@ export const REJECTION_TEXT = {
   releaseGroupCooling: "这笔属于结算组，冷却还没真正到期，批准时会被拒。到期后系统按条件解锁。",
 } as const;
 export function knownRejection(row: F5CommissionEvent, action: "release" | "reverse", suspensions?: readonly { userId: string; kind: string }[]): string | undefined {
+  const available = action === "release" ? row.canUnlock : row.canReverse;
+  if (available !== undefined) return available ? undefined : displayAdminError(new Error((action === "release" ? row.unlockBlockedReason : row.reverseBlockedReason) ?? "F5_COMMISSION_STATE_UNAVAILABLE"));
   if (action === "reverse" && row.status === "frozen" && !isGrouped(row)) return REJECTION_TEXT.reverseFrozenLegacy;
   if (action === "release" && isGrouped(row) && row.unlockAt !== undefined && row.unlockAt > Date.now()) return REJECTION_TEXT.releaseGroupCooling;
   // The capped list proves a matching suspension, never the absence of one.

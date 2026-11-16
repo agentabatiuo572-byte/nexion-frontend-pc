@@ -41,6 +41,12 @@ export type ECommandEvidence = {
 
 export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCESSING" | "FAILED" | "BATCH_RESULT" | "BUSINESS_RESULT_UNAVAILABLE" | "UNRESOLVED";
 
+/** Resume is local reconciliation. The server alone verifies rollback_confirmed; this only permits asking for that proof. */
+export function eCommandCanRequestResumeRollback(receipt: ECommandInvestigation | null | undefined) {
+  return !!receipt?.scope.startsWith("J4_PLAYBOOK_RESUME:") && (receipt.originalStatus === "UNKNOWN"
+    || receipt.originalStatus === "FAILED" && receipt.businessCode === null);
+}
+
 /** Governed conclusions take precedence; unconfirmed replies use business results and one verified legacy list. */
 export function eCommandResult(receipt: ECommandInvestigation | null): ECommandResult {
   if (receipt?.businessState === "PROCESSING") return "PROCESSING";

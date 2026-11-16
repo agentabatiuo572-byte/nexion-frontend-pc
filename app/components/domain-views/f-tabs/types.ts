@@ -21,6 +21,7 @@ import type {
   F1VRankRow,
   F1VRankOverview,
   F2Metric,
+  F2PayoutStatistic,
   F2PolicyParam,
   F2RateTier,
   F2UnilevelRate,
@@ -28,6 +29,8 @@ import type {
   F3DailyCap,
   F3Formula,
   F3Metric,
+  F3RawAmounts,
+  F3Statistics,
   F3Settlement,
   F4LeadershipPoolOverview,
   F4AmbassadorPolicy,
@@ -130,6 +133,7 @@ export interface FViewCtx {
   proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
+  f2PayoutStatistics?: F2PayoutStatistic[];
   f2DirectPolicy: DirectReferralPolicy | null;
   f2SevenLayerRevision: number | null;
   f2DirectPolicyLoading: boolean;
@@ -167,6 +171,8 @@ export interface FViewCtx {
   f3ReadEpoch: number;
   recoverF3: (original: FDomainAttempt, mode?: "query" | "retry" | "release") => Promise<A2OperationRow | null>;
   f3Metrics: F3Metric[];
+  f3Amounts?: F3RawAmounts;
+  f3Statistics?: F3Statistics;
   f3Formula: F3Formula | null;
   f3Settlements: F3Settlement[];
   f3MaxTrackGmv: number;

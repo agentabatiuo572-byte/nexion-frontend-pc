@@ -37,12 +37,13 @@ import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
 
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
-const fmtInt = (value: number) => Math.round(value).toLocaleString("en-US");
+const fmtInt = (value: number | null) => value === null ? "—" : Math.round(value).toLocaleString("en-US");
 /** 后端原样的小数文字加千分位，不舍入、不补零。 */
 const fmtDecimal = (raw: string) => {
   const match = /^(\d+)(\.\d+)?$/.exec(raw.trim());
   return match ? `${match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${match[2] ?? ""}` : raw.trim();
 };
+const amountText = (raw: string | null | undefined, legacy: number) => raw === undefined ? fmtInt(legacy) : raw === null ? "—" : fmtDecimal(raw);
 /**
  * 后端把金额先取整、再压成「$1.2k」这样的短写（OpsTeamService.moneyCompact）。不反算精确值：
  * 整数原样写，压缩过的按缩写换成整数写「约 48,200」，都带币种。
@@ -117,7 +118,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const lookupKw = lookupText.trim().toLowerCase();
   const userOptions = useMemo(() => {
     const source = lookupKw
-      ? rows.filter((row) => `${row.user} ${stateOf(row.state).label} ${row.a} ${row.b} ${row.match} ${row.today}`.toLowerCase().includes(lookupKw))
+      ? rows.filter((row) => `${row.user} ${stateOf(row.state).label} ${row.aRaw ?? row.a} ${row.bRaw ?? row.b} ${row.matchRaw ?? row.match} ${row.todayRaw ?? row.today}`.toLowerCase().includes(lookupKw))
       : rows;
     return source.slice(0, 12);
   }, [lookupKw, rows]);
@@ -150,7 +151,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const pauseState = f3PauseState(pausedRaw, cfg?.paused);
   const binaryPaused = pauseState === true;
   const capText = dailyCap?.amountUsdt != null ? `${fmtDecimal(dailyCap.amountUsdt)} USDT` : null;
-  const residualPool = compactMoney(cfg?.residualPool ?? "");
+  const residualPool = ctx.f3Amounts?.residualPoolUsdRaw === undefined ? compactMoney(cfg?.residualPool ?? "")
+    : ctx.f3Amounts.residualPoolUsdRaw === null ? null : `${fmtDecimal(ctx.f3Amounts.residualPoolUsdRaw)} USDT`;
   const rule: F3Rule = { threshold: thresholdText, rate: ratePercent === null ? null : `${ratePercent}%`, cap: capText, period: periodEff, residual: residualEff };
 
   // 后端结算时逐项核对这些设置（BinarySettlementPolicyProvider.lockPolicy），不认就拦下整期结算。
@@ -167,14 +169,18 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
   // 最近一期：结算记录按结算日倒序，第一条的结算日就是最近一期（最多 100 条里）。
   const byDate = useMemo(() => {
-    const groups = new Map<string, { date: string; owners: Set<string>; paid: number; matched: number; blocked: number; count: number }>();
+    const groups = new Map<string, { date: string; owners: Set<string>; paid: number | null; matched: number | null; blocked: number; count: number }>();
     for (const row of rows) {
       const key = row.settlementDate || "—";
       const group = groups.get(key) ?? { date: key, owners: new Set<string>(), paid: 0, matched: 0, blocked: 0, count: 0 };
       group.owners.add(row.user);
       group.count += 1;
       if (row.state.toLowerCase() === "blocked") group.blocked += 1;
-      else { group.paid += row.today; group.matched += row.match; }
+      // The new read has exact rows but no per-date monetary totals. Never sum a truncated list as an authoritative total.
+      if (row.todayRaw !== undefined) group.paid = null;
+      else if (row.state.toLowerCase() !== "blocked" && group.paid !== null) group.paid += row.today;
+      if (row.matchRaw !== undefined) group.matched = null;
+      else if (row.state.toLowerCase() !== "blocked" && group.matched !== null) group.matched += row.match;
       groups.set(key, group);
     }
     return Array.from(groups.values());
@@ -393,8 +399,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
 
       <StatBand label="团队平衡奖励摘要">
-        <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={fmtInt(ctx.f3MonthlyMatchedUsd)} unit="USDT"
-          sub={`今天 ${fmtInt(ctx.f3DailyMatchUsd)} USDT`}
+        <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={amountText(ctx.f3Amounts?.monthlyMatchedUsdRaw, ctx.f3MonthlyMatchedUsd)} unit="USDT"
+          sub={`今天 ${amountText(ctx.f3Amounts?.dailyMatchUsdRaw, ctx.f3DailyMatchUsd)} USDT`}
           explain="本月（按业务日历）结算记录里匹配订单额的合计，后端取整成整数。这是两组匹配上的订单额，不是发出的奖励；奖励 = 匹配订单额 × 当时的比例。" />
         <Stat label="没匹配上的订单额" icon={Layers3} tone="role-2" value={residualPool ? residualPool.replace(/ USDT$/, "") : "—"} unit={residualPool ? "USDT" : undefined}
           sub={residualPool ? residualLabel(residualEff) : "残额处理不认，后端没算"}
@@ -412,7 +418,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <F3RuleFlow rule={rule} capAction={capAction} />
         <p className="f3-example">
           {example
-            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {fmtInt(example.a)} USDT、B 组 {fmtInt(example.b)} USDT，匹配 {fmtInt(example.match)} USDT，记账 {fmtInt(example.today)} USDT（{stateOf(example.state).label}，整数）</>
+            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}，整数）</>
             : "还没有结算记录，第一笔结算后这里写出一条真实的例子。"}
           <Explain label="这条例子怎么来的" content="取结算记录里最新的一条，金额是后端取整后的整数；这条记录用的是当时的门槛、比例和上限，不一定是现在的。" />
         </p>
@@ -438,7 +444,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <SearchSelect aria-label="搜索并选择用户编码" placeholder="搜索邀请人用户编码" value={lookupText} onChange={updateLookup} onSelect={selectUser}
                 selected={selectedUser || undefined}
                 options={Array.from(new Map(userOptions.map((row) => [row.user, row])).values()).map((row) => ({
-                  value: row.user, label: row.user, extra: `A ${fmtInt(row.a)} · B ${fmtInt(row.b)} · ${stateOf(row.state).label}`,
+                  value: row.user, label: row.user, extra: `A ${amountText(row.aRaw, row.a)} · B ${amountText(row.bRaw, row.b)} · ${stateOf(row.state).label}`,
                 }))} empty="没有匹配的用户" />
             </FilterField>
             <FilterField>
@@ -570,10 +576,20 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 /** 一条结算记录：两组对比条、差多少、匹配和奖励、状态。 */
 function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | null }) {
   const state = stateOf(row.state);
-  const diff = Math.abs(row.a - row.b);
-  const smaller = row.a === row.b ? null : row.a < row.b ? "A" : "B";
-  const passA = threshold !== null && row.a >= threshold, passB = threshold !== null && row.b >= threshold;
-  const pass = threshold === null ? "门槛没读到" : passA && passB ? "都过门槛" : !passA && !passB ? "都没过门槛" : `${passA ? "B" : "A"} 组没过门槛`;
+  const aText = row.aRaw === undefined ? String(row.a) : row.aRaw;
+  const bText = row.bRaw === undefined ? String(row.b) : row.bRaw;
+  let diff = "—", smaller: "A" | "B" | null = null;
+  if (aText !== null && bText !== null) {
+    const [aWhole, aFraction = ""] = aText.split("."), [bWhole, bFraction = ""] = bText.split(".");
+    const scale = Math.max(aFraction.length, bFraction.length);
+    const delta = BigInt(aWhole + aFraction.padEnd(scale, "0")) - BigInt(bWhole + bFraction.padEnd(scale, "0"));
+    smaller = delta === BigInt(0) ? null : delta < BigInt(0) ? "A" : "B";
+    const digits = (delta < BigInt(0) ? -delta : delta).toString().padStart(scale + 1, "0");
+    diff = fmtDecimal(scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits);
+  }
+  const a = aText === null ? null : Number(aText), b = bText === null ? null : Number(bText);
+  const passA = threshold !== null && a !== null && a >= threshold, passB = threshold !== null && b !== null && b >= threshold;
+  const pass = a === null || b === null ? "—" : threshold === null ? "门槛没读到" : passA && passB ? "都过门槛" : !passA && !passB ? "都没过门槛" : `${passA ? "B" : "A"} 组没过门槛`;
   return (
     <Tr>
       <Td><Cell main={<span data-mono>{row.user}</span>} sub={<>
@@ -583,13 +599,13 @@ function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | 
       <Td className="f3-col-date"><Cell main={row.settlementDate || "—"} num /></Td>
       <Td>
         <span className="f3-pair-cell">
-          <span className="f3-pair-num" data-small={smaller === "A" ? "" : undefined}>{fmtInt(row.a)}</span>
-          <F3PairBar a={row.a} b={row.b} max={Math.max(row.a, row.b)} threshold={threshold} label={`A 组 ${fmtInt(row.a)} USDT，B 组 ${fmtInt(row.b)} USDT`} />
-          <span className="f3-pair-num" data-small={smaller === "B" ? "" : undefined}>{fmtInt(row.b)}</span>
-          <span className="f3-pair-note">{smaller ? `${smaller} 组少 ${fmtInt(diff)}` : "两组一样"} · {pass}</span>
+          <span className="f3-pair-num" data-small={smaller === "A" ? "" : undefined}>{amountText(row.aRaw, row.a)}</span>
+          <F3PairBar a={a ?? row.a} b={b ?? row.b} max={Math.max(a ?? row.a, b ?? row.b)} threshold={threshold} label={`A 组 ${amountText(row.aRaw, row.a)} USDT，B 组 ${amountText(row.bRaw, row.b)} USDT`} />
+          <span className="f3-pair-num" data-small={smaller === "B" ? "" : undefined}>{amountText(row.bRaw, row.b)}</span>
+          <span className="f3-pair-note">{a === null || b === null ? "—" : smaller ? `${smaller} 组少 ${diff}` : "两组一样"} · {pass}</span>
         </span>
       </Td>
-      <Td align="right"><Cell num main={`${fmtInt(row.today)} USDT`} sub={`匹配 ${fmtInt(row.match)} USDT`} /></Td>
+      <Td align="right"><Cell num main={`${amountText(row.todayRaw, row.today)} USDT`} sub={`匹配 ${amountText(row.matchRaw, row.match)} USDT`} /></Td>
       <Td><StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag></Td>
     </Tr>
   );

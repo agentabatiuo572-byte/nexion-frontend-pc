@@ -986,6 +986,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       });
     },
     f2Metrics: f2Overview?.metrics ?? [],
+    f2PayoutStatistics: f2Overview?.payoutStatistics,
     f2DirectPolicy,
     f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,
@@ -1071,6 +1072,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     updateFConfigBatch,
     f3Proposals, f3ApprovalRows, f3ReadEpoch, recoverF3,
     f3Metrics: f3Overview?.metrics ?? [],
+    f3Amounts: f3Overview ? { monthlyMatchedUsdRaw: f3Overview.monthlyMatchedUsdRaw, dailyMatchUsdRaw: f3Overview.dailyMatchUsdRaw,
+      maxDailyCapUsdRaw: f3Overview.maxDailyCapUsdRaw, maxTrackGmvRaw: f3Overview.maxTrackGmvRaw, residualPoolUsdRaw: f3Overview.residualPoolUsdRaw } : undefined,
+    f3Statistics: f3Overview?.statistics,
     f3Formula: f3Overview?.formula ?? null,
     f3Settlements: f3Overview?.settlements ?? [],
     f3MaxTrackGmv: f3Overview?.maxTrackGmv ?? 1,

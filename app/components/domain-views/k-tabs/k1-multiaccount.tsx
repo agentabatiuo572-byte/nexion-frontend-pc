@@ -909,7 +909,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releasePending = (record: K1PendingCommand) => {
     setReleasing(null);
     if (record.kind === "registration-param") {
-      // This K1 route writes A3_PLATFORM_PARAM, which is outside controlled investigation support.
+      // Keep the existing local release path after an explicitly rejected original-key retry.
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending(); ctx.toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
     }
@@ -1412,12 +1412,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const blocked = retryBlocked(record);
           const expired = record.expiresAt <= Date.now();
           const registration = record.kind === "registration-param";
-          return { key: record.fingerprint, title: record.label, record: registration ? undefined : record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !blocked,
-            status: registration ? { tone: expired ? "warn" : "neutral", label: expired ? "已过期" : "不能查询", line: "注册设置的修改查不了原结果，到操作记录与审批核对。" } : undefined,
+          return { key: record.fingerprint, title: record.label, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !blocked,
             actions: <>
               {record.kind === "cluster" && canQueryProposal && !fundInvestigationAccess(record).canRead
                 ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>
-                : !registration && <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
+                : <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
               {registration && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
@@ -1426,7 +1425,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <p><KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? ""}`} /></p>
               {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
             </>,
-            tech: `${registration ? `原请求编号 ${record.commandKey} ｜ ` : ""}操作人 ${record.operator} ｜ 理由 ${record.reason}` };
+            tech: `操作人 ${record.operator} ｜ 理由 ${record.reason}` };
         })} />
 
       <PageTabs ids={tabIds} label="多账户风险排查内容" value={tab} onChange={setTab} items={[

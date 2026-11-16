@@ -170,6 +170,33 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
 export function assertF2Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F2");
   domain(row, "F2");
+  if (row.payoutStatistics !== undefined) {
+    const currencies = new Set<string>();
+    array(row, "payoutStatistics", "F2").forEach((value, index) => {
+      const path = `payoutStatistics[${index}]`;
+      const statistic = record(value, "F2", path);
+      const currency = text(statistic.currency, "F2", `${path}.currency`);
+      if (!["USDT", "UVT"].includes(currency) || currencies.has(currency)) invalid("F2", `${path}.currency`);
+      currencies.add(currency);
+      for (const key of ["available", "statusMarkerOnly", "cashSettlementTimeAvailable"]) if (typeof statistic[key] !== "boolean") invalid("F2", `${path}.${key}`);
+      for (const key of ["window", "statusScope", "basis"]) text(statistic[key], "F2", `${path}.${key}`);
+      const statuses = array(statistic, "paidOrSettledStatuses", "F2");
+      if (statuses.length !== 2 || statuses[0] !== "PAID" || statuses[1] !== "SETTLED") invalid("F2", `${path}.paidOrSettledStatuses`);
+      if (statistic.paidStatuses !== undefined || statistic.paidAmountRaw !== undefined || statistic.paidEventCount !== undefined) {
+        const paidStatuses = array(statistic, "paidStatuses", "F2");
+        if (paidStatuses.length !== 1 || paidStatuses[0] !== "PAID") invalid("F2", `${path}.paidStatuses`);
+        if (statistic.paidAmountRaw !== null && (typeof statistic.paidAmountRaw !== "string" || f4Decimal(statistic.paidAmountRaw) === null || statistic.paidAmountRaw.startsWith("-"))) invalid("F2", `${path}.paidAmountRaw`);
+        if (statistic.paidEventCount !== null) nonNegativeInteger(statistic.paidEventCount, "F2", `${path}.paidEventCount`);
+        if (statistic.available === false && (statistic.paidAmountRaw !== null || statistic.paidEventCount !== null)) invalid("F2", `${path}.paidUnavailable`);
+      }
+      for (const key of ["allStatusAmountRaw", "paidOrSettledAmountRaw"]) {
+        if (statistic[key] !== null && (typeof statistic[key] !== "string" || f4Decimal(statistic[key]) === null || statistic[key].startsWith("-"))) invalid("F2", `${path}.${key}`);
+      }
+      for (const key of ["allStatusEventCount", "paidOrSettledEventCount"]) if (statistic[key] !== null) nonNegativeInteger(statistic[key], "F2", `${path}.${key}`);
+      if (statistic.available === false && ["allStatusAmountRaw", "allStatusEventCount", "paidOrSettledAmountRaw", "paidOrSettledEventCount"].some(key => statistic[key] !== null)) invalid("F2", `${path}.unavailable`);
+    });
+    if (currencies.size !== 2) invalid("F2", "payoutStatistics.currencies");
+  }
   if (row.sevenLayerRevision !== undefined) {
     const revision = nonNegativeInteger(row.sevenLayerRevision, "F2", "sevenLayerRevision");
     if (!Number.isSafeInteger(revision)) invalid("F2", "sevenLayerRevision");
@@ -235,6 +262,22 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
 export function assertF3Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F3");
   domain(row, "F3");
+  const rawAmounts = (item: JsonRecord, fields: string[], path: string) => {
+    for (const field of fields) {
+      const amount = item[field];
+      if (amount !== undefined && amount !== null && (typeof amount !== "string" || f4Decimal(amount) === null || amount.startsWith("-"))) invalid("F3", `${path}.${field}`);
+    }
+  };
+  rawAmounts(row, ["monthlyMatchedUsdRaw", "dailyMatchUsdRaw", "maxDailyCapUsdRaw", "maxTrackGmvRaw", "residualPoolUsdRaw"], "data");
+  if (row.statistics !== undefined) {
+    const statistics = object(row, "statistics", "F3");
+    text(statistics.basis, "F3", "statistics.basis");
+    for (const key of ["participantCount", "blockedCount", "monthlyMatchedUsd", "dailyMatchUsd", "autoPlacement7dCount", "maxDailyCapUsd", "maxTrackGmv", "residualPoolUsd", "settlements", "h1BinaryDailyCap"]) {
+      const statistic = object(statistics, key, "F3");
+      for (const field of ["source", "aggregate", "field", "filter", "window", "status"]) text(statistic[field], "F3", `statistics.${key}.${field}`);
+      if (typeof statistic.distinct !== "boolean") invalid("F3", `statistics.${key}.distinct`);
+    }
+  }
   const strings = (value: JsonRecord, keys: string[], path: string) => {
     for (const key of keys) if (typeof value[key] !== "string") invalid("F3", `${path}.${key}`);
   };
@@ -242,10 +285,12 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
     strings(record(value, "F3", `metrics[${index}]`), ["id", "label", "value", "sub", "tone"], `metrics[${index}]`);
   });
   const formula = object(row, "formula", "F3");
+  rawAmounts(formula, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], "formula");
   strings(formula, ["user", "matchRate", "threshold", "settlePeriod"], "formula");
   for (const key of ["trackA", "trackB", "matchAmount"]) finite(formula[key], "F3", `formula.${key}`);
   array(row, "settlements", "F3").forEach((value, index) => {
     const settlement = record(value, "F3", `settlements[${index}]`);
+    rawAmounts(settlement, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], `settlements[${index}]`);
     strings(settlement, ["user", "settlementDate", "cohort", "state", "tone"], `settlements[${index}]`);
     for (const key of ["ownerUserId", "trackA", "trackB", "matchAmount", "todayPaid"]) finite(settlement[key], "F3", `settlements[${index}].${key}`);
   });
@@ -358,6 +403,18 @@ export function assertF4MaterialPacket(value: unknown): asserts value is JsonRec
   }
 }
 
+/** Shared by the list and exact business-id read, before either projection is consumed. */
+export function assertF5ActionAvailability(event: JsonRecord) {
+  for (const [available, reason] of [["canUnlock", "unlockBlockedReason"], ["canReverse", "reverseBlockedReason"]]) {
+    if (event[available] === undefined) continue;
+    if (typeof event[available] !== "boolean") invalid("F5", available);
+    if (event[available]) {
+      if (event[reason] !== null) invalid("F5", reason);
+    } else text(event[reason], "F5", reason);
+  }
+  if (event.groupStatus !== undefined && typeof event.groupStatus !== "string") invalid("F5", "groupStatus");
+}
+
 export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F5");
   domain(row, "F5");
@@ -420,6 +477,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const eventIds: number[] = [];
   events.forEach((value, index) => {
     const event = record(value, "F5", `commissionEvents[${index}]`);
+    assertF5ActionAvailability(event);
     for (const field of ["commissionId", "kind", "user", "currency", "settledAt", "status", "cooldownLabel", "state", "auditKey"]) {
       text(event[field], "F5", `commissionEvents[${index}].${field}`);
     }

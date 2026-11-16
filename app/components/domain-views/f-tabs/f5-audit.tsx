@@ -492,10 +492,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const rowActions = (row: F5CommissionEvent): F5RowAction[] => {
     const list: F5RowAction[] = [];
     if (canFreeze && row.status === "cooling") list.push({ key: "freeze", label: "冻结", onSelect: () => dispose("freeze", row) });
-    if (canRelease && row.status === "cooling" && !isFriend(row)) list.push({ key: "unlock", label: "提前解锁", disabledReason: knownRejection(row, "release", data?.activeSuspensions), onSelect: () => dispose("unlock", row) });
+    if (canRelease && (row.canUnlock === true || row.status === "cooling" && (!isFriend(row) || row.canUnlock !== undefined))) list.push({ key: "unlock", label: "提前解锁", disabledReason: knownRejection(row, "release", data?.activeSuspensions), onSelect: () => dispose("unlock", row) });
     if (canFreeze && row.status === "frozen") list.push({ key: "unfreeze", label: "解冻", onSelect: () => dispose("unfreeze", row) });
     if (canSuspend) list.push({ key: "suspend", label: "暂停此类奖励", onSelect: () => suspend(row) });
-    if (canReverse && !SETTLED.includes(row.status)) list.push({ key: "reverse", label: "冲正", danger: true, disabledReason: knownRejection(row, "reverse"), onSelect: () => reverse(row) });
+    if (canReverse && (row.canReverse === true || !SETTLED.includes(row.status))) list.push({ key: "reverse", label: "冲正", danger: true, disabledReason: knownRejection(row, "reverse"), onSelect: () => reverse(row) });
     return list.map(item => ({ ...item, disabledReason: blockedRecord(row) ?? item.disabledReason }));
   };
 
