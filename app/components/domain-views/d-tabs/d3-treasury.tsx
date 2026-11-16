@@ -671,7 +671,7 @@ export function D3Treasury() {
       summary="看平台的钱够不够付，要不要补储备。"
       meta={tab ? (
         <span className="rd-toolbar">
-          <span>{asOf ? `${businessClock(parseBusinessTime(asOf))} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+          <span>{asOf && `${businessClock(parseBusinessTime(asOf))} 读取（${businessZone().label}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
           <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
         </span>
       ) : undefined}
