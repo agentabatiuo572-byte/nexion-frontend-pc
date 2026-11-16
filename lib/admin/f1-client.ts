@@ -2274,7 +2274,7 @@ export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string,
     : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`;
   const data = await f1Request<unknown>(path, {
     method: threshold ? "PATCH" : values.action === "reward_add" ? "POST" : values.action === "reward_remove" ? "DELETE" : "PUT",
-    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), reason, operator }),
+    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), expectedRevision: values.expectedRevision, reason, operator }),
     stableIdempotencyKey: commandKey, expectsData: true,
   });
   try { assertF1Overview(data); }
