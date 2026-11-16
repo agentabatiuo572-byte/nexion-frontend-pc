@@ -70,6 +70,8 @@ const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientE
   && cause.status !== 404
   && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
+const conversationPeerChanged = (cause: unknown) => cause instanceof SupportClientError
+  && cause.status === 409 && cause.backendMessage === "CONVERSATION_PEER_CHANGED";
 
 function parseConversations(raw: string | undefined): SessionConvo[] {
   if (!raw) return [];
@@ -1015,6 +1017,18 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   };
   const sendRow = pending ? pendingMessages.list().find(row => row.commandKey === pending.key) : firstPending ? pendingMessages.list().find(row => row.commandKey === firstPending.key) : undefined;
   const sendRetryExpired = Boolean(sendRow && isRetryExpired(sendRow));
+  const refreshChangedPeer = async (identity: string) => {
+    try {
+      followSelection.current = true;
+      await ctx.refreshConversations();
+      if (identityRef.current !== identity) return;
+      setContinuation(null);
+      setDetailRetry(value => value + 1); setProfileRetry(value => value + 1);
+      await messagePages.refresh();
+    } catch (cause) {
+      if (identityRef.current === identity) setActionError(displayAdminError(cause));
+    }
+  };
   const send = async (kind: "TEXT" | "IMAGE" | "SKU" | "LINK", retry?: Pending) => {
     if (busy || !conversationsAvailable || recoveryBlocksTarget) return;
     sendAdminTyping(false);
@@ -1077,7 +1091,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       } catch (cause) {
         if (identityRef.current === identity) {
           const busyHold = supportSessionBusy(cause);
-          if (submitted && !firstPending && busyHold) {
+          if (conversationPeerChanged(cause)) {
+            setSendError(firstPending ? "发送结果未知，请查询结果。" : `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`);
+            await refreshChangedPeer(identity);
+          } else if (submitted && !firstPending && busyHold) {
             // Someone else started talking first: lock the composer with their details and keep the draft.
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             lockFromBusy(requestedCustomerId, busyHold);
@@ -1117,6 +1134,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         setBusy(false);
         if (lostPermission(cause)) ctx.invalidateScope(selected.id, String(selected.customerId));
         setSendError(`会话状态暂时无法确认：${displayAdminError(cause)} 原文已保留，请重试。`);
+        if (conversationPeerChanged(cause)) await refreshChangedPeer(identity);
         return;
       }
     }
@@ -1162,6 +1180,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     }
     catch (cause) {
       const busyHold = supportSessionBusy(cause);
+      if (identityRef.current === identity && conversationPeerChanged(cause)) {
+        setSendError(retry ? "发送结果未知，请查询结果。" : `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
+        await refreshChangedPeer(identity);
+        return;
+      }
       if (identityRef.current === identity && submitted && !retry && busyHold) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         lockFromBusy(String(selected.customerId), busyHold);
