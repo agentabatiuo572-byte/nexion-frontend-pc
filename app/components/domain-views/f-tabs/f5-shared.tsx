@@ -273,7 +273,7 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
         ? "原请求超过 24 小时，不能再重试。查询只看现在的标准，证明不了原操作有没有执行。"
         : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。"}>已过期</StatusTag>;
   return (
-    <Notice tone={rows.every((row) => row.state === "pending") ? "progress" : "warn"} title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
+    <Notice tone="warn" title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
       <ul className="f5-recovery" aria-label="还没有结论的处置">
         {rows.map((row) => (
           <li key={row.key} data-recovery-state={row.state}>
