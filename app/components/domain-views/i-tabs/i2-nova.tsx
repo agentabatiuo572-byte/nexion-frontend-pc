@@ -728,10 +728,6 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           setEventRefreshKey((key) => key + 1);
           toast(`同步完成：发现 ${result.discovered} 条，新增 ${result.inserted} 条，重复 ${result.duplicates} 条`);
         })
-        .catch((error) => {
-          toast(`同步失败:${displayAdminError(error)}`);
-          throw error;
-        })
         .finally(() => setEventBusy(null));
     },
   });

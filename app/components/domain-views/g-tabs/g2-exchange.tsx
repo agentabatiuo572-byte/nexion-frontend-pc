@@ -381,8 +381,7 @@ function G2ExchangePage() {
       const message = messageOf(err);
       if (err instanceof G2OutcomeUnknownError) coveredErrors.current.add(message);
       setError(message);
-      // 结果未知时确认框开着、框里已写这句，不再弹一遍（同处理排队）。
-      if (!(err instanceof G2OutcomeUnknownError)) toast(`操作失败 · ${message}`);
+      // 确认框开着、框里已写这句，不再弹一遍（同处理排队）。
       throw err;
     } finally {
       setDirectCommands(listG2ExchangeCommands(batchAdminId).filter(record => record.path !== "/exchange/queue/process"));
@@ -778,7 +777,6 @@ function G2ExchangePage() {
           if (paramApproval.record(cap.key) || err instanceof G2OutcomeUnknownError) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) { await reload(true); openActionConfirm(null); }
-          if (!paramApproval.record(cap.key) && !(err instanceof G2OutcomeUnknownError)) toast(`操作失败 · ${messageOf(err)}`);
           throw err;
         } finally {
           setDirectCommands(listG2ExchangeCommands(batchAdminId).filter(record => record.path !== "/exchange/queue/process"));
