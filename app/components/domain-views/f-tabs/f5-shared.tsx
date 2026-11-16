@@ -130,8 +130,8 @@ export function approvalTag(note = "批准前这笔奖励不变。") {
 }
 
 /**
- * 后端批准时会拒的组合（F5-PD02、B02、B03）。结算组以返回的真实 unlockAt 毫秒判断；
- * 缺少这个时点不凭 DATEDIFF=0 推断到期。其余拒绝由后端裁决。
+ * 后端批准时会拒的组合（F5-PD02、B02、B03）。组读取的 unlockAt 是 release_at；
+ * 只预判同源组门槛，不从日数重建 network 事件的新截止。其余拒绝由后端裁决。
  */
 export const REJECTION_TEXT = {
   reverseFrozenLegacy: "没有结算组的旧奖励在已冻结时冲正，批准时会被拒。先解冻回冷却中，再冲正。",

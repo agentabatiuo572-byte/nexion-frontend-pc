@@ -952,6 +952,7 @@ export interface F5CommissionFilter {
 }
 
 export interface F5CommissionEvent {
+  /** Grouped reads project settlement release_at; the shifted network event deadline is not returned. */
   unlockAt?: number;
   settlementNo?: string;
   sourceRef?: string;
