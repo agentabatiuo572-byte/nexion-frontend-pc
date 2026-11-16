@@ -91,7 +91,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
         <p>合计是八类、所有状态的金额相加，含已冲正和已拒绝，不是实际发出的钱；两种币分开算。</p>
         <p>有到期时间的到期后系统解锁，不是好友奖励的也能申请提前解锁。已提现表示记录已结束，这页不核出款。</p>
         <p>冷却中、已解锁、已冻结一般都能冲正，没有结算组的旧已冻结记录除外；补发会生成一笔新记录，原记录不变。</p>
-        <p>只有冷却中和已解锁有金额，其余状态只有笔数；金额汇总时已四舍五入到两位小数。</p>
+        <p>只有冷却中和已解锁有金额，其余状态只有笔数。</p>
       </>}>
       <div className="f5-flow" role="group" aria-label="奖励状态流程">
         <div className="f5-flow-main">
@@ -157,7 +157,7 @@ export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAu
   const total = counts.reduce((sum, value) => sum + value, 0);
   return (
     <Panel icon={Layers3} tone="role-1" title="八类奖励" sub="全部记录"
-      explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。金额汇总时已四舍五入到两位小数。">
+      explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。">
       <div className="f5-kinds">
         {data.commissionKinds.map((item, index) => {
           const money = splitMoneyLabel(item.amt);
