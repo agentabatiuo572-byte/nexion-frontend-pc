@@ -30,6 +30,7 @@ interface BackendControl {
 }
 
 interface BackendCoverage {
+  reliable?: boolean;
   coverageRatio?: RawNumber;
   redlinePct?: RawNumber;
   redlineBreached?: boolean | string | null;
@@ -46,6 +47,7 @@ interface BackendOverrides {
 }
 
 interface BackendOverview {
+  priceAvailable?: boolean;
   currentPrice?: RawNumber;
   activeDayIndex?: RawNumber;
   activeFrame?: BackendFrame | null;
@@ -96,6 +98,7 @@ export interface G3Control {
 }
 
 export interface G3Coverage {
+  reliable?: boolean;
   coverageRatio: number;
   redlinePct: number;
   redlineBreached: boolean;
@@ -112,6 +115,7 @@ export interface G3Overrides {
 }
 
 export interface G3Overview {
+  priceAvailable?: boolean;
   currentPrice: number;
   activeDayIndex: number;
   activeFrame: G3CurveFrame;
@@ -125,6 +129,26 @@ export interface G3Overview {
   curveRevision?: string;
   priceRevision?: string;
   scheduleRevision?: string;
+}
+
+/** The read contract includes legitimate unknowns; the existing editor requires complete baselines. */
+export type G3ReadOverview = Omit<G3Overview, "currentPrice" | "overrides" | "coverage"> & {
+  currentPrice: number | null;
+  overrides: Omit<G3Overrides, "currentPrice"> & { currentPrice: number | null };
+  coverage: Omit<G3Coverage, "coverageRatio" | "redlinePct" | "redlineBreached"> & {
+    coverageRatio: number | null; redlinePct: number | null; redlineBreached: boolean | null;
+  };
+};
+export class G3MarketReadUnavailableError extends Error {
+  readonly reason: "PRICE_UNAVAILABLE" | "COVERAGE_UNAVAILABLE" | "PRICE_AND_COVERAGE_UNAVAILABLE";
+  constructor(readonly overview: G3ReadOverview) {
+    const priceUnavailable = overview.priceAvailable === false || overview.currentPrice === null || overview.overrides.currentPrice === null;
+    const coverageUnavailable = overview.coverage.reliable === false || overview.coverage.coverageRatio === null
+      || overview.coverage.redlinePct === null || overview.coverage.redlineBreached === null;
+    super(priceUnavailable ? "UVT 价格暂时读不到" : "UVT 价格数据加载失败，请刷新重试");
+    this.name = "G3MarketReadUnavailableError";
+    this.reason = priceUnavailable ? coverageUnavailable ? "PRICE_AND_COVERAGE_UNAVAILABLE" : "PRICE_UNAVAILABLE" : "COVERAGE_UNAVAILABLE";
+  }
 }
 
 export interface G3HistoryPoint {
@@ -201,7 +225,7 @@ function normalizeFrame(frame: BackendFrame | null | undefined, index: number): 
   };
 }
 
-function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
+function normalizeReadOverview(data: BackendOverview | null | undefined): G3ReadOverview {
   if (!data) throw new Error("UVT 价格数据加载失败，请刷新重试");
   const frames = (data?.frames ?? []).map(normalizeFrame);
   const activeDayIndex = requireNumber(data.activeDayIndex, "activeDayIndex");
@@ -219,8 +243,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
   if (!data.overrides) throw new Error("UVT 价格数据不完整（缺少手动设置），请刷新重试");
   const coverage = data.coverage;
   const overrides = data.overrides;
+  if (data.priceAvailable !== undefined && typeof data.priceAvailable !== "boolean"
+    || coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") throw new Error("UVT 价格数据加载失败，请刷新重试");
   return {
-    currentPrice: requireNumber(data.currentPrice, "currentPrice"),
+    priceAvailable: data.priceAvailable,
+    currentPrice: data.currentPrice === null ? null : requireNumber(data.currentPrice, "currentPrice"),
     activeDayIndex,
     activeFrame,
     weekPeakPrice: requireNumber(data.weekPeakPrice, "weekPeakPrice"),
@@ -236,7 +263,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
       fallback: typeof control.fallback === "undefined" ? undefined : toBool(control.fallback, false),
     })),
     overrides: {
-      currentPrice: requireNumber(overrides.currentPrice, "overrides.currentPrice"),
+      currentPrice: overrides.currentPrice === null ? null : requireNumber(overrides.currentPrice, "overrides.currentPrice"),
       volatilityPct: requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
       oracle: asText(overrides.oracle),
       deviationPct: parseNumber(overrides.deviationPct),
@@ -244,9 +271,10 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
       paused: toBool(overrides.paused, false),
     },
     coverage: {
-      coverageRatio: requireNumber(coverage.coverageRatio, "coverage.coverageRatio"),
-      redlinePct: requireNumber(coverage.redlinePct, "coverage.redlinePct"),
-      redlineBreached: toBool(coverage.redlineBreached, false),
+      reliable: coverage.reliable,
+      coverageRatio: coverage.coverageRatio === null ? null : requireNumber(coverage.coverageRatio, "coverage.coverageRatio"),
+      redlinePct: coverage.redlinePct === null ? null : requireNumber(coverage.redlinePct, "coverage.redlinePct"),
+      redlineBreached: coverage.redlineBreached === null ? null : toBool(coverage.redlineBreached, false),
       precheck: asText(coverage.precheck),
     },
     serverCanonical: data?.serverCanonical === true,
@@ -255,6 +283,18 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
     priceRevision: data.priceRevision,
     scheduleRevision: data.scheduleRevision,
   };
+}
+
+/** Preserve the existing editor contract without substituting numeric values for unavailable reads. */
+function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
+  const read = normalizeReadOverview(data);
+  if (read.priceAvailable === false || read.currentPrice === null || read.overrides.currentPrice === null
+    || read.coverage.reliable === false || read.coverage.coverageRatio === null
+    || read.coverage.redlinePct === null || read.coverage.redlineBreached === null) throw new G3MarketReadUnavailableError(read);
+  return { ...read, currentPrice: read.currentPrice,
+    overrides: { ...read.overrides, currentPrice: read.overrides.currentPrice },
+    coverage: { ...read.coverage, coverageRatio: read.coverage.coverageRatio,
+      redlinePct: read.coverage.redlinePct, redlineBreached: read.coverage.redlineBreached } };
 }
 
 function normalizeHistory(data: BackendHistory | null | undefined): G3History {
@@ -337,6 +377,11 @@ export function serializeG3Frames(frames: G3CurveFrame[]) {
     pumpProbability: g3NumberText(frame.pumpProbability, 6),
     volatilityPct: g3NumberText(frame.volatilityPct),
   }));
+}
+
+/** Read-only consumers can display available facts and each unknown independently. */
+export async function fetchG3MarketReadOverview(): Promise<G3ReadOverview> {
+  return normalizeReadOverview(await g3Request<BackendOverview>("/nex/curve"));
 }
 
 export async function fetchG3MarketOverview() {

@@ -1,6 +1,8 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  J2_GEO_HIT_COUNTRY_INVALID: "查询国家代码不合法，请重新选择国家后查询。",
+  J2_GEO_HIT_PAGE_INVALID: "查询页码超出支持范围，请重新选择页码。",
   A4_USER_NUMBER_INVALID: "事件的用户编号数据不完整，请重新查询后核对。",
   // F5 reward reconciliation and retained requests (backend 111e00cd).
   F5_EXPECTED_VERSION_REQUIRED: "缺少原奖励版本，不能提交状态处置。请重新查询并打开原记录。",

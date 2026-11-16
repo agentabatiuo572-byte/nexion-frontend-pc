@@ -826,6 +826,43 @@ export async function fetchJ2GeoHitSummary(signal?: AbortSignal): Promise<GeoHit
     source: requiredStringArray(row.source, "geo.hitSummary.source"), sourceFields: requiredStringArray(row.sourceFields, "geo.hitSummary.sourceFields"),
     definition: requiredText(row.definition, "geo.hitSummary.definition"), coverage: "recorded_geo_block_events_only", uniqueUsers: false, allAccessProof: false };
 }
+/** Individual refused requests, distinct from country settings and command receipts. */
+export type GeoHitDetail = {
+  id: number; recordedAt: string; countryCode: string; countryName: string;
+  endpointKey: string | null; source: string | null; eventCount: number;
+};
+export type GeoHitDetailPage = { total: number; pageNum: number; pageSize: number; records: GeoHitDetail[] };
+export type GeoHitDetailQuery = { countryCode?: string; endpointKey?: string; pageNum?: number; pageSize?: number };
+
+export async function fetchJ2GeoHitDetails(query: GeoHitDetailQuery = {}, signal?: AbortSignal): Promise<GeoHitDetailPage> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) if (value !== undefined) search.set(key, String(value));
+  const data = rec(await apiRequest<unknown>(`/geo-block/hits${search.size ? `?${search}` : ""}`, { signal }));
+  const count = (value: unknown, field: string, min = 0) => {
+    const result = requiredNum(value, `geo.hitDetails.${field}`);
+    if (!Number.isSafeInteger(result) || result < min) throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.${field}`);
+    return result;
+  };
+  const total = count(data.total, "total"), pageNum = count(data.pageNum, "pageNum", 1), pageSize = count(data.pageSize, "pageSize", 1);
+  if (pageSize > 100) throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.pageSize");
+  const records = requiredRecordRows(data.records, "geo.hitDetails.records").map((row, index): GeoHitDetail => {
+    const optionalText = (key: "endpointKey" | "source") => {
+      const value = row[key];
+      if (value == null) return null;
+      if (typeof value !== "string") throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.records.${index}.${key}`);
+      return value;
+    };
+    return { id: count(row.id, `records.${index}.id`, 1),
+      recordedAt: requiredText(row.recordedAt, `geo.hitDetails.records.${index}.recordedAt`),
+      countryCode: requiredText(row.countryCode, `geo.hitDetails.records.${index}.countryCode`),
+      countryName: requiredText(row.countryName, `geo.hitDetails.records.${index}.countryName`),
+      endpointKey: optionalText("endpointKey"), source: optionalText("source"),
+      eventCount: count(row.eventCount, `records.${index}.eventCount`) };
+  });
+  if (records.length > pageSize || records.length > total) throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.records");
+  return { total, pageNum, pageSize, records };
+}
+
 export type GeoEdgeMetric = { key: string; k: string; value: string; v: string; tone: string };
 export type GeoBlockOverview = {
   blocked: GeoCountry[];
