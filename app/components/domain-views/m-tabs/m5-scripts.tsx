@@ -876,7 +876,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
           : command.key.startsWith("I.session.advisor.policy.") ? `${command.beforeValue} → ${body.value}`
             : `${statusName(body.expectedStatus)} → ${statusName(body.status)} · ${command.text}`;
     return { key: record.commandKey, name: command?.action.split(" · admin.")[0] ?? "结果未知", change, submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>读回核对</Button>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
       {command && !isRetryExpired(record) && <Button size="sm" variant="primary" disabled={writePending || !canRetry(command)} onClick={() => recover(record)}>按原请求重试</Button>}
     </> };
   });
@@ -965,7 +965,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
         <Fact k="客服类型"><span data-proof="m5-seat-position-field">{seatLabel(position)}</span></Fact>
         <Fact k="现在服务">{agent.assignedUserCount} 位客户</Fact>
       </Facts>
-      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
+      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
       <p className="rd-note">接待资格和主管资格在账号管理里改。</p>
       <DiffField label="同时接待上限" before={String(agent.maxConcurrent)} unit="位" hint="0–40 的整数，0 表示不自动分配给他" error={capProblem || undefined} note={capNote}>
         {(control) => <NumberInput {...control} unit="位" min={0} max={40} step={1} value={maxConcurrent} disabled={saving || Boolean(pending)} onChange={(event) => setMaxConcurrent(event.target.value)} />}
@@ -1150,7 +1150,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>绑定理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:高价值用户进入专属客服服务名单,由客服主管分配跟进。" style={{ resize: "vertical" }} />
+            <textarea className="fld m5-bind-reason" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例：高价值用户进入专属客服服务名单，由客服主管分配跟进。" />
             <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>理由需填写 8-200 字。</span>
           </label>
         </div>
@@ -1183,7 +1183,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
                   <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{user.nickname || "未命名用户"}</span>
                   <span className="mono dim2" style={{ fontSize: 11.5 }}>{userNoOf(user)} · {user.phoneMasked || "未留手机号"}</span>
                 </span>
-                {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{boundToCurrent ? "已绑定" : "已绑定其他坐席"}</span>}
+                {alreadyBound && <span className="chip m5-bound-chip">{boundToCurrent ? "已绑定" : "已绑定其他客服"}</span>}
                 {checked && <Icon name="check" size={15} />}
               </button>
             );
