@@ -776,7 +776,7 @@ export default function UserDetailPage() {
   const adminKey = String(session?.adminId ?? "");
 
   const syncPending = useCallback(() => {
-    // 换人时这张表整张清掉（claimPendingCommandOwner），留下的旧记录就是当前账号的。
+    // 存储层只给出当前账号提交的记录，换人不清。
     const live = c3UserId ? c1UserCommands.list().map(c1Command).filter((command) => command.userId === c3UserId
       && (command.legacy ? hasPersistedPendingCommandOwner(adminKey) : command.adminKey === adminKey)) : [];
     setPendingCommands(live);
