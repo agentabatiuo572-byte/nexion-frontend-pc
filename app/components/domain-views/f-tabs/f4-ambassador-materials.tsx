@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, ExternalLink, FileCheck2 } from "lucide-react";
 import { BlockState, Button, Check, CheckGroup, Decision, Drawer, Fact, Facts, Field, Fold, KeyValues, Notice, NumberInput, Segments, StatusTag, Steps } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
+import { SETTLED_REJECTED } from "../recovery-panel";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
@@ -130,7 +131,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
       setPacket(null); setConfirmation(null);
       if (outcome === "SUCCEEDED") ctx.toast("材料核验已记录");
-      else if (outcome === "REJECTED") setRecoveryNotice("刷新页面查看现在的结果。");
+      else if (outcome === "REJECTED") setRecoveryNotice(SETTLED_REJECTED);
       else setRecoveryNotice(displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
       await refresh(); await ctx.refreshF4();
       return true;
