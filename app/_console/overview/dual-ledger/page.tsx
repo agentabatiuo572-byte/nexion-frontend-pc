@@ -183,6 +183,7 @@ export default function DualLedgerPage() {
     queueBacklogUsd,
     avgRiskScore,
     coverageSeries,
+    coverageSeriesPoints,
     coverageSeriesIntervalHours,
     prev,
   } = LEDGER;
@@ -241,6 +242,11 @@ export default function DualLedgerPage() {
       : null;
   // 历史点是当时的储备 ÷ 现在的应付款，线的起伏只说明储备在变（决定 B1-走势）。估算是旧页面就有的，只按储备变化的速度算。
   const trendMsg = windowsToRedline != null ? `储备在减少，按这个速度约 ${windowsToRedline} 个时段后跌破红线` : slope < -0.01 ? "储备在减少" : slope > 0.01 ? "储备在增加" : "储备没有明显变化";
+  // 新后端给每个点标了是不是按现在的应付款倒推的；旧后端没有这个标记时沿用原来的说法。
+  const backcastCount = coverageSeriesPoints?.filter((point) => point.backcast).length;
+  const latestLive = coverageSeriesPoints?.at(-1)?.backcast === false;
+  const backcastText = backcastCount === undefined ? undefined
+    : `${backcastCount === coverageSeriesPoints!.length ? "每个点都" : `前 ${backcastCount} 个点`}按现在的应付款倒推${latestLive ? "，「现在」是实时值" : ""}`;
   const seriesTicks = coverageSeries.map((_, index) => {
     const back = coverageSeries.length - 1 - index;
     if (back === 0) return "现在";
@@ -589,10 +595,10 @@ export default function DualLedgerPage() {
             ]} />
           <p className="b1-distance" data-tone={coverTone}>{distanceText}</p>
           <div className="b1-trend-head">
-            <h3 className="b1-sub">近 {coverageSeries.length} 个时段<Explain label="覆盖率走势怎么算" content={`每 ${coverageSeriesIntervalHours ?? "—"} 小时一个点。储备按资金账本倒推当时的值，应付款一律用现在的值（应付款没有历史记录），所以这条线不是当时真实的覆盖率，起伏只来自储备进出。「按这个速度」只用第一个点和最后一个点的储备变化估，没算应付款的变化，不是系统预测。`} /></h3>
+            <h3 className="b1-sub">近 {coverageSeries.length} 个时段<Explain label="覆盖率走势怎么算" content={`每 ${coverageSeriesIntervalHours ?? "—"} 小时一个点。${backcastCount === undefined ? "" : `${backcastCount === coverageSeriesPoints!.length ? "每个点都是" : `前 ${backcastCount} 个点是`}倒推的：`}储备按资金账本倒推当时的值，应付款一律用现在的值（应付款没有历史记录），所以${backcastCount === undefined ? "这条线" : "这些点"}不是当时真实的覆盖率，起伏只来自储备进出${latestLive ? "；「现在」这个点是实时值" : ""}。「按这个速度」只用第一个点和最后一个点的储备变化估，没算应付款的变化，不是系统预测。`} /></h3>
             <span className="b1-trend-msg" data-tone={windowsToRedline != null || (slope < -0.01 && zone !== "success") ? "warn" : undefined}>{trendMsg}</span>
           </div>
-          <p className="b1-caliber">历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化</p>
+          <p className="b1-caliber">{backcastText ?? "历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化"}</p>
           {windowsToRedline != null && <p className="b1-caliber">只按储备减少的速度估算，没算应付款的变化</p>}
           <TrendLines label="近几个时段的覆盖率" ticks={seriesTicks} format={pctText} axisFormat={(v) => `${Number(v.toFixed(1))}%`} height={120}
             series={[{ key: "coverage", label: "覆盖率", slot: 2, values: coverageSeries }]}

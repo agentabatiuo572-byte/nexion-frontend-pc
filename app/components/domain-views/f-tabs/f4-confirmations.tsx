@@ -10,6 +10,7 @@ import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usd
 import { decimalText } from "./f4-shared";
 import { f4Decimal, f4HeadCapAmplifies, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
+import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
 
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
@@ -98,11 +99,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的当前周重新计算池金额，并作为已解锁的 USDT 奖励真实入账到有资格的用户；本周已经结算过的会跳过，不补发差额。",
-      check: "执行时按当时的设置和票数重新计算；不检查兑付覆盖率。",
+      check: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次结算按算出的金额真实发钱",
-    coverageCheck: "执行这次结算时不检查兑付覆盖率，请按这里的数自己判断。",
+    coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。每周自动结算不做这项检查。",
     facts: <Facts>
       <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
@@ -232,16 +233,15 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给团队订单算力点最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
-      check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。执行时不检查兑付覆盖率。",
+      check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。批准时先查兑付覆盖率，不够不发。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次派奖按算出的金额真实发钱",
-    coverageCheck: "执行这次派奖时不检查兑付覆盖率，请按这里的数自己判断。",
-    facts: <Facts>
-      <Fact k="总榜奖池" lead tone="role-1" unit={ppAllTime === "" ? undefined : "USDT"}>{prizeShown(ppAllTime)}</Fact>
-      <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
-      <Fact k="头部上限"><span className="rd-keep">第 1 名最多 {top1MaxPct}%，</span><span className="rd-keep">前 5 名合计最多 {top5MaxPct}%，</span><span className="rd-keep">超出的不再分给别人</span></Fact>
-    </Facts>,
+    coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+    facts: <div className="rd-stack">
+      <F4PayoutPreviewFacts pool={prizeShown(ppAllTime)} />
+      <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
+    </div>,
     detail: `总榜不会自动清零。名次按算力点排，发的是 USDT：当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
     run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
   };
@@ -259,10 +259,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       check: "提交和执行时都要找到这个人本周的风险记录或生效中的关联账户簇，找不到会被拒绝。",
     },
     completionCopy: approvalCopy("榜单处置权限"),
-    facts: <KeyValues rows={[
-      { key: "who", label: "谁", value: `用户 ${member.userId}` },
-      { key: "rank", label: "本周名次", value: "computePoints" in member ? `第 ${member.rank} 名 · ${count(member.computePoints as number)} 点` : `第 ${member.rank} 名 · ${prizeText(member.gmvLabel)} USDT` },
-    ]} />,
+    facts: <Facts>
+      <Fact k="谁">{`用户 ${member.userId}`}</Fact>
+      <Fact k="本周名次">{"computePoints" in member ? `第 ${member.rank} 名 · ${count(member.computePoints as number)} 点` : `第 ${member.rank} 名 · ${prizeText(member.gmvLabel)} USDT`}</Fact>
+      <F4DisqualifyEvidenceFact memberUserId={member.memberUserId} />
+    </Facts>,
     detail: `把成员 ${member.memberUserId} 移出本周榜单，排名和奖池发放都不再算他。`,
   };
       break;

@@ -538,14 +538,14 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       title: `${archived ? "恢复上线" : "回滚"}${sectionName(s.key)}`,
       detail: (
         <>
-          当前 <b>{s.v}</b>。请选择要恢复的历史版本。提交后等待审批；审批通过并执行后，对外内容恢复为所选版本，权限要求和发布一样。回滚不重新检查三语，旧版本不完整时 App 信任中心整页不可用。
+          当前 <b>{s.v}</b>。请选择要恢复的历史版本，批准后对外换成它，权限要求和发布一样。内容超过 80 项或格式不对的版本不能回滚；缺语言的版本能回滚，但回滚后 App 信任中心整页打不开。
         </>
       ),
       amplifies: false,
       effect: approvalTag,
       confirmTone: "danger",
       confirmLabel: "提交审批",
-      statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}换成所选版本；所选版本不完整时 App 信任中心整页不可用。`, check: "先看所选版本完不完整，理由写清为什么回到这一版。" },
+      statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}换成所选版本；所选版本缺语言时 App 信任中心整页打不开。`, check: "先看所选版本完不完整：超过 80 项或格式不对的不能回滚。理由写清为什么回到这一版。" },
       edit: { kind: "select", label: archived ? "恢复成" : "回滚到", current: s.v, currentLabel: archived ? "已下架的版本" : "现在公开", options, optionLabels, hint: `只能选这一块发布过的版本，时间为${businessZone().label}` },
       facts: (value?: string) => {
         const target = value ? versionOf(value) : undefined;
