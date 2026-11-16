@@ -26,6 +26,8 @@ export type B4GrowthFlowHistory = {
   ratioSeries: Array<{ label: string; newInflowWan: number; outflowWan: number; newInflowUsdt: number; outflowUsdt: number; ratio: number | null }>;
   budget: {
     available: boolean;
+    usageAvailable?: boolean;
+    usageReason?: string;
     totalUsdt?: number;
     reason?: string;
     missingKeys: string[];
