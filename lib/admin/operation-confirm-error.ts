@@ -29,8 +29,8 @@ function outcomeUncertainDetail(error: unknown): { commandKey: string; isA2: boo
 export function operationConfirmErrorMessage(error: unknown): string {
   const uncertain = outcomeUncertainDetail(error);
   if (uncertain?.isA2) {
-    return "结果未知，可能已经生效。不要关框、不要改内容，直接重试，不会重复执行；"
-      + `也可以到「操作记录与审批」核对。命令号：${uncertain.commandKey}`;
+    return "结果未知，可能已经提交成功。不要关框、不要改内容，按原请求重试，"
+      + `或到「操作记录与审批」核对。命令号：${uncertain.commandKey}`;
   }
   if (uncertain) {
     // 刻意不承诺「系统会复用同一命令号自动去重」:携带命令号的错误族里,只有走持久 store 的面
