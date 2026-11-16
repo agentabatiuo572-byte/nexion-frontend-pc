@@ -14,7 +14,7 @@ export interface PendingMutationRecord {
   commandKey: string;
   createdAt: number;
   expiresAt: number;
-  /** Added at capture when the page has no existing submitter metadata. */
+  /** Authenticated submitter, stamped on every capture; page metadata cannot override it. */
   commandOwnerId?: number;
 }
 
@@ -62,28 +62,118 @@ function adminId(value: unknown): number | undefined {
   return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 }
 
-/** Decode the submitter fields already used by the migrated page journals. */
-function commandOwner(value: unknown): number | undefined {
+/** Audited legacy schemas only. Unlisted keys/fields never prove a submitter. */
+const legacyOwnerPaths: Record<string, readonly string[]> = {
+  "admin-promotion-pending-v1": ["owner"],
+  "nexgrid-admin-d1-uncertain-commands-v1": ["adminId"],
+  "nexion-a1-support-avatar-account-create": ["actorId"],
+  "nexion-account-avatar-drafts-v1": ["actorId"],
+  "nexion-admin-a3-pending-commands-v1": ["contentCommandActor", "commandOrigin.originalAdminId"],
+  "nexion-admin-a6-pending-commands-v1": ["actorId"],
+  "nexion-admin-a7-pending-commands-v1": ["actorId"],
+  "nexion-admin-a9-developer-access-attempts-v1": ["adminId"],
+  "nexion-admin-b0-export-commands-v1": ["adminId"],
+  "nexion-admin-b1-commands": ["adminId"],
+  "nexion-admin-b5-risk-radar-commands-v1": ["adminId"],
+  "nexion-admin-c1-user-detail-commands-v1": ["adminKey"],
+  "nexion-admin-c5-model-lock-commands-v1": ["owner"],
+  "nexion-admin-c5-security-commands-v1": ["owner"],
+  "nexion-admin-c6-regrisk-commands-v1": ["owner"],
+  "nexion-admin-cregis-deposit-policy-proposals-v1": ["owner"],
+  "nexion-admin-d2-withdrawal-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-d3-treasury-commands-v1": ["ownerAdminId", "commandOrigin.originalAdminId"],
+  "nexion-admin-d5-withdrawal-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-d6-fx-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-d7-payout-config-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-device-rank-attempt": ["adminId"],
+  "nexion-admin-e1-media-commands-v1": ["actorId"],
+  "nexion-admin-e1-monthly-target-commands-v1": ["actorId"],
+  "nexion-admin-e1-proposal-commands-v1": ["actorId"],
+  "nexion-admin-e2-pool-commands-v1": ["actorId"],
+  "nexion-admin-e3-proposals-v1": ["owner"],
+  "nexion-admin-e4-order-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-e5-full-commands-v1": ["actorId"],
+  "nexion-admin-e6-commands-v2": ["owner"],
+  "nexion-admin-f-commands-v1": ["adminId"],
+  "nexion-admin-f-direct-commands-v1": ["adminId", "commandOrigin.originalAdminId"],
+  "nexion-admin-f1-policy-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-f1-rank-how-save-v1": ["adminId"],
+  "nexion-admin-f2-activation-v1": ["adminId"],
+  "nexion-admin-f3-placements-v1": ["adminId"],
+  "nexion-admin-g-param-proposals-v1": ["adminId"],
+  "nexion-admin-g2-exchange-commands-v1": ["adminId"],
+  "nexion-admin-g4-genesis-commands-v1": ["adminId"],
+  "nexion-admin-g7-repurchase-commands-v1": ["adminId"],
+  "nexion-admin-h1-phase-commands-v1": ["actorId"],
+  "nexion-admin-h3-binding-commands-v1": ["adminId"],
+  "nexion-admin-h3-config-commands-v1": ["adminId"],
+  "nexion-admin-h3-mission-commands-v1": ["adminId"],
+  "nexion-admin-h3-weekly-region-proposals-v1": ["adminId"],
+  "nexion-admin-h4-commands-v1": ["owner"],
+  "nexion-admin-h5-mutations-v1": ["adminId"],
+  "nexion-admin-h7-voucher-commands-v1": ["adminId"],
+  "nexion-admin-h8-commands-v1": ["adminId"],
+  "nexion-admin-h9-public-stats-attempt": ["adminId"],
+  "nexion-admin-hi-reward-commands-v1": ["owner"],
+  "nexion-admin-i-content-uncertain-commands-v1": ["i1.owner", "i2.owner", "i3.owner", "i4.owner", "i6.owner"],
+  "nexion-admin-i3-campaign-commands-v1": ["owner"],
+  "nexion-admin-i4-document-commands-v1": ["owner"],
+  "nexion-admin-i4-trust-commands-v1": ["owner"],
+  "nexion-admin-j-emergency-commands-v1": ["geo.commandOrigin.originalAdminId", "tamper.commandOrigin.originalAdminId", "sop.commandOrigin.originalAdminId"],
+  "nexion-admin-j1-kill-switch-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-j1-restore-proposals": ["commandOrigin.originalAdminId"],
+  "nexion-admin-k1-multiaccount-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-k3-rules-commands-v1": ["actorId"],
+  "nexion-admin-l1-export-commands-v1": ["commandOrigin.originalAdminId"],
+  "nexion-admin-l3-detail-commands-v1": ["owner"],
+  "nexion-admin-l4-network-commands-v1": ["owner"],
+  "nexion-admin-l5-task-commands-v1": ["owner"],
+  "nexion-admin-m-content-commands-v1": ["faq.actorId", "m5.actorId"],
+  "nexion-admin-m-maintenance-v1": ["actorId"],
+  "nexion-admin-m-pool-transfer-v1": ["actorId"],
+  "nexion-admin-m-support-rules-v1": ["actorId"],
+  "nexion-admin-m-support-welcome-v1": ["actorId"],
+  "nexion-admin-m-transfer-v1": ["actorId"],
+  "nexion-admin-m3-session-end-v1": ["actorId"],
+  "nexion-admin-payment-policy-commands-v1": ["owner"],
+  "nexion-admin-payment-release-commands-v1": ["owner"],
+  "nexion-admin-phone-commands-v1": ["owner"],
+  "nexion-admin-phone-policy-proposals-v1": ["owner"],
+  "nexion-admin-purchase-payment-commands-v1": ["owner"],
+  "nexion-admin-support-group-commands-v1": ["actorId"],
+  "nexion-admin-support-pool-route-v1": ["actorId"],
+  "nexion-admin-withdrawal-config-proposals": ["adminId", "commandOrigin.originalAdminId"],
+  "nexion-m5-unbound-policy-v1": ["actorId"],
+  "nexion-self-avatar-save-v1": ["actorId"],
+  "nexion-support-bulk-attachment-v1": ["actorId"],
+  "nexion-support-bulk-pending": ["actorId"],
+  "nexion-support-random-assignment": ["actorId"],
+  "uvel-f4-ambassador-material-reviews": ["actorId"],
+};
+
+function commandOwner(value: unknown, storageKey: string): number | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const row = value as Record<string, unknown>;
-  const candidates = [row.commandOwnerId, row.actorId, row.adminId, row.adminKey, row.ownerAdminId, typeof row.owner === "string" && /^[1-9]\d*:.+$/.test(row.owner) ? row.owner.split(":")[0] : row.owner, row.contentCommandActor];
-  const originals = [row, ...["geo", "tamper", "sop", "i1", "i2", "i3", "i4", "i6", "faq", "m5"].map(key => row[key])];
-  for (const original of originals) {
-    if (!original || typeof original !== "object" || Array.isArray(original)) continue;
-    const saved = original as Record<string, unknown>;
-    if (original !== row) candidates.push(saved.owner, saved.actorId);
-    const origin = saved.commandOrigin;
-    if (origin && typeof origin === "object" && !Array.isArray(origin)) candidates.push((origin as Record<string, unknown>).originalAdminId);
-  }
-  const present = candidates.filter(id => id !== undefined);
-  const ids = present.map(adminId);
-  return ids.length && ids[0] !== undefined && ids.every(id => id === ids[0]) ? ids[0] : undefined;
+  // The journal's stamp is authoritative, even when a page has an unrelated
+  // field called owner/adminId. An invalid stamp must not fall back to legacy data.
+  if ("commandOwnerId" in row) return adminId(row.commandOwnerId);
+  const owners = (legacyOwnerPaths[storageKey] ?? []).map(path => {
+    let field: unknown = row;
+    for (const part of path.split(".")) {
+      if (!field || typeof field !== "object" || Array.isArray(field)) return undefined;
+      field = (field as Record<string, unknown>)[part];
+    }
+    // This particular legacy schema stores the authenticated adminId:username.
+    return storageKey === "nexion-admin-l4-network-commands-v1" && typeof field === "string"
+      ? /^[1-9]\d*:.+$/.test(field) ? field.split(":")[0] : undefined : field;
+  }).filter(owner => owner !== undefined).map(adminId);
+  return owners.length && owners[0] !== undefined && owners.every(owner => owner === owners[0]) ? owners[0] : undefined;
 }
 
-/** Also used by the few legacy readers that inspect raw journals. */
-export function isPendingCommandOwnedBy(value: unknown, ownerId: string | number | undefined = currentCommandOwner): boolean {
+/** Raw legacy readers must name their storage schema; new stamps need no field inference. */
+export function isPendingCommandOwnedBy(value: unknown, storageKey: string, ownerId: string | number | undefined = currentCommandOwner): boolean {
   const owner = adminId(ownerId);
-  return owner !== undefined && owner === currentCommandOwner && commandOwner(value) === owner;
+  return owner !== undefined && owner === currentCommandOwner && commandOwner(value, storageKey) === owner;
 }
 
 export function hasPersistedPendingCommandOwner(ownerId: string): boolean {
@@ -197,7 +287,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   }
 
   function visible(record: T, commandKey: string): boolean {
-    return isPendingCommandOwnedBy(record) && usable(record, commandKey, Date.now());
+    return isPendingCommandOwnedBy(record, storageKey) && usable(record, commandKey, Date.now());
   }
 
   return {
@@ -209,9 +299,8 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
       const previous = persisted[commandKey];
       if (currentCommandOwner === undefined) throw new Error("ADMIN_AUTH_REQUIRED");
       // A later session cannot rewrite a saved original, including through a stale callback.
-      if (previous && !isPendingCommandOwnedBy(previous)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
-      const extraOwner = commandOwner(extra);
-      if (extraOwner !== undefined && extraOwner !== currentCommandOwner) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+      if (previous && !isPendingCommandOwnedBy(previous, storageKey)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+      if (extra && "commandOwnerId" in extra && adminId(extra.commandOwnerId) !== currentCommandOwner) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
       // 🔴 TTL 是**从首次尝试起的硬上限,不滑动续期**(2026-08-06 修正)。
       //    后端幂等窗固定 24h 且从第一次请求起算(开发落地规格 §0.4,运营不可调)。
       //    上一版每次 remember 都 `Date.now() + ttl`,连续重试能让客户端记录活过后端窗口 ——
@@ -223,7 +312,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
       //   类型层今天挡得住 TS 调用方,但探针实测确实能覆盖 —— 顺序本身就该免疫。
       persisted[commandKey] = {
         ...(extra as object | undefined),
-        ...(extraOwner === undefined ? { commandOwnerId: currentCommandOwner } : {}),
+        commandOwnerId: currentCommandOwner,
         fingerprint,
         commandKey,
         createdAt,
@@ -317,7 +406,7 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
       try {
         const parsed = JSON.parse(window.sessionStorage.getItem(options.storageKey) ?? "{}") as Record<string, unknown>;
         const record = parsed?.[commandKey] as Partial<SlotAttemptRecord> | undefined;
-        return isPendingCommandOwnedBy(record) && !!record
+        return isPendingCommandOwnedBy(record, options.storageKey) && !!record
           && record.commandKey === commandKey
           && record.fingerprint === slot
           && record.inputFingerprint === inputFingerprint

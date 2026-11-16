@@ -477,7 +477,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   // 原操作提醒：每条写改的是什么、从多少到多少、什么时候提交的。按原请求重试只读保存的原记录，
   // 调用现成的 openOperation 打开原确认框；概览读不到、原来的按钮不在了也能打开。过期的只能查询。
   const queryOriginal = (record: K4PendingCommand) => {
-    if (!isPendingCommandOwnedBy(record)) return;
+    if (!isPendingCommandOwnedBy(record, "nexion-admin-k4-scoring-commands-v1")) return;
     void reloadCurrentScoring().catch(() => undefined);
     if (record.alertId) readWithdrawalAlerts();
     else if (record.operation && "user" in record.operation) void loadUser(record.operation.user.userNo);

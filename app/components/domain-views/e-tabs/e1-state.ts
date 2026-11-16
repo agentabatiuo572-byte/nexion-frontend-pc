@@ -113,7 +113,7 @@ export function e1LegacyCommands(actorId: string): E1Legacy[] {
     return Object.entries(saved).flatMap(([key, value]) => {
       if (!value || typeof value !== "object") return [];
       const row = value as E1Legacy;
-      return isPendingCommandOwnedBy(row, actorId) && row.commandKey === key && typeof row.fingerprint === "string" && row.fingerprint.startsWith("e1_")
+      return isPendingCommandOwnedBy(row, "nexion-admin-e-domain-commands-v1", actorId) && row.commandKey === key && typeof row.fingerprint === "string" && row.fingerprint.startsWith("e1_")
         && typeof row.inputFingerprint === "string" && Number.isFinite(row.createdAt) && Number.isFinite(row.expiresAt) ? [row] : [];
     });
   } catch { return []; }

@@ -294,7 +294,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const [settled, setSettled] = useState<FundSettled[]>([]);
   /** Evidence forms reuse this path; missing/unknown/failed receipts preserve the saved command. */
   const checkInvestigation = async (record: J1Pending | RestoreAttempt, evidence?: FundCommandEvidence) => {
-    if (!isPendingCommandOwnedBy(record)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+    if (!isPendingCommandOwnedBy(record, "input" in record ? "nexion-admin-j1-restore-proposals" : "nexion-admin-j1-kill-switch-commands-v1")) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     setSubmitting(record.fingerprint);
     try {
       const receipt = await checkFundCommand(record, evidence);
