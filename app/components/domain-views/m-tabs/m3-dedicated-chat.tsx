@@ -576,9 +576,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const threadNotice = (state: ConversationWriteState) => {
     const reassigned = Boolean(state.threadOwnerAgentId && state.currentAssignmentAgentId && state.threadOwnerAgentId !== state.currentAssignmentAgentId);
     const otherNo = state.writableConversationNo && state.writableConversationNo !== selected?.id ? state.writableConversationNo : null;
-    const current = otherNo ? visible.find((convo) => convo.id === otherNo) : undefined;
     // BUG-424：客户现在归本人时给下一步；按钮写的去向跟着后端给的当前会话走（有就打开，没有就首次联系）。
-    if (canContinueConversation && !current) return <Notice tone="neutral" action={<>
+    if (canContinueConversation) return <Notice tone="neutral" action={<>
       {!state.writableConversationNo && <Explain label="点了会怎样" content="进入首次联系。发出第一条消息后才有新会话。" />}
       <Button size="sm" variant="primary" loading={actionChecking} loadingText="正在核对…" onClick={() => void continueClosed()}>{state.writableConversationNo ? "打开当前会话" : "发起会话"}</Button>
     </>}>{reassigned ? `旧会话发不出：客户已从${state.threadOwnerAgentName ?? "原客服"}改分给你。` : "这是旧会话，这里发不出。"}</Notice>;
@@ -586,8 +585,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       : state.currentAssignmentAgentId ? `这是旧会话，客户现在归${state.currentAssignmentAgentName ?? "其他客服"}，这里不能再回复。`
       : otherNo ? "这是旧会话，客户现在的会话是另一条，这里不能再回复。"
       : "读不到这条会话现在归谁，暂时不能回复。";
-    return <Notice tone="neutral" action={current ? <Button size="sm" onClick={() => select(current)}>打开当前会话</Button>
-      : !reassigned && !otherNo && !state.currentAssignmentAgentId ? <Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button> : undefined}>{text}</Notice>;
+    return <Notice tone="neutral" action={!reassigned && !otherNo && !state.currentAssignmentAgentId ? <Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button> : undefined}>{text}</Notice>;
   };
   // M-25: only a thread this account can answer shows the editor; unassigned and supervisor review get one clear next step.
   const composerMode: "write" | "unbound" | "review" | "locked" | "checking" = selected && selectedUnbound ? "unbound" : heldByOther ? "locked" : !selected || actsAsAdvisor || holdAllowsOther ? "write" : canReviewAll && canWriteM3 && hold === undefined ? "checking" : "review";
@@ -1319,7 +1317,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     try {
       const next = await resolveMConversationContinuation(selected.id, adminId);
       if (stamp !== identityRef.current) return;
-      if (next.conversationNo) await ctx.loadConversationDetail(next.conversationNo);
+      if (next.conversationNo && !visible.some(convo => convo.id === next.conversationNo)) await ctx.refreshConversations();
       if (stamp !== identityRef.current) return;
       setContinuation(next);
       const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", next.customerId); window.history.replaceState(null, "", url);
