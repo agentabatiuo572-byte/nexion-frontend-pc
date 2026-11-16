@@ -141,7 +141,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const PRIZE_FIELD: Record<string, string> = { nameZh: "中文名称", nameEn: "英文名称", nameVi: "越南语名称", rewardType: "奖励类型", amount: "每名金额", productNo: "设备商品编号", quantity: "中奖名额", id: "奖项" };
   const prizeName = (id: string) => {
     const leaf = review?.fields.find(field => field.path === `prizes.${encodeURIComponent(id).replace(/\./g, "%2E")}.nameZh`);
-    return String(leaf?.latest ?? leaf?.mine ?? leaf?.opened ?? "") || "未命名奖项";
+    // 空名不算有名字：最新一份没写中文名时用你填的或打开时的名字。
+    return [leaf?.latest, leaf?.mine, leaf?.opened].map(name => name == null ? "" : String(name).trim()).find(Boolean) || "未命名奖项";
   };
   const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
     path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
