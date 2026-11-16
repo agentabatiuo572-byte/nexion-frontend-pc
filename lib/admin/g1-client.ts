@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { assertG1OverviewContract } from "@/lib/admin/g-overview-contract";
+import { assertG1OverviewContract, assertG1PositionContract } from "@/lib/admin/g-overview-contract";
 import { stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
@@ -71,6 +71,7 @@ interface BackendPositionRow {
   unlockAt?: string | null;
   estimatedInterest?: string | null;
   status?: string | null;
+  storedStatus?: string;
   statusLabel?: string | null;
   statusTone?: string | null;
   note?: string | null;
@@ -135,8 +136,8 @@ export interface G1Pool {
   apyDisplay: string;
   penalty: string;
   penaltyDisplay: string;
-  minStake: string;
-  minDisplayValue: string;
+  minStake: string | null;
+  minDisplayValue: string | null;
   lockedUsd: number;
   lockedDisplay: string;
   enabled: boolean;
@@ -169,6 +170,7 @@ export interface G1PositionRow {
   unlockAt: string;
   estimatedInterest: string;
   status: string;
+  storedStatus?: string;
   statusLabel: string;
   statusTone: string;
   note: string;
@@ -245,8 +247,8 @@ function normalizePool(row: BackendPool): G1Pool {
     apyDisplay: asText(row.apyDisplay, `${row.apy ?? ""}%`),
     penalty: String(row.penalty ?? ""),
     penaltyDisplay: asText(row.penaltyDisplay, `${row.penalty ?? ""}% principal + forfeit interest`),
-    minStake: String(row.minStake ?? ""),
-    minDisplayValue: asText(row.minDisplayValue, String(row.minStake ?? "")),
+    minStake: row.minStake === null ? null : String(row.minStake ?? ""),
+    minDisplayValue: row.minDisplayValue === null ? null : asText(row.minDisplayValue, String(row.minStake ?? "")),
     lockedUsd,
     lockedDisplay: asText(row.lockedDisplay, moneyMillions(lockedUsd)),
     enabled: toBool(row.enabled, true),
@@ -277,6 +279,7 @@ function normalizePositionRow(row: BackendPositionRow): G1PositionRow {
     unlockAt: asText(row.unlockAt),
     estimatedInterest: asText(row.estimatedInterest),
     status: asText(row.status),
+    ...(row.storedStatus !== undefined ? { storedStatus: row.storedStatus } : {}),
     statusLabel: asText(row.statusLabel),
     statusTone: asText(row.statusTone, "dim"),
     note: asText(row.note),
@@ -351,11 +354,11 @@ async function g1Request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G1_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), { httpStatus: response.status, apiCode: result?.code, reasonCode: result?.message });
   }
 
   return result.data as T;
@@ -363,4 +366,27 @@ async function g1Request<T>(path: string, init?: RequestInit) {
 
 export async function fetchG1StakingOverview() {
   return normalizeOverview(await g1Request<BackendOverview>("/staking"));
+}
+
+export type G1PositionRead = { status: "found"; record: G1PositionRow } | { status: "not-found" };
+
+/** Exact stored key, independent of the overview's 50-row limits and monthly early-withdrawal window. */
+export async function fetchG1StakingPosition(positionNo: string): Promise<G1PositionRead> {
+  const key = positionNo.trim();
+  if (!/^STK-[A-Za-z0-9-]{1,80}$/.test(key)) {
+    throw new Error(formatAdminApiError("STAKING_POSITION_NO_INVALID", "STAKING_POSITION_NO_INVALID"));
+  }
+  let data: BackendPositionRow;
+  try {
+    data = await g1Request<BackendPositionRow>(`/staking/positions/${encodeURIComponent(key)}`);
+  } catch (error) {
+    const failure = error as { httpStatus?: number; apiCode?: number; reasonCode?: string };
+    if (failure.httpStatus === 404 && failure.apiCode === 404 && failure.reasonCode === "STAKING_POSITION_NOT_FOUND") {
+      return { status: "not-found" };
+    }
+    throw error;
+  }
+  assertG1PositionContract(data);
+  if (data.positionNo !== key) throw new Error("G1_RESPONSE_INVALID:data.position.positionNo");
+  return { status: "found", record: normalizePositionRow(data) };
 }

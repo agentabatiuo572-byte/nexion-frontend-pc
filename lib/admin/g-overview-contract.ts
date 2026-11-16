@@ -90,7 +90,7 @@ function validateG1Pool(value: unknown, index: number): void {
   const row = record(module, value, path);
   requiredKeys(module, row, path, [
     "product", "tierKey", "term", "termDays", "apy", "apyDisplay", "penalty", "penaltyDisplay",
-    "minStake", "minDisplayValue", "lockedUsd", "lockedDisplay", "enabled", "killed", "status",
+    "lockedUsd", "lockedDisplay", "enabled", "killed", "status",
     "statusLabel", "statusTone", "highYield",
   ]);
   text(module, row.product, `${path}.product`);
@@ -101,8 +101,9 @@ function validateG1Pool(value: unknown, index: number): void {
   text(module, row.apyDisplay, `${path}.apyDisplay`);
   numeric(module, row.penalty, `${path}.penalty`, 0, 100);
   text(module, row.penaltyDisplay, `${path}.penaltyDisplay`);
-  numeric(module, row.minStake, `${path}.minStake`);
-  text(module, row.minDisplayValue, `${path}.minDisplayValue`);
+  // Explicit null means the stored minimum is unavailable; missing or malformed fields still fail.
+  if (row.minStake !== null) numeric(module, row.minStake, `${path}.minStake`);
+  if (row.minDisplayValue !== null) text(module, row.minDisplayValue, `${path}.minDisplayValue`);
   numeric(module, row.lockedUsd, `${path}.lockedUsd`);
   text(module, row.lockedDisplay, `${path}.lockedDisplay`);
   bool(module, row.enabled, `${path}.enabled`);
@@ -111,6 +112,25 @@ function validateG1Pool(value: unknown, index: number): void {
   text(module, row.statusLabel, `${path}.statusLabel`);
   enumText(module, row.statusTone, `${path}.statusTone`, new Set(["ok", "bad", "warn", "dim"]));
   bool(module, row.highYield, `${path}.highYield`);
+}
+
+function validateG1Position(value: unknown, path: string): void {
+  const module = "G1";
+  const position = record(module, value, path);
+  requiredKeys(module, position, path, [
+    "positionNo", "userNo", "nickname", "tier", "amount", "lockedApy", "earlyPenalty",
+    "lockedAt", "unlockAt", "estimatedInterest", "status", "statusLabel", "statusTone", "note",
+  ]);
+  ["positionNo", "userNo", "tier", "amount", "lockedApy", "earlyPenalty", "lockedAt", "unlockAt",
+    "estimatedInterest", "status", "statusLabel", "statusTone"].forEach((key) => text(module, position[key], `${path}.${key}`));
+  text(module, position.nickname, `${path}.nickname`, true);
+  text(module, position.note, `${path}.note`, true);
+  if (position.storedStatus !== undefined) text(module, position.storedStatus, `${path}.storedStatus`);
+}
+
+export function assertG1PositionContract<T>(value: T): T {
+  validateG1Position(value, "data.position");
+  return value;
 }
 
 function validateG1PositionGroup(value: unknown, index: number): void {
@@ -123,16 +143,7 @@ function validateG1PositionGroup(value: unknown, index: number): void {
   text(module, row.note, `${path}.note`, true);
   numeric(module, row.count, `${path}.count`);
   array(module, row.rows, `${path}.rows`).forEach((item, rowIndex) => {
-    const rowPath = `${path}.rows[${rowIndex}]`;
-    const position = record(module, item, rowPath);
-    requiredKeys(module, position, rowPath, [
-      "positionNo", "userNo", "nickname", "tier", "amount", "lockedApy", "earlyPenalty",
-      "lockedAt", "unlockAt", "estimatedInterest", "status", "statusLabel", "statusTone", "note",
-    ]);
-    ["positionNo", "userNo", "tier", "amount", "lockedApy", "earlyPenalty", "lockedAt", "unlockAt",
-      "estimatedInterest", "status", "statusLabel", "statusTone"].forEach((key) => text(module, position[key], `${rowPath}.${key}`));
-    text(module, position.nickname, `${rowPath}.nickname`, true);
-    text(module, position.note, `${rowPath}.note`, true);
+    validateG1Position(item, `${path}.rows[${rowIndex}]`);
   });
 }
 
