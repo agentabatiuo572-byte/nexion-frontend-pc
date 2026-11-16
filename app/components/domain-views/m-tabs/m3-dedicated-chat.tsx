@@ -63,7 +63,7 @@ const canSendTo = (convo: SessionConvo, adminId: number) => convo.status !== "tr
 const conversationStateLabel = (status: SessionConvo["status"]) => status === "open" ? "进行中" : status === "transferred" ? "已转出 · 只读" : "已结束";
 const lostPermission = (cause: unknown) => cause != null && typeof cause === "object" && "status" in cause && (cause.status === 403 || cause.status === 404);
 const rejectedSend = (cause: unknown) => cause instanceof SupportClientError
-  && [400, 403, 404, 409, 422].includes(cause.status)
+  && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
 
 function parseConversations(raw: string | undefined): SessionConvo[] {
@@ -844,7 +844,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     try {
       const saved=JSON.parse(sessionStorage.getItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`)??"{}");
       setSelectedClosedIds(new Set());
-      setIncludeCurrentReply(saved.include===true); setMaintenanceChosen(saved.intent==="MAINTENANCE");
+      setIncludeCurrentReply(saved.include===true);
+      const urlIntent = new URLSearchParams(window.location.search).get("intent");
+      setMaintenanceChosen(urlIntent !== null ? urlIntent === "maintenance" : saved.intent === "MAINTENANCE");
     } catch { setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); }
     setMetaTarget(targetKey);
   }, [targetKey, adminId, authEpoch, qualificationUnknown]);
@@ -1056,11 +1058,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       } catch (cause) {
         if (identityRef.current === identity) {
           const busyHold = supportSessionBusy(cause);
-          if (submitted && busyHold) {
+          if (submitted && !firstPending && busyHold) {
             // Someone else started talking first: lock the composer with their details and keep the draft.
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             lockFromBusy(requestedCustomerId, busyHold);
-          } else if (submitted && rejectedSend(cause)) {
+          } else if (submitted && !firstPending && rejectedSend(cause)) {
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
             else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
@@ -1141,12 +1143,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     }
     catch (cause) {
       const busyHold = supportSessionBusy(cause);
-      if (identityRef.current === identity && submitted && busyHold) {
+      if (identityRef.current === identity && submitted && !retry && busyHold) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         lockFromBusy(String(selected.customerId), busyHold);
         return;
       }
-      if (identityRef.current === identity && submitted && rejectedSend(cause)) {
+      if (identityRef.current === identity && submitted && !retry && rejectedSend(cause)) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         void ctx.refreshConversations().catch(() => {});
         if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "消息没有发出，内容已清除：你对这个会话的权限变了。请回客户列表核对。"); setSendError("当前会话权限已变化，请返回客户列表核对。"); }
@@ -1322,7 +1324,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp === identityRef.current) settle();
     } catch (cause) {
       if (stamp !== identityRef.current) return;
-      if (submitted && isExplicitRejection(cause)) {
+      if (submitted && !recovering && isExplicitRejection(cause)) {
         if (current()) { setHoldEndRejected(command.commandKey); setActionError(`结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
       else if (current()) { setActionError("结束会话结果未知。再点「结束会话」会先查原结果，不会重复结束。"); setHoldRetry((value) => value + 1); }

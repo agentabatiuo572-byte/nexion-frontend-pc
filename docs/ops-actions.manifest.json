@@ -31,7 +31,7 @@
     "B4": ["OPS-B-09", "OPS-B-10"],
     "B5": ["OPS-B-11", "OPS-B-12", "OPS-B-13", "OPS-B-14", "OPS-B-16"],
     "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35", "OPS-C-36", "OPS-C-38"],
-    "C2": ["OPS-C-01", "OPS-C-02a"],
+    "C2": ["OPS-C-01", "OPS-C-02a", "OPS-C-10", "OPS-C-39"],
     "C3": ["OPS-C-03", "OPS-C-21"],
     "C5": ["OPS-C-18", "OPS-C-37", "OPS-C-38"],
     "C6": ["OPS-C-20"],
@@ -481,7 +481,19 @@
       "status": "built",
       "view": "c-tabs/c2-actions.tsx + c5-security.tsx",
       "batch": "P1",
-      "restAction": "revokeUserSessions"
+      "restActions": ["proposeSessionRevocation", "revokeUserSessions"],
+      "note": "C2 通过审批申请撤销用户会话，domain C / op c2_session_revoke_all；C5 保留会话撤销路径"
+    },
+    {
+      "id": "OPS-C-39",
+      "domain": "C",
+      "object": "账户代看与名单(C2)",
+      "action": "开始或结束代看、维护黑白名单",
+      "status": "built",
+      "view": "c-tabs/c2-actions.tsx",
+      "batch": "done",
+      "restActions": ["startUserImpersonation", "terminateUserImpersonation", "upsertUserAccountList", "removeUserAccountList"],
+      "note": "审批映射 c2_impersonate_start / c2_impersonate_terminate / c2_blocklist_upsert / c2_blocklist_remove，沿用现有授权与命令恢复"
     },
     {
       "id": "OPS-C-11",

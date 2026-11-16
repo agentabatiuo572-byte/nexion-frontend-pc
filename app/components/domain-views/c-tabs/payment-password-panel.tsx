@@ -55,14 +55,15 @@ function PaymentPolicySection({ owner, canWrite, visible, onPendingChange, onBus
   const parsed = Object.fromEntries(paymentPolicyFields.map(key => [key, Number(values[key])])) as PaymentPolicyValues;
   const valid = !!policy?.constraints && paymentPolicyFields.every(key => /^\d+$/.test(values[key]) && Number.isSafeInteger(parsed[key]) && parsed[key] >= policy.constraints![key].min && parsed[key] <= policy.constraints![key].max);
   const changed = !!policy && paymentPolicyFields.some(key => parsed[key] !== policy.values[key]);
-  const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const trimmedReason = reason.replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+  const reasonValid = trimmedReason.length >= 8 && trimmedReason.length <= 200;
   const editable = !!policy && canWrite && policy.editable && !!policy.constraints && !!policy.effectDescription && !pending;
   const editReason = pending ? "请先查询上一笔调整结果" : !policy ? "当前规则尚未读取" : !policy.constraints || !policy.effectDescription ? "可调整范围或生效说明尚未确认" : !policy.editable ? "当前规则只能查看" : undefined;
   async function finish(queryOnly = false, replay = false) {
     if (mutation.current || replay && !canWrite || !queryOnly && !replay && (!editable || !policy || !valid || !changed || !reasonValid || !confirmed)) return;
     mutation.current = true; setBusy(true); onBusyChange?.(true); setError(""); setReceipt(null);
     try {
-      const result = queryOnly ? await queryPaymentPolicy(owner) : replay ? await retryPaymentPolicy(owner) : await submitPaymentPolicy(owner, parsed, policy!.version, reason.trim(), policy!.values);
+      const result = queryOnly ? await queryPaymentPolicy(owner) : replay ? await retryPaymentPolicy(owner) : await submitPaymentPolicy(owner, parsed, policy!.version, trimmedReason, policy!.values);
       if (!live.current) return;
       setReceipt(result);
       if (result.status !== "PENDING") { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); await load(); }
@@ -80,7 +81,7 @@ function PaymentPolicySection({ owner, canWrite, visible, onPendingChange, onBus
     {visible && policy && editing && <Drawer open busy={busy} onClose={() => { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); }} title="调整支付密码规则" icon={KeyRound} footer={<Decision others={<Button disabled={busy} onClick={() => { setEditing(false); setReason(""); setConfirmed(false); }}>取消调整</Button>} primary={<Button variant="primary" disabledReason={!valid ? "填写允许范围内的整数" : !changed ? "请先调整至少一项规则" : undefined} onClick={() => { setReviewing(true); setConfirmed(false); }}>下一步：核对调整</Button>} />}>
       <Facts><Fact k="规则版本">{policy.version}</Fact></Facts>{paymentPolicyFields.map(key => <Field key={key} label={labels[key]} help={`允许 ${policy.constraints![key].min}–${policy.constraints![key].max} ${units[key]}，整数`} error={values[key] && (!/^\d+$/.test(values[key]) || parsed[key] < policy.constraints![key].min || parsed[key] > policy.constraints![key].max) ? "请填写允许范围内的整数" : undefined}><NumberInput aria-label={labels[key]} unit={units[key]} step={1} min={policy.constraints![key].min} max={policy.constraints![key].max} value={values[key]} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} /></Field>)}
       {reviewing && <Modal title="核对支付密码规则调整" icon={KeyRound} sub={<StatusTag tone="progress">保存后生效</StatusTag>} busy={busy} onClose={() => setReviewing(false)} footer={<Decision others={<Button disabled={busy} onClick={() => setReviewing(false)}>返回修改</Button>} primary={<Button variant="primary" loading={busy} loadingText="正在保存并核对审计…" disabledReason={!valid || !changed ? "请返回填写有效调整" : !reasonValid ? "请填写 8–200 字的调整理由" : !confirmed ? "请核对数值与生效说明" : !editable ? editReason : undefined} onClick={() => void finish()}>确认并保存规则</Button>} />}>
-        <Facts>{paymentPolicyFields.map(key => <Fact key={key} k={labels[key]}><Change from={`${policy.values[key]} ${units[key]}`} to={`${parsed[key]} ${units[key]}`} /></Fact>)}</Facts><Notice tone="progress">{policy.effectDescription}</Notice><Field label="调整理由" required hint="8–200 字" error={leftReason && !reasonValid ? "请填写 8–200 字的调整理由" : undefined}><Textarea aria-label="支付密码规则调整理由" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} onBlur={() => setLeftReason(true)} rows={3} count={`${reason.trim().length}/200`} /></Field><Check checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} label="我已核对调整前后数值与生效说明" />{error && <Notice tone="danger">{error}</Notice>}
+        <Facts>{paymentPolicyFields.map(key => <Fact key={key} k={labels[key]}><Change from={`${policy.values[key]} ${units[key]}`} to={`${parsed[key]} ${units[key]}`} /></Fact>)}</Facts><Notice tone="progress">{policy.effectDescription}</Notice><Field label="调整理由" required hint="8–200 字" error={leftReason && !reasonValid ? "请填写 8–200 字的调整理由" : undefined}><Textarea aria-label="支付密码规则调整理由" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} onBlur={() => setLeftReason(true)} rows={3} count={`${trimmedReason.length}/200`} /></Field><Check checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} label="我已核对调整前后数值与生效说明" />{error && <Notice tone="danger">{error}</Notice>}
       </Modal>}
     </Drawer>}
   </Panel>;

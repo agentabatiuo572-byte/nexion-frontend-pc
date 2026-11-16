@@ -39,7 +39,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
   async function retryFaqs() { setFaqBusy(true); setFaqError(""); try { await ctx.refreshKnowledge(); } catch (e) { setFaqError(displayAdminError(e)); } finally { setFaqBusy(false); } }
   const source = templateType === "reply" ? "I.session.replyTemplates" : "I.session.scripts";
   const available = ctx.pget("I.session.templatesAvailable") === "1";
-  async function retryTemplates(){setTemplateBusy(true);setTemplateError("");try{await ctx.refreshContent();}catch(e){setTemplateError(displayAdminError(e));}finally{setTemplateBusy(false);}}
+  async function retryTemplates(){setTemplateBusy(true);setTemplateError("");try{await ctx.refreshTemplates();}catch(e){setTemplateError(displayAdminError(e));}finally{setTemplateBusy(false);}}
   const templates: Array<{ id: string; group?: string; type?: string; text: string }> = (() => { try { const rows = JSON.parse(ctx.pget(source) ?? "[]"); return Array.isArray(rows) ? rows.filter(r => r.status === "published" && typeof r.text === "string") : []; } catch { return []; } })();
   const groups = [...new Set(templates.map(t => t.group || (t.type === "advisor" ? "专属客服" : "客服")))];
   const filtered = templates.filter(t => (!group || (t.group || (t.type === "advisor" ? "专属客服" : "客服")) === group) && (!keyword.trim() || t.text.includes(keyword.trim())));

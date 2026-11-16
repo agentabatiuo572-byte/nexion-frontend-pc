@@ -1728,6 +1728,30 @@ export async function readSupportKnowledge() {
   return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
 }
 
+export async function readSupportTemplates() {
+  const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
+  const scripts = templates.scripts!.map(adaptScript);
+  return {
+        categories: templates.categories!.map(adaptCategory),
+        advisorPolicy: {
+          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
+          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
+          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
+          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
+          audience: str(templates.advisorPolicy?.audience),
+        },
+        workbenchPolicy: {
+          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
+        },
+        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
+        segmentFields: [...templates.segmentFields!],
+        scripts,
+        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
+        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
+        sessionTemplatesAvailable: true,
+      };
+}
+
 export async function fetchMContentData(onProgress?: (data: MContentData) => void, page?: string): Promise<MContentData> {
   const mContentSessionKey = currentMContentSessionKey();
   let snapshot = initialMContentData();
@@ -1845,27 +1869,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
       return;
     }
     try {
-      const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
-      const scripts = templates.scripts!.map(adaptScript);
-      publish({
-        categories: templates.categories!.map(adaptCategory),
-        advisorPolicy: {
-          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
-          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
-          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
-          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
-          audience: str(templates.advisorPolicy?.audience),
-        },
-        workbenchPolicy: {
-          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
-        },
-        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
-        segmentFields: [...templates.segmentFields!],
-        scripts,
-        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
-        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
-        sessionTemplatesAvailable: true,
-      });
+      publish(await readSupportTemplates());
     } catch {
       publish({
         categories: [],
