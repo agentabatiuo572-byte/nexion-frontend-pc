@@ -723,3 +723,7 @@
 .l6-page .l6-trends > * { flex-basis: 360px; }
 .l6-page .l6-trend { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .l6-page .l6-trend-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+/* 统计范围折叠里被排除的页面：两列名单，页面名在前，路径弱字跟在后面。 */
+.l6-page .l6-excluded { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--rd-space-2) var(--rd-space-6); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
+.l6-page .l6-excluded li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); min-width: 0; }
+.l6-page .l6-excluded-route { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; }
