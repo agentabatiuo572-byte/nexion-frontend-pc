@@ -16,5 +16,6 @@ export async function queryF4MaterialCommand(record: FundCommandRecord & { actor
   if (receipt?.businessState !== undefined) return { receipt, outcome: null };
   // F4's status endpoint accepts exactly actor:application and checks the retained business code.
   const state = await fetchDirectCommandReceipt(`F4_MATERIAL_REVIEW:${record.actorId}:${record.applicationId}`, record.commandKey, record.actorId).catch(() => null);
-  return { receipt, outcome: state === "SUCCEEDED" ? "SUCCEEDED" as const : state === "REJECTED" ? "REJECTED" as const : null };
+  // The minimal state does not identify a governed rejection or prove non-execution.
+  return { receipt, outcome: state === "SUCCEEDED" ? "SUCCEEDED" as const : null };
 }
