@@ -515,7 +515,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     key: command.commandKey,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先读回现在的状态；按原请求重试只重发原请求，不会重复执行。",
+    hint: "先查询原结果；按原请求重试不会重复执行。",
     blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),
