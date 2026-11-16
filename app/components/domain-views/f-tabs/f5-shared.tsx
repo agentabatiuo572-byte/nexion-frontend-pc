@@ -9,7 +9,7 @@ import { CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Snowflake, Tri
 import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type OperatorBriefKind } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { operationConfirmPlainMessage } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { f4Decimal } from "@/lib/admin/f4-money";
@@ -244,7 +244,7 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
         } catch (error) {
           // 和 F 域外壳一致：结果未知不算失败，审批单可能已经建了，冠以失败会让人换个办法重做。
           const uncertain = error instanceof Error && error.name.endsWith("OutcomeUncertainError");
-          const message = uncertain ? operationConfirmErrorMessage(error) : displayAdminError(error);
+          const message = uncertain ? operationConfirmPlainMessage(error) : displayAdminError(error);
           ctx.toast(uncertain ? message : "提交失败 · " + message);
           // 确认框自己管重试和错误样子，要把错误交回去。
           throw error;
