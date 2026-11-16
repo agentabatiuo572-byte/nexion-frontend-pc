@@ -42,7 +42,9 @@ import { toast } from "@/lib/store/ui";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { queryUserDetailCommand, userDetailCommandOrigin, userDetailCommandRoute } from "@/lib/admin/user-detail-command-query";
 import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
-import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
+import type { FundCommandEvidence, FundCommandOrigin, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
+import { FundClosureModal, closureKnown } from "@/app/components/domain-views/fund-command-check";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -63,7 +65,7 @@ import {
   riskBandTone,
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
-import { RecoveryPanel, SETTLED_REJECTED, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { RecoveryPanel, SETTLED_REJECTED, receiptExplain, receiptFact, receiptRejected, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 
 /**
@@ -675,6 +677,9 @@ export default function UserDetailPage() {
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   /** 最近一次查询原结果查到的结论，收起时就写在这一行（RecoveryItem.result）。 */
   const [pendingFound, setPendingFound] = useState<Record<string, "error" | "none" | "PROCESSING" | "FAILED" | "UNKNOWN" | "REJECTED" | "PROCESSED">>({});
+  /** 最近一次查到的原回包：结案框按它给结论（closureKnown）。 */
+  const [pendingOutcomes, setPendingOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closingCommand, setClosingCommand] = useState<C1Command | null>(null);
   const [corrections, setCorrections] = useState<PendingCorrection[]>([]);
   const [releasing, setReleasing] = useState<C1Command | null>(null);
   const [actionConfirm, setActionConfirm] = useState<null | {
@@ -944,7 +949,28 @@ export default function UserDetailPage() {
     const found = !result ? "error" : !result.receipt ? "none" : status === "PROCESSING" || status === "FAILED" || status === "UNKNOWN" ? status
       : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED";
     setPendingFound((current) => ({ ...current, [command.commandKey]: found }));
+    if (result) setPendingOutcomes((current) => ({ ...current, [command.commandKey]: { receipt: result.receipt } }));
     setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已重读现在的值，记录继续保留。" }));
+  };
+
+  /** 核查结案：按原请求号交后端核对证据（同 A3、A4、D7）；结了案才解除，没结案的按新查到的结论显示。 */
+  const closePending = async (command: C1Command, evidence: FundCommandEvidence) => {
+    const result = await queryUserDetailCommand(command, evidence);
+    if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) return;
+    setPendingOutcomes((current) => ({ ...current, [command.commandKey]: { receipt: result.receipt } }));
+    setClosingCommand(null);
+    if (result.settled) {
+      c1UserCommands.forget(command.fingerprint, command.commandKey);
+      syncPending();
+      const status = result.receipt?.originalStatus;
+      toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+        : status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : "核查确认已执行，记录已解除，不要再做一次。");
+      await load(); await loadPaymentMethods();
+      return;
+    }
+    const status = result.receipt?.originalStatus;
+    setPendingFound((current) => ({ ...current, [command.commandKey]: !result.receipt ? "none" : status === "PROCESSING" || status === "FAILED" || status === "UNKNOWN" ? status
+      : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED" }));
   };
 
   const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
@@ -1227,23 +1253,33 @@ export default function UserDetailPage() {
       const writable = device ? canWriteC2 : canWriteC1;
       const hasWrite = device ? hasC2Write : hasC1Write;
       const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
-      const nextStep = expired ? `${EXPIRED_TEXT}。` : command.legacy
+      const canClose = canInvestigateECommand(userDetailCommandRoute(command).readAuthority);
+      // 能在这里核查结案的，过期后不再指去操作记录与审批。
+      const nextStep = expired ? canClose ? "已超过 24 小时，不能再重试。" : `${EXPIRED_TEXT}。` : command.legacy
         ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
         : !writable
           ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
           : "按原请求重试只重发原请求，不会重复执行。";
-      // 查到的结论和资金页同一个说法；这页没有核查结案，过期或不能重试时都指向操作记录与审批。
+      // 查到的结论和资金页同一个说法。有调查权限的超级管理员（也是原操作人，数据层只让原操作人查）在这里核查结案：
+      // 仍未知随时可以，查到已处理、后台拒绝、记为失败的过了 24 小时才可以；其余指向操作记录与审批。
       const retryable = writable && !command.legacy && !expired;
       const found = refused ? undefined : pendingFound[command.commandKey];
+      const outcome = refused ? undefined : pendingOutcomes[command.commandKey];
+      const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+      const closable = canClose && !!receipt && (receipt.originalStatus === "UNKNOWN" || expired && (receipt.originalStatus === "SUCCEEDED" || receipt.originalStatus === "FAILED"));
+      const elsewhere = expired && canClose ? "已过 24 小时，请核查结案。" : "到操作记录与审批核对。";
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
         none: { tone: "warn" as const, label: "没有查到", line: "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
-        PROCESSING: { tone: "progress" as const, label: "还在执行", line: "稍后再查，执行完之前不要重试。" },
-        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
-        UNKNOWN: { tone: "warn" as const, label: "仍未知", line: "系统也没有结果，到操作记录与审批核对。" },
-        REJECTED: { tone: "warn" as const, label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${retryable ? "按原请求重试可看原因，不会重复执行。" : "到操作记录与审批核对。"}` },
-        PROCESSED: { tone: "warn" as const, label: "已处理", line: `后台已处理，看不出成没成；${retryable ? "按原请求重试可确认，不会重复执行。" : "到操作记录与审批核对。"}` },
+        PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : "稍后再查，执行完之前不要重试。" },
+        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。"
+          : expired && canClose ? `系统记录这次失败了；${elsewhere}` : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
+        UNKNOWN: { tone: "warn" as const, label: "仍未知", line: !canClose ? "系统也没有结果，到操作记录与审批核对。"
+          : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" },
+        REJECTED: { tone: "warn" as const, label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${retryable ? "按原请求重试可看原因，不会重复执行。" : elsewhere}` },
+        PROCESSED: { tone: "warn" as const, label: "已处理", line: `后台已处理，看不出成没成；${retryable ? "按原请求重试可确认，不会重复执行。" : elsewhere}` },
       }[found];
+      const more = found === "REJECTED" || found === "PROCESSED" ? receiptExplain(receipt) : undefined;
       return {
         key: command.fingerprint, object: command.label, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
@@ -1252,11 +1288,12 @@ export default function UserDetailPage() {
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
+          {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
-        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出{found === "FAILED" ? "。" : "，可能已经生效，不要重复操作。"}{nextStep}</p>,
+        detail: <><p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出{found === "FAILED" ? "。" : "，可能已经生效，不要重复操作。"}{nextStep}</p>{more && <p>{more}</p>}</>,
         tech: <p><Explain label="技术信息" content={command.legacy ? `原请求编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `原请求编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
@@ -1273,7 +1310,8 @@ export default function UserDetailPage() {
       };
     }),
   ];
-  const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
+  const openCount = pendingCommands.filter((command) => !isExplicitRejection(command.rejection) && ["FAILED", "REJECTED", "PROCESSED"].includes(pendingFound[command.commandKey] ?? "")).length;
+  const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length - openCount, 0, 0, openCount)} explainLabel="结果未知怎么处理"
     explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
     foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
     items={recoveryItems} />;
@@ -1618,6 +1656,9 @@ export default function UserDetailPage() {
           }}
         />
       )}
+      {closingCommand && <FundClosureModal label={closingCommand.label} createdAt={closingCommand.createdAt} known={closureKnown(pendingOutcomes[closingCommand.commandKey])}
+        facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(pendingOutcomes[closingCommand.commandKey]), "记录保留")}</Fact>}
+        onClose={() => setClosingCommand(null)} onSubmit={(evidence) => closePending(closingCommand, evidence)} />}
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
         explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。`} />}
       {notificationEvidence && canReadNotificationEvidence

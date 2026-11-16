@@ -1,6 +1,6 @@
 import type { StateTone } from "@/app/components/rd";
 import type { ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { SETTLED_REJECTED, receiptRejected, rejectedStatus } from "../recovery-panel";
+import { SETTLED_REJECTED, receiptExplain, receiptRejected, rejectedStatus } from "../recovery-panel";
 
 /**
  * J2、J3 结果未知记录查到结论后的说法。
@@ -14,14 +14,18 @@ export const SETTLED_TEXT: Record<string, string> = {
 };
 export const SETTLED_OTHER = "后台已处理原请求，记录已解除；页面显示的是现在的设置。";
 
-/** 回执是「已处理」、记录还没解除时这一行怎么说；查到的是后台拒绝（receipt）时换成「后台拒绝」那一档。 */
-export function processedStatus({ expired, canRetry, canClose, legacy, receipt }: { expired: boolean; canRetry: boolean; canClose: boolean; legacy?: boolean; receipt?: ECommandInvestigation | null }): { tone: StateTone; label: string; line: string } {
-  if (receiptRejected(receipt)) return rejectedStatus({ expired, canRetry, canClose, legacy });
+/**
+ * 回执是「已处理」、记录还没解除时这一行怎么说；查到的是后台拒绝（receipt）时换成「后台拒绝」那一档。
+ * more 是展开后的说明，和资金页面板同一档的一样（receiptExplain）。
+ */
+export function processedStatus({ expired, canRetry, canClose, legacy, receipt }: { expired: boolean; canRetry: boolean; canClose: boolean; legacy?: boolean; receipt?: ECommandInvestigation | null }): { tone: StateTone; label: string; line: string; more?: string } {
+  const more = receiptExplain(receipt);
+  if (receiptRejected(receipt)) return { ...rejectedStatus({ expired, canRetry, canClose, legacy }), more };
   const line = !expired && canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。"
     : expired ? canClose ? "后台已处理，看不出成没成；已过 24 小时，请核查结案。" : "后台已处理，看不出成没成；请有调查权限的超级管理员核查结案。"
       : legacy ? "后台已处理，看不出成没成；旧记录过 24 小时后可核查结案。"
         : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。";
-  return { tone: "warn", label: "已处理", line };
+  return { tone: "warn", label: "已处理", line, more };
 }
 
 /** 修改框里查到「已处理」时的一句；后台拒绝的另说。 */

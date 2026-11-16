@@ -1040,7 +1040,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : record.kind === "reverse"
           ? await reverseCommand(record.target, record.reason ?? "", record.operator, true)
           : await reviewCommand(record.kind, record.target, record.reason ?? "", record.operator, true);
-      if (outcome === "unknown") notePending(record, "还是没有确认，原记录继续保留。");
+      if (outcome === "unknown") notePending(record, "重试结果仍未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       // 只有后端对这条命令下了结论才给「解除待确认」；登录、权限、限流、幂等层、本地异常都不算（F01、OP-153）。
