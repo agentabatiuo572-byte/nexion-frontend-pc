@@ -1442,7 +1442,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     <PageHeader pageId="C3" title="余额与资产调整" summary={<AutoGloss>补偿或纠错时增减用户余额，另一位同事批准后才入账。</AutoGloss>}
       back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）` : overview.loading || queue.loading || history.loading ? "正在读取" : "这页的数据都没读到"}，不自动刷新</span>
+        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）` : overview.loading || queue.loading || history.loading ? "正在读取" : "这页的数据都没读到"}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={overview.loading || queue.loading || history.loading} onClick={() => void refreshAll()}>刷新</Button>
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；发起、批准和冲正要有对应权限的同事办。"}
