@@ -73,27 +73,14 @@ function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
     }
   }
   for (const version of records(moduleId, value.versions)) {
-    for (const key of ["copyKey", "version", "status", "surface", "audience", "trafficSplit", "zh", "en"]) {
+    for (const key of ["copyKey", "version", "status"]) {
       if (typeof version[key] !== "string") fail(moduleId);
-    }
-    // Legacy versions may lack Vietnamese text or a note. Keep the overview
-    // readable; the publication preflight, not the parser, rejects missing copy.
-    for (const key of ["vi", "versionNote"]) {
-      if (version[key] == null) version[key] = "";
-      else if (typeof version[key] !== "string") fail(moduleId);
     }
     if (version.copyPosition != null && typeof version.copyPosition !== "string") fail(moduleId);
     if (version.audienceTarget != null) {
       const target = record(moduleId, version.audienceTarget);
-      for (const key of ["locales", "tiers"]) if (!array(moduleId, target[key]).every((item) => typeof item === "string")) fail(moduleId);
-      if (target.mode != null && typeof target.mode !== "string") fail(moduleId);
-      for (const key of ["registrationDaysMin", "registrationDaysMax"]) {
-        if (target[key] != null && (typeof target[key] !== "number" || !Number.isInteger(target[key]))) fail(moduleId);
-      }
-    }
-    if (version.translations != null) {
-      const translations = record(moduleId, version.translations);
-      if (Object.values(translations).some((text) => text !== null && typeof text !== "string")) fail(moduleId);
+      array(moduleId, target.locales);
+      array(moduleId, target.tiers);
     }
   }
   for (const experiment of records(moduleId, value.experiments)) {

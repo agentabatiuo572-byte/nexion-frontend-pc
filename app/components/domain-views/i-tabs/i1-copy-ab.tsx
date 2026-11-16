@@ -17,8 +17,6 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
 import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -42,12 +40,11 @@ type CopyRow = {
   draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget | null; draftTrafficSplit?: string; draftNote?: string;
   revision?: number; usedVersionKeys?: string[];
 };
-type AudienceTarget = { mode?: string; locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
+type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type VersionRow = {
   copyKey: string; v: string; st: string; chain: string; ts: string;
   zh: string; en: string; vi: string; copyPosition?: string; surface: string;
   audience: string; audienceTarget?: AudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
-  translations?: Record<string, string | null> | null;
 };
 type VersionOptionRow = {
   versionKey: string; name: string; description: string | null; status: string;
@@ -381,7 +378,6 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     estimatedAudience: row.estimatedAudience,
     trafficSplit: row.trafficSplit,
     versionNote: row.versionNote,
-    translations: row.translations,
   }));
   const VERSION_OPTIONS: VersionOptionRow[] = [...(data?.versionOptions ?? [])]
     .map((option) => ({
@@ -1140,52 +1136,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     if (exp.variants.some((variant) => variant.impressions! < 100)) return "COPY_EXPERIMENT_MIN_SAMPLE_NOT_MET";
     const winner = exp.variants.find((variant) => variant.name === leaderOf(exp));
     if (!winner) return "COPY_EXPERIMENT_WINNER_NOT_UNIQUE";
-    const copy = findCopy(exp.copyKey);
-    if (!copy) return "COPY_NOT_FOUND";
-    const version = findVersion(copy.key, winner.version);
+    const version = findVersion(exp.copyKey, winner.version);
     if (!version) return "COPY_EXPERIMENT_WINNER_VERSION_INVALID";
     if (version.st.toLowerCase() === "draft") return "INVALID_STATE_TRANSITION";
-    if (!version.surface.trim() || (!version.audience.trim() && !version.audienceTarget)
-      || !version.trafficSplit.trim() || !version.versionNote.trim() || !version.copyPosition?.trim()
-      || missingLangs(version).length > 0) return "COPY_FIELDS_REQUIRED";
-    if (copy.key.trim().length > 96 || version.versionNote.trim().length > 255) return "COPY_METADATA_INVALID";
-    const target = version.audienceTarget;
-    if (target) {
-      const tiers = (target.tiers ?? []).map((tier) => tier.trim().toUpperCase());
-      const numbers = [...new Set(tiers.map((tier) => Number(tier.slice(1))))].sort((a, b) => a - b);
-      if (target.mode?.trim().toUpperCase() !== "STRUCTURED" || (target.locales?.length ?? 0) > 1
-        || target.locales?.some((locale) => !INTERFACE_LANGUAGES.some((language) => language.code === locale.trim()))
-        || tiers.length === 0 || tiers.some((tier) => !/^P[1-6]$/.test(tier))
-        || numbers[numbers.length - 1] - numbers[0] + 1 !== numbers.length
-        || target.registrationDaysMin == null || target.registrationDaysMin < 1 || target.registrationDaysMax != null) return "COPY_AUDIENCE_INVALID";
-    } else if (!data?.audiences.includes(version.audience.trim())) return "COPY_AUDIENCE_INVALID";
-    if (!COPY_MODULES.includes(version.surface as CopyModule)) return "COPY_SURFACE_UNSUPPORTED";
-    const split = version.trafficSplit.trim().replace(/%/g, "");
-    if (!/^[+-]?\d+$/.test(split) || Number(split) < 1 || Number(split) > 100) return "COPY_TRAFFIC_SPLIT_INVALID";
-    const placeholders = (text: string) => [...new Set(text.match(/\{[a-zA-Z0-9_.-]+\}/g) ?? [])].sort().join("\n");
-    const basePlaceholders = placeholders(version.en);
-    const texts = [version.zh, version.en, version.vi];
-    for (const [locale, text] of Object.entries(version.translations ?? {})) {
-      if (!INTERFACE_LANGUAGES.some((language) => !language.base && language.code === locale)) return "COPY_LOCALE_UNSUPPORTED";
-      if (text?.trim()) texts.push(text);
-    }
-    if (texts.some((text) => text.trim().length > 1000)) return "COPY_TEXT_TOO_LONG";
-    if (texts.some((text) => /^\s*[\[{]/.test(text))) return "COPY_JSON_NOT_ALLOWED";
-    if (texts.some((text) => /https?:\/\//i.test(text))) return "COPY_MANUAL_URL_NOT_ALLOWED";
-    if (texts.some((text) => placeholders(text) !== basePlaceholders)) return "COPY_PLACEHOLDERS_MISMATCH";
-    // Use the same quality feedback as the existing ordinary-publish editor.
-    const quality = i6CopyQualityIssues(version.zh, version.en, version.vi);
-    if (quality.length) return quality[0];
-    for (const text of texts.slice(3)) {
-      const extraQuality = i6CopyQualityIssues(version.zh, version.en, text);
-      if (extraQuality.length) return extraQuality[0];
-    }
-    const position = COPY_POSITION_ROWS.find((position) => position.positionKey === version.copyPosition!.trim());
-    if (!/^[a-z][a-z0-9._-]{1,95}$/.test(version.copyPosition.trim())) return "COPY_POSITION_KEY_INVALID";
-    if (!position) return "COPY_POSITION_NOT_FOUND";
-    if (position.status.toLowerCase() !== "active") return "COPY_POSITION_INACTIVE";
-    if (normalizeCopyModule(position.surface) !== version.surface) return "COPY_POSITION_SURFACE_MISMATCH";
-    if (publishBlockedReason(version.copyPosition, copy.key)) return "COPY_POSITION_ALREADY_PUBLISHED";
+    if (publishBlockedReason(version.copyPosition, exp.copyKey)) return "COPY_POSITION_ALREADY_PUBLISHED";
   };
   const adoptBlockedReason = (exp: ExpRow) => {
     const code = adoptionErrorCode(exp);
