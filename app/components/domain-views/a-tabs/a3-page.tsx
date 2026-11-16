@@ -20,7 +20,7 @@ import { a3Deduplicates, useA3Commands, type A3Command, type A3ContentComparison
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { fetchPlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import type { PublishedContentDocument, PublishedHowContentDocument } from "@/lib/admin/published-content-client";
+import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import {
   fetchA3Overview,
   type A3FeatureFlag,
@@ -369,7 +369,12 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       await commands.send(record, true);
       setRecovery(null); dropCheck(record.commandKey);
       setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
-      toast(original.mode === "PUBLISHED" ? original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
+      // A retry of a save that already landed replays its success; a later save by someone else is then what the page shows.
+      // The original save made revision + 1, so a higher current revision means the content was changed after it.
+      const current = await (original.kind === "docs" ? fetchDeveloperDocsAdmin() : fetchHowContentAdmin()).catch(() => null);
+      toast(current && current.revision > original.document.revision + 1
+        ? `原提交当时已经${original.mode === "PUBLISHED" ? "发布" : "保存"}；之后内容又被改过，页面显示的是现在的最新内容。`
+        : original.mode === "PUBLISHED" ? original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
     } catch (error) {
       if (!commands.find(record.fingerprint)) {
         setRecovery(null); dropCheck(record.commandKey);
