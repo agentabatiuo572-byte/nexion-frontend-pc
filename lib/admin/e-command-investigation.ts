@@ -165,6 +165,11 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     }
   }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : locator.originalPath === "/api/admin/platform/accounts/permissions" ? locator.originalMethod === "POST" && row.scope === "A1_PERMISSION_REGISTER"
+    : locator.originalPath === "/api/admin/platform/roles" ? locator.originalMethod === "POST" && /^A6_ROLE_CREATE:[A-Z0-9_-]{1,64}$/.test(String(row.scope))
+    : /^\/api\/admin\/platform\/roles\/[1-9]\d*$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === `A6_ROLE_UPDATE:${locator.originalPath.split("/").at(-1)}`
+    : locator.originalPath === "/api/admin/platform/menus" ? locator.originalMethod === "POST" && /^A7_MENU_CREATE:[A-Z0-9_-]{1,64}$/.test(String(row.scope))
+    : /^\/api\/admin\/platform\/menus\/[1-9]\d*$/.test(locator.originalPath) ? ["PATCH", "DELETE"].includes(locator.originalMethod) && row.scope === `A7_MENU_${locator.originalMethod === "DELETE" ? "DELETE" : "UPDATE"}:${locator.originalPath.split("/").at(-1)}`
     : locator.originalMethod === "POST" && locator.originalPath === "/api/admin/platform/events/retention-runs" ? row.scope === "A4_EVENT_RETENTION_RUN"
     : locator.originalPath === "/api/admin/content/knowledge/faqs" ? locator.originalMethod === "POST" && row.scope === "M4_SUPPORT_FAQ_CREATE"
     : /^\/api\/admin\/content\/knowledge\/faqs\/[^/]+(?:\/status)?$/.test(locator.originalPath) ? row.scope === normalizeScope(`M4_SUPPORT_FAQ_${locator.originalMethod === "DELETE" ? "DELETE" : locator.originalPath.endsWith("/status") ? "STATUS" : "UPDATE"}:${decodeURIComponent(locator.originalPath.split("/").at(locator.originalPath.endsWith("/status") ? -2 : -1)!)}`) && ["PATCH", "DELETE"].includes(locator.originalMethod)
