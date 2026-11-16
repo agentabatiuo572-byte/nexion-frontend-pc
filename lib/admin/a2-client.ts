@@ -492,7 +492,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.text().then(text => JSON.parse(text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null)) as ApiResult<T> | null;
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
-      || init.strictOutcome === true && (result.code >= 500 || result.code !== 0 && result.code < 400))) {
+      || result.code >= 500 || init.strictOutcome === true && result.code !== 0 && result.code < 400)) {
     throw new A2OutcomeUncertainError("提交结果暂未确认，请到操作记录里核对。", init.commandKey);
   }
 
