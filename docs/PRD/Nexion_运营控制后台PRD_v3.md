@@ -727,6 +727,8 @@ P1–P6逐档维护，有值按原文本CAS，缺值用__MISSING__而非0。提�
 
 #### [H4] 活动中心 CMS
 
+2026-11-17（e147302f）：统计新增h4Stats.wheelSpinsToday（UTC spin_date行数，源不可用null）、regionRestrictionCount（无来源null）及regionRestrictionsAvailable=false/原因。wheelEvByAsset分资产提供金额×概率÷100逐档6位期望值，不是实发；USDT卡只消费USDT组，不混币、不舍入，缺字段旧后端沿用旧scalar。原“保留2位”解释待视觉同步；地区限制数尚无真实数据源，H4-BE-08仅次数/真钱/库存已交付。
+
 2026-11-17原号恢复接续（hd-sync24a，3499f565）：仅积分奖档退役接GROWTH:H4:WHEEL_TIER_RETIRE:{tier}，精确growth_h4_read及WHEEL_CONFIG/H4_WHEEL_TIER_RETIRED成功证据。PC原记录保存原来源，现有查询先查原号，辅助失败继续现有读取；callback可正常返回业务拒绝，raw SUCCEEDED不清记录，受控确定结论才解除并独立重读。退役改变公开奖池，不以回滚/当前停用证未执行；其它H4入口、概率与奖励政策不变，受控表单交视觉。
 
 **2026-11-16 本人只读恢复（b0755cba / hd-sync13）**：写权被收回但保留 growth_h4_read 的原发起人可按原号查本人H4申请；促销原回执凭 growth_promotion_read 查询。PC查询原本未绑写权，保持现成入口与原记录归属；重试写入仍核当前权限和期限，全局审批队列另按原权判断。
