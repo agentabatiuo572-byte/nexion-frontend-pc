@@ -29,6 +29,7 @@ import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, ty
 import { CommandClosureModal, RECOVERY_LINE } from "../e-tabs/e-command-check";
 import { processedStatus } from "./j-recovery-copy";
 import { receiptFact } from "../recovery-panel";
+import { eCommandCanRequestResumeRollback } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -288,9 +289,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     : fingerprint.endsWith("/resume") ? "resume" as const : fingerprint.endsWith("/rollback") ? "rollback" as const : fingerprint.startsWith("PUT") ? "update" as const : "create" as const;
   const busy = !!checking;
   /** 查询原结果、核查结案（共用按钮）；结案框按这类操作后端能给的结论选。 */
-  const checkButtons = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }, label: string, kind: J4CommandContext["kind"], change: ReactNode) =>
-    <FundCheckButtons record={investigationRecord(record)} outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
+  const checkButtons = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }, label: string, kind: J4CommandContext["kind"], change: ReactNode) => {
+    const outcome = outcomes[record.commandKey];
+    const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+    return <FundCheckButtons record={investigationRecord(record)} outcome={kind === "resume" && receipt?.originalStatus === "FAILED" && !eCommandCanRequestResumeRollback(receipt) ? undefined : outcome} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
       onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
+  };
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const context = record.sop.context;
     const label = `${contextName(context)} · ${operationNames[context.kind]}`;
@@ -383,8 +387,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   </>;
   const recovery = <>
     <FundRecoveryPanel rows={recoveryRows} settled={settled} onDismissSettled={(key) => setSettled((previous) => previous.filter((item) => item.key !== key))} />
-    {/* 新增、编辑、演练、取消只在本地事务里写，后端能按回滚证据判「未执行」；恢复核对和恢复开关会动外部业务，后端只收「已执行」或「仍未知」。 */}
-    {closing && (closing.kind === "resume" || closing.kind === "rollback"
+    {/* 恢复核对只核本地持久事实；后端核 rollback_confirmed 才收未执行。恢复开关仍会动外部业务。 */}
+    {closing && (closing.kind === "rollback" || closing.kind === "resume" && !eCommandCanRequestResumeRollback(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null)
       ? <FundClosureModal label={closing.label} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
         onClose={() => setClosing(null)} onSubmit={submitClosure} />
       : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
