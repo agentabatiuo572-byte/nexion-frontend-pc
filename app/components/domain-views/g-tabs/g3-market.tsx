@@ -27,6 +27,7 @@ import {
   type G3CurveField,
   type G3HistoryPoint,
   type G3Overview,
+  type G3ReadOverview,
   type G3OverrideKey,
 } from "@/lib/admin/g3-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -460,15 +461,15 @@ function G3MarketEditor() {
     };
   }, []);
 
-  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3Overview>, success: string, recovered = false) => {
+  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3ReadOverview>, success: string, recovered = false) => {
     setBusyKey(g3MarketObjectKey(change));
     setError("");
     try {
-      const next = await action();
+      await action();
       reconcileObservedAfterSave(change);
       // 按原请求恢复时，后端回放的是当时保存的回包，不是现在的读取：不拿它当当前概览，改为重读；
       // 重读失败只报读取失败，新修改继续不可用，原操作照常算完成。
-      if (!recovered) setOverview(next);
+      // This branch still needs complete editor baselines; refresh separately from the write result.
       // 写入成功后回读历史属于附加刷新:历史面失败不能把已成功的写入报成失败。
       const [historyResult] = await Promise.allSettled([fetchG3MarketHistory()]);
       if (historyResult.status === "fulfilled") {
@@ -479,7 +480,7 @@ function G3MarketEditor() {
         setHistoryError(messageOf(historyResult.reason));
       }
       toast(recovered ? REREAD_TEXT : success);
-      if (recovered) { setRereadPending(true); void reload(true); }
+      setRereadPending(true); void reload(true);
     } catch (err) {
       const message = messageOf(err);
       setError(message);
@@ -563,13 +564,13 @@ function G3MarketEditor() {
         today={overview?.activeDayIndex} frames={overview?.frames ?? (marketConfirm.action === "curve-cell"
           ? marketConfirm.expectedFrames.map(frame => ({ dayIndex: frame.dayIndex, targetPrice: Number(frame.targetPrice), pumpProbability: Number(frame.pumpProbability), volatilityPct: Number(frame.volatilityPct) })) : [])} tuning={MANUAL_TUNING}
         onStateChange={syncCommands} onFailure={onCommandFailure} onBusy={value => setBusyKey(value ? "market-confirm" : null)}
-        onCurrent={current => { setOverview(current); setRereadPending(false); }}
+        onCurrent={() => { setRereadPending(true); void reload(true); }}
         onClose={() => setMarketConfirm(null)}
         onDone={(result) => {
           setMarketConfirm(null);
           if (result.active) reconcileObservedAfterSave(marketConfirm);
-          if (result.active && !result.recovered) setOverview(result.active);
-          if (result.recovered) setRereadPending(true);
+          // The write receipt may have unavailable readings; reload the editor baseline separately.
+          setRereadPending(true);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
           toast(result.recovered ? REREAD_TEXT : result.acknowledgement);
           void reload(true);

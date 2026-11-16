@@ -5,8 +5,8 @@ import {
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { isExplicitRejection } from "./explicit-rejection";
 import {
-  fetchG3MarketOverview, g3LegacyCommands, submitG3MarketCommand,
-  type G3CurveField, type G3Overview, type G3OverrideKey, type serializeG3Frames,
+  fetchG3MarketReadOverview, g3LegacyCommands, submitG3MarketCommand,
+  type G3CurveField, type G3ReadOverview, type G3OverrideKey, type serializeG3Frames,
 } from "./g3-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
@@ -33,7 +33,7 @@ type CommandPayload = {
 };
 export type G3PendingCommand = PendingMutationRecord & CommandPayload & { legacy?: boolean };
 /** `recovered`: the reply belongs to a saved original request, so `active` is that request's stored reply, not a current read. */
-export type G3CommandResult = { active?: G3Overview; acknowledgement: string; ticketKey?: string; recovered?: boolean };
+export type G3CommandResult = { active?: G3ReadOverview; acknowledgement: string; ticketKey?: string; recovered?: boolean };
 export const G3_ENVIRONMENT_FORBIDDEN = "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION";
 
 const commands = createPendingMutationStore<PendingMutationRecord & { input: string }>({
@@ -238,7 +238,7 @@ export async function executeG3MarketChange(
   }
   if (mode === "lookup") {
     if (command.request.kind === "approval") return null;
-    await fetchG3MarketOverview();
+    await fetchG3MarketReadOverview();
     ensureOwner(false);
     throw new Error("已读到现在的配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。");
   }
