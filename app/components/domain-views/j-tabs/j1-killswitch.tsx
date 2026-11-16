@@ -40,8 +40,8 @@ const IMPACT_KEEP = ["资金流出", "负债增加", "影响兑付"];
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
 /** 只覆盖本页显示，等待后端同步开关说明。 */
 const GATE_COPY: Record<string, { cap: string; desc: string }> = {
-  withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已提交打款方的链上单继续核对原结果，不能保证撤回。" },
-  trial: { cap: "新试用领取和试用转购", desc: "关停后停止新领取和试用转购；已有试用记录仍按系统状态显示，用户仍可取消。" },
+  withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已交给打款渠道的单继续处理，可能照常到账，撤不回。" },
+  trial: { cap: "新试用领取和试用转购", desc: "已在试用的用户仍可取消；到期的试用要等恢复后才结束。" },
 };
 function gateCopy(gate: JGate) {
   return GATE_COPY[gate.key] ?? { cap: operatorCopyText(gate.cap), desc: operatorCopyText(gate.desc) };
@@ -60,7 +60,7 @@ const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-rad
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const READING = "正在读取最新状态，读完再操作";
 const LOCKED = "这项有结果未知的操作，先到页面上方查询原结果";
-const BLOCKED_RESUME = "系统尚未允许恢复，暂不能发起资金业务恢复审批。到「资金储备与应付款」核对覆盖率和估值，待系统允许恢复后再申请。";
+const BLOCKED_RESUME = "覆盖率低于恢复红线，现在不能申请恢复资金业务。到「资金储备与应付款」核对，不低于红线后再申请。";
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const STALE = "这个值刚被别人改过，本次没有保存。";
 const RETRY_DENIED = "这个账号现在没有这项操作的权限，不能重试。请联系超级管理员，或到操作记录与审批核对";
@@ -123,7 +123,14 @@ function timeText(value: string) {
 }
 
 /** 后端的规则说明带内部代号（R1、R2），写给运营时去掉（DT-14）。 */
-const plainRuleText = (text: string) => operatorCopyText(text).replace(/\bR\d(?:\/R\d)*\s*/g, "").replace(/\s*·\s*$/, "");
+const plainRuleText = (text: string) => operatorCopyText(text).replace(/\bR\d(?:\/R\d)*\s*/g, "").replace(/\s*·\s*$/, "").replace(/,(?=[\u4e00-\u9fff])/g, "，");
+/** 后端的规则条件是公式和箭头（「÷」「→」），还写着「对账恢复正常后再开放」（实际不会自动恢复），这页写成运营的话，阈值跟当前值走。 */
+const RULE_TEXT: Record<string, (rule: AutoRuleRow) => string> = {
+  withdrawSurge: (rule) => `24 小时提现申请额达到真实储备的 ${ruleValue(rule)}（挤兑红线）时，关停提现。`,
+  maturityGap: (rule) => `钱包余额和账本余额相差超过 ${ruleValue(rule)} 时，关停兑换。`,
+  tamperCluster: (rule) => `单个账户 24 小时内超过 ${rule.thr} 次，或全平台比上个周期突增时告警。`,
+  regulatoryDirective: () => "监管点名或法务事件时，在这页手动关停，要写原因。",
+};
 
 function RuleCondition({ text }: { text: string }) {
   const [before, after] = text.split("挤兑红线");
@@ -362,7 +369,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       setRestoreApprovals((rows) => [...rows.filter((row) => row.obj !== g.key), ...(ticket.status === "pending" ? [ticket] : [])]);
       restoreAttempts.forget(slot, key);
       toast(ticket.status === "pending"
-        ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，业务仍已关停；另一位有权超管批准后生效`
+        ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，业务仍已关停；另一位超级管理员批准后生效`
         : `已核对原恢复申请 ${ticket.id}，请到操作记录与审批查看结果`, "success");
       if (ticket.status !== "pending") {
         void actions.reloadJEmergency().catch(() => toast(`已核对原恢复申请 ${ticket.id}，请刷新确认最新开关状态`, "warn"));
@@ -422,7 +429,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const header = (
     <PageHeader pageId="J1" title="紧急停用开关"
-      summary={<AutoGloss>关停立即生效，恢复需另一位有权超管批准。</AutoGloss>}
+      summary={<AutoGloss>关停立即生效，恢复要另一位超级管理员批准。</AutoGloss>}
       meta={<span className="rd-toolbar">
         {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新。自动关停发生时顶栏告警先提醒，这页要刷新才看到。" /></span>}
         {!contentError && <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={reload}>刷新</Button>}
@@ -462,7 +469,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const { coverageRatio: COV, redlinePct: RED } = data.coverage;
   const coverageReady = data.coverage.valuationReliable;
   const recoveryBlock = !data.coverage.valuationReliable
-    ? "估值不可靠，暂不能发起资金业务恢复审批。到「资金储备与应付款」核对估值，待估值可靠且系统允许恢复后再申请。"
+    ? "估值不可靠，现在不能申请恢复资金业务。到「资金储备与应付款」核对估值，可靠后再申请。"
     : data.coverage.recoveryAllowedByServer ? undefined : BLOCKED_RESUME;
   // yellowLinePct 是红线加 25，不是资金总览的健康线（F03）。这页只和红线比，不下「正常」结论。
   // 恢复资格使用服务端许可；数值比较只用于展示差值。
@@ -495,7 +502,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       facts: <Facts><Fact k="业务">{name}，控制{cap}</Fact><Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{gate.key === "withdraw" && <Fact k="关停范围" tone="warn">{gateCopy(gate).desc}</Fact>}</Facts>,
       detail: "关停不会多付钱，不需要先检查备付金。",
       effect: IMMEDIATE,
-      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批，由另一位有权超管批准。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，用户仍可取消。恢复要回到这页提交审批，由另一位有权超管批准。" : `${name}控制的业务全站马上停止。恢复要回到这页提交审批，由另一位有权超管批准。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
+      statedBrief: { impact: gate.key === "withdraw" ? "立即停止新提现申请、审核放行和未派发的链上打款。恢复要回到这页提交审批，由另一位超级管理员批准。" : gate.key === "trial" ? "立即停止新试用领取和试用转购，用户仍可取消。恢复要回到这页提交审批，由另一位超级管理员批准。" : `全站马上停止${cap}。恢复要回到这页提交审批，由另一位超级管理员批准。`, check: "核对业务和触发依据，理由写清监管通知、工单或事件编号。" },
       confirmTone: "danger",
       confirmLabel: "确认关停，立即生效",
       reasonPlaceholder: REASON_HINT,
@@ -528,13 +535,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
       facts: <Facts>
         <Fact k="业务">{name}</Fact>
-        {gate.key === "withdraw" && <Fact k="控制范围" tone="warn"><KeepText text={gateCopy(gate).desc} /></Fact>}
+        {gate.key === "withdraw" && <Fact k="关停范围" tone="warn"><KeepText text={gateCopy(gate).desc} /></Fact>}
         <Fact k="备付金检查"><KeepText text={gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"} /></Fact>
+        <Fact k="谁来批准">另一位超级管理员，需有审批和恢复业务的权限</Fact>
       </Facts>,
-      detail: "恢复申请进入应急审批队列，排在其他待办前。审批人要有审批和恢复权限。",
+      detail: "恢复申请排在应急审批队列最前。",
       effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
       statedBrief: {
-        impact: `提交后${name}仍已关停。另一位有权超管批准后重新开放${cap}，发起人不能批自己的单。`,
+        impact: `提交后${name}仍已关停，批准后重新开放${cap}；你不能批自己的申请。`,
         check: "确认风险已解除，理由写清依据或工单号。",
       },
       confirmLabel: "提交恢复审批",
@@ -560,7 +568,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gateCopy(gate).cap }))} /></Fold>}</div>,
       detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
       effect: IMMEDIATE,
-      statedBrief: { impact: `已选的 ${targets.length} 项业务立即关停。有一项不符合时整批不执行。恢复要逐项提交审批，由另一位有权超管批准。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
+      statedBrief: { impact: `已选的 ${targets.length} 项业务立即关停；有一项已关停或在等补录，整批都不关。恢复要逐项提交审批，由另一位超级管理员批准。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
       confirmLabel: `确认关停 ${targets.length} 项，立即生效`,
       reasonPlaceholder: "例如：为什么现在要关停、内部工单号",
@@ -617,7 +625,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       formKey: stale?.round,
       action: `应急参数调整 · ${row.k}`,
       title: `调整${row.k}`,
-      detail: <>{plainRuleText(row.d)}。自动关停马上生效；补录只是补写处理结论，不会自动恢复业务。</>,
+      detail: <>{plainRuleText(row.d)}。补录只写处理结论，不会恢复业务。</>,
       effect: IMMEDIATE,
       statedBrief: { impact: "只影响之后的自动关停，已经在等补录的事项截止时间不变。", check: "核对新值，理由写清依据或工单号。" },
       facts: stale && changedByOther(unitText(stale.was, row.unit), unitText(row.v, row.unit)),
@@ -664,7 +672,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <Fact k="触发值 / 阈值">{signal.value} / {signal.threshold}</Fact>
         <Fact k="截止时间">{timeText(row.dueAt)}{row.overdue ? "，已逾期" : ""}</Fact>
       </Facts>,
-      detail: "如建议恢复，仍需单独提交应急审批，另一位有权超管批准后生效；资金业务批准时重查覆盖率，试用免查。",
+      detail: "选了建议恢复也不会恢复业务，要另外提交恢复审批，由另一位超级管理员批准。",
       effect: <StatusTag tone="neutral" filled>业务继续关停</StatusTag>,
       statedBrief: { impact: "只写下处理结论，业务继续关停，不会恢复。", check: "核对触发值和阈值，理由写清判断依据。" },
       confirmLabel: "确认补录，业务仍关停",
@@ -709,14 +717,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       { k: "操作后果", v: gate.enabled ? "关停不查覆盖率，确认后立即生效。"
         : backfill ? "先补录结论才能恢复，补录不会恢复业务。"
           : gate.coveragePrecheckRequired ? "提交应急审批，批准后生效；批准时重查覆盖率，失败仍待批。" : "提交应急审批，批准后生效；试用免查覆盖率。" },
-      { k: "谁能恢复", v: "另一位有审批和恢复权限的超级管理员批准，发起人不能批自己的单。" },
+      { k: "谁能恢复", v: "另一位超级管理员批准，不能批自己的申请。" },
     ];
   };
 
   const conclusionFacts = overdue.length > 0
     ? <><b>{overdue.length}</b> 项待补录已逾期，已关停 {killed} 个业务</>
     : <>业务开关：已关停 <b>{killed}</b> 个业务{backfills.length > 0 && <>，<b>{backfills.length}</b> 项待补录</>}</>;
-  const nextStepHelp = canResume ? "风险解除后，到业务卡点「提交恢复审批」；批准前仍关停。" : "风险解除后，请有权超管发起恢复审批；批准前仍关停。";
+  const nextStepHelp = canResume ? "风险解除后，到业务卡点「提交恢复审批」；批准前仍关停。" : "风险解除后，请有恢复权限的同事提交审批；批准前仍关停。";
   // 审批人写在页头副标题，结论第二行只写下一步；问号补第二行没有的事（DT-12）。
   const approvalHelp = "发起人不能批自己的申请。提交后业务卡标「恢复待审批」，申请在应急审批队列置顶。";
   const resumeBlocked = !covPass && killedGates.some((gate) => gate.coveragePrecheckRequired);
@@ -747,9 +755,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       )}
 
       <StatBand label="业务开关摘要">
-        <Stat lead tone={liveCount < availableGates.length ? "warn" : "role-2"} icon={Power} label="在线 / 可用业务" value={`${liveCount} / ${availableGates.length}`} explain="分母只算当前可用业务；暂不可用业务仍显示卡片，但不计入分母。" />
+        <Stat lead tone={liveCount < availableGates.length ? "warn" : "role-2"} icon={Power} label="在线 / 可用业务" value={`${liveCount} / ${availableGates.length}`} explain="只算可用的业务，暂不可用的不算在内。" />
         <Stat tone={data.stats.emergencyGateCount > 0 ? "warn" : "role-other"} icon={Siren} label="自动或批量关停" value={String(data.stats.emergencyGateCount)} unit="项" explain="由自动规则、批量应急或应急预案联动关停的业务。" />
-        <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查未通过而未能恢复的累计次数，不是现在受限的业务数。审批时覆盖率不通过仍保留待批工单。" />
+        <Stat tone="role-other" icon={ShieldAlert} label="未能恢复" value={String(data.stats.coverageBlockedCount)} unit="次" explain="因覆盖率或估值检查没通过、没能恢复的累计次数，不是现在受限的业务数。" />
         <Stat tone={covPass ? "role-1" : "danger"} icon={Coins} label="兑付覆盖率" value={coverageReady ? pct(COV) : "暂时无法判断"} sub={`红线 ${RED}%`} explain={`储备除以应付款，${coverageGapText}。恢复提现、兑换或创世节点批准时，系统重查覆盖率；试用免查。`} />
       </StatBand>
 
@@ -778,14 +786,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       {canBatchKill && (
         <div className="rd-control-batch">
           <BatchBar summary={<><b data-proof="j1-batch-count">已选 {selOnCount} 项业务</b>{liveCount === 0 && " · 所有业务都已关停"}</>}
-            hint={<AutoGloss>遇监管点名、法务事件时，在业务卡右上角勾选多个业务，一次全部关停。立即生效，有一项不符合时整批不执行。</AutoGloss>}>
+            hint={<AutoGloss>遇监管点名、法务事件时，在业务卡右上角勾选多个业务，一次全部关停，立即生效。</AutoGloss>}>
             <Button variant="danger-outline" disabledReason={contentLoading ? READING : selOnCount === 0 ? (liveCount === 0 ? "所有业务都已关停，没有可关停的业务。要再用批量关停，先在业务卡上提交恢复审批，批准后再操作。" : "先在业务卡右上角勾选要关停的业务") : undefined} onClick={launchBatch}>立即应急关停</Button>
           </BatchBar>
         </div>
       )}
 
       {backfills.length > 0 && (
-        <Panel title="自动关停待补录" explain="复核触发信号并补全处置结论，补录不会自行恢复业务。完成后从这里移除。" icon={ListChecks} tone={overdue.length > 0 ? "danger" : "warn"} flush>
+        <Panel title="自动关停待补录" explain="核对触发值，写下处理结论。补录不会恢复业务，补完从这里移除。" icon={ListChecks} tone={overdue.length > 0 ? "danger" : "warn"} flush>
           <Table label="自动关停待补录">
             <thead><tr><Th>业务 · 规则</Th><Th align="right">触发值 / 阈值</Th><Th>截止时间 · 触发时间</Th><Th>状态</Th>{canKill && <Th align="right">操作</Th>}</tr></thead>
             <tbody>
@@ -820,7 +828,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </Figure>}
       </Fold>
 
-      <Fold title="功能开关总表" explain="关停确认后立即生效，恢复提交应急审批、批准后生效，都要填写理由。提交恢复后业务仍已关停。提现关停还会停止未派发的链上打款；已提交打款方的链上单继续核对原结果，不能保证撤回。"
+      <Fold title="功能开关总表" explain="关停立即生效；恢复要提交审批，批准前仍关停，都要写理由。提现关停还会停止未派发的链上打款，已交给打款渠道的单撤不回。"
         icon={ScrollText} tone="role-other" summary={`${gates.length} 个业务开关`}
         actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录与审批</Link> : undefined}
         open={!!folds.table} onOpenChange={(open) => setFolds((state) => ({ ...state, table: open }))}>
@@ -862,7 +870,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             const source = RULE_SOURCE[rule.id];
             return (
               <ConfigRow key={rule.id} name={`${rule.nm} · ${plainRuleText(rule.tag)}`}
-                what={rule.cond.map((part, index) => {
+                what={RULE_TEXT[rule.id] ? <RuleCondition text={RULE_TEXT[rule.id](rule)} /> : rule.cond.map((part, index) => {
                   if (!part) return null;
                   // R2、R3 的阈值可变，条件文字跟当前值走，后端给的是固定文字（F04）。
                   const text = index !== 1 ? part : rule.id === "tamperCluster" ? `${rule.thr} ${rule.unit}` : rule.id === "maturityGap" ? ruleValue(rule) : part;
@@ -870,7 +878,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                 })}
                 when={`${RULE_MODE_LABEL[rule.mode]}${rule.adjustable ? "，保存后立即生效" : ""}`}
                 note={rule.refNote || undefined}
-                value={ruleValue(rule)}
+                value={rule.id === "regulatoryDirective" ? "人工关停" : ruleValue(rule)}
                 action={rule.adjustable && canWrite
                   ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`rule:${rule.id}`)} onClick={() => adjRule(rule)}>调整</Button>
                   : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置</Link> : undefined} />
