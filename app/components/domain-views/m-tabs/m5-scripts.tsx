@@ -685,7 +685,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const roster = !hasM1ReadAuthority
     ? <BlockState state="denied" title="当前账号没有客服名册权限" detail="话术与模板照常能维护。" />
     : <>
-      <Notice tone="neutral">暂停接新单的客服，自动分配和人工转接都选不到，邀请来的新用户仍归他；同时接待上限只管自动分配。</Notice>
+      <Notice tone="neutral">暂停接新单的客服，自动分配和人工转接都选不到；邀请来的新用户、主管随机分配时仍可能分给他。同时接待上限只管自动分配。</Notice>
       <Panel flush icon={Headset} tone="role-3" title="客服接待名册" sub={agentPageAvailable ? `${agentTotal} 位` : undefined}
         explain="列出你能管的客服，每页 5 位。分组、在不在线到客服工作台的「客服与分组」看；接待资格和主管资格在账号管理里改，这里不改。">
         <Table label="客服接待名册" className="m5-roster">
@@ -974,7 +974,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       <CheckGroup legend="接待开关">
         <Check label="开放接待" help="关闭后不参与自动分配和邀请继承" checked={enabled} disabled={saving || Boolean(pending)} onChange={() => setEnabled((v) => !v)} />
         <Check label="允许被转交" help="关闭后转交会话时选不到他" checked={transferable} disabled={saving || Boolean(pending)} onChange={() => setTransferable((v) => !v)} />
-        <Check label="暂停接新单" help="自动分配和人工转接都选不到他，邀请来的新用户仍归他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
+        <Check label="暂停接新单" help="自动分配和人工转接都选不到他；邀请来的新用户、主管随机分配时仍可能分给他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
       </CheckGroup>
       <div className="m5-tag-checks">
         <CheckGroup legend="标签" explain="只能从名册里已有的标签里选，最多 10 个。" help={tagOptions.length === 0 ? "名册里还没有任何标签。" : undefined}>

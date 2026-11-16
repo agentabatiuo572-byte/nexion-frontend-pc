@@ -68,7 +68,7 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
           explain="首次咨询的分配方式、提醒和兜底时长。点这一格看完整流程。" onOpen={() => setTab("rules")} openLabel="看分配规则" />}
         {manager && <Stat icon={Headset} tone="role-3" label="开放接待" value={agentsReady ? content.agentsOpen : "—"} unit={agentsReady ? "位" : undefined}
           sub={agentsReady ? `暂停接新单 ${content.agentsBusy} · 共 ${content.agentsTotal} 位` : undefined}
-          explain="你能管的客服里开着接待的人数。暂停接新单的不会被自动分配或转接新客户，邀请来的新用户仍会归他。点这一格看客服名册。" onOpen={() => setTab("roster")} openLabel="看客服接待名册" />}
+          explain="你能管的客服里开着接待的人数。暂停接新单的不会被自动分配或转接新客户；邀请来的新用户、主管随机分配时仍可能分给他。点这一格看客服名册。" onOpen={() => setTab("roster")} openLabel="看客服接待名册" />}
         {manager && <Stat icon={MessageCircleHeart} tone="role-3" label="欢迎语最近修改" value={welcome.state !== "ready" ? "—" : welcomeDate ?? "还没改过"}
           sub={welcome.state === "ready" ? "只影响之后注册的用户" : undefined}
           explain="新用户注册后收到的第一条消息，中文、英语、越南语各一份。点这一格看内容。" onOpen={() => setTab("welcome")} openLabel="看欢迎语" />}
