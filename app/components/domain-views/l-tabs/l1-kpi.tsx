@@ -25,7 +25,7 @@ import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
@@ -275,7 +275,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
     try {
       await send(record.mode, record.input, record.reason, record.label);
     } catch (cause) {
-      if (isExplicitRejection(cause)) { ctx.toast(displayAdminError(cause), "warn"); return; }
+      if (isExplicitRejection(cause)) { ctx.toast(`原操作被拒绝，记录已解除：${displayAdminError(cause)}`, "warn"); return; }
       setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
       setRetryRejected(isExplicitRejection(cause));
     } finally {
@@ -325,7 +325,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
         rows={pending ? [{ key: pending.commandKey, title: pending.label, record: pending, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !expired && !!ctx.canExport,
           copy: { where: `「${pageName}」和操作记录与审批` },
           actions: <>
-            <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
+            <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
             {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原请求重试</Button>}
           </>,
           detail: <>
@@ -338,7 +338,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
           任务生成后才能下载。{exportPage(`到「${pageName}」下载`)}
         </Notice>
       )}
-      {closing && pending && <FundClosureModal label={pending.label} createdAt={pending.createdAt}
+      {closing && pending && <FundClosureModal label={pending.label} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
         onClose={() => setClosing(false)} onSubmit={async evidence => { await checkInvestigation(pending, evidence); setClosing(false); }} />}
     </>,
   };

@@ -20,7 +20,7 @@ import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
@@ -1541,7 +1541,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      if (isExplicitRejection(cause)) { toast(displayAdminError(cause), "warn"); return; }
+      if (isExplicitRejection(cause)) { toast(`原操作被拒绝，记录已解除：${displayAdminError(cause)}`, "warn"); return; }
       // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原命令的结论（OP-153）。
       if (isExplicitRejection(cause)) {
         notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 原操作结果仍未知，记录继续保留。`);
@@ -1697,7 +1697,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const check = () => void (record.kind === "batch" ? checkInvestigation(record).catch(() => undefined) : verifyPending(record));
     return { key: record.fingerprint, title: record.label, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record),
       actions: <>
-        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={check} onClose={() => setClosing(record)} />
         {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>看现在的状态</Button>}
         <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
@@ -1978,10 +1978,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       </>}
     </Drawer>
 
-    {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} facts={<Fact k="涉及提现单">{closing.nos.length === 1 ? closing.nos[0] : `${closing.nos.length} 笔`}</Fact>}
+    {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} known={closureKnown(investigationResults[closing.commandKey])} facts={<Fact k="涉及提现单">{closing.nos.length === 1 ? closing.nos[0] : `${closing.nos.length} 笔`}</Fact>}
       onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
 
     {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
+      {batchResult.result.accepted.length === 0 && <Notice tone="warn">这批没有一笔{actionLabel(batchResult.action)}成功{batchResult.result.conflicts.length > 0 ? `，${batchResult.result.conflicts.length} 笔未执行` : ""}{batchResult.result.rejected.length > 0 ? `，${batchResult.result.rejected.length} 笔转单笔人工审核` : ""}。</Notice>}
       <Facts>
         <Fact k="批次">{batchResult.result.batchId}</Fact>
       </Facts>
@@ -1991,7 +1992,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <Fold inset title="大额转人工" summary={`${batchResult.result.rejected.length} 笔`}>
         <RecordList label="大额转人工的提现" records={batchResult.result.rejected.map((id) => ({ id, value: "转单笔人工审核", reference: id, status: <StatusTag tone="warn">未批量放行</StatusTag> }))} />
       </Fold>
-      <Fold inset title="未执行" summary={`${batchResult.result.conflicts.length} 笔`} alert={batchResult.result.conflicts.length > 0}>
+      <Fold inset title="未执行" summary={`${batchResult.result.conflicts.length} 笔`} alert={batchResult.result.conflicts.length > 0} defaultOpen={batchResult.result.accepted.length === 0 && batchResult.result.conflicts.length > 0}>
         <RecordList label="批量未执行的提现" records={batchResult.result.conflicts.map((conflict) => ({ id: conflict.withdrawalId, reference: conflict.withdrawalId,
           value: displayAdminError(new Error(conflict.reason)), status: <StatusTag tone="warn">{MOVED_STATE_CODES.includes(conflict.reason) ? "状态已变化" : "未执行"}</StatusTag> }))} />
       </Fold>
