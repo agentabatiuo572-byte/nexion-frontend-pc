@@ -503,7 +503,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       <Facts>
         <Fact k="范围">全平台、所有时间、各种状态的 8 类账单<Explain label="8 类是哪些" content="兑换、充值、提现、收益、团队奖励、退款、奖励、购买。按创建时间从新到旧，不限已结算。" /></Fact>
         <Fact k="文件">d4-bills-masked.csv，11 列<Explain label="11 列是什么" content="账单号、用户编号（脱敏）、类型、子类型、资产、方向、金额、变动后余额、状态、业务编号、创建时间。金额是原币原值，不换算、不舍入。" /></Fact>
-        <Fact k="脱敏" tone="warn">用户编号只留首 1 位和末 2 位<Explain label="脱敏到什么程度" content="2 位以内的编号整个写成 **。业务编号里和该用户编号相同的一段会被替换，其余原样；不导出昵称、备注。" /></Fact>
+        <Fact k="脱敏" tone="warn">用户编号只留首 1 位和末 2 位<Explain label="脱敏到什么程度" content="2 位以内的编号整个写成 **。业务编号里代表这位用户的那段同样隐藏，其余部分和账单号原样；不导出昵称、备注。" /></Fact>
         <Fact k="上限">最多 100,000 行，超过会被拒</Fact>
         <Fact k="怎么拿到">浏览器直接下载，不进任务列表，也没有下载链接</Fact>
         <Fact k="留什么记录">每次导出写进导出记录</Fact>
@@ -790,7 +790,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const createPanel = (
     <div ref={createRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">新建导出</span>} explainLabel="新建导出" icon={FilePlus2} sub="三种出口，去向不同"
-        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单只隐藏用户编号，其他内容原样导出。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出，都在上面任务列表里放行和下载。</p></>}>
+        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出，都在上面任务列表里放行和下载。</p></>}>
         <div className="l5-create">
           <article className="l5-create-card" aria-labelledby="l5-create-agg">
             <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3><Explain label="汇总数据是什么" content="关键指标、转化与留存、财务、运营四类汇总，不含个人信息。创建那一刻取数，以后下载还是那一刻的数。" /></div>
@@ -820,7 +820,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             <div className="l5-create-foot"><Button icon={<ScrollText size={14} aria-hidden />} disabledReason={regulatoryBlocked} onClick={requestRegulatoryReport}>生成当前披露快照</Button></div>
           </article>
           <article className="l5-create-card" aria-labelledby="l5-create-ledger">
-            <div className="l5-create-head"><IconTile tone="role-1" icon={ReceiptText} size={28} /><h3 id="l5-create-ledger">8 类账单明细</h3><Explain label="8 类账单明细是什么" content={<><p>兑换、充值、提现、收益、团队奖励、退款、奖励、购买，全平台所有时间。</p><p>用户编号只保留首尾字符，不导出昵称、备注。要按日期、用户筛，到「{ledgerName}」导出。</p></>} /></div>
+            <div className="l5-create-head"><IconTile tone="role-1" icon={ReceiptText} size={28} /><h3 id="l5-create-ledger">8 类账单明细</h3><Explain label="8 类账单明细是什么" content={<><p>兑换、充值、提现、收益、团队奖励、退款、奖励、购买，全平台所有时间。</p><p>用户编号只保留首尾字符，业务编号里代表这位用户的那段也一样；不导出昵称、备注。要按日期、用户筛，到「{ledgerName}」导出。</p></>} /></div>
             <RouteFacts rows={[["进任务列表", "不进"], ["要放行", "不用"], ["拿到文件", "确认后直接下载 CSV，最多 10 万行", true]]} />
             <div className="l5-create-foot">{ctx.canExportLedger
               ? <Button icon={<ReceiptText size={14} aria-hidden />} loading={ledgerExporting} loadingText="正在导出…" onClick={requestLedgerDownload}>导出 8 类账单明细</Button>
