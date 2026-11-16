@@ -325,7 +325,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <Table label="当前等级任务" className="e2-task-table"><colgroup><col className="e2-control-column" /><col className="e2-name-column" /><col /><col /><col /></colgroup><thead><tr>
           <Th control><Checkbox aria-label="选择本页全部任务" disabled={!!writeBlock || !rows.length} checked={rows.length > 0 && selected.length === rows.length} indeterminate={selected.length > 0 && selected.length < rows.length}
             onChange={event => setSelected(event.target.checked ? rows.map(row => row.taskTypeId) : [])} /></Th>
-          <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th>状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；已停用的任务不再参加新派单，当前单照常完成。" /></Th>
+          <Th>任务名称</Th><Th>类型</Th><Th align="right">时长</Th><Th>状态<Explain label="任务启用状态的说明" content="已启用的任务可参加新派单；停用的不再参加新派单，停用不会取消当前单。" /></Th>
         </tr></thead><tbody>{readingTasks ? <TableLoading columns={5} /> : tasks.state === "error" ? <TableMessage columns={5} role="alert"><BlockState state="error" title="任务读取失败" detail={tasks.error} onRetry={() => void refresh()} /></TableMessage>
           : !query.code && pools.state === "error" ? <TableMessage columns={5}>任务等级读取成功后，再读取任务列表。</TableMessage>
           : rows.length ? rows.map(row => <Tr key={row.taskTypeId} selected={selected.includes(row.taskTypeId)}><Td><Checkbox aria-label={`选择 ${row.name}`} title={writeBlock} disabled={!!writeBlock} checked={selected.includes(row.taskTypeId)} onChange={event => setSelected(event.target.checked ? [...selected, row.taskTypeId] : selected.filter(id => id !== row.taskTypeId))} /></Td>
@@ -356,13 +356,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             {dialog.kind === "status" && <Fact k={dialog.enabled ? "本次启用" : "本次停用"}>{dialog.tasks.length} 个任务</Fact>}
             {dialog.kind === "random" && dialog.original && <><Fact k="任务数量">{dialog.original.request.kind === "random" ? dialog.original.request.body.count : "—"} 个</Fact><Fact k="限定类型">{dialog.original.request.kind === "random" && dialog.original.request.body.taskClasses ? dialog.original.request.body.taskClasses.map(value => TASK_CLASS_LABELS[value]).join("、") : "不限类型"}</Fact></>}
           </Facts>
-          {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务。" : "只影响之后新派的任务，当前单照常完成。"}</Notice>}
+          {!dialog.original && (dialog.kind === "random" || dialog.enabled) && <Notice tone="neutral">{dialog.kind === "random" ? "生成后立即加入当前等级，仅影响之后新派的任务。" : "只影响之后新派的任务，不改当前单。"}</Notice>}
           {dialog.kind === "status" && !dialog.enabled && <>{impactLoading ? <BlockState state="loading" title="正在计算停用影响…" />
             : impactError ? <BlockState state="error" title="停用影响读取失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
               : impact && <>{dialog.original && <p className="rd-aux">首次读取的影响 · {impactAt ? businessStamp(impactAt) : "—"} · {businessZoneText()}</p>}
                 {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="e2-command-tasks">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
-                  <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，当前单照常完成。不等于设备管理列表总数。影响按读取时算，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>当前单照常完成，之后等待配置；停跑期间不计收益、不补发。</p>
-                </Notice> : <Notice tone="neutral">没有商品会失去全部可用任务；当前单照常完成。</Notice>}</>}</>}
+                  <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，停用不会取消当前单。不等于设备管理列表总数。影响按读取时算，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>停用不会取消当前单，当前单结束后等待配置；停跑期间不计收益、不补发。<Explain label="当前单什么时候不会完成" content="历史截止时间之前开始、还没入账的旧单例外：会被取消，不发收益。这和停用无关。" /></p>
+                </Notice> : <Notice tone="neutral">没有商品会失去全部可用任务；停用不会取消当前单。</Notice>}</>}</>}
           {!dialog.original && dialog.kind === "random" && <><Field label="任务数量" required help="1–50 个，整数" explain="每次添加 1–50 个，默认启用。各类任务的时长范围见「技术信息」。" error={touched.count && !countReady ? "任务数量要填 1–50 的整数" : undefined}>
             <NumberInput unit="个" min={1} max={50} step={1} value={count} disabled={saving} onChange={event => setCount(event.target.value)} onBlur={() => setTouched(old => ({ ...old, count: true }))} /></Field>
             <CheckGroup legend="限定类型" summary={classes.length ? `已选 ${classes.length} 类` : "不限类型"} explain="限制本次随机生成的类型；可多选，不选则不限。不保证每类均匀分到或至少分到一个，不改变已有任务。">
