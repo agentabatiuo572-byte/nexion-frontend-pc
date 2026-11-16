@@ -56,6 +56,9 @@ function backendPath(parts: string[], method: string) {
   if (parts.length === 2 && parts[0] === "leadership-pool" && parts[1] === "settle") {
     return "/api/admin/teams/leadership-pool/settle";
   }
+  if (method === "GET" && parts.length === 2 && parts[0] === "commissions" && /^CM-\d+$/i.test(parts[1])) {
+    return `/api/admin/commissions/${encodeURIComponent(parts[1])}`;
+  }
   if (parts.length === 1 && parts[0] === "commissions") {
     return "/api/admin/commissions";
   }

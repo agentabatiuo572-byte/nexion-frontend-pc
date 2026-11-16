@@ -18,6 +18,8 @@ import {
   assertF4Overview,
   assertF4MaterialPacket,
   assertF5Overview,
+  F5_KINDS,
+  F5_STATUSES,
 } from "@/lib/admin/f-overview-contract";
 
 interface ApiResult<T> {
@@ -1888,7 +1890,7 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (/^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+    if (/^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
@@ -2008,6 +2010,56 @@ export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): P
         computePoints: f4LeaderboardDecimal(entry.computePoints), disqualificationAvailable: entry.disqualificationAvailable,
         riskEvidenceRef: entry.riskEvidenceRef, reason: entry.reason };
     }) };
+}
+
+/** Current reward facts for approval review; never a snapshot of the proposal or an execution preview. */
+export type F5CommissionRecord = {
+  commissionId: string;
+  eventId: number;
+  userId: number;
+  user: string;
+  kind: string;
+  amount: string;
+  currency: string;
+  status: string;
+  version: number;
+  amountUSDT?: string;
+  amountNEX?: string;
+};
+export type F5CommissionRead = { status: "found"; record: F5CommissionRecord } | { status: "not-found" };
+
+export async function fetchF5CommissionByBusinessId(commissionId: string): Promise<F5CommissionRead> {
+  const id = commissionId.trim().toUpperCase();
+  if (!/^CM-\d+$/.test(id)) throw new Error(formatAdminApiError("COMMISSION_ID_INVALID", "COMMISSION_ID_INVALID"));
+  let data: unknown;
+  try { data = await f1Request<unknown>(`/commissions/${encodeURIComponent(id)}`); }
+  catch (error) {
+    const failure = error as { httpStatus?: number; apiCode?: number; reasonCode?: string };
+    if (failure.httpStatus === 404 && failure.apiCode === 404 && failure.reasonCode === "COMMISSION_EVENT_NOT_FOUND") return { status: "not-found" };
+    throw error;
+  }
+  // This endpoint uses eventView, as does the list. Validate the facts consumed here once at the read boundary.
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:commission");
+  const row = data as Record<string, unknown>;
+  if (typeof row.commissionId !== "string" || !/^CM-\d+$/.test(row.commissionId)
+    || typeof row.eventId !== "number" || !Number.isSafeInteger(row.eventId) || row.eventId <= 0
+    || row.commissionId !== `CM-${row.eventId}` || BigInt(row.commissionId.slice(3)) !== BigInt(id.slice(3))
+    || typeof row.userId !== "number" || !Number.isSafeInteger(row.userId) || row.userId <= 0
+    || row.user !== `U${String(row.userId).padStart(8, "0")}`
+    || typeof row.kind !== "string" || !F5_KINDS.includes(row.kind)
+    || typeof row.currency !== "string" || !["USDT", "UVT"].includes(row.currency)
+    || typeof row.status !== "string" || ![...F5_STATUSES, "unknown"].includes(row.status)
+    || typeof row.version !== "number" || !Number.isSafeInteger(row.version) || row.version < 0) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:commission");
+  const amounts: { amount: string; amountUSDT?: string; amountNEX?: string } = { amount: "" };
+  for (const key of ["amount", "amountUSDT", "amountNEX"] as const) {
+    if (key !== "amount" && row[key] == null) continue;
+    const value = row[key];
+    const decimal = typeof value === "string" ? f4Decimal(value) : null;
+    if (decimal === null || decimal.startsWith("-")) throw new Error(`F5_OVERVIEW_RESPONSE_INVALID:commission.${key}`);
+    amounts[key] = decimal;
+  }
+  return { status: "found", record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
+    user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts } };
 }
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {
