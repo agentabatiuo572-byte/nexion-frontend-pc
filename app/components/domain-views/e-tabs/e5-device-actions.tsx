@@ -156,7 +156,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const showOutcome = (record: E5Command, outcome: CommandOutcome) => {
     if ("receipt" in outcome && outcome.receipt && eCommandSettled(outcome.receipt)) {
       const status = outcome.receipt.originalStatus;
-      setSettled(list => [...list.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, text: status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。" }]);
+      setSettled(list => [...list.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, text: status === "CONFIRMED_REJECTED" ? "刷新页面查看现在的结果。" : status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。" }]);
     } else setOutcomes(values => ({ ...values, [record.commandKey]: outcome }));
   };
   const canInvestigate = canInvestigateECommand("device_e5_read");

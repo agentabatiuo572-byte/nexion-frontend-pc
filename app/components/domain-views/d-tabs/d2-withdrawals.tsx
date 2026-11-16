@@ -19,7 +19,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessT
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundCommandBatchResolved, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1488,10 +1488,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     try {
       const receipt = await checkFundCommand(record, evidence);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
-      if (fundCommandSettled(receipt)) {
+      if (fundCommandSettled(receipt) || record.kind === "batch" && fundCommandBatchResolved(receipt, record.nos)) {
         pendingKeys.forget(record.fingerprint, record.commandKey);
         syncPending();
-        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus }]);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus, ...(receipt!.batch ? { batch: receipt!.batch } : {}) }]);
         await Promise.all([refresh(), detailRef.current && record.nos.includes(detailRef.current.withdrawalNo) ? reopenDetail() : null]);
       }
       return receipt;
@@ -1554,7 +1554,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const verifyPending = async (record: D2PendingCommand) => {
     try {
       const receipt = await checkInvestigation(record);
-      if (fundCommandSettled(receipt)) return;
+      if (fundCommandSettled(receipt) || record.kind === "batch" && fundCommandBatchResolved(receipt, record.nos)) return;
     } catch { /* 查询失败、没查到都显示在这条记录的查询结果里。 */ }
     const [no] = record.nos;
     const latest = await fetchD2WithdrawalDetail(no).catch(() => null);

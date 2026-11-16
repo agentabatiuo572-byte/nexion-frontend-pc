@@ -51,5 +51,6 @@ export async function checkFundCommand(record: FundCommandRecord, evidence?: ECo
   return discoverECommand(locator);
 }
 
-export { eCommandSettled as fundCommandSettled, eCommandResult as fundCommandResult } from "./e-command-investigation";
-export type { ECommandEvidence as FundCommandEvidence, ECommandInvestigation as FundCommandInvestigation };
+export { eCommandSettled as fundCommandSettled, eCommandResult as fundCommandResult,
+  eCommandBatchResolved as fundCommandBatchResolved, eCommandCanConcludeRejected as fundCommandCanConcludeRejected } from "./e-command-investigation";
+export type { ECommandEvidence as FundCommandEvidence, ECommandInvestigation as FundCommandInvestigation, ECommandBatch as FundCommandBatch } from "./e-command-investigation";

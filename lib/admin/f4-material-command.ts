@@ -12,7 +12,9 @@ export async function queryF4MaterialCommand(record: FundCommandRecord & { actor
   const receipt = evidence ? await query() : await query().catch(() => null);
   const result = fundCommandResult(receipt);
   if (result === "SUCCEEDED" || result === "NOT_EXECUTED") return { receipt, outcome: result };
+  if (receipt?.originalStatus === "CONFIRMED_REJECTED") return { receipt, outcome: "REJECTED" as const };
+  if (receipt?.businessState !== undefined) return { receipt, outcome: null };
   // F4's status endpoint accepts exactly actor:application and checks the retained business code.
   const state = await fetchDirectCommandReceipt(`F4_MATERIAL_REVIEW:${record.actorId}:${record.applicationId}`, record.commandKey, record.actorId).catch(() => null);
-  return { receipt, outcome: state === "SUCCEEDED" ? "SUCCEEDED" as const : state === "REJECTED" ? "NOT_EXECUTED" as const : null };
+  return { receipt, outcome: state === "SUCCEEDED" ? "SUCCEEDED" as const : state === "REJECTED" ? "REJECTED" as const : null };
 }

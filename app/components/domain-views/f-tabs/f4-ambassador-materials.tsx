@@ -130,6 +130,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
       setPacket(null); setConfirmation(null);
       if (outcome === "SUCCEEDED") ctx.toast("材料核验已记录");
+      else if (outcome === "REJECTED") setRecoveryNotice("刷新页面查看现在的结果。");
       else setRecoveryNotice(displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
       await refresh(); await ctx.refreshF4();
       return true;
