@@ -81,12 +81,15 @@ function CurrentTask({ device, readAt }: { device: E5Device; readAt: number }) {
 function DeviceStatus({ device: d, detail = false }: { device: E5Device; detail?: boolean }) {
   const value = E5_STATES[d.simState!];
   const note = e5StateNote(d);
+  const label = note.label ?? value.label;
   const reach = useReach();
   // 取消激活、解绑、置换回收时后端写的停跑原因就是这个动作本身，状态已经说了，不再当暂停原因列出。
-  const paused = (d.simState === "STOPPED" || d.simState === "UNBOUND") && ["deactivate", "unbind", "recycle", "replace"].includes(d.pausedReason.trim().toLowerCase()) ? "" : d.pausedReason;
+  // 退款、赠送撤销写的停跑原因和下面那行归属说明是同一件事，也不重复列出。
+  const sameAsOwnership = d.ownershipStatus === "REFUNDED" && d.pausedReason.trim().toUpperCase() === "ORDER_REFUND" || d.ownershipStatus === "REVOKED" && d.pausedReason.trim().toUpperCase() === "PROMOTION_REFUND";
+  const paused = (d.simState === "STOPPED" || d.simState === "UNBOUND") && (["deactivate", "unbind", "recycle", "replace"].includes(d.pausedReason.trim().toLowerCase()) || sameAsOwnership) ? "" : d.pausedReason;
   const specific = d.simState !== "SIM_OFF" && (d.simState === "ERROR" || !!paused);
   const reason = <>{d.simState === "ERROR" ? <><p>原错误：{d.simLastError || "未提供错误原因"}</p><p>下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等系统安排"}</p><p>系统每 30 秒自动重试。</p></> : <>{paused && <p>暂停原因：{pausedReasonText(paused)}</p>}<p>{d.simState === "WAITING_CONFIG" && detail && reach("/devices/tasks") ? <>没有可用任务，<Link href="/devices/tasks">去任务池核对</Link>。停跑期间不计收益、不补发。</> : note.reason}</p></>}</>;
-  return <div className="e5-state"><div className="e5-task-head"><StatusTag tone={value.tone} icon={value.icon}>{value.label}</StatusTag>{specific && !detail && <Explain label={`${value.label}的原因`} content={reason} />}</div>
+  return <div className="e5-state"><div className="e5-task-head"><StatusTag tone={value.tone} icon={value.icon}>{label}</StatusTag>{specific && !detail && <Explain label={`${label}的原因`} content={reason} />}</div>
     {detail ? <div className="e5-status-detail">{reason}</div> : <>{d.simState === "LEGACY_PENDING" && <span className="e5-sub">先核对旧任务</span>}{d.simState === "WAITING_CONFIG" && <span className="e5-sub">{reach("/devices/tasks") ? <Link href="/devices/tasks">去任务池核对</Link> : "去任务池核对"}</span>}{d.simState === "CLOSING" && <span className="e5-sub">结算后自动停用</span>}{note.sub && <span className="e5-sub">{note.sub}</span>}</>}
   </div>;
 }
@@ -184,7 +187,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
     const [fresh] = await Promise.all([readList(), readOverview()]);
     if (!fresh) return "最新设备列表未读到，请重试读取；原操作继续待确认。";
     const matches = fresh.filter(row => record.intent === "pause" || record.intent === "resume" ? row.userId === record.device.userId : row.deviceId === record.device.deviceId);
-    return matches.length ? `已读到：${matches.map(row => `${row.serial} · ${E5_STATES[row.simState!].label}`).join("；")}。当前列表状态不能单独确认原操作结果，请结合操作记录与审批核对。` : "已读取当前列表，原对象不在当前页或筛选结果中。请清除筛选核对；原操作继续待确认。";
+    return matches.length ? `已读到：${matches.map(row => `${row.serial} · ${e5StateNote(row).label ?? E5_STATES[row.simState!].label}`).join("；")}。当前列表状态不能单独确认原操作结果，请结合操作记录与审批核对。` : "已读取当前列表，原对象不在当前页或筛选结果中。请清除筛选核对；原操作继续待确认。";
   };
   const selected = rows.find(row => row.deviceId === selectedId);
   const index = rows.findIndex(row => row.deviceId === selectedId);

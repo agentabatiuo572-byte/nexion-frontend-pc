@@ -424,12 +424,14 @@
 .a4-rec-time, .a4-rec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .a4-rec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .a4-rec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.a4-rec-line { grid-column: 2 / -1; margin-top: -4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .a4-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 @container adom (max-width: 1100px) {
   .a4-rec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
   .a4-rec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
   .a4-rec-time { grid-column: 1 / 3; grid-row: 2; }
   .a4-rec-actions { grid-column: 3; grid-row: 2; }
+  .a4-rec-line { grid-column: 1 / -1; grid-row: 3; }
 }
 
 /* 上线进度点：五个点一条线，当前的上色，旁边写字 */
