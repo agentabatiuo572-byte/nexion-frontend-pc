@@ -583,7 +583,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const otherNo = state.writableConversationNo && state.writableConversationNo !== selected?.id ? state.writableConversationNo : null;
     // BUG-424：客户现在归本人时给下一步；按钮写的去向跟着后端给的当前会话走（有就打开，没有就首次联系）。
     if (canContinueConversation) return <Notice tone="neutral" action={<>
-      {!state.writableConversationNo && <Explain label="点了会怎样" content="进入首次联系。发出第一条消息后才有新会话。" />}
+      {!state.writableConversationNo && <Explain label="点了会怎样" content="进入首次联系，发出第一条消息后开始对话。" />}
       <Button size="sm" variant="primary" loading={actionChecking} loadingText="正在核对…" onClick={() => void continueClosed()}>{state.writableConversationNo ? "打开当前会话" : "发起会话"}</Button>
     </>}>{reassigned ? `旧会话发不出：客户已从${state.threadOwnerAgentName ?? "原客服"}改分给你。` : "这是旧会话，这里发不出。"}</Notice>;
     const text = reassigned ? `这条会话原属${state.threadOwnerAgentName ?? "其他客服"}，客户已改分给${state.currentAssignmentAgentName ?? "其他客服"}，这里不能再回复。`
@@ -1023,7 +1023,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const sendRetryExpired = Boolean(sendRow && isRetryExpired(sendRow));
   const markSendRetryRejected = (key: string, cause: unknown) => {
     setSendRejected(previous => new Set(previous).add(key));
-    setSendError(`重试被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`);
+    setSendError(`重试被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原来那次可能已发出，核对后再解除。`);
   };
   const refreshChangedPeer = async (identity: string) => {
     if (selected) messagePages.invalidateWriteState(selected.id);
@@ -1200,7 +1200,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           pendingMessages.forget(pendingKey(adminId)); setPending(null);
         }
         if (submitted && retry && rejectedSupportWrite(cause)) markSendRetryRejected(record.key, cause);
-        else setSendError(retry ? "发送结果未知，请查询结果。" : "本次发送已被拒绝：这条已不是当前会话。原文还在，客户仍归你时点上方按钮到当前会话再发。");
+        else setSendError(retry ? "发送结果未知，请查询结果。" : "本次发送已被拒绝：这条已不是当前会话。原文还在，客户仍归你时到当前会话再发。");
         await refreshChangedPeer(identity);
         return;
       }
@@ -1405,7 +1405,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     } catch (cause) {
       if (stamp !== identityRef.current) return;
       if (submitted && rejectedSupportWrite(cause)) {
-        if (current()) { setHoldEndRejected(previous => new Set(previous).add(command.commandKey)); setActionError(`结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
+        if (current()) { setHoldEndRejected(previous => new Set(previous).add(command.commandKey)); setActionError(recovering ? `重试被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原来那次可能已结束，核对后再解除。` : `结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。这次没有结束，核对后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
       else if (current()) setHoldRetry((value) => value + 1);
     } finally { if (current()) setHoldEnding(false); }
@@ -1639,18 +1639,18 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   </>;
 
   return <>
-    {sendRelease && <ReleaseModal label={sendRelease.fingerprint.startsWith("nexion-m3-first-pending:") ? "首次联系" : "发送消息"} onCancel={() => setSendRelease(null)} onConfirm={() => {
+    {sendRelease && <ReleaseModal label={sendRelease.fingerprint.startsWith("nexion-m3-first-pending:") ? "首次联系" : "发送消息"} explain={`先在会话里看${sendRelease.fingerprint.startsWith("nexion-m3-first-pending:") ? "首次联系的消息" : "这条消息"}有没有发出再解除；重试被拒不等于原来那次没发出。解除不发请求，不进操作记录。`} onCancel={() => setSendRelease(null)} onConfirm={() => {
       pendingMessages.forget(sendRelease.fingerprint, sendRelease.commandKey);
       setPending(previous => previous?.key === sendRelease.commandKey ? null : previous);
       setFirstPending(previous => previous?.key === sendRelease.commandKey ? null : previous);
       setSendRejected(previous => new Set([...previous].filter(key => key !== sendRelease.commandKey)));
       setSendRelease(null); setSendError("");
     }} />}
-    {holdEndRelease && <ReleaseModal label="结束会话" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
+    {holdEndRelease && <ReleaseModal label="结束会话" explain="先看这位客户是不是还在接待中再解除；重试被拒不等于原来那次没结束。解除不发请求，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
       setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdEndRelease.customerId) ?? null : previous);
       setHoldEndCommands(readSessionEndRecords(adminId, holdEndRelease.customerId));
-      setHoldEndRejected(previous => new Set([...previous].filter(key => key !== holdEndRelease.commandKey))); setHoldEndRelease(null); setHoldRetry(value => value + 1);
+      setHoldEndRejected(previous => new Set([...previous].filter(key => key !== holdEndRelease.commandKey))); setHoldEndRelease(null); setActionError(""); setHoldRetry(value => value + 1);
     }} />}
     <PageHeader pageId="M3" title="专属会话" back={back}
       summary={<>{summary} <Explain label="时间和更新方式" content={`时间均为${zoneLabel}。${streamReady ? "有新消息时自动更新。" : ""}`} /></>}
@@ -1755,7 +1755,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         </header>
         {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
           {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
-          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? "接待实例未确认：可查原结果；结束入口仍按原记录及期限核对。" : "记录缺少接待编号：只能查原结果；结束当前接待仍受原记录核对限制。"}{isRetryExpired(record) && ` ${RETRY_EXPIRED_TEXT}。`}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? isRetryExpired(record) ? `还不能确认这条结束记录是哪一次接待的，可以查原结果；${RETRY_EXPIRED_TEXT}。` : "还不能确认这条结束记录是哪一次接待的，可以查原结果；点「结束会话」会先按它核对，可能按原操作重试。" : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}。` : ""}`}</Notice>)}
           {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
             explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。时间为${businessZone().label}。`}
             items={sessionEndRecoveries.filter(record => record.instanceState === "historical").map(record => {
@@ -1793,7 +1793,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           {selected && !writable && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || !selected.writeState || selected.status !== "open") && (recoveryBlocksTarget
             ? <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息发送结果未知，暂时不能再发。</Notice>
             : !canWriteM3 ? <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>
-            : !selected.writeState ? <Notice tone="warn" action={<Button size="sm" onClick={() => void refreshChangedPeer(identityRef.current)}>重新读取会话</Button>}>还没核对到这条会话能否回复，请重新读取。</Notice>
+            : !selected.writeState ? <Notice tone="warn" action={<Button size="sm" onClick={() => void refreshChangedPeer(identityRef.current)}>重新读取会话</Button>}>还没确认这条会话能不能回复，确认前先不能发送。</Notice>
             : selected.status !== "open" ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
             : selectedUnbound ? <Notice tone="warn">该客户还没有专属客服，等待主管分配后回复。</Notice>
             : selected.writeState?.canReply === false ? threadNotice(selected.writeState)
