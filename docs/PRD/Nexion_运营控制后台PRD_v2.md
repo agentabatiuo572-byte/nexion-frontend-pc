@@ -626,6 +626,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 #### [E5] 设备管理
 
+2026-11-17 归属门禁接线（hd-sync25，后端4869903c/8539f20e）：E5Device接收可选ownershipStatus，缺失/null/空串保持未知，不默认OWNED；显式非OWNED不允许普通或强制激活，OWNED时按后端raw集合，含旧raw UNBOUND的强制激活。无归属保持现有simState/raw UNBOUND拒绝，其余普通仅INVENTORY、强制INVENTORY/DEACTIVATED/INACTIVE。列表、详情、提交前和状态说明共用canActivateE5Device。退款REFUNDED及促销撤销REVOKED的停用行复用现有「不能再激活」和通用停止原因，不改成解绑/置换事实。**交付缺口：4869903c只改DeviceOpsView和mapper，E5 devices()的StoreDeviceView.from仍未带归属，E5列表/详情实际仍走旧规则，不能宣称退款设备入口已全部关闭；需后端补DTO后复验。**旧OWNED/raw UNBOUND的「已解绑」标签仍保留，措辞交视觉；以下旧的一律不可激活规则按本条归属优先修正。
+
 2026-11-16（hd-patch-e5u、hd-vis-e5）：运营解绑同时写状态和归属为 UNBOUND，后端 `64f53ce0` 激活前要求归属 OWNED，所以解绑之后不能通过后台恢复给原用户。入口（`canActivateE5Device`）：simState 为 UNBOUND 或原始状态为 UNBOUND 的设备既没有「激活」也没有「强制激活」；原始状态 DEACTIVATED、INACTIVE 的可以申请强制激活；INVENTORY 可以直接激活或强制激活；RECYCLED、RETIRED 不能。页面文字：解绑确认框后果「设备不再归原用户，后台不能再恢复；不退款，购入时间不变，解绑后没有收益。」，标题下加「不能撤销」；已解绑的状态下面一行「不能再激活」，详情「已不归原用户，不能再激活。」（不再按后来被回收、退役细分）；取消激活后果「停用后不接新任务、不占名额，不退款；之后用户能在 App 里重新激活，后台也能申请强制激活。」（App 合法再次激活见下文 `a9658470`）。置换回收写下的停跑原因（recycle、replace）和取消激活、解绑一样，不再当暂停原因列出（E6 同）。已经建好的强制激活申请，批准时设备已不归原用户会返回 409 `DEVICE_OWNERSHIP_NOT_OWNED`（中文：这次没有激活，请驳回），申请仍是待审批、对象仍锁，发起人按原申请查询当前状态，不能把批准失败当成建单失败。下文旧的「解绑后可申请强制激活回到原用户」说法作废。
 
 2026-11-16 单台恢复/激活（后端 `64f53ce0`，E5-BE-15）：两条业务路径都先要求真实 ownership_status=OWNED，否则 409 DEVICE_OWNERSHIP_NOT_OWNED，状态/审计/事件均不写。runtime 仅清 UNBIND/DEACTIVATE，保留其它系统暂停；状态允许集合、容量、A2 和成功原号回放不变。直接 restore 仍无 PC 调用入口，既有精确转发白名单保留。读取没有独立 ownershipStatus，不能从空名额反推归属或把允许的旧 OWNED/UNBOUND 行一概挡住；执行前归属继续由后端核。正常解绑写 ownership=UNBOUND，不能再承诺批准强制激活会交回原用户；下列旧状态说明和解绑后果中的相应句子由视觉修改，本次仅登记事实。E6 复用相同动作和拒绝分类。新码中文交共用字典负责线。
@@ -677,6 +679,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 ---
 
 #### [E6a] 手机任务、收益、用户手机与校准规则
+
+2026-11-17 用户手机归属（hd-sync25，4869903c/8539f20e）：phones()直接返回DeviceOpsView，周期收益enrich保留ownershipStatus；手机读取已交付。与E5共用mapE5Device边界解析和canActivateE5Device：非OWNED禁普通/强制激活，OWNED按raw集合，旧OWNED/raw UNBOUND允许强制激活；无字段/null/空串沿旧规则。stopped()按同一判断选用已有「可以重新激活」「不能再激活」，raw RECYCLED/RETIRED继续原说明；REFUNDED/REVOKED不再被称为可以激活，也不硬套已回收/已解绑。手机行、提交前重检、权限、6台上限、原请求恢复和现有结构保持。旧OWNED/raw UNBOUND标签仍叫「已解绑」，需要视觉决定准确称谓；本条修正下方历史的一律解绑不可激活说明。
 
 2026-11-16（hd-patch-e5u、hd-vis-e5）：E6 手机适用同一归属限制，解绑之后不能通过后台恢复。手机读取不带 simState，按原始状态判断：原始状态 UNBOUND 的手机没有「激活」「强制激活」，DEACTIVATED 的可以申请强制激活，RECYCLED、RETIRED 不能。页面文字：解绑确认框后果「手机不再归这位用户，后台不能再恢复；不退款，购入时间不变，解绑后没有收益。」，标题下「批准后生效」「不能撤销」（强制激活只有「批准后生效」，激活、取消激活、暂停和恢复用户为「立即生效」，和 E5 一致）；已解绑的手机状态下面一行「不能再激活」；取消激活后果不变（App 再次激活不适用于手机）。已有强制激活申请批准被拒时仍待审批，发起人查询当前审批状态，终态后才能按现有流程解除。下文旧的手机解绑恢复承诺作废。
 
