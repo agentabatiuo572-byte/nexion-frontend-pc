@@ -3,8 +3,12 @@ export type CheckInRule = { key: string; name: string; sub?: string; cur: string
 export type StreakMilestone = { id: number; day: string; reward: string; kind?: string };
 export type PowerUp = { id: number; day: number; label: string; sub?: string; downstream?: string | null; note?: string; effectType?: string; businessAvailable?: boolean | null };
 export type EarnMilestone = { id: number; key: string; threshold: string; nex: string; weekTrigger?: number | null };
+export type H5StatisticBasis = {
+  source: string; windowType: string; window: string | null; aggregate: string; condition: string;
+  denominator: string | null; unit: string | null; availability: string;
+};
 export type H5Model = {
-  stats: { todaySign?: number | null; signRate?: string | null; lucky15Actual?: string | null; lucky2Actual?: string | null; lucky15Config?: string | null; lucky2Config?: string | null; weekRevive?: number | null; weekMsTrigger?: number | null; weekMsNex?: string | null };
+  stats: { statBasis?: Record<string, H5StatisticBasis> | null; todaySign?: number | null; signRate?: string | null; lucky15Actual?: string | null; lucky2Actual?: string | null; lucky15Config?: string | null; lucky2Config?: string | null; weekRevive?: number | null; weekMsTrigger?: number | null; weekMsNex?: string | null };
   rules: CheckInRule[];
   streakMilestones: StreakMilestone[];
   streakDistribution: { day: string; count: number; height: number }[];
@@ -46,8 +50,20 @@ export function parseH5Model(value: unknown): H5Model {
   const tick = object(data.tickInterval);
   const optionalText = (key: string) => stats[key] == null ? null : string(stats[key]);
   const optionalCount = (key: string) => stats[key] == null ? null : integer(stats[key]);
+  const statBasis = stats.statBasis == null ? stats.statBasis as null | undefined
+    : Object.fromEntries(Object.entries(object(stats.statBasis)).map(([key, value]) => {
+      const row = object(value);
+      return [key, {
+        source: string(row.source), windowType: string(row.windowType), aggregate: string(row.aggregate),
+        condition: string(row.condition), availability: string(row.availability),
+        window: row.window == null ? null : string(row.window),
+        denominator: row.denominator == null ? null : string(row.denominator),
+        unit: row.unit == null ? null : string(row.unit),
+      }];
+    }));
   return {
     stats: {
+      statBasis,
       todaySign: optionalCount("todaySign"), signRate: optionalText("signRate"),
       lucky15Actual: optionalText("lucky15Actual"), lucky2Actual: optionalText("lucky2Actual"),
       lucky15Config: optionalText("lucky15Config"), lucky2Config: optionalText("lucky2Config"),

@@ -954,6 +954,8 @@ H4 已确认保存后重读失败，现有表单与保存按钮禁用；保存�
 
 #### [H5] 签到与UVT奖励
 
+2026-11-17（48c621f0）：stats.statBasis新增九项机器口径，非纯注释，但不改变查询或数值。todaySign去重签到人，signRate除去重nx_user_streak用户（非注册总数）；两实际幸运比例是当天签到行中reward_multiplier≥1.5/≥2，非互斥命中人群。以上按GROWTH_TEAM业务日；weekRevive数近7天补救相关权益行，weekMsTrigger/weekMsNex数近7天收益里程碑行/奖励UVT，均非自然周/连签奖。前端接元数据、兼容旧后端；H5-BE-05按准确口径披露交付，统计降级可用性尚未解决，2倍精确命中之类措辞交视觉。
+
 **2026-11-17 连签奖励提示（hd-vis-be20）**：编辑器提示改为「数量要大于 0，UVT、USDT 最多 6 位小数，转盘票填整数」；「这页怎么用」同步；转盘票小数的错误说明改为「转盘票数量须为 1–2147483647 的整数」；填 0 或格式不对时（STREAK_REWARD_AMOUNT_INVALID）改为「奖励要写一种，数量大于 0，如 +5 UVT、+1 USDT 或转盘票 ×2。」，A2 批准连签提案被拒时同一句。
 
 **2026-11-17 连签奖励正值（hd-sync27-1 / e9bc672c，文档cd78b851）**：parseStreakReward在原精度校验之后、SPIN整数校验之前要求amount>0。PC h5StreakReward同序预判：UVT/USDT正数且最多6位小数，SPIN正整数且不超Integer.MAX_VALUE；BADGE仍后端核原徽章可用性，不按正金额拦。基础/第7天正整数规则不变，不扩大到收益里程碑。零值422 STREAK_REWARD_AMOUNT_INVALID发生在配置CAS/审计前，直写/审批创建及批准回放共用；既有中文和明确拒绝语义适用，编辑器提示补“正数”的文字交视觉。旧已存值不回溯改写。
