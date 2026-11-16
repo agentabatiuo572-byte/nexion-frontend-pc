@@ -2463,6 +2463,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PLATFORM_EXPERIENCE_SOURCE_INVALID: "安装包来源只能选择“官方发布”或“暂不可用”；本次未保存，请重新选择。",
   NETWORK_FAILURE: "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。",
   ROLE_GRANTS_UNKNOWN_PERMISSION_OR_MENU: "授权清单中包含已停用或不存在的权限/菜单，本次未修改原授权；请刷新目录后重新选择。",
+  AUDIT_ROLE_WRITE_FORBIDDEN: "内置审计角色只能有查看权限，本次未修改授权；请取消修改和敏感权限后重新提交。",
   ROLE_GRANTS_INVALID: "授权清单格式无效，本次未修改原授权；请刷新后重试。",
   ROLE_GRANTS_STALE: "这个角色的权限和菜单已被别人改过，这次没有生效。发起人：页面已读到最新授权，按最新的核对勾选后再提交；审批人：这张申请不能批准，请驳回。",
   ROLE_GRANTS_EXPECTED_REQUIRED: "这次授权修改没带上提交时读到的授权，确认不了期间有没有人改过，没有生效。发起人：重新打开授权表核对后再提交；审批人：这张申请不能批准，请驳回。",

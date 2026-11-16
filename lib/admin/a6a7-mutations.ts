@@ -48,7 +48,7 @@ export function a6GrantsProblem(roleCode: string, input: A6GrantsPayload, menus:
   const byCode = new Map(permissions.map(permission => [permission.permissionCode, permission]));
   if (input.menuIds.some(id => byId.get(id)?.status !== 1) || input.permissionCodes.some(code => !byCode.has(code))) return "ROLE_GRANTS_UNKNOWN_PERMISSION_OR_MENU";
   // A6-PD02 explicitly disallows WRITE and HIGH; do not infer an export exception from its name.
-  if (roleCode === "AUDITOR" && input.permissionCodes.some(code => byCode.get(code)!.permType !== "READ")) return "AUDITOR_READ_ONLY";
+  if (roleCode.toUpperCase() === "AUDITOR" && input.permissionCodes.some(code => byCode.get(code)!.permType !== "READ")) return "AUDITOR_READ_ONLY";
 }
 
 function wire(original: Original, reason: string, operator: string) {
