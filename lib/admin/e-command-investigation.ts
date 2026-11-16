@@ -41,15 +41,15 @@ export type ECommandEvidence = {
 
 export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCESSING" | "FAILED" | "BATCH_RESULT" | "BUSINESS_RESULT_UNAVAILABLE" | "UNRESOLVED";
 
-/** The stored business result takes precedence; legacy servers retain the verified success-only list. */
+/** Governed conclusions take precedence; unconfirmed replies use business results and one verified legacy list. */
 export function eCommandResult(receipt: ECommandInvestigation | null): ECommandResult {
   if (receipt?.businessState === "PROCESSING") return "PROCESSING";
   if (!receipt || receipt.locked) return "UNRESOLVED";
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return "REJECTED";
-  if (receipt.businessState === "SUCCEEDED" && /^D2_BATCH_(?:APPROVE|REJECT|DELAY|FREEZE)$/.test(receipt.scope))
-    return receipt.batch ? "BATCH_RESULT" : "BUSINESS_RESULT_UNAVAILABLE";
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
+  if (receipt.businessState === "SUCCEEDED" && /^D2_BATCH_(?:APPROVE|REJECT|DELAY|FREEZE)$/.test(receipt.scope))
+    return receipt.batch ? "BATCH_RESULT" : "BUSINESS_RESULT_UNAVAILABLE";
   // Verified callbacks return only success or throw. H3 redrive proves requeue, not delivery.
   // A4 retention is excluded: failing to acquire its lock is also a normal return.
   const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
