@@ -55,6 +55,7 @@ function requireActor(owner: number, write: boolean, scope: string) {
   const auth = useAdminAuth.getState(), actor = auth.session;
   if (!auth.isAuthenticated || auth.logoutPending || !actor || actor.adminId !== owner) throw new Error("ADMIN_AUTH_REQUIRED");
   const allowed = scope.includes("/h4_media/") ? actor.authorities.includes("device_e1_write") || scope.endsWith("/promotion-banner") && actor.authorities.includes("growth_promotion_edit")
+    || scope === "H/h4_media/promotion-evidence" && actor.authorities.some(code => ["growth_promotion_reward_cancel", "growth_promotion_reward_reverse", "growth_promotion_reward_resolve"].includes(code))
     : actor.authorities.includes(scope.includes("/h4_wheel_") ? "growth_h4_wheel_pool_write" : "growth_h4_write");
   if (write && !allowed) throw new Error("H4_MAKER_FORBIDDEN");
   return actor;
