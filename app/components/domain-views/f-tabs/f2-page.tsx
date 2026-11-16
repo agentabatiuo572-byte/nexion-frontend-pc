@@ -14,7 +14,6 @@ import { F2DirectPolicy } from "./f2-direct-policy";
 import { F2Layers, F2Legacy, F2Limits, F2Partner, F2Who } from "./f2-rates";
 import { F2RecoveryNotice, F2SevenLayerActivation } from "./f2-seven-layer-activation";
 import { F2ConfirmModal, LAYERS, configuredValue, num, type F2Confirm } from "./f2-shared";
-import { decimalText } from "./f4-shared";
 import { stamp } from "./f2-shared";
 import type { FViewCtx } from "./types";
 
@@ -62,7 +61,11 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
 
   const metric = (id: string) => ctx.f2Metrics.find((row) => row.id === id);
   const usdt = metric("weeklyUsdtRoyalty"), uvt = metric("weeklyNexPayout"), l1 = metric("l1TriggerRate");
-  const amount = (raw: string | null | undefined) => raw ? decimalText(raw.replace(/^\$/, "").replace(/,/g, "")) : "—";
+  // 金额原文本：整数部分加千分位，去掉末尾 0、至少两位小数，不舍入；读不懂的原样写。
+  const amount = (raw: string | null | undefined) => {
+    const match = raw ? /^(\d+)(?:\.(\d+))?$/.exec(raw.replace(/^\$/, "").replace(/,/g, "").trim()) : null;
+    return !raw ? "—" : match ? `${num(match[1])}.${(match[2] ?? "").replace(/0+$/, "").padEnd(2, "0")}` : raw;
+  };
   const absent = "没有记录时后端不返回这个数，这里写「—」，不是 0。";
   // 新后端给原始金额和按现在状态分的合计；旧后端没有这组数，金额是舍到两位的。
   const stats = ctx.f2PayoutStatistics;
