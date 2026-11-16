@@ -673,6 +673,8 @@ export default function UserDetailPage() {
   const [record, setRecord] = useState<{ kind: RecordKind; index: number; latest?: boolean } | null>(null);
   const [pendingCommands, setPendingCommands] = useState<C1Command[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  /** 最近一次查询原结果查到的结论，收起时就写在这一行（RecoveryItem.result）。 */
+  const [pendingFound, setPendingFound] = useState<Record<string, "error" | "none" | "PROCESSING" | "FAILED" | "UNKNOWN" | "REJECTED" | "PROCESSED">>({});
   const [corrections, setCorrections] = useState<PendingCorrection[]>([]);
   const [releasing, setReleasing] = useState<C1Command | null>(null);
   const [actionConfirm, setActionConfirm] = useState<null | {
@@ -939,10 +941,10 @@ export default function UserDetailPage() {
     }
     await load();
     const status = result?.receipt?.originalStatus;
-    const found = !result ? "查询失败，这不代表没执行。" : !result.receipt ? "没有查到原结果，查不到不等于没执行。"
-      : status === "PROCESSING" ? "原操作还在执行，稍后再查。" : status === "FAILED" ? "系统记录这次失败了。" : status === "UNKNOWN" ? "系统也没有原结果。"
-        : receiptRejected(result.receipt) ? `后台拒绝了这次操作，不保证没有改动；${Date.now() < command.expiresAt ? "24 小时内按原请求重试可看原因。" : "已过 24 小时，到操作记录核对。"}` : "原结果还没有确定结论。";
-    setPendingNotes((current) => ({ ...current, [command.fingerprint]: `${found}已重读现在的值，记录继续保留。` }));
+    const found = !result ? "error" : !result.receipt ? "none" : status === "PROCESSING" || status === "FAILED" || status === "UNKNOWN" ? status
+      : receiptRejected(result.receipt) ? "REJECTED" : "PROCESSED";
+    setPendingFound((current) => ({ ...current, [command.commandKey]: found }));
+    setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已重读现在的值，记录继续保留。" }));
   };
 
   const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
@@ -1230,9 +1232,22 @@ export default function UserDetailPage() {
         : !writable
           ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
           : "按原请求重试只重发原请求，不会重复执行。";
+      // 查到的结论和资金页同一个说法；这页没有核查结案，过期或不能重试时都指向操作记录与审批。
+      const retryable = writable && !command.legacy && !expired;
+      const found = refused ? undefined : pendingFound[command.commandKey];
+      const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
+        error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
+        none: { tone: "warn" as const, label: "没有查到", line: "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
+        PROCESSING: { tone: "progress" as const, label: "还在执行", line: "稍后再查，执行完之前不要重试。" },
+        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
+        UNKNOWN: { tone: "warn" as const, label: "仍未知", line: "系统也没有结果，到操作记录与审批核对。" },
+        REJECTED: { tone: "warn" as const, label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${retryable ? "按原请求重试可看原因，不会重复执行。" : "到操作记录与审批核对。"}` },
+        PROCESSED: { tone: "warn" as const, label: "已处理", line: `后台已处理，看不出成没成；${retryable ? "按原请求重试可确认，不会重复执行。" : "到操作记录与审批核对。"}` },
+      }[found];
       return {
         key: command.fingerprint, object: command.label, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
+        result: shown && { tag: <StatusTag tone={shown.tone}>{shown.label}</StatusTag>, line: shown.line },
         line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[command.fingerprint],
         actions: <>
@@ -1241,7 +1256,7 @@ export default function UserDetailPage() {
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
-        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{nextStep}</p>,
+        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出{found === "FAILED" ? "。" : "，可能已经生效，不要重复操作。"}{nextStep}</p>,
         tech: <p><Explain label="技术信息" content={command.legacy ? `原请求编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `原请求编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
