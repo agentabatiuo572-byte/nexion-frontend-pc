@@ -59,10 +59,10 @@ const EXPIRED_APPROVAL_NO_AUDIT = "已超过 24 小时，不能再重试。这�
 const EXPIRED_NO_QUERY = "已超过 24 小时，不能再重试。这个账号看不到操作记录，也查不了原审批单，请交财务负责人处理。";
 const NO_WRITE = "这个账号现在没有这项修改权限，不能重试，请到操作记录核对";
 const READY_EXPLAIN = "只表示 HDPay 商户已配好，不代表打款一定到账。和充值收款用同一个商户。提现总开关关着时，用户也不能提现。";
-const APPROVAL_COPY = "另一位超级管理员批准前参数不变；批准后用于新报价，用户没提交的旧报价要重新报价，已提交的订单金额不变。";
+const APPROVAL_COPY = "另一位超级管理员批准前参数不变。";
 const IMPACT = "只影响之后的报价；用户还没提交的旧报价需要重新报价，已提交的订单金额不变。";
 /** 确认框「批准后生效」标签的提示：谁来批、批准前什么不变（影响在执行摘要，不重复）。 */
-const APPROVAL_NOTE = "另一位超级管理员批准前参数不变；批准后用于新报价。";
+const APPROVAL_NOTE = "另一位超级管理员批准后才用于新报价。";
 const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 /** 共用文字泛指「这个对象」并让人去「操作记录与审批」；这页写明是哪组参数，当前权限到不了那页的账号写等谁处理。 */
 const PENDING_HERE = "这组参数已有放宽单在等批准，批准或驳回后才能再提交放宽";
@@ -794,7 +794,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     {draft.submitBlock && draft.errorCount === 0 && <><br />{draft.submitBlock}</>}
   </>);
   const decisionExplain = draft && (draft.changed.length === 0 ? RULE
-    : draft.amplifies ? `只要有一项放宽，整组走审批。${APPROVAL_COPY}` : `没有放宽项，提交后立即生效。${IMPACT}`);
+    : draft.amplifies ? `只要有一项放宽，整组走审批。${APPROVAL_COPY}批准后${IMPACT}` : `没有放宽项，提交后立即生效。${IMPACT}`);
 
   return (
     <>
