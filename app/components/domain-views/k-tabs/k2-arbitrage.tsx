@@ -853,7 +853,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   });
   const pendingNotices = (
     <KRecoveryNotice key="k2-recovery" title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原结果，24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原结果。</p><p>待审批：查到你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
+      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原结果，24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原结果。</p><p>待审批：你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。别的管理员提交的冻结不列在这里，表里同样标「待审批」，详情里写谁、什么时候提交。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
       lead={reach("/platform/audit", "platform_a2_read") ? <>也可以<Link className="rd-link" href="/platform/audit">到「操作记录与审批」核对</Link>。</> : undefined} />
   );
   const rereadNotice = rereadPending && overview && !ctx.contentError
@@ -1088,6 +1088,8 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
                 : `${openRow.clusterId}（${CLUSTER_STATUS_LABELS[openRow.clusterStatus ?? ""] ?? "状态未知"}）` },
               { label: "处置", value: openRow.disposition ? <StatusTag tone="done" icon={CheckCircle2}>{K2_DISPOSITION_LABELS[openRow.disposition] ?? "已处置"}</StatusTag>
                 : awaitingApproval(openRow) ? pendingTag("另一位管理员", "批准前这组账户、登录和提现都不变，这条命中的处置按钮先锁住。") : <StatusTag tone="warn">待处置</StatusTag> },
+              ...(!openRow.disposition && openRow.pendingApproval ? [{ label: "待批申请", value: openRow.pendingApproval.action ?? "申请内容未知",
+                reason: `${openRow.pendingApproval.submittedBy ?? "提交人未知"} · ${openRow.pendingApproval.submittedAt ? `${formatBusinessTimeCompact(openRow.pendingApproval.submittedAt, "时间未知")}（${businessZone().label}）提交` : "提交时间未知"}` }] : !openRow.disposition && approvalVerified(pendingFor(openRow.rowId)) ? [{ label: "待批申请", value: "你提交的冻结关联账户，在等另一位管理员批准" }] : []),
             ]} />
             {freezeBlocked && (
               <Notice tone="warn" title="冻结前要先标记可疑"
