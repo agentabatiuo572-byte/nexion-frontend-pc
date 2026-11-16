@@ -33,7 +33,7 @@ import {
   type DeveloperAccessRequest,
 } from "@/lib/admin/developer-access-client";
 import { canReviewDeveloperAccess, developerAccessResourceGuard } from "@/lib/admin/developer-access-policy";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
@@ -63,6 +63,8 @@ const developerAccessAttempts = createPendingMutationStore<DeveloperAccessAttemp
 });
 
 /** Real server-backed developer access governance. Navigation ownership remains with the A-domain integrator. */
+/** 过期后能做的事在本页：查询原结果，读到结论就解除。不借用指向「操作记录与审批」的通用句。 */
+const A9_EXPIRED_TEXT = "已超过 24 小时，不能再重试；点「查询原结果」核对。";
 const developerStatusText = (value: string) => ({ PENDING: "待审批", APPROVED: "已批准", REJECTED: "已驳回", REVOKED: "已撤销", EXPIRED: "已过期" } as Record<string,string>)[value] ?? "未知状态";
 
 type StatusFilter = "" | DeveloperAccessRequest["status"];
@@ -171,7 +173,7 @@ export function A9DeveloperAccess() {
     const identity = `${action}:${row.requestNo}`;
     const saved = previous && developerAccessAttempts.list().find(record => record.commandKey === previous.commandKey && record.fingerprint === identity);
     if (previous && (!saved || !isOwnAttempt(saved))) return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_ORIGINAL_REQUEST_REQUIRED") };
-    if (saved && isRetryExpired(saved)) return { kind: "failed", message: RETRY_EXPIRED_TEXT };
+    if (saved && isRetryExpired(saved)) return { kind: "failed", message: A9_EXPIRED_TEXT };
     const rechecked = dialog?.rechecked && !dialog.needsRead && dialog.row === row;
     if (!previous && ((!rechecked && (!ready || !data?.records.some(item => item.requestNo === row.requestNo && item.status === row.status)))
       || developerAccessAttempts.list().some(record => isOwnAttempt(record) && record.fingerprint.endsWith(`:${row.requestNo}`)))) return { kind: "skipped" };
@@ -224,7 +226,7 @@ export function A9DeveloperAccess() {
   const restoreReview = (previous: DeveloperAccessAttempt, current?: DeveloperAccessRequest) => {
     const action = previous.fingerprint.split(":")[0] as ReviewAction;
     if (!isOwnAttempt(previous) || !reviewPermissions[action]) return;
-    if (isRetryExpired(previous)) { toast(RETRY_EXPIRED_TEXT, "warn"); return; }
+    if (isRetryExpired(previous)) { toast(A9_EXPIRED_TEXT, "warn"); return; }
     const row = previous.row ?? (current && { ...current, status: previous.inputFingerprint.split(":")[2] as DeveloperAccessRequest["status"] });
     if (!row) return;
     setDialogFailure(null);
@@ -262,7 +264,7 @@ export function A9DeveloperAccess() {
         developerAccessAttempts.forget(record.fingerprint, record.commandKey);
         setAttemptsTick(value => value + 1);
         setDialog(state => state?.previous?.commandKey === record.commandKey ? null : state);
-        toast(current.status === sourceStatus ? "没有执行" : `${developerStatusText(current.status)} ${requestNo}`, "success");
+        toast(current.status === sourceStatus ? "原操作没有执行，记录已解除，可以重新提交。" : `这条申请${developerStatusText(current.status)}，记录已解除：${requestNo}`, "success");
       } else toast(pendingReason(record)!, "warn");
       setReloadKey(value => value + 1);
     } catch (cause) { toast(displayAdminReadError(cause), "error"); }
@@ -283,7 +285,7 @@ export function A9DeveloperAccess() {
   const attempts = developerAccessAttempts.list().filter(isOwnAttempt);
   const attemptFor = (row: DeveloperAccessRequest) => attempts.find((record) => record.fingerprint.endsWith(`:${row.requestNo}`));
   const pendingReason = (record: DeveloperAccessAttempt | undefined) => record
-    ? isRetryExpired(record) ? RETRY_EXPIRED_TEXT
+    ? isRetryExpired(record) ? A9_EXPIRED_TEXT
       : `这条申请有一个结果未知的${reviewActionLabel[record.fingerprint.split(":")[0] as ReviewAction]}，先按原请求重试，不要另外提交。` : undefined;
 
   const rowActions = (row: DeveloperAccessRequest) => {
@@ -380,9 +382,9 @@ export function A9DeveloperAccess() {
     const [action, requestNo] = record.fingerprint.split(":") as [ReviewAction, string];
     const current = records.find((item) => item.requestNo === requestNo);
     const row = record.row ?? current;
-    const reason = isRetryExpired(record) ? RETRY_EXPIRED_TEXT
+    const reason = isRetryExpired(record) ? A9_EXPIRED_TEXT
       : !reviewPermissions[action] ? `这个账号现在没有${reviewActionLabel[action]}的权限`
-      : !row ? "先点「查看申请现状」，读到这条申请后才能重试"
+      : !row ? "先点「查询原结果」，读到这条申请后才能重试"
         : undefined;
     return (
       <li key={record.fingerprint}>
@@ -390,10 +392,12 @@ export function A9DeveloperAccess() {
         <span className="a9-rec-no" data-mono>{requestNo}</span>
         <span className="a9-rec-time">{businessStamp(record.createdAt)} 提交</span>
         <span className="a9-rec-state">
-          <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。按原请求重试不会重复执行。">结果未知</StatusTag>
+          {isRetryExpired(record)
+            ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试。点「查询原结果」：状态没变说明没有执行，记录会解除。">已过期</StatusTag>
+            : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。按原请求重试不会重复执行。">结果未知</StatusTag>}
         </span>
         <span className="a9-rec-actions">
-          <Button size="sm" variant="ghost" onClick={() => void findOriginal(record)}>查看申请现状</Button>
+          <Button size="sm" variant="ghost" onClick={() => void findOriginal(record)}>查询原结果</Button>
           <Button size="sm" disabledReason={reason} onClick={() => restoreReview(record, current)}>按原请求重试</Button>
         </span>
       </li>
@@ -443,8 +447,9 @@ export function A9DeveloperAccess() {
     {conclusion}
 
     {recoveryRows.length > 0 && <Notice tone="warn" title={<>{recoveryRows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={<>
-      <p>提交时没收到确定结果，可能已经生效。按原请求重试不会重复执行。</p>
-      <p>这页查不到原结果。「查看申请现状」读的是这条申请现在的状态，不能证明原操作成没成，也不会解除这条记录。</p>
+      <p>提交时没收到确定结果，可能已经生效。24 小时内按原请求重试不会重复执行。</p>
+      <p>「查询原结果」读这条申请现在的状态。已经变了（比如已批准、已驳回），说明处理过了，记录解除。</p>
+      <p>状态没变：24 小时内记录保留，可以重试；超过 24 小时说明原操作没有执行，记录解除，可以重新提交。</p>
     </>} /></>}>
       <ul className="a9-rec" aria-label="结果未知的操作">{recoveryRows}</ul>
       <p className="a9-rec-zone">提交时间为{zone}</p>
@@ -572,7 +577,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
       onClose={onClose}
       footer={<Decision others={<Button variant="secondary" disabled={busy} onClick={onClose}>取消</Button>}
         primary={<Button variant={look.danger && !retrying ? "danger" : "primary"} loading={busy} loadingText="正在提交…"
-          disabledReason={previous && isRetryExpired(previous) ? RETRY_EXPIRED_TEXT : state.needsRead ? "先重新读取申请状态" : !previous && !canReviewDeveloperAccess(row.status, action) ? displayAdminError("DEVELOPER_ACCESS_REQUEST_STATE_CONFLICT") : length > 500 ? reasonError : short ? (length === 0 ? "先填写备注" : `备注还差 ${8 - length} 字`) : undefined} onBlockedClick={onTouch} onClick={onConfirm}>
+          disabledReason={previous && isRetryExpired(previous) ? A9_EXPIRED_TEXT : state.needsRead ? "先重新读取申请状态" : !previous && !canReviewDeveloperAccess(row.status, action) ? displayAdminError("DEVELOPER_ACCESS_REQUEST_STATE_CONFLICT") : length > 500 ? reasonError : short ? (length === 0 ? "先填写备注" : `备注还差 ${8 - length} 字`) : undefined} onBlockedClick={onTouch} onClick={onConfirm}>
           {retrying ? "按原请求重试" : look.confirm}
         </Button>} />}>
       {retrying && <Notice tone="warn">{mode === "recovery"
