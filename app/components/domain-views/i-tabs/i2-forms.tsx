@@ -120,6 +120,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   onSubmit: () => void;
 }) {
   const issues = templateIssues(form);
+  const varSpots = LOCALES.flatMap((l) => [placeholdersOf(form[`title${l.key}`]).length ? `${l.label}标题` : "", placeholdersOf(form[`body${l.key}`]).length ? `${l.label}正文` : ""]).filter(Boolean);
   const enPair = !!form.titleEn.trim() !== !!form.bodyEn.trim();
   const ctaNote = UNREACHABLE_CTA.has(form.cta) ? <StatusTag tone="warn">{UNREACHABLE_TEXT}</StatusTag> : undefined;
   return (
@@ -146,12 +147,12 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
           </Field>
         </div>
 
-        <div className="i2-vars">
+        {social ? <div className="i2-vars">
           <span className="i2-vars-k">可用变量</span>
           {PLACEHOLDERS.map((v) => <code key={v} title={PLACEHOLDER_TEXT[v]} data-used={issues.used.includes(v) ? "" : undefined}>{v}</code>)}
-          <span className="i2-vars-note">{social ? "真实动态频道发送时换成真实事件的内容" : "只有真实动态频道会替换变量"}</span>
-        </div>
-        {!social && issues.used.length > 0 && <Notice tone="warn">{`这个频道的变量目前不会被替换，用户会看到原样的 ${issues.used.join("、")}。`}</Notice>}
+          <span className="i2-vars-note">发送时换成真实事件的内容</span>
+        </div> : <div className="i2-vars"><span className="i2-vars-note">只有真实动态频道会替换变量，其他频道的标题和正文里不能有 {"{…}"}</span></div>}
+        {!social && issues.used.length > 0 && <Notice tone="warn">{`${varSpots.join("、")}里有 ${issues.used.join("、")}：这个频道填不了，保存会被拒，先删掉。`}</Notice>}
         {issues.unknown.length > 0 && <Notice tone="warn">{`不认识的变量：${issues.unknown.join("、")}，保存会被拒。`}</Notice>}
         {issues.mismatch.length > 0 && <Notice tone="warn">{`三种语言正文里的变量要一样：${issues.mismatch.join("；")}。`}</Notice>}
 
