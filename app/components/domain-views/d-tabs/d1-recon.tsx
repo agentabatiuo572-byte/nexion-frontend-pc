@@ -517,6 +517,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     createdAt: command.createdAt,
     hint: "先读取现在的值核对；按原请求重试不会重复执行。",
     blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
+    expired: command.expiresAt <= Date.now(),
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),
     retry: async () => { setBusy(true); try { await retry(); } finally { setBusy(false); } },

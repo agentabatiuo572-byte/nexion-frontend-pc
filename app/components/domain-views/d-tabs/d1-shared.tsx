@@ -102,6 +102,8 @@ export type D1PendingItem = {
   hint: ReactNode;
   /** 现在不能重试的原因：过了时限、没有权限。 */
   blocked?: string;
+  /** 过了 24 小时重试时限：标签写「已过期」，和别的页同一个说法。 */
+  expired?: boolean;
   auditHref?: string;
   /** 读回这条对象的现状，返回写给人看的一句话。 */
   verify?: () => Promise<ReactNode>;
@@ -139,7 +141,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
       if (isExplicitRejection(error)) {
         note(item.key, `重试被拒：${displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。`);
         setReleasable((current) => [...current, item.key]);
-      } else if (unknownOutcome(error)) note(item.key, "重试结果仍未确认，原操作继续保留。");
+      } else if (unknownOutcome(error)) note(item.key, "重试结果仍未知，原操作继续保留。");
       else note(item.key, `这次没查到结果：${displayAdminError(error)} 原操作记录继续保留。`);
     } finally {
       setRunning("");
@@ -167,15 +169,15 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           const refused = item.retry && releasable.includes(item.key);
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
-            tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : "结果未知"}</StatusTag>,
-            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.blocked ? `${item.blocked}。` : "可能已经生效，先读取现在的值核对。" : "可能已经生效，这项只能读取现在的值核对。",
+            tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知"}</StatusTag>,
+            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，先读取现在的值核对。" : item.blocked ? `${item.blocked}。` : "可能已经生效，先读取现在的值核对。" : "可能已经生效，这项只能读取现在的值核对。",
             note: notes[item.key],
             actions: <>
               {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
             </>,
-            detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={hint} /> : hint}</p>,
+            detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
             tech: <p><Explain label="技术信息" content={`原请求编号 ${item.key}`}>技术信息</Explain></p>,
           };
         })} />
