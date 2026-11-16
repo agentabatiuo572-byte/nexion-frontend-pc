@@ -36,7 +36,7 @@ const LABELS: Record<E5Intent, string> = { activate: "激活设备", deactivate:
 const CONFIRMS: Record<E5Intent, string> = { activate: "确认激活", deactivate: "确认取消激活", pause: "确认暂停该用户", resume: "确认恢复该用户", "force-activate": "提交强制激活审批", unbind: "提交解绑审批", legacy: "提交终结审批" };
 const EFFECTS: Record<E5Intent, string> = {
   activate: "激活后占用一个设备名额。每人最多 6 台，包含手机。",
-  deactivate: "有运行中任务时，本单完成并结算后自动停用；停用后不再接新任务，不退款。要再用只能申请强制激活。",
+  deactivate: "有运行中任务时，本单结束后自动停用：一般是结算后；历史截止时间之前开始、还没入账的旧单会被取消，不结算。停用后不再接新任务，不退款，要再用只能申请强制激活。",
   pause: "暂停这位用户的全部设备（含手机），停跑期间不计收益、不补发。之后可以点「恢复该用户」。",
   resume: "只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。",
   "force-activate": "待激活、已停用、已解绑的设备都能直接激活，仍受每人 6 台上限。",
@@ -120,7 +120,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       sync();
       const submitted = ["force-activate", "unbind", "legacy"].includes(record.intent);
       const message = submitted ? `已提交审批 · 审批单 ${result.id}，批准前设备状态不变` : record.intent === "deactivate"
-        ? result.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活"
+        ? result.pendingDeactivate ? "已申请停用，当前任务结束后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
       if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
       else { settleEnd(record, String(result.id), String(result.status)); await refresh(); }
@@ -296,7 +296,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   }
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
   return <>
-    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">停用中，结算后自动停用，暂时没有可做的操作。</span> : <IconButton aria-label={`操作 ${d.serial}`} disabledReason="停用中，结算后自动停用，暂时没有可做的操作"><MoreHorizontal size={16} aria-hidden /></IconButton> : inline ? <span className="rd-muted">{readOnly ? "任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
+    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">停用中，当前任务结束后自动停用，暂时没有可做的操作。</span> : <IconButton aria-label={`操作 ${d.serial}`} disabledReason="停用中，结算后自动停用，暂时没有可做的操作"><MoreHorizontal size={16} aria-hidden /></IconButton> : inline ? <span className="rd-muted">{readOnly ? "任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
     {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Button onClick={() => setCandidateOpen(false)}>关闭</Button>}>
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>

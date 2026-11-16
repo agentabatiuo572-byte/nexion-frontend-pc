@@ -769,7 +769,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       ? await activateE5Device(deviceId, false, reason, operator)
       : await deactivateE5Device(deviceId, false, reason, operator);
     await refreshE5();
-    setToast(action === "activate" ? "设备已激活" : device.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活");
+    setToast(action === "activate" ? "设备已激活" : device.pendingDeactivate ? "已申请停用，当前任务结束后自动停用" : "设备已取消激活");
   }, [operator, refreshE5, setToast]);
   const runE5UserBatch = useCallback(async (userId: number, paused: boolean, reason: string) => {
     const result = await setE5UserDevicesPaused(userId, paused, reason, operator);

@@ -9,7 +9,7 @@ export const E5_STATES: Record<E5SimState, { label: string; tone: StateTone; rea
   RUNNING: { label: "运行中", tone: "ok", reason: "当前任务为空不代表设备没有运行。" },
   WAITING_CONFIG: { label: "等待配置", tone: "warn", reason: "没有可用任务，请去任务池核对。停跑期间不计收益、不补发。" },
   PAUSED: { icon: CirclePause, label: "已暂停", tone: "neutral", reason: "按暂停原因核对；停跑期间不计收益、不补发。" },
-  CLOSING: { label: "停用中", tone: "progress", reason: "当前单完成并结算后停用，仍占设备名额，不再接新任务。" },
+  CLOSING: { label: "停用中", tone: "progress", reason: "当前单结束后停用，仍占设备名额，不再接新任务。" },
   STOPPED: { label: "已停用", tone: "done", reason: "设备已停止；要再用只能申请强制激活，批准后生效。" },
   UNBOUND: { label: "已解绑", tone: "done", reason: "不再归属原用户，历史记录保留；要恢复只能申请强制激活，批准后生效。" },
   ERROR: { label: "出错重试中", tone: "danger", reason: "系统每 30 秒自动重试，原错误和下次重试时间见设备详情。" },
