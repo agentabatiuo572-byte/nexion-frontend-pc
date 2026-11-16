@@ -217,7 +217,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
       if (!unknown && !retained) pendingExports.forget(EXPORT_SCOPE);
       syncPending();
       if (!unknown) throw cause;
-      ctx.toast("结果未确认，不要重复导出。到页面上方按原操作重试。", "warn");
+      ctx.toast("结果未知，不要重新导出。到页面上方按原请求重试。", "warn");
       return;
     }
     pendingExports.forget(EXPORT_SCOPE);
