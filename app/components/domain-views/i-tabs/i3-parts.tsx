@@ -17,7 +17,7 @@ export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
 export type TierK = CampaignRow["tier"];
 export type Lang = "zh" | "vi" | "en";
 
-/** 投递时后端截到的长度（I3-现状）：标题 128 字、正文 512 字，按字符数算。 */
+/** 投递长度上限：标题 128 字、正文 512 字，按字算；超了后端拒绝保存、排期和发送。 */
 export const TITLE_SENT = 128;
 export const BODY_SENT = 512;
 export const chars = (value: string) => [...value];
@@ -75,7 +75,7 @@ export function splitBody(value: string) {
   return { title, body: body.join("\n") };
 }
 
-/** 超出投递长度的部分画成删除线，后面写「之后 N 字不会发出」。 */
+/** 超出投递长度的部分画成删除线，后面写「多了 N 字」：超了不能保存、排期或发送。 */
 export function CutText({ text, limit, className }: { text: string; limit: number; className?: string }) {
   const list = chars(text);
   if (list.length <= limit) return <span className={className}>{text}</span>;
@@ -84,13 +84,13 @@ export function CutText({ text, limit, className }: { text: string; limit: numbe
   return (
     <span className={className}>
       {kept}
-      <del className="i3-cut" aria-label={`超出 ${limit} 字，下面 ${rest.length} 字不会发出`}>{rest.slice(0, 24).join("")}{rest.length > 24 ? "…" : ""}</del>
-      <span className="i3-cut-note">{`之后 ${rest.length} 字不会发出`}</span>
+      <del className="i3-cut" aria-label={`超出 ${limit} 字，多了 ${rest.length} 字，删减后才能保存和发送`}>{rest.slice(0, 24).join("")}{rest.length > 24 ? "…" : ""}</del>
+      <span className="i3-cut-note">{`多了 ${rest.length} 字，删减后才能保存和发送`}</span>
     </span>
   );
 }
 
-/** App 通知列表里的一行和点开后的样子（示意）。按 App 收到的长度截断。 */
+/** App 通知列表里的一行和点开后的样子（示意）。超出投递长度的部分划掉。 */
 export function NotificationPreview({ lang, title, body, ctaLabel, tier, kindLabel, missing, fallback }: {
   lang: Lang;
   title: string;

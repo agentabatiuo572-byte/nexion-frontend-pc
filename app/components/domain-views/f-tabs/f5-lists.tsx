@@ -81,7 +81,7 @@ export function F5SuspensionList({ rows, canSuspend, onResume }: { rows: readonl
       explain={<>
         <p>暂停中的用户和奖励类型，一行一类，算全部用户，不跟筛选变。恢复也要提交审批。</p>
         <p>暂停批准后，这位用户这类奖励里未发完的记录被冻结（等价格、待追回的不动）；好友两类以后算出金额的也先冻结；其他类型以后不一定停发。</p>
-        <p>恢复后，没有其他冻结条件的好友奖励回到冷却中；其他类型已冻结的记录不会自动解冻，要逐笔解冻，暂停时清掉到期时间的旧记录解冻后也不会自动到期。</p>
+        <p>恢复后，没有其他冻结条件的好友奖励回到冷却中；其他类型已冻结的记录不会自动解冻，要逐笔解冻；以前暂停时清掉了到期时间的旧记录不能解冻。</p>
       </>}>
       <Table label="暂停名单" className="f5-table f5-suspension-table">
         <thead><tr><Th>用户</Th><Th>暂停的奖励</Th><Th>原因</Th><Th>操作人</Th><Th>暂停时间</Th>{canSuspend && <Th sticky="end">操作</Th>}</tr></thead>

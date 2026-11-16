@@ -263,7 +263,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       detail={`材料 V${confirmation.expectedMaterialRevision} · 结论：${confirmation.decision === "PASSED" ? "通过" : "需补材料"}`}
       confirmLabel="记录核验结论"
       completionCopy={pending ? isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")
-        ? "只能查询原结果；能确定这次核验没有记下时才解除记录。"
+        ? "只能查询原结果：查到已经记下或确定没记下，都会解除这条记录；查不出就继续保留。"
         : "按原请求重试：原版本、原结论和原理由不变，已经记录过的不会记两次。" : "核验结论和理由立即记录到这一版材料，不经审批。"}
       getPendingReason={() => pendingRef.current?.input.reason}
       inlineApproval={{

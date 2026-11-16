@@ -135,6 +135,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const dispose = (action: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent, recovery?: F5Recovery) => {
     const friend = isFriend(row);
     const grouped = isGrouped(row);
+    // 暂停名单最多 100 条：命中能说明在暂停，没命中不能说明没暂停，所以只写命中的。
+    const suspension = grouped ? undefined : data?.activeSuspensions.find(item => item.userId === String(row.userId) && item.kind === row.kind);
     if (action === "freeze") {
       setConfirm({
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
@@ -159,7 +161,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
         coverageLead: "提前解锁后这笔钱可能提前流出",
-        coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时不再检查。",
+        coverageCheck: grouped ? "提交前按页面读到的兑付覆盖率查一次；批准时不再查覆盖率，只核冷却有没有真正到期。" : "提交前按页面读到的兑付覆盖率查一次。批准时系统再查：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。",
         blockedReason: knownRejection(row, "release", data?.activeSuspensions),
         statedBrief: grouped
           ? { impact: "批准时系统核对结算组的冷却是否真正到期，没到期会拒绝", check: "核对剩余冷却天数，理由写清为什么要提前。" }
@@ -171,6 +173,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           {recordFacts(row)}
           <Fact k="状态"><Change from="冷却中" to="已解锁" /></Fact>
           <Fact k="剩余冷却">{row.coolingDaysLeft > 0 ? `${row.coolingDaysLeft} 天` : "当天到期或没有到期时间"}</Fact>
+          {suspension && <Fact k="奖励暂停" tone="warn">这类奖励正在暂停，批准时会被拒<Explain label="暂停原因" content={`${suspension.reason || "暂停时没写原因"}（${timeText(suspension.updatedAt)} 起，${zoneNote()}）`} /></Fact>}
           {grouped
             ? <Fact k="用户余额" tone="warn">属于结算组：冷却没真正到期时批准会被拒，钱不会提前流出</Fact>
             : <Fact k="用户余额">批准后进用户钱包的可用余额；能不能提走仍受钱包其他限制</Fact>}
@@ -194,8 +197,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           {scopeFact(row, "解冻")}
           {friend
             ? <Fact k="到期时间" tone="warn">沿用原来的，不重新计算；用户还有其他冻结条件（暂停、风险）时批准会被拒</Fact>
-            : grouped ? <Fact k="到期时间">沿用原来的，不重新计算</Fact>
-              : <Fact k="到期时间" tone="warn">沿用原来的<Explain label="暂停时冻结的旧记录" content="没有结算组的旧记录，如果是暂停用户奖励时被冻结的，到期时间已被清空，解冻后不会自动到期，要再提前解锁。已报给技术同事修复。" /></Fact>}
+            : <Fact k="到期时间" tone="warn">接着冷却冻结时还剩的时间<Explain label="没有到期时间的旧记录" content="以前暂停用户奖励时冻结的旧记录，到期时间已被清空，批准解冻时会被拒，这笔继续冻结。要处理请联系值班人员核对。" /></Fact>}
           <Fact k="用户余额">解冻本身不动余额</Fact>
           <Fact k="能不能撤回">能，可以再冻结</Fact>
           <Fact k="谁来批准">{approverText("奖励冻结权限")}</Fact>
@@ -312,7 +314,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       facts: <Facts>
         <Fact k="用户">{row.user}</Fact>
         <Fact k="从哪一笔打开"><span data-mono>{row.id}</span> · {kindName(row.kind)}</Fact>
-        <Fact k="批准后">所选类型里未发完的记录改为已冻结<Explain label="哪些记录会被冻结" content="好友两类：冷却中和已冻结的整组按住，等价格的不动。其他类型：等发放、冷却中、已解锁的都改为已冻结，并清掉到期时间。已提现、已冲正、待追回的记录不动。" /></Fact>
+        <Fact k="批准后">所选类型里未发完的记录改为已冻结<Explain label="哪些记录会被冻结" content="好友两类：冷却中和已冻结的整组按住，等价格的不动。其他类型：等发放、冷却中、已解锁的都改为已冻结，到期时间保留。已提现、已冲正、待追回的记录不动。" /></Fact>
         <Fact k="以后" tone="warn">好友两类以后算出金额的先冻结；其他类型以后不一定停发</Fact>
         <Fact k="能不能撤回">能，在「暂停名单」恢复，也要审批</Fact>
         <Fact k="谁来批准">{approverText("暂停奖励权限")}</Fact>

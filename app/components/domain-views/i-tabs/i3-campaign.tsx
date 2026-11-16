@@ -1171,6 +1171,8 @@ const I3_TICKET = { pending: "待审批", approved: "已批准", rejected: "已�
 const I3_ACTION: Record<I3Command["action"], string> = { create: "新建通知", draft: "编辑通知草稿", schedule: "排期发送", "send-now": "立即发送通知", cancel: "取消排期", delete: "删除通知草稿" };
 const SAVE_TITLE_MAX = 160;
 const SAVE_BODY_MAX = 4000;
+/** 只给提示用：去掉末尾的 0 后小数超过两位。提交时的检查在 i-client 里，不靠它。 */
+const budgetPlacesOver = (value: string) => /^\s*-?\d*\.\d*[1-9]\d*\s*$/.test(value) && (value.trim().split(".")[1] ?? "").replace(/0+$/, "").length > 2;
 
 /** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
 function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
@@ -1192,14 +1194,15 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
   const selectedCta = deliveryCatalog?.ctaRoutes.find((option) => option.value === form.ctaHref);
   const enEmpty = !form.titleEn.trim() && !form.bodyEn.trim();
   const blocked = mutationBlocked || (!audienceCatalog && !frozen ? "受众目录没读到，不能保存；刷新页面后再试" : estimating && !frozen ? "正在估算人数，估完再保存" : undefined);
-  const lengthHelp = (len: number, sent: number, saveMax: number) => len > saveMax
-    ? `${len}/${sent} 字：超过 ${saveMax} 字，保存会被拒绝`
-    : len > sent ? `${len}/${sent} 字：App 只收到前 ${sent} 字，后面的截掉（预览里划掉的部分）` : undefined;
+  // 字数按字算（表情算 1 个）；保存上限 160 另按长度算，表情多的标题会先碰到它。
+  const lengthHelp = (len: number, sent: number, raw: string, saveMax: number) => len > sent
+    ? `${len}/${sent} 字：多了 ${len - sent} 字，不能保存、排期或发送`
+    : raw.length > saveMax ? `${len}/${sent} 字：表情等特殊字符太多，超过保存上限，不能保存` : undefined;
 
   return (
     <Drawer open wide data-i3-form="" busy={submitting} onClose={onClose} title={editing ? "编辑通知草稿" : "新建通知"} sub={editing ? editing.name : "保存为草稿，不会发给任何人"} icon={FilePen} tone="role-3"
       explain="左边填，右边看 App 里的样子。保存后是草稿；之后在卡片上点「排期」或「立即发送」才会发出。"
-      footer={<Decision note={missing.length ? `还缺：${missing.join("、")}` : over.length ? `${over.map((l) => LANG_NAME[l]).join("、")}有超长的内容，App 只收到前面一段` : undefined}
+      footer={<Decision note={missing.length ? `还缺：${missing.join("、")}` : over.length ? `${over.map((l) => LANG_NAME[l]).join("、")}的内容超长，删减后才能保存` : undefined}
         primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{frozen ? "按原请求重试" : editing ? "保存修改" : "保存草稿"}</Button>}
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
@@ -1227,17 +1230,17 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-text">
             <div className="i3-form-head">
-              <h3 id="i3-f-text" className="i3-sub-title">通知内容<Explain label="字数怎么算" content="这里按字符数。保存上限（标题 160、正文 4000）另按长度算，表情等特殊字符算 2 个，可能没到上限就被拒。" /></h3>
+              <h3 id="i3-f-text" className="i3-sub-title">通知内容<Explain label="字数怎么算" content={<><p>标题最多 128 字、正文最多 512 字，一个表情也算 1 字；超了不能保存、排期或发送。</p><p>标题另有保存上限 160，表情等特殊字符按 2 个算，表情很多时可能没到 128 字就超了。</p></>} /></h3>
               <LocaleTabs label="内容语言" value={lang} onChange={setLang} items={[
                 { value: "zh", label: "中文", missing: langMissing("zh") },
                 { value: "vi", label: "越南语", missing: langMissing("vi") },
                 { value: "en", label: enEmpty ? "英语（选填）" : "英语" },
               ]} />
             </div>
-            <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字，App 收到前 ${TITLE_SENT} 字`}>
+            <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, title.trim(), SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字`}>
               {(control) => <Input {...control} disabled={frozen} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
-            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时英语用户收到系统默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。")}>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时英语用户收到系统默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。")}>
               {(control) => <Textarea {...control} disabled={frozen} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
@@ -1286,7 +1289,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-budget">
             <h3 id="i3-f-budget" className="i3-sub-title">预算记录</h3>
-            <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填就不记。系统按两位小数保存（四舍五入）。">
+            <Field label="预算" hint="选填" help={budgetPlacesOver(form.budget) ? "最多两位小数，多了不能保存" : "只记录，不扣款、不发奖；不填就不记。最多两位小数。"}>
               {(control) => <NumberInput {...control} disabled={frozen} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
             </Field>
           </section>
