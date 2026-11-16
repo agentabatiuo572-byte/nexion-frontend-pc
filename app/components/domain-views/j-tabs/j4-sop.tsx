@@ -293,29 +293,31 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const context = record.sop.context;
-    const label = `${contextName(context)} · ${operationNames[context.kind]}`;
+    const label = `${operationNames[context.kind]} · ${contextName(context)}`;
     const change = context.kind === "create" || context.kind === "update"
       ? `${context.fields.scene} · ${context.fields.owner} · ${context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
       : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
     const expired = isRetryExpired(record);
     const retry = !expired && canRetry(context);
+    const basis = closureKnown(outcomes[record.commandKey]);
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
-      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : undefined,
+      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" }
+        : expired && basis && !basis.rejected && basis.success === "never" ? { tone: "neutral", label: "记为失败", line: "这条结不了案；请把技术信息里的原请求编号交给技术同事。" } : undefined,
       actions: <>
         {checkButtons(record, label, context.kind, change)}
         {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
       </>,
       detail: <>
         {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
-        {(context.kind === "resume" || context.kind === "rollback") && <p>{context.kind === "resume" ? "恢复核对" : "恢复开关"}记为失败也可能做了一部分，以执行追溯里每一步的状态为准。</p>}
+        {(context.kind === "resume" || context.kind === "rollback") && <p>{context.kind === "resume" ? "恢复核对" : "恢复开关"}可能只做了一部分，以执行追溯里每一步的状态为准。</p>}
         {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
       </>,
     };
   });
   recoveryRows.push(...proposals.filter((record) => verifiedProposals[record.commandKey]?.status !== "pending").map((record): FundRecoveryRow => {
-    const label = `${contextName(record.sopProposal.context)} · ${operationNames.execute}`;
+    const label = `${operationNames.execute} · ${contextName(record.sopProposal.context)}`;
     const expired = isRetryExpired(record);
     const missing = absent[record.commandKey] && !record.sopProposal.accepted;
     const retry = !expired && !record.sopProposal.accepted && canRetry(record.sopProposal.context);
@@ -338,7 +340,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   recoveryRows.push(...legacy.map((record): FundRecoveryRow => {
     const kind = legacyKind(record.fingerprint);
     const code = record.fingerprint.split("/")[3];
-    const label = `${code ? `${decodeURIComponent(code)} · ` : ""}${operationNames[kind]}`;
+    const label = `${operationNames[kind]}${code ? ` · ${decodeURIComponent(code)}` : ""}`;
     const expired = isRetryExpired(record);
     const outcome = outcomes[record.commandKey];
     const processed = outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "SUCCEEDED" && !fundCommandSettled(outcome.receipt);
@@ -368,6 +370,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   };
   const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
   const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
+  const closingBasis = closureKnown(closingOutcome);
   const submitClosure = async (evidence: FundCommandEvidence) => {
     if (!closing) return;
     const { record, label } = closing;
@@ -379,6 +382,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const closureFacts = closing && <>
     {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
     <Fact k="系统记录">{receiptFact(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null, "原操作还锁着")}</Fact>
+    {closingBasis && !closingBasis.rejected && closingBasis.success === "never" && <Fact k="原请求编号"><span data-mono="">{closing.record.commandKey}</span></Fact>}
     {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
   </>;
   const recovery = <>
@@ -389,7 +393,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         onClose={() => setClosing(null)} onSubmit={submitClosure} />
       : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
         onClose={() => setClosing(null)} onSubmit={submitClosure} />)}
-    {releasing && <ReleaseModal label={`${contextName(releasing.sopProposal.context)} · ${operationNames.execute}`}
+    {releasing && <ReleaseModal label={`${operationNames.execute} · ${contextName(releasing.sopProposal.context)}`}
       explain="原申请超过 24 小时，按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
       onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
     {releasingLegacy && <ReleaseModal label={`${operationNames[legacyKind(releasingLegacy.fingerprint)]} · 改版前的旧记录`}
