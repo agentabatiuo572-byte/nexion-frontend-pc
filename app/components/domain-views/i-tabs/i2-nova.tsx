@@ -800,7 +800,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const unknownChange = (row: I2Command) => {
     if (row.action !== "编辑频道" && row.action !== "新增频道") return row.change;
-    const [tick = "", cooldown = ""] = row.change.split(" · ");
+    const { tick = "", cooldown = "" } = row.cadence ?? {};
     return `扫描间隔 ${durationText(tick).text} · 个人间隔 ${durationText(cooldown).text}`;
   };
   const unknownNotice = pending.length > 0 && (
