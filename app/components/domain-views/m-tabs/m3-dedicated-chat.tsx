@@ -1275,7 +1275,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const laterReception = Boolean(holdEndCommand && !holdEndCommand.sessionRef && isRetryExpired(holdEndCommand)
     && hold?.state === "MINE" && hold.sessionRef
     && Date.parse(`${hold.sessionRef.slice(hold.sessionRef.indexOf(":") + 1)}Z`) > holdEndCommand.createdAt);
-  const mayEndLaterReception = laterReception && legacyEndChecked === holdEndCommand?.commandKey;
+  const mayEndLaterReception = Boolean(holdEndCommand?.sessionRef && hold?.sessionRef && holdEndCommand.sessionRef !== hold.sessionRef)
+    || laterReception && legacyEndChecked === holdEndCommand?.commandKey;
   const endHold = async (queryOriginal = false) => {
     if (!holdCustomer || holdEnding || hold?.state !== "MINE" && !endPending) return;
     const stamp = identityRef.current;
