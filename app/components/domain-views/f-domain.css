@@ -925,5 +925,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-payout-list[data-long] .rd-table th { position: sticky; top: 0; z-index: 1; }
 .f4-payout-table { width: 100%; }
 .f4-payout-ref { color: var(--rd-text-2); }
+/* 被头部上限削过的行：「算出 X」和上限名各占一行，窄框里不撑出横向滚动，各行折法一致 */
+.f4-payout-cap > span { display: block; }
 .f4-payout-table :is(th, td):first-child { padding-left: 12px; }
 .f4-payout-table :is(th, td):last-child { padding-right: 12px; }
