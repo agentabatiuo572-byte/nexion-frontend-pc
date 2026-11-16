@@ -51,9 +51,9 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
   if (receipt.businessState !== undefined) {
-    // These A4 writers store views and throw refusals; cleanup completion may also mean no lock was acquired.
+    // H3 redrive stores a view and throws every refusal; success proves only that requeue was arranged.
     if (receipt.businessState === "UNKNOWN" && receipt.businessCode === null && receipt.originalStatus === "SUCCEEDED"
-      && (receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:") || receipt.scope === "A4_EVENT_RETENTION_RUN")) return "SUCCEEDED";
+      && receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")) return "SUCCEEDED";
     if (receipt.businessState === "UNKNOWN") return "UNRESOLVED";
     // These code-zero replies carry source/item results that the receipt does not project.
     // OpsNovaService:188–231 may skip refused items; OpsI18nLearningService:215–223 may repair zero items.
