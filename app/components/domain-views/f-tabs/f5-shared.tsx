@@ -211,7 +211,7 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       completionCopy={confirm.completionCopy}
       amplifies={!!confirm.amplify}
       coverage={coverage}
-      coverageReliable={canReadCoverage && needsReliableCoverage ? !!coverage && coverage.reliable !== false : undefined}
+      coverageReliable={canReadCoverage ? needsReliableCoverage ? !!coverage && coverage.reliable !== false : coverage?.reliable : undefined}
       coverageUnavailableBlocks={canReadCoverage && needsReliableCoverage}
       coverageLead={confirm.coverageLead}
       coverageCheck={confirm.coverageCheck}
