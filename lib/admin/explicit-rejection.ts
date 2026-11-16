@@ -15,6 +15,9 @@ import { isOutcomeUnknownError } from "./outcome-classification";
 
 const NOT_A_VERDICT = new Set([401, 403, 408, 425, 429]);
 const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
+  // 9a700738: updateRoleGrantsOnce runs inside idempotency, before proposal or grant writes;
+  // approval replay shares the guard. Existing successful commands replay first.
+  "AUDIT_ROLE_WRITE_FORBIDDEN",
   // Backend 441c412b (f972feb4), market/application/OpsNexMarketService.java:
   // prepareMarketPolicy:1248–1250 rejects before review and A2 ticket/lock inserts;
   // updateWeeklyCurve:1413 rejects before applyWeeklyCurve's first config write (:1428);

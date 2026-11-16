@@ -495,6 +495,8 @@
 
 #### [G7] 锁定计划
 
+2026-11-17（f4961993）：APY服务范围改为0<apy≤300（百分点），0/0.000000及负数均422 G7_APY_OUT_OF_RANGE，既有数据库apy_bps>0约束未改。空/非数字沿G7_NUMBER_INVALID或请求校验拒绝；normalizeValue在产品更新前、幂等回调内，成功原号先回放。PC编辑器提前拒0，原负数/空/非数字校验保留，APY取消0.01强制步进以免多拦合法精度，键盘增减0.01保留，金额不舍入；旧结果未知原body/key不改写。G7-BE-02已交付；已有中文0–300%与两位小数提示交视觉修正，不改本轮屏幕文字。
+
 **2026-11-16 锁的说法（hd-final-vb）**：页面打开时就按读取标出被审批锁住的参数（有该参数写权时带单号，看不到提交人）。结论说明写「批准、驳回或撤回之前，被锁的参数调高调低都改不了，其他参数照常可改。」，不再说锁是直接修改时才知道的；结论下一行、这一行「审批锁定中」的说明、名称问号的备注和「调整」的禁用原因说法一致，禁用原因是全站的「在等审批，批准、驳回或撤回后才能改。」。
 
 **2026-11-16 待审批读取（hd-sync15 / 8a4513d5）**：参数可选 pendingApproval/pendingOperationId 在既有读取边界校验；真锁接现有标签、单号和新写禁用，原请求恢复保持可用。false 仅有该参数精确写权时收敛已知锁，无权 false/null、缺字段或读取失败不解除。批准、驳回、撤回后成功读取解除；保存响应复用概览也含字段，旧缓存回执不补字段、原号重放后仍重读。
@@ -727,6 +729,12 @@ P1–P6逐档维护，有值按原文本CAS，缺值用__MISSING__而非0。提�
 
 #### [H4] 活动中心 CMS
 
+2026-11-17（79815419）：wheelAwardsToday.byAsset保留count（发奖行），新增realOutflowCount，amount只SUM(real_outflow=1的reward_amount)，amountBasis明示过滤；coupon创建AVAILABLE券并非钱包出账，其面额不再计实付款。新旧版本字段可选兼容，未自行相加资产或用概率估算实付。
+
+2026-11-17（db343ba3）：wheelAwardsToday按转盘UTC日提供available/reason、basis/spinDate、byAsset.count/amount。spin写入及wallet/voucher同事务，提交行才算发奖；本版本amount包含coupon面额，不能解释为实付款。读层保留原精度与空值，未新建显示区域；原真钱统计仍取独立日用量接口。79815419真实出账修正另记。
+
+2026-11-17（e147302f）：统计新增h4Stats.wheelSpinsToday（UTC spin_date行数，源不可用null）、regionRestrictionCount（无来源null）及regionRestrictionsAvailable=false/原因。wheelEvByAsset分资产提供金额×概率÷100逐档6位期望值，不是实发；USDT卡只消费USDT组，不混币、不舍入，缺字段旧后端沿用旧scalar。原“保留2位”解释待视觉同步；地区限制数尚无真实数据源，H4-BE-08仅次数/真钱/库存已交付。
+
 2026-11-17原号恢复接续（hd-sync24a，3499f565）：仅积分奖档退役接GROWTH:H4:WHEEL_TIER_RETIRE:{tier}，精确growth_h4_read及WHEEL_CONFIG/H4_WHEEL_TIER_RETIRED成功证据。PC原记录保存原来源，现有查询先查原号，辅助失败继续现有读取；callback可正常返回业务拒绝，raw SUCCEEDED不清记录，受控确定结论才解除并独立重读。退役改变公开奖池，不以回滚/当前停用证未执行；其它H4入口、概率与奖励政策不变，受控表单交视觉。
 
 **2026-11-16 本人只读恢复（b0755cba / hd-sync13）**：写权被收回但保留 growth_h4_read 的原发起人可按原号查本人H4申请；促销原回执凭 growth_promotion_read 查询。PC查询原本未绑写权，保持现成入口与原记录归属；重试写入仍核当前权限和期限，全局审批队列另按原权判断。
@@ -949,6 +957,10 @@ H4 已确认保存后重读失败，现有表单与保存按钮禁用；保存�
 **2026-11-16 文字核对（hd-issues-vb）**：转盘奖池问号先说共用奖池和多付钱，再列 App 检查的四项（2–12 档；奖型只有 UVT、USDT、代金券；概率合计正好 100%；至少一档不发真钱的 UVT 安慰奖）。促销首屏有结果未知时，数量只在上方提醒里写一次，结论不再重复。促销保存冲突框「不保存，返回活动」一步放弃（见 growth-promotions/ADMIN-PRD）。抽奖冲突对比的奖项名，最新一份中文名为空时用你填的或打开时的名字。
 
 #### [H5] 签到与UVT奖励
+
+2026-11-17（79815419）：两个配置统计来源纠正为nx_growth_checkin_rule.current_value，rule_key=p15/p2；fallback=ZERO_FALLBACK披露缺表/缺值/空白/异常/解析失败会返回0。PC只在同读规则行可解析且确为零时保留配置0%，其余被披露的回退0%保留空值，不把读失败当真实零；原非零值和旧后端无metadata读取不变。后端仍未逐项给出本次读取是否失败，不能宣称可用性已完整交付。
+
+2026-11-17（48c621f0）：stats.statBasis新增九项机器口径，非纯注释，但不改变查询或数值。todaySign去重签到人，signRate除去重nx_user_streak用户（非注册总数）；两实际幸运比例是当天签到行中reward_multiplier≥1.5/≥2，非互斥命中人群。以上按GROWTH_TEAM业务日；weekRevive数近7天补救相关权益行，weekMsTrigger/weekMsNex数近7天收益里程碑行/奖励UVT，均非自然周/连签奖。前端接元数据、兼容旧后端；H5-BE-05按准确口径披露交付，统计降级可用性尚未解决，2倍精确命中之类措辞交视觉。
 
 **2026-11-17 连签奖励提示（hd-vis-be20）**：编辑器提示改为「数量要大于 0，UVT、USDT 最多 6 位小数，转盘票填整数」；「这页怎么用」同步；转盘票小数的错误说明改为「转盘票数量须为 1–2147483647 的整数」；填 0 或格式不对时（STREAK_REWARD_AMOUNT_INVALID）改为「奖励要写一种，数量大于 0，如 +5 UVT、+1 USDT 或转盘票 ×2。」，A2 批准连签提案被拒时同一句。
 
