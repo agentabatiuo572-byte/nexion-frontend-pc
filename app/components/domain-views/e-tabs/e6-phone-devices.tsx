@@ -33,10 +33,12 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
   useEffect(()=>{const u=new URLSearchParams(window.location.search),size=Number(u.get("phonePageSize")),page=Number(u.get("phonePage"));if([10,20,50].includes(size))ctx.setE5PageSize(size);if(u.has("phoneKeyword"))ctx.setE5Keyword(u.get("phoneKeyword")!);if(Number.isSafeInteger(page)&&page>0)ctx.setE5Page(page);},[]);
   const phoneScope=(d:E5Device)=>`phone:${d.deviceId}:${d.userId}`;
   const items=(d:E5Device):MoreMenuItem[]=>{
-    const result:MoreMenuItem[]=[],activatable=d.state==="inventory"||d.state==="unbound",deactivatable=["active","busy","offline","abnormal","unknown"].includes(d.state),full=d.activeDevicesForUser>=6;
+    // Same raw-status sets as E5: the merged phone state also shows recycled/retired phones as unbound or stopped.
+    const raw=d.rawStatus.trim().toUpperCase(),activatable=raw==="INVENTORY",forceActivatable=["INVENTORY","DEACTIVATED","INACTIVE","UNBOUND"].includes(raw);
+    const result:MoreMenuItem[]=[],deactivatable=["active","busy","offline","abnormal","unknown"].includes(d.state),full=d.activeDevicesForUser>=6;
     const add=(action:Action,blocked?:string,danger=false)=>result.push({key:action,label:LABELS[action],danger,disabledReason:blocked??((m.locked(phoneScope(d))||m.legacyPhoneLocked(d.serial,d.deviceId,d.userId))?"这个手机或用户有原操作待确认":undefined),onSelect:()=>setConfirm({device:d,action})});
-    if(activatable&&ctx.canWriteE5&&d.state==="inventory")add("activate",full?"已达 6 台上限，请先停用其他设备":undefined);
-    if(activatable&&ctx.canForceActivateE5&&m.canPropose)add("force",full?"已达 6 台上限，强制激活也不能绕过":undefined);
+    if(activatable&&ctx.canWriteE5)add("activate",full?"已达 6 台上限，请先停用其他设备":undefined);
+    if(forceActivatable&&ctx.canForceActivateE5&&m.canPropose)add("force",full?"已达 6 台上限，强制激活也不能绕过":undefined);
     if(deactivatable&&ctx.canWriteE5)add("deactivate");
     if(ctx.canWriteE5&&(d.pausedReason?canResumeE5UserDevicesFrom(d):deactivatable))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
     if(deactivatable&&ctx.canUnbindE5&&m.canPropose)add("unbind",undefined,true);
