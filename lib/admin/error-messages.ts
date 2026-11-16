@@ -648,7 +648,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PHONE_MODEL_LOCK_RELEASE_NOT_FOUND: "未查到原解除回执，不能据此认定没有执行。请保留原记录，稍后查询原解除结果。",
   PHONE_MODEL_LOCK_RELEASE_RECEIPT_FORBIDDEN: "当前账号或客户范围不允许查看原解除回执。请恢复原操作者及客户范围后查询，原记录继续保留。",
   TASK_POOL_FORMAT_RETIRED: "这份操作使用了已停用的任务格式，请先核对原提案；不要修改未知请求或换号重发。核实原结果后，商品配置回商品管理、商城任务回任务池、手机任务回手机算力配置重新配置任务等级。",
-  A2_PROPOSAL_READ_FORBIDDEN: "当前账号无权读取原审批单，请保留原命令号，请有权管理员核对。",
+  A2_PROPOSAL_READ_FORBIDDEN: "这个账号看不了原审批单，记录先留着；请有查看权限的管理员核对。",
   ASSET_ID_INVALID: "媒体标识无效，请核对原媒体记录；不要删除已有商品关联。",
   ASSET_ID_REQUIRED: "缺少媒体标识，请重新读取商品媒体记录。",
   BUNDLE_DISCOUNT_POLICY_UNAVAILABLE: "组合折扣策略暂时读不到，请重新加载后核对。",
@@ -1411,8 +1411,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K2_ROW_NOT_FOUND: "这条命中记录已不存在，本次未执行；请刷新后核对最新命中。",
   K2_CLUSTER_ID_REQUIRED: "这条命中没有关联账户组，不能冻结；请到多账户风险排查核对。",
   K2_SIGNAL_SUBJECT_NOT_RESOLVED: "无法确认命中记录对应的真实账户，本次未处置；请联系风控值班人员核对证据。",
-  A2_PROPOSAL_KEY_INVALID: "原审批命令号格式无效，暂时无法查询；请保留原记录并联系值班人员核对。",
-  A2_PROPOSAL_RESULT_AMBIGUOUS: "原命令号对应的审批结果不唯一，仍需核查；请保留原记录并联系值班人员，不要重新提交。",
+  A2_PROPOSAL_KEY_INVALID: "这条原申请的记录不完整，查不了原审批单；记录先留着，请联系值班人员核对。",
+  A2_PROPOSAL_RESULT_AMBIGUOUS: "按原请求查到不止一张审批单，还要人工核查；记录先留着，请联系值班人员，不要重新提交。",
   K2_ROW_CONCURRENT_UPDATE: "这条命中记录已被其他操作员处理，请刷新后查看最新状态。",
   K2_PARAM_CONCURRENT_UPDATE: "这个参数已被其他操作员修改，请刷新后基于最新值重试。",
   K2_PARAM_EXPECTED_VERSION_REQUIRED: "缺少参数版本，请刷新页面后重试。",
@@ -1453,7 +1453,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RULE_STATE_INVALID: "目标规则状态无效，请刷新页面后重试。",
   RULE_NOT_FOUND: "提现规则不存在或已删除，请刷新页面后重试。",
   WITHDRAW_RULE_RELOAD_FAILED: "规则写入后的最新状态加载失败，请刷新页面核对结果。",
-  OBJECT_LOCKED_BY_A2: "该业务对象正在等待审批处理，请完成或撤销审批后再操作。",
+  OBJECT_LOCKED_BY_A2: "这一项正在等审批，批准、驳回或撤回后才能再操作。",
   D2_DEVELOPMENT_SIMULATION_STATE_INVALID: "这笔不满足开发账号的 H1 冷却条件，不能模拟。请核对测试用户与冷却来源，已到期时刷新查看系统复查结果。",
   D2_COOLDOWN_ALREADY_DUE: "这笔提现已到复查时间，无需模拟到期；请刷新查看系统复查结果。",
   D2_DEVELOPMENT_SIMULATION_CONFLICT: "模拟到期未完成，请刷新详情核对复查条件后重试。",
@@ -1552,7 +1552,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A2_REASON_POLICY_INVALID: "操作理由规则配置无效，当前无法提交；请联系值班人员核对理由长度和格式策略。",
   A2_RETENTION_RUN_INVALID: "留存清理任务返回的数据不完整或格式异常，结果尚未确认；请刷新「操作记录与审批」记录核对执行状态，持续出现时联系值班人员。",
   A2_RETENTION_PREVIEW_INVALID: "留存清理范围预览返回的数据不完整或格式异常，为避免误删已停止执行；请刷新页面重新加载范围，持续出现时联系值班人员。",
-  A2_WITHDRAW_WRITE_NOT_CONFIRMED: "撤回请求已提交但未取得系统最新状态；请刷新「操作记录与审批」列表核对状态，不要换新命令号重复提交。",
+  A2_WITHDRAW_WRITE_NOT_CONFIRMED: "撤回已发出，但没拿到最新状态；请刷新「操作记录与审批」核对，不要再撤回一次。",
   E5_OBSERVABILITY_SCHEMA_INVALID: "设备运行监测数据不完整或格式异常，页面已停止展示推测状态；请重新加载，持续出现时联系设备运维值班人员。",
   E5_DEVICE_ACTION_OUTCOME_UNCERTAIN: "设备操作的结果尚未确认；请保留当前输入并原样重试，系统会复用同一命令号避免重复执行。",
   G2_BATCH_RESPONSE_INVALID: "兑换队列批处理返回的数据不完整或计数不一致，结果尚未确认；请用同一命令号重试并刷新队列核对。",
@@ -2635,10 +2635,10 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SESSION_CATEGORY_UNSUPPORTED: "找不到这类会话，请重新读取会话类别。",
   SESSION_CATEGORY_READONLY: "这类会话由平台统一管理，不能在本页启停。",
   SESSION_CATEGORY_ENABLED_REQUIRED: "缺少会话类别目标状态，请重新打开确认框。",
-  SESSION_CATEGORY_STALE: "会话类别状态已变化，请重新读取后核对启停操作。",
+  SESSION_CATEGORY_STALE: "会话类别刚被改过，这次没有执行；页面已重新读取，核对后再操作。",
   SESSION_POLICY_FIELD_UNSUPPORTED: "不支持修改这个主动推送参数，请重新读取设置。",
   SESSION_ADVISOR_AUTOPUSH_EXECUTOR_UNAVAILABLE: "主动推送还没有执行器，后台不接受启用；其余参数可保存，暂时不会推送。",
-  SESSION_POLICY_STALE: "主动推送设置已变化，请重新读取后核对新值。",
+  SESSION_POLICY_STALE: "主动推送设置刚被改过，这次没有执行；页面已重新读取，核对新值后再操作。",
   SESSION_POLICY_DELAY_INVALID: "首推延迟须为 0–60000 的整数，单位毫秒，请核对后提交。",
   SESSION_POLICY_COOLDOWN_INVALID: "冷却时间须为 1–720 的整数，单位小时，请核对后提交。",
   SESSION_POLICY_MAX_INVALID: "单会话上限须为 0–20 的整数，单位条，请核对后提交。",
@@ -2655,7 +2655,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SESSION_SCRIPT_INITIAL_STATUS_MUST_BE_DRAFT: "新建话术必须先保存为草稿，再单独确认发布。",
   SESSION_SCRIPT_ID_REQUIRED: "缺少话术编号，请从话术列表重新打开。",
   SESSION_SCRIPT_NOT_FOUND: "这条话术已不存在，请重新读取话术列表。",
-  SESSION_SCRIPT_STALE: "话术状态已变化，请重新读取后核对发布或归档操作。",
+  SESSION_SCRIPT_STALE: "话术刚被改过，这次没有执行；页面已重新读取，核对后再操作。",
   SESSION_SCRIPT_STATUS_TRANSITION_INVALID: "当前话术状态不允许执行此操作；草稿可发布，已发布可归档，归档后不能再发布。",
   SESSION_REPLY_TEMPLATE_REQUIRED: "缺少即时回复模板，请重新填写正文。",
   SESSION_REPLY_TEMPLATE_TYPE_UNSUPPORTED: "即时回复模板类型无效，请重新读取模板列表。",
@@ -2665,7 +2665,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SESSION_REPLY_TEMPLATE_INITIAL_STATUS_MUST_BE_DRAFT: "新建即时回复模板必须先保存为草稿，再单独确认发布。",
   SESSION_REPLY_TEMPLATE_ID_REQUIRED: "缺少即时回复模板编号，请从列表重新打开。",
   SESSION_REPLY_TEMPLATE_NOT_FOUND: "这条即时回复模板已不存在，请重新读取列表。",
-  SESSION_REPLY_TEMPLATE_STALE: "即时回复模板状态已变化，请重新读取后核对发布或归档操作。",
+  SESSION_REPLY_TEMPLATE_STALE: "即时回复模板刚被改过，这次没有执行；页面已重新读取，核对后再操作。",
   SESSION_REPLY_TEMPLATE_STATUS_TRANSITION_INVALID: "当前模板状态不允许执行此操作；草稿可发布，已发布可归档，归档后不能再发布。",
   SESSION_TEMPLATE_I18N_MISMATCH: "已发布译文与中文正文或占位符不一致，请在维护翻译中核对后再发布。",
   M5_SESSION_TEMPLATE_PROTOCOL_INVALID: "会话话术模板服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
@@ -3778,8 +3778,8 @@ export function formatAdminApiError(message: string | null | undefined, fallback
 }
 
 const NEUTRAL_DISPLAY_FALLBACK = "操作失败，请稍后重试。";
-const SERVICE_DOWN_WRITE = "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。";
-const GATEWAY_FAILED_WRITE = "服务连接异常，结果尚未确认；请保留已填内容，刷新核对后再决定是否重试。";
+const SERVICE_DOWN_WRITE = "服务暂时不可用，结果未知，可能已经生效；先核对原操作，不要重复提交。一直查不清请联系值班人员。";
+const GATEWAY_FAILED_WRITE = "服务连接异常，结果未知，可能已经生效；保留已填内容，核对后再决定要不要重试。";
 const NETWORK_FAILED_WRITE = ADMIN_ERROR_MESSAGES.NETWORK_FAILURE;
 const HAS_CJK_RE = /[一-鿿]/;
 
@@ -3796,6 +3796,8 @@ const HAS_CJK_RE = /[一-鿿]/;
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
   if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return "服务暂时不可用，请稍后重试；持续失败请联系值班人员。";
+  // 通用兜底「操作失败」对读取不贴切（ISSUES 773）：读取只说没读到。
+  if (shown === NEUTRAL_DISPLAY_FALLBACK) return "没有读到数据，请稍后重试；一直读不到请联系值班人员。";
   // 读接口断网只是没读到，不是「操作结果未确认」（visual-1 第 15 条）。
   if (shown.startsWith("网络连接已中断，本次操作结果尚未确认")) return "网络连接失败，没有读到数据，请检查网络后重试。";
   return shown === NETWORK_FAILED_WRITE ? "网络连接失败，请检查网络后重试。" : shown;
