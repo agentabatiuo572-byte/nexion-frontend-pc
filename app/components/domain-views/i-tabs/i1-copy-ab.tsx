@@ -450,8 +450,11 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const findCopy = (key: string) => COPY_POOL.find((copy) => copy.key === key);
   const optionName = (versionKey?: string) => VERSION_OPTIONS.find((option) => option.versionKey === versionKey)?.name;
   const positionName = (positionKey?: string) => COPY_POSITION_ROWS.find((position) => position.positionKey === positionKey)?.name ?? positionKey ?? "—";
-  const isPublished = (copy: CopyRow) => copy.status.toLowerCase() === "published";
-  /** 同一个位置上另外已发布的文案（I1-PD01：App 要求一个位置恰好一条）。 */
+  // c090ae36 uses the public reader's predicate, including legacy saved drafts.
+  // The current version, not draftVersion/draftCopyPosition, determines delivery.
+  const isPublished = (copy: CopyRow) => ["published", "draft-saved"].includes(copy.status.toLowerCase())
+    && findVersion(copy.key, copy.version)?.st.toLowerCase() === "published";
+  /** 同一个位置上另外可供公开读取的文案；不把未发布草稿算占位。 */
   const othersPublishedAt = (positionKey: string | undefined, exceptKey: string) => positionKey
     ? COPY_POOL.filter((copy) => copy.key !== exceptKey && isPublished(copy) && copy.copyPosition === positionKey)
     : [];
@@ -475,7 +478,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       .then(() => { toast(ok); return true; });
   };
 
-  const liveCopyStatus = (c: CopyRow): string => c.status;
+  const liveCopyStatus = (c: CopyRow): string => isPublished(c) ? "published" : c.status;
   const liveExpState = (e: ExpRow): string => e.state;
   const liveFw = (_key: string, cur: string): string => cur;
 
@@ -883,7 +886,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       const copy = findCopy(key);
       subject = <>文案 <span data-mono="">{key}</span></>;
       if (ready && !copy) gone = "这条文案在最新读取里没有了，不能按最新的重做。";
-      const state = copy ? `${copy.version} · ${copyStatus(copy.status).text}${copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}` : "—";
+      const live = copy && ["published", "draft-saved"].includes(copy.status.toLowerCase())
+        && findVersion(copy.key, copy.version)?.st.toLowerCase() === "published";
+      const state = copy ? `${copy.version} · ${copyStatus(live ? "published" : copy.status).text}${copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}` : "—";
       const editing = (original?.method === "PATCH" && path.endsWith("/draft")) || (original?.method === "POST" && /\/versions$/.test(path));
       if (editing) {
         columns = ["现在", "你填的"];
@@ -1198,7 +1203,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const orphanCopies = COPY_POOL.filter((copy) => !copy.copyPosition || !positionKeys.has(copy.copyPosition)).filter((copy) => surf === "all" || copy.surface === surf);
   const surfCount = (value: Surf) => value === "all" ? COPY_POSITION_ROWS.length : COPY_POSITION_ROWS.filter((position) => normalizeCopyModule(position.surface) === value).length;
   const crowded = COPY_POSITION_ROWS.filter((position) => COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === position.positionKey).length > 1);
-  const paused = COPY_POOL.filter((copy) => { const value = copy.status.toLowerCase(); return value === "draft-saved" || value === "draft"; });
+  const paused = COPY_POOL.filter((copy) => { const value = copy.status.toLowerCase(); return !isPublished(copy) && (value === "draft-saved" || value === "draft"); });
   const awaiting = EXPS.filter((exp) => exp.state === "concluded" || exp.state === "stopped");
   const scheduled = EXPS.filter((exp) => exp.state === "scheduled");
   const publishedCount = COPY_POOL.filter(isPublished).length;
@@ -1425,7 +1430,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const detailDraft = detailCopy?.draftVersion ? findVersion(detailCopy.key, detailCopy.draftVersion) : undefined;
   const detailExp = detailCopy ? experimentOf(detailCopy.key) : undefined;
   const copyDrawer = detailCopy && (() => {
-    const st = copyStatus(detailCopy.status);
+    const st = copyStatus(liveCopyStatus(detailCopy));
     const locked = lockReason(`copy:${detailCopy.key}`);
     const rows: JudgmentRow[] = [
       { label: "状态", value: <StatusTag tone={st.tone} explain={st.explain}>{st.text}</StatusTag> },
