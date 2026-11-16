@@ -458,12 +458,15 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const othersPublishedAt = (positionKey: string | undefined, exceptKey: string) => positionKey
     ? COPY_POOL.filter((copy) => copy.key !== exceptKey && isPublished(copy) && copy.copyPosition === positionKey)
     : [];
-  const publishBlockedReason = (positionKey: string | undefined, exceptKey: string) =>
-    othersPublishedAt(positionKey?.trim(), exceptKey.trim()).length > 0 ? "这个位置已有发布中的内容" : undefined;
-  const crowdNotice = (positionKey: string | undefined, exceptKey: string) => {
+  /** 位置被别的已发布文案占着时的禁用原因：点名占着的那条；能换位置的入口（编辑、新增）多一句「或换个位置」。 */
+  const publishBlockedReason = (positionKey: string | undefined, exceptKey: string, canMove = true) => {
+    const others = othersPublishedAt(positionKey?.trim(), exceptKey.trim());
+    return others.length > 0 ? `位置被「${others.map((copy) => copy.desc).join("、")}」占用，先下架它${canMove ? "或换个位置" : ""}` : undefined;
+  };
+  const crowdNotice = (positionKey: string | undefined, exceptKey: string, canMove = true) => {
     const others = othersPublishedAt(positionKey, exceptKey);
     if (others.length === 0) return null;
-    return <Notice tone="warn" title="这个位置已有发布中的内容">「{others.map((copy) => copy.desc).join("、")}」已在{positionName(positionKey)}发布。再发布一条会让这个位置在 App 里取不到内容。</Notice>;
+    return <Notice tone="warn" title={`${positionName(positionKey)}已被占用`}>一个位置只能有一条已发布的文案。「{others.map((copy) => copy.desc).join("、")}」正在这里发布，先下架它{canMove ? "，或换个位置" : "再来"}。</Notice>;
   };
   // I6-BE-03：发布会把同名词条最新的草稿直接改成这版内容并发布，那边草稿里写的就没了。
   const i18nFact = (key: string) => (<>
@@ -536,17 +539,17 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const draft = mode === "存草稿";
     const target = form.version || editableVersion?.v || "";
     const current = findVersion(c.key, c.version);
-    const pauses = draft && isPublished(c);
+    const live = isPublished(c);
     openActionConfirm({ briefKind: "config",
       action: <>{draft ? "存草稿" : "发布内容版本"} · {c.key} {target}</>,
       title: `${draft ? "存草稿" : "发布"} ${target}`,
       detail: <>{draft ? "保存这个草稿。" : "发布这个版本。"}</>,
       amplifies: false,
-      effect: draft ? (pauses ? LIVE : OFFLINE("保存草稿，线上不变")) : LIVE,
+      effect: draft ? OFFLINE("保存草稿，线上不变") : LIVE,
       confirmLabel: draft ? "确认存草稿" : "确认发布",
       blockedReason: draft ? undefined : publishBlockedReason(form.copyPosition, c.key),
       statedBrief: draft
-        ? { impact: pauses ? `保存草稿 ${target}，这条文案的状态变成草稿。` : "只保存草稿，这条文案现在没有在投放。", check: "核对三种语言和位置；存草稿不更新多语言与课程的词条。" }
+        ? { impact: live ? `用户继续看到线上的 ${c.version}；草稿 ${target} 发布后才替换它。` : "这条文案已下架，存了草稿也不对外；发布草稿才上线。", check: "核对三种语言和位置；存草稿不更新多语言与课程的词条。" }
         : { impact: `${target} 替换现在发布的 ${c.version}，同时更新多语言与课程里的同名词条。`, check: "核对三种语言、位置和占位符。" },
       facts: <Facts>
         <Fact k="文案">{c.desc} · <span data-mono="">{c.key}</span></Fact>
@@ -554,9 +557,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         {!draft && i18nFact(c.i18nKey)}
       </Facts>,
       content: <>
-        {pauses && <Notice tone="warn" title="存草稿会撤下线上内容">按位置取文案时取不到这条文案，发布或删掉这个草稿后恢复。</Notice>}
         {!draft && crowdNotice(form.copyPosition, c.key)}
-        <CompareTexts beforeLabel={`现在 ${c.version}`} afterLabel={draft ? `草稿 ${target}` : `发布后 ${target}`} before={textsOf(current)} after={textsOfForm(form)} />
+        <CompareTexts beforeLabel={live ? `线上 ${c.version}` : `已下架 ${c.version}`} afterLabel={draft ? `草稿 ${target}` : `发布后 ${target}`} before={textsOf(current)} after={textsOfForm(form)} />
       </>,
       run: (reason) => {
         const payload = {
@@ -578,7 +580,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         };
         const done = (result: unknown) => { if (result !== false) setEditor(null); return result; };
         if (form?.saveMode === "存草稿") {
-          return runBackend(actions.saveI1CopyDraft(c.key, payload, reason), pauses ? `${c.key} 草稿已保存，暂停投放` : `${c.key} 草稿已保存，线上不变`).then(done);
+          return runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿 ${target} 已保存，线上不变`).then(done);
         } else {
           return runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`).then(done);
         }
@@ -763,7 +765,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认回滚",
-      blockedReason: publishBlockedReason(target?.copyPosition, copy.key),
+      blockedReason: publishBlockedReason(target?.copyPosition, copy.key, false),
       statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档，位置和模块按 ${v} 的；草稿和实验记录保留，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时会被拒绝。" },
       facts: <Facts>
         <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
@@ -771,7 +773,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         {i18nFact(copy.i18nKey)}
       </Facts>,
       content: <>
-        {crowdNotice(target?.copyPosition, copy.key)}
+        {crowdNotice(target?.copyPosition, copy.key, false)}
         {target && <CompareTexts beforeLabel={`现在 ${copy.version}`} afterLabel={`回滚后 ${v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(target)!} />}
       </>,
       run: (reason) => {
@@ -817,11 +819,11 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       effect: <IrreversibleTag>不能恢复</IrreversibleTag>,
       confirmTone: "danger",
       confirmLabel: "确认删除",
-      statedBrief: { impact: back ? `草稿删掉、不能恢复；这条文案回到发布 ${copy?.version} 的状态。` : "草稿删掉、不能恢复；已发布和已归档的版本不受影响。", check: "这个版本号以后不能再给这条文案用。" },
+      statedBrief: { impact: back ? `只删掉草稿，不能恢复；线上的 ${copy?.version} 不变。` : "只删掉草稿，不能恢复；这条文案仍是下架。", check: "这个版本号以后不能再给这条文案用。" },
       facts: <Facts>
         <Fact k="文案">{copy?.desc ?? copyKey} · <span data-mono="">{copyKey}</span></Fact>
         <Fact k="草稿">{version}</Fact>
-        {back && <Fact k="之后">恢复投放 {copy?.version}</Fact>}
+        <Fact k="线上">{back ? `${copy?.version} 不变` : "没有，仍是下架"}</Fact>
       </Facts>,
       run: (reason) => {
         const mutationKey = `${copyKey}:${version}`;
@@ -1064,7 +1066,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认停止",
-      statedBrief: { impact: "停止后不再分组，按位置取文案回到已发布的版本；这条文案存了草稿时仍取不到。数据保留，之后可以采纳或弃用。", check: "App 上已经拿到的内容，要等它重新读取才变。" },
+      statedBrief: { impact: "停止后不再分组，按位置取文案回到线上的版本。数据保留，之后可以采纳或弃用。", check: "App 上已经拿到的内容，要等它重新读取才变。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
         <Fact k="合计看到">{countOf(exp.impressions) === null ? "—" : `${countOf(exp.impressions)!.toLocaleString()} 人`}</Fact>
@@ -1090,16 +1092,16 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       effect: LIVE,
       confirmLabel: "确认采纳",
       blockedReason: exp ? adoptBlockedReason(exp) : displayAdminError(new Error("COPY_EXPERIMENT_NOT_FOUND")),
-      statedBrief: { impact: "按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳；采纳不重跑发布时的内容检查，先核对内容对比；没有显著性检验。" },
+      statedBrief: { impact: "按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组满 100 人看到、转化率唯一最高才能采纳，内容和位置按发布的要求检查；不做显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
-        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
+        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，不能采纳"}</Fact>
         {copy && i18nFact(copy.i18nKey)}
       </Facts>,
       content: <>
-        {copy && crowdNotice(winnerVersion?.copyPosition ?? copy.copyPosition, copy.key)}
-        {copy?.draftVersion && <Notice tone="warn" title="这条文案存了草稿">{`采纳后仍取不到，发布或删掉草稿 ${copy.draftVersion} 才恢复投放。`}</Notice>}
-        {copy && winnerVersion && <CompareTexts beforeLabel={`现在 ${copy.version}`} afterLabel={`采纳后 ${winnerVersion.v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(winnerVersion)!} />}
+        {copy && crowdNotice(winnerVersion?.copyPosition ?? copy.copyPosition, copy.key, false)}
+        {copy?.draftVersion && copy.status.toLowerCase() === "archived" && <Notice tone="warn" title="这条文案已下架">{`采纳后版本换成 ${winnerVersion?.v ?? "胜出的那组"}，但文案仍是下架，用户看不到。`}</Notice>}
+        {copy && winnerVersion && <CompareTexts beforeLabel={isPublished(copy) ? `线上 ${copy.version}` : `已下架 ${copy.version}`} afterLabel={`采纳后 ${winnerVersion.v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(winnerVersion)!} />}
       </>,
       run: (reason) => {
         return runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜版本已发布`);
@@ -1143,6 +1145,11 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   };
   const adoptBlockedReason = (exp: ExpRow) => {
     const code = adoptionErrorCode(exp);
+    // 位置被占时点名占着的那条，和发布、回滚的禁用原因一样。
+    if (code === "COPY_POSITION_ALREADY_PUBLISHED") {
+      const winner = exp.variants.find((variant) => variant.name === leaderOf(exp));
+      return publishBlockedReason(findVersion(exp.copyKey, winner?.version)?.copyPosition, exp.copyKey, false);
+    }
     return code ? displayAdminError(new Error(code)) : undefined;
   };
 
@@ -1222,7 +1229,6 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const orphanCopies = COPY_POOL.filter((copy) => !copy.copyPosition || !positionKeys.has(copy.copyPosition)).filter((copy) => surf === "all" || copy.surface === surf);
   const surfCount = (value: Surf) => value === "all" ? COPY_POSITION_ROWS.length : COPY_POSITION_ROWS.filter((position) => normalizeCopyModule(position.surface) === value).length;
   const crowded = COPY_POSITION_ROWS.filter((position) => COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === position.positionKey).length > 1);
-  const paused = COPY_POOL.filter((copy) => { const value = copy.status.toLowerCase(); return !isPublished(copy) && (value === "draft-saved" || value === "draft"); });
   const awaiting = EXPS.filter((exp) => exp.state === "concluded" || exp.state === "stopped");
   const scheduled = EXPS.filter((exp) => exp.state === "scheduled");
   const publishedCount = COPY_POOL.filter(isPublished).length;
@@ -1233,9 +1239,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     ? <Conclusion state="unknown" icon={ShieldAlert}>文案暂时不能改，先重新加载</Conclusion>
     : crowded.length > 0
       ? <Conclusion state="danger" icon={TriangleAlert} hint="下架多出来的一条。">{crowded[0].name}有 <b>{COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === crowded[0].positionKey).length}</b> 条在投放，App 取不到这个位置的内容</Conclusion>
-      : paused.length > 0
-        ? <Conclusion state="warn" icon={TriangleAlert} hint="发布草稿后恢复投放。" explain={<><p>存草稿会把文案改成草稿状态，按位置取文案时取不到它。后端已按缺陷登记。</p><p>删掉草稿只在现在的版本还是已发布时恢复；下架后存的草稿，删掉也不会恢复。</p></>}><b>{paused.length}</b> 条文案存了草稿，暂停投放</Conclusion>
-        : awaiting.length + scheduled.length > 0
+      : awaiting.length + scheduled.length > 0
           ? <Conclusion state="neutral" icon={ListChecks} hint={[awaiting.length ? `${awaiting.length} 个已结束，去采纳或弃用` : "", scheduled.length ? `${scheduled.length} 个待启动` : ""].filter(Boolean).join("，")}>有 {awaiting.length + scheduled.length} 个实验等你处理</Conclusion>
           : COPY_POOL.length === 0
             ? <Conclusion state="neutral" icon={ListChecks} hint={canCreateCopy ? "在一个位置上点「在这里新增文案」。" : undefined}>还没有文案，{COPY_POSITION_ROWS.length} 个位置都空着</Conclusion>
@@ -1355,7 +1359,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const hasUnusedActiveVersion = ACTIVE_VERSION_OPTIONS.some((option) => !usedVersionKeys.has(option.value));
     const locked = lockReason(`copy:${copy.key}`);
     const items: MoreMenuItem[] = [];
-    if (status === "archived") items.push({ key: "rollback", label: `回滚到 ${row.v}`, disabledReason: locked ?? publishBlockedReason(row.copyPosition, copy.key), onSelect: () => rollbackTo(copy, row.v) });
+    if (status === "archived") items.push({ key: "rollback", label: `回滚到 ${row.v}`, disabledReason: locked ?? publishBlockedReason(row.copyPosition, copy.key, false), onSelect: () => rollbackTo(copy, row.v) });
     if (status === "published") {
       items.push(existingDraft
         ? { key: "draft", label: `继续草稿 ${existingDraft.v}`, disabledReason: locked, onSelect: () => editCopy(copy, existingDraft) }
@@ -1451,11 +1455,13 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const copyDrawer = detailCopy && (() => {
     const st = copyStatus(liveCopyStatus(detailCopy));
     const locked = lockReason(`copy:${detailCopy.key}`);
+    const live = isPublished(detailCopy);
+    const versionText = `${detailCopy.version}${optionName(detailCopy.version) ? ` · ${optionName(detailCopy.version)}` : ""}`;
     const rows: JudgmentRow[] = [
       { label: "状态", value: <StatusTag tone={st.tone} explain={st.explain}>{st.text}</StatusTag> },
       { label: "位置", value: `${positionName(detailCopy.copyPosition)} · ${moduleLabel(detailCopy.surface)}` },
-      { label: "发布中的版本", value: `${detailCopy.version}${optionName(detailCopy.version) ? ` · ${optionName(detailCopy.version)}` : ""}` },
-      { label: "草稿", value: detailCopy.draftVersion ?? "没有" },
+      { label: "线上版本", value: live ? versionText : `没有（${detailCopy.version} 已下架）` },
+      { label: "草稿", value: detailCopy.draftVersion ? `${detailCopy.draftVersion} · 还没发布` : "没有" },
       { label: "实验", value: detailExp ? <button type="button" className="rd-link i1-exp-link" onClick={() => openExperiment(detailExp.id)}>{experimentState(detailExp.state).text} · {detailExp.id}</button> : "没有" },
     ];
     const others = othersPublishedAt(detailCopy.copyPosition, detailCopy.key);
@@ -1470,11 +1476,11 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           primary={<Button variant="primary" disabledReason={locked} onClick={() => editCopy(detailCopy)}>{detailCopy.draftVersion ? "编辑草稿" : "编辑文案"}</Button>} /> : undefined}>
         <JudgmentPoints rows={rows} />
         {isPublished(detailCopy) && others.length > 0 && <Notice tone="danger" title="这个位置不止一条在投放">「{others.map((copy) => copy.desc).join("、")}」也在这里发布，App 按位置取文案时取不到内容。</Notice>}
-        <Panel plain headingLevel={3} title={`发布中的内容 ${detailCopy.version}`}>
+        <Panel plain headingLevel={3} title={live ? `线上内容 ${detailCopy.version}` : `已下架的内容 ${detailCopy.version}`}>
           {detailCurrent ? <LangBlocks texts={textsOf(detailCurrent)!} /> : <p className="i1-weak">读不到这个版本的内容</p>}
         </Panel>
         {detailCopy.draftVersion && (
-          <Fold inset title={`草稿 ${detailCopy.draftVersion}`} summary="还没发布" defaultOpen>
+          <Fold inset title={`草稿 ${detailCopy.draftVersion}`} summary="还没发布，用户看不到" defaultOpen>
             <LangBlocks texts={{ zh: detailCopy.draftZh ?? detailDraft?.zh ?? "", vi: detailCopy.draftVi ?? detailDraft?.vi ?? "", en: detailCopy.draftEn ?? detailDraft?.en ?? "" }} />
           </Fold>
         )}
@@ -1581,7 +1587,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           sub={<>{editor.copy.desc} · <span data-mono="">{editor.copy.key}</span></>}
           basedOn={<Fact k="基于">{editor.base ? `${editor.base.v} · ${versionStatus(editor.base.st).text}` : editor.copy.version}</Fact>}
           stale={editorStale}
-          pausesDelivery={isPublished(editor.copy)}
+          liveVersion={isPublished(editor.copy) ? editor.copy.version : undefined}
           publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, editor.copy.key)}
           onClose={() => setEditor(null)}
           onSubmit={(form, mode) => submitCopyEdit(editor.copy, editor.base, { ...form, saveMode: mode }, mode)} />

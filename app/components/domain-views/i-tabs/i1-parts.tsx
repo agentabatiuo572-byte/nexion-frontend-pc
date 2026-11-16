@@ -26,12 +26,12 @@ export const moduleLabel = (surface?: string) => (surface && MODULE_LABELS[surfa
 
 export const missingLangs = (texts: Texts) => LANGS.filter((lang) => !texts[lang.key]?.trim()).map((lang) => lang.label);
 
-/** 文案状态：后端小写、下划线换短横线；存草稿是 draft-saved，这时按位置取不到它（B01）。 */
+/** 文案状态：后端小写、下划线换短横线。传进来的已按线上版本判过：旧的 draft-saved 只有现在的版本不在线时才走到这里。 */
 export function copyStatus(status: string): { tone: StateTone; text: string; explain?: string } {
   const value = status.toLowerCase();
   if (value === "published") return { tone: "ok", text: "已发布" };
   if (value === "archived") return { tone: "done", text: "已下架" };
-  if (value === "draft-saved" || value === "draft") return { tone: "warn", text: "暂停投放", explain: "存了草稿，这条文案的状态变成草稿，按位置取文案时取不到它。发布草稿后恢复；删掉草稿只在现在的版本还是已发布时恢复。" };
+  if (value === "draft-saved" || value === "draft") return { tone: "done", text: "已下架", explain: "现在的版本已下架，草稿还没发布；发布草稿才上线。" };
   return { tone: "neutral", text: "状态待核实", explain: `后端返回的状态是 ${status}，这页不认识。` };
 }
 
@@ -154,8 +154,9 @@ export function PositionCard({ title, sub, statusTag, surface, copies, problem, 
                 ? <LangLines texts={copy.texts} dim={copy.status.toLowerCase() !== "published"} />
                 : <p className="i1-weak">读不到 {copy.version} 的内容</p>}
               <div className="i1-pos-meta">
-                <span><b data-mono="">{copy.version}</b>{copy.versionName ? ` · ${copy.versionName}` : ""}</span>
-                <span>{copy.versionCount} 个版本{copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}</span>
+                <span>{copy.status.toLowerCase() === "published" ? "线上 " : ""}<b data-mono="">{copy.version}</b>{copy.versionName ? ` · ${copy.versionName}` : ""}</span>
+                {copy.draftVersion && <span>草稿 <b data-mono="">{copy.draftVersion}</b> 还没发布</span>}
+                <span>{copy.versionCount} 个版本</span>
                 <span>最近改版 {copy.lastChange || "—"}</span>
                 {copy.experiment
                   ? <button type="button" className="rd-link i1-exp-link" onClick={() => onOpenExperiment(copy.experiment!.id)}>
@@ -377,15 +378,15 @@ function copyFormIssues(spec: CopyEditSpec | CopyCreateSpec, state: BusinessForm
   return { fields, other, blocked: list.length ? `还缺：${[...new Set(list)].join("、")}` : undefined };
 }
 
-export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDelivery, publishBlockedReason, onClose, onSubmit }: {
+export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion, publishBlockedReason, onClose, onSubmit }: {
   spec: CopyEditSpec | CopyCreateSpec;
   title: string;
   sub?: ReactNode;
   basedOn?: ReactNode;
   /** 页面数据没读到最新时放在表单最上面的提醒和重新加载（编辑框挡着页面上的那一个）。 */
   stale?: ReactNode;
-  /** 这条文案现在是已发布：存草稿会让它暂停投放（B01）。 */
-  pausesDelivery?: boolean;
+  /** 这条文案线上的版本；有值时脚注说明存草稿不影响它。 */
+  liveVersion?: string;
   publishBlockedReason?: (form: BusinessFormValue) => string | undefined;
   onClose: () => void;
   onSubmit: (form: BusinessFormValue, mode: SaveMode) => void;
@@ -415,7 +416,7 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, pausesDeliv
     <>
       <Drawer open wide onClose={close} title={title} sub={sub} icon={FilePen} tone="role-1"
         footer={<Decision
-          note={!isCreate && pausesDelivery ? "存草稿会撤下线上内容，发布或删掉草稿后恢复投放。" : undefined}
+          note={!isCreate && liveVersion ? `存草稿不影响线上的 ${liveVersion}，发布后才替换。` : undefined}
           others={<Button onClick={close}>取消</Button>}
           primary={<>
             {!isCreate && <Button disabledReason={draftCheck.blocked} onBlockedClick={() => setAttempted(true)} onClick={() => onSubmit(form, "存草稿")}>存草稿</Button>}
