@@ -18,6 +18,7 @@ import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, ty
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine } from "../recovery-panel";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
+import { SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -57,11 +58,6 @@ function investigationRecord(record: SlotAttemptRecord & { geo?: J2PendingComman
 /** 改的是哪一项，按原槽位认。 */
 const slotName = (fingerprint: string) => fingerprint.includes("country-lists/blocked") ? "封锁名单" : fingerprint.includes("country-lists/limited") ? "受限名单"
   : fingerprint.includes("endpoints/") ? "功能入口规则" : fingerprint.endsWith("edge-judge") ? "地区识别源" : "应急批量封锁";
-const SETTLED_TEXT: Record<string, string> = {
-  CONFIRMED_NOT_EXECUTED: "核查确认原修改没有执行，记录已解除，可以重新修改。",
-  CONFIRMED_SUCCEEDED: "核查确认原修改已生效，记录已解除；页面显示的是现在的设置。",
-};
-const SETTLED_DONE = "原修改已生效，记录已解除；页面显示的是现在的设置。";
 const NOW_ONLY = "已重读现在的名单和规则；这是现在的值，不能据此判断原修改成没成。";
 
 function createJ2CommandKey(scope: string) {
@@ -280,11 +276,18 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const queryButtons = (record: SlotAttemptRecord, label: string, change: ReactNode) => {
     const outcome = outcomes[record.commandKey];
     const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
-    const canClose = receipt?.originalStatus === "UNKNOWN" && fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit;
+    const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
+      && (receipt?.originalStatus === "UNKNOWN" || receipt?.originalStatus === "SUCCEEDED" && isRetryExpired(record));
     return <>
       <Button size="sm" loading={checking === record.commandKey} disabled={!!checking && checking !== record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={!!checking} onClick={() => setClosing({ record, label, change })}>核查结案</Button>}
     </>;
+  };
+  /** 回执是「已处理」而记录没解除：看不出成没成，靠重试原请求或核查结案确认。 */
+  const processedOf = (record: SlotAttemptRecord, expired: boolean, retry: boolean, legacy?: boolean) => {
+    const outcome = outcomes[record.commandKey];
+    if (!outcome || !("receipt" in outcome) || outcome.receipt?.originalStatus !== "SUCCEEDED") return undefined;
+    return processedStatus({ expired, canRetry: retry, canClose: fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit, legacy });
   };
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const input = JSON.parse(record.geo.body) as J2CommandBody;
@@ -305,13 +308,18 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const expired = isRetryExpired(record);
     const slotLabel = record.geo.context.label;
     return {
-      key: record.commandKey, title: <>{slotLabel} · {change}</>, record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
+      key: record.commandKey, title: <span title={typeof change === "string" ? `${slotLabel} · ${change}` : undefined}>{slotLabel} · {change}</span>,
+      record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record), canQuery: true,
+      status: processedOf(record, expired, canRetry(record)),
       actions: <>
         {queryButtons(record, slotLabel, change)}
         {!expired && canRetry(record) && <Button size="sm" disabled={!!checking} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
       </>,
-      detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
+      detail: <>
+        <p>{slotLabel}：{change}</p>
+        {pendingNotes[record.commandKey] && <p><KeepText text={pendingNotes[record.commandKey]} /></p>}
+      </>,
     };
   });
   recoveryRows.push(...legacy.map((record): FundRecoveryRow => {
@@ -321,7 +329,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return {
       key: record.commandKey, title: `${label} · 改版前的旧记录`, record: investigationRecord(record, adminId), outcome,
       createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
-      status: outcome ? undefined : expired
+      status: outcome ? processedOf(record, expired, false, true) : expired
         ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
         : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原修改的内容，不能重试，先查询原结果。" },
       actions: <>
@@ -336,7 +344,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     ? `list:${record.fingerprint.split("/").at(-1)}` : record.fingerprint.includes("endpoints/")
       ? `endpoint:${decodeURIComponent(record.fingerprint.split("/").at(-1)!)}` : record.fingerprint.endsWith("edge-judge") ? "edge" : "emergency"));
   const recovery = <>
-    {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_DONE}
+    {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
     <FundRecoveryPanel rows={recoveryRows} heading={`${recoveryRows.length} 项修改结果未知`} />
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt}
