@@ -447,7 +447,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         if (invalid) throw new Error(invalid);
         const threshold = decimalText(form.threshold);
         const nex = decimalText(form.nex);
-        await runChange({ target, action: `收益里程碑 · $${milestone.threshold}`, name: `收益里程碑 · ${milestone.key}`,
+        await runChange({ target, action: `收益里程碑 · ${milestone.threshold} USDT`, name: `收益里程碑 · ${milestone.key}`,
           before: `${milestone.threshold} USDT；${milestone.nex} UVT`, after: `${threshold} USDT；${nex} UVT`, success: `${milestone.key} 已更新`,
           reason, snapshot, businessValue: { threshold, nex }, approvalRequired: amplifies(form),
           direct: { path: `/earn-milestones/${encodeURIComponent(milestone.key)}`, body: { thresholdUsd: threshold, rewardNex: nex } },
