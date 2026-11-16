@@ -969,6 +969,7 @@ export interface F5CommissionFilter {
 }
 
 export interface F5CommissionEvent {
+  /** Grouped reads project settlement release_at; the shifted network event deadline is not returned. */
   unlockAt?: number;
   settlementNo?: string;
   sourceRef?: string;
@@ -1097,7 +1098,7 @@ export interface F5CommissionAuditOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number };
+  coverage?: { coverageRatio: number; redlinePct: number; reliable?: boolean; coverageRatioText: string; redlinePctText: string; redlineBreached: boolean };
   sources: string[];
 }
 
@@ -1673,6 +1674,17 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     };
   });
   const pagination = data.pagination;
+  const coverageRatioText = data.coverage?.coverageRatio == null ? null : f4Decimal(data.coverage.coverageRatio);
+  const redlinePctText = data.coverage?.redlinePct == null ? null : f4Decimal(data.coverage.redlinePct);
+  let coverage: F5CommissionAuditOverview["coverage"];
+  if (coverageRatioText !== null && redlinePctText !== null) {
+    const [ratioWhole, ratioFraction = ""] = coverageRatioText.split(".");
+    const [redlineWhole, redlineFraction = ""] = redlinePctText.split(".");
+    const scale = Math.max(ratioFraction.length, redlineFraction.length);
+    coverage = { coverageRatio: Number(coverageRatioText), redlinePct: Number(redlinePctText), reliable: data.coverage?.reliable,
+      coverageRatioText, redlinePctText,
+      redlineBreached: BigInt(ratioWhole + ratioFraction.padEnd(scale, "0")) < BigInt(redlineWhole + redlineFraction.padEnd(scale, "0")) };
+  }
   return {
     pendingCalculations: data.pendingCalculations,
     pendingCalculationCount: toNumber(data.pendingCalculationCount),
@@ -1741,10 +1753,8 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // Missing coverage remains unknown. Only reissue has an execution-time backend B1 check.
-    coverage: finiteDashboardNumber(data.coverage?.coverageRatio) !== null && finiteDashboardNumber(data.coverage?.redlinePct) !== null
-      ? { coverageRatio: Number(data.coverage!.coverageRatio), redlinePct: Number(data.coverage!.redlinePct) }
-      : undefined,
+    // Ungrouped unlocks and reissues require a reliable execution-time snapshot.
+    coverage,
     sources: data?.sources ?? [],
   };
 }
@@ -1818,7 +1828,7 @@ async function f1Request<T>(
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.
-      result = JSON.parse(raw.replace(/("(?:amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+      result = JSON.parse(raw.replace(/("(?:amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;

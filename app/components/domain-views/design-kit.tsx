@@ -3728,6 +3728,9 @@ export type CoverageSnapshot = {
   coverageRatio: number;
   redlinePct: number;
   healthyPct?: number;
+  coverageRatioText?: string;
+  redlinePctText?: string;
+  redlineBreached?: boolean;
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
@@ -3822,10 +3825,10 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   // F4 preserves the backend's raw ratio gate; ambassador budget checks also require reliability.
   const coverageUnknown = coverageReliable === false;
-  const covBlocked = Boolean(effectiveAmplifies && ((coverage && coverage.coverageRatio < coverage.redlinePct) || (coverageUnknown && coverageUnavailableBlocks)));
+  const covBlocked = Boolean(effectiveAmplifies && ((coverage && (coverage.redlineBreached ?? coverage.coverageRatio < coverage.redlinePct)) || (coverageUnknown && coverageUnavailableBlocks)));
   const coverageBlockText = coverageUnknown ? "兑付覆盖率暂时读不到，读到之前不能提交" : "兑付覆盖率低于红线，暂时无法提交";
-  const coverageRatioText = coverageUnknown || !coverage ? "—" : fmtPct(coverage.coverageRatio);
-  const coverageRedlineText = coverageUnknown || !coverage ? "—" : fmtConfigPct(coverage.redlinePct);
+  const coverageRatioText = coverageUnknown || !coverage ? "—" : coverage.coverageRatioText !== undefined ? `${coverage.coverageRatioText}%` : fmtPct(coverage.coverageRatio);
+  const coverageRedlineText = coverageUnknown || !coverage ? "—" : coverage.redlinePctText !== undefined ? `${coverage.redlinePctText}%` : fmtConfigPct(coverage.redlinePct);
   // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
   // 业务后果与谁来批分别常显，放大资金提示用同一套警示样式。
   const rdApproval = surface && !!approvalSpec && !approvalSpec.heading && !inlineApproval;
