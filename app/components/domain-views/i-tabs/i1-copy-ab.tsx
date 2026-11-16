@@ -135,6 +135,13 @@ const textsOf = (row?: { zh?: string; en?: string; vi?: string }): Texts | null 
 const textsOfForm = (form: BusinessFormValue): Texts => ({ zh: form.zh ?? "", vi: form.vi ?? "", en: form.en ?? "" });
 /** 后端给的是累计数的字符串；读不成整数就当没有。 */
 const countOf = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.trim()) : null);
+/** 后端记的「操作人 / 动作」摘要，动作写成中文；认不出的原样显示。 */
+function chainText(chain: string): string {
+  const m = /^(.+?) \/ (content|rollback|archived|deleted|experiment (.+) adopted)$/.exec(chain.trim());
+  if (!m) return chain || "—";
+  const act = m[2] === "content" ? "改内容" : m[2] === "rollback" ? "回滚" : m[2] === "archived" ? "下架" : m[2] === "deleted" ? "删除草稿" : `采纳实验 ${m[3]}`;
+  return `${m[1]} ${act}`;
+}
 
 /** 直接到用户面前的操作：「已处理」也不代表用户已经看到。 */
 const USER_FACING = new Set(["发布内容版本", "回滚", "下架当前发布版", "采纳获胜变体"]);
@@ -1422,7 +1429,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
             options={[{ value: "all", label: "全部文案" }, ...COPY_POOL.map((copy) => ({ value: copy.key, label: `${copy.desc} · ${copy.key}` }))]} />
         </FilterField>
       </FilterBar>
-      <Panel title="内容历史" icon={History} tone="role-3" flush sub={`${filteredVersions.length} 条 · ${ZONE}`} explain="每条文案各个版本的内容、状态和最近一次操作。时间只有月日时分，没有年份。" data-proof="copy-version-list">
+      <Panel title="内容历史" icon={History} tone="role-3" flush sub={`${filteredVersions.length} 条 · ${ZONE}`} explain="每条文案各个版本的内容、状态和最近一次操作。「最后变动」是这条记录最后一次变化的时间，被新版本换下也算，不一定是旁边那次操作的时间。" data-proof="copy-version-list">
         <Table label="内容历史" className="i1-history">
           <thead><tr><Th>文案</Th><Th>版本</Th><Th>中文内容</Th><Th>位置</Th><Th>最近操作</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
@@ -1439,7 +1446,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
                   <Td grow><Cell main={row.zh ? nexGridBrandText(row.zh) : <StatusTag tone="warn">中文缺失</StatusTag>} title={row.zh ? nexGridBrandText(row.zh) : undefined}
                     sub={lack.length ? <span className="i1-warn-text">缺{lack.join("、")}</span> : undefined} /></Td>
                   <Td><Cell main={positionName(row.copyPosition)} sub={moduleLabel(row.surface)} /></Td>
-                  <Td><Cell main={row.chain || "—"} sub={row.ts || "—"} title={row.chain || undefined} /></Td>
+                  <Td><Cell main={chainText(row.chain)} sub={row.ts ? `最后变动 ${row.ts}` : "—"} title={row.chain ? chainText(row.chain) : undefined} /></Td>
                   <Td align="right" data-fit="">{items.length > 0 ? <MoreMenu label={`${row.copyKey} ${row.v} 的操作`} items={items} /> : <span className="i1-weak">—</span>}</Td>
                 </Tr>
               );
@@ -1532,7 +1539,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
               return (
                 <li key={row.v}>
                   <span className="i1-vlist-main"><b data-mono="">{row.v}</b><StatusTag tone={vst.tone}>{vst.text}</StatusTag></span>
-                  <span className="i1-weak">{row.chain || "—"} · {row.ts || "—"}</span>
+                  <span className="i1-weak">{chainText(row.chain)} · 最后变动 {row.ts || "—"}</span>
                   {items.length > 0 && <MoreMenu label={`${row.v} 的操作`} items={items} />}
                 </li>
               );
@@ -1571,7 +1578,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           { label: "状态", value: <StatusTag tone={st.tone}>{st.text}</StatusTag> },
           { label: "文案", value: copy?.desc ?? detailRow.copyKey },
           { label: "位置", value: `${positionName(detailRow.copyPosition)} · ${moduleLabel(detailRow.surface)}` },
-          { label: "最近操作", value: `${detailRow.chain || "—"} · ${detailRow.ts || "—"}（${ZONE}）` },
+          { label: "最近操作", value: chainText(detailRow.chain) },
+          { label: "最后变动", value: detailRow.ts ? `${detailRow.ts}（${ZONE}）` : "—" },
         ]} />
         <Panel plain headingLevel={3} title="三种语言">
           <LangBlocks texts={textsOf(detailRow)!} />
