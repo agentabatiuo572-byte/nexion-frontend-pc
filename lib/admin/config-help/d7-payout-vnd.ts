@@ -43,7 +43,7 @@ export const PAYOUT_VND_HELP: Record<PayoutVndWritableField, PayoutVndFieldHelp>
     what: "当前不起作用；只保存，不触发重新报价",
     when: "只改配置；调大要批准",
     how: "0–10%，最多一位小数",
-    effect: "现在改了不影响报价和到账金额；保存后整组版本更新，用户还没提交的旧报价需要重新报价",
+    effect: "现在改了不影响报价和到账金额，但保存后用户还没提交的报价要重新报价",
   },
   feeRatePct: {
     what: "手续费按提现金额算的比例",

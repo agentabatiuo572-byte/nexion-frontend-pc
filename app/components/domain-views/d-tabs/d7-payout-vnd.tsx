@@ -51,19 +51,19 @@ const READING = "正在读取最新数据，读完再操作";
 const LOCKED = "上一次提交的结果未知，处理完再改";
 const CONFLICT = "越南盾提现参数已被其他人员更新，当前输入已保留。请读取最新后重新核对。";
 /** 抽屉没有改动时，底部问号只写规则，不说哪条路（「写的必须是真的」）。 */
-const RULE = "只要有一项放宽，整组走审批，另一位超管批准前当前参数不变；全部收紧提交后立即生效。只影响之后的报价。";
+const RULE = "有一项放宽，整组要另一位超级管理员批准，批准前参数不变；没有放宽的修改提交后立即生效。只影响之后的报价。";
 const COVERAGE_CHECK = "提交和批准时都会检查兑付覆盖率，低于红线或读不到时不能提交，也不能批准。";
 /** 过期后继续锁住，受控核查后端已交付，但本页本轮未接入结案入口（OP-153）；不引导关标签页绕过。到不了操作记录的账号写这页上能走的路，再交财务负责人（同汇率设置）。 */
 const EXPIRED_DIRECT_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「读回现在的状态」看版本有没有变，核对后交财务负责人处理。";
 const EXPIRED_APPROVAL_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「查询原结果」核对有没有生成审批单，核对后交财务负责人处理。";
 const EXPIRED_NO_QUERY = "已超过 24 小时，不能再重试。这个账号看不到操作记录，也查不了原审批单，请交财务负责人处理。";
 const NO_WRITE = "这个账号现在没有这项修改权限，不能重试，请到操作记录核对";
-const READY_EXPLAIN = "只表示服务端配置齐全，不代表已确认真实到账。和充值收款共用同一商户。提现总开关关闭时，用户也不能提现。";
-const APPROVAL_COPY = "另一位超管批准前，当前配置保持不变。批准后新报价使用新参数，未提交的旧报价需重新报价，已提交订单金额不变。";
+const READY_EXPLAIN = "只表示 HDPay 商户已配好，不代表打款一定到账。和充值收款用同一个商户。提现总开关关着时，用户也不能提现。";
+const APPROVAL_COPY = "另一位超级管理员批准前参数不变；批准后用于新报价，用户没提交的旧报价要重新报价，已提交的订单金额不变。";
 const IMPACT = "只影响之后的报价；用户还没提交的旧报价需要重新报价，已提交的订单金额不变。";
 /** 确认框「批准后生效」标签的提示：谁来批、批准前什么不变（影响在执行摘要，不重复）。 */
-const APPROVAL_NOTE = "另一位超管批准前，当前参数不变；批准后新报价使用新参数。";
-const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等待另一位超管批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+const APPROVAL_NOTE = "另一位超级管理员批准前参数不变；批准后用于新报价。";
+const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 /** 共用文字泛指「这个对象」并让人去「操作记录与审批」；这页写明是哪组参数，当前权限到不了那页的账号写等谁处理。 */
 const PENDING_HERE = "这组参数已有放宽单在等批准，批准或驳回后才能再提交放宽";
 const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处理后再提交。";
@@ -391,7 +391,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       </>,
       facts: <div className="rd-stack">
         <DiffList rows={rows} />
-        {pendingTicket && !amplifies && <Notice tone="warn">放宽单 {pendingTicket.id} 批准时会因版本变化被拒，要重新发起。</Notice>}
+        {pendingTicket && !amplifies && <Notice tone="warn">保存后，在等批准的放宽单 {pendingTicket.id} 批准时会被拒，要重新发起。</Notice>}
       </div>,
       amplifies,
       coverage: amplifies ? coverage : undefined,
@@ -504,7 +504,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       ? "读回失败，暂时读不到。记录继续保留。"
       : latest.version === record.expectedVersion
         ? `读回：现在还是版本 v${latest.version}，和发出时一样，暂时没看到这次修改。可以按原请求重试。`
-        : `读回：现在是版本 v${latest.version}，发出时是 v${record.expectedVersion}。版本变了可能是别人改的，记录继续保留。`);
+        : `读回：现在是版本 v${latest.version}，发出时是 v${record.expectedVersion}。可能是这次修改生效了，也可能是别人改的，记录继续保留。`);
   };
 
   /** 按原操作重试：同命令号、同内容、同理由（OP-94）。只有成功才解除；被明确拒绝后人核实过才能解除。 */
@@ -530,7 +530,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (isDOutcomeUnknownError(cause)) {
         note(record.commandKey, "重试的结果也未知，记录继续保留。稍后再读回现在的状态或重试。");
       } else if (isExplicitRejection(cause)) {
-        note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回现在的状态」核实。本地解除不证明原操作未执行，也不算核查结案。`);
+        note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回现在的状态」核实。解除原操作记录不代表原操作没执行，也不算核查结案。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
@@ -596,7 +596,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       void loadQueue();
     } catch (cause) {
       note(key, isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
-        ? `暂未查到原审批单，不能据此认定没有提交。${canReachAudit ? "请到「操作记录与审批」核对，不要重复提交。" : "核对后交财务负责人处理，不要重复提交。"}`
+        ? `暂时没查到原审批单，不代表没有提交。${canReachAudit ? "请到「操作记录与审批」核对，不要重复提交。" : "核对后交财务负责人处理，不要重复提交。"}`
         : `查询没有成功：${isA2OutcomeUncertainError(cause) ? uncertainDetail(cause) || "结果仍未知" : reasonOf(displayAdminError(cause))}。记录继续保留。`);
     } finally {
       setRecovering("");
@@ -632,13 +632,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
       const kept = pendingConfigApproval("D7", session.adminId);
       if (kept && isExplicitRejection(cause)) {
-        note(key, `重试被拒绝：${message}。先核对原审批单；查不到不代表没有生成。本地解除不算核查结案。`);
+        note(key, `重试被拒绝：${message}。先核对原审批单，查不到不代表没有生成。解除原操作记录不算核查结案。`);
         setRetryRejected((current) => [...current, key]);
       } else if (kept) {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
         note(key, `重试没有完成：${message}。记录继续保留，稍后再查询原结果或重试。`);
       } else {
-        setApprovalRejected(`${message}。原本地记录已清除，重新提交仍须通过服务端校验。`);
+        setApprovalRejected(`${message}。这条记录已清除，要改请重新提交。`);
       }
     } finally {
       setRecovering("");
@@ -679,7 +679,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }
     return { key: approval.commandKey, title: "放宽提交", record: approval, outcome: investigationResults[approval.commandKey], createdAt: approval.createdAt, expired, canRetry: showRetry && canManage,
-      canQuery: canQueryOriginal, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
+      canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
       status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
       actions: <>
         {canQueryOriginal && <FundCheckButtons record={approval} lookupWithoutOrigin outcome={investigationResults[approval.commandKey]} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
@@ -705,7 +705,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     <section className="rd-guide-section">
       <h3>这个账号能做什么</h3>
       {canManage
-        ? <p>能修改参数。只要有一项放宽，整组走审批，另一位超管批准前，当前配置保持不变；全部收紧提交后立即生效。</p>
+        ? <p>能修改参数。有一项放宽，整组要另一位超级管理员批准，批准前参数不变；没有放宽的修改提交后立即生效。</p>
         : <p>这个账号只能查看。</p>}
       {canForce && <p>价格倒挂时能强制保存：先输入「{FORCE_PHRASE}」，再写理由。强制保存倒挂价的单，批准人还要有强制保存权限。</p>}
     </section>
@@ -794,7 +794,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     {draft.submitBlock && draft.errorCount === 0 && <><br />{draft.submitBlock}</>}
   </>);
   const decisionExplain = draft && (draft.changed.length === 0 ? RULE
-    : draft.amplifies ? `只要有一项放宽，整组走审批。${APPROVAL_COPY}` : `全部收紧，提交后立即生效。${IMPACT}`);
+    : draft.amplifies ? `只要有一项放宽，整组走审批。${APPROVAL_COPY}` : `没有放宽项，提交后立即生效。${IMPACT}`);
 
   return (
     <>
@@ -812,7 +812,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
         items={queue.rows.map((ticket) => ({ key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="progress">待审批</StatusTag>, line: "等另一位超级管理员批准，批准前当前参数不变。" }))} />
       {showSentTicket && !canReadQueue && (
-        <Notice tone="progress">放宽单 {sentTicket.id} 已提交，等待另一位超管批准，批准前当前参数不变。这个账号看不到后续进度，结果请问超级管理员。</Notice>
+        <Notice tone="progress">放宽单 {sentTicket.id} 已提交，等另一位超级管理员批准，批准前参数不变。这个账号看不到后续进度，结果请问超级管理员。</Notice>
       )}
       {queue.failed && <Notice tone="warn" action={<InlineRetry onRetry={() => void loadQueue()} retrying={queue.loading} />}>放宽单状态暂时读不到</Notice>}
 
@@ -890,7 +890,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
               {editing.others.length > 0
                 ? <>你改过的项保留你的值，其余已换成最新。
                   <Facts>{editing.others.map((key) => <Fact key={key} k={PAYOUT_VND_FIELDS[key].label}><Change settled from={valueText(key, editing.othersFrom![key])} to={valueText(key, draft.base[key])} /></Fact>)}</Facts></>
-                : "别人改的项和你看到的值相同，你的改动都保留。"}
+                : "最新的值和你打开时一样，你的改动都保留。"}
             </Notice>
           )}
           <section className="rd-config-group" aria-label="价格预览">
