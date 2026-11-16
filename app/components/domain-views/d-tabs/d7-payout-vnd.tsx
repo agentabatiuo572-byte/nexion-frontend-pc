@@ -718,7 +718,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       summary={<AutoGloss>设置银行卡提现的报价、手续费和单笔限额。</AutoGloss>}
       guideExtra={guideExtra}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）· ` : ""}打开时读取</span>
+        <span>{readAt && `${businessClock(readAt)} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
       </span>}
       readOnly={canManage ? undefined : "当前账号只能查看这页"}
