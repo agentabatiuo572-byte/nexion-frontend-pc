@@ -8,6 +8,7 @@ import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
 import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendarVersion, type BusinessZoneOption } from "@/lib/admin/business-calendar-client";
 import { parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export type A3Original =
   | { kind: "flag"; row: A3FeatureFlag; value: string }
@@ -25,13 +26,16 @@ export type A3Command = PendingMutationRecord & {
   reason: string;
   name: string;
   change: string;
+  /** Present only when this content request actually sends its explicit command key. */
+  contentCommandActor?: number;
 };
 const PATHS: Record<A3Original["kind"], string> = {
   flag: "/api/admin/platform/config", param: "/api/admin/platform/config",
   schedule: "/api/admin/platform/business-calendar", cancel: "/api/admin/platform/business-calendar/cancel",
   experience: "/api/admin/platform/config/experience", docs: "/api/admin/developer/docs", how: "/api/admin/content/how-it-works",
 };
-export const a3Deduplicates = (record: Pick<A3Command, "original">) => record.original.kind !== "docs" && record.original.kind !== "how";
+export const a3Deduplicates = (record: Pick<A3Command, "original" | "contentCommandActor">) => record.original.kind !== "docs" && record.original.kind !== "how"
+  || record.contentCommandActor !== undefined;
 export type A3ContentComparison = {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
   version: { submitted: string; current: string; matches: boolean };
@@ -88,16 +92,20 @@ const commands = createPendingMutationStore<A3Command>({
   isValidRecord: record => {
     try {
       return validOriginal(record.original) && record.path === PATHS[record.original.kind]
+        && (record.contentCommandActor === undefined || ["docs", "how"].includes(record.original.kind)
+          && Number.isSafeInteger(record.contentCommandActor) && record.contentCommandActor > 0)
         && record.method === (record.original.kind === "cancel" ? "POST" : "PUT")
         && typeof record.body === "string" && object(JSON.parse(record.body)) && typeof record.reason === "string"
-        && typeof record.name === "string" && typeof record.change === "string" && record.fingerprint === a3Slot(record.original);
+        && typeof record.name === "string" && typeof record.change === "string"
+        && record.fingerprint === (record.contentCommandActor === undefined ? a3Slot(record.original) : `${record.contentCommandActor}:${a3Slot(record.original)}`);
     } catch { return false; }
   },
 });
 
 export function useA3Commands() {
+  const actorId = useAdminAuth(state => state.session?.adminId);
   const [pending, setPending] = useState<A3Command[]>([]);
-  const sync = useCallback(() => setPending(commands.list()), []);
+  const sync = useCallback(() => setPending(commands.list().filter(record => record.contentCommandActor === undefined || record.contentCommandActor === actorId)), [actorId]);
   useEffect(sync, [sync]);
   // Expiration affects availability even when the operator leaves the page open.
   useEffect(() => {
@@ -106,14 +114,21 @@ export function useA3Commands() {
     const timer = window.setTimeout(sync, Math.max(1, next - Date.now()));
     return () => window.clearTimeout(timer);
   }, [pending, sync]);
-  const find = (slot: string) => commands.list().find(record => record.fingerprint === slot);
+  const find = (slot: string) => commands.list().find(record => (record.fingerprint === slot
+    || record.contentCommandActor === actorId && record.fingerprint === `${actorId}:${slot}`)
+    && (record.contentCommandActor === undefined || record.contentCommandActor === actorId));
   const capture = (input: Omit<A3Command, keyof PendingMutationRecord>) => {
     const slot = a3Slot(input.original);
     if (find(slot)) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    const contentSave = input.original.kind === "docs" || input.original.kind === "how";
+    const auth = useAdminAuth.getState();
+    if (contentSave && (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !auth.session
+      || auth.session.passwordChangeRequired || !auth.session.authorities.includes("platform_a3_write"))) throw new Error("ADMIN_PERMISSION_DENIED");
     const key = `a3-${input.original.kind}-${crypto.randomUUID()}`;
-    commands.remember(slot, key, input);
-    if (!commands.isDurablyStored(slot, key)) {
-      commands.forget(slot, key); sync();
+    const fingerprint = contentSave ? `${auth.session!.adminId}:${slot}` : slot;
+    commands.remember(fingerprint, key, { ...input, ...(contentSave ? { contentCommandActor: auth.session!.adminId } : {}) });
+    if (!commands.isDurablyStored(fingerprint, key)) {
+      commands.forget(fingerprint, key); sync();
       throw new Error("A3_ORIGINAL_STORAGE_FAILED");
     }
     sync();
@@ -131,13 +146,14 @@ export function useA3Commands() {
       contentMatches: contentJSON("locales" in current ? current.locales : current.contents)
         === contentJSON(original.kind === "docs" ? original.document.locales : original.document.contents),
     };
-    const matched = comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
+    // A current document cannot establish the outcome of an explicitly keyed command.
+    const matched = !a3Deduplicates(record) && comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
     if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { current, comparison, matched };
   };
   // The visual worker must obtain confirmation before calling this. Read failure retains the record.
   const releaseContent = async (record: A3Command, confirmed: boolean) => {
-    if (!confirmed) throw new Error("A3_ORIGINAL_QUERY_ONLY");
+    if (!confirmed || a3Deduplicates(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     const result = await queryContent(record);
     if (!result.matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { ...result, released: !result.matched };
@@ -145,6 +161,11 @@ export function useA3Commands() {
   const send = async (record: A3Command, retry = false) => {
     if (retry && (!a3Deduplicates(record) || isRetryExpired(record))) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A3_ORIGINAL_STORAGE_FAILED");
+    if (record.contentCommandActor !== undefined) {
+      const auth = useAdminAuth.getState();
+      if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || auth.session?.passwordChangeRequired
+        || auth.session?.adminId !== record.contentCommandActor || !auth.session.authorities.includes("platform_a3_write")) throw new Error("ADMIN_PERMISSION_DENIED");
+    }
     try {
       const response = await guardedFetch(record.path, {
         method: record.method, cache: "no-store",
@@ -153,6 +174,7 @@ export function useA3Commands() {
       });
       const result: unknown = await response.json().catch(() => null);
       const body = object(result) ? result : null;
+      if (record.contentCommandActor !== undefined && useAdminAuth.getState().session?.adminId !== record.contentCommandActor) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       if (!response.ok || body?.code !== 0) {
         const reasonCode = typeof body?.message === "string" ? body.message : undefined;

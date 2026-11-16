@@ -479,6 +479,10 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 
 #### [A3] 系统配置
 
+2026-11-16 内容原命令（后端 `6843af70`，A3-BE-02）：W06/W07在原控制器进入持久幂等回调，scope分别A3_DEVELOPER_DOCS_UPDATE:{actor}、A3_HOW_CONTENT_UPDATE:{actor}，hash绑定actor及反序列化请求体；显式Idempotency-Key优先，旧调用未发时auto:hash。PC新内容记录保存contentCommandActor并实际发送原key，按本人/内容种类保留与互锁，换账号只隔离新记录；24小时内现有「按原请求重试」发送原path/method/body/key，成功和明确拒绝才清。旧PC记录没有这个标记时不补key、不升级成可重发。原revision/内容/理由校验只在新执行，成功回执先回放；回放之后独立读取当前内容，不把旧响应写成当前编辑数据。
+
+新显式命令读取当前内容只能核对，当前revision/正文相同或不同都不能证明原号结果，不提供据此解除；超过24小时只读保留，A3仍无原号只读回执/受控核查，A3-BE-03继续开放。新PC须在含6843af70的后端之后上线，旧后端忽略key不能当成已支持去重。现有“内容保存不能重试”等说明只适用旧未发键记录，视觉需收窄；本次不改句子或组成。
+
 2026-11-16 清单修正：开关、参数提交在持久化原请求之前重新核对当前会话的超级管理员角色；权限不符且未发出的操作不登记为结果未知。现行入口为 `a3-page.tsx`、`a3-calendar.tsx`、`a3-experience.tsx`、`a3-content.tsx`，共用原请求发送为 `a3-mutations.ts`；三个无运行时引用的旧组件及其旧登记已移除。
 
 **2026-11-16 事件积压读取（后端 `ae23923f`／文档 `82a76781`）**：同一健康行的 `backlogCount`、`oldestSeconds`、`auditLinkUnresolvedCount` 三个非负整数全部存在时，前端写「没有积压」或「{N} 条在排队 · 最久 {时长}」（N 带千分位）；未关联数大于 0 时追加「{K} 条「查看用户资料」事件对不上操作记录」（和问号里的叫法一致；找技术值班的提示在页首结论里）。不足 60 秒写秒，不足 1 小时取整分钟，否则写小时和余分钟（余分钟为 0 只写小时）；不换算成天。任一数字缺失时保留后端原句，不补零、不反解析；状态、颜色及读取失败仍按服务端 `tone`／`stale`。A5 同一键共用此格式规则；现行 A5 投影只带原句，没有这三个数字，因此保持原句及原有实时/过期边界，不另读 A3 绕过权限。
@@ -510,10 +514,10 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 | W03 | `PUT /api/admin/platform/business-calendar` | `{countryCode,zoneId,effectiveDate,reason}`；命令号去重 | 19 个允许时区，日期至少后端最早日，同一时刻仅一个未来 GLOBAL；有效超级管理员；理由 8–200 |
 | W04 | `POST /api/admin/platform/business-calendar/cancel` | `{versionId,reason}`；命令号去重 | 仅撤未生效 GLOBAL 安排；有效超级管理员；理由 8–200 |
 | W05 | `PUT /api/admin/platform/config/experience` | `{expectedVersion,baseUrl,channels,appDownload,reason,operator,interfaceLanguages?}`；CAS 与命令号去重 | `platform_a3_write`；理由 8–200；版本加一；不写只读 H3 开关 |
-| W06 | `PUT /api/admin/developer/docs` | 整份 `{version,status,locales,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；**无命令号去重** | `platform_a3_write` 加 developer 域写权/超级管理员豁免；理由 8–500；revision CAS |
-| W07 | `PUT /api/admin/content/how-it-works` | 整份 `{version,status,contents,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；**无命令号去重** | `platform_a3_write` 加 content 域写权；理由 8–500；revision CAS；SANDBOX 缺 runId 明确拒绝 |
+| W06 | `PUT /api/admin/developer/docs` | 整份 `{version,status,locales,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；新记录显式原key、按actor持久去重 | `platform_a3_write` 加 developer 域写权/超级管理员豁免；理由 8–500；revision CAS |
+| W07 | `PUT /api/admin/content/how-it-works` | 整份 `{version,status,contents,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；新记录显式原key、按actor持久去重 | `platform_a3_write` 加 content 域写权；理由 8–500；revision CAS；SANDBOX 缺 runId 明确拒绝 |
 
-前五个去重 scope 分别为 `A3_FEATURE_FLAG:<key>`、`A3_PLATFORM_PARAM:<key>`、`R1_BUSINESS_CALENDAR`、`R1_BUSINESS_CALENDAR_CANCEL`、`A3_PLATFORM_EXPERIENCE`，24 小时从首次提交计算，不因重试续期。W06/W07 的 revision 防覆盖不等于按命令防重。
+前五个去重 scope 分别为 `A3_FEATURE_FLAG:<key>`、`A3_PLATFORM_PARAM:<key>`、`R1_BUSINESS_CALENDAR`、`R1_BUSINESS_CALENDAR_CANCEL`、`A3_PLATFORM_EXPERIENCE`；W06/W07新增两个actor scope见本节最新合同。24小时从首次提交计算，不因重试续期；revision防覆盖与命令去重分别保留。
 
 **③ 原请求与结果未知（R1）**
 
@@ -521,8 +525,8 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 
 - 首次失败按 `isDeterministicRejection`：4xx 或 2xx 非零业务码为本次明确拒绝；幂等未收敛码、5xx、网络失败、读不懂的包继续保留。第一次明确拒绝丢本次号，确认框保留输入。
 - W01–W05 恢复只能发送原方法、原路径、原 body 字符串和原 `Idempotency-Key`。重试被拒仅 `isExplicitRejection` 认定的明确拒绝才解除；401/403/408/425/429 及 IDEMPOTENCY_* 均保留。W03 的 `EFFECTIVE_DATE_TOO_EARLY` 在幂等查询前检查，时间前进后的拒绝也保留原记录。
-- 超过 24 小时保留证据且禁止发送写请求，只能查询。W06/W07任何时候都不重发：读取修订号恰为原请求+1，且正文版本、目标状态、完整locales/contents一致时按已保存收场并清记录；单纯当前值相同不结案。对象键顺序不影响比较，数组顺序仍保留。
-- 当前后端没有A3原命令回执或受控核查origin；W06/W07读回不一致时可以在运营核对并确认后解除：解除函数再次读取，失败不解除，一致按已保存收场，不一致才清记录，返回修订号、正文版本、状态和内容是否一致。页面：「查询原结果」读回不一致时，页头结果未知提示条写一句运营的话（内容不同：「现在的内容和你提交的不一样，可能没保存上，也可能刚被别人改过。核对后解除，再重新保存。」；内容相同：「内容和你提交的一样，但保存记录对不上，可能刚被别人改过。核对后可以解除。」），该行和原保存框给「解除原操作记录…」；确认框列原操作、提交时间、版本、保存为、内容是否相同，修改序号（提交时、应为、现在）收进折叠的「技术信息」，确认后再读一次：读取失败不解除并提示原记录还在，一致按已保存收场，不一致才清记录并把原来填的内容放回编辑器、基于现在的修订号保存。两类内容的结果未知和「已过期」标签都写「不能重发，读回一致按已保存收场，对不上可以核对后解除」，不再写「记录继续保留」。其它过期直写继续保留，不能借A2核查伪造结案。
+- 超过24小时保留证据且禁止发送写请求，只能查询。W06/W07新显式命令在期限内可按原号重试，当前内容无论是否相同都不能结案。旧未发键记录保持原来的只读比较：修订号恰加一、正文版本/目标状态/完整locales或contents一致才按既定旧合同收场，不升级原请求身份。
+- 当前后端没有A3原号只读回执或受控核查origin；以下仅适用于升级前未发key的W06/W07旧记录，新显式命令不得按当前值解除。旧记录读回不一致时可以在运营核对并确认后解除：解除函数再次读取，失败不解除，一致按已保存收场，不一致才清记录，返回修订号、正文版本、状态和内容是否一致。页面：「查询原结果」读回不一致时，页头结果未知提示条写一句运营的话（内容不同：「现在的内容和你提交的不一样，可能没保存上，也可能刚被别人改过。核对后解除，再重新保存。」；内容相同：「内容和你提交的一样，但保存记录对不上，可能刚被别人改过。核对后可以解除。」），该行和原保存框给「解除原操作记录…」；确认框列原操作、提交时间、版本、保存为、内容是否相同，修改序号（提交时、应为、现在）收进折叠的「技术信息」，确认后再读一次：读取失败不解除并提示原记录还在，一致按已保存收场，不一致才清记录并把原来填的内容放回编辑器、基于现在的修订号保存。两类内容的结果未知和「已过期」标签都写「不能重发，读回一致按已保存收场，对不上可以核对后解除」，不再写「记录继续保留」。其它过期直写继续保留，不能借A2核查伪造结案。
 - 得到写入成功或恢复明确拒绝后结束恢复模式，关闭旧确认框，再独立读取当前配置；重读成功前新修改不可用。幂等回放只证明当时的写入，不能当现在数据。PUT 成功后 GET 失败属于读回失败，不报提交失败，也不重发新命令。
 
 **④ 参数与业务日历口径**

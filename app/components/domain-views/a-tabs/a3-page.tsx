@@ -313,8 +313,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             toast(record.original.mode === "PUBLISHED" ? record.original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
             return;
           }
-          setChecks(value => ({ ...value, [record.commandKey]: result.comparison }));
-          toast("已读到现在的内容。", "warn");
+          if (!a3Deduplicates(record)) setChecks(value => ({ ...value, [record.commandKey]: result.comparison }));
+          toast(a3Deduplicates(record) ? displayAdminError(new Error("A3_ORIGINAL_CURRENT_ONLY")) : "已读到现在的内容。", "warn");
           return;
         }
       }
@@ -352,12 +352,28 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     } finally { setReleasing(null); }
   };
   const openRelease = useCallback((record: A3Command) => setReleasing({ record, busy: false }), []);
-  const recoverOriginal = (record: A3Command) => {
+  const recoverOriginal = async (record: A3Command) => {
     if (record.original.kind === "flag") flagChg(record.original.row, record);
     else if (record.original.kind === "param") paramChg(record.original.row, record);
+    else if ((record.original.kind === "docs" || record.original.kind === "how") && a3Deduplicates(record)) {
+      const original = record.original;
+      setMutating(record.commandKey);
+      try {
+        await commands.send(record, true);
+        setRecovery(null); dropCheck(record.commandKey);
+        setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
+        toast(original.mode === "PUBLISHED" ? original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
+      } catch (error) {
+        if (!commands.find(record.fingerprint)) {
+          setRecovery(null); dropCheck(record.commandKey);
+          setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
+        }
+        toast(displayAdminError(error), "error");
+      } finally { setMutating(null); }
+    }
     else setRecovery(record);
   };
-  // 说明内容本来就不能重发，过没过 24 小时都一样：标签只说怎么收场，不说「记录继续保留」。
+  // Legacy content requests sent no key; keep their original query/reconciliation contract.
   const contentTag = (record: A3Command) => isRetryExpired(record)
     ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时。这类保存不能重试：查询结果和原提交一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain="这类保存不能重试。点「查询原结果」：和原提交一致就算已保存，对不上时可以核对后解除。">结果未知</StatusTag>;
@@ -368,8 +384,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除原操作记录…</Button>}
-      {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={(record.original.kind === "experience" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
-        onClick={() => recoverOriginal(record)}>按原请求重试</Button>}
+      {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={mutating ? "正在提交" : (record.original.kind === "experience" || record.original.kind === "docs" || record.original.kind === "how" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
+        onClick={() => void recoverOriginal(record)}>按原请求重试</Button>}
     </>,
   }));
 
