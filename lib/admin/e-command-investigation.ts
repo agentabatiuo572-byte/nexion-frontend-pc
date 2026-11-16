@@ -40,7 +40,6 @@ export function eCommandResult(receipt: ECommandInvestigation | null): "SUCCEEDE
     || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
     // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
     || receipt.scope === "I4_TRUST_DOCUMENT"
-    || receipt.scope === "A4_EVENT_RETENTION_RUN"
     || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
   return successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
 }
