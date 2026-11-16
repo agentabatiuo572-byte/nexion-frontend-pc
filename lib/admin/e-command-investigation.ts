@@ -132,7 +132,7 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/content\/trust-disclosure\/trust-sections\/[^/]+\/(?:publish|rollback|archive)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `I4_TRUST_SECTION_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
     : /^\/api\/admin\/content\/trust-documents\/(?:whitepaper|incorporation|msb|ein)(?:\/restore-default)?$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "I4_TRUST_DOCUMENT"
     : locator.originalPath === "/api/admin/content/i18n-learning/rescan" ? row.scope === "I6_I18N_RESCAN"
-    : /^\/api\/admin\/growth\/quest-events\/wheel-tiers\/[^/]+\/retire$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === normalizeScope(`GROWTH:H4:WHEEL_TIER_RETIRE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`)
+    : /^\/api\/admin\/growth\/quest-events\/wheel-tiers\/[^/]+\/retire$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === normalizeScope(`GROWTH:H4:WHEEL_TIER_RETIRE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()}`)
     : locator.originalPath === "/api/admin/growth/public-stats" ? locator.originalMethod === "PATCH" && row.scope === "GROWTH:H9:PUBLIC_STATS_UPDATE:PUBLIC_STATS"
     : locator.originalPath === "/api/admin/growth/device-rank-config" ? locator.originalMethod === "PATCH" && /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(String(row.scope))
     : courseParts ? !!courseScope && row.scope === normalizeScope(courseScope)
