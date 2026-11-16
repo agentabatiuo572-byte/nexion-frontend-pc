@@ -47,7 +47,7 @@ export type J4CommandContext =
   | { kind: "cancel" | "resume" | "rollback"; execution: SopExecution };
 type J4ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 export type J4PendingCommand = SlotAttemptRecord & {
-  sop: { path: string; method: string; body: string; context: J4CommandContext };
+  sop: { path: string; method: string; body: string; context: J4CommandContext; commandOrigin?: FundCommandOrigin };
 };
 export type J4PendingProposal = SlotAttemptRecord & {
   sopProposal: { body: string; context: Extract<J4CommandContext, { kind: "execute" }>; accepted: boolean };
@@ -105,6 +105,9 @@ const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
             && input.target?.domain === "J" && input.target.type === "playbook" && input.target.id === context.playbook.code;
         }
         const command = record.sop!;
+        const origin = command.commandOrigin;
+        if (origin !== undefined && (origin.originalMethod !== command.method || origin.originalPath !== `/api/admin/emergency${command.path}`
+          || origin.readAuthority !== "emergency_j4_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
         if (context.kind === "update" && input.version !== context.playbook.version) return false;
         if ("execution" in context && !context.execution.executionId) return false;
         const code = "playbook" in context ? context.playbook.code : "execution" in context ? context.execution.code : "";
@@ -180,7 +183,8 @@ export const listJ2CountryCommands = () => emergencyCommands.list().filter((reco
 export const getJ2PendingCommand = (slot: string) => listJ2PendingCommands().find((record) => record.fingerprint === slot);
 export const getJ3PendingCommand = () => emergencyCommands.list().find((record): record is J3PendingCommand => !!record.tamper);
 export const getJ3LegacyCommand = () => emergencyCommands.list().find((record) => record.fingerprint === J3_CONFIG_SLOT && !record.tamper);
-export const listJ4PendingCommands = () => emergencyCommands.list().filter((record): record is J4PendingCommand => !!record.sop);
+export const listJ4PendingCommands = () => emergencyCommands.list().filter((record): record is J4PendingCommand => !!record.sop
+  && (!record.sop.commandOrigin || record.sop.commandOrigin.originalAdminId === String(useAdminAuth.getState().session?.adminId)));
 export const listJ4PendingProposals = () => emergencyCommands.list().filter((record): record is J4PendingProposal => !!record.sopProposal);
 export const listJ4LegacyCommands = () => emergencyCommands.list().filter((record) => isJ4WriteSlot(record.fingerprint) && !record.sop);
 /** Local release after confirmation: expired legacy records cannot be replayed. */
@@ -331,6 +335,25 @@ export async function queryJ2Command(record: SlotAttemptRecord, evidence?: FundC
   return receipt;
 }
 
+/** Lists and current settings cannot settle a playbook command, even after its retry window. */
+export async function queryJ4Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  let receipt;
+  if (saved.sop?.commandOrigin) {
+    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.sop.commandOrigin }, evidence);
+  } else {
+    const actorId = useAdminAuth.getState().session?.adminId;
+    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
+    const [method, path] = saved.fingerprint.split(" ");
+    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
+      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j4_read") : await discoverECommand(locator);
+  }
+  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
+
 function emergencyInputFingerprint(body: BodyInit | null | undefined) {
   if (typeof body !== "string") return body == null ? "" : String(body);
   try {
@@ -426,7 +449,8 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       const commandKey = providedCommandKey || idempotencyKey();
       if (!saved) {
         if (!sopContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, sop: { path, method, body: init.body, context: sopContext } });
+        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, sop: { path, method, body: init.body, context: sopContext,
+          commandOrigin: fundCommandOrigin(method as "PUT" | "POST", `/api/admin/emergency${path}`, "emergency_j4_read") } });
       }
       if (!emergencyCommands.isDurablyStored(writeSlot, commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, commandKey);
