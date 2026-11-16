@@ -28,19 +28,27 @@ function outcomeUncertainDetail(error: unknown): { commandKey: string; isA2: boo
 
 export function operationConfirmErrorMessage(error: unknown): string {
   const uncertain = outcomeUncertainDetail(error);
-  if (uncertain?.isA2) {
-    return "结果未知，可能已经提交成功。不要关框、不要改内容，按原请求重试，"
-      + `或到「操作记录与审批」核对。命令号：${uncertain.commandKey}`;
-  }
+  const text = operationConfirmPlainMessage(error);
+  // 页面自己的 confirmCopy 原样给；其余结果未知的句子末尾带上命令号，共用确认框会把它收进「技术信息」。
+  return uncertain && (uncertain.isA2 || text !== ownConfirmCopy(error)) ? `${text}命令号：${uncertain.commandKey}` : text;
+}
+
+/** 有自己恢复入口的页面可以在错误上带一句 confirmCopy（只改这页的说法）。 */
+function ownConfirmCopy(error: unknown): string | undefined {
+  const own = (error as Error & { confirmCopy?: unknown }).confirmCopy;
+  return typeof own === "string" && own ? own : undefined;
+}
+
+/** 不带「命令号：…」的同一句话：给轻提示和页面提示用，它们没有「技术信息」可收编号（全站-标识外露）。 */
+export function operationConfirmPlainMessage(error: unknown): string {
+  const uncertain = outcomeUncertainDetail(error);
+  if (uncertain?.isA2) return "结果未知，可能已经提交成功。不要关框、不要改内容，按原请求重试，或到「操作记录与审批」核对。";
   if (uncertain) {
-    // 有自己恢复入口的页面可以在错误上带一句 confirmCopy（只改这页的说法）；没带的照旧指向操作记录与审批。
-    const own = (error as Error & { confirmCopy?: unknown }).confirmCopy;
-    if (typeof own === "string" && own) return own;
+    // 没带 confirmCopy 的照旧指向操作记录与审批。
     // 刻意不承诺「系统会复用同一命令号自动去重」:携带命令号的错误族里,只有走持久 store 的面
     // (F1 直写 / H8 / K1 / K6 …)真会复用,A3 等仍是每次现铸 —— 对它们做这个承诺就是骗运营去重试。
     // 「保留输入原样重试」对所有域都成立;是否去重交由运营核对审计后决定。
-    return "结果未知，可能已经生效。先到「操作记录与审批」核对，再决定要不要重试；"
-      + `重试时不要改内容。命令号：${uncertain.commandKey}`;
+    return ownConfirmCopy(error) ?? "结果未知，可能已经生效。先到「操作记录与审批」核对，再决定要不要重试；重试时不要改内容。";
   }
   if (error instanceof Error) {
     // 弹窗 alertbar 也是展示边界:非空 message 必须过咽喉,裸机器码不得原样上屏。

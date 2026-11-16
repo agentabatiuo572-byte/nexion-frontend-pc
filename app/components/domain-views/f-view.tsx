@@ -72,7 +72,7 @@ import { F2Page } from "./f-tabs/f2-page";
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
-import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { operationConfirmPlainMessage } from "@/lib/admin/operation-confirm-error";
 import { directReferralAmplifies, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import "./f-tabs/f2-design.css";
 
@@ -100,11 +100,10 @@ function fProposalCommandKey(modalCommandKey: string | undefined, sourceDomain: 
 }
 
 function errorMessage(error: unknown) {
-  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)必须
-  // 附命令号:它们意味着请求可能已被后端执行,运营要拿这个号去审计记录核对。文案本体仍走
-  // displayAdminError 咽喉(错误文案专项的单一出口),这里只补咽喉拿不到的命令号。
+  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)用结果未知的说法；
+  // 页面提示没有「技术信息」，命令号不进句子（全站-标识外露），只留在错误对象上。
   if (error instanceof Error && error.name.endsWith("OutcomeUncertainError")) {
-    return operationConfirmErrorMessage(error);
+    return operationConfirmPlainMessage(error);
   }
   return displayAdminError(error);
 }

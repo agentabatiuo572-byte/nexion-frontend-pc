@@ -242,7 +242,7 @@ export async function executeG3MarketChange(
     ensureOwner(false);
     throw new Error("已读到现在的配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。");
   }
-  if (g3MarketCommandExpired(command)) throw new A2OutcomeUncertainError("原命令已过期或本机时间异常，只能继续核对，不能重试或另建编号。", key);
+  if (g3MarketCommandExpired(command)) throw new A2OutcomeUncertainError("原请求已过期或本机时间不对，只能继续核对，不能重试，也不能重新发起。", key);
   if (!store.isDurablyStored(command.fingerprint, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   try {
     ensureOwner(true);

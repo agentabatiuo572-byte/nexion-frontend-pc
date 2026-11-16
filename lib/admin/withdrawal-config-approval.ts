@@ -427,7 +427,7 @@ export async function submitConfigApproval<T>(
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原命令仍待确认，请稍后查询。", key);
+      throw new A2OutcomeUncertainError("原请求还没有结果，请稍后查询。", key);
     }
     // 查无原单后的恢复，只能由带原因码的明确拒绝解除；权限、限流等仍保留原记录。
     // 首次新命令沿用原来的拒绝清理规则。

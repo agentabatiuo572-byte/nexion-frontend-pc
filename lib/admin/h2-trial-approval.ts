@@ -54,7 +54,7 @@ export async function submitH2TrialApproval(
     if (ticket && (!ticket.mine || ticket.obj !== previous.obj
         || ticket.action !== `${H2_TRIAL_ACTIONS[previous.op]} · ${previous.sid}`
         || ticket.operationCode !== previous.op || ticket.retiredOperation !== true)) {
-      throw new Error("审批回执与原操作不符，原命令已保留，请到操作记录核对。");
+      throw new Error("查到的审批单和原操作对不上，原记录继续保留，请到操作记录核对。");
     }
     return ticket;
   }
@@ -80,7 +80,7 @@ export async function submitH2TrialApproval(
     }
     if (!ticket && mode === "lookup") return null;
     if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原命令已过期，暂未查到审批单。请继续核对原操作。", key);
+      throw new A2OutcomeUncertainError("原请求已过期，还没查到审批单。请继续核对原操作。", key);
     }
   }
 

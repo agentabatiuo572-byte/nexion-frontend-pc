@@ -10,9 +10,8 @@ import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { listF1Proposals, f1ProposalAuthority } from "@/lib/admin/f1-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { operationConfirmPlainMessage } from "@/lib/admin/operation-confirm-error";
 import { formatF1ExactAmount } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { F1RewardPayout } from "@/lib/admin/f1-client";
@@ -190,8 +189,9 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
           onClose();
         } catch (error) {
           // 和 F 域外壳的写法一致：结果未知不算失败，原申请可能已经建了，冠以失败会让人换个办法重做。
-          const message = error instanceof Error && error.name.endsWith("OutcomeUncertainError") ? operationConfirmErrorMessage(error) : displayAdminError(error);
-          ctx.toast(isA2OutcomeUncertainError(error) ? message : "提交失败 · " + message);
+          const uncertain = error instanceof Error && error.name.endsWith("OutcomeUncertainError");
+          const message = uncertain ? operationConfirmPlainMessage(error) : displayAdminError(error);
+          ctx.toast(uncertain ? message : "提交失败 · " + message);
           // 确认框自己管重试和错误样子，要把错误交回去。
           throw error;
         }

@@ -1473,7 +1473,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       action: `核对原操作 · ${subject}`,
       detail: expired
         ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</>
-        : <>先按原命令查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
+        : <>先查原审批单；查不到才按原请求重发，不会重复执行。理由沿用原操作。</>,
       confirmLabel: expired ? "查询原审批单" : "核对原操作",
       getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
       run: async () => {
@@ -1513,8 +1513,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <b>{subject}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
                   {expired
                     ? retire ? "不能再按原请求重发，也查不到回执。请刷新奖池，核对这一档是否已经退役；原记录继续保留。" : "不能再按原请求重发，只能查询原审批单。"
-                    : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求原样重发，同一命令不会重复执行。"
-                      : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
+                    : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求重发，不会重复执行。"
+                      : "没收到系统回复，不知道审批单建没建成。核对时先查原审批单，查不到才按原请求重发，不会重复建单。"}
                 </span>
                 {!(expired && retire) && <button className="l-btn sm mc" disabled={!(record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite) || !!lookupKey}
                   onClick={() => expired ? void lookupExpiredHICommand(record) : openResumeHICommand(record, subject)}>{expired ? lookupKey === record.commandKey ? "查询中…" : "查询原审批单" : "核对原操作"}</button>}
