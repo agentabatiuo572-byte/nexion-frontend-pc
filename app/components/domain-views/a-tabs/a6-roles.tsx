@@ -312,7 +312,10 @@ export default function A6Roles() {
     const ticket = await commands.queryProposal(record);
     requireActor();
     commands.observe(record, ticket);
-    if (!ticket) { setToast(displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false; }
+    if (!ticket) {
+      if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id);
+      setToast(displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
+    }
     setConfirmReq(null);
     // A terminal ticket is authoritative about the decision; the current grants still require a real GET.
     let readbackFailed = false;
@@ -543,8 +546,10 @@ export default function A6Roles() {
   const approvalReason = writeReason ?? (roleRecords.some(record => record.ticket?.status === "pending") ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : undefined);
   const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => {
     const expired = isRetryExpired(record);
-    // 决定表「R1-提案过期」：只有删除和改授权这两种一定建审批单的，过期且按原请求明确查不到才可解除。
-    const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && (record.original.kind === "a6-delete" || record.original.kind === "a6-grants");
+    // Status can also have succeeded as a direct no-op; release requires its current target state.
+    const original = record.original;
+    const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && (original.kind === "a6-delete" || original.kind === "a6-grants"
+      || original.kind === "a6-status" && overview?.roles.some(role => role.id === original.role.id && role.status === original.status));
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired

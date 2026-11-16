@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
-import { newA6IdempotencyKey, type A6GrantsPayload, type A6RoleCreateInput, type A6RoleDetail, type A6RoleUpdateInput } from "./a6-client";
+import { fetchA6RoleDetail, newA6IdempotencyKey, type A6GrantsPayload, type A6RoleCreateInput, type A6RoleDetail, type A6RoleUpdateInput } from "./a6-client";
 import { newA7IdempotencyKey, type A7MenuCreateInput, type A7MenuTreeNode, type A7MenuUpdateInput } from "./a7-client";
 import type { A8Permission } from "./a8-client";
 import { isAdminAuthFailure, resetAdminSession } from "./auth-session";
@@ -180,10 +180,15 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
   };
   const releaseExpiredProposal = async (record: RbacCommand, confirmed: boolean) => {
     const current = saved(record.commandKey);
-    // A status PATCH can also succeed directly when the target status already matches.
-    // A missing A2 ticket cannot settle that union response; only always-proposal endpoints qualify.
-    if (!confirmed || !current || !["a6-delete", "a6-grants"].includes(current.original.kind) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    if (!confirmed || !current || !rbacProposal(current.original) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     if (await queryProposal(current)) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    // A status PATCH can also return a direct no-op when the target status already matches.
+    // Missing the proposal alone cannot settle that union: confirm the requested status too.
+    if (current.original.kind === "a6-status") {
+      const role = await fetchA6RoleDetail(current.original.role.id);
+      requireOriginalActor(current);
+      if (role.status !== current.original.status) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    }
     forget(current);
   };
   const send = async (record: RbacCommand, retry: boolean) => {
