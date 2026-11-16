@@ -300,7 +300,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const outcome = outcomes[record.commandKey];
     const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
     const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
-      && (receipt?.originalStatus === "UNKNOWN" || receipt?.originalStatus === "SUCCEEDED" && isRetryExpired(record));
+      && (receipt?.originalStatus === "UNKNOWN" || (receipt?.originalStatus === "SUCCEEDED" || receipt?.originalStatus === "FAILED") && isRetryExpired(record));
     return <>
       <Button size="sm" loading={checking === record.commandKey} disabled={!!checking && checking !== record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={!!checking} onClick={() => setClosing({ record, label, change })}>核查结案</Button>}
