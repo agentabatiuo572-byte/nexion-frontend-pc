@@ -207,7 +207,7 @@ export default function A7Menus() {
   };
   const queryOriginal = async (record: RbacCommand) => {
     requireActor();
-    const state = await commands.queryReceipt(record);
+    const state = await commands.queryReceipt(record).catch(() => null);
     requireActor();
     const settled = state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED";
     if (settled) {
