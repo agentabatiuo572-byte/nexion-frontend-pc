@@ -130,7 +130,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选分类准备默认头像</button>}
     {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
       {scope === "admin" && draft.cancelKey
-        ? <p>取消新头像的结果未知：不能再取消一次，也查不到原结果。请联系值班人员核对，这条记录先保留。</p>
+        ? <p>取消新头像的结果未知，不能再取消一次。请到页面上方「账号原操作」点「查询原结果」。</p>
         : <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>}
       {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果未知，请选择首次上传的同一张图片后重试。</p>}
       {draft.asset && <small>新头像有效期至 {businessStamp(new Date(draft.asset.expiresAt).getTime())}（{businessZone().label}）</small>}
