@@ -512,6 +512,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-page [data-empty], .h3-tl-amount b[data-empty], .h3-locales dd[data-empty] { color: var(--rd-text-3); }
 .h3-card-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .h3-card[data-dim] .h3-card-title { color: var(--rd-text-2); }
+.h3-card-primary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); min-width: 0; }
 /* 首日时间线 */
 .h3-timeline { display: flex; flex-direction: column; gap: var(--rd-space-3); margin: 0; }
 .h3-timeline-track { display: grid; gap: 0; min-width: 0; grid-template-columns: minmax(140px, 1fr) 148px; }

@@ -30,7 +30,7 @@ import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
 import {
-  AppPreview, DayOneTimeline, H3RecoveryList, PhaseStrip, TaskCard, TaskStatusTag, WeeklyFormula,
+  AppPreview, DayOneTimeline, H3RecoveryList, PhaseStrip, TaskCard, TaskStatusTag, WeeklyFormula, taskRetired,
   H3_BINDING_EVENT_LABELS, H3_BINDING_EVENT_OPTIONS, H3_BINDING_EVENT_PRODUCERS, H3_BINDING_USER_FIELDS, H3_BINDING_USER_FIELD_LABELS,
   TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, legacyAssetText, mulDecimal,
@@ -1578,7 +1578,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           primary={!detailArchived ? <Button variant={taskStatusOf(detailTask) === "active" ? "secondary" : "primary"} disabledReason={missionEnableReason(detailTask)} onClick={conflictDraft.register(JSON.stringify(["openMissionStatus:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionStatus(detailTask, detailName))}>{taskStatusOf(detailTask) === "active" ? "停用" : "启用"}</Button> : undefined} /> : undefined}>
         {detailTask && detail && <>
           <JudgmentPoints rows={[
-            { label: "状态", value: <TaskStatusTag task={detailTask} /> },
+            { label: "状态", value: <TaskStatusTag task={detailTask} />, reason: taskRetired(detailTask) ? "质押类每周任务已下线，不能再启用；改名称、奖励和归档照常" : undefined },
             { label: "做了什么算完成", state: activeUnbound(detailTask) ? "warn" : undefined,
               value: !taskUnbound(detailTask) && detailBindings.some((binding) => Number(binding.status) === 1)
                 ? detailBindings.filter((binding) => Number(binding.status) === 1).map(bindingEventText).join("、")

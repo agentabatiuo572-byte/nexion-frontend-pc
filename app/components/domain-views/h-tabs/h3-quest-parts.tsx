@@ -11,7 +11,7 @@ import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
-import { h3Decimal } from "@/lib/admin/h3-contract";
+import { h3Decimal, h3MissionEnableRefusal } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
@@ -218,11 +218,16 @@ export const taskStatusOf = (task: QuestTask): TaskStatus | "unknown" => {
 /** 生效中但完成判定是「未绑定」：App 会下发，用户却做不完。 */
 export const taskUnbound = (task: QuestTask) => text(task.completionType, "unbound") === "unbound";
 export const activeUnbound = (task: QuestTask) => taskStatusOf(task) === "active" && taskUnbound(task);
+/** 已下线的质押类每周任务（f85e1742）：后端存的仍是已停用，只是不能再启用。按 h3-contract 的同一判断认，不按名字猜。 */
+export const taskRetired = (task: QuestTask) => taskStatusOf(task) === "paused" && Boolean(h3MissionEnableRefusal(text(task.taskKind, ""), text(task.taskCode, "")));
+export const RETIRED_NOTE = "质押类已下线";
 
 export function TaskStatusTag({ task }: { task: QuestTask }) {
   const status = taskStatusOf(task);
   if (status === "active") return <StatusTag tone="ok" icon={CircleCheck} explain="已启用：之后注册的用户（新手任务）、之后发布的每周任务里会有它。已经发给用户的那一份不受影响。">已启用</StatusTag>;
-  if (status === "paused") return <StatusTag tone="neutral" icon={CircleSlash} explain="已停用：之后注册和之后发布的每周任务里没有它；已经发给用户的那一份照旧。新建的任务也是这个状态。">已停用</StatusTag>;
+  if (status === "paused") return <StatusTag tone="neutral" icon={CircleSlash} explain={taskRetired(task)
+    ? "已停用：质押类每周任务已下线，不能再启用；改名称、奖励和归档照常。已经发给用户的那一份照旧。"
+    : "已停用：之后注册和之后发布的每周任务里没有它；已经发给用户的那一份照旧。新建的任务也是这个状态。"}>已停用</StatusTag>;
   if (status === "archived") return <StatusTag tone="done" icon={Archive} explain="已归档：不能再启用，名称、类别和文字不能改；奖励仍可维护。归档后才能删除。">已归档</StatusTag>;
   return <StatusTag tone="warn" icon={CircleAlert} explain="后端返回了这页不认识的状态，请联系后端核对。">状态未知</StatusTag>;
 }
@@ -312,7 +317,7 @@ export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps,
       </dl>
       {(primary || (menu && menu.length > 0)) && (
         <footer className="h3-card-actions">
-          {primary}
+          {primary && taskRetired(task) ? <span className="h3-card-primary">{primary}<span className="h3-card-muted">{RETIRED_NOTE}</span></span> : primary}
           {menu && menu.length > 0 && <MoreMenu label={`${name} 的更多操作`} items={menu} />}
         </footer>
       )}
