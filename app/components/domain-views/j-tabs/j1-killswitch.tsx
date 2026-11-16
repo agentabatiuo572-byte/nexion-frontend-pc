@@ -40,7 +40,7 @@ const IMPACT_KEEP = ["资金流出", "负债增加", "影响兑付"];
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
 /** 只覆盖本页显示，等待后端同步开关说明。 */
 const GATE_COPY: Record<string, { cap: string; desc: string }> = {
-  withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已交给打款渠道的单继续处理，可能照常到账，撤不回。" },
+  withdraw: { cap: "新提现申请、审核放行和未派发的链上打款", desc: "已交给打款渠道的单照常处理，不保证撤回。" },
   trial: { cap: "新试用领取和试用转购", desc: "已在试用的用户仍可取消；到期的试用要等恢复后才结束。" },
 };
 function gateCopy(gate: JGate) {
@@ -60,7 +60,7 @@ const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-rad
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const READING = "正在读取最新状态，读完再操作";
 const LOCKED = "这项有结果未知的操作，先到页面上方查询原结果";
-const BLOCKED_RESUME = "覆盖率低于恢复红线，现在不能申请恢复资金业务。到「资金储备与应付款」核对，不低于红线后再申请。";
+const BLOCKED_RESUME = "系统现在不允许恢复资金业务，暂不能申请。到「资金储备与应付款」核对覆盖率和估值，系统允许后再申请。";
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const STALE = "这个值刚被别人改过，本次没有保存。";
 const RETRY_DENIED = "这个账号现在没有这项操作的权限，不能重试。请联系超级管理员，或到操作记录与审批核对";
@@ -469,7 +469,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const { coverageRatio: COV, redlinePct: RED } = data.coverage;
   const coverageReady = data.coverage.valuationReliable;
   const recoveryBlock = !data.coverage.valuationReliable
-    ? "估值不可靠，现在不能申请恢复资金业务。到「资金储备与应付款」核对估值，可靠后再申请。"
+    ? "估值不可靠，现在不能申请恢复资金业务。到「资金储备与应付款」核对估值，等估值可靠、系统允许后再申请。"
     : data.coverage.recoveryAllowedByServer ? undefined : BLOCKED_RESUME;
   // yellowLinePct 是红线加 25，不是资金总览的健康线（F03）。这页只和红线比，不下「正常」结论。
   // 恢复资格使用服务端许可；数值比较只用于展示差值。
@@ -828,7 +828,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </Figure>}
       </Fold>
 
-      <Fold title="功能开关总表" explain="关停立即生效；恢复要提交审批，批准前仍关停，都要写理由。提现关停还会停止未派发的链上打款，已交给打款渠道的单撤不回。"
+      <Fold title="功能开关总表" explain="关停立即生效；恢复要提交审批，批准前仍关停，都要写理由。提现关停还会停止未派发的链上打款，已交给打款渠道的单照常处理，不保证撤回。"
         icon={ScrollText} tone="role-other" summary={`${gates.length} 个业务开关`}
         actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J">查看操作记录与审批</Link> : undefined}
         open={!!folds.table} onOpenChange={(open) => setFolds((state) => ({ ...state, table: open }))}>
