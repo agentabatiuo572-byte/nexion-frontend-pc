@@ -236,6 +236,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     await actions.reloadIContent();
     toast("已重新读取；现在的内容不能证明原操作的结果，记录继续保留。");
   };
+  /** 结果未知不是失败，不加「操作失败」（同 I2）。 */
+  const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
   const replay = async (record: I1Command) => {
     try {
       await retryI1Command(record);
@@ -243,10 +245,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       syncPending();
       if (!pendingI1Commands().some((row) => row.commandKey === record.commandKey)) {
         await refreshAfterMutation(record);
-        toast(`操作失败:${displayAdminError(error)}`);
+        toast(failText(error));
         return false;
       }
-      throw new Error(`操作失败:${displayAdminError(error)}`);
+      throw new Error(failText(error));
     }
     await refreshAfterMutation(record);
     toast(`${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`);
@@ -285,7 +287,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           if (await reviewConflict(error, reason, value, form)) ctx.closeActionConfirm();
           syncPending();
           // The domain owns first-attempt rejection: keep the confirmation and its input even for business 403.
-          throw new Error(`操作失败:${displayAdminError(error)}`);
+          throw new Error(failText(error));
         }
       },
     };
@@ -317,7 +319,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           if (isOutcomeUnknownError(error)) { pendingKey = (error as { commandKey?: string }).commandKey; savedValue = value; }
           if (await reviewConflict(error, reason, value)) ctx.closeConfirm?.();
           syncPending();
-          throw new Error(`操作失败:${displayAdminError(error)}`);
+          throw new Error(failText(error));
         }
       },
     };
