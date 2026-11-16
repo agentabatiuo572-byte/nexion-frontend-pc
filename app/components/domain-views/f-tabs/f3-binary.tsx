@@ -304,7 +304,6 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     <PageHeader pageId="F3" title="团队平衡奖励"
       summary="两组订单额都过门槛，按较小一组乘比例给邀请人发奖励。"
       readOnly={!canSettle && !canConfigure && !canPause ? "当前账号只能查看这页" : undefined}
-      meta="打开时读取，不自动刷新"
       actions={<Button size="sm" onClick={() => ctx.nav("B")}>风险提醒</Button>} />
   );
 
@@ -331,7 +330,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     return period || residual ? `改为 ${[period, residual ? residualLabel(residual) : undefined].filter(Boolean).join(" · ")}` : "按原申请的结算周期和残额处理";
   };
   const recovery = recoveryCount > 0 && (
-    <Notice tone={recoveryOpen ? "warn" : "progress"} title={<>{recoveryOpen ? `有 ${recoveryCount} 项原申请还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原申请怎么处理" content={<>
+    <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原申请还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原申请怎么处理" content={<>
       <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。成员分组是直接保存，查询只读回现在的分组。</p>
     </>} /></>}>
