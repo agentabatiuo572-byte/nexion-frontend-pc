@@ -556,8 +556,8 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       return <Notice key={record.commandKey} tone="warn" title={`${saved?.label ?? "旧操作"} · ${busyKey === record.commandKey ? "提交中…" : saved?.rejected ? "已被拒绝" : "结果未知"}`} actionBelow action={<>
         <Button size="sm" loading={busyKey === `read:${record.commandKey}`} disabledReason={!canRead ? "缺少查看提现风险规则权限" : undefined} onClick={async () => {
           setBusyKey(`read:${record.commandKey}`);
-          try { await reload(); setReadback("已读回当前规则与命中记录；当前值不能单独证明原命令成功，请继续核对操作记录与审批。"); }
-          catch (error) { setReadback(`读回失败 · ${errorText(error)}`); } finally { setBusyKey(null); }
+          try { await reload(); setReadback("已重新读取规则和命中记录；现在的值证明不了原操作成没成，请到操作记录与审批核对。"); }
+          catch (error) { setReadback(`读取失败 · ${errorText(error)}`); } finally { setBusyKey(null); }
         }}>查询原结果</Button>
         <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原请求重试</Button>
         {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>解除待确认</Button>}
@@ -659,7 +659,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       onRebase={async (rule) => {
         const latest = await import("@/lib/admin/k-client").then((client) => client.fetchK3WithdrawRuleOverview(query.withdrawRules));
         const next = latest.rules.records.find((item) => item.ruleId === rule.ruleId) ?? latest.dimensions.filter((item) => item.ruleId === rule.ruleId).map(projectionRule)[0];
-        if (!next) throw new Error("当前分页未找到原规则，请读回规则总表后重新核对");
+        if (!next) throw new Error("这一页没找到原规则，请重新读取规则总表后再核对");
         if (draft.kind === "edit" && editableReason(next)) throw new Error(editableReason(next));
         setDraft({ kind: draft.kind, rule: next }); return next;
       }} />}

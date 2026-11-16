@@ -519,7 +519,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   });
   const pendingBars = (
     <KRecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果：读回现在的评分规则、用户分数或告警状态。读到的是现在的值，不能单凭它认定原操作成没成。</p><p>24 小时内可以按原请求重试：打开原来的确认框，内容和理由都不变，后端认得出是同一次提交，不会重复执行。告警标为已读不提供重试。</p><p>原请求只保存在这个浏览器标签页里。</p></>} />
+      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果：看现在的评分规则、用户分数或告警状态。读到的是现在的值，不能单凭它认定原操作成没成。</p><p>24 小时内可以按原请求重试：打开原来的确认框，内容和理由都不变，不会重复执行。告警标为已读不提供重试。</p><p>原请求只保存在这个浏览器标签页里。</p></>} />
   );
 
   const inboundNotice = INBOUND_USER && (
@@ -1005,7 +1005,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                   </tbody>
                 </Table>
               )}
-        {alertUnknown.length > 0 && !withdrawalAlertError && <div className="k4-panel-note"><Notice tone="warn">标为已读结果未知。这个操作不提供原样重试；点「查询原结果」读回后端记下的状态。</Notice></div>}
+        {alertUnknown.length > 0 && !withdrawalAlertError && <div className="k4-panel-note"><Notice tone="warn">标为已读结果未知。这个操作不提供原样重试；点「查询原结果」看系统记下的状态。</Notice></div>}
       </Panel>
     </div>
   );

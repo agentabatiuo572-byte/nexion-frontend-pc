@@ -785,7 +785,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           () => reloadAfter(`${name}已更新为 ${record.value}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
       case "registration-param":
         return sendCommand(record, (key) => updateK1RegistrationParam({ key: target, value: record.expectedValue! }, record.value!, reason, key),
-          () => reloadAfter(`${name}已更新`, `${name}已保存，但暂时无法读回；请刷新本页核对`));
+          () => reloadAfter(`${name}已更新`, `${name}已保存，但暂时读不到最新值；请刷新本页核对`));
       case "release-param": {
         const effect = target === "duplicateAccountPendingFrom" ? "后续新增收益按新审核起点处理"
           : target === "duplicateAccountFreezeFrom" ? "后续新增收益和当前提现资格按新锁定起点判断"
