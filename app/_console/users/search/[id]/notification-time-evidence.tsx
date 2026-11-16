@@ -167,7 +167,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
         { label: "当前记录时间", value: `${data.storedCreatedAt}（北京时间）` },
         { label: "投递事实时间", value: data.deliveryFactTime ?? "尚不可确认" },
       ]} />
-      <Timeline label="通知投递证据" entries={data.facts.map(fact => ({
+      <Timeline label="通知投递证据" precision="second" entries={data.facts.map(fact => ({
         id: fact.eventId,
         action: FACT_NAME[fact.eventName] ?? fact.eventName,
         actor: "系统",
