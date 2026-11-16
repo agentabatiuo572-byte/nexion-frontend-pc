@@ -489,7 +489,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       summary={summary}
       actions={actions}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+        {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={!ctx.canExport && !ctx.canExportNetworkTree ? "你只能查看，导出需要报表导出权限" : undefined}

@@ -7,6 +7,7 @@
 import type { ReactNode } from "react";
 import { CalendarRange, Cpu, Flag, ListChecks, Users } from "lucide-react";
 import { BarList, ColumnChart, Explain, Fold, Panel, ScaleBar, Table, Td, Th, Tr, type ChartSlot } from "@/app/components/rd";
+import { businessOffsetMinutes, businessZone } from "@/lib/admin/business-time";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
 import type { L4DistRow, L4HistoryRow, L4OperationsData, L4PhaseRow } from "./l4-live-data";
@@ -402,6 +403,12 @@ export function PhaseReport({ data, scope, links, panel, phaseNames }: { data: L
 
 /* ---------------- 四类报表共用的时间段 ---------------- */
 
+/** 后端给的业务时区是「UTC+08:00」这种偏移：和后台业务时区一致时写它的名字（如北京时间），不一致才写偏移。 */
+const zoneWord = (zone: string) => {
+  const match = /^UTC([+-])(\d{2}):(\d{2})$/.exec(zone);
+  return match && (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) === businessOffsetMinutes() ? businessZone().label : zone;
+};
+
 export function HistoryFold({ data, scope }: { data: L4OperationsData; scope: string }) {
   const rows = data.history;
   const digits = amountDigits(rows.flatMap((row) => [row.yieldUsdt, row.commissionPaidUsdt]));
@@ -412,7 +419,7 @@ export function HistoryFold({ data, scope }: { data: L4OperationsData; scope: st
       explain={<>
         <p>设备、任务、团队三块里的柱图都按这同一组时间段切，所以能一段一段对着看：比如哪一周买设备的多、那一周任务完成和新邀请是不是也多。</p>
         <p>日、周按业务日一天一段；月、自定义按周一段，写那一周周一的日期。只列有事件的时间段，没有事件的日子不补 0 行。</p>
-        <p>业务日按 {data.quality.businessTimeZone} 算。</p>
+        <p>业务日按{zoneWord(data.quality.businessTimeZone)}算。</p>
       </>}>
       {rows.length === 0 ? <p className="rd-note">所选时间段没有事件，不列时间段。</p> : (
         <Table label="四类报表按同一组时间段对照" className="l4-table">
