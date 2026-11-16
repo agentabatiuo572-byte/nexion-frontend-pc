@@ -86,7 +86,6 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         <Link className="rd-link" href="/network/leadership-pool" prefetch={false}>团队激励池票数权重</Link>
         <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f1Loading} onClick={() => void ctx.refreshF1()}>重新读取</Button>
       </>}
-      meta="打开时读取，不自动刷新"
       readOnly={readOnly} />
   );
   const dialogs = <Fragment key="f1-dialogs">

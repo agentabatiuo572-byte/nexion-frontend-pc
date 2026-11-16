@@ -144,7 +144,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     finally { setBusy(false); }
   };
   return <>
-    <div className="f1-recovery-wrap"><Notice tone={open ? "warn" : "progress"} title={open ? `逐条核对原操作（${rows.length} 项）` : `等批准的申请（${rows.length} 项）`}>
+    <div className="f1-recovery-wrap"><Notice tone="warn" title={open ? `逐条核对原操作（${rows.length} 项）` : `等批准的申请（${rows.length} 项）`}>
       {policyBroken && <p>有一条门槛或奖励的原操作内容不完整，请到「操作记录与审批」核对。</p>}
       {rows.length > 0 && <ul className="f1-recovery" aria-label="还没有结论的原操作">
         {rows.map((row) => <li key={row.key} data-recovery-state={row.state}>
