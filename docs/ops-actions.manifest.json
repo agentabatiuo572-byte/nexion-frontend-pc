@@ -481,8 +481,8 @@
       "status": "built",
       "view": "c-tabs/c2-actions.tsx + c5-security.tsx",
       "batch": "P1",
-      "restActions": ["proposeSessionRevocation", "revokeUserSessions"],
-      "note": "C2 通过审批申请撤销用户会话，domain C / op c2_session_revoke_all；C5 保留会话撤销路径"
+      "restAction": "proposeSessionRevocation",
+      "note": "C2 通过审批申请撤销用户会话，domain C / op c2_session_revoke_all；C5 同用撤销审批入口（旧 revokeUserSessions 已无页面调用）"
     },
     {
       "id": "OPS-C-39",
