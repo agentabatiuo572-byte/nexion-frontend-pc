@@ -1,3 +1,4 @@
+import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
 import { h4CommandRequest, markH4Read } from "./h4-mutations";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
@@ -186,7 +187,7 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
   });
   // 与兄弟 client(e1/f1/a4…)同款:2xx 但响应体不是 JSON(网关 HTML 错误页)时
   // 原写法会抛英文 SyntaxError,绕过下面这条已备中文的归因分支。
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await ((path === "/quest-events/events-overview" || path === "/quest-events/wheel-daily-usage") ? response.text().then(parseH4StatisticsJson) : response.json()).catch(() => null)) as ApiResult<T> | null;
   const unknownOutcome = strictOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown";
   if (!response.ok || !result || result.code !== 0 || unknownOutcome) {
     const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
@@ -368,6 +369,7 @@ export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"):
         || event.hasRule !== undefined && typeof event.hasRule !== "boolean") throw new Error("活动规则读取失败，请刷新后重试。");
     }
   }
+  Object.assign(result, readH4Statistics(result));
   markH4Read("overview", true);
   return result;
 }

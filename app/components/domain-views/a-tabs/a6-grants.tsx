@@ -187,11 +187,14 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
   const [tab, setTab] = useState<Tab>("perms");
   const ids = useTabIds();
 
+  const auditor = detail.roleCode.toUpperCase() === "AUDITOR";
+  const canSelectPerm = (code: string) => !auditor || permByCode.get(code)?.permType === "READ";
   const togglePerm = (code: string) => {
+    if (!permSet.has(code) && !canSelectPerm(code)) return;
     setPermSet((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
   };
   const togglePermGroup = (codes: string[], allOn: boolean) => {
-    setPermSet((prev) => { const n = new Set(prev); codes.forEach((c) => allOn ? n.delete(c) : n.add(c)); return n; });
+    setPermSet((prev) => { const n = new Set(prev); codes.forEach((c) => { if (allOn) n.delete(c); else if (canSelectPerm(c)) n.add(c); }); return n; });
   };
   const toggleMenu = (node: A7MenuTreeNode, checked: boolean) => {
     setMenuSet((prev) => {
@@ -258,7 +261,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
   const addedAmplifies = permDiff.added.filter((code) => permByCode.get(code)?.amplifies === 1).length;
   const stoppedMenus = [...menuSet].filter((id) => menuById.get(id)?.status === 0);
   const mismatch = grantMismatch(permSet, menuSet, permByCode, menuById);
-  const auditorWrites = detail.roleCode === "AUDITOR" ? [...permSet].filter((code) => { const t = permByCode.get(code)?.permType; return t === "WRITE" || t === "HIGH"; }).length : 0;
+  const auditorWrites = auditor ? [...permSet].filter((code) => !canSelectPerm(code)).length : 0;
   const changed = permDiff.added.length + permDiff.removed.length + menuDiff.added.length + menuDiff.removed.length > 0;
   const allExpanded = menuCollapsed.size === 0;
   const submissionProblem = a6GrantsProblem(detail.roleCode, { permissionCodes: [...permSet], menuIds: [...menuSet] }, allMenus, allPerms);
@@ -335,7 +338,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
               <div className="a6-perm-pages">
                 {activeGroup ? (() => {
                   const domCodes = activeGroup.pages.flatMap((p) => p.perms.map((pp) => pp.permissionCode));
-                  const domAllOn = domCodes.length > 0 && domCodes.every((c) => permSet.has(c));
+                  const domAllOn = domCodes.length > 0 && domCodes.filter(canSelectPerm).every((c) => permSet.has(c));
                   return (
                     <>
                       <div className="a6-mod-head">
@@ -346,7 +349,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
                       {activeGroup.pages.map((p) => {
                         const pageKey = `${activeGroup.domain.code}:${p.l2.id}`;
                         const pageCodes = p.perms.map((pp) => pp.permissionCode);
-                        const pageAllOn = pageCodes.length > 0 && pageCodes.every((c) => permSet.has(c));
+                        const pageAllOn = pageCodes.length > 0 && pageCodes.filter(canSelectPerm).every((c) => permSet.has(c));
                         const pageSel = pageCodes.filter((c) => permSet.has(c)).length;
                         const pgOpen = pageExpanded.has(pageKey) || !!q;
                         return (
@@ -367,7 +370,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
                                   const delta = on === wasPerm.has(pp.permissionCode) ? undefined : on ? "add" : "remove";
                                   return (
                                     <label key={pp.permissionCode} className="a6-perm" title={pp.permissionCode} data-on={on ? "" : undefined} data-delta={delta}>
-                                      <Checkbox checked={on} onChange={() => togglePerm(pp.permissionCode)} />
+                                      <Checkbox checked={on} disabled={!on && !canSelectPerm(pp.permissionCode)} title={!on && !canSelectPerm(pp.permissionCode) ? displayAdminError(new Error("AUDIT_ROLE_WRITE_FORBIDDEN")) : undefined} onChange={() => togglePerm(pp.permissionCode)} />
                                       <span className="a6-perm-text">
                                         <span className="a6-perm-name">{permLabel(pp.permissionCode, pp)}</span>
                                         <span className="a6-perm-code">{pp.permissionCode}</span>

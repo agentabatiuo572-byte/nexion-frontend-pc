@@ -32,6 +32,7 @@ import {
   createH4WheelGuard,
   updateH4WheelGuard,
 } from "@/lib/admin/h-client";
+import type { H4Statistics } from "@/lib/admin/h4-statistics";
 import { fetchH4WheelDailyUsage, type H4WheelDailyUsage } from "@/lib/admin/h4-daily-usage";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
@@ -52,13 +53,11 @@ import {
   type LegacyEvent, type LocaleCode, type WheelTier,
 } from "./h4-legacy-parts";
 
-type Model = {
-  h4Stats?: Record<string, any>;
+type Model = H4Statistics & {
   events?: LegacyEvent[];
   contentLocales?: Record<string, Record<string, Record<string, Record<string, string>>>>;
   wheelTiers?: WheelTier[];
   wheelSignature?: string;
-  wheelEvUsd?: number | string;
   wheelGuards?: Array<{ key: string; label: string; value: string; note?: string }>;
   trackables?: Array<{ id: string; name: string; cond: string; join: string; done: string; claim: string; geo: string }>;
 };
@@ -1002,6 +1001,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const tiers = model.wheelTiers ?? [];
   const guards = model.wheelGuards ?? [];
   const h4Stats = model.h4Stats ?? {};
+  const wheelEvUsdt = model.wheelEvByAsset === undefined ? model.wheelEvUsd : model.wheelEvByAsset?.USDT;
   const probabilitySum = tiers.reduce((sum, tier) => sum + numericValue(tier.prob), 0);
   const probabilityOk = Math.abs(probabilitySum - 100) < 0.001;
   const pointsTiers = tiers.filter(wheelPointsTier);
@@ -1062,15 +1062,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const conclusion = wheelBroken
     ? <Conclusion state="danger" lead icon={CircleAlert} hint="先处理「等你处理」第一行。">App 转盘现在抽不了{gapCount > 0 ? `，还有 ${gapsByEvent.length} 个活动缺翻译` : ""}</Conclusion>
     : todos.length > 0 ? <Conclusion state="warn" lead icon={ListChecks}>有 {todos.length} 件事等你处理</Conclusion>
-    : <Conclusion state="ok" icon={ListChecks} explain="只按这页读到的既有活动、转盘奖池和护栏判断；用户能不能抽还看开始时间、资格和当天库存。玩法和抽奖在「玩法与抽奖」页签。">{numericValue(h4Stats.ongoing)} 个既有活动进行中，转盘奖池没有查出问题，没有等你处理的事</Conclusion>;
+    : <Conclusion state="ok" icon={ListChecks} explain="只按这页读到的既有活动、转盘奖池和护栏判断；用户能不能抽还看开始时间、资格和当天库存。玩法和抽奖在「玩法与抽奖」页签。">{h4Stats.ongoing == null ? "—" : numericValue(h4Stats.ongoing)} 个既有活动进行中，转盘奖池没有查出问题，没有等你处理的事</Conclusion>;
 
   return <div className="h4l">
     {recovery}
     {conclusion}
     <StatBand label="既有活动与转盘的关键数">
-      <Stat label="进行中的既有活动" value={numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)}`} explain="按活动存的状态数「进行中」的个数（不看删除状态）。限地区的活动数后端没有提供；紧急处理去「紧急停用开关」。" />
-      <Stat label="可追踪活动参与" value={numericValue(h4Stats.trackJoin)} unit="人次" icon={ListChecks} tone="role-3" sub={`达标 ${numericValue(h4Stats.trackDone)} · 已领 ${numericValue(h4Stats.trackClaim)}`} explain="开了「统计效果」的活动的参与、达标、领取次数合计，不是转化率。" />
-      <Stat label="平均每次抽奖发出" value={text(model.wheelEvUsd, "") === "" ? "—" : amountText(text(model.wheelEvUsd))} unit="USDT" icon={Coins} tone="role-1" sub="只算发真钱的奖项" explain="后端按各档「金额 × 概率」逐档算到 6 位再相加、保留 2 位，是按概率的估算，不是实际发出的钱。" />
+      <Stat label="进行中的既有活动" value={h4Stats.ongoing == null ? "—" : numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)}`} explain="按活动存的状态数「进行中」的个数（不看删除状态）。限地区的活动数后端没有提供；紧急处理去「紧急停用开关」。" />
+      <Stat label="可追踪活动参与" value={h4Stats.trackJoin == null ? "—" : numericValue(h4Stats.trackJoin)} unit="人次" icon={ListChecks} tone="role-3" sub={`达标 ${h4Stats.trackDone == null ? "—" : numericValue(h4Stats.trackDone)} · 已领 ${h4Stats.trackClaim == null ? "—" : numericValue(h4Stats.trackClaim)}`} explain="开了「统计效果」的活动的参与、达标、领取次数合计，不是转化率。" />
+      <Stat label="平均每次抽奖发出" value={wheelEvUsdt == null ? "—" : amountText(wheelEvUsdt)} unit="USDT" icon={Coins} tone="role-1" sub="只算发真钱的奖项" explain="后端按各档「金额 × 概率」逐档算到 6 位再相加、保留 2 位，是按概率的估算，不是实际发出的钱。" />
       <Stat label="今天已发真钱" value={usedPayout === null ? "—" : amountText(usedPayout)} unit={usedPayout === null ? undefined : "USDT"} icon={Disc3} tone="role-2"
         sub={wheelDailyUsageError ? "今天的用量没读到" : !wheelDailyUsage ? "正在读取…" : <>抽奖 <span className="h4-num">{wheelDailyUsage.spinCount}</span> 次 · UTC <span className="h4-num">{wheelDailyUsage.serverDate.slice(5)}</span></>}
         explain={<><p>转盘今天发出的 USDT 真钱奖合计，和每日预算比的就是这个数。抽奖次数含每日免费抽奖和签到加抽。</p><p>{USAGE_DAY}</p></>}
