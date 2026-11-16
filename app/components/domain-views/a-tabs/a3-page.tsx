@@ -382,7 +382,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const contentTag = (record: A3Command) => isRetryExpired(record)
     ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain={a3Deduplicates(record)
-      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原请求重试，不会重复保存；也可以先查询原结果，和现在的内容对比。"
+      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原请求重试，不会重复保存；查询原结果和原提交一致就算已保存。"
       : "提交时没收到确定结果，可能已经保存。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
   const recoveryRows: GRecoveryRow[] = commands.pending.map(record => ({
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
@@ -590,7 +590,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；也可以先点「查询原结果」核对。</p><p>说明内容和开发者文档查询时会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。</p></>}
+        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；也可以先点「查询原结果」核对。</p><p>说明内容和开发者文档查询时会和现在的内容对比，一致就算已保存；对不上时，能重试的先按原请求重试，不能重试的可以核对后解除。</p></>}
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}

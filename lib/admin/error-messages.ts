@@ -2374,7 +2374,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RBAC_CONFLICT_RECHECK_REQUIRED: "当前菜单已重新读取，请核对后再次确认。",
   A6_ROLE_READBACK_FAILED: "审批结论已确认，但角色读回失败，请重新读取角色。",
   DEVELOPER_ACCESS_SORT_INVALID: "提交时间的排序方向无效，请重新读取列表。",
-  A3_ORIGINAL_CURRENT_ONLY: "已读取当前设置；当前值不能证明原操作的结果，原记录继续保留。",
+  A3_ORIGINAL_CURRENT_ONLY: "已重新读取。现在的值证明不了原操作的结果，原记录继续保留；24 小时内可以按原请求重试。",
   A3_MUTATION_OUTCOME_UNCERTAIN: "结果未知：可能已经生效。请查询原结果，原请求已保留。",
   A3_MUTATION_RESPONSE_UNREADABLE: "结果未知：保存结果没读全，可能已经生效。请查询原结果，原请求已保留。",
   BUSINESS_CALENDAR_RESPONSE_INVALID: "业务日历回包不完整，无法确认当前时区和安排；请重新读取或联系平台值班人员。",
