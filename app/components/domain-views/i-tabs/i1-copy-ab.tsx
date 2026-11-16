@@ -405,7 +405,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     v: row.version,
     st: row.status,
     chain: row.chain,
-    ts: row.ts,
+    // The existing caption is storage-local Beijing time. Keep legacy labels unparsed;
+    // a new explicit null must not invent a last-operation time from creation or today.
+    ts: row.updatedAt === undefined ? row.ts : row.updatedAt?.replace("T", " ").slice(0, 16) ?? "",
     zh: row.zh,
     en: row.en,
     vi: row.vi,
