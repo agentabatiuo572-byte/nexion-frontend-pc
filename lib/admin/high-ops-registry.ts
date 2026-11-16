@@ -1652,7 +1652,7 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— I 域内容(批 8) ——
   // buildCommand params 严格对齐后端 OpsTrustDisclosureService.replay(委托架构:I3/I7 委托另 2 service)。
-  // I3 通知优先级 CAP(updateCapRule · tier 锁 · amplifies false)
+  // I3 CAP: only A2 replay calls updateApprovedCapRule (0e301ad5); direct PATCH is rejected.
   {
     op: "i3_cap_adjust",
     domain: "I",

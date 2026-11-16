@@ -24,6 +24,10 @@ const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
   // These four business guards now return 422 and use the ordinary 4xx verdict path.
   // Keep the exact-code 403 exception for older responses; no other 403 is a verdict.
   "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION",
+  // Backend 0e301ad5 rejects an unapproved I3 cap PATCH inside the idempotency
+  // callback before reading/updating the rule or applying notification retention.
+  // Stored successful commands replay before this guard.
+  "NOTIFICATION_CAP_APPROVAL_REQUIRED",
 ]);
 
 export function isExplicitRejection(error: unknown): boolean {
