@@ -96,15 +96,14 @@ export function canResumeE5UserDevicesFrom(device: E5Device) {
   ].includes(reason);
 }
 
-/** SIM_STATE_PREFIX projects raw UNBOUND OR ownership UNBOUND.
- * Store lists expose it; phone JSON omits it, so missing evidence keeps the raw-status rules.
- * Only UNBOUND paired with another raw status proves lost ownership; keep the
- * backend-allowed legacy OWNED/raw-UNBOUND case until ownership is exposed.
+/** Since 64f53ce0 activation requires ownership OWNED, and an unbind writes both the raw status and the
+ * ownership as UNBOUND: an unbound device cannot be put back into service from the console.
+ * simState UNBOUND covers either column (store lists); phone JSON omits simState, so the raw status decides there.
  */
 export function canActivateE5Device(device: Pick<E5Device, "simState" | "rawStatus">, force = false) {
   const raw = device.rawStatus.trim().toUpperCase();
-  if (device.simState === "UNBOUND" && raw !== "UNBOUND") return false;
-  return force ? ["INVENTORY", "DEACTIVATED", "INACTIVE", "UNBOUND"].includes(raw) : raw === "INVENTORY";
+  if (device.simState === "UNBOUND" || raw === "UNBOUND") return false;
+  return force ? ["INVENTORY", "DEACTIVATED", "INACTIVE"].includes(raw) : raw === "INVENTORY";
 }
 
 export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number; errorRetry: number; legacyPending: number; waitingConfig: number }
