@@ -293,8 +293,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   // Saved drafts may still carry a purpose; it is now derived from the explicit 联系维护 switch below (M-26 / M-54).
   const [pending, setPending] = useState<Pending | null>(null);
-  const [sendRejected, setSendRejected] = useState<Set<string>>(() => new Set());
-  const [sendRelease, setSendRelease] = useState<StoredMessage | null>(null);
   const [recoveries, setRecoveries] = useState<Array<{ slot: string; locator: PrivateMessageRecovery }>>([]);
   const [recoveryError, setRecoveryError] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState("");
@@ -832,7 +830,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     };
   }, []);
   useEffect(() => {
-    setSendRejected(new Set()); setSendRelease(null);
     setDrafts({}); setDraftOwner(0); setActionResult(""); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
@@ -1021,10 +1018,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   };
   const sendRow = pending ? pendingMessages.list().find(row => row.commandKey === pending.key) : firstPending ? pendingMessages.list().find(row => row.commandKey === firstPending.key) : undefined;
   const sendRetryExpired = Boolean(sendRow && isRetryExpired(sendRow));
-  const markSendRetryRejected = (key: string, cause: unknown) => {
-    setSendRejected(previous => new Set(previous).add(key));
-    setSendError(`重试被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原来那次可能已发出，核对后再解除。`);
-  };
   const refreshChangedPeer = async (identity: string) => {
     if (selected) messagePages.invalidateWriteState(selected.id);
     try {
@@ -1101,19 +1094,16 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         if (identityRef.current === identity) {
           const busyHold = supportSessionBusy(cause);
           if (conversationPeerChanged(cause)) {
-            if (submitted && !firstPending) {
+            if (submitted && rejectedSupportWrite(cause)) {
               pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             }
-            if (submitted && firstPending && rejectedSupportWrite(cause)) markSendRetryRejected(record.key, cause);
-            else setSendError(firstPending ? "发送结果未知，请查询结果。" : `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`);
+            setSendError(submitted && rejectedSupportWrite(cause) ? `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。` : "发送结果未知，请查询结果。");
             await refreshChangedPeer(identity);
-          } else if (submitted && !firstPending && busyHold) {
+          } else if (submitted && busyHold) {
             // Someone else started talking first: lock the composer with their details and keep the draft.
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             lockFromBusy(requestedCustomerId, busyHold);
-          } else if (submitted && firstPending && rejectedSupportWrite(cause)) {
-            markSendRetryRejected(record.key, cause);
-          } else if (submitted && !firstPending && rejectedSupportWrite(cause)) {
+          } else if (submitted && rejectedSupportWrite(cause)) {
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
             else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
@@ -1196,24 +1186,19 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     catch (cause) {
       const busyHold = supportSessionBusy(cause);
       if (identityRef.current === identity && conversationPeerChanged(cause)) {
-        if (submitted && !retry) {
+        if (submitted && rejectedSupportWrite(cause)) {
           pendingMessages.forget(pendingKey(adminId)); setPending(null);
         }
-        if (submitted && retry && rejectedSupportWrite(cause)) markSendRetryRejected(record.key, cause);
-        else setSendError(retry ? "发送结果未知，请查询结果。" : "本次发送已被拒绝：这条已不是当前会话。原文还在，客户仍归你时到当前会话再发。");
+        setSendError(submitted && rejectedSupportWrite(cause) ? "本次发送已被拒绝：这条已不是当前会话。原文还在，客户仍归你时到当前会话再发。" : "发送结果未知，请查询结果。");
         await refreshChangedPeer(identity);
         return;
       }
-      if (identityRef.current === identity && submitted && !retry && busyHold) {
+      if (identityRef.current === identity && submitted && busyHold) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         lockFromBusy(String(selected.customerId), busyHold);
         return;
       }
-      if (identityRef.current === identity && submitted && retry && rejectedSupportWrite(cause)) {
-        markSendRetryRejected(record.key, cause);
-        return;
-      }
-      if (identityRef.current === identity && submitted && !retry && rejectedSupportWrite(cause)) {
+      if (identityRef.current === identity && submitted && rejectedSupportWrite(cause)) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         void ctx.refreshConversations().catch(() => {});
         if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "消息没有发出，内容已清除：你对这个会话的权限变了。请回客户列表核对。"); setSendError("当前会话权限已变化，请返回客户列表核对。"); }
@@ -1639,13 +1624,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   </>;
 
   return <>
-    {sendRelease && <ReleaseModal label={sendRelease.fingerprint.startsWith("nexion-m3-first-pending:") ? "首次联系" : "发送消息"} explain={`先在会话里看${sendRelease.fingerprint.startsWith("nexion-m3-first-pending:") ? "首次联系的消息" : "这条消息"}有没有发出再解除；重试被拒不等于原来那次没发出。解除不发请求，不进操作记录。`} onCancel={() => setSendRelease(null)} onConfirm={() => {
-      pendingMessages.forget(sendRelease.fingerprint, sendRelease.commandKey);
-      setPending(previous => previous?.key === sendRelease.commandKey ? null : previous);
-      setFirstPending(previous => previous?.key === sendRelease.commandKey ? null : previous);
-      setSendRejected(previous => new Set([...previous].filter(key => key !== sendRelease.commandKey)));
-      setSendRelease(null); setSendError("");
-    }} />}
     {holdEndRelease && <ReleaseModal label="结束会话" explain="先看这位客户是不是还在接待中再解除；重试被拒不等于原来那次没结束。解除不发请求，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
       setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdEndRelease.customerId) ?? null : previous);
@@ -1843,7 +1821,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             {draft.trim() && <p className="m3s-aux">草稿已保留，恢复后可以继续发送。</p>}
           </>}
           {!busy && pending && selected?.id !== pending.conversationId && <Notice tone="warn" action={<Button size="sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</Button>}>另一条消息发送结果未知，请先回原会话处理。</Notice>}
-          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>{sendRetryExpired ? "查询原结果" : "查询结果并重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>重试</Button>}{sendRow && sendRejected.has(sendRow.commandKey) && <Button size="sm" disabled={busy} onClick={() => setSendRelease(sendRow)}>解除原操作记录</Button>}</>}>{sendRetryExpired ? RETRY_EXPIRED_TEXT : sendError || "上条消息发送结果未知，请查询结果。"}</Notice>}
+          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>{sendRetryExpired ? "查询原结果" : "查询结果并重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>重试</Button>}</>}>{sendRetryExpired ? RETRY_EXPIRED_TEXT : sendError || "上条消息发送结果未知，请查询结果。"}</Notice>}
         </div>
       </div>
 
