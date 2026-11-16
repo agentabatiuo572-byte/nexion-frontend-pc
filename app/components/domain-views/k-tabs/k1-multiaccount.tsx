@@ -755,7 +755,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
       return;
     }
-    pendingCommands.forget(scope);
+    pendingCommands.forget(scope, key);
     syncPending();
     await done();
   };
