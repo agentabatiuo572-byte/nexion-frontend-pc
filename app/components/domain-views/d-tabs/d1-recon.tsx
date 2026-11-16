@@ -441,7 +441,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       confirmLabel: "确认调整",
       reasonMin: 8, reasonMax: 200,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      detail: "银行卡支付参数要整组提交，这次只改单笔上限，其他参数按读回的值原样提交。",
+      detail: "银行卡支付参数要整组提交，这次只改单笔上限，其他参数按读到的值原样提交。",
       completionCopy: "只对之后的新付款单生效，已下的付款单按原上限。",
       edit: { kind: "number", current: String(current), unit: "USDT", min: 100, max: 10_000, step: 1, disallowCurrent: true, hint: "100–10,000 的整数",
         preview: (value) => /^\d+$/.test(value) ? `改成 ${Number(value).toLocaleString("en-US")}：用户一笔最多充 ${Number(value).toLocaleString("en-US")} USDT。` : undefined },
@@ -492,30 +492,30 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     if (path === "/vietqr/config") {
       const current = await loadD1VietQrOverview("inflight");
       setVietQr(current);
-      return `读回：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USDT（第 ${current.config.version} 版）。${kept}`;
+      return `读到：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USDT（第 ${current.config.version} 版）。${kept}`;
     }
     if (path.startsWith("/vietqr/orders/")) {
       const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 });
       const order = latest.records.find(value => value.intentNo === code);
-      return order ? `读回：这笔现在是「${orderStatusText(order.status)}」${order.creditedUsdt > 0 ? `，已入账 ${usdt(order.creditedUsdt)} USDT` : "，还没入账"}。${kept}` : "读回：列表里暂时找不到这笔，记录继续保留。";
+      return order ? `读到：这笔现在是「${orderStatusText(order.status)}」${order.creditedUsdt > 0 ? `，已入账 ${usdt(order.creditedUsdt)} USDT` : "，还没入账"}。${kept}` : "读到：列表里暂时找不到这笔，记录继续保留。";
     }
     const current = await fetchD1TopupOverview();
     setOverview(current);
     const name = depositChannelText(code);
     if (path.startsWith("/topup/reconciliation/")) {
       const row = current.reconciliation.find(value => value.channel === code);
-      return row ? `读回：${name}今天的差异现在是「${diffText(row)}」。${kept}` : `读回：今天没有${name}的对账记录。${kept}`;
+      return row ? `读到：${name}今天的差异现在是「${diffText(row)}」。${kept}` : `读到：今天没有${name}的对账记录。${kept}`;
     }
     const channel = current.channels.find(value => value.code === code);
-    if (!channel) return `读回：暂时读不到${name}。记录继续保留。`;
-    return path.endsWith("/enabled") ? `读回：${name}现在是「${channel.enabled ? "启用" : "停用"}」。${kept}`
-      : `读回：${name}单笔上限现在是 ${channel.maxAmountValue == null ? "未设置" : `${channel.maxAmountValue.toLocaleString("en-US")} USD`}。${kept}`;
+    if (!channel) return `读到：暂时读不到${name}。记录继续保留。`;
+    return path.endsWith("/enabled") ? `读到：${name}现在是「${channel.enabled ? "启用" : "停用"}」。${kept}`
+      : `读到：${name}单笔上限现在是 ${channel.maxAmountValue == null ? "未设置" : `${channel.maxAmountValue.toLocaleString("en-US")} USD`}。${kept}`;
   };
   const pendingItem = (command: D1PendingCommand, retry: () => Promise<unknown>, permitted: boolean): D1PendingItem => ({
     key: command.commandKey,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先查询原结果；按原请求重试不会重复执行。",
+    hint: "先读取现在的值核对；按原请求重试不会重复执行。",
     blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),

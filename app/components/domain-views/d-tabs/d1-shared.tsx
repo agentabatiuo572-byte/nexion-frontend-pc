@@ -151,7 +151,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
     setRunning(item.key);
     try {
       note(item.key, await item.verify());
-    } catch (error) { note(item.key, `读回失败：${displayAdminError(error)} 记录继续保留。`); }
+    } catch (error) { note(item.key, `读取失败：${displayAdminError(error)} 记录继续保留。`); }
     finally { setRunning(""); }
   };
   // 「到操作记录与审批核对」放在面板底栏，不用展开就看得到；同一个去处只放一次。
@@ -160,7 +160,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
   return (
     <>
       <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理"
-        explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
+        explain="这些操作发出后没收到明确结果，可能已经生效。先读取现在的值核对；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
         foot={auditLinks.length ? auditLinks : undefined}
         items={items.map((item): RecoveryItem => {
           const hint = item.retry ? item.blocked ?? item.hint : item.hint;
@@ -168,10 +168,10 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : "结果未知"}</StatusTag>,
-            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.blocked ? `${item.blocked}。` : "可能已经生效，先查询原结果。" : "可能已经生效，这项只能查询原结果。",
+            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.blocked ? `${item.blocked}。` : "可能已经生效，先读取现在的值核对。" : "可能已经生效，这项只能读取现在的值核对。",
             note: notes[item.key],
             actions: <>
-              {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>查询原结果</Button>}
+              {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
             </>,

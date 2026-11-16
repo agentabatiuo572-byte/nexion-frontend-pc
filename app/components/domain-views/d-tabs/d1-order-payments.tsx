@@ -147,18 +147,18 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       key: row.commandKey,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
-      hint: "先查询原结果；按原请求重试不会重复执行。",
+      hint: "先读取现在的值核对；按原请求重试不会重复执行。",
       blocked: !canRetryPurchasePayment(row) ? RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {
         if (isPolicy) {
           const current = await fetchPurchasePaymentPolicy();
           if (owns()) { setPolicy(current); if (!changed) setDraft(current.channels.map(item => ({ ...item }))); }
-          return `读回：手续费现在是第 ${current.version} 版。那次修改是否生效，请到操作记录确认。记录继续保留。`;
+          return `读到：手续费现在是第 ${current.version} 版。那次修改是否生效，请到操作记录确认。记录继续保留。`;
         }
         const current = await fetchPurchasePaymentRecord(row.scope);
         if (owns()) setSelected(current.intentNo);
-        return `读回：这笔付款现在是「${stateText[current.status]}」。状态可能是别人改的，记录继续保留。`;
+        return `读到：这笔付款现在是「${stateText[current.status]}」。状态可能是别人改的，记录继续保留。`;
       },
       retry: async () => {
         if (mutation.current || !owns()) throw new Error("上一项操作还在处理，请稍后再试");
