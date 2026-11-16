@@ -43,6 +43,9 @@ export const uvtText = (value: unknown) => {
   const kept = frac.replace(/0+$/, "");
   return `${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${kept.length >= 2 ? kept : kept.padEnd(2, "0")}`;
 };
+/** 后端明确给的 null 是这门课没设奖励，和读不到（「—」）分开写，也不写成 0。 */
+export const NO_REWARD = "未设奖励";
+export const rewardPerUser = (value: unknown) => value === null ? NO_REWARD : `${uvtText(value)} UVT/人`;
 
 export type CourseMode = "create" | "edit" | "version-create" | "version-edit";
 export type CourseForm = Record<string, string>;

@@ -29,7 +29,7 @@ import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-t
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
-import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, nsLabel, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
+import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
 /** 查到原审批单时说结论：还在等批准，或已有结果、执行情况到操作记录看。 */
 const ticketText = (ticket: A2OperationRow) => ({
@@ -721,10 +721,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const courseChange = (c: Course, target: { version: string; reward: unknown; title?: string; quiz?: number; pass?: unknown }) => <Facts>
     <Fact k="课程">{nexGridBrandText(target.title ?? c.title)}</Fact>
     <Fact k="版本"><Change from={liveStatus(c) === "published" ? `${c.v}（线上）` : `${c.v}（${COURSE_STATUS[liveStatus(c)]?.text ?? "草稿"}）`} to={`${target.version}（线上）`} /></Fact>
-    <Fact k="学完发">{liveStatus(c) === "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
-      ? <Change from={`${uvtText(c.rewardRaw)} UVT/人`} to={`${uvtText(target.reward)} UVT/人`} /> : `${uvtText(target.reward)} UVT/人`}</Fact>
-    {liveStatus(c) !== "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
-      && <Fact k="课程卡上现在" tone="warn">{`${uvtText(c.rewardRaw)} UVT/人，发布后换成 ${target.version} 的数`}</Fact>}
+    <Fact k="学完发">{liveStatus(c) === "published" && rewardPerUser(c.rewardRaw) !== rewardPerUser(target.reward)
+      ? <Change from={rewardPerUser(c.rewardRaw)} to={rewardPerUser(target.reward)} /> : rewardPerUser(target.reward)}</Fact>
+    {liveStatus(c) !== "published" && rewardPerUser(c.rewardRaw) !== rewardPerUser(target.reward)
+      && <Fact k="课程卡上现在" tone="warn">{`${rewardPerUser(c.rewardRaw)}，发布后换成 ${target.version} 的数`}</Fact>}
     {target.quiz !== undefined && <Fact k="测验">{target.quiz} 题 · {String(target.pass ?? "—")} 分及格</Fact>}
     {approverFact(Number(target.reward))}
   </Facts>;
@@ -744,7 +744,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       title: reward > 0 ? "提交审批：发布课程" : "发布课程",
       detail: (
         <>
-          分类「{categoryLabel("payload" in target ? target.payload.category as string : target.category)}」 · 奖励 {uvtText(rawReward)} UVT/人。发布后 App 学习课程里能看到并学这门课。
+          分类「{categoryLabel("payload" in target ? target.payload.category as string : target.category)}」 · 奖励 {rewardPerUser(rawReward)}。发布后 App 学习课程里能看到并学这门课。
         </>
       ),
       effect: activationEffect(reward),
@@ -783,6 +783,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         } },
       facts: <Facts>
         <Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact>
+        {c.rewardRaw === null && <Fact k="现在">{NO_REWARD}</Fact>}
         <Fact k="按新数发">批准后还没发到账的，包括已学完、奖励还没发的</Fact>
         <Fact k="已经发出的">不补差、不扣回</Fact>
         <Fact k="谁来批">{APPROVER}（需有审批批准和课程调奖权限）</Fact>
@@ -889,7 +890,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const courseDraftFacts = (form: CourseForm, extra?: ReactNode) => <Facts>
     <Fact k="课程">{nexGridBrandText(form.titleZh || "—")}</Fact>
     {extra}
-    <Fact k="学完发" lead unit="UVT/人">{uvtText(form.reward)}</Fact>
+    {form.reward?.trim() ? <Fact k="学完发" lead unit="UVT/人">{uvtText(form.reward)}</Fact> : <Fact k="学完发" lead>{NO_REWARD}</Fact>}
     <Fact k="测验">{form.quizCount} 题 · {form.passScore} 分及格 · 可重试 {form.retries} 次</Fact>
   </Facts>;
   const draftEffect = <StatusTag tone="neutral" filled>只存草稿</StatusTag>;
@@ -1100,7 +1101,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const input: Record<string, unknown> = rejected?.operation ? rejected.input ?? {} : proposalInput?.command.params ?? {};
     const latestOverview = conflict.latest?.overview;
     const carry = (value?: string) => { prefill.current = { scope, reason: conflict.requested.reason, value }; };
-    const reward = (value: unknown) => value === undefined || value === null || value === "" ? "—" : `${uvtText(value)} UVT/人`;
+    const reward = (value: unknown) => value === undefined || value === "" ? "—" : rewardPerUser(value);
     const quiz = (payload?: { quizQuestions?: unknown; passScore?: unknown }) => Array.isArray(payload?.quizQuestions)
       ? `${payload.quizQuestions.length} 题 · ${String(payload.passScore ?? "—")} 分及格` : "—";
     const courseContentRows = (left: Record<string, unknown> | undefined, right: Record<string, unknown> | undefined): IConflictRow[] => {
@@ -1261,11 +1262,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       case "message-rollback": return `${from} → 复制 ${record.version} 发布`;
       case "integrity-fix": return `存成草稿 · ${record.snapshot?.integrityIssue ? issueName(record.snapshot.integrityIssue) : "完整性问题"}`;
       case "rescan": return "重算问题报告";
-      case "course-create": return `新课草稿 · 学完发 ${uvtText(record.input.rewardNex)} UVT/人`;
-      case "course-draft": return `草稿 · 学完发 ${uvtText(record.input.rewardNex)} UVT/人`;
+      case "course-create": return `新课草稿 · 学完发 ${rewardPerUser(record.input.rewardNex)}`;
+      case "course-draft": return `草稿 · 学完发 ${rewardPerUser(record.input.rewardNex)}`;
       case "course-delete": return "删除草稿";
       case "course-archive": return "在线 → 已下架";
-      case "version-create": case "version-draft": return `${record.version} 草稿 · 学完发 ${uvtText(record.input.rewardNex)} UVT/人`;
+      case "version-create": case "version-draft": return `${record.version} 草稿 · 学完发 ${rewardPerUser(record.input.rewardNex)}`;
       case "version-delete": return `删除 ${record.version} 草稿`;
       case "featured": return `${record.snapshot?.featuredCourseId || "—"} → ${record.target}`;
       default: return "原记录不完整";
@@ -1493,6 +1494,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       { label: "在 App 哪里", value: <>{nsLabel(sm.namespace)} · <span className="i6-mono">{keyPath || sm.messageKey}</span></> },
       { label: "用户何时看到", value: whenSeen },
       { label: "变量", value: sm.placeholders.length ? <span className="i6-mono">{sm.placeholders.join("、")}</span> : "无" },
+      ...(sm.versionCreatedAt || sm.versionUpdatedAt ? [{ label: "这一版", value: (([created, updated]) => created === updated
+        ? `创建 ${created}（${BJ}）` : <>创建 {created}<br />更新 {updated}（{BJ}）</>)([sm.versionCreatedAt, sm.versionUpdatedAt].map((at) => formatBusinessTimeCompact(at, "—"))) }] : []),
       ...(i1 ? [{ label: "来源", value: <>页面文案对比测试发布同步{i1Reachable ? <> · <Link className="rd-link" href="/content/copy-ab" prefetch={false}>去页面文案对比测试</Link></> : null}</> }] : []),
     ] : [];
     const drawerFooter = !sm || !canWriteI6 ? undefined : copyEditor
@@ -1603,8 +1606,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </div>
 
       <Fold title="完整性检查" icon={ListChecks} tone={openIssues.length ? "warn" : "role-other"} alert={liveIntegrity > 0}
-        summary={liveIntegrity > 0 ? `${count(liveIntegrity)} 处问题 · ${openIssues.filter((issue) => issue.cnt > 0).map((issue) => `${issueName(issue)} ${count(issue.cnt)}`).join(" · ")}` : INTEGRITY_ISSUES.length ? "问题报告里没有待修的" : "还没有问题报告"}
-        explain="检查 6 类：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。报告存在后台，点「重新检查」或修复一条后更新；报告是空的不代表文案都没问题。一条文案可能同时算进几类。"
+        summary={<>{liveIntegrity > 0 ? `${count(liveIntegrity)} 处问题 · ${openIssues.filter((issue) => issue.cnt > 0).map((issue) => `${issueName(issue)} ${count(issue.cnt)}`).join(" · ")}` : INTEGRITY_ISSUES.length ? "问题报告里没有待修的" : "还没有问题报告"}
+          <span className="i6-muted"> · {data?.lastScanAt ? `上次检查 ${formatBusinessTimeCompact(data.lastScanAt, "—")}（${BJ}）` : "还没有检查记录"}</span></>}
+        explain="检查 6 类：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。报告存在后台，点「重新检查」或修复一条后更新；「上次检查」只记点「重新检查」的时间。报告是空的不代表文案都没问题。一条文案可能同时算进几类。"
         actions={canWriteI6 ? <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={rescan}>重新检查</Button> : undefined}>
         {INTEGRITY_ISSUES.length === 0
           ? <BlockState state="empty" title="还没有问题报告" detail={canWriteI6 ? "点「重新检查」生成一份。" : undefined} />
@@ -1672,12 +1676,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </div>;
             })}
           </section>
-          <Fold inset title="历史版本" icon={History} summary={messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本`}
-            explain="回滚是把旧版本的三语复制成新版本发布，旧记录不改；当前还有草稿时不能回滚。历史版本不带时间。">
+          <Fold inset title="历史版本" icon={History} summary={messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本 · 时间为${BJ}`}
+            explain="回滚是把旧版本的三语复制成新版本发布，旧记录不改；当前还有草稿时不能回滚。">
             <Table label="历史版本">
-              <thead><tr><Th>版本</Th><Th>状态</Th><Th>三语</Th><Th align="right">操作</Th></tr></thead>
+              <thead><tr><Th>版本</Th><Th>状态</Th><Th>三语</Th><Th>更新时间</Th><Th align="right">操作</Th></tr></thead>
               <tbody>
-                {messageVersionsLoading && <TableLoading columns={4} rows={2} />}
+                {messageVersionsLoading && <TableLoading columns={5} rows={2} />}
                 {!messageVersionsLoading && messageVersions.map((row) => {
                   const complete = [row.zh, row.en, row.vi].filter(Boolean).length;
                   const current = row.version === sm.version;
@@ -1685,6 +1689,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     <Td><Cell main={row.version} sub={current ? "当前版本" : undefined} /></Td>
                     <Td><StatusTag tone={msgStatus(row.status).tone}>{statusLabel(row.status)}</StatusTag></Td>
                     <Td>{complete}/3</Td>
+                    <Td><Cell main={formatBusinessTimeCompact(row.versionUpdatedAt, "—")} sub={row.versionCreatedAt ? `创建 ${formatBusinessTimeCompact(row.versionCreatedAt, "—")}` : undefined} /></Td>
                     <Td align="right" data-fit=""><span className="i6-row-actions">
                       {!current && <Button size="sm" variant="ghost" onClick={() => setCompareVersion(compareVersion === row.version ? "" : row.version)}>{compareVersion === row.version ? "收起对比" : "对比"}</Button>}
                       {canWriteI6 && row.status === "archived" && sm.status !== "draft"
@@ -1692,7 +1697,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     </span></Td>
                   </Tr>;
                 })}
-                {!messageVersionsLoading && messageVersions.length === 0 && <TableMessage columns={4}>暂无历史版本</TableMessage>}
+                {!messageVersionsLoading && messageVersions.length === 0 && <TableMessage columns={5}>暂无历史版本</TableMessage>}
               </tbody>
             </Table>
             {compareTarget && <CompareRows beforeLabel={`${compareTarget.version}（旧）`} afterLabel={`${sm.version}（现在）`}
@@ -1729,7 +1734,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     ?? courseRecords.find(record => record.payload.kind === "proposal" && record.payload.input.obj === id && record.ticketStatus === "pending");
   const unknownOf = (id: string) => courseRecords.find((record) => record.payload.kind === "proposal" && record.payload.input.obj === id && record.ticketStatus !== "pending");
   const weekly = operatorCopyText(I6_STATS.weeklyNexPayout);
-  const weeklyValue = weekly.replace(/\s*UVT$/, "");
+  // 原精度文本只加千分位、补到两位，不舍入；不是数字时照原文显示。
+  const weeklyValue = (raw => i6Amount(raw) === undefined ? raw : uvtText(raw))(weekly.replace(/\s*UVT$/, ""));
   const unknownCount = courseRecords.filter((record) => record.ticketStatus !== "pending" && !record.receiptKnown).length + ordinaryRecords.length;
   const submittedCount = courseRecords.filter((record) => record.ticketStatus !== "pending" && record.receiptKnown).length;
   const pendingCourseCount = new Set([...courseApprovalRows.map(row => row.obj), ...courseRecords.filter(record => record.ticketStatus === "pending")
@@ -1793,7 +1799,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     <StatBand label="课程概况">
       <Stat tone="role-2" icon={GraduationCap} label="在线课程" value={count(I6_STATS.coursesOnline)} unit="门" sub={`共 ${count(allCourses.length)} 门 · 草稿 ${count(counts.draft)} · 已下架 ${count(counts.archived)}`} />
       <Stat tone="role-1" icon={BookOpen} label="近 7 天学完发出" value={weeklyValue} unit="UVT"
-        explain="过去 7 天（滚动，不是自然周）已发到用户的课程奖励合计，只算正式用户；已按两位小数四舍五入。" />
+        explain="过去 7 天（滚动，不是自然周）已发到正式用户的课程奖励合计，按实际金额显示，不舍入。" />
       <Stat tone="role-4" icon={Star} label="首页推荐" value={featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置"}
         explain="推荐位只有一个。App 首页先推用户没学完、正在学的课，其次才推这门。" />
       <Stat tone="role-4" icon={ListChecks} label="单课奖励范围" value={`${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max}`} unit="UVT"
@@ -1832,7 +1838,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 </header>
                 <div className="i6-course-reward">
                   <span className="i6-course-reward-k">学完发</span>
-                  <span className="i6-course-reward-v" data-empty={c.reward > 0 ? undefined : ""}>{uvtText(c.rewardRaw)}<small>UVT/人</small></span>
+                  <span className="i6-course-reward-v" data-empty={c.reward > 0 ? undefined : ""}>{c.rewardRaw === null ? <small>{NO_REWARD}</small> : <>{uvtText(c.rewardRaw)}<small>UVT/人</small></>}</span>
                 </div>
                 <dl className="i6-course-meta">
                   <div><dt>版本</dt><dd>{c.v}</dd></div>
@@ -1887,7 +1893,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <Facts>
                 <Fact k="标题">{(versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"] || "—")}</Fact>
                 <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}</Fact>
-                <Fact k="学完发" unit="UVT/人">{uvtText(versionCourse.rewardRaw)}</Fact>
+                <Fact k="学完发" unit={versionCourse.rewardRaw === null ? undefined : "UVT/人"}>{versionCourse.rewardRaw === null ? NO_REWARD : uvtText(versionCourse.rewardRaw)}</Fact>
                 <Fact k="分类">{categoryLabel(versionCourse.cat)}</Fact>
                 <Fact k="形式和难度">{FORMAT_LABEL[versionCourse.format] ?? versionCourse.format} · {LEVEL_LABEL[versionCourse.level] ?? versionCourse.level}</Fact>
                 <Fact k="预计时长">{durationText(versionCourse.duration)}</Fact>
@@ -1932,7 +1938,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       <Td><Cell main={row.version} /></Td>
                       <Td><StatusTag tone={status.tone}>{status.text}</StatusTag></Td>
                       <Td grow><Cell main={title} title={title} /></Td>
-                      <Td align="right"><Cell num main={`${uvtText(row.payload.rewardNex)} UVT`} /></Td>
+                      <Td align="right"><Cell num={row.payload.rewardNex !== null} main={row.payload.rewardNex === null ? NO_REWARD : `${uvtText(row.payload.rewardNex)} UVT`} /></Td>
                       <Td><Cell main={row.updatedAt ? formatBusinessTimeCompact(row.updatedAt, "—") : "—"} /></Td>
                       <Td align="right" data-fit=""><span className="i6-row-actions">
                         {row.status === "DRAFT" && canWriteI7 && <>
