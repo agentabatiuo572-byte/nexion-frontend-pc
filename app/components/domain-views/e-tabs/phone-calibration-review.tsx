@@ -26,7 +26,7 @@ export function PhoneCalibrationReview({ proposal }: { proposal: PhoneProposalVi
     </div>
     {!inherited && <h5>iPhone 机型变化{baseline ? `（对比当前已发布第 ${baseline.revision} 版）` : ""}</h5>}
     {inherited ? null : !baseline ? <p role="status">{stale
-        ? `申请基于第 ${proposal.expectedRevision} 版，现在已是第 ${proposal.baseline!.revision} 版，无法对比差异；以下是申请里的全部 iPhone 机型。`
+        ? `申请基于第 ${proposal.expectedRevision} 版，现已是第 ${proposal.baseline!.revision} 版，无法对比；下面是申请里的全部机型。`
         : "当前已发布的规则加载失败，无法对比差异；以下是申请里的全部 iPhone 机型。"}</p>
       : iosChanges.length === 0 ? <p>iPhone 机型规则没有变化。</p>
       : <div className="ui-table-scroll"><table>
