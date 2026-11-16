@@ -246,7 +246,7 @@ export default function DualLedgerPage() {
   const backcastCount = coverageSeriesPoints?.filter((point) => point.backcast).length;
   const latestLive = coverageSeriesPoints?.at(-1)?.backcast === false;
   const backcastText = backcastCount === undefined ? undefined
-    : `${backcastCount === coverageSeriesPoints!.length ? "每个点都是" : `前 ${backcastCount} 个点是`}倒推的：当时的储备 ÷ 现在的应付款${latestLive ? "；「现在」是实时值" : ""}`;
+    : `${backcastCount === coverageSeriesPoints!.length ? "每个点都" : `前 ${backcastCount} 个点`}按现在的应付款倒推${latestLive ? "，「现在」是实时值" : ""}`;
   const seriesTicks = coverageSeries.map((_, index) => {
     const back = coverageSeries.length - 1 - index;
     if (back === 0) return "现在";
