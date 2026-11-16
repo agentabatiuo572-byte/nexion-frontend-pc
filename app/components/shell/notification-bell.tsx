@@ -18,7 +18,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { a2ActionText } from "@/lib/admin/operator-copy";
+import { a2ActionText, a2ObjectText } from "@/lib/admin/operator-copy";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
@@ -57,7 +57,7 @@ function roleForA2Operation(row: A2OperationRow): AdminRole | null {
 
 function operationDetail(row: A2OperationRow) {
   const delta = row.before !== "—" || row.after !== "—" ? `${row.before} → ${row.after}` : row.reason;
-  return `${row.obj} · ${delta}`;
+  return `${a2ObjectText(row)} · ${delta}`;
 }
 
 /** 铃铛的目标里默认读权表没有的两页。其余目标按表判断。 */
