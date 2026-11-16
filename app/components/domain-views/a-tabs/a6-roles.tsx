@@ -473,11 +473,6 @@ export default function A6Roles() {
           {addedSensitive > 0 && (
             <Notice tone="warn" title={<>加了 {addedSensitive} 项敏感操作{addedAmplifies ? `，其中 ${addedAmplifies} 项可能多付钱` : ""}<Explain label="敏感操作" content={<><p>{SENSITIVE_EXPLAIN}</p><p>{AMPLIFIES_EXPLAIN}</p></>} /></>} />
           )}
-          {d.status === 0 && permDiff.added.length > 0 && (
-            <Notice tone="warn" title="这个角色已停用">
-              <p>新加的权限批准后可能存不上，批准后回这页核对。</p>
-            </Notice>
-          )}
           {d.roleCode === "SUPER_ADMIN" && (
             <Notice tone="danger" title="超级管理员角色的授权不能修改，提交会被拒绝" />
           )}
@@ -932,7 +927,7 @@ function SavedCheck({ desired, detail, approved, permByCode, menuById, onRetry }
     <div className="a6-saved">
       {approved && (same ? <span>现在存着的和提交的一致</span> : (
         <Fold inset title="和提交的不一样" alert summary={parts.join("；")}
-          explain={`只说明现在存着的和这次申请不同：可能没存上，也可能之后又改过授权${detail.status === 0 ? "；停用角色新加的权限可能存不上" : ""}。`}>
+          explain="只说明现在存着的和这次申请不同：多半是之后又改过授权；较早批准的申请也可能当时没存全。">
           {missing.length > 0 && <PermChangeList codes={missing} permByCode={permByCode} kind="missing" limit={20} />}
           {menuDiffs > 0 && <>
             <h4 className="a6-subhead">菜单：提交了、现在没有 {menuSame.removed.length} 个 · 现在多出 {menuSame.added.length} 个</h4>

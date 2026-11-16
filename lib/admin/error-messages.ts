@@ -3400,7 +3400,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A1_PERMISSION_ALREADY_EXISTS: "这个权限编码已经登记，请到权限清单核对，不能重复登记。",
   A6_OVERVIEW_CONTRACT_INVALID: "角色目录返回的数据不完整或格式异常，请重新读取；持续失败请联系值班人员。",
   A6_DETAIL_CONTRACT_INVALID: "角色授权返回的数据不完整或格式异常，请重新读取；持续失败请联系值班人员。",
-  A6_ROLE_GRANTS_NOT_PERSISTED: "角色授权返回的数据不完整或格式异常，请重新读取；持续失败请联系值班人员。",
+  A6_ROLE_GRANTS_NOT_PERSISTED: "授权没能完整保存，这次没有生效，角色的权限和菜单保持原样。请重新读取后再提交，反复出现请联系值班人员。",
   A7_OVERVIEW_CONTRACT_INVALID: "菜单树返回的数据不完整或统计不一致，请重新读取；持续失败请联系值班人员。",
   A7_MUTATION_RESPONSE_INVALID: "菜单保存结果没读全，结果未知；原请求已保留，请核对。",
   A6_PROPOSAL_RECEIPT_MISMATCH: "返回的审批单和原角色或原操作对不上，请保留原请求并查询，不要重新提交。",

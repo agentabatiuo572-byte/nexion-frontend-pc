@@ -286,7 +286,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
         )}
         {detail.status === 0 && permDiff.added.length > 0 && (
           <Notice tone="warn" title="这个角色已停用">
-            <p>新加的权限批准后可能存不上，批准后回这页核对。</p>
+            <p>批准后照常保存，启用这个角色后才生效。</p>
           </Notice>
         )}
         {auditorWrites > 0 && (
