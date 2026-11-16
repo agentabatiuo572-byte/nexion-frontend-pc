@@ -47,9 +47,12 @@ type StoredMessage = PendingMutationRecord & { payload: string };
 // Legacy timeout rows must survive private-message housekeeping even when their payload cannot be recovered.
 const pendingMessages = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-private-pending-v1", retainExpiredRecords: true, isValidRecord: (row) => typeof row.payload === "string" || /^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint) });
 const pendingTimeoutPolicies = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-timeout-pending-v1", retainExpiredRecords: true, isValidRecord: (row) => typeof row.payload === "string" });
-type SessionEndRecord = PendingMutationRecord & { actorId: number; customerId: string; sessionRef?: string };
+export type SessionEndRecord = PendingMutationRecord & { actorId: number; customerId: string; sessionRef?: string };
 // Keep legacy customer-only records; new commands bind one reception instance and never overwrite older evidence.
 const sessionEndCommands = createPendingMutationStore<SessionEndRecord>({ storageKey: "nexion-admin-m3-session-end-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && typeof row.customerId === "string" });
+export function readSessionEndRecords(actorId: number, customerId: string | undefined): SessionEndRecord[] {
+  return sessionEndCommands.list().filter(row => row.actorId === actorId && row.customerId === customerId);
+}
 const readPending = (slot: string) => pendingMessages.list().find((row) => row.fingerprint === slot)?.payload;
 const rememberPending = (slot: string, commandKey: string, value: object) => {
   pendingMessages.remember(slot, commandKey, { payload: JSON.stringify(value) });
@@ -485,19 +488,22 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [holdRead, setHoldRead] = useState<{ customerId: string; hold: SupportSessionHold | null } | null>(null);
   const [holdRetry, setHoldRetry] = useState(0), [holdEnding, setHoldEnding] = useState(false);
   const [holdEndCommand, setHoldEndCommand] = useState<SessionEndRecord | null>(null);
+  const [holdEndCommands, setHoldEndCommands] = useState<SessionEndRecord[]>([]);
   const [legacyEndChecked, setLegacyEndChecked] = useState<string | null>(null);
-  const [holdEndRejected, setHoldEndRejected] = useState<string | null>(null);
+  const [holdEndRejected, setHoldEndRejected] = useState<Set<string>>(() => new Set());
   const [holdEndRelease, setHoldEndRelease] = useState<SessionEndRecord | null>(null);
   const holdEndView = useRef({ customerId: holdCustomer, commandKey: holdEndCommand?.commandKey });
   holdEndView.current = { customerId: holdCustomer, commandKey: holdEndCommand?.commandKey };
   const holdRequest = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
   const hold = holdRead && holdRead.customerId === holdCustomer ? holdRead.hold : undefined;
+  const sessionEndRecoveries = holdEndCommands.filter(record => record.actorId === adminId && record.customerId === holdCustomer).map(record => ({ ...record, isCurrentInstance: Boolean(record.sessionRef && record.sessionRef === hold?.sessionRef) }));
   useEffect(() => {
-    const saved = sessionEndCommands.list().filter(row => row.actorId === adminId && row.customerId === holdCustomer);
+    const saved = readSessionEndRecords(adminId, holdCustomer);
+    setHoldEndCommands(saved);
     setHoldEndCommand(previous => saved.find(row => row.sessionRef && row.sessionRef === hold?.sessionRef)
       ?? saved.find(row => row.commandKey === previous?.commandKey) ?? saved[0] ?? null);
     setHoldEnding(false);
-    setHoldEndRejected(previous => saved.some(row => row.commandKey === previous) ? previous : null);
+    setHoldEndRejected(previous => new Set([...previous].filter(key => saved.some(row => row.commandKey === key))));
     setHoldEndRelease(previous => saved.some(row => row.commandKey === previous?.commandKey) ? previous : null);
     setLegacyEndChecked(null);
   }, [adminId, holdCustomer, authEpoch, hold?.sessionRef]);
@@ -1296,10 +1302,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     && Date.parse(`${hold.sessionRef.slice(hold.sessionRef.indexOf(":") + 1)}Z`) > holdEndCommand.createdAt);
   const mayEndLaterReception = Boolean(holdEndCommand?.sessionRef && hold?.sessionRef && holdEndCommand.sessionRef !== hold.sessionRef)
     || laterReception && legacyEndChecked === holdEndCommand?.commandKey;
-  const endHold = async (queryOriginal = false) => {
-    if (!holdCustomer || holdEnding || hold?.state !== "MINE" && !endPending) return;
+  const endHold = async (queryOriginal = false, original?: SessionEndRecord) => {
+    if (!holdCustomer || holdEnding || hold?.state !== "MINE" && !endPending && !original
+      || original && (original.actorId !== adminId || original.customerId !== holdCustomer)) return;
     const stamp = identityRef.current;
-    let command = endPending && (queryOriginal || !mayEndLaterReception) ? holdEndCommand! : null;
+    let command = original ?? (endPending && (queryOriginal || !mayEndLaterReception) ? holdEndCommand! : null);
     command ??= sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdCustomer
       && !!row.sessionRef && row.sessionRef === hold?.sessionRef) ?? null;
     const recovering = Boolean(command);
@@ -1314,12 +1321,14 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const current = () => stamp === identityRef.current && holdEndView.current.customerId === command.customerId && holdEndView.current.commandKey === command.commandKey;
     const settle = (message = "") => {
       sessionEndCommands.forget(command.fingerprint, command.commandKey);
+      if (holdEndView.current.customerId === command.customerId) setHoldEndCommands(readSessionEndRecords(command.actorId, command.customerId));
+      setHoldEndRejected(previous => new Set([...previous].filter(key => key !== command.commandKey)));
       const visible = current();
       setHoldEndCommand(previous => previous?.customerId === command.customerId && previous.commandKey === command.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === command.customerId) ?? null : previous);
-      if (visible) { setActionError(message); setHoldRetry((value) => value + 1); setHoldEnding(false); setHoldEndRejected(null); }
+      if (visible) { setActionError(message); setHoldRetry((value) => value + 1); setHoldEnding(false); }
     };
     holdEndView.current = { customerId: command.customerId, commandKey: command.commandKey };
-    setHoldEndCommand(command); setHoldEnding(true); setActionError(""); setHoldEndRejected(null);
+    setHoldEndCommand(command); setHoldEndCommands(readSessionEndRecords(adminId, holdCustomer)); setHoldEnding(true); setActionError("");
     let submitted = false;
     try {
       // A number already sent is checked first; only a number the system never received goes out again, unchanged.
@@ -1335,6 +1344,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         }
         return;
       }
+      if (queryOriginal) { if (current()) setActionError(isRetryExpired(command) ? RETRY_EXPIRED_TEXT : "结束会话的结果还没出来，请稍后再查。"); return; }
       if (recovering && isRetryExpired(command)) { if (current()) setActionError(RETRY_EXPIRED_TEXT); return; }
       submitted = true;
       await supportClient.endSessionHold(command.customerId, command.commandKey, command.sessionRef!);
@@ -1342,11 +1352,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     } catch (cause) {
       if (stamp !== identityRef.current) return;
       if (submitted && !recovering && rejectedSupportWrite(cause)) {
-        if (current()) { setHoldEndRejected(command.commandKey); setActionError(`结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
+        if (current()) { setHoldEndRejected(previous => new Set(previous).add(command.commandKey)); setActionError(`结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
       else if (current()) { setActionError("结束会话结果未知。再点「结束会话」会先查原结果，不会重复结束。"); setHoldRetry((value) => value + 1); }
     } finally { if (current()) setHoldEnding(false); }
   };
+  const querySessionEndRecord = (record: SessionEndRecord) => endHold(true, record);
   const insertText = (text: string) => {
     const start=composerRef.current?.selectionStart??draft.length, end=composerRef.current?.selectionEnd??start;
     setDrafts(old=>({...old,[targetKey]:draft.slice(0,start)+text+draft.slice(end)}));
@@ -1578,7 +1589,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     {holdEndRelease && <ReleaseModal label="结束会话" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
       setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdEndRelease.customerId) ?? null : previous);
-      setHoldEndRejected(null); setHoldEndRelease(null); setHoldRetry(value => value + 1);
+      setHoldEndCommands(readSessionEndRecords(adminId, holdEndRelease.customerId));
+      setHoldEndRejected(previous => new Set([...previous].filter(key => key !== holdEndRelease.commandKey))); setHoldEndRelease(null); setHoldRetry(value => value + 1);
     }} />}
     <PageHeader pageId="M3" title="专属会话" back={back}
       summary={<>{summary} <Explain label="时间和更新方式" content={`时间均为${zoneLabel}。${streamReady ? "有新消息时自动更新。" : ""}`} /></>}
@@ -1681,8 +1693,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             {chatMenu.length > 0 && <MoreMenu items={chatMenu} />}
           </div>
         </header>
-        {(endPending && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {endPending && !holdEnding && <Notice tone="warn" action={mayEndLaterReception ? <Button size="sm" onClick={() => void endHold(true)}>查询原结果</Button> : holdEndCommand && holdEndRejected === holdEndCommand.commandKey ? <Button size="sm" onClick={() => setHoldEndRelease(holdEndCommand)}>解除原操作记录</Button> : undefined}>{holdEndCommand && !holdEndCommand.sessionRef ? "上次结束请求没记下是哪一次接待：点「结束会话」只查原结果，不会重发，也不算到这次接待上。" : holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>}
+        {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
+          {!holdEnding && sessionEndRecoveries.map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{!record.sessionRef ? "上次结束请求没记下是哪一次接待：点「结束会话」只查原结果，不会重发，也不算到这次接待上。" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "上次结束会话结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
           {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}
