@@ -42,7 +42,7 @@ import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportK
 import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, timeText, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
+import { DueTab, FORECAST_90D_BLOCK, FlowTab, FundConclusion, OverviewTab, SettingsTab, amountText, categoryText, effectiveText, forecastDiffRows, money, type CrossLink, type ForecastValues, type Loadable } from "./d3-treasury-views";
 
 const OPERATOR = currentAdminOperator;
 
@@ -105,7 +105,7 @@ interface PendingItem {
   /** 完整原记录供核对和复制；不从当前表单重建。 */
   record: unknown;
   title: string;
-  body: ReactNode;
+  body?: ReactNode;
   /** 还能重试时写在 body 后面；过期后换成 RETRY_EXPIRED。 */
   hint: string;
   expiresAt: number;
@@ -708,7 +708,7 @@ export function D3Treasury() {
       commandKey: record.commandKey,
       record,
       title: "可能已经入账",
-      body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
+      body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}。</>,
       hint: "按原请求重试不会重复登记。",
       expiresAt: record.expiresAt,
       allowed: canInject,
@@ -730,7 +730,6 @@ export function D3Treasury() {
       commandKey: forecastRecord.commandKey,
       record: forecastRecord,
       title: "可能已经保存",
-      body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
       hint: "按原请求重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
       allowed: canConfig && originalOwner(savedForecast),
@@ -752,7 +751,6 @@ export function D3Treasury() {
       commandKey: record.commandKey,
       record,
       title: "导出任务可能已经生成",
-      body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "文件可能没有下载下来；按原请求重试不会多记一次。",
       expiresAt: record.expiresAt,
       allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && originalOwner(record),
@@ -782,13 +780,16 @@ export function D3Treasury() {
         link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">到操作记录与审批核对</Link>}
         rows={pendingItems.map((item) => {
           const expired = item.expiresAt <= Date.now();
+          // 查到记为失败时，「可能已经入账」这类猜测不再写。
+          const outcome = investigationResults[item.commandKey];
+          const found = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
           return { key: item.commandKey, title: item.label, record: item.investigationRecord, outcome: investigationResults[item.commandKey], createdAt: item.investigationRecord.createdAt, expired, canRetry: !expired && item.allowed,
             actions: <>
               <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={expired} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
               <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
             </>,
             detail: <>
-              <p>{item.title}。{item.body}{expired ? "" : item.hint}</p>
+              <p>{found === "FAILED" ? "" : `${item.title}。`}{item.body}{expired ? "" : item.hint}</p>
               {pendingNotes[item.commandKey] && <p><KeepText text={pendingNotes[item.commandKey]} /></p>}
               <Fold inset title="原操作完整内容" summary="原请求编号、完整内容和提交时间">
                 <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
