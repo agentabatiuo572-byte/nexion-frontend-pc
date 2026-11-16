@@ -634,7 +634,7 @@ export const d1CommandReplayable = (path: string) => !path.startsWith("/cregis/"
   || D1_RETAINED_CREGIS_WRITES.some((pattern) => pattern.test(path.split("?")[0]));
 
 export const D1_PENDING_OBJECT_TEXT = "这项上次的操作结果还没确认，先在本页上方核对";
-export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录核查";
+export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录与审批核对";
 const D1_IDENTITY_FIELDS = ["network", "cid", "sourceType", "sourceId", "intentNo"] as const;
 
 /**
