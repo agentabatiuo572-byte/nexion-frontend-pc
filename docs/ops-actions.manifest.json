@@ -170,9 +170,9 @@
       "object": "平台维护公告开关",
       "action": "开启/关闭维护公告",
       "status": "built",
-      "view": "a-tabs/a3-config.tsx",
+      "view": "a-tabs/a3-page.tsx",
       "batch": "done",
-      "restAction": "updateA3FeatureFlag",
+      "restAction": "useA3Commands",
       "note": "A3 当前只开放后端已登记且有真实运行时消费者的横切开关；维护公告通过版本校验、理由、幂等和 A2 审计生效"
     },
     {
@@ -181,9 +181,9 @@
       "object": "平台横切参数",
       "action": "调整全球限流上限",
       "status": "built",
-      "view": "a-tabs/a3-config.tsx",
+      "view": "a-tabs/a3-page.tsx",
       "batch": "done",
-      "restAction": "updateA3Parameter",
+      "restAction": "useA3Commands",
       "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
@@ -192,13 +192,13 @@
       "object": "提现强审参数",
       "action": "调整提现加强审核金额",
       "status": "built",
-      "view": "a-tabs/a3-config.tsx",
+      "view": "a-tabs/a3-page.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {
           "type": "pc-runtime",
-          "file": "app/components/domain-views/a-tabs/a3-config.tsx",
-          "positivePatterns": ["提现加强审核金额", "updateA3Parameter"],
+          "file": "app/components/domain-views/a-tabs/a3-page.tsx",
+          "positivePatterns": ["提现强审门槛", "commands.send"],
           "negativePatterns": ["服务端权威契约未完成"]
         }
       ],
