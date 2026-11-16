@@ -141,7 +141,7 @@ function useMutations() {
   }
   async function start(scope: string, section: E6Section, label: string, payload: Payload) {
     if (sending.current) throw new Error("正在提交原操作，请等结果。");
-    if (locked(scope)) throw new Error("这个对象有原操作待确认，请先核对原操作。");
+    if (locked(scope)) throw new Error("这个对象有结果未知的原操作，请先核对原操作。");
     const commandKey = createA2CommandKey("e6"), fingerprint = `${owner}|${scope}`;
     const body = JSON.stringify(payload.kind === "risk" ? { ...payload.input, expectedRevision: payload.revision, confirmed: true } : payload.kind === "device" ? payload.input.action === "pause" || payload.input.action === "resume" ? { userId: payload.input.userId, reason: payload.input.reason, operator: payload.input.operator } : { reason: payload.input.reason, operator: payload.input.operator } : payload.input);
     commands.remember(fingerprint, commandKey, { owner, epoch, scope, section, label, payload: JSON.parse(JSON.stringify(payload)), body });

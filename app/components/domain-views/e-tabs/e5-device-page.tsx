@@ -185,9 +185,9 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const refresh = async (successMessage?: string) => { await Promise.all([readList(successMessage), readOverview()]); if (activityOpen) setActivityVersion(value => value + 1); };
   const readBack = async (record: import("@/lib/admin/e5-command").E5Command) => {
     const [fresh] = await Promise.all([readList(), readOverview()]);
-    if (!fresh) return "最新设备列表未读到，请重试读取；原操作继续待确认。";
+    if (!fresh) return "最新设备列表未读到，请重试读取；原记录继续保留。";
     const matches = fresh.filter(row => record.intent === "pause" || record.intent === "resume" ? row.userId === record.device.userId : row.deviceId === record.device.deviceId);
-    return matches.length ? `已读到：${matches.map(row => `${row.serial} · ${e5StateNote(row).label ?? E5_STATES[row.simState!].label}`).join("；")}。当前列表状态不能单独确认原操作结果，请结合操作记录与审批核对。` : "已读取当前列表，原对象不在当前页或筛选结果中。请清除筛选核对；原操作继续待确认。";
+    return matches.length ? `已读到：${matches.map(row => `${row.serial} · ${e5StateNote(row).label ?? E5_STATES[row.simState!].label}`).join("；")}。当前列表状态不能单独确认原操作结果，请结合操作记录与审批核对。` : "已读取当前列表，原对象不在当前页或筛选结果中。请清除筛选核对；原记录继续保留。";
   };
   const selected = rows.find(row => row.deviceId === selectedId);
   const index = rows.findIndex(row => row.deviceId === selectedId);

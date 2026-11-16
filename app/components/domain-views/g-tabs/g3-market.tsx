@@ -2,7 +2,6 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { fmtConfigPct } from "@/lib/format";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
@@ -508,9 +507,7 @@ function G3MarketEditor() {
     } catch (err) {
       const message = messageOf(err);
       setError(message);
-      // 拿得到错误对象就按类型认结果未知，不看句子：A2 的结果未知错误，或带 unknownOutcome 标记的 G3 写入失败。
-      const unknown = isA2OutcomeUncertainError(err) || (err as { unknownOutcome?: unknown } | null)?.unknownOutcome === true;
-      toast(unknown ? message : `操作失败 · ${message}`);
+      // 确认框开着、框里已写这句，不再另弹轻提示。
       throw err;
     } finally {
       setBusyKey(null);

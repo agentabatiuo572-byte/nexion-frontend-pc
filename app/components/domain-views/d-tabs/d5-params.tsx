@@ -833,7 +833,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         const detail = cause.message.match(/（([^（）]*[\u4e00-\u9fa5][^（）]*)）$/)?.[1];
         note(key, `${detail ? sentence(detail) : ""}结果还是未知，记录继续保留。`);
       }
-      else if (!kept) toast(`重试被拒绝：${sentence(errorText(cause))}原审批命令已清除，可以重新发起。`, "warn");
+      else if (!kept) toast(`重试被拒绝：${sentence(errorText(cause))}原申请记录已清除，可以重新发起。`, "warn");
       else if (mode === "retry" && isExplicitRejection(cause)) {
         note(key, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
         setRetryRejected((current) => [...current, key]);

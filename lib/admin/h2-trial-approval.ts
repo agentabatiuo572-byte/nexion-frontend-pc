@@ -59,7 +59,7 @@ export async function submitH2TrialApproval(
     return ticket;
   }
   if (mode === "lookup" && !previous) return null;
-  if (mode === "retry" && !previous) throw new Error("原审批命令已处理，请刷新后核对结果。");
+  if (mode === "retry" && !previous) throw new Error("原审批申请已处理，请刷新后核对结果。");
   const original = previous ?? { ...input, reason };
   const action = `${H2_TRIAL_ACTIONS[original.op]} · ${original.sid}`;
   const key = previous?.commandKey ?? createA2CommandKey(original.op);
@@ -107,7 +107,7 @@ export async function submitH2TrialApproval(
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批命令仍待确认，请查询原操作。", key);
+      throw new A2OutcomeUncertainError("原审批申请还没有结果，请查询原结果。", key);
     }
     if (!isA2OutcomeUncertainError(error)
         && (!previous || !(error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))))) {

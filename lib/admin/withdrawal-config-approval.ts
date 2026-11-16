@@ -344,7 +344,7 @@ export function configApprovalOriginalInput(sourceDomain: ApprovalSource, input:
         || typeof original[0]?.decisionRef !== "string" || !/^[0-9a-f]{64}$/.test(original[0]?.expectedRevision)
       : sourceDomain === "D7" ? !Number.isSafeInteger(original[0]?.expectedVersion)
       : typeof original[0]?.expectedRevision !== "string")) {
-    throw new Error("原审批命令不完整，请到操作记录核对。");
+    throw new Error("原审批申请不完整，请到操作记录核对。");
   }
   return original as [ApprovalValues, string];
 }
@@ -364,7 +364,7 @@ export async function submitConfigApproval<T>(
   const previous = pendingConfigApproval(sourceDomain, session.adminId, scope);
   if (lookupOnly && !previous) return null;
   if (mode === "retry-original") {
-    if (!previous) throw new Error("原审批命令已处理，请刷新页面后重新操作。");
+    if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
   const input = JSON.stringify([values, reason]);
@@ -414,11 +414,11 @@ export async function submitConfigApproval<T>(
     }
     if (sourceDomain === "G4" && previous?.g4Ticket && !ticket) throw new A2OutcomeUncertainError("暂未查到已收录的原审批单，请继续核对，不能重新提交。", key);
     if (previous && !ticket && (previous.expiresAt <= Date.now() || sourceDomain === "G4" && Date.now() < previous.createdAt)) {
-      throw new A2OutcomeUncertainError("原审批命令已过期，暂未查到结果。请到操作记录核对，勿重复提交。", key);
+      throw new A2OutcomeUncertainError("原审批申请已过期，还没查到结果。请到操作记录核对，不要重复提交。", key);
     }
     if (lookupOnly && !ticket) return null;
     if (previous && previous.input !== input && !ticket) {
-      throw new A2OutcomeUncertainError("请用原配置和原理由核对该命令，或在操作记录中查询。", key);
+      throw new A2OutcomeUncertainError("请用原配置和原理由核对这张申请，或在操作记录中查询。", key);
     }
     if (!ticket) {
       if (!proposal) throw new Error("请填写完整后提交。");

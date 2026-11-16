@@ -141,7 +141,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const readingTasks = tasks.state === "loading" || lastQuery.current !== JSON.stringify(query);
   const fresh = pools.state === "ready" && !readingTasks && tasks.state === "ready" && !!pool;
   const locked = pending.some(record => record.pool.code === query.code);
-  const writeBlock = !ctx.canWriteE2 ? "只读，你只能查看任务池" : locked ? "这个等级有待确认操作，请先查看原操作"
+  const writeBlock = !ctx.canWriteE2 ? "只读，你只能查看任务池" : locked ? "这个等级有结果未知的操作，请先查看原操作"
     : !fresh ? "请先重新读取任务等级和任务列表" : undefined;
   const selectedRows = rows.filter(row => selected.includes(row.taskTypeId));
   const toDisable = selectedRows.filter(row => row.enabled).length, toEnable = selectedRows.length - toDisable;
@@ -367,7 +367,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <CheckGroup legend="限定类型" summary={classes.length ? `已选 ${classes.length} 类` : "不限类型"} explain="限制本次随机生成的类型；可多选，不选则不限。不保证每类均匀分到或至少分到一个，不改变已有任务。">
               {TASK_CLASSES.map(value => <Check key={value} label={<TaskClassTag taskClass={value} />} aria-label={TASK_CLASS_LABELS[value]} disabled={saving} checked={classes.includes(value)} onChange={event => setClasses(event.target.checked ? TASK_CLASSES.filter(item => classes.includes(item) || item === value) : classes.filter(item => item !== value))} />)}</CheckGroup></>}
           {dialog.original ? <Facts><Fact k="原操作理由">{dialog.original.request.body.reason}</Fact></Facts>
-            : <Field label="操作理由" required hint="至少 8 字" explain="记录这次调整的依据，随命令写入操作记录。" error={touched.reason && !reasonReady ? "请填写 8–200 字的操作理由" : undefined}>
+            : <Field label="操作理由" required hint="至少 8 字" explain="记录这次调整的依据，随这次操作写入操作记录。" error={touched.reason && !reasonReady ? "请填写 8–200 字的操作理由" : undefined}>
               <Textarea rows={3} maxLength={400} count={`${reasonLength}/200`} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
           {dialogError && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}

@@ -129,7 +129,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const paymentPending = owner && canRead ? pendingPaymentReleases(owner).filter(row => row.portKey === `global:${row.userId}`
     && !(tab === "payment" && (params?.get("paymentTab") !== "exceptions" ? row.userId === userId : row.recordId === shownPaymentRecord))) : [];
   const phonePending = owner && userId ? pendingPhoneCommands(owner, userId) : [], modelPending = owner && userId ? pendingModelLockCommands(owner, userId) : [];
-  const userBlocked = (id: string) => busy ? "正在提交，请稍候" : pending.some(row => !isCompleteC5Command(row) || row.userId === id) || logoutPending.some(row => row.userId === id) ? "此用户有待确认原操作，请先核对" : undefined;
+  const userBlocked = (id: string) => busy ? "正在提交，请稍候" : pending.some(row => !isCompleteC5Command(row) || row.userId === id) || logoutPending.some(row => row.userId === id) ? "此用户有结果未知的原操作，请先核对" : undefined;
   const sessions = overview?.sessions?.records ?? [], selectedSession = sessions.find(row => row.refreshTokenId === shownSession);
   const lockedUsers = overview?.lockedUsers ?? [], credentials = overview?.credentialParams ?? [];
   const activeCount = count(overview?.selectedActiveSessionCount), shortCount = count(overview?.stats?.lockedShort), longCount = count(overview?.stats?.lockedLong);

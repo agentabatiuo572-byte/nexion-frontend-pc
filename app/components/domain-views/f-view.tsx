@@ -1415,10 +1415,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           }
           setActionConfirm(null);
           } catch (error) {
-            // outcome-uncertain 不算「失败」:提案可能已生效,冠以失败会诱导换渠道重做造成重复动作。
-            setToast(isA2OutcomeUncertainError(error) || mc.f4Snapshot && isF1OutcomeUncertainError(error)
-              ? errorMessage(error)
-              : "提交失败 · " + errorMessage(error));
+            // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹同一句轻提示。
             // Modal owns the retry/error state and must retain the original command key.
             // Swallowing here clears its submitting state without rendering the recovery path.
             throw error;

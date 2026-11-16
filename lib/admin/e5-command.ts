@@ -122,13 +122,13 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
       headers: { "Content-Type": "application/json", "Idempotency-Key": record.commandKey },
     });
     const raw: unknown = await response.json();
-    if (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") throw new E5CommandError("原操作结果未确认", undefined, "", true);
+    if (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") throw new E5CommandError("原操作结果未知", undefined, "", true);
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new E5CommandError("原操作的结果读不到", undefined, "", true);
     const result = raw as { code?: unknown; message?: unknown; data?: unknown };
     if (!response.ok || result.code !== 0) {
       const status = response.ok && typeof result.code === "number" && result.code >= 400 && result.code < 500 ? result.code : response.status;
       const code = typeof result.message === "string" ? result.message : "";
-      throw new E5CommandError(formatAdminApiError(code, "原操作结果未确认，请核查"), status, code,
+      throw new E5CommandError(formatAdminApiError(code, "原操作结果未知，请核查"), status, code,
         response.status >= 500 || !code || !Number.isInteger(result.code) || typeof result.code === "number" && result.code >= 500 || isIdempotencyOutcomeOpen(code) || retry && record.intent === "legacy" && code.startsWith("LEGACY_UNKNOWN_"),
         response.status, typeof result.code === "number" ? result.code : undefined);
     }

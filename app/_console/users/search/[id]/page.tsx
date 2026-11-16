@@ -909,7 +909,7 @@ export default function UserDetailPage() {
   const retryPending = async (command: C1Command) => {
     if (command.expiresAt <= Date.now()) return;
     if (!c1UserCommands.isDurablyStored(command.fingerprint, command.commandKey)) {
-      setPendingNotes((current) => ({ ...current, [command.fingerprint]: "本机存储里查不到原操作，这次没有发送。到操作记录与审批核对，待确认继续保留。" }));
+      setPendingNotes((current) => ({ ...current, [command.fingerprint]: "本机存储里查不到原操作，这次没有发送。到操作记录与审批核对，原记录继续保留。" }));
       return;
     }
     try {
@@ -1169,7 +1169,7 @@ export default function UserDetailPage() {
   const issues: { key: string; text: string; danger?: boolean; go?: () => void; goLabel?: string }[] = [
     summary.locked === true && { key: "locked", text: "账号已锁定", go: () => locate("security"), goLabel: "查看安全信息" },
     paymentSecurity.state === "exception" && { key: "payment", text: "支付密码有异常", go: () => locate("security"), goLabel: "查看安全信息" },
-    paymentSecurity.pending && { key: "release", text: "有一笔解除结果等待确认", go: () => locate("security"), goLabel: "查看安全信息" },
+    paymentSecurity.pending && { key: "release", text: "有一笔解除结果未知", go: () => locate("security"), goLabel: "查看安全信息" },
     unfinishedRevokes.length > 0 && { key: "revoke", text: "有已解绑的卡仍可能被扣款", danger: true, go: () => locate("security", "hub-payment-methods"), goLabel: "查看支付方式" },
     riskHigh && { key: "risk", text: "风险档是高风险", danger: true },
     openCases > 0 && { key: "cases", text: "有未关闭的风险案件" },

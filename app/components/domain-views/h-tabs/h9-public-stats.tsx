@@ -444,7 +444,6 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             command = undefined;
             if (recovering) { ctx.openActionConfirm(null); await load(module); }
           }
-          ctx.toast(kind === "unknown" ? `保存结果未知 · ${message}` : message, kind === "unknown" ? "warn" : "error");
           throw cause;
         } finally { setSaving(false); syncPending(); }
       },

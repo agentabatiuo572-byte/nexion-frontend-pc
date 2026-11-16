@@ -10,7 +10,7 @@
  * amplifies 仅放大流出方向(放松 dial / 升奖励 / 升概率 / 升 NEX 奖励 / 降门槛 / 真实奖)。
  * 统一来源:后端 /api/admin/growth/* 读模型。
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import "./h-domain.css";
 import { RdPage } from "@/app/components/rd";
@@ -44,6 +44,9 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "H1", [meta.l2Id]);
   const [rhythm, setRhythm] = useState<H1RhythmOverview | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
+  // 页签自己关框时记下来：框关了才需要轻提示，框开着错误就写在框里。
+  const openConfirm = useRef<ActionConfirmReq | null>(null);
+  openConfirm.current = mc;
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const can = useCallback((authority: string) => {
     return access[1] === "superadmin" || access[1] === "super" || access.slice(2).includes(authority);
@@ -51,7 +54,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: HCtx = {
     toast: setToast,
-    openActionConfirm: setActionConfirm,
+    openActionConfirm: (req) => { openConfirm.current = req; setActionConfirm(req); },
     openConfirm: setCf,
     closeConfirm: (req) => setCf(current => !req || current === req ? null : current),
     can,
@@ -105,8 +108,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
               await mc.run(reason, newValue, businessValue);
               setActionConfirm(current => current === mc ? null : current);
             } catch (error) {
-              // 免费试用设置的错误只写在框里，不再弹同一句（S01）。
-              if (tab !== "H2") setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
+              // 错误只写在框里，不再弹同一句（S01）；页签自己把框关了时才用轻提示告诉运营。
+              if (tab !== "H2" && openConfirm.current !== mc) setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}
