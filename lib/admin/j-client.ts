@@ -6,6 +6,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
 type ApiResult<T> = {
   code?: number;
@@ -278,7 +279,18 @@ export async function retryJ3Command(record: J3PendingCommand) {
 export async function queryJ3Command(record: J3PendingCommand, evidence?: FundCommandEvidence) {
   const saved = getJ3PendingCommand();
   if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  const receipt = await checkFundCommand({ ...saved, commandOrigin: saved.tamper.commandOrigin }, evidence);
+  let receipt;
+  if (saved.tamper.commandOrigin) {
+    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.tamper.commandOrigin }, evidence);
+  } else {
+    // During backend-first rollout an older client may already have a retained server receipt.
+    // Its server-owned origin must prove this operator; do not invent or persist a legacy maker.
+    const actorId = useAdminAuth.getState().session?.adminId;
+    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
+    const locator = { commandKey: saved.commandKey, originalMethod: "PUT" as const,
+      originalPath: "/api/admin/emergency/tamper/alert-config", originalAdminId: String(actorId) };
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j3_read") : await discoverECommand(locator);
+  }
   if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
   return receipt;
 }
