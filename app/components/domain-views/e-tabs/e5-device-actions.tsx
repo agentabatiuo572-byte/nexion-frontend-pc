@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import Link from "next/link";
 import { MoreHorizontal, SearchCheck } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -268,16 +268,19 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   useEffect(() => { setAction(null); setCandidateOpen(false); setCandidate(null); setCandidateError(""); }, [d.deviceId, d.userId, d.serial, epoch]);
   if (!session || !state) return null;
   const readOnly = !phones && d.simState === "SIM_OFF";
-  const activatable = phones ? ["inventory", "unbound"].includes(d.state) : ["WAITING_ACTIVATION", "STOPPED", "UNBOUND"].includes(d.simState ?? "");
+  // STOPPED also projects RECYCLED/RETIRED; execution uses the raw device status.
+  const rawStatus = d.rawStatus.trim().toUpperCase();
+  const activatable = rawStatus === "INVENTORY";
+  const forceActivatable = ["INVENTORY", "DEACTIVATED", "INACTIVE", "UNBOUND"].includes(rawStatus);
   const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const platform = session.authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
-  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有待确认操作，请先核对原操作" : undefined;
+  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有待确认操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined;
   const options: MoreMenuItem[] = [];
   const add = (intent: E5Intent, label: string, extra?: string) => options.push({ key: intent, label, danger: intent === "unbind" || intent === "pause", disabledReason: locked(intent) ?? extra, onSelect: () => setAction(intent) });
   if (!readOnly) {
-    if (activatable && ctx.canWriteE5 && (phones ? d.state === "inventory" : d.simState === "WAITING_ACTIVATION")) add("activate", "激活", full ? "已达 6 台激活上限（含手机）" : undefined);
-    if (activatable && ctx.canForceActivateE5) add("force-activate", "强制激活", !platform ? "还需审批发起权限，请联系管理员" : full ? "已达 6 台激活上限（含手机）" : undefined);
+    if (activatable && ctx.canWriteE5) add("activate", "激活", full ? "已达 6 台激活上限（含手机）" : undefined);
+    if (forceActivatable && ctx.canForceActivateE5) add("force-activate", "强制激活", !platform ? "还需审批发起权限，请联系管理员" : full ? "已达 6 台激活上限（含手机）" : undefined);
     if (deactivatable && ctx.canWriteE5) add("deactivate", "取消激活");
     if (deactivatable && ctx.canUnbindE5) add("unbind", "解绑", !platform ? "还需审批发起权限，请联系管理员" : undefined);
     if (ctx.canWriteE5 && (d.pausedReason ? canResumeE5UserDevicesFrom(d) : deactivatable)) add(d.pausedReason ? "resume" : "pause", d.pausedReason ? "恢复该用户" : "暂停该用户");
