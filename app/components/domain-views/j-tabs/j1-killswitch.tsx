@@ -236,7 +236,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         await dispatch(extra.command, extra.reason, key);
       } catch (cause) {
         const unknown = isEmergencyOutcomeUncertain(cause);
-        if (!unknown && !retained) pendingKeys.forget(scope);
+        if (!unknown && !retained || retained && isExplicitRejection(cause)) pendingKeys.forget(scope, key);
         syncPending();
         await actions.reloadJEmergency().catch(() => undefined);
         if (unknown) {
@@ -283,6 +283,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     try {
       await sendCommand(fingerprint, extra);
     } catch (cause) {
+      if (isExplicitRejection(cause)) { toast(displayAdminError(cause), "warn"); return; }
       notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
       if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, commandKey]);
     }

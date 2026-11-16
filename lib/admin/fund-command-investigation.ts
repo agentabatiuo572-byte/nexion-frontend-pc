@@ -1,5 +1,5 @@
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator } from "./e-command-investigation";
+import { discoverECommand, investigateECommand, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator } from "./e-command-investigation";
 import { formatAdminApiError } from "./error-messages";
 import type { PendingMutationRecord } from "./pending-mutation-store";
 
@@ -48,5 +48,5 @@ export async function checkFundCommand(record: FundCommandRecord, evidence?: ECo
   return discoverECommand(locator);
 }
 
-export { eCommandSettled as fundCommandSettled };
+export { eCommandSettled as fundCommandSettled, eCommandResult as fundCommandResult } from "./e-command-investigation";
 export type { ECommandEvidence as FundCommandEvidence, ECommandInvestigation as FundCommandInvestigation };

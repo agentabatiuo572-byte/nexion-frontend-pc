@@ -125,6 +125,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
+      if (retry && isExplicitRejection(cause)) toast(displayAdminError(cause));
       if (retry && !e5Commands.list().find(r => r.commandKey === record.commandKey)?.receivedTicketId && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
       const pausedGone = cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND" && !retry && !e5Commands.get(record.fingerprint);
       const saved = e5Commands.list().find(r => r.commandKey === record.commandKey);

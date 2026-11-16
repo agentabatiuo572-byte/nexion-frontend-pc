@@ -741,7 +741,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       await send(key);
     } catch (cause) {
       const unknown = cause instanceof K1OutcomeUncertainError || cause instanceof A2OutcomeUncertainError;
-      if (!unknown && !retained) pendingCommands.forget(scope);
+      if (!unknown && !retained || retained && isExplicitRejection(cause)) pendingCommands.forget(scope, key);
       syncPending();
       if (!unknown) throw cause;
       ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
@@ -825,6 +825,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       await runRecord(record);
     } catch (cause) {
+      if (isExplicitRejection(cause)) { ctx.toast(errorText(cause), "warn"); return; }
       setPendingNotes((current) => ({ ...current, [record.fingerprint]: `重试被拒绝：${errorText(cause)} 这说明不了原操作的结果，原操作继续保留。` }));
       if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, record.commandKey]);
     } finally {

@@ -214,7 +214,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
         : !isLOutcomeUnknownError(cause) && !failure.reasonCode?.startsWith("IDEMPOTENCY_")
           && isDeterministicRejection(failure.status ?? 0);
       const unknown = !rejected;
-      if (!unknown && !retained) pendingExports.forget(EXPORT_SCOPE);
+      if (rejected) pendingExports.forget(EXPORT_SCOPE, key);
       syncPending();
       if (!unknown) throw cause;
       ctx.toast("结果未知，不要重新导出。到页面上方按原请求重试。", "warn");
@@ -275,6 +275,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
     try {
       await send(record.mode, record.input, record.reason, record.label);
     } catch (cause) {
+      if (isExplicitRejection(cause)) { ctx.toast(displayAdminError(cause), "warn"); return; }
       setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
       setRetryRejected(isExplicitRejection(cause));
     } finally {

@@ -1141,7 +1141,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       } catch (cause) {
         const unknown = isDOutcomeUnknownError(cause);
         const moved = cause instanceof DRequestError && (cause.status === 409 || cause.code === 409) && MOVED_STATE_CODES.includes(cause.reasonCode ?? "");
-        if (!unknown && !retained) pendingKeys.forget(scope);
+        if (!unknown && !retained || retained && isExplicitRejection(cause)) pendingKeys.forget(scope, key);
         syncPending();
         await refresh();
         const open = detailRef.current;
@@ -1541,6 +1541,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (record.kind === "simulate") await runDevelopmentSimulation(no, record.reason, record.operator);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
+      if (isExplicitRejection(cause)) { toast(displayAdminError(cause), "warn"); return; }
       // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原命令的结论（OP-153）。
       if (isExplicitRejection(cause)) {
         notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 原操作结果仍未知，记录继续保留。`);

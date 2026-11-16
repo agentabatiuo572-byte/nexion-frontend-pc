@@ -145,9 +145,7 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
   } catch (cause) {
     if (!retry && cause instanceof E5CommandError && !cause.unknownOutcome && cause.httpStatus !== undefined
         && isDeterministicRejection(cause.httpStatus, cause.apiCode)) e5Commands.forget(record.fingerprint, record.commandKey);
-    else if (retry && isExplicitRejection(cause)) e5Commands.remember(record.fingerprint, record.commandKey, {
-      ...record, retryRejection: cause instanceof Error ? cause.message : String(cause),
-    });
+    else if (retry && isExplicitRejection(cause)) e5Commands.forget(record.fingerprint, record.commandKey);
     throw cause;
   }
   if (["force-activate", "unbind", "legacy"].includes(record.intent) && retry) {
