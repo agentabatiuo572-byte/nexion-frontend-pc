@@ -1734,7 +1734,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     </Notice>}
     <FundRecoveryPanel rows={pendingRows} link={auditLink} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
       settledAction={item => item.batch && item.status !== "CONFIRMED_SUCCEEDED" && settledBatches[item.key]
-        ? <Button size="sm" variant="ghost" onClick={() => setBatchResult({ action: settledBatches[item.key], result: item.batch! })}>查看逐笔结果</Button> : null} />
+        ? <button type="button" className="rd-link" onClick={() => setBatchResult({ action: settledBatches[item.key], result: item.batch! })}>查看逐笔结果</button> : null} />
 
     <StatBand label="提现汇总">
       <Stat lead tone="role-2" icon={Inbox} label="要处理" value={todoCount ?? "—"} unit={todoCount === undefined ? undefined : "笔"} sub={countsFailed ? "数量暂时读不到" : undefined}
