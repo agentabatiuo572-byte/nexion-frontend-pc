@@ -57,6 +57,7 @@ import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
   configApprovalOriginalInput,
@@ -871,6 +872,23 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     const original = session ? pendingConfigApproval("D5", session.adminId) : undefined;
     if (original && !fundInvestigationAccess(original).unavailableReason) await checkProposalInvestigation(original).catch(() => undefined);
   };
+  /** 收紧（直接保存）：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
+  const [directClosing, setDirectClosing] = useState<TightenRecord | null>(null);
+  const settleDirect = async (record: TightenRecord, status: FundSettled["status"]) => {
+    setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label.replace(/^调整提现参数 · /, ""), status }]);
+    syncPending();
+    await load();
+  };
+  const lookupTighten = async (record: TightenRecord) => {
+    setRecovering(record.commandKey);
+    try {
+      const { receipt, settled: done } = await queryD5DirectCommand(record);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+    } catch (cause) {
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+    } finally { setRecovering(""); }
+  };
   const releasePending = (record: ReleaseTarget) => {
     setReleasing(null);
     // D5_WITHDRAWAL_LIMITS_UPDATE is not in AdminCommandOrigin.supported; retain its existing local handling.
@@ -917,9 +935,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     })()] : []),
     ...tightenPending.map((record): FundRecoveryRow => {
       const expired = record.expiresAt <= Date.now();
-      return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), createdAt: record.createdAt, expired, canRetry: !expired,
-        status: { tone: expired ? "warn" : "neutral", label: expired ? "已过期" : "不能查询", line: expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : "直接保存的修改查不了原结果，按原请求重试不会重复生效。" },
+      // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
+      const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
+      return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
+        createdAt: record.createdAt, expired, canRetry: !expired && commandAuthorities(record.changes).every(can),
         actions: <>
+          <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
+            onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
           {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
           {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
@@ -927,13 +949,22 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           <p>{`改动：${describeChanges(record.changes)}。可能已经生效，有结果前这页不能再修改。`}</p>
           {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
         </>,
-        tech: `原请求编号 ${record.commandKey} ｜ 版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
+        tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
     }),
   ];
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} known={closureKnown(investigationResults[loosenRecord.commandKey])} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
+    {directClosing && <CommandClosureModal label={directClosing.label.replace(/^调整提现参数 · /, "")} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
+      known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="改动">{describeChanges(directClosing.changes)}</Fact>}
+      onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
+        const record = directClosing;
+        const { receipt, settled: done } = await queryD5DirectCommand(record, evidence);
+        setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+        setDirectClosing(null);
+        if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+      }} />}
   </>;
 
   const writableNames = [

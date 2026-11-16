@@ -8,12 +8,11 @@
  * - ExecutePrepare：发起正式执行的第一步：先看清每一步和后果、逐步勾选确认，再填触发依据和说明。
  *   字段和校验照改版前的 j4-execution-confirmation（J4-H03），之后进共用确认框写理由、提交审批申请。
  * - TraceDrawer：一次执行的只读追溯（触发依据、逐步确认、逐步结果、通知和审计记录、恢复情况）。
- * - J4RecoveryNotice：结果未知的原操作逐条列出。行由页面用本机保存的原请求拼好传进来；旧逻辑不保存原请求，现在传空，等代码 worker 按 R1 接。
  */
 import { useState, type ReactNode } from "react";
-import { Ban, CircleHelp, Clock3, FlaskConical, Hourglass, ListChecks, Pencil, Plus, Search, Siren, SkipForward, Trash2, Undo2, Workflow } from "lucide-react";
-import { Button, Checkbox, Drawer, Explain, Fact, Facts, Field, Input, Modal, NumberInput, Notice, Panel, SearchSelect, Select, StatusTag, Textarea, Check } from "@/app/components/rd";
-import { businessStamp, businessZone, formatBusinessTime, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { Ban, CircleHelp, Clock3, FlaskConical, ListChecks, Pencil, Plus, Search, Siren, SkipForward, Trash2, Undo2, Workflow } from "lucide-react";
+import { Button, Checkbox, Drawer, Fact, Facts, Field, Input, Modal, NumberInput, Notice, Panel, SearchSelect, Select, StatusTag, Textarea, Check } from "@/app/components/rd";
+import { businessZone, formatBusinessTime, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { J4ActionOption, J4RollbackOption, JNotifyTemplateOption, Playbook, PlaybookStep, SopExecution } from "@/lib/admin/j-client";
 
@@ -161,65 +160,6 @@ export function StepDots({ steps, drill }: { steps: string[]; drill?: boolean })
       </span>
       <span className="j4-dots-text">{text}</span>
     </span>
-  );
-}
-
-/* ---------------- 结果未知逐条提醒（界面备好，等代码 worker 接 R1） ---------------- */
-
-export type J4RecoveryRow = {
-  key: string;
-  /** 哪个预案的哪种操作：「SOP-01 监管点名快速止血 · 发起正式执行」。 */
-  name: string;
-  /** 提交了什么，写人话：「应急通道，触发依据 监管点名，4 步」。 */
-  change: ReactNode;
-  /** 本机保存原请求的时间（毫秒）。 */
-  submittedAt: number;
-  /** 走审批的申请（发起正式执行）还是直接生效的写操作。 */
-  kind: "approval" | "direct";
-  expired: boolean;
-  onQuery: () => void;
-  onRetry?: () => void;
-  /** 执行申请过期且后端明确查不到，或改版前的旧记录过期：可以确认解除这条记录。 */
-  onRelease?: () => void;
-  note?: ReactNode;
-};
-export function j4UnknownTag(kind: "approval" | "direct") {
-  return kind === "approval"
-    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，申请可能已经提交、正在等批准。先查询原结果；24 小时内也可以按原请求重试，不会建第二张申请。">结果未知</StatusTag>
-    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内也可以按原请求重试，不会重复执行。">结果未知</StatusTag>;
-}
-export function j4ExpiredTag(kind: "approval" | "direct", legacy = false) {
-  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "approval"
-    ? "原请求超过 24 小时，不能再重试，只能查询原申请。按原请求查不到这张申请时，说明没建成，可以解除原操作记录。"
-    : legacy ? "已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。"
-      : "原请求超过 24 小时，不能再重试，只能查询。查到的是现在的状态，不能据此认定原操作成没成，记录继续保留。"}>已过期</StatusTag>;
-}
-export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <Notice tone="warn" title={<>{rows.length} 项操作结果未知<Explain label="结果未知怎么处理" content={<>
-      <p>提交时没收到确定结果。发起正式执行的申请可能已经提交、在等批准；新增、编辑、演练、取消、核对和恢复开关可能已经生效。</p>
-      <p>先点「查询原结果」；24 小时内也可以按原请求重试，不会重复执行。</p>
-      <p>执行申请按原请求查原申请，查到就以它为准；其他操作只能查到现在的状态，可能是别人改的，不能单凭它认定原操作成没成。记录留到原请求有确定结果；执行申请过期且按原请求查不到、或改版前的旧记录过期，可以确认解除。</p>
-    </>} /></>}>
-      <ul className="j4-rec" aria-label="结果未知的操作">
-        {rows.map((row) => (
-          <li key={row.key}>
-            <span className="j4-rec-name">{row.name}</span>
-            <span className="j4-rec-change">{row.change}</span>
-            <span className="j4-rec-time">{businessStamp(row.submittedAt)} 提交</span>
-            <span className="j4-rec-state">{row.expired ? j4ExpiredTag(row.kind, row.kind === "direct" && !!row.onRelease) : j4UnknownTag(row.kind)}</span>
-            <span className="j4-rec-actions">
-              <Button size="sm" onClick={row.onQuery}>查询原结果</Button>
-              {!row.expired && row.onRetry && <Button size="sm" onClick={row.onRetry}>按原请求重试</Button>}
-              {row.expired && row.onRelease && <Button size="sm" onClick={row.onRelease}>确认解除</Button>}
-            </span>
-            {row.note && <span className="j4-rec-note">{row.note}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="j4-rec-zone">提交时间为{businessZone().label}</p>
-    </Notice>
   );
 }
 

@@ -18,6 +18,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundSettled } from "../fund-command-check";
+import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -307,6 +308,22 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       throw cause;
     } finally { setRetrying(false); }
   };
+  /** 直接修改：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
+  const settleDirect = async (record: PendingFx, status: FundSettled["status"]) => {
+    setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status }]);
+    syncPending(); setRetryRejected(""); setPendingNote("");
+    await load();
+  };
+  const lookupDirect = async (record: PendingFx) => {
+    setRetrying(true);
+    try {
+      const { receipt, settled: done } = await queryD6DirectCommand(record);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+    } catch (cause) {
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+    } finally { setRetrying(false); }
+  };
   const releasePending = (record: PendingFx) => {
     setReleasing(false);
     // Legacy manual release is separate from evidence-based command closure.
@@ -445,29 +462,40 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const expired = pending.expiresAt <= Date.now();
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
-    return { key: pending.commandKey, title: what, record: pending.proposal ? pending : undefined, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
-      status: pending.proposal ? undefined : { tone: expired ? "warn" as const : "neutral" as const, label: expired ? "已过期" : "不能查询", line: "直接修改查不了原结果，到下面的调整历史核对。" },
-      canQuery: !!pending.proposal && canQueryOriginal, copy: { where: "操作记录与审批和调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
+    // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
+    const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
+    return { key: pending.commandKey, title: what, record: target, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
+      canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "操作记录与审批和调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
         {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
+        {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
+          onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
         <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
         {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>
         <p>这次修改可能已经提交，已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
-        {expired && <p>{canAudit ? "请财务负责人到操作记录与审批和下面的调整历史核对这次修改有没有生效。" : "这个账号看不到操作记录，请在下面的调整历史里核对，再交财务负责人处理。"}</p>}
+        {expired && pending.proposal && <p>{canAudit ? "请财务负责人到操作记录与审批和下面的调整历史核对这次修改有没有生效。" : "这个账号看不到操作记录，请在下面的调整历史里核对，再交财务负责人处理。"}</p>}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
-        {retryRejected && !expired && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "列表里找不到记录不能证明没执行。「解除原操作记录」只清本页这条记录，原操作没有结案时系统仍会阻止新提交。"}</p>}
+        {retryRejected && !expired && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}
       </>,
-      tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}${pending.proposal ? "" : ` ｜ 原请求编号 ${pending.commandKey}`}` };
+      tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };
   })();
   const pendingNotice = <FundRecoveryPanel rows={pendingRow ? [pendingRow] : []} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
     link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>到操作记录与审批核对</Link>} />;
   const releaseModal = <>
     {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
-    {pending && closing && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
+    {pending && closing && !pending.proposal && <CommandClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} commandKey={pending.commandKey} createdAt={pending.createdAt}
+      known={closureKnown(investigationResults[pending.commandKey])} facts={<Fact k="改动"><Change from={valueText(pending.param, pending.before)} to={valueText(pending.param, pending.after)} /></Fact>}
+      onClose={() => setClosing(false)} onSubmit={async evidence => {
+        const { receipt, settled: done } = await queryD6DirectCommand(pending, evidence);
+        setInvestigationResults(current => ({ ...current, [pending.commandKey]: { receipt } }));
+        setClosing(false);
+        if (done) await settleDirect(pending, receipt?.originalStatus ?? "SUCCEEDED");
+      }} />}
+    {pending && closing && pending.proposal && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(pending, evidence); setClosing(false); }} />}
   </>;
 
