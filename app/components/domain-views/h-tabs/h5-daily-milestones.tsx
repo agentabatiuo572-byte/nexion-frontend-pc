@@ -311,7 +311,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       coverageLead: "数量变多或换成别的资金、转盘票，平台会多付",
       coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线；变少、不变、改成徽章不检查。",
       amplifies: true,
-      edit: { kind: "text", current: milestone.reward, disallowCurrent: true, currentLabel: "现在的名称", hint: "写一种：+5 UVT、+0.5 USDT、转盘票 ×2；UVT、USDT 最多 6 位小数，转盘票填整数",
+      edit: { kind: "text", current: milestone.reward, disallowCurrent: true, currentLabel: "现在的名称", hint: "写一种：+5 UVT、+0.5 USDT、转盘票 ×2；数量要大于 0，UVT、USDT 最多 6 位小数，转盘票填整数",
         validate: value => { const issue = h5StreakReward(value).issue; return issue ? displayAdminError(new Error(issue)) : undefined; } },
       confirmLabelForValue: value => value && h5StreakReward(value).amount && h5StreakReward(value).type.toLowerCase() !== milestone.kind?.toLowerCase() ? "提交审批" : "确认提交",
       run: async (reason, value) => {
