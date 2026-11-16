@@ -339,10 +339,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         {queryButtons(record, slotLabel, change)}
         {!expired && canRetry(record) && <Button size="sm" disabled={!!checking} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
       </>,
-      detail: <>
-        <p>{slotLabel}：{change}</p>
-        {pendingNotes[record.commandKey] && <p><KeepText text={pendingNotes[record.commandKey]} /></p>}
-      </>,
+      detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
     };
   });
   recoveryRows.push(...legacy.map((record): FundRecoveryRow => {

@@ -1568,7 +1568,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                         ? { kind: "select", current: param.value, options: ["1", "0"], optionLabels: H5_SWITCH_LABELS, disallowCurrent: true }
                         : { kind: "number", current: param.value, unit: accountUnit(param.unit), min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true, hint: `${param.min}–${param.max} 的整数` },
                       effect: IMMEDIATE_EFFECT, confirmLabel: "确认修改", reasonPlaceholder: "写清调整原因和依据", reasonMax: 200,
-                      run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整${param.name}`, operator, reason, value, expectedValue: param.value }),
+                      run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整 ${param.name}`, operator, reason, value, expectedValue: param.value }),
                     })) : undefined} />)}
                 </ConfigList> : <p className="rd-note">暂无已配置的 H5 注册参数。</p>}
               </Panel>

@@ -135,7 +135,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [closing, setClosing] = useState<I2Command | null>(null);
   const [settledRows, setSettledRows] = useState<FundSettled[]>([]);
   const settle = (record: I2Command, receipt: NonNullable<Awaited<ReturnType<typeof queryI2Command>>>) =>
-    setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: `${record.action} · ${record.object}`, status: receipt.originalStatus }]);
+    setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: `${record.action} · ${unknownObject(record)}`, status: receipt.originalStatus }]);
   const queryOriginal = async (record: I2Command) => {
     let settled = false;
     setChecking(record.commandKey);
@@ -821,6 +821,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return key && row.object === key ? channelName(key, novas.find((n) => n.key === key)?.name ?? "") : row.object;
   };
   const unknownChange = (row: I2Command) => {
+    // 事件概率只写改了的几类，用中文名，不露类别键。
+    if (row.target === "distribution") return row.change.split(" · ").map((part) => /^(\S+) (\S+)% → (\d+)%$/.exec(part))
+      .filter((match): match is RegExpExecArray => !!match && match[2] !== match[3])
+      .sort((left, right) => orderDist(SOCIAL_DIST).findIndex((item) => item.key === left[1]) - orderDist(SOCIAL_DIST).findIndex((item) => item.key === right[1]))
+      .map(([, key, before, after]) => `${operatorCopyText(SOCIAL_DIST.find((item) => item.key === key)?.name ?? key)} ${before}% → ${after}%`).join(" · ");
     if (row.action !== "编辑频道" && row.action !== "新增频道") return row.change;
     const { tick = "", cooldown = "" } = row.cadence ?? {};
     return `扫描间隔 ${durationText(tick).text} · 个人间隔 ${durationText(cooldown).text}`;
