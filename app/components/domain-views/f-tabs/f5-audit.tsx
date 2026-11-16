@@ -160,7 +160,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
         coverageLead: "提前解锁后这笔钱可能提前流出",
         coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时不再检查。",
-        blockedReason: knownRejection(row, "release"),
+        blockedReason: knownRejection(row, "release", data?.activeSuspensions),
         statedBrief: grouped
           ? { impact: "批准时系统核对结算组的冷却是否真正到期，没到期会拒绝", check: "核对剩余冷却天数，理由写清为什么要提前。" }
           : { impact: "批准后这笔改为已解锁，释放到用户钱包", check: "核对兑付覆盖率和这笔奖励，理由写清为什么要提前。" },
@@ -490,7 +490,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const rowActions = (row: F5CommissionEvent): F5RowAction[] => {
     const list: F5RowAction[] = [];
     if (canFreeze && row.status === "cooling") list.push({ key: "freeze", label: "冻结", onSelect: () => dispose("freeze", row) });
-    if (canRelease && row.status === "cooling" && !isFriend(row)) list.push({ key: "unlock", label: "提前解锁", disabledReason: knownRejection(row, "release"), onSelect: () => dispose("unlock", row) });
+    if (canRelease && row.status === "cooling" && !isFriend(row)) list.push({ key: "unlock", label: "提前解锁", disabledReason: knownRejection(row, "release", data?.activeSuspensions), onSelect: () => dispose("unlock", row) });
     if (canFreeze && row.status === "frozen") list.push({ key: "unfreeze", label: "解冻", onSelect: () => dispose("unfreeze", row) });
     if (canSuspend) list.push({ key: "suspend", label: "暂停此类奖励", onSelect: () => suspend(row) });
     if (canReverse && !SETTLED.includes(row.status)) list.push({ key: "reverse", label: "冲正", danger: true, disabledReason: knownRejection(row, "reverse"), onSelect: () => reverse(row) });

@@ -483,7 +483,16 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   array(row, "anomalies", "F5");
   array(row, "coolingPolicy", "F5");
   array(row, "operationHistory", "F5");
-  array(row, "activeSuspensions", "F5");
+  array(row, "activeSuspensions", "F5").forEach((value, index) => {
+    const suspension = record(value, "F5", `activeSuspensions[${index}]`);
+    positiveInteger(suspension.userId, "F5", `activeSuspensions[${index}].userId`);
+    if (!F5_KINDS.includes(text(suspension.kind, "F5", `activeSuspensions[${index}].kind`))) invalid("F5", "activeSuspensions.kind");
+  });
+  if (row.coverage != null) {
+    const coverage = object(row, "coverage", "F5");
+    if (coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") invalid("F5", "coverage.reliable");
+    for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] != null) finite(coverage[key], "F5", `coverage.${key}`);
+  }
   const total = nonNegativeInteger(row.total, "F5", "total");
   if (text(pagination.mode, "F5", "pagination.mode") !== "server-cursor"
       || defaultPageSize > maxPageSize

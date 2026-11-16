@@ -16,6 +16,7 @@ import { f4Decimal } from "@/lib/admin/f4-money";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
 
@@ -136,9 +137,11 @@ export const REJECTION_TEXT = {
   reverseFrozenLegacy: "没有结算组的旧奖励在已冻结时冲正，批准时会被拒。先解冻回冷却中，再冲正。",
   releaseGroupCooling: "这笔属于结算组，冷却还没真正到期，批准时会被拒。到期后系统按条件解锁。",
 } as const;
-export function knownRejection(row: F5CommissionEvent, action: "release" | "reverse"): string | undefined {
+export function knownRejection(row: F5CommissionEvent, action: "release" | "reverse", suspensions?: readonly { userId: string; kind: string }[]): string | undefined {
   if (action === "reverse" && row.status === "frozen" && !isGrouped(row)) return REJECTION_TEXT.reverseFrozenLegacy;
   if (action === "release" && isGrouped(row) && row.unlockAt !== undefined && row.unlockAt > Date.now()) return REJECTION_TEXT.releaseGroupCooling;
+  // The capped list proves a matching suspension, never the absence of one.
+  if (action === "release" && !isGrouped(row) && suspensions?.some(item => item.userId === String(row.userId) && item.kind === row.kind)) return displayAdminError(new Error("DIRECT_REFERRAL_SPONSOR_FROZEN"));
   return undefined;
 }
 
@@ -191,6 +194,10 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
     } finally { if (!getOriginal()) onClose(); }
   };
   const retryable = original && (original.kind === "proposal" ? canRetryF5Proposal(original.original) : canRetryF5Anomaly(original.original));
+  const canReadCoverage = useAdminAuth(({ session }) => session?.authorities.some(authority => ["overview_b1_read", "finance_d3_read", "bi_l3_read"].includes(authority)) ?? false);
+  const needsReliableCoverage = confirm.snapshot?.action === "reissue"
+    || confirm.snapshot?.action === "unlock" && !!confirm.snapshot.row && !isGrouped(confirm.snapshot.row);
+  const coverage = canReadCoverage ? confirm.snapshot?.coverage ?? ctx.f5Overview?.coverage : undefined;
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -203,7 +210,9 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       statedBrief={confirm.statedBrief}
       completionCopy={confirm.completionCopy}
       amplifies={!!confirm.amplify}
-      coverage={confirm.snapshot?.coverage ?? ctx.f5Overview?.coverage}
+      coverage={coverage}
+      coverageReliable={canReadCoverage && needsReliableCoverage ? !!coverage && coverage.reliable !== false : undefined}
+      coverageUnavailableBlocks={canReadCoverage && needsReliableCoverage}
       coverageLead={confirm.coverageLead}
       coverageCheck={confirm.coverageCheck}
       confirmTone={confirm.confirmTone}
