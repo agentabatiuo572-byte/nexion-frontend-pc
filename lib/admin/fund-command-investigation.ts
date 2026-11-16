@@ -4,7 +4,7 @@ import { formatAdminApiError } from "./error-messages";
 import type { PendingMutationRecord } from "./pending-mutation-store";
 
 export type FundCommandOrigin = Omit<ECommandLocator, "commandKey"> & {
-  readAuthority: "finance_d2_read" | "finance_d3_read" | "device_e4_read" | "emergency_j1_read" | "emergency_j2_read" | "emergency_j3_read" | "emergency_j4_read" | "risk_k1_read" | "bi_l1_read" | "finance_d5_read" | "finance_d6_read" | "finance_d7_read";
+  readAuthority: "finance_d2_read" | "finance_d3_read" | "device_e4_read" | "emergency_j1_read" | "emergency_j2_read" | "emergency_j3_read" | "emergency_j4_read" | "risk_k1_read" | "bi_l1_read" | "finance_d5_read" | "finance_d6_read" | "finance_d7_read" | "content_i1_read" | "content_i2_read";
 };
 export type FundCommandRecord = PendingMutationRecord & { commandOrigin?: FundCommandOrigin };
 export type FundInvestigationOutcome = { receipt: ECommandInvestigation | null } | { error: string };

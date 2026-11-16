@@ -46,7 +46,47 @@ export function canInvestigateECommand(authority: string) {
 function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvestigation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const row = value as Record<string, unknown>;
+  const copyPath = locator.originalPath.match(/^\/api\/admin\/content\/copy-ab\/(.+)$/)?.[1];
+  const copyRoutes: [string, RegExp, string][] = [
+    ["POST", /^copies$/, "I1_COPY_CREATE"],
+    ["PATCH", /^copies\/[^/]+\/draft$/, "I1_COPY_DRAFT_SAVE"],
+    ["POST", /^copies\/[^/]+\/versions$/, "I1_COPY_VERSION_PUBLISH"],
+    ["POST", /^copies\/[^/]+\/versions\/[^/]+\/rollback$/, "I1_COPY_VERSION_ROLLBACK"],
+    ["POST", /^copies\/[^/]+\/archive$/, "I1_COPY_VERSION_ARCHIVE"],
+    ["DELETE", /^copies\/[^/]+\/versions\/[^/]+$/, "I1_COPY_DRAFT_VERSION_DELETE"],
+    ["POST", /^positions$/, "I1_COPY_POSITION_CREATE"],
+    ["PATCH", /^positions\/[^/]+$/, "I1_COPY_POSITION_UPDATE"],
+    ["DELETE", /^positions\/[^/]+$/, "I1_COPY_POSITION_DELETE"],
+    ["POST", /^version-options$/, "I1_COPY_VERSION_OPTION_CREATE"],
+    ["PUT", /^version-options\/[^/]+$/, "I1_COPY_VERSION_OPTION_UPDATE"],
+    ["DELETE", /^version-options\/[^/]+$/, "I1_COPY_VERSION_OPTION_DELETE"],
+    ["PATCH", /^framework\/[^/]+$/, "I1_COPY_EXPERIMENT_FRAMEWORK_UPDATE"],
+    ["POST", /^experiments$/, "I1_COPY_EXPERIMENT_CREATE"],
+    ["POST", /^experiments\/[^/]+\/start$/, "I1_COPY_EXPERIMENT_START"],
+    ["POST", /^experiments\/[^/]+\/stop$/, "I1_COPY_EXPERIMENT_STOP"],
+    ["POST", /^experiments\/[^/]+\/adopt$/, "I1_COPY_EXPERIMENT_ADOPT"],
+    ["POST", /^experiments\/[^/]+\/discard$/, "I1_COPY_EXPERIMENT_DISCARD"],
+  ];
+  const copyScope = copyPath && copyRoutes.find(([method, path]) => method === locator.originalMethod && path.test(copyPath))?.[2];
+  const novaPath = locator.originalPath.match(/^\/api\/admin\/content\/nova\/(.+)$/)?.[1];
+  const novaObject = novaPath?.match(/^(channels|templates)(?:\/([^/]+)(?:\/(status))?)?$/);
+  let novaScope: string | undefined;
+  if (novaObject) {
+    const [, family, key, status] = novaObject;
+    const action = !key && locator.originalMethod === "POST" ? "CREATE"
+      : key && locator.originalMethod === "PATCH" ? status ? "STATUS" : "UPDATE"
+        : key && !status && locator.originalMethod === "DELETE" ? "DELETE" : undefined;
+    if (action) novaScope = `I2_NOVA_${family === "channels" ? "CHANNEL" : "TEMPLATE"}_${action}${key ? `:${decodeURIComponent(key)}` : ""}`;
+  } else if (novaPath === "social-distribution" && locator.originalMethod === "PATCH") novaScope = "I2_NOVA_SOCIAL_DISTRIBUTION";
+  else if (novaPath === "social-events/sync" && locator.originalMethod === "POST") novaScope = "I2_NOVA_SOCIAL_SYNC";
+  else if (novaPath === "social-events/expire" && locator.originalMethod === "POST") novaScope = "I2_NOVA_SOCIAL_EXPIRE";
+  else {
+    const event = novaPath?.match(/^social-events\/([1-9]\d*)(?:\/(status))?$/);
+    if (event && (event[2] ? locator.originalMethod === "PATCH" : locator.originalMethod === "DELETE")) novaScope = `I2_NOVA_SOCIAL_EVENT_${event[2] ? "STATUS" : "DELETE"}:${BigInt(event[1])}`;
+  }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : copyPath ? row.scope === copyScope
+    : novaPath ? row.scope === novaScope
     : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? /^D2(?:[_:])/.test(String(row.scope))
       : locator.originalPath.startsWith("/api/admin/treasury/") ? /^D3(?:[_:])/.test(String(row.scope))
         : locator.originalPath.startsWith("/api/admin/devices/orders/") ? /^E4(?:[_:])/.test(String(row.scope))
