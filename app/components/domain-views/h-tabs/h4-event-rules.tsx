@@ -273,7 +273,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
   })();
 
   return <Panel id="h4l-plays" title="七类玩法" icon={Sparkles} tone="role-4" sub={loading ? undefined : `共 ${rows.length} 条规则`}
-    explain={<><p>每个内置活动背后是一类玩法：规则参数、开关、开放时间。先保存完整配置，就绪后再开启。</p><p>第一次开启要另一位超级管理员批准；开启后玩法和时间固定，只能关闭，关闭后不能再开。玩法开着没有，和「既有活动」卡上的状态是两件事，分别看。</p></>}
+    explain={<><p>每个内置活动背后是一类玩法：规则参数、开关、开放时间。先保存完整配置，就绪后再开启。</p><p>第一次开启要另一位超级管理员批准；开启后玩法和时间固定，只能关闭，关闭后不能再开。玩法开着没有，和「既有活动」卡上的状态是两件事，分别看。</p><p>App 支持的活动，「既有活动」里写的奖励只是展示文字，实际按这里的规则发。</p></>}
     actions={<Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的配置" : undefined} onClick={() => void load()}>刷新</Button>}>
     {loading ? <BlockState state="loading" title="正在加载活动规则" />
       : !rows.length && error ? <BlockState state="error" title="玩法规则没有读到" detail={error} onRetry={() => void load()} />
@@ -284,7 +284,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
         return <article key={row.eventCode} className="h4-card h4l-play" aria-label={`${EVENT_KIND_LABELS[row.kind] ?? "其他活动"} · ${row.eventCode}`} data-dim={!supported || ended(row) ? "" : undefined}>
           <header className="h4-card-head">
             <div className="h4-card-title"><h3>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.eventCode}>{row.eventCode}</span></span></div>
-            <span className="h4l-tags">{row.rulesLocked && !ended(row) && <StatusTag tone="neutral" icon={Lock} explain="开过一次：玩法和时间已固定。">已固定</StatusTag>}{stateTag(row)}</span>
+            <span className="h4l-tags">{row.supported === false && <StatusTag tone="warn" explain="App 还不支持这个活动：配置可以保存，开启会被拒绝。">App 暂不支持</StatusTag>}{row.rulesLocked && !ended(row) && <StatusTag tone="neutral" icon={Lock} explain="开过一次：玩法和时间已固定。">已固定</StatusTag>}{stateTag(row)}</span>
           </header>
           <p className="h4l-desc">{supported ? PLAY_SENTENCE[playKey({ kind: row.kind, rules: eventRuleDraftRules(row) })] ?? "—" : "这类玩法已停用，只能查看。"}</p>
           <dl className="h4l-facts">
