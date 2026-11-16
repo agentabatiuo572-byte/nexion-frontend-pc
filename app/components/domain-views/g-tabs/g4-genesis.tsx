@@ -721,7 +721,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             <div className="t"><div className="k">每个节点分到</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
             <div className="t"><div className="k">今日发放 {dividend.batchNo || "—"}</div><div className="v" style={{ color: "var(--success)" }}>{showPaidEmission ? `已发 ${fmtNumber(dividend.paidCount, 0)} 个节点 · ${fmtUsdCompact(dividend.paidAmountUsdt)}` : "未开始发放"}</div></div>
           </div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>两种算法</b> · 用户实际收益按当前参数计算；财务预估按「节点价 × 持有量 × 收益比例」保底。曲线只是策略说明，每天实际发多少仍按计算基数和收益比例。修改收益比例、曲线或计算基数时，覆盖率不足会无法保存（当前 {cov}%）。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>收益计算说明</b> · 现有有效持仓的每日应付按‘系列当前价 × 持仓数量 × 每日收益比例’计算；参数生效后按新值计算后续应付，已结算记录不回算。发放曲线为策略说明，参数调整仍按现行审批与 B1 覆盖率规则执行。</div>
         </div>
       </section>
 
