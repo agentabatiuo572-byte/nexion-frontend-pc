@@ -191,7 +191,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
     payload = parseI6Json(await response.text()) as ApiResult<unknown>;
   } catch { throw uncertain("结果未知，请查询原结果或按原请求重试。"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
-    || payload.message !== undefined && typeof payload.message !== "string") throw uncertain("原操作回执无法核实，请保留记录并查询原结果。");
+    || payload.message !== undefined && typeof payload.message !== "string") throw uncertain("原操作的返回内容无法核实，请保留记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
   if (!response.ok || payload.code !== 0 || unknown) {
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
@@ -223,7 +223,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
         && (!command.version || course.version === command.version);
     }
   } catch { /* An unreadable success is still an unresolved original. */ }
-  if (!valid) throw uncertain("原操作回执无法核实，请保留记录并查询原结果。");
+  if (!valid) throw uncertain("原操作的返回内容无法核实，请保留记录并查询原结果。");
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return payload.data;
 }
@@ -343,7 +343,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
     payload = await response.json();
   } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"); }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
-    || payload.message !== undefined && typeof payload.message !== "string") throw new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。");
+    || payload.message !== undefined && typeof payload.message !== "string") throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
   if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
@@ -374,7 +374,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
         && JSON.stringify(row.fields.slice(0, submitted.length)) === JSON.stringify(submitted) && retainedLocales;
     } catch { /* An unreadable success cannot resolve the original command. */ }
   }
-  if (!valid) throw new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。");
+  if (!valid) throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
 }
 
@@ -536,7 +536,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
     || payload.message !== undefined && typeof payload.message !== "string") {
-    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   }
   if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
@@ -562,7 +562,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
           : row.id === command.target && row.revision === Number(input.expectedRevision) + (command.action === "send-now" ? 2 : 1));
     } catch { /* Unreadable success is still unknown; retain the original request. */ }
   }
-  if (!valid) throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  if (!valid) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
 }
 
@@ -726,7 +726,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.code !== "number"
     || payload.message !== undefined && typeof payload.message !== "string") {
-    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   }
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
   if (!response.ok || payload.code !== 0 || unknown) {
@@ -739,7 +739,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }
-  if (!i2ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  if (!i2ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return payload.data;
 }
@@ -887,10 +887,10 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
     throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   }
   if ((payload.code !== undefined && typeof payload.code !== "number") || (payload.message !== undefined && typeof payload.message !== "string")) {
-    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   }
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
   if (!response.ok || payload.code !== 0 || unknown) {
@@ -903,7 +903,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }
-  if (!i1ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  if (!i1ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return payload.data;
 }

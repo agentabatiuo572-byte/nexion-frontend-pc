@@ -105,10 +105,10 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
     headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   let result: unknown;
   try { result = await response.json(); }
-  catch { throw new TaskPoolApiError("任务池响应暂时读不到，请保留原操作核对。", undefined, response.status); }
+  catch { throw new TaskPoolApiError("任务池返回的内容暂时读不懂，请保留原操作核对。", undefined, response.status); }
   let envelope: Record<string, unknown>;
   try { envelope = record(result); }
-  catch { throw new TaskPoolApiError("任务池响应格式不完整，请保留原操作核对。", undefined, response.status); }
+  catch { throw new TaskPoolApiError("任务池返回的内容不完整，请保留原操作核对。", undefined, response.status); }
   if (!response.ok || envelope.code !== 0) {
     const code = typeof envelope.message === "string" ? envelope.message : "";
     const businessStatus = typeof envelope.code === "number" && envelope.code >= 400 ? envelope.code : undefined;
@@ -121,7 +121,7 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
         const currentValue = code === "TASK_POOL_ENABLED_LIMIT" ? data.enabled : data.total;
         const current = currentValue == null ? null : integer(currentValue);
         message = `${code === "TASK_POOL_ENABLED_LIMIT" ? "启用任务" : "任务总数"}上限为 ${limit} 个${current == null ? "" : `，当前 ${current} 个`}，本次 ${requested} 个。${code === "TASK_POOL_ENABLED_LIMIT" ? "请减少数量或先停用部分任务。" : "请减少数量；总量已满时请联系任务池负责人。"}`;
-      } catch { throw new TaskPoolApiError("任务池错误响应不完整，请保留原操作核对。", status, response.status, code, envelope.data); }
+      } catch { throw new TaskPoolApiError("任务池返回的错误说明不完整，请保留原操作核对。", status, response.status, code, envelope.data); }
     }
     const unknown = !status || status < 400 || status >= 500 || [401, 403, 408, 425, 429].includes(status)
       || !code || code.startsWith("IDEMPOTENCY_") || code === "TASK_POOL_IDEMPOTENCY_CONFLICT";

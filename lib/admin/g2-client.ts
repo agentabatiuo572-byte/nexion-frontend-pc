@@ -203,7 +203,7 @@ const BATCH_PATH = "/exchange/queue/process";
 
 export class G2BatchReceiptNotFound extends Error {
   constructor() {
-    super("暂未找到可核对的原回执。请先查看操作记录。");
+    super("没有查到原结果。请先查看操作记录。");
   }
 }
 

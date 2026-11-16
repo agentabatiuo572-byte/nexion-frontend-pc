@@ -153,7 +153,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
         if (result?.domain !== "H3" || !updated || (r.store === "config" ? updated.key !== body.key
           : r.store === "binding" ? updated.bindingCode !== code || updated.action !== expectedAction
             : (r.request.path === "/quest-events/missions" ? updated.missionCode !== body.missionCode || updated.missionType !== body.missionType : updated.taskCode !== code || updated.taskKind !== body.taskKind && !r.request.path.endsWith("/presentation")) || updated.action !== expectedAction)) {
-          throw new OutcomeUnknownError("保存回执与原修改不符，原请求继续保留，请查询原结果。");
+          throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原请求继续保留，请查询原结果。");
         }
       }
     } catch (error) {

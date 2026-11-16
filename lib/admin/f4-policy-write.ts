@@ -48,7 +48,7 @@ export async function sendF4Policy(adminId: number, policy?: F4AmbassadorPolicyU
     // A replayed policy is historical evidence only. The caller always rereads.
     const receipt = await updateF4AmbassadorPolicy(values, savedReason, operator, original.commandKey);
     if (receipt.revision !== values.expectedRevision + 1 || receipt.policyVersion !== values.policyVersion) {
-      throw new F1OutcomeUncertainError("规则保存回执与原请求对不上，请继续核对。", original.commandKey);
+      throw new F1OutcomeUncertainError("规则保存后返回的内容和原请求对不上，请继续核对。", original.commandKey);
     }
   } catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };

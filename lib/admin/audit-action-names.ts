@@ -128,7 +128,7 @@ export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   "CREGIS_AUTO_FORWARD_COLLECTION_SUBMITTING": "归集到 Cregis 请求提交中",
   "CREGIS_AUTO_FORWARD_COLLECTION_UNKNOWN": "归集到 Cregis 结果待核查",
   "CREGIS_AUTO_FORWARD_COMPLETED": "自动资金流程已链上确认",
-  "CREGIS_AUTO_FORWARD_ENQUEUED": "自动资金流程任务入队",
+  "CREGIS_AUTO_FORWARD_ENQUEUED": "自动资金流程任务加入队列",
   "CREGIS_AUTO_FORWARD_ORIGINAL_CID_BOUND": "核对并绑定自动任务原 CID",
   "CREGIS_AUTO_FORWARD_PAYMENT_FAILED": "自动 Cregis 转平台收款钱包未完成",
   "CREGIS_AUTO_FORWARD_PAYMENT_PENDING": "自动 Cregis 转平台收款钱包确认中",

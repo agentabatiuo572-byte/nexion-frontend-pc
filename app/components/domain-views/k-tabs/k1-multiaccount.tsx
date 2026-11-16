@@ -890,7 +890,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       }
       if (!original.mine || original.obj !== record.target || original.action !== `${LEGACY_CLUSTER_RECEIPTS[record.clusterAction!][1]} · ${record.target}`
         || (original.operationCode && original.operationCode !== CLUSTER_OPS[record.clusterAction!].def().op)) {
-        setPendingNotes(current => ({ ...current, [record.fingerprint]: "回执与原操作不符，保留原记录，请到操作记录核对。" }));
+        setPendingNotes(current => ({ ...current, [record.fingerprint]: "查到的审批单和原操作对不上，原记录继续保留，请到操作记录核对。" }));
         return;
       }
       pendingCommands.forget(record.fingerprint, record.commandKey);

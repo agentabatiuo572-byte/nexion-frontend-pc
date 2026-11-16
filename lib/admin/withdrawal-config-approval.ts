@@ -188,7 +188,7 @@ export async function submitB5ThresholdApproval<T>(
       // 111e00cd OpsAuditCenterService.ticketMetadata emits command.op for B5 too.
       if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "提高提现压力红线"
         || ticket.operationCode !== "b5_bankrun_thresholds")) {
-        throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
+        throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", key);
       }
       if (!ticket && (extra.received || extra.b5Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
       attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket, received: true }
@@ -240,7 +240,7 @@ async function releaseExpiredThresholdApproval(source: "B1" | "B5", adminId: str
   if (ticket) {
     const action = source === "B1" ? "降低兑付覆盖率红线" : "提高提现压力红线";
     if (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode !== commands[source].op) {
-      throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", commandKey);
+      throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", commandKey);
     }
     attempts.remember(slot, commandKey, { ...record, received: true, [ticketField]: ticket, [missingField]: undefined });
     return false;
@@ -286,7 +286,7 @@ export async function submitB1ThresholdApproval<T>(
       // 111e00cd ticketMetadata now returns command.op for B1, including history.
       if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "降低兑付覆盖率红线"
         || ticket.operationCode !== "b1_coverage_thresholds")) {
-        throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
+        throw new A2OutcomeUncertainError("查到的审批单和原申请对不上，请继续核对。", key);
       }
       if (!ticket && (extra.received || extra.b1Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
       attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket, received: true } : { b1NotFound: true as const }) });
@@ -440,7 +440,7 @@ export async function submitConfigApproval<T>(
     // all dividend tickets; OpsAuditCenterService.ticketMetadata adds no G4 code.
     if (ticket.mine !== true || ticket.obj !== "dividend" || ticket.action !== "批准创世分红操作"
       || ticket.operationCode && ticket.operationCode !== op) {
-      throw new A2OutcomeUncertainError("回执与原日分红审批不匹配，请继续核对。", key);
+      throw new A2OutcomeUncertainError("查到的审批单和原日分红申请对不上，请继续核对。", key);
     }
     attempts.remember(slot, key, { input: previous?.input ?? input, g4Ticket: ticket, g4Request: proposal });
   }

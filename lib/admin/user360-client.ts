@@ -768,7 +768,7 @@ export type NotificationTimeEvidence = {
 };
 
 function normalizeNotificationTimeEvidence(value: unknown, notificationId: number): NotificationTimeEvidence {
-  const invalid = () => { throw new Error("通知证据响应无效，请重试"); };
+  const invalid = () => { throw new Error("通知证据读取异常，请重试"); };
   const validDate = (date: unknown): date is string => {
     if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date)) return false;
     const parsed = new Date(date.replace(" ", "T") + "Z");

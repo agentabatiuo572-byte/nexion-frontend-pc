@@ -47,7 +47,7 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
   try {
     const receipt = await updateF5AnomalyConfig(request.commissionAnomalySigma, request.layerRatioAnomalyPct, request.reason, request.operator, original.commandKey);
     if (typeof receipt.operationNo !== "string" || !receipt.operationNo || Number(receipt.commissionAnomalySigma) !== request.commissionAnomalySigma
-      || Number(receipt.layerRatioAnomalyPct) !== request.layerRatioAnomalyPct) throw new F1OutcomeUncertainError("保存回执与原请求对不上，请继续核对。", original.commandKey);
+      || Number(receipt.layerRatioAnomalyPct) !== request.layerRatioAnomalyPct) throw new F1OutcomeUncertainError("保存后返回的内容和原请求对不上，请继续核对。", original.commandKey);
   } catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
     if (recovering ? isExplicitRejection(error) : !isF1OutcomeUncertainError(error)
