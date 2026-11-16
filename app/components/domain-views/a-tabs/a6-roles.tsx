@@ -62,8 +62,8 @@ type Submitted = {
 type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; actions: ReactNode };
 
 /** 审批单最后一次查到的状态；只有回执、还没查到状态时单独写。 */
-const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; tone: "progress" | "ok" | "neutral"; icon: LucideIcon }> = {
-  pending: { label: "待审批", tone: "progress", icon: Clock3 },
+const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; tone: "warn" | "progress" | "ok" | "neutral"; icon: LucideIcon }> = {
+  pending: { label: "待审批", tone: "warn", icon: Clock3 },
   approved: { label: "已批准", tone: "ok", icon: CheckCircle2 },
   rejected: { label: "已驳回", tone: "neutral", icon: XCircle },
   withdrawn: { label: "已撤回", tone: "neutral", icon: Undo2 },
@@ -553,7 +553,7 @@ export default function A6Roles() {
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired
-        ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? original.kind === "a6-status" ? "原请求超过 24 小时，不能再重试。没有这张审批单，角色也已经是要改成的状态，可以解除这条记录。" : "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="没收到确定结果，可能已生效或已建审批单。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
@@ -721,7 +721,9 @@ export default function A6Roles() {
 
       {releasing && (
         <ReleaseModal label={<>{releasing.name}<br />{businessStamp(releasing.createdAt)} 提交</>}
-          explain={`提交时间为${businessZone().label}。确认后先按原请求再查一次审批单：明确没有这张单才解除，原操作不会执行；查到了就不解除，请点「查询原结果」。`}
+          explain={releasing.original.kind === "a6-status"
+            ? `提交时间为${businessZone().label}。确认后再查一次审批单和角色：没有这张单、角色也已经是「${releasing.original.status === 1 ? "启用" : "停用"}」才解除。原请求可能已经直接生效，也可能没到后端，角色都已是要改成的状态，不会再执行。查到单就不解除，请点「查询原结果」。`
+            : `提交时间为${businessZone().label}。确认后先按原请求再查一次审批单：明确没有这张单才解除，原操作不会执行；查到了就不解除，请点「查询原结果」。`}
           onCancel={() => setReleasing(null)}
           onConfirm={() => {
             const record = releasing;
