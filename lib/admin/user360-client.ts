@@ -697,6 +697,8 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
       ? exact.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
       : exact);
   }).catch(() => null)) as ApiResult<T> | null;
+  const authFailure = isAdminAuthFailure(response.status, result?.message);
+  if (authFailure) resetAdminSession();
   // C6 first-send rejection classification needs a readable business verdict.
   // A bare/malformed 4xx must not discard the saved original request.
   if (init?.requireReadableOutcome && (!result || typeof result.code !== "number" || !Number.isFinite(result.code))) {
@@ -704,10 +706,6 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
   }
 
   if (!response.ok || !result || result.code !== 0) {
-    const authFailure = isAdminAuthFailure(response.status, result?.message);
-    if (authFailure) {
-      resetAdminSession();
-    }
     const commandKey = headers.get("Idempotency-Key");
     // 话术与命令号去留同口径:5xx 保住了号,提示也必须说「结果未知」而不是「失败」,
     // 否则运营会换个入口重做一遍(第三轮验收 P1-6)。

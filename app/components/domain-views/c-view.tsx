@@ -6,7 +6,7 @@
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
  * 各页读写统一走后端 user360/admin-users 接口;冻结、模拟登录、资产调整和安全参数都以服务端返回为准。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./c-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
@@ -29,6 +29,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "C1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  useEffect(() => { setActionConfirm(null); setCf(null); }, [tab]);
 
   const ctx: CCtx = {
     toast: setToast,

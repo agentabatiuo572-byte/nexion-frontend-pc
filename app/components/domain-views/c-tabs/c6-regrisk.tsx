@@ -211,6 +211,10 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   };
   const perform = async (original: C6Pending, retry = true, onRejected?: (latest: UserRegistrationRiskOverview | null, failure: unknown) => void) => {
     if (mutation.current || !canSubmit()) return false;
+    if (original.expiresAt <= Date.now()) {
+      toast("原请求已超过 24 小时或没有保存完整，只能读回核对，不能重试。", "warn");
+      return false;
+    }
     mutation.current = true;
     setBusy(true);
     let row: C6Pending | undefined;
