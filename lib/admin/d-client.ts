@@ -32,7 +32,7 @@ export class DRequestError extends Error {
  */
 export class DOutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string) {
-    super("结果未知，可能已经生效。到页面上方查询原结果，或按原请求重试。");
+    super("结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。");
     this.name = "DOutcomeUnknownError";
   }
 }

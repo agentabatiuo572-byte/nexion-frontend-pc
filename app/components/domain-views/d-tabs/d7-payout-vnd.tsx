@@ -533,7 +533,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     note(record.commandKey, !latest
       ? "现在的值暂时读不到。"
       : latest.version === record.expectedVersion
-        ? `现在的参数和发出时一样，还没看到这次修改${isRetryExpired(record) ? "。" : "；可以按原请求重试。"}`
+        ? "现在的参数和发出时一样，还没看到这次修改。"
         : "现在的参数在发出后被改过，可能是这次修改，也可能是别人改的。");
   };
 
@@ -731,7 +731,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     {releasing && <ReleaseModal label="参数修改" onCancel={() => setReleasing(null)} onConfirm={releasePending}
       explain="重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。" />}
     {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
-      known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="改动">{valuesSummary(directClosing.values)}</Fact>}
+      known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
         const record = directClosing;
         const { receipt, settled: done } = await queryD7DirectCommand(record, evidence);
