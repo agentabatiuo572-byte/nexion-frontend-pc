@@ -163,6 +163,10 @@ interface BackendF3Metric {
 }
 
 interface BackendF3Settlement {
+  trackARaw?: string | null;
+  trackBRaw?: string | null;
+  matchAmountRaw?: string | null;
+  todayPaidRaw?: string | null;
   ownerUserId?: number | string | null;
   user?: string | null;
   settlementDate?: string | null;
@@ -176,6 +180,10 @@ interface BackendF3Settlement {
 }
 
 interface BackendF3Formula {
+  trackARaw?: string | null;
+  trackBRaw?: string | null;
+  matchAmountRaw?: string | null;
+  todayPaidRaw?: string | null;
   user?: string | null;
   trackA?: number | string | null;
   trackB?: number | string | null;
@@ -208,7 +216,8 @@ interface BackendF3Config {
   residualSub?: string | null;
 }
 
-interface BackendF3Overview {
+interface BackendF3Overview extends F3RawAmounts {
+  statistics?: F3Statistics;
   metrics?: BackendF3Metric[] | null;
   formula?: BackendF3Formula | null;
   settlements?: BackendF3Settlement[] | null;
@@ -663,6 +672,10 @@ export interface F3Metric {
 }
 
 export interface F3Settlement {
+  aRaw?: string | null;
+  bRaw?: string | null;
+  matchRaw?: string | null;
+  todayRaw?: string | null;
   ownerUserId: number;
   user: string;
   settlementDate: string;
@@ -676,6 +689,10 @@ export interface F3Settlement {
 }
 
 export interface F3Formula {
+  trackARaw?: string | null;
+  trackBRaw?: string | null;
+  matchAmountRaw?: string | null;
+  todayPaidRaw?: string | null;
   user: string;
   trackA: number;
   trackB: number;
@@ -718,7 +735,20 @@ export interface F3BinaryConfig {
   residualSub: string;
 }
 
-export interface F3BinaryOverview {
+export interface F3RawAmounts {
+  monthlyMatchedUsdRaw?: string | null;
+  dailyMatchUsdRaw?: string | null;
+  maxDailyCapUsdRaw?: string | null;
+  maxTrackGmvRaw?: string | null;
+  residualPoolUsdRaw?: string | null;
+}
+
+export type F3Statistics = { basis: string } & Record<"participantCount" | "blockedCount" | "monthlyMatchedUsd" | "dailyMatchUsd" | "autoPlacement7dCount" | "maxDailyCapUsd" | "maxTrackGmv" | "residualPoolUsd" | "settlements" | "h1BinaryDailyCap", {
+  source: string; aggregate: string; field: string; filter: string; window: string; status: string; distinct: boolean;
+}>;
+
+export interface F3BinaryOverview extends F3RawAmounts {
+  statistics?: F3Statistics;
   metrics: F3Metric[];
   formula: F3Formula;
   settlements: F3Settlement[];
@@ -1412,14 +1442,17 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
 }
 
 function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3BinaryOverview {
-  const metrics = (data?.metrics ?? []).map((item) => ({
-    id: asText(item.id, "metric"),
-    name: asText(item.label, "指标"),
-    value: asText(item.value, "-"),
-    sub: asText(item.sub, ""),
-    tone: asText(item.tone, ""),
-    configKey: asText(item.configKey, ""),
-  }));
+  const metrics = (data?.metrics ?? []).map((item) => {
+    const raw = item.id === "todayBalanceMatch" ? data?.dailyMatchUsdRaw : item.id === "residualPool" ? data?.residualPoolUsdRaw : undefined;
+    return {
+      id: asText(item.id, "metric"),
+      name: asText(item.label, "指标"),
+      value: raw === undefined ? asText(item.value, "-") : raw ?? "—",
+      sub: asText(item.sub, ""),
+      tone: asText(item.tone, ""),
+      configKey: asText(item.configKey, ""),
+    };
+  });
   const settlements = (data?.settlements ?? []).map((item) => ({
     ownerUserId: toNumber(item.ownerUserId),
     user: asText(item.user, "usr_unknown"),
@@ -1429,6 +1462,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     b: toNumber(item.trackB),
     match: toNumber(item.matchAmount),
     today: toNumber(item.todayPaid),
+    aRaw: item.trackARaw, bRaw: item.trackBRaw, matchRaw: item.matchAmountRaw, todayRaw: item.todayPaidRaw,
     state: asText(item.state, "-"),
     tone: asText(item.tone, ""),
   }));
@@ -1437,8 +1471,12 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
   const config = data?.config ?? {};
   if (config.paused !== undefined && config.paused !== null && typeof config.paused !== "boolean") throw new Error("F3_RESPONSE_INVALID:config.paused");
   return {
+    monthlyMatchedUsdRaw: data?.monthlyMatchedUsdRaw, dailyMatchUsdRaw: data?.dailyMatchUsdRaw,
+    maxDailyCapUsdRaw: data?.maxDailyCapUsdRaw, maxTrackGmvRaw: data?.maxTrackGmvRaw, residualPoolUsdRaw: data?.residualPoolUsdRaw,
+    statistics: data?.statistics,
     metrics,
     formula: {
+      trackARaw: formula.trackARaw, trackBRaw: formula.trackBRaw, matchAmountRaw: formula.matchAmountRaw, todayPaidRaw: formula.todayPaidRaw,
       user: asText(formula.user),
       trackA: toNumber(formula.trackA),
       trackB: toNumber(formula.trackB),
@@ -1877,7 +1915,8 @@ async function f1Request<T>(
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
-      result = JSON.parse(raw.replace(/("h1BinaryDailyCap"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+      result = JSON.parse(raw.replace(/("(?:h1BinaryDailyCap|monthlyMatchedUsdRaw|dailyMatchUsdRaw|maxDailyCapUsdRaw|maxTrackGmvRaw|residualPoolUsdRaw|trackARaw|trackBRaw|matchAmountRaw|todayPaidRaw)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.

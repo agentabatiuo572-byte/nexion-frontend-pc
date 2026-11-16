@@ -262,6 +262,22 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
 export function assertF3Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F3");
   domain(row, "F3");
+  const rawAmounts = (item: JsonRecord, fields: string[], path: string) => {
+    for (const field of fields) {
+      const amount = item[field];
+      if (amount !== undefined && amount !== null && (typeof amount !== "string" || f4Decimal(amount) === null || amount.startsWith("-"))) invalid("F3", `${path}.${field}`);
+    }
+  };
+  rawAmounts(row, ["monthlyMatchedUsdRaw", "dailyMatchUsdRaw", "maxDailyCapUsdRaw", "maxTrackGmvRaw", "residualPoolUsdRaw"], "data");
+  if (row.statistics !== undefined) {
+    const statistics = object(row, "statistics", "F3");
+    text(statistics.basis, "F3", "statistics.basis");
+    for (const key of ["participantCount", "blockedCount", "monthlyMatchedUsd", "dailyMatchUsd", "autoPlacement7dCount", "maxDailyCapUsd", "maxTrackGmv", "residualPoolUsd", "settlements", "h1BinaryDailyCap"]) {
+      const statistic = object(statistics, key, "F3");
+      for (const field of ["source", "aggregate", "field", "filter", "window", "status"]) text(statistic[field], "F3", `statistics.${key}.${field}`);
+      if (typeof statistic.distinct !== "boolean") invalid("F3", `statistics.${key}.distinct`);
+    }
+  }
   const strings = (value: JsonRecord, keys: string[], path: string) => {
     for (const key of keys) if (typeof value[key] !== "string") invalid("F3", `${path}.${key}`);
   };
@@ -269,10 +285,12 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
     strings(record(value, "F3", `metrics[${index}]`), ["id", "label", "value", "sub", "tone"], `metrics[${index}]`);
   });
   const formula = object(row, "formula", "F3");
+  rawAmounts(formula, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], "formula");
   strings(formula, ["user", "matchRate", "threshold", "settlePeriod"], "formula");
   for (const key of ["trackA", "trackB", "matchAmount"]) finite(formula[key], "F3", `formula.${key}`);
   array(row, "settlements", "F3").forEach((value, index) => {
     const settlement = record(value, "F3", `settlements[${index}]`);
+    rawAmounts(settlement, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], `settlements[${index}]`);
     strings(settlement, ["user", "settlementDate", "cohort", "state", "tone"], `settlements[${index}]`);
     for (const key of ["ownerUserId", "trackA", "trackB", "matchAmount", "todayPaid"]) finite(settlement[key], "F3", `settlements[${index}].${key}`);
   });

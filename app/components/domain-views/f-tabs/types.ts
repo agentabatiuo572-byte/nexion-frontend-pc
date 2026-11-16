@@ -29,6 +29,8 @@ import type {
   F3DailyCap,
   F3Formula,
   F3Metric,
+  F3RawAmounts,
+  F3Statistics,
   F3Settlement,
   F4LeadershipPoolOverview,
   F4AmbassadorPolicy,
@@ -169,6 +171,8 @@ export interface FViewCtx {
   f3ReadEpoch: number;
   recoverF3: (original: FDomainAttempt, mode?: "query" | "retry" | "release") => Promise<A2OperationRow | null>;
   f3Metrics: F3Metric[];
+  f3Amounts?: F3RawAmounts;
+  f3Statistics?: F3Statistics;
   f3Formula: F3Formula | null;
   f3Settlements: F3Settlement[];
   f3MaxTrackGmv: number;
