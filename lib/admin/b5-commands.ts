@@ -39,7 +39,9 @@ export const b5Commands = createPendingMutationStore<Saved>({
       if (record.kind === "subscription") return record.method === "PUT" && record.path === "/api/admin/risk/alert-subscription"
         && typeof input?.operator === "string" && version(input.expectedVersion)
         && [input.inApp, input.email, input.webhook].every(value => typeof value === "boolean") && typeof input.webhookUrl === "string"
-        && typeof record.facts.subscriber === "string" && version(record.facts.version) && input.expectedVersion === record.facts.version
+        && typeof record.facts.subscriber === "string"
+        && (record.facts.subscriberDisplayName == null || typeof record.facts.subscriberDisplayName === "string")
+        && version(record.facts.version) && input.expectedVersion === record.facts.version
         && [record.facts.inApp, record.facts.email, record.facts.webhook].every(value => typeof value === "boolean")
         && [record.facts.webhookUrl, record.facts.emailMode, record.facts.webhookMode, record.facts.sharedWith].every(value => typeof value === "string");
       if (record.kind === "signal") return record.method === "PATCH"
