@@ -250,7 +250,7 @@ export async function submitF1Policy(
         if (mode === "lookup") {
           const result = await queryF1PolicyCommand(session.adminId, previous!).catch(() => null);
           return { active: await fetchF1VRankOverview().catch(() => null), resolved: result?.settled === true, receipt: result?.receipt,
-            acknowledgement: result?.settled ? result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "刷新页面查看现在的结果。" : formatAdminApiError(result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED"
+            acknowledgement: result?.settled ? result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。" : formatAdminApiError(result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED"
               ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED" : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED", "INVESTIGATION_RECEIPT_UNREADABLE")
               : "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
         }
