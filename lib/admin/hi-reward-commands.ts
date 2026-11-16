@@ -187,7 +187,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
       return { kind: "proposal" as const, ticket };
     }
   }
-  if (isRetryExpired(record)) throw new Error(`${RETRY_EXPIRED_TEXT}。命令号：${key}`);
+  if (isRetryExpired(record)) throw new Error(`${RETRY_EXPIRED_TEXT}。`);
   try {
     if (original.kind === "proposal") {
       const ticket = await createA2OperationProposal(JSON.parse(record.body) as HIProposal, key, true);
@@ -219,7 +219,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
 export async function retireH4PointsTier(tierName: string, expectedSignature: string, reason: string) {
   const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
   if (pending && (pending.payload.kind !== "retire" || pending.payload.tierName !== tierName))
-    throw new Error(`奖池有另一条结果待确认的原操作，请先按原命令核对。命令号：${pending.commandKey}`);
+    throw new Error("奖池还有一条结果未知的原操作，请先查询它的原结果。");
   const session = useAdminAuth.getState().session;
   if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
   return submitHIRewardCommand(HI_WHEEL_SCOPE, { kind: "retire", tierName,

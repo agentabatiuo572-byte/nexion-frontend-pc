@@ -2119,8 +2119,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button>
         </>}>
         <p>
-          {bizTimeFull(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。{expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}
-          <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
+          {bizTime(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。{expired ? RETRY_EXPIRED : RECOVERY_HINT[record.kind]}
+          <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
         </p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
           {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadMain()} /></>}</p>}

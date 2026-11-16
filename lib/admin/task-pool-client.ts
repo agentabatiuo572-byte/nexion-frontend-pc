@@ -46,11 +46,11 @@ const POOL_ERRORS: Record<string, string> = {
   RESOURCE_NOT_FOUND: "这个接口或资源不存在，请联系值班人员核对。",
   METHOD_NOT_ALLOWED: "这个请求方式不受支持，请联系值班人员核对。",
   UNSUPPORTED_MEDIA_TYPE: "提交格式不受支持，请保留内容并联系值班人员核对。",
-  IDEMPOTENCY_RESPONSE_DESERIALIZE_FAILED: "原命令的结果暂时读不到，请保留原记录，不要换号重发。",
-  IDEMPOTENCY_RESPONSE_SERIALIZE_FAILED: "原命令的结果暂时无法确认，请保留原记录，不要换号重发。",
+  IDEMPOTENCY_RESPONSE_DESERIALIZE_FAILED: "原请求的结果暂时读不到，请保留原记录，不要重新发起。",
+  IDEMPOTENCY_RESPONSE_SERIALIZE_FAILED: "原请求的结果暂时无法确认，请保留原记录，不要重新发起。",
   IDEMPOTENCY_SCOPE_REQUIRED: "缺少操作标识，请保留原记录并联系值班人员核对。",
-  IDEMPOTENCY_KEY_CONFLICT: "原命令号状态冲突，请保留原请求核对，不要另发一批。",
-  TASK_POOL_IDEMPOTENCY_CONFLICT: "原命令号与本次内容不一致，请保留原记录核对，不要换号重发。",
+  IDEMPOTENCY_KEY_CONFLICT: "原请求和这次的内容对不上，请先查询原结果，不要另发一批。",
+  TASK_POOL_IDEMPOTENCY_CONFLICT: "这次的内容和原请求不一致，请先查询原结果，不要重新发起。",
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -184,7 +184,7 @@ export async function sendTaskPoolCommand(command: TaskPoolCommand): Promise<Ran
     if (new Set(created.map(row => row.taskTypeId)).size !== created.length
       || created.some(row => !row.enabled || row.durationMinutes <= 0 || row.durationMinutes > 120)) throw new Error("新增任务结果不完整。");
     return { created, pool };
-  } catch { throw new TaskPoolApiError("任务操作回执不完整，请保留原操作和命令号核对。"); }
+  } catch { throw new TaskPoolApiError("任务操作的结果没读全，原操作已保留，请先查询原结果。"); }
 }
 export async function fetchDisableImpact(code: string, ids: string[]): Promise<DisableImpact> {
   const raw = record(await request(`/task-pools/${encodeURIComponent(code)}/disable-impact?${new URLSearchParams({ taskTypeIds: ids.join(",") })}`));

@@ -1004,7 +1004,7 @@ export default function H1Phase({ ctx,
         </Facts>
         <Fold inset title="技术信息" summary={`${detail.requests.length} 个原请求`}>
           <div className="h1-request-list">{detail.requests.map((request) => <Facts key={request.commandKey}>
-            <Fact k="命令号">
+            <Fact k="原请求编号">
               <span data-mono>{request.commandKey}</span>
             </Fact>
             <Fact k="请求">{request.method} /api/admin{request.kind === "patch" ? "/growth" : ""}{request.path}</Fact>

@@ -1065,9 +1065,22 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const latest = await fetchUserAssetAdjustmentDetail(record.target).catch(() => null);
     if (!latest?.adjustment) { notePending(record, "读回失败，这张单暂时读不到。待确认继续保留。"); return; }
     const row = latest.adjustment;
+    // 只改说法：没变、变了且和这次对得上、变了但对不上分开说。处理人是后端记的复核人（撤回不记复核人，只有提交人能撤回）。
+    const verb = record.kind === "approve" ? "批准" : record.kind === "reject" ? "驳回" : record.kind === "withdraw" ? "撤回" : "冲正";
+    const tail = !isRetryExpired(record) && canRetry(record) ? "按原请求重试可确认，不会重复执行。" : "待确认继续保留。";
+    const checker = text(row.checker, "").trim();
+    const byMe = !!checker && checker.toLowerCase() === makerUsername;
+    const label = statusOf(row).label;
+    const status = upper(row.status);
     notePending(record, record.kind === "reverse"
-      ? `读回：这张单现在${row.reversedBy ? `已冲正，冲正单 ${row.reversedBy}` : "还没有冲正"}，发出时还没有冲正。状态可能是别人改的，待确认继续保留。`
-      : `读回：这张单现在是「${statusOf(row).label}」，发出时是「待审批」。状态可能是别人改的，待确认继续保留。`);
+      ? row.reversedBy
+        ? `读回：这张单已冲正，冲正单 ${row.reversedBy}。可能是这次冲正，也可能是别人做的。${tail}`
+        : `读回：这张单还没有冲正，这次冲正还没生效。${tail}`
+      : isPendingRow(row) ? `读回：这张单还是「待审批」，这次${verb}还没生效。${tail}`
+      : record.kind === "withdraw" && status === "WITHDRAWN" ? `读回：这张单现在是「已撤回」，和这次撤回对得上。${tail}`
+      : byMe && status === (record.kind === "approve" ? "APPROVED" : "REJECTED") ? `读回：这张单现在是「${label}」，处理人 ${checker}，和这次${verb}对得上。${tail}`
+      : byMe && record.kind === "approve" && status === "REJECTED" ? `读回：这张单现在是「已驳回」，处理人 ${checker}。兑付覆盖率低于红线时，批准会被系统改成驳回，可能就是这次。${tail}`
+      : `读回：这张单现在是「${label}」${checker ? `，处理人 ${checker}` : ""}，不是这次的${verb}${byMe ? "" : "，可能是别人处理的"}。待确认继续保留。`);
     setCurrent({ row, source: isPendingRow(row) ? "queue" : "history" });
     setDetail(latest);
     setDetailError("");

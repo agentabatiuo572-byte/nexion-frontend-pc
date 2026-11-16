@@ -375,7 +375,7 @@ export async function submitConfigApproval<T>(
       || saved.target?.domain !== "G" || saved.target.type !== "genesis_param" || saved.target.id !== "dividend"
       || typeof saved.operator !== "string" || typeof saved.operatorRole !== "string"
       || JSON.stringify([saved.command.params, saved.reason]) !== previous.input) {
-      throw new A2OutcomeUncertainError("原日分红请求不完整，请保留命令号并核对原审批单。", key);
+      throw new A2OutcomeUncertainError("原日分红请求不完整，请保留原记录并核对原审批单。", key);
     }
   }
   const objectId = values && sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values

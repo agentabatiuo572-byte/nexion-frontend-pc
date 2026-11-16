@@ -814,7 +814,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       pendingKeyBeforeRequest = undefined;
     }
     if (d1Write && init?.idempotencyKey && previous && !d1CommandReplayable(previous.path)) {
-      throw new Error("这项操作后端不按命令号去重，再发一次可能再执行一次，所以不能按原请求重试；先读回核对。");
+      throw new Error("这项操作再发一次可能会再执行一次，所以不能按原请求重试；先读取现在的值核对。");
     }
     // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原请求重试。
     if (d1Write && !init?.idempotencyKey && !D1_CREGIS_SWITCH_PATH.test(path)) {

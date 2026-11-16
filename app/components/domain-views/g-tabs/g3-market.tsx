@@ -2,6 +2,7 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { fmtConfigPct } from "@/lib/format";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
@@ -70,7 +71,8 @@ const CONTROL_ORDER = ["pin", "schedule", "loop"];
 /** 按原请求重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
 const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
-const UNKNOWN_TEXT = /^提交结果(暂未确认|未知)/;
+// 只剩字符串时（页面上的 error）按开头认结果未知：A2 发起申请丢回包的句子以「结果未知，可能已经提交」开头。
+const UNKNOWN_TEXT = /^(提交结果(暂未确认|未知)|结果未知，可能已经提交)/;
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -506,7 +508,9 @@ function G3MarketEditor() {
     } catch (err) {
       const message = messageOf(err);
       setError(message);
-      toast(UNKNOWN_TEXT.test(message) ? message : `操作失败 · ${message}`);
+      // 拿得到错误对象就按类型认结果未知，不看句子：A2 的结果未知错误，或带 unknownOutcome 标记的 G3 写入失败。
+      const unknown = isA2OutcomeUncertainError(err) || (err as { unknownOutcome?: unknown } | null)?.unknownOutcome === true;
+      toast(unknown ? message : `操作失败 · ${message}`);
       throw err;
     } finally {
       setBusyKey(null);

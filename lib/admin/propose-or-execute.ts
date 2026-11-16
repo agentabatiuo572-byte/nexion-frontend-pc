@@ -77,7 +77,7 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
     return "proposed";
   } catch (error) {
     if (isA2OutcomeUncertainError(error)) {
-      toast(`提交结果暂未确认，请保持弹窗内容不变直接重试，或到操作记录里核对 · 命令号 ${error.commandKey}`);
+      toast("结果未知，可能已经提交。不要重新填写，在框里按原请求重试，不会重复提交。");
     } else {
       toast(`提交失败：${displayAdminError(error)}`);
     }

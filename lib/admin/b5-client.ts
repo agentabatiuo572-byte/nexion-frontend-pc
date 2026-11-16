@@ -45,7 +45,8 @@ export type B5InboxItem = {
 export class B5OutcomeUnknownError extends Error {
   readonly unknownOutcome = true;
   constructor(public readonly commandKey: string, detail?: string) {
-    super(`${detail ? `${detail} ` : ""}本次操作结果未知，可能已经生效。请先刷新核对；如需重试，请保持输入不变并使用当前操作重试。请求号：${commandKey}`);
+    // 传输层的说明（服务不可用、网关异常）已经写了「结果未知」，不再重复一遍。
+    super(`${detail && !detail.includes("结果未知") ? `${detail} ` : ""}结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。`);
     this.name = "B5OutcomeUnknownError";
   }
 }
