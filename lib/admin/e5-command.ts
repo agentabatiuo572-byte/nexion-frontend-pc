@@ -1,5 +1,5 @@
 import { A2OutcomeUncertainError, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
-import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-classification";
@@ -50,7 +50,7 @@ export function e5LegacyCommands(): { commandKey: string; fingerprint: string }[
     for (const value of Object.values(table)) {
       if (!value || typeof value !== "object") continue;
       const row = value as Record<string, unknown>;
-      if (typeof row.commandKey === "string" && typeof row.fingerprint === "string"
+      if (isPendingCommandOwnedBy(row) && typeof row.commandKey === "string" && typeof row.fingerprint === "string"
         && (key.includes("e5-device") || /e5_device_|device-activate|device-deactivate|device-batch/.test(row.fingerprint)))
         rows.push({ commandKey: row.commandKey, fingerprint: row.fingerprint });
     }

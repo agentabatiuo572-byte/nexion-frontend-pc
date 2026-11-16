@@ -68,7 +68,7 @@ import {
 } from "@/lib/admin/a2-policy";
 import { A2_MECHANISM_HELP, A2_MECHANISM_WHERE } from "@/lib/admin/config-help/a2";
 import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
-import { createPendingMutationStore, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
@@ -1071,6 +1071,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const tabIds = useTabIds();
 
   const syncPending = () => setPendingCommands(a2Commands.list());
+  useEffect(() => { syncPending(); }, [session?.adminId]);
 
   const loadMain = async () => {
     const seq = ++mainSeq.current;
@@ -1314,7 +1315,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           && ["COVERAGE_SNAPSHOT_UNAVAILABLE", "COVERAGE_BELOW_REDLINE"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
         const retentionRefused = extra.kind === "retention" && isExplicitRejection(cause)
           && ["RETENTION_PARAMETERS_STALE", "RETENTION_EXPECTED_MONTHS_REQUIRED"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
-        if (!unknown && (!retained || payoutCoverageRefused || retentionRefused || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope);
+        if (!unknown && (!retained || payoutCoverageRefused || retentionRefused || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope, key);
         syncPending();
         if (retentionRefused) {
           ctx.closeActionConfirm?.();
@@ -1326,7 +1327,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       }
       const confirmed = await confirm(result).catch(() => false);
       if (!confirmed) { syncPending(); toast(UNKNOWN_TOAST, "warn"); return "unknown"; }
-      a2Commands.forget(scope);
+      a2Commands.forget(scope, key);
       syncPending();
       return "ok";
     } finally {
@@ -1406,6 +1407,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
   const canRetry = (record: A2PendingCommand) => {
+    if (!isPendingCommandOwnedBy(record)) return false;
     if (record.kind === "withdraw") return canWithdraw;
     if (record.kind === "param" || record.kind === "retention") return canWrite;
     if (record.kind === "export") return canExport;
@@ -1475,6 +1477,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /** 读回只给现在的事实，不解除（OP-93、OP-95）。 */
   const verifyPending = async (record: A2PendingCommand) => {
+    if (!isPendingCommandOwnedBy(record)) return;
     if (record.kind === "export") {
       // 后端把命令号写进这次导出记录的详情，按对象查得到；查到也只说明后端生成过，文件没下到时按原操作重试。
       const found = await fetchA2Overview({ action: "A2_AUDIT_EXPORTED", object: record.commandKey }).catch(() => null);
@@ -1509,6 +1512,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，后端仍按这张单现在的状态校验。 */
   const releasePending = (record: A2PendingCommand) => {
+    if (!isPendingCommandOwnedBy(record)) return;
     a2Commands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
@@ -1518,6 +1522,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /** 「在操作记录里查看」：切到操作记录，对象填审批单号或机制、清理的资源名，导出按这次的命令号查，模块不限。 */
   const showInRecords = (record: A2PendingCommand) => {
+    if (!isPendingCommandOwnedBy(record)) return;
     const next: A2AuditFilter = record.kind === "export" ? { action: "A2_AUDIT_EXPORTED", object: record.commandKey } : { object: PARAM_AUDIT_OBJECT[record.kind] ?? record.target };
     applyFilter(next);
     chooseTab("records");

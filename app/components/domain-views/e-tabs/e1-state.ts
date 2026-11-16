@@ -1,7 +1,7 @@
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { SkuForm } from "./data";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 export const E1_LEVELS = [
   { key: "L1", label: "L1", name: "初级" }, { key: "L2", label: "L2", name: "中级" },
@@ -107,14 +107,13 @@ export const e1MediaCommands = createPendingMutationStore<E1MediaPending>({
 export type E1Legacy = PendingMutationRecord & { inputFingerprint: string };
 /** Old slots have no reason/actor/envelope. Read only, never resolve or expire them. */
 export function e1LegacyCommands(actorId: string): E1Legacy[] {
-  if (!hasPersistedPendingCommandOwner(actorId)) return [];
   try {
     const saved: unknown = JSON.parse(sessionStorage.getItem("nexion-admin-e-domain-commands-v1") ?? "{}");
     if (!saved || typeof saved !== "object" || Array.isArray(saved)) return [];
     return Object.entries(saved).flatMap(([key, value]) => {
       if (!value || typeof value !== "object") return [];
       const row = value as E1Legacy;
-      return row.commandKey === key && typeof row.fingerprint === "string" && row.fingerprint.startsWith("e1_")
+      return isPendingCommandOwnedBy(row, actorId) && row.commandKey === key && typeof row.fingerprint === "string" && row.fingerprint.startsWith("e1_")
         && typeof row.inputFingerprint === "string" && Number.isFinite(row.createdAt) && Number.isFinite(row.expiresAt) ? [row] : [];
     });
   } catch { return []; }

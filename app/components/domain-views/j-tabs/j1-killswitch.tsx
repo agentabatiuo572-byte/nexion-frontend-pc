@@ -21,7 +21,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -176,7 +176,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     setPending(pendingKeys.list());
     setPendingRestores(restoreAttempts.list());
   };
-  useEffect(() => { syncPending(); }, []);
+  useEffect(() => { syncPending(); }, [session?.adminId]);
   useEffect(() => {
     if (!data) return;
     lastRead.current = data;
@@ -246,7 +246,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         // 确认框留着时原因写在框里，重试的原因写在待确认条上，都不再弹同一句；权限层的 403 由确认框提示并关框（OP-132）。
         throw cause;
       }
-      pendingKeys.forget(scope);
+      pendingKeys.forget(scope, key);
       syncPending();
       after?.();
       try {
@@ -294,6 +294,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const [settled, setSettled] = useState<FundSettled[]>([]);
   /** Evidence forms reuse this path; missing/unknown/failed receipts preserve the saved command. */
   const checkInvestigation = async (record: J1Pending | RestoreAttempt, evidence?: FundCommandEvidence) => {
+    if (!isPendingCommandOwnedBy(record)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     setSubmitting(record.fingerprint);
     try {
       const receipt = await checkFundCommand(record, evidence);
