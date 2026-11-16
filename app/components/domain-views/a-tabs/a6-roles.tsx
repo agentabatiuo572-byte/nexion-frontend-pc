@@ -317,28 +317,29 @@ export default function A6Roles() {
     const state = !ticket && (!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
       ? await commands.queryReceipt(record).catch(() => null) : null;
     requireActor();
-    // The minimal status cannot tell a rolled-back refusal apart; the detailed receipt can (eCommandSettled).
-    const receipt = state === "REJECTED" ? await commands.queryInvestigation(record).catch(() => undefined) : undefined;
+    // UNKNOWN also covers governed nonexecution; expired failures need server-owned rollback proof.
+    const receipt = state === "REJECTED" || state === "UNKNOWN" || state === "FAILED" && isRetryExpired(record)
+      ? await commands.queryInvestigation(record).catch(() => undefined) : undefined;
     requireActor();
     const keep = (outcome: RbacOutcome) => setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
     if (!ticket) {
+      if (receipt && eCommandSettled(receipt)) {
+        setConfirmReq(null); setReleasing(null);
+        commands.forget(record);
+        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+        requireActor();
+        if (announce) setToast(rbacSettledText(receipt));
+        return false;
+      }
       // A6 may return its trusted business refusal after writes began and rolled back.
       // Keep the original; the minimal status supplies neither its reason nor a governed conclusion.
       if (state === "REJECTED") {
-        if (receipt && eCommandSettled(receipt)) {
-          setConfirmReq(null); setReleasing(null);
-          commands.forget(record);
-          await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-          requireActor();
-          if (announce) setToast(rbacSettledText(receipt));
-          return false;
-        }
         keep({ state, receipt });
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
         return false;
       }
       if ((!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
-        && (state === "SUCCEEDED" || state === "FAILED")) {
+        && (state === "SUCCEEDED" || state === "FAILED" && !receipt)) {
         setConfirmReq(null); setReleasing(null);
         commands.forget(record);
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
@@ -350,12 +351,12 @@ export default function A6Roles() {
         return false;
       }
       if (!proposal) {
-        keep({ state: state ?? "ERROR" });
+        keep({ state: state ?? "ERROR", receipt });
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
         return false;
       }
-      if (record.original.kind === "a6-status" && state === "PROCESSING") {
-        keep({ state });
+      if (record.original.kind === "a6-status" && (state === "PROCESSING" || receipt)) {
+        keep({ state: state ?? "ERROR", receipt });
         await reloadCurrent(record.original.role.id);
         return false;
       }
@@ -601,7 +602,7 @@ export default function A6Roles() {
     const original = record.original;
     const outcome = outcomes[record.commandKey];
     const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: authorities.includes(rbacAuthority(original)), canClose: false });
-    const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && (original.kind === "a6-delete" || original.kind === "a6-grants"
+    const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && !outcome?.receipt && (original.kind === "a6-delete" || original.kind === "a6-grants"
       || original.kind === "a6-status" && overview?.roles.some(role => role.id === original.role.id && role.status === original.status));
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
