@@ -217,7 +217,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
 
   return <>
     <PageHeader pageId="D1" title="充值与收款对账" summary="核对订单付款和充值，处理没对上的钱。"
-      meta={<span className="rd-toolbar"><span>打开和点「刷新」时读取，不自动刷新</span>
+      meta={<span className="rd-toolbar">
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => setReloadTick(value => value + 1)}>刷新</Button></span>}
       readOnly={canWriteAny ? undefined : "没有修改权限时，这页只能查看。"} />
     {conclusion}

@@ -1900,7 +1900,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   VIETQR_CONFIG_VERSION_CONFLICT: "VietQR 参数已被其他操作员修改，本次未覆盖；请刷新后基于最新版本重试。",
   VIETQR_TOLERANCE_OUT_OF_RANGE: "金额容差须为 0 至 5,000 ₫ 的整数。",
   VIETQR_GRACE_OUT_OF_RANGE: "回单宽限须为 0 至 60 分钟的整数。",
-  VIETQR_TX_LIMIT_OUT_OF_RANGE: "VietQR 单笔上限须为 100 至 10,000 USD 的整数。",
+  VIETQR_TX_LIMIT_OUT_OF_RANGE: "银行卡支付单笔上限须为 100 至 10,000 USDT 的整数。",
   TRC20_CONFIRMATIONS_OUT_OF_RANGE: "TRC20 入账确认数须为 1 至 64 的整数。",
   ERC20_CONFIRMATIONS_OUT_OF_RANGE: "ERC20 入账确认数须为 1 至 64 的整数。",
   BEP20_CONFIRMATIONS_OUT_OF_RANGE: "BEP20 入账确认数须为 1 至 64 的整数。",
