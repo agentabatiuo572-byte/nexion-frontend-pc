@@ -16,7 +16,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { fetchJ2GeoHitDetails, fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitDetailPage, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
-import { SettledLine } from "../recovery-panel";
+import { SettledLine, receiptFact } from "../recovery-panel";
 import { CommandClosureModal, closureKnown } from "../e-tabs/e-command-check";
 import { SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -310,7 +310,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const processedOf = (record: SlotAttemptRecord, expired: boolean, retry: boolean, legacy?: boolean) => {
     const outcome = outcomes[record.commandKey];
     if (!outcome || !("receipt" in outcome) || outcome.receipt?.originalStatus !== "SUCCEEDED") return undefined;
-    return processedStatus({ expired, canRetry: retry, canClose: fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit, legacy });
+    return processedStatus({ expired, canRetry: retry, canClose: fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit, legacy, receipt: outcome.receipt });
   };
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const input = JSON.parse(record.geo.body) as J2CommandBody;
@@ -373,7 +373,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} known={closureKnown(outcomes[closing.record.commandKey])}
       facts={<>
         <Fact k="改动">{closing.change}</Fact>
-        <Fact k="系统记录">{(outcomes[closing.record.commandKey] as { receipt?: { originalStatus: string } | null } | undefined)?.receipt?.originalStatus === "SUCCEEDED" ? "已处理，看不出成没成，原修改还锁着" : (outcomes[closing.record.commandKey] as { receipt?: { originalStatus: string } | null } | undefined)?.receipt?.originalStatus === "FAILED" ? "记为失败，原修改还锁着" : "结果未知，原修改还锁着"}</Fact>
+        <Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.record.commandKey]), "原修改还锁着")}</Fact>
         {(() => { const last = (outcomes[closing.record.commandKey] as { receipt?: { investigation: { investigatedAt: string; conclusion: string } | null } | null } | undefined)?.receipt?.investigation;
           return last && <Fact k="上次核查">{formatBusinessTimeCompact(last.investigatedAt, "—")}，记为「{last.conclusion === "SUCCEEDED" ? "已执行" : last.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>; })()}
       </>}

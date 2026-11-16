@@ -3637,6 +3637,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   IDEMPOTENCY_ORIGINAL_OPERATION_REQUIRES_INVESTIGATION: "这个对象仍有原操作结果未确认，须由有权超管核查。请保留原命令，不要换号重发；解除本页待确认不替后端结案。",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED: "原操作已核查确认成功，原命令不会再执行。请查看原审批单和当前业务结果。",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED: "原操作已核查确认未执行，原命令不能重试。需要时重新核对当前条件后再发起。",
+  IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED: "原操作已核查确认是后台拒绝，原请求不能再重试。要重做，请按现在的状态重新发起。",
   // E2/E5/E6 original-command lookup and closure (66ecdb47 AdminCommandInvestigationService, PhoneModelRiskReceiptService).
   E5_USER_ID_INVALID: "用户筛选无效，请清除用户筛选，再从列表里点选用户。",
   COMMAND_INVESTIGATION_FORBIDDEN: "只有原操作人或有调查权限的超级管理员能查这条原操作，核查结案只限有调查权限的超级管理员。原记录继续保留。",

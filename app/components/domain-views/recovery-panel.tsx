@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, X } from "lucide-react";
 import { Button, Explain, IconButton, Notice, type StateTone } from "@/app/components/rd";
+import { eCommandCanConcludeRejected, eCommandResult, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 
 /** 两分钟内发出的才算运营刚做完操作产生的记录；页面分批读进来的旧记录不算。 */
 const FRESH_MS = 2 * 60 * 1000;
@@ -29,24 +30,87 @@ export function useFreshFirst<T extends { key: string; createdAt?: number }>(row
   return { ordered, box };
 }
 
-/** 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。 */
-/** 按原号查到已处理完或记为失败：后端对这两种不收「仍未知」，结案框只给能提交的结论。 */
-export function closureKnown(outcome?: { receipt: { originalStatus: string } | null } | { error: string }) {
-  const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
-  return status === "SUCCEEDED" || status === "FAILED";
+/**
+ * 结案框能给哪些结论（只在按原号查到已处理完或记为失败时有；后端对这两种不收「仍未知」）。
+ * rejected：原回包是后台拒绝（数据层 eCommandCanConcludeRejected），可以按「后台拒绝」结案。
+ * success：「已执行」靠什么——receipt 原回包本身就能证明（业务码 0 或没有业务码），不用填成功记录编号；
+ * audit 要填这次操作的成功记录编号；never 这类操作后端不认成功记录、原回包又证明不了，不给这个选项。
+ * J4 恢复核对只认原回包业务码 0，后端不认任何成功记录（AdminCommandInvestigationService.allowedFact 没有这一支）。
+ * 旧后端没有业务结果字段：照旧，除 J4 恢复核对外「已执行」都要编号。
+ */
+export type ClosureBasis = { rejected: boolean; success: "receipt" | "audit" | "never" };
+export function closureKnown(outcome?: { receipt: ECommandInvestigation | null } | { error: string }): ClosureBasis | false {
+  const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+  if (receipt?.originalStatus !== "SUCCEEDED" && receipt?.originalStatus !== "FAILED") return false;
+  const receiptOnly = receipt.scope.startsWith("J4_PLAYBOOK_RESUME:");
+  const byReceipt = receipt.originalStatus === "SUCCEEDED" && (receipt.businessState === undefined ? receiptOnly : receipt.businessCode === 0 || receipt.businessCode === null);
+  return { rejected: eCommandCanConcludeRejected(receipt), success: byReceipt ? "receipt" : receiptOnly ? "never" : "audit" };
 }
 
+/** 查到原回包是后台拒绝、记录还保留（不含核查结案后的「后台拒绝」）。 */
+export function receiptRejected(receipt: ECommandInvestigation | null | undefined) {
+  return receipt?.originalStatus === "SUCCEEDED" && eCommandResult(receipt) === "REJECTED";
+}
+
+/** 后台拒绝、记录还保留时这一行怎么说：后台当时拒绝了，但不保证没有改动；原因要按原请求重试拿回，过期后核查结案。 */
+export function rejectedStatus({ expired, canRetry, canClose, legacy }: { expired: boolean; canRetry: boolean; canClose: boolean; legacy?: boolean }): { tone: StateTone; label: string; line: string } {
+  return { tone: "warn", label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${!expired && canRetry ? "按原请求重试可看原因，不会重复执行。"
+    : expired ? canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。"
+      : legacy ? "旧记录过 24 小时后可核查结案。" : "请有操作权限的人按原请求重试看原因。"}` };
+}
+
+/** 资金动账的操作：被拒时单独提醒钱可能已经动过。 */
+const MONEY_SCOPE = /^(?:D2|E4)[_:]|^D3_RESERVE_INJECTION$|^F5_COMMISSION_(?:REVERSE|REISSUE)$/;
+
+/** 展开后的说明：「后台拒绝」不等于没执行；「已处理」里缺逐项结果的几类为什么看不出。旧后端返回 undefined，和原来一样。 */
+export function receiptExplain(receipt: ECommandInvestigation | null | undefined, where = "操作记录与审批") {
+  if (!receipt || receipt.businessState === undefined || receipt.originalStatus !== "SUCCEEDED") return undefined;
+  const result = eCommandResult(receipt);
+  if (result === "REJECTED") return `${MONEY_SCOPE.test(receipt.scope) ? "被拒不等于资金没有变动" : "被拒不等于什么都没执行"}，先到${where}核对再决定。拒绝原因：24 小时内按原请求重试会原样拿回，不会重复执行；过期后请有调查权限的超级管理员核查结案。`;
+  if (result !== "BUSINESS_RESULT_UNAVAILABLE") return undefined;
+  return receipt.businessState === "SUCCEEDED"
+    ? "这类操作逐项执行，后台只记了整体做完，没记每一项的结果，看不出是否全部做成。按原请求重试会拿回当时的完整结果，不会重复执行；过期后请核查结案。"
+    : "后台记下这次处理完了，但没记成没成。按原请求重试会原样返回当时的结果，不会重复执行；过期后请核查结案。";
+}
+
+/** 原回包的业务码（后端只给数字，不给原因文字），只放技术信息；0 和没有码时不写。接受查询结果或回执本身。 */
+export function businessCodeOf(value: { receipt: ECommandInvestigation | null } | { error: string } | ECommandInvestigation | null | undefined) {
+  const receipt = value && "receipt" in value ? value.receipt : value && "originalStatus" in value ? value : null;
+  return receipt?.businessCode != null && receipt.businessCode !== 0 ? receipt.businessCode : undefined;
+}
+export function receiptCodeTech(receipt: ECommandInvestigation | null | undefined) {
+  const code = businessCodeOf(receipt);
+  return code === undefined ? "" : `业务码 ${code}`;
+}
+
+/** 结案框里「系统记录」一行：按查到的原结果写，held 是记录现在的样子（例如「原修改还锁着」）。 */
+export function receiptFact(receipt: ECommandInvestigation | null | undefined, held: string) {
+  return `${receiptRejected(receipt) ? "后台拒绝了" : receipt?.originalStatus === "SUCCEEDED" ? "已处理，看不出成没成" : receipt?.originalStatus === "FAILED" ? "记为失败" : "结果未知"}，${held}`;
+}
+
+/** 核查确认是后台拒绝之后的一句：记录解除了，但不等于没执行，也不能重发原来那一次。 */
+export const SETTLED_REJECTED = "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。";
+
+/** 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。 */
 export function recoveryTitle(unknown: number, waiting = 0, ended = 0) {
   return [unknown ? `${unknown} 项操作结果未知` : "", waiting ? `${waiting} 项${unknown ? "" : "操作"}在等审批` : "", ended ? `${ended} 项${unknown || waiting ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
 }
 
 /** 查到已解决的记录：一行轻提示，不占一张卡。 */
-export function SettledLine({ label, text, onDismiss }: { label: ReactNode; text: string; onDismiss?: () => void }) {
+export function SettledLine({ label, text, action, onDismiss }: { label: ReactNode; text: string; action?: ReactNode; onDismiss?: () => void }) {
   return <p className="fund-settled" role="status">
     <CheckCircle2 size={14} aria-hidden />
     <span><b>{label}</b> {text}</span>
+    {action}
     {onDismiss && <IconButton aria-label="关闭这条提示" onClick={onDismiss}><X size={14} aria-hidden /></IconButton>}
   </p>;
+}
+
+/** 标题列放不下时末尾是省略号：悬停看全文；被截断的，展开后第一行写全（.fund-row-full）。 */
+export function fullTitle(element: HTMLSpanElement | null) {
+  if (!element) return;
+  element.title = element.textContent ?? "";
+  element.toggleAttribute("data-truncated", element.scrollWidth > element.clientWidth);
 }
 
 export type RecoveryItem = {
@@ -59,6 +123,8 @@ export type RecoveryItem = {
   tag: ReactNode;
   /** 紧跟标签的一句结论：这条现在怎样、下一步做什么。 */
   line: string;
+  /** 查询后的结论：有就替换收起时的标签和那句话，不用展开才看得到。 */
+  result?: { tag: ReactNode; line: string };
   /** 最近一次查询的回答；回答变了这一行自动展开。 */
   note?: ReactNode;
   /** note 不是纯文字时用它判断回答变没变。 */
@@ -97,13 +163,13 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
         <div className="fund-row-line">
           <button type="button" className="fund-row-toggle" aria-expanded={expanded} aria-controls={id}
             onClick={() => setOpen(keys => expanded ? keys.filter(key => key !== item.key) : [...keys, item.key])}>
-            <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title">{item.object}</span>
+            <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title" ref={fullTitle}>{item.object}</span>
           </button>
-          {item.tag}
-          <span className="fund-row-text">{item.line}</span>
+          {item.result?.tag ?? item.tag}
+          <span className="fund-row-text">{item.result?.line ?? item.line}</span>
           <span className="fund-row-actions">{item.actions}</span>
         </div>
-        {expanded && <div className="fund-row-detail" id={id}>{item.detail}{item.note && <div role="status">{item.note}</div>}{item.tech}</div>}
+        {expanded && <div className="fund-row-detail" id={id}><p className="fund-row-full">{item.object}</p>{item.detail}{item.note && <div role="status">{item.note}</div>}{item.tech}</div>}
       </li>;
     })}</ul>
     {(items.length > 3 || foot) && <div className="fund-rows-foot">
