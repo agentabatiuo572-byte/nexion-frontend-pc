@@ -182,6 +182,13 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
       for (const key of ["window", "statusScope", "basis"]) text(statistic[key], "F2", `${path}.${key}`);
       const statuses = array(statistic, "paidOrSettledStatuses", "F2");
       if (statuses.length !== 2 || statuses[0] !== "PAID" || statuses[1] !== "SETTLED") invalid("F2", `${path}.paidOrSettledStatuses`);
+      if (statistic.paidStatuses !== undefined || statistic.paidAmountRaw !== undefined || statistic.paidEventCount !== undefined) {
+        const paidStatuses = array(statistic, "paidStatuses", "F2");
+        if (paidStatuses.length !== 1 || paidStatuses[0] !== "PAID") invalid("F2", `${path}.paidStatuses`);
+        if (statistic.paidAmountRaw !== null && (typeof statistic.paidAmountRaw !== "string" || f4Decimal(statistic.paidAmountRaw) === null || statistic.paidAmountRaw.startsWith("-"))) invalid("F2", `${path}.paidAmountRaw`);
+        if (statistic.paidEventCount !== null) nonNegativeInteger(statistic.paidEventCount, "F2", `${path}.paidEventCount`);
+        if (statistic.available === false && (statistic.paidAmountRaw !== null || statistic.paidEventCount !== null)) invalid("F2", `${path}.paidUnavailable`);
+      }
       for (const key of ["allStatusAmountRaw", "paidOrSettledAmountRaw"]) {
         if (statistic[key] !== null && (typeof statistic[key] !== "string" || f4Decimal(statistic[key]) === null || statistic[key].startsWith("-"))) invalid("F2", `${path}.${key}`);
       }

@@ -631,6 +631,9 @@ export interface F2PayoutStatistic {
   paidOrSettledStatuses: string[];
   paidOrSettledAmountRaw: string | null;
   paidOrSettledEventCount: number | null;
+  paidStatuses?: string[];
+  paidAmountRaw?: string | null;
+  paidEventCount?: number | null;
   statusMarkerOnly: boolean;
   cashSettlementTimeAvailable: boolean;
   basis: string;
@@ -1870,7 +1873,7 @@ async function f1Request<T>(
     } else if (/^\/rates(?:\?|$)/.test(path) && !isWrite) {
       const raw = await response.text();
       // Keep each rate/coefficient lexeme; missing flags remain independent booleans.
-      result = JSON.parse(raw.replace(/("(?:usdtPct|nexReward|allStatusAmountRaw|paidOrSettledAmountRaw)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:usdtPct|nexReward|allStatusAmountRaw|paidOrSettledAmountRaw|paidAmountRaw)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
