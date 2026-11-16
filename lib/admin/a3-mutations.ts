@@ -154,7 +154,8 @@ export function useA3Commands() {
   };
   // The visual worker must obtain confirmation before calling this. Read failure retains the record.
   const releaseContent = async (record: A3Command, confirmed: boolean) => {
-    if (!confirmed) throw new Error("A3_ORIGINAL_QUERY_ONLY");
+    // Inside the retry window the original request can still land; only the keyed retry settles it then.
+    if (!confirmed || a3Deduplicates(record) && !isRetryExpired(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     const result = await queryContent(record);
     if (!result.matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { ...result, released: !result.matched };

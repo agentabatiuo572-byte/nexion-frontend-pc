@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { f4Decimal } from "@/lib/admin/f4-money";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
@@ -563,7 +564,8 @@ function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
 }
 
 function readBDomainResponse(response: Response) {
-  return response.text().then(raw => JSON.parse(raw.replace(/("coverageRatio"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
+  return response.text().then(raw => JSON.parse(raw.replace(/("coverageRatio"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+    (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
 }
 
 export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {

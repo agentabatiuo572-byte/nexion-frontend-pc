@@ -1829,7 +1829,8 @@ async function f1Request<T>(
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.
-      result = JSON.parse(raw.replace(/("(?:amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+      result = JSON.parse(raw.replace(/("(?:amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
