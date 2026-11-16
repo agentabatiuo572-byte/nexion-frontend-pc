@@ -262,12 +262,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       action={pools.state === "ready" && emptyLevels.length > 0 && emptyLevels[0].code !== query.code ? <Button size="sm" onClick={() => setQuery(old => ({ ...old, code: emptyLevels[0].code, page: 1 }))}>查看 {emptyLevels[0].code} {emptyLevels[0].name}</Button> : undefined}>{conclusion}</Conclusion>
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={() => void refresh()}>刷新</Button>}>{receipt}</Notice>}
-    {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未确认`}
-      actionBelow action={<><Button size="sm" disabled={saving} onClick={async () => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); setPendingNote("正在读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); try { const receipt = await checkE2Command(record); syncPending(); showOutcome(record, { receipt }); } catch (cause) { showOutcome(record, { error: displayAdminReadError(cause) }); } if (query.code === record.pool.code && query.page === 1) await refresh(); setPendingNote("已读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); }}>查原操作结果</Button>
-        {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原操作重试</Button>}
+    {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未知`}
+      actionBelow action={<><Button size="sm" disabled={saving} onClick={async () => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); setPendingNote("正在查询原等级现在的情况；现在的数量和状态证明不了原操作的结果，原操作记录继续保留。"); try { const receipt = await checkE2Command(record); syncPending(); showOutcome(record, { receipt }); } catch (cause) { showOutcome(record, { error: displayAdminReadError(cause) }); } if (query.code === record.pool.code && query.page === 1) await refresh(); setPendingNote("已查到原等级现在的情况；现在的数量和状态证明不了原操作的结果，原操作记录继续保留。"); }}>查询原结果</Button>
+        {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原请求重试</Button>}
         <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} onClick={() => setClosing(record)}>核查结案</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => { viewOriginal(record); setReleasing(true); }}>解除待确认</Button>}
+        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => { viewOriginal(record); setReleasing(true); }}>解除原操作记录</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
       <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>
@@ -338,18 +338,18 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           onPage={page => { setSelected([]); setQuery(old => ({ ...old, page })); }} onPageSize={size => { setSelected([]); setQuery(old => ({ ...old, size, page: 1 })); }} />}
       </Panel>
     </section>
-    {dialog && <Modal title={releasing ? "解除待确认" : originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
+    {dialog && <Modal title={releasing ? "解除原操作记录" : originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
       icon={releasing ? ShieldCheck : dialog.kind === "random" ? Plus : ClipboardList} tone={!releasing && dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
       sub={releasing || dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}
       footer={releasing && dialog.original ? <><Button onClick={() => setReleasing(false)}>返回</Button><Button variant="primary" onClick={() => { e2Commands.forget(dialog.original!.fingerprint, dialog.original!.commandKey); syncPending(); close(); void refresh(); }}>确认解除</Button></>
         : <><Button disabled={saving} onClick={close}>{dialog.original ? "收起" : "取消"}</Button>
-          {originalRejected && !originalExpired ? <Button variant="primary" disabled={saving} onClick={() => setReleasing(true)}>解除待确认</Button>
+          {originalRejected && !originalExpired ? <Button variant="primary" disabled={saving} onClick={() => setReleasing(true)}>解除原操作记录</Button>
             : !originalExpired && <Button variant={dialog.kind === "status" && !dialog.enabled ? "danger" : "primary"} loading={saving} loadingText="提交中…" disabledReason={dialog.original ? retryBlock(dialog.original) : formBlock}
-              onClick={() => { if (dialog.original) void send(dialog.original, true); else { setTouched({ count: true, reason: true }); void submit(); } }}>{dialog.original ? "按原操作重试" : dialog.kind === "random" ? "确认添加并生效" : dialog.enabled ? "确认启用" : "确认停用"}</Button>}</>}>
-      {releasing && dialog.original ? <div className="rd-stack"><ReleaseBody label={`${dialog.pool.code} ${dialog.pool.name} · ${e2CommandLabel(dialog.original)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只移除本地待确认记录，不办理后端核查结案。" /><Facts><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{dialog.original.request.body.reason}</Fact></Facts></div>
+              onClick={() => { if (dialog.original) void send(dialog.original, true); else { setTouched({ count: true, reason: true }); void submit(); } }}>{dialog.original ? "按原请求重试" : dialog.kind === "random" ? "确认添加并生效" : dialog.enabled ? "确认启用" : "确认停用"}</Button>}</>}>
+      {releasing && dialog.original ? <div className="rd-stack"><ReleaseBody label={`${dialog.pool.code} ${dialog.pool.name} · ${e2CommandLabel(dialog.original)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只移除这条原操作记录，不办理后端核查结案。" /><Facts><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{dialog.original.request.body.reason}</Fact></Facts></div>
         : <div className="rd-stack">
-          {dialog.original && <Notice tone="warn" title={originalExpired ? "已超过 24 小时，不能再重试" : originalRejected ? "原样重试被明确拒绝" : "结果未确认，原操作已冻结"}>
-            {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先核实原操作结果，再决定是否解除本地待确认；这次拒绝不会自动清除原记录。" : retryBlock(dialog.original) ?? "只能按原操作重试：重发保存的原请求，系统认得出是同一次提交，不会重复执行。"}
+          {dialog.original && <Notice tone="warn" title={originalExpired ? "已超过 24 小时，不能再重试" : originalRejected ? "按原请求重试被明确拒绝" : "结果未知，原操作已冻结"}>
+            {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先查询原结果，再决定是否解除原操作记录；这次拒绝不会自动清除它。" : retryBlock(dialog.original) ?? "只能按原请求重试：系统认得出是同一次提交，不会重复执行。"}
           </Notice>}
           <Facts><Fact k="任务等级">{dialog.pool.code} {dialog.pool.name}</Fact>
             {dialog.original && <><Fact k="原操作">{e2CommandLabel(dialog.original)}</Fact><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()} · {dialog.original.actorName}</Fact></>}
@@ -373,7 +373,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {dialogError && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
-          <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="请求编号"><span data-mono>{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("请求编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
+          <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="请求编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("请求编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
         </div>}
     </Modal>}
   </>;
