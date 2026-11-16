@@ -257,6 +257,16 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
   if (monthOptions.length !== totalMonths || monthOptions.some((month, index) => month !== index + 1)) invalid("B4", "filters.monthOptions");
   const phaseOptions = strings(filters.phaseOptions, "B4", "filters.phaseOptions");
   if (phaseOptions.length !== B4_PHASES.length || phaseOptions.some((phase, index) => phase !== B4_PHASES[index])) invalid("B4", "filters.phaseOptions");
+  // Names are additive read metadata. Older backends omit them; an empty name stays unnamed.
+  for (const [field, name] of [["filters.phaseName", filters.phaseName], ["rhythm.currentPhaseName", rhythm.currentPhaseName]] as const) {
+    if (name != null && typeof name !== "string") invalid("B4", field);
+  }
+  if (filters.phaseNames !== undefined) {
+    const names = record(filters.phaseNames, "B4", "filters.phaseNames");
+    for (const [phase, name] of Object.entries(names)) {
+      if (!B4_PHASES.includes(phase as typeof B4_PHASES[number]) || (name !== null && typeof name !== "string")) invalid("B4", `filters.phaseNames.${phase}`);
+    }
+  }
 
   const distributions = new Map<string, JsonRecord[]>();
   for (const key of ["phaseDistribution", "monthDistribution", "distribution"]) {
@@ -265,6 +275,7 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
     for (const [index, row] of distribution.entries()) {
       const phase = text(row.phase, "B4", `${key}.${index}.phase`);
       if (!B4_PHASES.includes(phase as typeof B4_PHASES[number])) invalid("B4", `${key}.${index}.phase`);
+      if (row.phaseName != null && typeof row.phaseName !== "string") invalid("B4", `${key}.${index}.phaseName`);
       nonNegativeInteger(row.userCount, "B4", `${key}.${index}.userCount`);
       boolean(row.inScope, "B4", `${key}.${index}.inScope`);
     }

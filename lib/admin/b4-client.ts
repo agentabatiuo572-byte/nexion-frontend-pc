@@ -16,6 +16,7 @@ export type B4Filters = { granularity: B4Granularity; month: string; phase: stri
 
 export interface B4DistributionRow {
   phase: string;
+  phaseName?: string | null;
   month?: number;
   userCount: number;
   inScope: boolean;
@@ -39,11 +40,14 @@ export interface B4PhaseOverview {
     granularity: B4Granularity;
     month: number;
     phase: string;
+    phaseName?: string | null;
+    phaseNames?: Record<string, string | null>;
     monthOptions: number[];
     phaseOptions: string[];
   };
   rhythm: {
     currentPhase: string;
+    currentPhaseName?: string | null;
     currentMonth: number;
     totalMonths: number;
     phaseProgressPct: number;
