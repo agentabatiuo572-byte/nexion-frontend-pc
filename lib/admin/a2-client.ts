@@ -471,7 +471,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
   };
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Unlock?: boolean }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -515,18 +515,18 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
       formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);
   }
 
-  // 55b47abc refuses these exact F5 unlocks before any state, ledger or ticket write.
+  // F5 unlock and unfreeze guards refuse these exact commands before state, ledger or ticket writes.
   // A transport/unknown-outcome response still takes precedence above.
-  const f5UnlockRejected = init?.f5Unlock === true && /^\/operations\/[^/]+\/approve$/.test(path)
+  const f5StatusRejected = init?.f5Status === true && /^\/operations\/[^/]+\/approve$/.test(path)
     && response.status === result?.code && (
-      response.status === 409 && result.message === "COMMISSION_USER_SUSPENDED"
+      response.status === 409 && (result.message === "COMMISSION_USER_SUSPENDED" || result.message === "F5_COOLDOWN_DEADLINE_UNRECOVERABLE")
       || response.status === 422 && result.message === "COVERAGE_BELOW_REDLINE"
       || response.status === 503 && result.message === "COVERAGE_SNAPSHOT_UNAVAILABLE");
   if (!response.ok || !result || result.code !== 0) {
     // 🔴 带在途命令号时,只有**确定性拒绝**(4xx / 2xx 但业务码非 0)才算「这次没生效」。
     //   5xx 归确定失败 = 调用方 forget 命令号 = 下次重试铸新号 = 后端去重失效 = 资金动作双发。
     //   口径单源见 outcome-classification.ts(2026-08-06 全家族统一)。
-    if (init?.commandKey && !f5UnlockRejected && outcomeStaysUnknown(response.status, result?.code)) {
+    if (init?.commandKey && !f5StatusRejected && outcomeStaysUnknown(response.status, result?.code)) {
       throw new A2OutcomeUncertainError(
         formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`),
         init.commandKey,
@@ -539,7 +539,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
       apiCode: result?.code,
       details: result?.data,
       backendMessage: result?.message,
-      f5UnlockRejected,
+      f5StatusRejected,
     });
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {
@@ -597,7 +597,7 @@ export async function approveA2Operation(operationId: string, reason: string, co
   const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
     method: "POST",
     body: JSON.stringify({ reason }),
-    f5Unlock: operationCode === "f_commission_status",
+    f5Status: operationCode === "f_commission_status",
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
   });
   return fromTicket(row);
