@@ -252,7 +252,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     onRetry: !record.sopProposal.accepted && canRetry(record.sopProposal.context) ? () => restoreProposal(record) : undefined,
     onRelease: absent[record.commandKey] && !record.sopProposal.accepted ? () => setReleasing(record) : undefined,
     note: absent[record.commandKey] && !record.sopProposal.accepted
-      ? `后端按原请求查不到这张申请，说明没建成；${isRetryExpired(record) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
+      ? `按原请求查不到这张申请，说明没建成；${isRetryExpired(record) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
       : notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
   })));
   recoveryRows.push(...legacy.map((record): J4RecoveryRow => ({
@@ -265,7 +265,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     setReleasing(null);
     try {
       if (await releaseExpiredJ4Proposal(record)) toast("已解除这条记录；需要的话可以重新发起执行申请", "success");
-      else toast("后端现在查到了这张申请，记录保留，请按申请状态处理", "warn");
+      else toast("现在查到了这张申请，记录保留，请按申请状态处理", "warn");
     } catch (error) {
       noteError(record.commandKey, error);
     }
@@ -274,7 +274,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const recovery = <>
     <J4RecoveryNotice rows={recoveryRows} />
     {releasing && <ReleaseModal label={`${contextName(releasing.sopProposal.context)} · ${operationNames.execute}`}
-      explain="原申请超过 24 小时，后端按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
+      explain="原申请超过 24 小时，按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
       onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
     {releasingLegacy && <ReleaseModal label={`${recoveryRows.find((row) => row.key === releasingLegacy.commandKey)?.name} · 旧记录`}
       explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
