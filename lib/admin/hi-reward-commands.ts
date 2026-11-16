@@ -166,7 +166,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
   const authorities = original.kind === "retire" ? ["growth_h4_wheel_pool_write"]
     : original.input.command.domain === "I" ? ["content_i7_write", "content_i7_course_reward_adjust"]
     : [original.input.command.op === "h4_legacy_event_reward_update" ? "growth_h4_write" : "growth_h4_wheel_pool_write"];
-  if (!authorities.every(a => session.authorities.includes(a))) throw new Error("当前账号没有原操作所需权限，请保留原命令并核对授权。");
+  if (!authorities.every(a => session.authorities.includes(a))) throw new Error("当前账号没有原操作需要的权限，请保留原记录并核对授权。");
   const key = previous?.commandKey ?? createA2CommandKey(original.kind === "retire" ? "h4-tier-retire" : original.input.command.op);
   if (!previous) {
     commands.remember(`${session.adminId}:${scope}`, key, { owner: session.adminId, scope, payload: original,
@@ -182,7 +182,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
     const ticket = await fetchA2ProposalByKey(key, true);
     if (ticket) {
       if (!ticket.mine || ticket.obj !== original.input.obj || (ticket.operationCode && ticket.operationCode !== original.input.command.op))
-        throw new A2OutcomeUncertainError("查询回执与原操作不符，请保留原命令核对。", key);
+        throw new A2OutcomeUncertainError("查到的审批单和原操作对不上，请保留原记录核对。", key);
       commands.forget(record.fingerprint, key);
       return { kind: "proposal" as const, ticket };
     }
@@ -192,7 +192,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
     if (original.kind === "proposal") {
       const ticket = await createA2OperationProposal(JSON.parse(record.body) as HIProposal, key, true);
       if (!ticket.mine || ticket.obj !== original.input.obj || (ticket.operationCode && ticket.operationCode !== original.input.command.op))
-        throw new A2OutcomeUncertainError("审批回执与原操作不符，请保留原命令核对。", key);
+        throw new A2OutcomeUncertainError("返回的审批单和原操作对不上，请保留原记录核对。", key);
       commands.forget(record.fingerprint, key);
       return { kind: "proposal" as const, ticket };
     }
@@ -201,7 +201,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
     }, undefined, true);
     if (result?.updated?.tierName !== original.tierName || result.updated.action !== "retired"
       || !Array.isArray(result.wheelTiers) || typeof result.wheelSignature !== "string")
-      throw new A2OutcomeUncertainError("退役回执不完整，请保留原命令核对。", key);
+      throw new A2OutcomeUncertainError("退役后返回的内容不完整，请保留原记录核对。", key);
     commands.forget(record.fingerprint, key);
     return { kind: "retire" as const, overview: result };
   } catch (error) {

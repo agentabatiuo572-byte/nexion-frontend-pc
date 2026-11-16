@@ -1040,14 +1040,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : record.kind === "reverse"
           ? await reverseCommand(record.target, record.reason ?? "", record.operator, true)
           : await reviewCommand(record.kind, record.target, record.reason ?? "", record.operator, true);
-      if (outcome === "unknown") notePending(record, "还是没有确认，原命令继续保留。");
+      if (outcome === "unknown") notePending(record, "还是没有确认，待确认继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       // 只有后端对这条命令下了结论才给「解除待确认」；登录、权限、限流、幂等层、本地异常都不算（F01、OP-153）。
       if (rejectsCommand(cause)) {
-        notePending(record, `重试没有成功：${errorMessage(cause)}这说明不了原操作的结果，原命令继续保留。`);
+        notePending(record, `重试没有成功：${errorMessage(cause)}这说明不了原操作的结果，待确认继续保留。`);
         setRetryRejected((keys) => [...keys, record.commandKey]);
-      } else notePending(record, `这次没能确认结果：${errorMessage(cause)}原命令继续保留。`);
+      } else notePending(record, `这次没能确认结果：${errorMessage(cause)}待确认继续保留。`);
     }
   };
 

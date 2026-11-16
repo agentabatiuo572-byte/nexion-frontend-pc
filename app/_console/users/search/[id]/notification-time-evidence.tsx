@@ -118,7 +118,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       }
       if (retained) {
         // 重试被拒说明不了原操作的结果：原命令继续保留，人核实后才解除（OP-93 第 8 条）。
-        setNotice({ tone: "warn", text: `重试没有成功：${displayAdminError(cause)} 这说明不了原校正的结果，原命令继续保留。` });
+        setNotice({ tone: "warn", text: `重试没有成功：${displayAdminError(cause)} 这说明不了原校正的结果，原记录继续保留。` });
         corrections.remember(slot, command.commandKey, { preview: command.preview, reason: command.reason,
           rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
         refreshPending();

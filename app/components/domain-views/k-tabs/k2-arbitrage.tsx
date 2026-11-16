@@ -484,7 +484,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     if (!commandAttempt.isDurablyStored(scope, commandKey)) {
       if (!retained) commandAttempt.forget(scope, commandKey);
       throw new Error(retained
-        ? "浏览器存不下原操作，本次没有发送，结果仍未知。原命令继续保留，请查询原操作。"
+        ? "浏览器存不下原操作，这次没有发送，原操作结果仍未知。原记录继续保留，请查询原结果。"
         : "浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     // A later new submission can itself become unknown; this frame owns its new key too.

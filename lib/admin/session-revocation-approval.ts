@@ -58,7 +58,7 @@ export async function proposeSessionRevocation(
       throw new Error(`原操作结果未知，暂时查不到审批单。${displayAdminError(error)} 请稍后再查。`);
     }
     if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原命令已过期，暂未查到审批单。请继续核对原操作。", key);
+      throw new A2OutcomeUncertainError("原请求已过期，还没查到审批单。请继续核对原操作。", key);
     }
   }
   try {
