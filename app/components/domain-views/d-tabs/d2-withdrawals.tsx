@@ -938,7 +938,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
-  const [batchResult, setBatchResult] = useState<{ action: D2BatchAction; result: D2BatchResult } | null>(null);
+  // 按原请求查到的逐笔结果没有批次号：结果窗不写批次。
+  const [batchResult, setBatchResult] = useState<{ action: D2BatchAction; result: Omit<D2BatchResult, "batchId" | "reason"> & { batchId?: string } } | null>(null);
+  /** 查询后整批解除的记录：它的批量动作，「查看逐笔结果」打开同一个结果窗。 */
+  const [settledBatches, setSettledBatches] = useState<Record<string, D2BatchAction>>({});
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
   const [bankDetail, setBankDetail] = useState<D2BankPayout | null>(null);
   const [cregisDetail, setCregisDetail] = useState<D2CregisPayout | null>(null);
@@ -1492,6 +1495,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         pendingKeys.forget(record.fingerprint, record.commandKey);
         syncPending();
         setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus, ...(receipt!.batch ? { batch: receipt!.batch } : {}) }]);
+        if (record.kind === "batch" && receipt!.batch && record.action) setSettledBatches(current => ({ ...current, [record.commandKey]: record.action as D2BatchAction }));
         await Promise.all([refresh(), detailRef.current && record.nos.includes(detailRef.current.withdrawalNo) ? reopenDetail() : null]);
       }
       return receipt;
@@ -1728,7 +1732,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
       现在 {fmtPct(d5.coverageRatio)}，红线 {fmtConfigPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
-    <FundRecoveryPanel rows={pendingRows} link={auditLink} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
+    <FundRecoveryPanel rows={pendingRows} link={auditLink} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+      settledAction={item => item.batch && item.status !== "CONFIRMED_SUCCEEDED" && settledBatches[item.key]
+        ? <Button size="sm" variant="ghost" onClick={() => setBatchResult({ action: settledBatches[item.key], result: item.batch! })}>查看逐笔结果</Button> : null} />
 
     <StatBand label="提现汇总">
       <Stat lead tone="role-2" icon={Inbox} label="要处理" value={todoCount ?? "—"} unit={todoCount === undefined ? undefined : "笔"} sub={countsFailed ? "数量暂时读不到" : undefined}
@@ -1983,9 +1989,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
     {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
       {batchResult.result.accepted.length === 0 && <Notice tone="warn">这批没有一笔{actionLabel(batchResult.action)}成功{batchResult.result.conflicts.length > 0 ? `，${batchResult.result.conflicts.length} 笔未执行` : ""}{batchResult.result.rejected.length > 0 ? `，${batchResult.result.rejected.length} 笔转单笔人工审核` : ""}。</Notice>}
-      <Facts>
+      {batchResult.result.batchId && <Facts>
         <Fact k="批次">{batchResult.result.batchId}</Fact>
-      </Facts>
+      </Facts>}
       <Fold inset title="成功" summary={`${batchResult.result.accepted.length} 笔`} defaultOpen={batchResult.result.accepted.length > 0 && batchResult.result.conflicts.length === 0}>
         <RecordList label="批量成功的提现" records={batchResult.result.accepted.map((id) => ({ id, value: "处理成功", reference: id, status: <StatusTag tone="ok">成功</StatusTag> }))} />
       </Fold>
