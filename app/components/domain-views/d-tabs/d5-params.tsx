@@ -793,7 +793,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     try {
       const { label, changes, expectedVersion, reason, operator } = record;
       const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator }, true);
-      if (outcome === "unknown") note(record.commandKey, "重试的结果也没确认，原操作继续保留。稍后再试。");
+      if (outcome === "unknown") note(record.commandKey, "重试结果仍未知，原操作继续保留，稍后再试。");
       else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
     } catch (cause) {
       // 后端明确拒绝了这次重试才给「解除待确认」；本地出错、登录、权限、限流不算（F03、OP-153）。
@@ -870,7 +870,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const lookupLoosen = async () => {
     await recoverLoosen("lookup");
     const original = session ? pendingConfigApproval("D5", session.adminId) : undefined;
-    if (original && !fundInvestigationAccess(original).unavailableReason) await checkProposalInvestigation(original).catch(() => undefined);
+    if (!original || fundInvestigationAccess(original).unavailableReason) return;
+    // 查到原请求的执行记录后，这一行按它写结论；审批单查询留下的「没找到、还是未知」会和结论打架，清掉。
+    if (await checkProposalInvestigation(original).catch(() => undefined)) note(original.commandKey, "");
   };
   /** 收紧（直接保存）：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
   const [directClosing, setDirectClosing] = useState<TightenRecord | null>(null);
@@ -937,6 +939,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const expired = record.expiresAt <= Date.now();
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
+      // 查到记为失败时，「可能已经生效」不再写。
+      const outcome = investigationResults[record.commandKey];
+      const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
       return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
         createdAt: record.createdAt, expired, canRetry: !expired && commandAuthorities(record.changes).every(can),
         actions: <>
@@ -946,7 +951,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
-          <p>{`改动：${describeChanges(record.changes)}。可能已经生效，有结果前这页不能再修改。`}</p>
+          <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}</p>
           {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
         </>,
         tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
@@ -1051,7 +1056,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const pendingCount = tightenPending.length + (loosenRecord ? 1 : 0);
   const conclusion = tightenPending.length || loosenRecord
     // 大字留给答案：有待确认时结论只说后果，不放大、不再指路（DT-12、DT-21）。
-    ? <Conclusion state="warn" hint={coverageLine}>{tightenPending.length ? `${pendingCount} 项修改结果没确认，确认前这页暂停修改` : "1 项放宽结果没确认，确认前暂停放宽，收紧照常"}</Conclusion>
+    ? <Conclusion state="warn" hint={coverageLine}>{tightenPending.length ? `${pendingCount} 项修改结果未知，有结果前这页暂停修改` : "1 项放宽结果未知，有结果前暂停放宽，收紧照常"}</Conclusion>
     : coverageBlock
       ? <Conclusion state="danger" lead hint={<>{p.coverageReliable ? "" : `读到 ${pct(p.coverageRatio)}，红线 ${fmtConfigPct(p.redlinePct)}。`}收紧不受影响。{poolHint}</>} explain={coverageExplain}>{coverageBlock}</Conclusion>
       : networks.outage
