@@ -952,7 +952,19 @@ export type TamperReport = {
   accountCount: number;
 };
 
-export type PlaybookStep = { domain: string; dom: string; action: string; ax: string; approve: boolean; ref?: string | null };
+export type J4StepImpact = {
+  available: false;
+  reason: "NO_AUTHORITATIVE_IMPACT_COUNT" | "TARGET_SCOPE_ONLY" | "NOTIFICATION_COUNT_ONLY";
+  scope: {
+    type: "killswitch" | "country" | "user" | "cluster" | "campaign" | "disclosure" | "unknown";
+    value: string;
+    targetUserCount?: number;
+  };
+  estimatedUsers: null;
+  actualAffectedUsers: null;
+  actualNotifications: number | null;
+};
+export type PlaybookStep = { domain: string; dom: string; action: string; ax: string; approve: boolean; ref?: string | null; impact?: J4StepImpact };
 export type Playbook = {
   code: string;
   name: string;
@@ -994,7 +1006,7 @@ export type SopExecution = {
   rollbackAt?: string;
   rollbackReason?: string;
   notificationDispatch: Record<string, unknown>;
-  domainActions: Array<Record<string, unknown>>;
+  domainActions: Array<Record<string, unknown> & { impact?: J4StepImpact }>;
   rollbackActions: Array<Record<string, unknown>>;
   reversible: boolean;
 };
@@ -1553,6 +1565,33 @@ function normalizeTamperReport(raw: unknown, expectedWindow: "24h" | "7d" | "30d
   };
 }
 
+/** 6c8eb9ae/91adf9aa: counts describe target members or notifications, never affected users.
+ * An absent contract is the legacy backend, distinct from an explicit unavailable impact. */
+function normalizeJ4StepImpact(value: unknown): J4StepImpact | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) contractError("sop.step.impact");
+  const row = value as Record<string, unknown>;
+  if (!row.scope || typeof row.scope !== "object" || Array.isArray(row.scope)) contractError("sop.step.impact.scope");
+  const scope = row.scope as Record<string, unknown>;
+  if (row.available !== false || row.estimatedUsers !== null || row.actualAffectedUsers !== null
+    || typeof row.reason !== "string" || !["NO_AUTHORITATIVE_IMPACT_COUNT", "TARGET_SCOPE_ONLY", "NOTIFICATION_COUNT_ONLY"].includes(row.reason)
+    || typeof scope.type !== "string" || !["killswitch", "country", "user", "cluster", "campaign", "disclosure", "unknown"].includes(scope.type)
+    || typeof scope.value !== "string"
+    || scope.targetUserCount !== undefined && (typeof scope.targetUserCount !== "number" || !Number.isSafeInteger(scope.targetUserCount) || scope.targetUserCount < 0)
+    || row.actualNotifications !== null && (typeof row.actualNotifications !== "number" || !Number.isSafeInteger(row.actualNotifications) || row.actualNotifications < 0)) {
+    contractError("sop.step.impact");
+  }
+  return {
+    available: false,
+    reason: row.reason as J4StepImpact["reason"],
+    scope: { type: scope.type as J4StepImpact["scope"]["type"], value: scope.value,
+      ...(scope.targetUserCount !== undefined ? { targetUserCount: scope.targetUserCount as number } : {}) },
+    estimatedUsers: null,
+    actualAffectedUsers: null,
+    actualNotifications: row.actualNotifications as number | null,
+  };
+}
+
 function normalizeSopPlaybook(raw: unknown): Playbook {
   const row = rec(raw);
   const sequence = requiredRecordRows(row.sequence, "sop.playbook.sequence").map((step) => ({
@@ -1562,6 +1601,7 @@ function normalizeSopPlaybook(raw: unknown): Playbook {
     ax: str(step.action),
     approve: requiredBool(step.approve, "sop.step.approve"),
     ref: step.ref == null ? null : str(step.ref),
+    impact: normalizeJ4StepImpact(step.impact),
   }));
   const emergency = requiredBool(row.emergency, "sop.playbook.emergency");
   return {
@@ -1613,7 +1653,9 @@ function normalizeSopExecution(raw: unknown): SopExecution {
     rollbackAt: str(row.rollbackAt),
     rollbackReason: str(row.rollbackReason),
     notificationDispatch: rec(row.notificationDispatch),
-    domainActions: requiredRecordRows(row.domainActions, "sop.execution.domainActions"),
+    domainActions: requiredRecordRows(row.domainActions, "sop.execution.domainActions").map((action) => ({
+      ...action, impact: normalizeJ4StepImpact(action.impact),
+    })),
     rollbackActions: row.rollbackActions == null ? [] : requiredRecordRows(row.rollbackActions, "sop.execution.rollbackActions"),
     reversible: requiredBool(row.reversible, "sop.execution.reversible"),
   };

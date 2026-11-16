@@ -1,6 +1,19 @@
 import type { H3QuestEventBinding } from "./h-client";
 
 export type H3Task = Record<string, any>;
+
+/** f85e1742/ec68f13e: documented write contract; ASCII codes compare without changing stored values. */
+export function h3MissionEnableRefusal(taskKind: string, taskCode: string): "H3_MISSION_RETIRED" | undefined {
+  return taskKind === "MISSION" && ["weekly_t1_nex_v2_lock", "weekly_t1_stake_fallback", "weekly_t2_stake_small"].includes(taskCode.toLowerCase())
+    ? "H3_MISSION_RETIRED" : undefined;
+}
+
+export function h3MissionCreationRefusal(missionType: string, missionCode: string): "H3_DAY_ONE_STAKING_MISSION_REFUSED" | undefined {
+  const normalized = missionCode.toLowerCase();
+  return missionType === "DAY_ONE" && (normalized.includes("stake") || normalized.includes("lock"))
+    ? "H3_DAY_ONE_STAKING_MISSION_REFUSED" : undefined;
+}
+
 export type H3Model = {
   h3Stats: Record<string, unknown>;
   dayOneWindow: string;

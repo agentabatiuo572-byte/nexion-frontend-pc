@@ -18,7 +18,7 @@ import {
   type H3MissionKind,
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
-import { compareH3Decimal, h3Decimal, parseH3Model } from "@/lib/admin/h3-contract";
+import { compareH3Decimal, h3Decimal, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -335,6 +335,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   const runCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string, bv: H3MissionForm) => {
+    const refusal = h3MissionCreationRefusal(missionType, bv.missionCode?.trim() ?? "");
+    if (refusal) { toast(displayAdminError(new Error(refusal))); return; }
     const reward = /^\d+$/.test(bv.rewardPoints?.trim() ?? "") ? bv.rewardPoints.trim() : null;
     const approval = Number(bv.rewardPoints) > 0;
     const editor = creating;
@@ -491,6 +493,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const targetStatus = conflictDraft.intent ?? (status === "active" ? "paused" : "active");
     if (targetStatus === status) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样，没有改动"); return; }
     const enabling = targetStatus === "active";
+    const refusal = enabling ? h3MissionEnableRefusal(taskKind, taskCode) : undefined;
+    if (refusal) { toast(displayAdminError(new Error(refusal))); return; }
     openConfirm({ rebaseValue: targetStatus, briefKind: "config",
       target: taskCode,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
@@ -1061,7 +1065,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const status = taskStatusOf(task);
     if (status === "archived") return <Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${nameOf(task)}`} onClick={conflictDraft.register(JSON.stringify(["openMissionDelete:1", task.taskCode ?? task.id]), () => openMissionDelete(task, name))}>删除</Button>;
     return <Button size="sm" icon={status === "active" ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />} aria-label={`${status === "active" ? "停用" : "启用"} ${nameOf(task)}`}
+      disabledReason={missionEnableReason(task)}
       onClick={conflictDraft.register(JSON.stringify(["openMissionStatus:1", task.taskCode ?? task.id]), () => openMissionStatus(task, name))}>{status === "active" ? "停用" : "启用"}</Button>;
+  };
+
+  const missionEnableReason = (task: QuestTask) => {
+    const { taskKind, taskCode, status } = taskIdentity(task);
+    const refusal = status === "paused" ? h3MissionEnableRefusal(taskKind, taskCode) : undefined;
+    return refusal ? displayAdminError(new Error(refusal)) : undefined;
   };
 
   const openWeeklyReward = (task: QuestTask) => {
@@ -1564,7 +1575,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             {!detailArchived && <Button onClick={conflictDraft.register(JSON.stringify(["openMissionPresentation:2", detailTask?.taskCode ?? detailTask?.id]), () => openMissionPresentation(detailTask, detailName))}>改类别和跳转</Button>}
             {detail.list !== "dayOne" && <Button disabledReason={lockReason(`mission.${codeOf(detailTask)}.reward`)} onClick={conflictDraft.register(JSON.stringify(["openWeeklyReward:2", detailTask?.taskCode ?? detailTask?.id]), () => openWeeklyReward(detailTask))}>改奖励</Button>}
           </>}
-          primary={!detailArchived ? <Button variant={taskStatusOf(detailTask) === "active" ? "secondary" : "primary"} onClick={conflictDraft.register(JSON.stringify(["openMissionStatus:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionStatus(detailTask, detailName))}>{taskStatusOf(detailTask) === "active" ? "停用" : "启用"}</Button> : undefined} /> : undefined}>
+          primary={!detailArchived ? <Button variant={taskStatusOf(detailTask) === "active" ? "secondary" : "primary"} disabledReason={missionEnableReason(detailTask)} onClick={conflictDraft.register(JSON.stringify(["openMissionStatus:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionStatus(detailTask, detailName))}>{taskStatusOf(detailTask) === "active" ? "停用" : "启用"}</Button> : undefined} /> : undefined}>
         {detailTask && detail && <>
           <JudgmentPoints rows={[
             { label: "状态", value: <TaskStatusTag task={detailTask} /> },
