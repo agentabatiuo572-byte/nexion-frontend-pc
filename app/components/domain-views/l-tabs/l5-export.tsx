@@ -356,10 +356,20 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       if (original?.settled) {
         l5TaskCommands.forget(record.fingerprint, record.commandKey);
         syncCommands(); refreshRequired.current = true; ctx.closeActionConfirm?.();
+        const status = original.receipt?.originalStatus;
+        toast(`${record.task.id} · ${status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+          : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"}`, "success");
         await currentContext.current.reloadBi?.();
         return;
       }
-      if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) return;
+      // 只有这类报表的查看权限、没有导出任务权限：读不到任务现在的状态，只说原结果查到了什么和下一步。
+      if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) {
+        const canWrite = record.action === "approve" ? ctx.canApproveExportTasks : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
+        const step = isRetryExpired(record) ? "已过 24 小时不能再重试，请有导出任务查看权限的同事核对。"
+          : canWrite ? "24 小时内可以按原请求重试。" : "请有导出任务查看权限的同事核对。";
+        toast(`${record.task.id} · ${!original ? "查询失败，这不代表没执行" : "还没查出原结果的结论"}，原请求继续保留；${step}`, "warn");
+        return;
+      }
       const current = await fetchL5ExportTask(record.task.id);
       toast(`${record.task.id} · ${taskStatus(current).label} · ${formatAdminApiError("L5_TASK_QUERY_UNSETTLED", "L5_TASK_QUERY_UNSETTLED")}`);
       await currentContext.current.reloadBi?.();

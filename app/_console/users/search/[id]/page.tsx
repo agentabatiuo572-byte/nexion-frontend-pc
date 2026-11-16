@@ -924,18 +924,24 @@ export default function UserDetailPage() {
     toast.success("已解除原操作记录，后台的结果和锁定不变");
   };
 
-  /** 读回只给现在的事实，变了也可能是别人改的，不能当成原命令的回执，待确认保留（OP-93、OP-95）。 */
+  /** 先按原请求查原结果，查到确定结论才解除并告诉运营结果；查不出结论再读回现在的值，变了也可能是别人改的，待确认保留（OP-93、OP-95）。 */
   const verifyPending = async (command: C1Command) => {
     const result = await queryUserDetailCommand(command).catch(() => null);
     if (String(useAdminAuth.getState().session?.adminId) !== (command.adminKey || adminKey)) return;
     if (result?.settled) {
       c1UserCommands.forget(command.fingerprint, command.commandKey);
       syncPending(); setActionConfirm(null); setReleasing(null);
+      const status = result.receipt?.originalStatus;
+      toast.success(command.label, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+        : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
       await load(); await loadPaymentMethods();
       return;
     }
     await load();
-    setPendingNotes((current) => ({ ...current, [command.fingerprint]: "已读取现在的值，核对上面的内容。现在的状态可能是别人改的，记录继续保留。" }));
+    const status = result?.receipt?.originalStatus;
+    const found = !result ? "查询失败，这不代表没执行。" : !result.receipt ? "没有查到原结果，查不到不等于没执行。"
+      : status === "PROCESSING" ? "原操作还在执行，稍后再查。" : status === "FAILED" ? "系统记录这次失败了。" : status === "UNKNOWN" ? "系统也没有原结果。" : "原结果还没有确定结论。";
+    setPendingNotes((current) => ({ ...current, [command.fingerprint]: `${found}已重读现在的值，记录继续保留。` }));
   };
 
   const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
@@ -1229,7 +1235,7 @@ export default function UserDetailPage() {
         line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[command.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读取现在的值</Button>
+          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
