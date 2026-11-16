@@ -185,7 +185,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   ];
   const submittedAt = retry ? retry.expiresAt - PENDING_MUTATION_TTL_MS : 0;
   const DAY_HELP: Record<(typeof dayFields)[number], string> = {
-    dormantDays: "有效账户活动超过这么多天、且活动记录完整，客户才算沉睡。留空表示不判定沉睡。",
+    dormantDays: "最近一次有效账户活动距今超过这么多天，客户算沉睡；活动记录不全的不算。留空表示不判定沉睡。",
     maintenanceDays: "距上次维护满这么多天，客户进专属客服的主动维护待办。改天数不会补记维护。",
     activityWindowDays: "统计活跃客户时往回看几天，和沉睡分开算，不能大于沉睡天数。",
   };
@@ -211,7 +211,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
             ? "第一次发消息时，分给可接单的客服里负载最低的；没人可接就继续等。"
             : "主管手动分；超时没人分就按负载兜底。"}
-            explain="邀请继承和专属邀请码优先：这类客户注册时就有专属客服，不走这里。可接单指没暂停接新单、绑定客户数没到上限。已有专属客服的客户不会重新分配。">
+            explain="靠邀请继承或专属邀请码注册的客户已有专属客服，不走这里，已有专属客服的也不会重新分配。可接单指没暂停接新单、客户没到上限。">
             <Segments label="新客户怎么分" value={draft.unboundAssignmentMode ?? "SUPERVISOR"} onChange={(value) => setField("unboundAssignmentMode", value)}
               items={[{ value: "AUTO_RANDOM", label: "首次咨询时按负载自动分配", disabled: !editable }, { value: "SUPERVISOR", label: "客服主管分配", disabled: !editable }]} />
           </Field>
@@ -245,7 +245,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
               onClick={() => { if (retry) restore(); else setConfirm(true); }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
           </div>}
         </div>}
-        {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">手动处理等分配的客户：<a className="rd-link" href="/service/overview?view=pool">核对历史池并明确分配</a></p>}
+        {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">还在等分配的客户可以手动分：<a className="rd-link" href="/service/overview?view=pool">到客服工作台「待分配」</a></p>}
       </Panel>
       {confirm && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide onClose={() => { if (!saving) setConfirm(false); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
