@@ -135,7 +135,7 @@ function statusHistoryEntries(value: string | undefined, chain: string): Timelin
 const FAILURE_REASON_LABELS: Record<string, string> = {
   H1_COOLDOWN_FAST_TRACK: "低风险提现冷却中，到期后系统自动复查",
   H1_COOLDOWN_FAST_TRACK_APPROVED: "冷却期已结束，系统已自动放行",
-  A3_STRONG_REVIEW_THRESHOLD: "达到大额门槛，需人工复核",
+  A3_STRONG_REVIEW_THRESHOLD: "达到提现强审门槛，需人工复核",
   WITHDRAWAL_KILL_SWITCH_DISABLED: "提现已关停，到期没有自动放行，转人工审核",
   K3_RULE_DELAY: "触发提现风险规则（延迟），等到期复查",
   K3_RULE_FREEZE: "触发提现风险规则（冻结），需人工核实",
@@ -889,7 +889,7 @@ function noBatchHint(row: D2Withdrawal) {
 }
 
 const BANK_BLOCK = "收款账户暂不能审核放行，原因见详情里的「HDPay 银行打款」。";
-const LARGE_BLOCK = "这笔达到大额门槛，要财务主管或超级管理员放行";
+const LARGE_BLOCK = "这笔达到提现强审门槛，要财务主管或超级管理员放行";
 
 function shortAddress(value: string) {
   return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
@@ -1711,7 +1711,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <PageHeader pageId="D2" title="提现审核" summary={<AutoGloss>审核用户提现，先看风险和兑付覆盖率。</AutoGloss>}
       meta={<span className="rd-toolbar">
         <span>
-          {readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新 ·{" "}
+          {readAt && <>{`${readAt} 读取（${businessZone().label}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /> ·{" "}</>}
           <Explain label="到账时限怎么算" content="按「USDT 提现参数」现在的设置；已提交的提现按提交时的时限。">到账时限 {canReadD5 ? (resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`) : "无权限"}</Explain>
         </span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>

@@ -1818,7 +1818,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   WITHDRAWAL_REFUND_ORDER_MISMATCH: "退款的用户或金额和原提现单对不上，本次没有退款。请联系值班人员核对账单。",
   WITHDRAWAL_PENDING_FUNDS_INCONSISTENT: "这笔提现的冻结资金和账面对不上，本次没有退款。请联系值班人员核对账单。",
   D2_REJECT_REFUND_STATE_CONFLICT: "拒绝退款的状态更新发生冲突，不能确认处理结果。请到提现详情和操作记录核对原操作，不要换号重复退款。",
-  LARGE_AMOUNT_REQUIRES_SINGLE_MANUAL_REVIEW: "这笔达到大额门槛，不能批量放行。请由财务主管打开单笔详情，核对收款地址、风险和覆盖率后处理。",
+  LARGE_AMOUNT_REQUIRES_SINGLE_MANUAL_REVIEW: "这笔达到提现强审门槛，不能批量放行。请由财务主管打开单笔详情，核对收款地址、风险和覆盖率后处理。",
   HDPAY_PAYOUT_RETURNED: "HDPay 已退回这笔打款。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
   HDPAY_PAYOUT_FAILED: "HDPay 返回打款失败。请核对原单结算和用户退款记录，不要重新放行或重复退款。",
   // 后端事实核对：FINANCE_LEAD 是角色；K3_EXPIRY_DELAY、K3_DELAY_ONCE 是生命周期来源／期限标记，均非接口错误码。
