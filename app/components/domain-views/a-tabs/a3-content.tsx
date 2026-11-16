@@ -25,7 +25,9 @@ export const contentCheckLine = (check: A3ContentComparison) =>
   check.contentMatches
     ? "内容和你提交的一样，但保存记录对不上，可能刚被别人改过。核对后可以解除。"
     : "现在的内容和你提交的不一样，可能没保存上，也可能刚被别人改过。核对后解除，再重新保存。";
-type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; restored: A3Restored | null; onRestored: () => void };
+/** 「按原请求重试」可用时给原提交框的确认按钮；不可用（旧记录、已过期）时为 undefined。 */
+type ContentRetry = { disabledReason?: string; busy: boolean; run: () => void };
+type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; retry: (record: A3Command) => ContentRetry | undefined; restored: A3Restored | null; onRestored: () => void };
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
 type Row = Record<string, unknown>;
 type Mode = "DRAFT" | "PUBLISHED";
@@ -87,16 +89,20 @@ export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, t
 }
 
 /** 保存草稿和发布共用的确认框：理由 8–500 在框里填，点确认时才校验（旧写法）。 */
-function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, reasonMin, locked, onCancel, onConfirm }: {
+/** locked：结果未知时打开的是原提交（内容、方式、理由都是原来的），只能查询、解除或按原请求重试。 */
+function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, reasonMin, locked, retry, onCancel, onConfirm }: {
   mode: Mode; title: string; busy: boolean; error: string | null; facts: ReactNode; extra?: ReactNode;
-  locked?: boolean; reason: string; onReason: (value: string) => void; reasonMin: number; onCancel: () => void; onConfirm: () => void;
+  locked?: boolean; retry?: ContentRetry; reason: string; onReason: (value: string) => void; reasonMin: number; onCancel: () => void; onConfirm: () => void;
 }) {
   const publish = mode === "PUBLISHED";
-  return <Modal title={title} tone={publish ? "danger" : "neutral"} icon={publish ? undefined : FileText} busy={busy} dirty={Boolean(reason)} onClose={onCancel}
+  const working = busy || Boolean(retry?.busy);
+  return <Modal title={locked ? `原提交：${title}` : title} tone={publish ? "danger" : "neutral"} icon={publish ? undefined : FileText} busy={working} dirty={Boolean(reason)} onClose={onCancel}
     sub={publish ? <StatusTag tone="progress" filled>立即替换 App 读到的内容</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，App 读到的不变</StatusTag>}
     footer={<>
-      <Button disabled={busy} onClick={onCancel}>取消</Button>
-      <Button variant={publish ? "danger" : "primary"} loading={busy} disabledReason={locked ? "结果未知" : undefined} onClick={onConfirm}>{publish ? "发布" : "保存草稿"}</Button>
+      <Button disabled={working} onClick={onCancel}>取消</Button>
+      {locked && retry
+        ? <Button variant={publish ? "danger" : "primary"} loading={retry.busy} disabledReason={retry.disabledReason} onClick={retry.run}>按原请求重试</Button>
+        : <Button variant={publish ? "danger" : "primary"} loading={busy} disabledReason={locked ? "结果未知" : undefined} onClick={onConfirm}>{publish ? "发布" : "保存草稿"}</Button>}
     </>}>
     {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
     {facts}
@@ -105,6 +111,14 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
       {(control) => <Textarea {...control} aria-label="变更理由" value={reason} disabled={locked || busy} maxLength={500} rows={2} count={`${reason.trim().length}/500`} placeholder="例如：更新提现说明，工单号" onChange={(event) => onReason(event.target.value)} />}
     </Field>
   </Modal>;
+}
+
+const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下这次提交，<KeepText text="24 小时内可以按原请求重试。" /></>;
+/** 原提交框里还没有对比结果时：能重试的说重试会怎样，不能重试的说查询会怎样。 */
+function OriginalNote({ retryable }: { retryable: boolean }) {
+  return retryable
+    ? <>重试按原提交的内容、方式和理由再发一次：已经保存过的不会再存；<KeepText text="内容已被别人改过会被拒绝并重新读取。" /></>
+    : <>查询原结果会和现在的内容对比：一致就算已保存，<KeepText text="对不上时可以核对后解除。" /></>;
 }
 
 /** 结果未知的保存框里：读回对不上时给解除入口；点了先关保存框，再开页面上的解除框。 */
@@ -121,7 +135,7 @@ function Preview({ title, children }: { title: string; children: ReactNode }) {
 
 /* ────────────────── 开发者接口文档（W06） ────────────────── */
 
-function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
+function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, retry, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -301,7 +315,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
     </Panel>
 
 
-    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布开发者接口文档" : "保存开发者接口文档草稿"} busy={saving} locked={Boolean(original)} error={error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
+    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布开发者接口文档" : "保存开发者接口文档草稿"} busy={saving} locked={Boolean(original)} retry={original ? retry(original) : undefined} error={error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
       onCancel={() => setMode(null)} onConfirm={() => void save(mode)}
       facts={<DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline?.status ?? ""] ?? "—", after: mode === "DRAFT" && baseline?.hasPublishedVersion ? "草稿，公开版不变" : STATUS_NAME[mode] },
@@ -310,7 +324,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
       extra={check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-        : <Notice tone="neutral">这类保存不能重试：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /></Notice>} />}
+        : <Notice tone="neutral">{original ? <OriginalNote retryable={Boolean(retry(original))} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
   </div>;
 }
 
@@ -327,7 +341,7 @@ function initialDocument(): PublishedHowContentDocument {
 }
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
-function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
+function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, retry, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -590,7 +604,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     </Panel>
 
 
-    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布业务说明" : "保存业务说明草稿"} busy={saving} locked={Boolean(original)} error={error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
+    {mode && <SaveModal mode={mode} title={mode === "PUBLISHED" ? "发布业务说明" : "保存业务说明草稿"} busy={saving} locked={Boolean(original)} retry={original ? retry(original) : undefined} error={error} reason={original?.reason ?? reason} onReason={setReason} reasonMin={8}
       onCancel={() => setMode(null)} onConfirm={() => void save(mode)}
       facts={<DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline?.status ?? ""] ?? "—", after: mode === "DRAFT" && baseline?.hasPublishedVersion ? "草稿，公开版不变" : STATUS_NAME[mode] },
@@ -600,7 +614,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页打不开。</Notice>}
         {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-          : <Notice tone="neutral">六页一起保存，不能重试：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
+          : <Notice tone="neutral">{original ? <OriginalNote retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
       </>} />}
   </div>;
 }

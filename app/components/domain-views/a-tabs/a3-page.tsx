@@ -352,35 +352,42 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     } finally { setReleasing(null); }
   };
   const openRelease = useCallback((record: A3Command) => setReleasing({ record, busy: false }), []);
+  /** Content retry publishes to the App: it runs only from the original-submission dialog's confirm button. */
+  const retryContent = async (record: A3Command) => {
+    if (record.original.kind !== "docs" && record.original.kind !== "how") return;
+    const original = record.original;
+    setMutating(record.commandKey);
+    try {
+      await commands.send(record, true);
+      setRecovery(null); dropCheck(record.commandKey);
+      setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
+      toast(original.mode === "PUBLISHED" ? original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
+    } catch (error) {
+      if (!commands.find(record.fingerprint)) {
+        setRecovery(null); dropCheck(record.commandKey);
+        setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
+      }
+      toast(displayAdminError(error), "error");
+    } finally { setMutating(null); }
+  };
+  const contentRetry = (record: A3Command) => a3Deduplicates(record) && !isRetryExpired(record)
+    ? { disabledReason: mutating ? "正在提交" : canWriteExperience ? undefined : "你只能查看", busy: mutating === record.commandKey, run: () => void retryContent(record) }
+    : undefined;
   const recoverOriginal = async (record: A3Command) => {
     if (record.original.kind === "flag") flagChg(record.original.row, record);
     else if (record.original.kind === "param") paramChg(record.original.row, record);
-    else if ((record.original.kind === "docs" || record.original.kind === "how") && a3Deduplicates(record)) {
-      const original = record.original;
-      setMutating(record.commandKey);
-      try {
-        await commands.send(record, true);
-        setRecovery(null); dropCheck(record.commandKey);
-        setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
-        toast(original.mode === "PUBLISHED" ? original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
-      } catch (error) {
-        if (!commands.find(record.fingerprint)) {
-          setRecovery(null); dropCheck(record.commandKey);
-          setReadNonce(value => ({ ...value, [original.kind]: value[original.kind] + 1 }));
-        }
-        toast(displayAdminError(error), "error");
-      } finally { setMutating(null); }
-    }
     else setRecovery(record);
   };
-  // Legacy content requests sent no key; keep their original query/reconciliation contract.
+  const isContent = (record: A3Command) => record.original.kind === "docs" || record.original.kind === "how";
   const contentTag = (record: A3Command) => isRetryExpired(record)
-    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时。这类保存不能重试：查询结果和原提交一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
-    : <StatusTag tone="warn" icon={CircleHelp} explain="这类保存不能重试。点「查询原结果」：和原提交一致就算已保存，对不上时可以核对后解除。">结果未知</StatusTag>;
+    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
+    : <StatusTag tone="warn" icon={CircleHelp} explain={a3Deduplicates(record)
+      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原请求重试，不会重复保存；也可以先查询原结果，和现在的内容对比。"
+      : "提交时没收到确定结果，可能已经保存。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
   const recoveryRows: GRecoveryRow[] = commands.pending.map(record => ({
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
-    key: record.commandKey, name: record.name, change: a3Deduplicates(record) ? record.change : record.change.replace(" · default-", " · "), submittedAt: record.createdAt,
-    tag: !a3Deduplicates(record) ? contentTag(record) : isRetryExpired(record) ? expiredTag("direct") : unknownTag("direct"),
+    key: record.commandKey, name: record.name, change: isContent(record) ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
+    tag: isContent(record) ? contentTag(record) : isRetryExpired(record) ? expiredTag("direct") : unknownTag("direct"),
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除原操作记录…</Button>}
@@ -583,7 +590,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。先点「查询原结果」读当前值核对。</p><p>开关、参数、业务日历、App 分享与下载：24 小时内可以按原请求重试，不会重复执行。说明内容和开发者文档不能重试：查询结果和原提交一致就算已保存，对不上时可以核对后解除。</p></>}
+        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；也可以先点「查询原结果」核对。</p><p>说明内容和开发者文档查询时会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。</p></>}
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}
@@ -625,7 +632,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       <div {...ids.panel("calendar")} hidden={tab !== "calendar"}><A3Calendar commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={calendarNonce} onSummary={setCalendar} toast={toast} /></div>
       <div {...ids.panel("experience")} hidden={tab !== "experience"}><A3Experience commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={readNonce.experience} toast={toast} /></div>
       <div {...ids.panel("content")} hidden={tab !== "content"}><A3Content commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={readNonce.how} docsNonce={readNonce.docs} toast={toast} onSummary={setContent}
-        checks={checks} onRelease={openRelease} restored={restored} onRestored={onRestored} /></div>
+        checks={checks} onRelease={openRelease} retry={contentRetry} restored={restored} onRestored={onRestored} /></div>
       <div {...ids.panel("status")} hidden={tab !== "status"}>{statusPanel}</div>
     </div>
   );

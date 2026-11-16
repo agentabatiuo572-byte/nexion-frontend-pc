@@ -377,8 +377,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         if (!current) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
         requireActor(record.intent, false);
         // The status endpoint intentionally supplies no one-time password.
-        if (announce) toast(state === "SUCCEEDED" ? displayAdminError(new Error("A1_ORIGINAL_OPERATION_CONFIRMED"))
-          : displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
+        if (announce) toast(state !== "SUCCEEDED" ? "查到原结果：没有执行，记录已解除。"
+          : record.request.kind === "create" ? "查到原结果：账号已建好。一次性密码这里拿不到，请给这个账号重置一次密码，把新的一次性密码交给对方。"
+            : record.request.kind === "password" ? "查到原结果：密码已重置。一次性密码这里拿不到，请再重置一次，把新的一次性密码交给对方。"
+              : displayAdminError(new Error("A1_ORIGINAL_OPERATION_CONFIRMED")));
         return true;
       }
       if (record.request.kind === "permission") await fetchA8PermissionDetail(record.request.input.permissionCode);
@@ -1241,7 +1243,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         : intent.kind === "permission" ? `${intent.draft.code} · ${intent.draft.name}` : operatorDisplayLabel(intent.account),
       submittedAt: record.createdAt,
       tag: record.ticket?.status === "pending" ? <StatusTag tone="warn">待审批</StatusTag>
-        : expired ? expiredTag(intent.kind === "create" && request.kind !== "proposal" ? "原请求超过 24 小时，不能再重试。先在账号列表核对是否已建好，不要重复创建。" : undefined)
+        : expired ? expiredTag(intent.kind === "create" && request.kind !== "proposal" ? "原请求超过 24 小时，不能再重试。先查询原结果；没查到时到账号列表核对，不要重复创建。" : undefined)
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", request.kind === "proposal" ? undefined : DIRECT_UNKNOWN_NOTE[intent.kind]),
       actions: <>
         <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
@@ -1259,9 +1261,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   for (const draft of avatarDrafts.list().filter(row => row.actorId === currentAdminId && row.scope === "admin" && (!row.asset || row.cancelKey))) {
     const target = draft.fingerprint.split(":")[2] ?? "new";
     recoveryRows.push({ key: draft.cancelKey ?? draft.commandKey, name: draft.cancelKey ? "取消账号头像" : "准备账号头像", change: <>{draft.kind === "UPLOAD" ? draft.fileName ?? "上传的图片" : "随机默认头像"} · {target === "new" ? "新建账号" : <>账号编号 <span data-mono>{target}</span></>}</>, submittedAt: draft.createdAt,
-      tag: Date.now() >= draft.expiresAt ? expiredTag("原请求超过 24 小时，不能再重试，也查不到原结果，请联系值班人员核对。")
+      tag: Date.now() >= draft.expiresAt ? expiredTag(draft.cancelKey ? "原请求超过 24 小时，仍可以查询原结果；一直查不到请联系值班人员核对。" : "原请求超过 24 小时，不能再重试，也查不到原结果，请联系值班人员核对。")
         : unknownTag("direct", draft.cancelKey
-          ? "提交时没收到确定结果，取消可能已经生效。取消不能重试，也查不到原结果，请联系值班人员核对。"
+          ? "提交时没收到确定结果，取消可能已经生效。取消不能重试，可以查询原结果：查到就解除，没查到时记录保留。"
           : "提交时没收到确定结果，头像可能已经准备好。24 小时内可以点「处理原头像」按原请求重试，上传的要选同一张图片。"),
       actions: <>
         <Button size="sm" onClick={() => void (async () => {
@@ -1272,8 +1274,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               recoveryStarted(); setAvatarRecovery(null); reloadPending();
               if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
               requireActor(null, false);
-              toast(errorMessage(new Error(state === "SUCCEEDED" ? "A1_ORIGINAL_OPERATION_CONFIRMED" : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
-            } else toast(errorMessage(new Error("IDEMPOTENCY_RESULT_UNKNOWN")));
+              toast(state === "SUCCEEDED" ? "查到原结果：新头像已取消，记录已解除。" : "查到原结果：取消没有执行，准备好的新头像还在。");
+            } else toast("没查到取消的结果，记录保留。稍后再查；一直查不到请联系值班人员核对。");
             return;
           }
           if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");

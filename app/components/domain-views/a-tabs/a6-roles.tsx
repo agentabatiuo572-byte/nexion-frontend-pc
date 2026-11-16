@@ -320,13 +320,15 @@ export default function A6Roles() {
         commands.forget(record);
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
         requireActor();
-        if (announce) setToast(state === "SUCCEEDED" ? record.original.kind === "a6-create" ? "角色已创建，还没有任何权限" : "已保存"
-          : displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
+        // The historical receipt says nothing about grants made since; the reread role is the current state.
+        if (announce) setToast(state !== "SUCCEEDED" ? "查到原结果：没有执行，记录已解除。"
+          : record.original.kind === "a6-create" ? "查到原结果：角色已创建。"
+            : record.original.kind === "a6-status" ? `查到原结果：提交时角色已是「${record.original.status === 1 ? "启用" : "停用"}」，不用审批。` : "查到原结果：已保存。");
         return false;
       }
       if (!proposal) {
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-        setToast(displayAdminError(new Error("RBAC_READBACK_ONLY")));
+        setToast("没查到原结果，记录保留。角色已重新读取，只供对照。");
         return false;
       }
       if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id);
@@ -570,7 +572,7 @@ export default function A6Roles() {
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired
-        ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? original.kind === "a6-status" ? "原请求超过 24 小时，不能再重试。没有这张审批单，角色也已经是要改成的状态，可以解除这条记录。" : "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? original.kind === "a6-status" ? "原请求超过 24 小时，不能再重试。没查到审批单和原结果，但角色已经是要改成的状态，可以解除这条记录。" : "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="没收到确定结果，可能已生效或已建审批单。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
@@ -739,7 +741,7 @@ export default function A6Roles() {
       {releasing && (
         <ReleaseModal label={<>{releasing.name}<br />{businessStamp(releasing.createdAt)} 提交</>}
           explain={releasing.original.kind === "a6-status"
-            ? `提交时间为${businessZone().label}。确认后再查一次审批单和角色：没有这张单、角色也已经是「${releasing.original.status === 1 ? "启用" : "停用"}」才解除。原请求可能已经直接生效，也可能没到后端，角色都已是要改成的状态，不会再执行。查到单就不解除，请点「查询原结果」。`
+            ? `提交时间为${businessZone().label}。没查到原结果，按角色现在的状态核对：确认时再查一次，没有审批单、角色仍是「${releasing.original.status === 1 ? "启用" : "停用"}」才解除。解除只清这条记录，不会再发原请求；查到审批单就不解除。`
             : `提交时间为${businessZone().label}。确认后先按原请求再查一次审批单：明确没有这张单才解除，原操作不会执行；查到了就不解除，请点「查询原结果」。`}
           onCancel={() => setReleasing(null)}
           onConfirm={() => {
