@@ -42,6 +42,8 @@ export type A6RoleDetail = {
 export type A6RoleCreateInput = { roleCode: string; roleName: string; remark?: string; status?: number };
 export type A6RoleUpdateInput = { roleName?: string; remark?: string };
 export type A6GrantsPayload = { permissionCodes: string[]; menuIds: number[] };
+export type A6GrantsSnapshot = { expectedPermissionCodes: string[]; expectedMenuIds: number[] };
+export type A6GrantsRequest = A6GrantsPayload & A6GrantsSnapshot;
 
 function normalizeOverview(raw: unknown): A6RoleOverview {
   return strictA6Overview(raw) as A6RoleOverview;
@@ -140,7 +142,7 @@ export async function deleteA6Role(roleId: number, reason: string, operator: str
   return ticket;
 }
 
-export async function proposeA6RoleGrants(roleId: number, payload: A6GrantsPayload, reason: string, operator: string, stableKey?: string): Promise<A2ProposalTicket> {
+export async function proposeA6RoleGrants(roleId: number, payload: A6GrantsRequest, reason: string, operator: string, stableKey?: string): Promise<A2ProposalTicket> {
   const raw = await a6Request<unknown>(`/roles/${encodeURIComponent(roleId)}/grants`, {
     method: "PUT",
     body: JSON.stringify({ ...payload, reason, operator }),

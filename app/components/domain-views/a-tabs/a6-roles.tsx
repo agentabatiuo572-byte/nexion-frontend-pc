@@ -540,7 +540,8 @@ export default function A6Roles() {
     needsRecheck.current = false;
     const bound = freshOverview.current.roles.find(row => row.id === role.id)?.adminCount;
     if (recheckOriginal.kind === "a6-update") showOriginal({ ...recheckOriginal, role });
-    else if (recheckOriginal.kind === "a6-grants") showOriginal({ ...recheckOriginal, role, bound, menus: menuTree, permissions: allPerms });
+    else if (recheckOriginal.kind === "a6-grants") showOriginal({ ...recheckOriginal, role, bound, menus: menuTree, permissions: allPerms,
+      input: { ...recheckOriginal.input, expectedPermissionCodes: [...role.permissionCodes], expectedMenuIds: [...role.menuIds] } });
     else showOriginal({ ...recheckOriginal, role, bound });
     // Keep the existing modal mounted so the operator's reason and requested changes survive.
     // eslint-disable-next-line react-hooks/exhaustive-deps

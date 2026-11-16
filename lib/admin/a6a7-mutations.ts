@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
-import { fetchA6RoleDetail, newA6IdempotencyKey, type A6GrantsPayload, type A6RoleCreateInput, type A6RoleDetail, type A6RoleUpdateInput } from "./a6-client";
+import { fetchA6RoleDetail, newA6IdempotencyKey, type A6GrantsPayload, type A6GrantsSnapshot, type A6RoleCreateInput, type A6RoleDetail, type A6RoleUpdateInput } from "./a6-client";
 import { newA7IdempotencyKey, type A7MenuCreateInput, type A7MenuTreeNode, type A7MenuUpdateInput } from "./a7-client";
 import type { A8Permission } from "./a8-client";
 import { isAdminAuthFailure, resetAdminSession } from "./auth-session";
@@ -19,7 +19,8 @@ export type A6Original =
   | { kind: "a6-update"; role: A6RoleDetail; input: A6RoleUpdateInput }
   | { kind: "a6-status"; role: A6RoleDetail; status: 0 | 1; bound?: number }
   | { kind: "a6-delete"; role: A6RoleDetail; bound?: number }
-  | { kind: "a6-grants"; role: A6RoleDetail; input: A6GrantsPayload; bound?: number; menus: A7MenuTreeNode[]; permissions: A8Permission[] };
+  // Only legacy saved requests may omit the snapshot; their original body must remain byte-for-byte unchanged.
+  | { kind: "a6-grants"; role: A6RoleDetail; input: A6GrantsPayload & Partial<A6GrantsSnapshot>; bound?: number; menus: A7MenuTreeNode[]; permissions: A8Permission[] };
 export type A7Original =
   | { kind: "a7-create"; input: A7MenuCreateInput; parent?: A7MenuTreeNode }
   | { kind: "a7-update"; node: A7MenuTreeNode; input: A7MenuUpdateInput; parent?: A7MenuTreeNode }
@@ -88,6 +89,10 @@ function validOriginal(value: unknown): value is Original {
         if (!object(value.input) || !Array.isArray(value.input.permissionCodes) || !value.input.permissionCodes.every(text)
           || !Array.isArray(value.input.menuIds) || !value.input.menuIds.every(id) || !Array.isArray(value.menus) || !value.menus.every(menu)
           || !Array.isArray(value.permissions)) return false;
+        if (value.input.expectedPermissionCodes !== undefined || value.input.expectedMenuIds !== undefined) {
+          if (!Array.isArray(value.input.expectedPermissionCodes) || !value.input.expectedPermissionCodes.every(text)
+            || !Array.isArray(value.input.expectedMenuIds) || !value.input.expectedMenuIds.every(id)) return false;
+        }
         value.permissions.forEach(normalizeA8Permission);
         return true;
       }
@@ -223,7 +228,8 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
         if (isAdminAuthFailure(response.status, reasonCode)) resetAdminSession();
         // Keep the structured reason until the page display boundary; a first refusal stays in its confirmation.
         throw Object.assign(new Error(reasonCode ?? `RBAC_REQUEST_FAILED_${response.status}`), {
-          status: response.status, reasonCode, apiCode: typeof result?.code === "number" ? result.code : undefined,
+          status: response.ok && typeof result?.code === "number" && result.code >= 400 && result.code < 500 ? result.code : response.status,
+          reasonCode, apiCode: typeof result?.code === "number" ? result.code : undefined,
         });
       }
       const original = record.original;

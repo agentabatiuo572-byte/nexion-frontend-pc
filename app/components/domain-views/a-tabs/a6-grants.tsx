@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Coins, Eye, PenLine, Search, ShieldAlert, TriangleAlert } from "lucide-react";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import type { A6GrantsPayload, A6RoleDetail } from "@/lib/admin/a6-client";
+import type { A6GrantsRequest, A6RoleDetail } from "@/lib/admin/a6-client";
 import type { A7MenuTreeNode } from "@/lib/admin/a7-client";
 import type { A8Permission } from "@/lib/admin/a8-client";
 import { a6GrantsProblem } from "@/lib/admin/a6a7-mutations";
@@ -174,8 +174,9 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
   menuTree: A7MenuTreeNode[];
   allPerms: A8Permission[];
   onClose: () => void;
-  onSubmit: (payload: A6GrantsPayload, permBefore: number, menuBefore: number) => void;
+  onSubmit: (payload: A6GrantsRequest, permBefore: number, menuBefore: number) => void;
 }) {
+  const [snapshot] = useState(() => ({ expectedPermissionCodes: [...detail.permissionCodes], expectedMenuIds: [...detail.menuIds] }));
   const [permSet, setPermSet] = useState<Set<string>>(() => new Set(detail.permissionCodes));
   const [menuSet, setMenuSet] = useState<Set<number>>(() => new Set(detail.menuIds));
   // 反转语义:折叠集(默认空 = 全展开);menuTree 异步加载后即默认全展开,无需 effect 填充
@@ -272,7 +273,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
         explain="提交的是勾选后的完整两组，一张审批单；批准后整组替换，批准前什么都不变。"
         others={<Button variant="secondary" onClick={onClose}>取消</Button>}
         primary={<Button variant="primary" disabledReason={submissionProblem ? displayAdminError(new Error(submissionProblem)) : undefined} onClick={() => {
-          if (!submissionProblem) onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet] }, detail.permissionCodes.length, detail.menuIds.length);
+          if (!submissionProblem) onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet], ...snapshot }, detail.permissionCodes.length, detail.menuIds.length);
         }}>核对并提交</Button>} />}>
       <div className="a6-grants">
         <dl className="a6-grants-sum" aria-label="改动汇总">
