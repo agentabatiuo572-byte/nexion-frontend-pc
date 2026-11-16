@@ -2404,6 +2404,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_DAY0_VALUE_INVALID: "首笔收益到账时限必须是 30–600 秒。",
   A4_DAY0_POLICY_INVALID: "首笔收益统计窗口配置无效，必须为 30–600 秒。请有权限的同事到「用户行为事件」核对接入窗口设置。",
   A4_EVENT_RETENTION_INVALID: "事件留存期必须是 13-60 个月。",
+  A4_EVENT_RETENTION_POLICY_UNAVAILABLE: "事件留存期还没有读到，这次没有清理。请刷新核对「事件留存期」后再清理。",
+  A4_EVENT_RETENTION_POLICY_INVALID: "事件留存期设置不对（要 13–60 个月），这次没有清理。请先调整「事件留存期」。",
   A4_SAMPLING_VALUE_INVALID: "浏览或会话采样率必须是 0%–100%；资金、风控、转化类必须保持 100%。",
   A4_SAMPLING_POLICY_UNAVAILABLE: "当前采样规则尚未配置，暂时无法采集这类事件；请到统计参数核对采样率。",
   A4_SAMPLING_POLICY_INVALID: "当前采样规则格式无效，暂时无法采集这类事件；请核对采样率及受保护事件的 100% 设置。",

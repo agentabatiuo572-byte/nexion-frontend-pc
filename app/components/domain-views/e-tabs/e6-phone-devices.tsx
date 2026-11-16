@@ -7,6 +7,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { canActivateE5Device, canResumeE5UserDevicesFrom, pausedReasonText, type E5Device } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { E6PendingNotice, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
+import { e5StoppedNote } from "./e5-device-state";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -16,8 +17,9 @@ const LABELS={activate:"激活手机",deactivate:"取消激活",force:"强制激
 type Action=keyof typeof LABELS;
 // 主状态和后端的先后一致：停用、停用中排在运营暂停前面（暂停原因仍在问号里）。
 const shownPaused=(d:E5Device)=>!!d.pausedReason&&d.state!=="unbound"&&d.state!=="pending-deactivate";
-// 「已解绑 / 停用」合并了几种手机：显示时按真实状态分开，并写明还能不能再用（请求里的原状态仍用 STATES）。
-const stopped=(d:E5Device)=>{const raw=d.rawStatus.trim().toUpperCase(),sub=canActivateE5Device(d,true)?"可以重新激活":"不能再激活";return raw==="UNBOUND"?{label:"已解绑",sub}:raw==="RECYCLED"?{label:"已停用",sub:"已回收，不能再激活"}:raw==="RETIRED"?{label:"已停用",sub:"已退役，不能再激活"}:{label:"已停用",sub};};
+// 「已解绑 / 停用」合并了几种手机：显示时按归属和真实状态分开，叫法和 E5 一样（请求里的原状态仍用 STATES）。
+// 手机行不看设备进度：读不到归属时只按原始状态说，和以前一样。
+const stopped=(d:E5Device)=>e5StoppedNote({...d,simState:null});
 // 取消激活、解绑、置换回收时后端写的停跑原因就是动作本身，标签已经说了；其余原因按 E5 的叫法翻译。
 const pauseShown=(d:E5Device)=>!!d.pausedReason&&!(d.state==="unbound"&&["deactivate","unbind","recycle","replace"].includes(d.pausedReason.trim().toLowerCase()));
 const stateLabel=(d:E5Device)=>shownPaused(d)?"已暂停":d.state==="unbound"?stopped(d).label:STATES[d.state];

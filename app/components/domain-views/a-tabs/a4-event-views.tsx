@@ -160,7 +160,7 @@ export function consumerParts(consumers: string, pageName: (code: string) => str
   });
 }
 
-export type A4RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode };
+export type A4RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode; /** 查询原结果后的一句结论。 */ line?: string };
 
 /** 原操作提醒：逐条写改的是什么、对象是谁、什么时候提交的、现在什么状态，按钮在行尾。 */
 export function A4RecoveryNotice({ title, explain, rows }: { title: ReactNode; explain: ReactNode; rows: A4RecoveryRow[] }) {
@@ -176,6 +176,7 @@ export function A4RecoveryNotice({ title, explain, rows }: { title: ReactNode; e
             <span className="a4-rec-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="a4-rec-state">{row.tag}{row.ticket && <span className="a4-rec-ticket">审批单 <span data-mono>{row.ticket}</span></span>}</span>
             <span className="a4-rec-actions">{row.actions}</span>
+            {row.line && <span className="a4-rec-line" role="status">{row.line}</span>}
           </li>
         ))}
       </ul>
