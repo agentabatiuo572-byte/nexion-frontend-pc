@@ -89,7 +89,10 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   try {
     const text = await res.text();
     if (!text) throw new Error("RISK_RESPONSE_BODY_MISSING");
-    payload = JSON.parse(text) as ApiResult<T>;
+    // BigDecimal JSON tokens must survive before JSON.parse can round them.
+    payload = JSON.parse(path === "/arbitrage/overview"
+      ? text.replace(/("amountRaw"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : text) as ApiResult<T>;
   } catch (error) {
     if (isWrite) {
       throw new K1OutcomeUncertainError(
@@ -257,9 +260,23 @@ export type MultiAccountOverview = {
   sources: string[];
 };
 
+export type K2StructuredFacts = {
+  amounts?: { currency: "USDT" | "UVT"; amountRaw: string | null }[];
+  settledCount?: number | null;
+  blockedCount?: number | null;
+  blockedCountAvailable?: boolean;
+  blockedCountBasis?: string;
+  amountBasis?: string;
+  cellMeaning?: string;
+  trialStartEventCount?: number;
+  trialCellMeaning?: string;
+  trialEventBasis?: string;
+};
+
 export type K2Row = {
   rowId: string;
   rid: string;
+  structured?: K2StructuredFacts;
   viewKey: string;
   clusterId?: string;
   cluster?: string;
@@ -1065,9 +1082,37 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
             submittedAt: pending.submittedAt === null ? null : requiredK2String(pending.submittedAt, `${rowPath}.pendingApproval.submittedAt`),
           };
         }
+        let structured: K2StructuredFacts | undefined;
+        if (row.structured !== undefined) {
+          const factsPath = `${rowPath}.structured`;
+          const facts = requiredK2Record(row.structured, factsPath);
+          structured = {};
+          if (facts.amounts !== undefined) {
+            structured.amounts = requiredK2Array(facts.amounts, `${factsPath}.amounts`).map((value, index) => {
+              const amountPath = `${factsPath}.amounts[${index}]`;
+              const amount = requiredK2Record(value, amountPath);
+              if (amount.currency !== "USDT" && amount.currency !== "UVT") invalidK2Response(`${amountPath}.currency`);
+              const amountRaw = amount.amountRaw === null ? null : requiredK2String(amount.amountRaw, `${amountPath}.amountRaw`);
+              if (amountRaw !== null && !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(amountRaw)) invalidK2Response(`${amountPath}.amountRaw`);
+              return { currency: amount.currency as "USDT" | "UVT", amountRaw };
+            });
+          }
+          for (const key of ["settledCount", "blockedCount"] as const) {
+            if (facts[key] !== undefined) structured[key] = facts[key] === null ? null : requiredK2Integer(facts[key], `${factsPath}.${key}`);
+          }
+          if (facts.trialStartEventCount !== undefined) structured.trialStartEventCount = requiredK2Integer(facts.trialStartEventCount, `${factsPath}.trialStartEventCount`);
+          if (facts.blockedCountAvailable !== undefined) {
+            if (typeof facts.blockedCountAvailable !== "boolean") invalidK2Response(`${factsPath}.blockedCountAvailable`);
+            structured.blockedCountAvailable = facts.blockedCountAvailable as boolean;
+          }
+          for (const key of ["blockedCountBasis", "amountBasis", "cellMeaning", "trialCellMeaning", "trialEventBasis"] as const) {
+            if (facts[key] !== undefined) structured[key] = requiredK2String(facts[key], `${factsPath}.${key}`);
+          }
+        }
         return {
           rowId,
           rid: rowId,
+          structured,
           viewKey: rowViewKey,
           clusterId,
           cluster: clusterId || undefined,

@@ -1507,6 +1507,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.9 I 内容与合规 CMS
 
+**2026-11-17 I2 变量拒绝（hd-sync35，42295ac0/5f776655）**：真实业务adapter频道保存模板时拒绝基础三语变量；更新省略translations时检查实际保留译文，发布旧草稿同时检查三语及扩展译文标题/正文。既有NOVA_TEMPLATE_PLACEHOLDER_UNSUPPORTED业务422（HTTP200封装）在模板/频道状态/成功审计前返回；前端已有中文和首次/重试明确拒绝收尾。overview没有占位符或逐频道策略目录，按brief不复制业务规则，现有编辑器警告及后端拒绝沿用；不为了通过保存补translations={}，也不把本规则套到I1/I3。I2-BE-03累计已交付，已发布旧模板不自动治理。
+
+**2026-11-17 I4 部分公开（hd-sync35，f88495da）**：服务端public current与管理published-snapshot跳过未发布/缺块，允许成功空数组，已发布坏版本/重复键仍拒绝；原公开清空和sandbox保持。PC现有parser接受子集，预览仅取成功正式快照列出的未cleared字段，缺块不回填后台正文，管理卡及版本入口保留。App@4ce72560仍要求六键，客户端兼容未交，I4-BE-01仅后端范围已交，不整划；页面首屏、状态与发布/下架确认旧说法交视觉和App协调，不能把服务端available=true当当前App读取成功。
+
 **2026-11-16 I4 实际公开状态读取（hd-sync10，后端 bcf0125b）**：新增 `fetchI4PublishedSnapshot(signal?)` 读取 `GET /api/admin/content/trust-disclosure/published-snapshot`，复用内容代理的 trust-disclosure 白名单、会话令牌和错误处理，此精确路径只允许 GET，后端仅授予 `content_i4_read`。返回 `sampledAt/available/reason/source/sourceEnvironment/runId/sections`；每节为 `sectionKey/version/available/reason/fields`，每项为 `key/cleared/reason`。可空字符串保留 null；失效快照仍返回成功管理响应及六节不可用占位，不能将 available=false 当请求失败。`cleared` 只表示非空原值被清空，reason 可以非空但 cleared=false；不包含被扣下的值，也不是语言派生后 App 的完整文字。页面（hd-vbe）：打开、点「刷新」、任一版块版本或状态变化时读取；结论下一行写核对结果（已核对 / 版本对不上 / 整页打不开 / 测试环境演示内容）和取样时间（北京时间），整块没公开的个数沿用结论句，这一行只补零散被清空的项数和版本不一致的块数。卡片标「App 实际给出」「N 项被清空」「App 给的是 vX」；详情多一行「App 实际给出」，字段旁写「App 没公开：原因」；原因码、来源、环境、运行号只在详情的技术信息里。读取失败（含旧后端没有此接口）不挡整页，结论下一行给重试，卡片退回页面推断并标「预计 App 显示」。
 
 **I4 删除草稿冲突理由（2026-11-15）**：删除确认的首次修订冲突将本次确认的理由和原 sectionKey 直接交给冲突核对，不再误取未打开的草稿编辑器保存说明。核对后仍删除原栏目/原版本，带回原理由，重新确认才以最新 revision 和新命令号提交。保存草稿继续保留完整 draftEditor 及保存说明；共用确认框无需为此重置表单。
