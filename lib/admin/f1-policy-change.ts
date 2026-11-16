@@ -8,6 +8,9 @@ import { findHighOp } from "./high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem, VRankRewardType } from "./platform-types";
+import { fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { isOriginalCommandOrigin, queryOriginalCommand, type OriginalCommandRoute } from "./original-command-query";
+import { formatAdminApiError } from "./error-messages";
 
 export type F1ConditionField = "selfBuy" | "teamGv" | "directRefs" | "legCount" | "legRank";
 export type F1PolicyAction = "threshold" | "reward_add" | "reward_update" | "reward_remove";
@@ -29,7 +32,7 @@ type OriginalCommand = {
   directExpectedRevision?: string;
 };
 
-export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean };
+export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
 const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
@@ -121,6 +124,12 @@ export function f1PolicyNeedsApproval(editor: F1PolicyEditor, form: F1PolicyForm
 function slot(owner: number, editor: F1PolicyEditor) {
   return `${owner}:F1:${editor.row.v}:${editor.action}:${editor.field ?? editor.reward?.id ?? "new"}`;
 }
+function f1PolicyRoute(values: F1PolicyValues): OriginalCommandRoute {
+  const base = `/api/admin/teams/ranks/${encodeURIComponent(values.rank)}`;
+  return { originalMethod: values.action === "threshold" ? "PATCH" : values.action === "reward_add" ? "POST" : values.action === "reward_remove" ? "DELETE" : "PUT",
+    originalPath: values.action === "threshold" ? `${base}/thresholds/${encodeURIComponent(values.field!)}` : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`,
+    readAuthority: "network_f1_read" };
+}
 function originalF1Policy(owner: number, record: F1PolicyRecord) {
   const original = JSON.parse(record.input) as OriginalCommand;
   if (!original.editor || slot(owner, original.editor) !== record.fingerprint || typeof original.reason !== "string"
@@ -128,7 +137,9 @@ function originalF1Policy(owner: number, record: F1PolicyRecord) {
     || original.values.rank !== original.editor.row.v || original.values.action !== original.editor.action
     || original.values.field !== original.editor.field || original.values.rewardId !== original.editor.reward?.id
     || original.directExpectedRevision !== undefined && (original.directExpectedRevision !== original.values.expectedRevision || !/^[0-9a-f]{64}$/.test(original.directExpectedRevision))
-    || original.approval && !original.proposal) throw new Error("原操作内容不完整，请到操作记录核对后处理。");
+    || original.approval && !original.proposal
+    || !original.approval && (!isOriginalCommandOrigin(record.commandOrigin, f1PolicyRoute(original.values))
+      || record.commandOrigin && record.commandOrigin.originalAdminId !== String(owner))) throw new Error("原操作内容不完整，请到操作记录核对后处理。");
   return { ...record, original };
 }
 export function listF1PolicyOperations(owner: number) {
@@ -189,7 +200,8 @@ export async function submitF1Policy(
         target: definition.buildTarget({ rank: values.rank }),
       };
     }
-    attempts.remember(fingerprint, key, { input: JSON.stringify(original) });
+    const route = !approval ? f1PolicyRoute(values) : undefined;
+    attempts.remember(fingerprint, key, { input: JSON.stringify(original), ...(route ? { commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) } : {}) });
     if (!attempts.isDurablyStored(fingerprint, key)) {
       attempts.forget(fingerprint, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
@@ -235,7 +247,13 @@ export async function submitF1Policy(
     } else {
       if (!previous?.received) {
         // Reading current configuration cannot establish an unknown command's outcome.
-        if (mode === "lookup") return { active: await fetchF1VRankOverview(), resolved: false, acknowledgement: "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
+        if (mode === "lookup") {
+          const result = await queryF1PolicyCommand(session.adminId, previous!).catch(() => null);
+          return { active: await fetchF1VRankOverview().catch(() => null), resolved: result?.settled === true, receipt: result?.receipt,
+            acknowledgement: result?.settled ? formatAdminApiError(result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED"
+              ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED" : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED", "INVESTIGATION_RECEIPT_UNREADABLE")
+              : "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
+        }
         if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
         if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);
         posting = true;
@@ -263,6 +281,15 @@ export async function submitF1Policy(
   // The command's known result is independent of this subsequent read.
   const active = await fetchF1VRankOverview().catch(() => null);
   return { active, resolved: true, acknowledgement };
+}
+
+export async function queryF1PolicyCommand(owner: number, record: F1PolicyRecord, evidence?: FundCommandEvidence) {
+  const saved = originalF1Policy(owner, record);
+  if (saved.original.approval) throw new Error("INVESTIGATION_SCOPE_UNSUPPORTED");
+  const receipt = await queryOriginalCommand(saved, f1PolicyRoute(saved.original.values), String(owner), evidence);
+  const settled = fundCommandSettled(receipt);
+  if (settled) attempts.forget(record.fingerprint, record.commandKey);
+  return { receipt, settled };
 }
 
 /** Refresh saved pending approvals without treating a failed read as a pending verdict. */

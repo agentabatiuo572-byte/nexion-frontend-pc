@@ -486,7 +486,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (record.kind === "policy") {
         if (mode === "release") throw new Error("直接保存的原操作只能核对，不能解除记录。");
         if (mode === "retry") { await sendF4Policy(owner); resolved = true; }
-        else await queryF4Policy(owner, original as FDirectAttempt);
+        else resolved = (await queryF4Policy(owner, original as FDirectAttempt)).settled;
       } else {
         const ticket = mode === "release" ? (await releaseF4Proposal(owner, original), null)
           : mode === "retry" ? await sendF4Proposal(owner, original.fingerprint) : await queryF4Proposal(owner, original);
@@ -561,7 +561,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         if (mode === "release") throw new Error("直接保存的原操作只能核对，不能解除记录。");
         if (mode === "retry") await sendF5Anomaly(owner);
         else {
-          const current = await queryF5Anomaly(owner, original as FDirectAttempt);
+          const result = await queryF5Anomaly(owner, original as FDirectAttempt);
+          if (result.settled) return true;
+          const current = result.current;
           setToast(`当前金额偏离 ${current.configValues.commissionAnomalySigma}、层比例偏离 ${current.configValues.layerRatioAnomalyPct}%；只供核对，原操作结果仍未知。`);
           return false;
         }

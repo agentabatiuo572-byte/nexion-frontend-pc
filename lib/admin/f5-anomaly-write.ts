@@ -6,6 +6,10 @@ import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
 import { useAdminAuth } from "../store/admin-auth";
+import { fundCommandOrigin, fundCommandSettled, type FundCommandEvidence } from "./fund-command-investigation";
+import { queryOriginalCommand } from "./original-command-query";
+
+const anomalyRoute = { originalMethod: "PUT", originalPath: "/api/admin/teams/commissions/anomaly-config", readAuthority: "network_f5_read" } as const;
 
 export function listF5AnomalyWrites(adminId: number) {
   return fDirectCommands.list().filter(row => row.fingerprint === `${adminId}:f5-anomaly-config`
@@ -29,7 +33,8 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
     if (!values) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
     const request = { ...values, operator: auth.session.operator || auth.session.username };
     const slot = `${adminId}:f5-anomaly-config`, key = createA2CommandKey("f5-anomaly-config");
-    fDirectCommands.remember(slot, key, { adminId, f5Request: request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request) });
+    fDirectCommands.remember(slot, key, { adminId, f5Request: request, f5Snapshot: snapshot, inputFingerprint: JSON.stringify(request),
+      commandOrigin: fundCommandOrigin(anomalyRoute.originalMethod, anomalyRoute.originalPath, anomalyRoute.readAuthority) });
     original = listF5AnomalyWrites(adminId)[0];
     if (!fDirectCommands.isDurablyStored(slot, key)) {
       fDirectCommands.forget(slot, key);
@@ -53,8 +58,12 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
 }
 
 /** Current thresholds are comparison evidence, not a receipt proving that the original PUT did not execute. */
-export async function queryF5Anomaly(adminId: number, original: FDirectAttempt) {
+export async function queryF5Anomaly(adminId: number, original: FDirectAttempt, evidence?: FundCommandEvidence) {
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId || original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  return fetchF5CommissionAuditOverview();
+  const query = () => queryOriginalCommand(original, anomalyRoute, String(adminId), evidence);
+  const receipt = evidence ? await query() : await query().catch(() => null);
+  const settled = fundCommandSettled(receipt);
+  if (settled) fDirectCommands.forget(original.fingerprint, original.commandKey);
+  return { receipt, settled, current: await fetchF5CommissionAuditOverview() };
 }
