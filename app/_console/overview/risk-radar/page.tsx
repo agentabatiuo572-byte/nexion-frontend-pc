@@ -589,7 +589,7 @@ export default function RiskRadarPage() {
     finally { syncPending(value => value + 1); }
   };
   const approvalTag = approvalPending
-    ? <StatusTag tone="progress" explain={`审批单 ${approvalPending.ticketId}。另一位超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>
+    ? <StatusTag tone="warn" explain={`审批单 ${approvalPending.ticketId}。另一位超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>
     : null;
   const actionsFor = (item: BuiltDimension, issue: boolean) => {
     // 一屏只留一个主按钮：排第一的那张卡（结论句说「先看」的那项），其余卡用次按钮。

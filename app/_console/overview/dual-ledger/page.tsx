@@ -89,7 +89,7 @@ interface B1PendingCommand {
 function PendingCommands({ items, auditReachable }: { items: readonly B1PendingCommand[]; auditReachable: boolean }) {
   const waiting = items.filter((item) => item.tag.label === "待审批").length;
   return (
-    <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone={waiting === items.length ? "progress" : "warn"} explainLabel="结果未知怎么处理"
+    <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone="warn" explainLabel="结果未知怎么处理"
       explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；24 小时内只能按原请求重试，不能改值。有结果前，红线、健康线和储备注入不能再提交。"
       foot={auditReachable ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined}
       items={items.map((item): RecoveryItem => ({
@@ -486,7 +486,7 @@ export default function DualLedgerPage() {
     pendingItems.push({
       commandKey: pendingApproval.commandKey,
       object: "降低红线的审批",
-      tag: verified ? { tone: "progress", label: "待审批" } : { tone: "warn", label: expired ? "已过期" : "结果未知" },
+      tag: verified ? { tone: "warn", label: "待审批" } : { tone: "warn", label: expired ? "已过期" : "结果未知" },
       line: verified ? "等另一位超级管理员批准，批准前红线不变。" : !expired ? "可能已经提交，先查询原结果。" : releasableApproval === pendingApproval.commandKey ? "查不到这张审批单，说明没建成；可以解除。" : "超过 24 小时不能再重试，先查询原审批单。",
       body: `红线 ${fmtConfigPct(pendingApproval.values.redlinePct)} · 健康线 ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`,
       expired,
