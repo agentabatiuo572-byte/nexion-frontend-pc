@@ -559,7 +559,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       guideExtra={canGlobalRead ? undefined : <p>你的账号只能按用户查账单，「全平台账单」相关的步骤不适用。</p>}
       meta={canUserRead ? (
         <span className="rd-toolbar">
-          <span>{readAt ? `${businessClock(readAt)} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+          <span>{readAt && `${businessClock(readAt)} 读取（${businessZone().label}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
           <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={tab === "all" ? loading : userLoading} onClick={refresh}>刷新</Button>
         </span>
       ) : undefined}
