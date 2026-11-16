@@ -11,7 +11,7 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
+import { canActivateE5Device, canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
 import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, releaseMissingE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
@@ -55,8 +55,6 @@ interface ActionsState {
   toast: (message: string) => void;
 }
 const CommandsContext = createContext<ActionsState | null>(null);
-/** 已解绑设备的强制激活：和解绑框那句对上（activateE5Device 允许原始状态 UNBOUND，归属回到原用户）。入口只给允许的原始状态。 */
-const UNBOUND_RESTORE = "设备回到原用户，占用一个名额，每人最多 6 台；解绑期间的收益不补发。";
 /** 结束旧任务时设备在「停用中」：批准会顺带把它停用（LegacyUnknownZeroCreditService.approve 的 pendingDeactivate 分支）。 */
 const LEGACY_CLOSING = "这台设备已申请停用，批准时会一并停用。";
 const PROPOSALS: E5Intent[] = ["force-activate", "unbind", "legacy"];
@@ -268,10 +266,9 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   useEffect(() => { setAction(null); setCandidateOpen(false); setCandidate(null); setCandidateError(""); }, [d.deviceId, d.userId, d.serial, epoch]);
   if (!session || !state) return null;
   const readOnly = !phones && d.simState === "SIM_OFF";
-  // STOPPED also projects RECYCLED/RETIRED; execution uses the raw device status.
-  const rawStatus = d.rawStatus.trim().toUpperCase();
-  const activatable = rawStatus === "INVENTORY";
-  const forceActivatable = ["INVENTORY", "DEACTIVATED", "INACTIVE", "UNBOUND"].includes(rawStatus);
+  // Shared by rows and the detail footer; do not infer ownership from raw status alone.
+  const activatable = canActivateE5Device(d);
+  const forceActivatable = canActivateE5Device(d, true);
   const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const platform = session.authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
@@ -317,7 +314,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
     {action && <OperationConfirmModal action={LABELS[action]} title={LABELS[action]} briefKind="record" confirmLabel={CONFIRMS[action]} reasonMin={8} reasonMax={200}
       confirmTone={action === "unbind" || action === "pause" || action === "legacy" ? "danger" : "primary"}
       effect={<><StatusTag tone="progress" filled explain={proposal ? "另一位有审批权限和这项操作权限的管理员批准后执行，发起人不能自批；批准前设备状态不变。" : undefined}>{proposal ? "批准后生效" : "立即生效"}</StatusTag>{action === "legacy" && <IrreversibleTag />}</>}
-      statedBrief={{ impact: action === "force-activate" && !phones && d.simState === "UNBOUND" ? UNBOUND_RESTORE : action === "legacy" && d.pendingDeactivate ? `${EFFECTS.legacy}${LEGACY_CLOSING}` : EFFECTS[action], check: "核对设备、归属用户、操作范围和理由，名额包含手机。" }}
+      statedBrief={{ impact: action === "legacy" && d.pendingDeactivate ? `${EFFECTS.legacy}${LEGACY_CLOSING}` : EFFECTS[action], check: "核对设备、归属用户、操作范围和理由，名额包含手机。" }}
       completionCopy={proposal ? "另一位管理员批准后执行，批准前设备状态不变。" : undefined}
       facts={<><Facts>{action === "pause" || action === "resume" ? <><Fact label="用户" value={d.user} /><Fact label="影响范围" value={action === "pause" ? "这位用户的全部设备（含手机）" : "这位用户被运营暂停的设备（含手机）"} /><Fact label="从这台设备发起" value={<>{d.deviceName}<br /><span className="e5-instance" data-mono>{d.serial}</span></>} /><Fact label="发起设备状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} /></> : <><Fact label="设备" value={d.deviceName} /><Fact label="实例号" value={d.serial} mono /><Fact label="归属用户" value={d.user} /><Fact label="当前状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} />{action === "deactivate" && <><Fact label="什么时候停" value="有任务时这一单结算后停，没有任务立即停" /><Fact label="旧任务" value="还没入账的直接取消，不结算" /></>}</>}
         {action === "legacy" && candidate && <><Fact label="原任务" value={candidate.taskNo} /><Fact label="案件" value={candidate.caseId} /></>}
