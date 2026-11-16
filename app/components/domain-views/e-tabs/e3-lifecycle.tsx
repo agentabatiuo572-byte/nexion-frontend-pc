@@ -25,7 +25,7 @@ import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel
 export const E3_APPROVER_SINGLE = "另一位有批准权限、能查看这页的管理员在「操作记录与审批」批准后生效，发起人不能自批；批准前规则不变。";
 export const E3_APPROVER_BATCH = "另一位有批准权限的管理员在「操作记录与审批」批准后整组一起生效，发起人不能自批；批准前规则不变。";
 /** 覆盖率和任务奖励上限在批准执行时检查，提交时不查。 */
-export const E3_COVERAGE_CHECK = "提交时不检查；批准执行时后端检查兑付覆盖率，产能类修改还检查各商品的任务奖励上限，不通过就不执行。";
+export const E3_COVERAGE_CHECK = "提交时不查；批准时再查兑付覆盖率，产能类修改还查各商品的任务奖励上限，不通过就不执行。";
 
 export const REQUIRED_E3_KEYS = [
   "E.device.capacity.band1DeltaPct",
@@ -233,7 +233,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       {recovery}
       {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
         : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
-        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系后端核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系技术同事核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
         : <BlockState state="loading" title="正在读取规则和统计…" />}
       {manual}
     </div>;
@@ -255,7 +255,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     return proposals.length ? { ...proposals[0], after: Object.assign({}, ...proposals.map(p => p.after)) } : undefined;
   };
   const proposalOnly = authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write");
-  const BATCH_BLOCKED = "你的账号只有提案权，后端目前不接受这类账号提交成组修改（已提后端）。单项修改不受影响；这组请有完整审批写权限的同事提交。";
+  const BATCH_BLOCKED = "只有提案权的账号现在提交不了成组修改（已提后端），单项不受影响。这组请有完整审批写权限的同事提交。";
   const LEGACY_LOCKED = "这一项有一次早期版本的提交结果未知，先在页面上方查询原结果";
 
   const effect = (batch: boolean) => <StatusTag tone="progress" filled explain={batch ? E3_APPROVER_BATCH : E3_APPROVER_SINGLE}>批准后生效</StatusTag>;
@@ -322,7 +322,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     const key = `E.device.capacity.band${band}DeltaPct`;
     const stage = band === 1 ? `前期（第 1–${s1} 月）` : band === 2 ? `中期（第 ${s1 + 1}–${s2} 月）` : `后期（第 ${lateFrom} 月起）`;
     single({ label: NAMES[key], key, unit: "%", amplify: band === 3, title: `调整${stage.replace(/（.*/, "")}每月变化`,
-      detail: `${stage}每月按当前产能乘以（1 + 这个值 ÷ 100）。批准后之后的产能按新值算，不改已发的任务和已结算的收益。`,
+      detail: "之后的产能按新值算，已发的任务和已结算的收益不变。",
       impact: `改${stage}每个月产能变化多少。调高（往正数方向）会让产能更高，平台按产能多付任务收益。`,
       hint: "−100 到 100，最多两位小数；负数是下降，正数是上升", preview: capPreview(key), coverageLead: "调高每月变化会让设备产能更高，平台多付任务收益", facts: capFacts(key, `${stage}每月变化`) });
   };
@@ -369,7 +369,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
     <div className="rd-split" data-detail="">
       <Panel title="产能随月龄变化" icon={Gauge} tone="role-4" sub={`画到第 ${cyc} 个月`} data-proof="e3-capacity-curve"
-        explain={<><p>参与逐月下降的商品，设备第 m 个月的产能 = 100% × 各段（1 + 每月变化 ÷ 100）的连乘，不低于下限 {floor}%。图上按两位小数显示，后端按六位小数算。</p><p>「曲线画几个月」只决定图画多长，不截断用户的产能。</p></>}
+        explain={<><p>参与逐月下降的商品，产能从 100% 起每月乘以（1 + 这一段的每月变化 ÷ 100），不低于下限 {floor}%。图上显示两位小数，实际按六位算。</p><p>「曲线画几个月」只决定图画多长，不截断用户的产能。</p></>}
         actions={pendingCurve && <StatusTag tone="progress" icon={Clock3}>有待批准的修改</StatusTag>}>
         <div className="e3p-curve">
           <TrendLines label={`产能随月龄变化：第 0 月 100%，第 ${s1} 月 ${capText(curve[s1] ?? 0)}，第 ${s2} 月 ${capText(curve[s2] ?? 0)}，第 ${cyc} 月 ${capText(curve[cyc] ?? 0)}，下限 ${floor}%`}
@@ -390,7 +390,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         </Panel>
 
         <Panel title="最近 24 小时" icon={Clock3} tone="role-2" sub={rate ? `成功率 ${rate}` : "24 小时内没有处理"}
-          explain={<><p>按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
+          explain={<><p>从现在往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
           actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href="/finance/ledger?keyword=tradein&status=FAILED">查看失败的置换账单</Link>}>
           <Table label="最近 24 小时的回收、置换、停用">
             <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录（{zone}）</Th></tr></thead>
@@ -471,7 +471,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
     {/* 升级置换阶梯：旧设备按已赚回比例分 5 档抵扣 */}
     <Panel title="升级置换规则" icon={ArrowLeftRight} tone="role-2" sub={tradeinOn ? "开启中" : "已关闭"} data-proof="e3-tradein-rules"
-      explain="用户用旧设备抵扣买新设备。按旧设备「已赚回 ÷ 实付价」落在哪一档，按那档比例抵扣实付价；折抵只减新设备的应付，不进余额，最多抵到新设备价格。">
+      explain={<><p>用户用旧设备抵扣新设备货款：按旧设备已赚回占实付价的比例分档，按那档比例抵扣实付价，不进余额，最多抵到新设备价格。</p><p>规则批准后，用户已拿到、没提交的报价金额变了要重新报价；已完成的置换不变。</p></>}>
       <ConfigList label="升级置换开关">
         <ConfigRow name="升级置换" value={<StatusTag tone={tradeinOn ? "ok" : "done"}>{tradeinOn ? "开启" : "关闭"}</StatusTag>} sub={pendingTag(["E.tradein.enabled"])}
           what="App 能不能发起升级置换" when="批准后，之后的报价和提交按新开关判断，已完成的不回溯"
@@ -492,7 +492,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             {adjust(cuts.map((_, i) => `E.tradein.ladder.cut${i + 1}`), () => multi({
               name: "分档界线", title: "调整分档界线", ascending: true,
               hint: "已赚回 ÷ 实付价小于界线 1 是第 1 档，等于界线算下一档，不小于界线 4 是第 5 档。四条要从小到大。",
-              detail: "四条界线一起提交、一起批准，批准后对之后的报价和提交生效，已完成的置换不回溯。",
+              detail: "四条界线一起批准。之后的报价和提交按新界线；没提交的报价金额变了要重新报价，已完成的置换不变。",
               impact: "改旧设备按已赚回比例分到哪一档。界线往后挪，高抵扣档持续更久，平台多让利。",
               coverageLead: "这次改动会让某些旧设备落进抵扣更多的档，平台多让利",
               facts: <Facts><Fact k="现在">{cuts.map((c) => `${c}%`).join("、")}</Fact><Fact k="各档比例">{credits.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
@@ -506,7 +506,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             {adjust(credits.map((_, i) => `E.tradein.ladder.credit${i + 1}`), () => multi({
               name: "各档抵扣比例", title: "调整各档抵扣比例", amplify: true,
               hint: "第 1 档抵扣最多，往后逐档减少；不逐档递减会在批准时被拒绝。",
-              detail: "五档一起提交、一起批准，批准后对之后的报价和提交生效，已完成的置换不回溯。超过 75% 是提醒，不是上限。",
+              detail: "五档一起批准。之后的报价和提交按新比例；没提交的报价金额变了要重新报价，已完成的置换不变。超过 75% 只是提醒。",
               impact: "改每一档抵扣实付价的百分之几。调高任一档，平台多让利。",
               coverageLead: "调高抵扣比例，平台多让利",
               facts: <Facts><Fact k="现在">{credits.map((c) => `${c}%`).join("、")}</Fact><Fact k="分档界线">{cuts.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
@@ -549,10 +549,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             coverageLead: "关闭后可以换同价或更便宜的设备，应付可能是 0",
             facts: <Facts><Fact k="改的是">只能换更贵的新设备</Fact></Facts> }))} />
         <ConfigRow name="每单最多抵扣台数" value={`${pE("E.tradein.maxDevicesPerOrder")} 台`}
-          sub={<>{pendingTag(["E.tradein.maxDevicesPerOrder"])}{num(pE("E.tradein.maxDevicesPerOrder")) !== 1 && <StatusTag tone="neutral" icon={Info} explain="App 和后端提交时都只收一台旧设备，这个值大于 1 也只按 1 台处理（已提后端）。">目前每单只按 1 台处理</StatusTag>}</>}
+          sub={<>{pendingTag(["E.tradein.maxDevicesPerOrder"])}{num(pE("E.tradein.maxDevicesPerOrder")) !== 1 && <StatusTag tone="neutral" icon={Info} explain="用户提交时只能选一台旧设备，这个值大于 1 也只按 1 台处理（已提后端）。">目前每单只按 1 台处理</StatusTag>}</>}
           what="一笔升级置换最多用几台旧设备抵扣" when="批准后，之后的置换按新值判断" effect="目前每单只按 1 台处理；调大算多付钱。"
           action={adjust(["E.tradein.maxDevicesPerOrder"], () => single({ label: "单笔最多抵扣台数", key: "E.tradein.maxDevicesPerOrder", unit: "台", title: "调整每单最多抵扣台数",
-            detail: "目前 App 和后端提交时都只收一台旧设备，这个值大于 1 也只按 1 台处理（已提后端）。只影响之后的置换。",
+            detail: "用户提交时只能选一台旧设备，这个值大于 1 也只按 1 台处理（已提后端）。只影响之后的置换。",
             impact: "改一笔升级置换最多用几台旧设备抵扣。目前每单只按 1 台处理。", hint: "1 到 1,000,000 的整数；目前每单只按 1 台处理",
             coverageLead: "调大台数算多付钱",
             facts: <Facts><Fact k="改的是">每单最多抵扣台数</Fact><Fact k="现在实际">每单只按 1 台处理</Fact></Facts> }))} />
@@ -562,7 +562,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     </Panel>
 
     <Fold title="目前不生效的参数" icon={PackageOpen} tone="role-other" summary="1 组 · 提示升级的月损失金额，App 目前不读"
-      explain="能保存，但 App 目前不读这几个值，改了不会触发任何提示（已提后端接上或退役）。入口保留。">
+      explain="能保存，但 App 目前不读这几个值，改了不会有任何提示（已提后端）。">
       <ConfigList label="目前不生效的参数">
         <ConfigRow name="提示升级的月损失金额" value={`入门 ${pE("E.device.taskLock.s1")} · Pro ${pE("E.device.taskLock.pro")} · 机柜 ${pE("E.device.taskLock.rack")} USDT`}
           sub={<>{pendingTag(["E.device.taskLock.s1", "E.device.taskLock.pro", "E.device.taskLock.rack"])}<StatusTag tone="neutral" icon={Info}>目前不生效</StatusTag></>}
@@ -571,7 +571,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           action={adjust(["E.device.taskLock.s1", "E.device.taskLock.pro", "E.device.taskLock.rack"], () => multi({
             name: "提示升级的月损失金额", title: "调整提示升级的月损失金额",
             hint: "目前只保存：App 不读这三个金额，改了不会触发升级提示。",
-            detail: "三个一起提交、一起批准。目前 App 不读这三个值，改了不会触发升级提示（已提后端）。它们是金额，不是派单等待时间。",
+            detail: "三个一起批准。App 目前不读这三个金额，改了不会有升级提示（已提后端）。",
             impact: "只保存三个金额，目前不触发任何提示，不改派单和收益。",
             facts: <Facts><Fact k="入门设备">{pE("E.device.taskLock.s1")} USDT</Fact><Fact k="UVELBox Pro">{pE("E.device.taskLock.pro")} USDT</Fact><Fact k="UVELRack">{pE("E.device.taskLock.rack")} USDT</Fact><Fact k="生效情况">目前不生效</Fact></Facts>,
             fields: [
