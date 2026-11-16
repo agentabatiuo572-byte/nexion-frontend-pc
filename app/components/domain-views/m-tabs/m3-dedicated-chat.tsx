@@ -541,7 +541,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const canContinueConversation = Boolean(!qualificationUnknown && canWriteM3 && !heldByOther && selected?.detailReady
     && selected.ownerAdminId === adminId && selected.writeState?.currentAssignmentAgentId === String(adminId)
     && (selected.status !== "open" || selected.writeState.canReply === false));
-  const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueConversation ? "可以前往当前会话继续。" : "");
+  const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueConversation ? selected?.writeState?.writableConversationNo ? "可以打开当前会话继续。" : "可以发起会话继续。" : "");
   // M-26 / M-54: messages are service replies by default. Per SPEC FEAT-M04 and CONTRACTS §5 (owner decision R05),
   // maintenance is counted only through an explicit 联系维护 intent, so it is an opt-in switch, never inferred.
   const intentSource = requestedCustomerId && !selected ? firstDetail : profileDetail?.customerId === selected?.customerId ? profileDetail : null;
@@ -1181,7 +1181,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     catch (cause) {
       const busyHold = supportSessionBusy(cause);
       if (identityRef.current === identity && conversationPeerChanged(cause)) {
-        setSendError(retry ? "发送结果未知，请查询结果。" : `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
+        setSendError(retry ? "发送结果未知，请查询结果。" : "本次发送已被拒绝：这条已不是当前会话。原文还在，客户仍归你时点上方按钮到当前会话再发。");
         await refreshChangedPeer(identity);
         return;
       }
@@ -1355,10 +1355,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setHoldEndRejected(previous => new Set([...previous].filter(key => key !== command.commandKey)));
       const visible = current();
       setHoldEndCommand(previous => previous?.customerId === command.customerId && previous.commandKey === command.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === command.customerId) ?? null : previous);
-      if (visible) { setActionError(message); setHoldRetry((value) => value + 1); setHoldEnding(false); }
+      if (visible) { setActionError(message); setActionResult(""); setHoldRetry((value) => value + 1); setHoldEnding(false); }
     };
     holdEndView.current = { customerId: command.customerId, commandKey: command.commandKey };
-    setHoldEndCommand(command); setHoldEndCommands(readSessionEndRecords(adminId, holdCustomer)); setHoldEnding(true); setActionError("");
+    setHoldEndCommand(command); setHoldEndCommands(readSessionEndRecords(adminId, holdCustomer)); setHoldEnding(true); setActionError(""); setActionResult("");
     let submitted = false;
     try {
       // A number already sent is checked first; only a number the system never received goes out again, unchanged.
@@ -1366,16 +1366,16 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== identityRef.current) return;
       if (receipt?.status === "SUCCEEDED") { settle(); return; }
       if (receipt?.status === "FAILED") { settle("原操作没有结束会话，请确认后再点一次。"); return; }
-      if (receipt) { if (current()) setActionError("结束会话的结果还没出来，请稍后再查。"); return; }
+      if (receipt) { if (current()) setActionResult("结束会话的结果还没出来，请稍后再查。"); return; }
       if (recovering && !command.sessionRef) {
         if (current()) {
           setLegacyEndChecked(command.commandKey);
-          setActionError(laterReception ? "原操作查不到结果，原记录继续保留，不会重发。现在是新的一次接待，再点「结束会话」只结束这一次。" : "上次结束请求没记下是哪一次接待，不能重发，也不算到这次接待上；原记录继续保留，请稍后再查。");
+          setActionResult(laterReception ? "原操作查不到结果，原记录继续保留，不会重发。现在是新的一次接待，再点「结束会话」只结束这一次。" : "上次结束请求没记下是哪一次接待，不能重发，也不算到这次接待上；原记录继续保留，请稍后再查。");
         }
         return;
       }
-      if (queryOriginal) { if (current()) setActionError(isRetryExpired(command) ? RETRY_EXPIRED_TEXT : "结束会话的结果还没出来，请稍后再查。"); return; }
-      if (recovering && isRetryExpired(command)) { if (current()) setActionError(RETRY_EXPIRED_TEXT); return; }
+      if (queryOriginal) { if (current()) setActionResult(isRetryExpired(command) ? RETRY_EXPIRED_TEXT : "结束会话的结果还没出来，请稍后再查。"); return; }
+      if (recovering && isRetryExpired(command)) { if (current()) setActionResult(RETRY_EXPIRED_TEXT); return; }
       submitted = true;
       await supportClient.endSessionHold(command.customerId, command.commandKey, command.sessionRef!);
       if (stamp === identityRef.current) settle();
@@ -1384,7 +1384,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (submitted && !recovering && rejectedSupportWrite(cause)) {
         if (current()) { setHoldEndRejected(previous => new Set(previous).add(command.commandKey)); setActionError(`结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
-      else if (current()) { setActionError("结束会话结果未知。再点「结束会话」会先查原结果，不会重复结束。"); setHoldRetry((value) => value + 1); }
+      else if (current()) setHoldRetry((value) => value + 1);
     } finally { if (current()) setHoldEnding(false); }
   };
   const querySessionEndRecord = (record: SessionEndRecord) => endHold(true, record);
@@ -1717,7 +1717,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
           <div className="m3s-chat-actions">
             {(selected || profileCustomerId) && <Button size="sm" className="m3s-profile-toggle" onClick={() => setScreen("profile")}>客户资料</Button>}
-            {canContinueConversation && selected?.status !== "open" && <Button size="sm" title="重新核对当前专属客服归属，继续当前对话" onClick={continueClosed}>前往当前会话</Button>}
+            {canContinueConversation && selected?.status !== "open" && <Button size="sm" title="重新核对当前专属客服归属，继续当前对话" onClick={continueClosed}>{selected?.writeState?.writableConversationNo ? "打开当前会话" : "发起会话"}</Button>}
             {writable && actsAsAdvisor && selected && <Button size="sm" disabled={actionChecking} disabledReason={currentReplyTarget ? "客户还有消息没回，先回复才能标记已解决" : undefined} icon={<CheckIcon size={14} />} onClick={closeConversation}>标记已解决</Button>}
             {(hold?.state === "MINE" || endPending) && !actsAsAdvisor && <Button size="sm" loading={holdEnding} loadingText="正在结束…" icon={<Square size={14} />} onClick={() => void endHold()}>结束会话</Button>}
             {chatMenu.length > 0 && <MoreMenu items={chatMenu} />}
