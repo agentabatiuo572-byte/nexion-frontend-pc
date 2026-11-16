@@ -136,8 +136,8 @@ export interface G1Pool {
   apyDisplay: string;
   penalty: string;
   penaltyDisplay: string;
-  minStake: string;
-  minDisplayValue: string;
+  minStake: string | null;
+  minDisplayValue: string | null;
   lockedUsd: number;
   lockedDisplay: string;
   enabled: boolean;
@@ -247,8 +247,8 @@ function normalizePool(row: BackendPool): G1Pool {
     apyDisplay: asText(row.apyDisplay, `${row.apy ?? ""}%`),
     penalty: String(row.penalty ?? ""),
     penaltyDisplay: asText(row.penaltyDisplay, `${row.penalty ?? ""}% principal + forfeit interest`),
-    minStake: String(row.minStake ?? ""),
-    minDisplayValue: asText(row.minDisplayValue, String(row.minStake ?? "")),
+    minStake: row.minStake === null ? null : String(row.minStake ?? ""),
+    minDisplayValue: row.minDisplayValue === null ? null : asText(row.minDisplayValue, String(row.minStake ?? "")),
     lockedUsd,
     lockedDisplay: asText(row.lockedDisplay, moneyMillions(lockedUsd)),
     enabled: toBool(row.enabled, true),

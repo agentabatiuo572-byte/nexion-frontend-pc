@@ -74,7 +74,8 @@ function noteText(value: string) {
 }
 
 /** 最低额是「1000 USDT」这种文本：数字按金额写法补千分位和两位小数，认不出的原样显示。 */
-function minText(value: string) {
+function minText(value: string | null) {
+  if (value === null) return "—";
   const match = /^(-?[\d,]+(?:\.\d+)?)\s+(\S+)$/.exec(value.trim());
   return match ? `${rowAmount(match[1])} ${match[2]}` : value;
 }

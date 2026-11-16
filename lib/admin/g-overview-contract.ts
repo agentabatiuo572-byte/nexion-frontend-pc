@@ -90,7 +90,7 @@ function validateG1Pool(value: unknown, index: number): void {
   const row = record(module, value, path);
   requiredKeys(module, row, path, [
     "product", "tierKey", "term", "termDays", "apy", "apyDisplay", "penalty", "penaltyDisplay",
-    "minStake", "minDisplayValue", "lockedUsd", "lockedDisplay", "enabled", "killed", "status",
+    "lockedUsd", "lockedDisplay", "enabled", "killed", "status",
     "statusLabel", "statusTone", "highYield",
   ]);
   text(module, row.product, `${path}.product`);
@@ -101,8 +101,9 @@ function validateG1Pool(value: unknown, index: number): void {
   text(module, row.apyDisplay, `${path}.apyDisplay`);
   numeric(module, row.penalty, `${path}.penalty`, 0, 100);
   text(module, row.penaltyDisplay, `${path}.penaltyDisplay`);
-  numeric(module, row.minStake, `${path}.minStake`);
-  text(module, row.minDisplayValue, `${path}.minDisplayValue`);
+  // Explicit null means the stored minimum is unavailable; missing or malformed fields still fail.
+  if (row.minStake !== null) numeric(module, row.minStake, `${path}.minStake`);
+  if (row.minDisplayValue !== null) text(module, row.minDisplayValue, `${path}.minDisplayValue`);
   numeric(module, row.lockedUsd, `${path}.lockedUsd`);
   text(module, row.lockedDisplay, `${path}.lockedDisplay`);
   bool(module, row.enabled, `${path}.enabled`);
