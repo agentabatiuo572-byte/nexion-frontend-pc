@@ -1225,7 +1225,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         : intent.kind === "create" ? <>{intent.form.displayName} · <span data-mono>{intent.form.username}</span> · {roleName(record.snapshot.roles, intent.form.role)} · {intent.form.email || "未填邮箱"}</>
         : intent.kind === "permission" ? `${intent.draft.code} · ${intent.draft.name}` : operatorDisplayLabel(intent.account),
       submittedAt: record.createdAt,
-      tag: record.ticket?.status === "pending" ? <StatusTag tone="progress">待审批</StatusTag>
+      tag: record.ticket?.status === "pending" ? <StatusTag tone="warn">待审批</StatusTag>
         : expired ? expiredTag(intent.kind === "create" && request.kind !== "proposal" ? "原请求超过 24 小时，不能再重试。先在账号列表核对是否已建好，不要重复创建。" : undefined)
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", request.kind === "proposal" ? undefined : DIRECT_UNKNOWN_NOTE[intent.kind]),
       actions: <>
@@ -1287,7 +1287,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     : governanceFrozen
       ? { state: "danger" as const, text: `有效的超级管理员只有 ${effectiveSupers} 人，账号管理进入恢复期`, hint: "先新建或提升一位超级管理员，要另一位超级管理员批准。" }
       : creationPendingCount
-        ? { state: "warn" as const, text: `有 ${creationPendingCount} 个新建账号结果未知，先核对再继续`, hint: "在上方点「按原请求重试」，不会建第二个。" }
+        ? (() => {
+          // 按每条记录现在能做什么分开说：能重试、只能查询（过期或已建单）、在等审批。
+          const creations = pendingOperations.filter(r => r.intent.kind === "create");
+          const waiting = creations.filter(r => r.ticket?.status === "pending").length;
+          const retryable = creations.filter(r => !r.ticket && !r.received && Date.now() < r.expiresAt).length;
+          const queryOnly = creations.length - waiting - retryable;
+          const hints = [
+            retryable && (retryable === creations.length ? "在上方点「按原请求重试」，不会建第二个" : `${retryable} 个可以按原请求重试，不会建第二个`),
+            queryOnly && (queryOnly === creations.length ? "已不能重试，点「查询原结果」或在账号列表核对有没有建好" : `${queryOnly} 个只能查询原结果`),
+            waiting && (waiting === creations.length ? "批准后才会建好" : `${waiting} 个在等审批`),
+          ].filter(Boolean);
+          return { state: "warn" as const, text: waiting === creations.length ? `有 ${waiting} 个新建账号在等审批` : `有 ${creations.length - waiting} 个新建账号结果未知，同一登录名先核对再新建`, hint: `${hints.join("；")}。` };
+        })()
         : unboundOps.length
           ? { state: "warn" as const, text: `${unboundOps.length} 个启用中的账号还没绑定两步验证`, hint: "提醒本人登录后完成绑定。" }
           : effectiveSupers === 2
