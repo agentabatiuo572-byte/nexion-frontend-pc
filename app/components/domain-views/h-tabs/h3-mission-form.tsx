@@ -71,7 +71,7 @@ export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview
               action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>重试读取</Button>}>
               填的内容还在，读到以后才能继续。
             </Notice>}
-            <Field label="任务编号" required hint="英文和数字" error={shown.missionCode}>
+            <Field label="任务编号" required hint="英文和数字" error={shown.missionCode ?? (creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined)}>
               {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>
             <Field label="任务名称" required error={shown.missionName}>

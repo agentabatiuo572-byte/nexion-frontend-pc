@@ -745,6 +745,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <Fact k="批准前">什么都不会发生</Fact>
           <Fact k="批准后">自动按顺序执行 {count(p.seq.length)} 步，不再逐步等人确认；某一步失败就停下，前面做完的保持生效</Fact>
           <Fact k="收得回吗" tone="warn">{undoSummary(p.seq)}</Fact>
+          {p.seq.some((step) => step.impact) && <Fact k="影响人数" tone="warn">系统算不出，不代表没有影响</Fact>}
           <Fact k="触发依据">{draft.triggerBasis}</Fact>
           <Fact k="触发说明">{draft.triggerContext.trim()}</Fact>
         </Facts>
@@ -1056,7 +1057,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     const supported = p.seq.filter(isSupportedStep);
     return (
       <Panel id="j4-detail" title={p.name} icon={ListChecks} tone="role-3" sub={<span data-mono="">{p.code}</span>}
-        explain="批准后系统按下面的顺序自动执行；每一步写着做什么、对象、影响和收不收得回。"
+        explain={`批准后系统按下面的顺序自动执行；每一步写着做什么、对象、影响和收不收得回。${p.seq.some((step) => step.impact) ? "影响人数系统算不出，不代表没有影响。" : ""}`}
         actions={<>{p.emer ? <StatusTag tone="danger" icon={Siren} explain="执行记为「应急执行」。审批人、批准要求和执行顺序都和常规一样，不会加急。">应急通道</StatusTag> : <StatusTag tone="neutral" icon={Workflow}>常规</StatusTag>}{statusTag(p)}</>}
         data-testid={`j4-playbook-detail-${p.code}`}>
         <KeyValues rows={[

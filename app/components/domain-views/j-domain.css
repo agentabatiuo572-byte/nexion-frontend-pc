@@ -717,6 +717,10 @@
 :is(.j4-page, .j4-execute, .rd-confirm) .j4-step-head .j4-step-target { margin-left: 0; }
 :is(.j4-page, .j4-execute, .rd-confirm) .j4-step-impact { margin: 0; color: var(--rd-text-2); }
 :is(.j4-page, .j4-execute, .rd-confirm) .j4-step-page { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+:is(.j4-page, .j4-execute, .j4-trace) .j4-step-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+:is(.j4-page, .j4-execute, .j4-trace) .j4-step-scale > svg { flex: none; color: var(--rd-text-3); }
+:is(.j4-page, .j4-execute, .j4-trace) .j4-step-scale-known::before { content: "·"; margin-right: 6px; color: var(--rd-text-3); }
+:is(.j4-page, .j4-execute, .rd-confirm, .j4-trace) .j4-step-target[data-empty] { font-family: inherit; color: var(--rd-text-3); }
 .j4-execute .j4-step-check { display: inline-flex; align-items: center; gap: 6px; padding-top: 2px; color: var(--rd-text-2); cursor: pointer; white-space: nowrap; }
 .j4-execute .j4-step[data-checked] .j4-step-n { background: var(--rd-brand-soft); color: var(--rd-text); }
 
@@ -820,6 +824,7 @@
 .j4-trace .j4-trace-n { font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 .j4-trace .j4-trace-more { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .j4-trace .j4-trace-fail { color: var(--rd-danger); }
+.j4-trace .j4-trace-scale { grid-column: 2 / -1; }
 .j4-trace .j4-trace-list:not([data-wide]) li { grid-template-columns: 56px auto auto minmax(0, 1fr); }
 
 .j4-trace .rd-facts + .j4-trace-list, .j4-trace .rd-facts + p { margin-top: 12px; }
