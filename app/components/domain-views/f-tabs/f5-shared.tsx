@@ -89,7 +89,7 @@ export function Money({ value, currency }: { value: number | string; currency: s
   );
 }
 
-/** 后端汇总标签「USDT 1234.50 · UVT 0.00」拆成两种币；后端已经四舍五入到两位小数，这里不再改。 */
+/** 后端汇总标签拆成两种币；保留其金额文本与原精度，只加千分位。 */
 export function splitMoneyLabel(label: string | undefined): { usdt: string; uvt: string } | null {
   const match = /^USDT (\d+(?:\.\d+)?) · UVT (\d+(?:\.\d+)?)$/.exec((label ?? "").trim());
   return match ? { usdt: groupDigits(match[1]), uvt: groupDigits(match[2]) } : null;

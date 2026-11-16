@@ -1,4 +1,5 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
+import { f4Decimal } from "./f4-money";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -81,15 +82,22 @@ function isValidLocalDateTime(value: string): boolean {
 
 function moneySnapshot(value: unknown, field: string) {
   const snapshot = record(value, "F5", field);
+  const amounts = { usdt: "", nex: "" };
+  for (const key of ["usdt", "nex"] as const) {
+    const raw = snapshot[key];
+    if (typeof raw !== "string" && typeof raw !== "number") invalid("F5", `${field}.${key}`);
+    const amount = f4Decimal(raw);
+    if (amount === null || amount.startsWith("-")) invalid("F5", `${field}.${key}`);
+    amounts[key] = amount;
+  }
   return {
-    usdt: nonNegative(snapshot.usdt, "F5", `${field}.usdt`),
-    nex: nonNegative(snapshot.nex, "F5", `${field}.nex`),
+    ...amounts,
     count: nonNegativeInteger(snapshot.count, "F5", `${field}.count`),
   };
 }
 
-function expectedMoneyLabel(snapshot: { usdt: number; nex: number }) {
-  return `USDT ${snapshot.usdt.toFixed(2)} · UVT ${snapshot.nex.toFixed(2)}`;
+function expectedMoneyLabel(snapshot: { usdt: string; nex: string }) {
+  return `USDT ${snapshot.usdt} · UVT ${snapshot.nex}`;
 }
 
 function domain(row: JsonRecord, expected: string) {
