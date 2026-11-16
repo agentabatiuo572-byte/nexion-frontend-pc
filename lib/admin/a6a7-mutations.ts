@@ -12,6 +12,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 import { normalizeA6Detail, normalizeA8Permission } from "./rbac-contracts";
 import { useAdminAuth } from "../store/admin-auth";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type A6Original =
   | { kind: "a6-create"; input: A6RoleCreateInput }
@@ -171,6 +172,19 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     // The caller checks the current authenticated actor again after this await.
     return ticket;
   };
+  const queryReceipt = async (record: RbacCommand) => {
+    requireOriginalActor(record);
+    const original = record.original;
+    const scope = original.kind === "a6-create" ? `A6_ROLE_CREATE:${original.input.roleCode.trim().toUpperCase()}`
+      : original.kind === "a6-update" || original.kind === "a6-status" ? `A6_ROLE_UPDATE:${original.role.id}`
+        : original.kind === "a7-create" ? `A7_MENU_CREATE:${original.input.menuCode.trim().toUpperCase()}`
+          : original.kind === "a7-update" ? `A7_MENU_UPDATE:${original.node.id}`
+            : original.kind === "a7-delete" ? `A7_MENU_DELETE:${original.node.id}` : undefined;
+    if (!scope) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    const state = await fetchDirectCommandReceipt(scope, record.commandKey, record.actorId);
+    requireOriginalActor(record);
+    return state;
+  };
   const observe = (record: RbacCommand, ticket: RbacTicket | null) => {
     const current = saved(record.commandKey);
     if (!current) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
@@ -247,5 +261,5 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("RBAC_MUTATION_OUTCOME_UNKNOWN", { cause: error });
     }
   };
-  return { records, sync, saved, blocked, capture, send, queryProposal, observe, releaseExpiredProposal };
+  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, forget, observe, releaseExpiredProposal };
 }

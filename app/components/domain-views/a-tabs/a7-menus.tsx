@@ -205,12 +205,21 @@ export default function A7Menus() {
       if (problem) throw new Error(problem);
     }
   };
-  const queryOriginal = async () => {
+  const queryOriginal = async (record: RbacCommand) => {
     requireActor();
+    const state = await commands.queryReceipt(record);
+    requireActor();
+    const settled = state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED";
+    if (settled) {
+      freshOverview.current = null;
+      setConfirmReq(null); setMode(null);
+      commands.forget(record);
+    }
     if (!await refresh()) throw new Error("RBAC_FRESH_READ_REQUIRED");
     requireActor();
-    // A7 has no receipt lookup. Reading today's tree never releases an unresolved original command.
-    setToast(displayAdminReadError(new Error("RBAC_READBACK_ONLY")));
+    setToast(settled ? state === "SUCCEEDED" ? record.original.kind === "a7-delete" ? "已删除" : "已保存"
+      : displayAdminReadError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED"))
+      : displayAdminReadError(new Error("RBAC_READBACK_ONLY")));
   };
   const openOperation = (original: A7Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand, rechecked = false) => {
     let blockedReason: string | undefined;
@@ -370,7 +379,7 @@ export default function A7Menus() {
                     ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，也查不到原结果；读到的菜单只能用来核对，这条记录不会自动解除。">已过期</StatusTag>
                     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>}
                   <span className="a7-recovery-actions">
-                    <Button variant="ghost" onClick={() => void queryOriginal().catch(error => setToast(displayAdminReadError(error)))}>重新读取菜单</Button>
+                    <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>重新读取菜单</Button>
                     {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
                   </span>
                 </li>
@@ -442,7 +451,7 @@ export default function A7Menus() {
           blockedReason={!recoveryRecord ? confirmReq.blockedReason ?? readReason : undefined}
           inlineApproval={{ resolve: () => undefined, pending: !!recoveryRecord, initialRecovery: "retry",
             expired: !!recoveryRecord && isRetryExpired(recoveryRecord), disabledReason: recoveryRecord && !authorities.includes("platform_a7_write") ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
-            recover: async () => { await queryOriginal(); return true; } }}
+            recover: async () => { const record = confirmReq.getRecord(); if (record) await queryOriginal(record); return true; } }}
           action={confirmReq.action}
           title={confirmReq.title}
           detail={confirmReq.detail}

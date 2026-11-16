@@ -13,7 +13,7 @@ import { roleLabel, canAccessResolvedPath, resolveVisibleDomains } from "@/lib/n
 import { fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { a1PendingCommands, a1IntentSlot, a1IntentAuthority, sendA1Pending, type A1Intent, type A1Pending, type A1Request, type A1Snapshot } from "@/lib/admin/a1-pending";
+import { a1PendingCommands, a1IntentSlot, a1IntentAuthority, queryA1DirectReceipt, sendA1Pending, type A1Intent, type A1Pending, type A1Request, type A1Snapshot } from "@/lib/admin/a1-pending";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import {
   fetchA1Overview,
@@ -365,7 +365,22 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
   const queryOriginal = async (record: A1Pending, announce = true) => {
     requireActor(record.intent, false);
+    if (record.actorId !== currentAdminId) throw new Error("A1_SESSION_CHANGED");
     if (record.request.kind !== "proposal") {
+      const state = await queryA1DirectReceipt(record);
+      if (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED") {
+        requireActor(record.intent, false);
+        recoveryStarted(); ctx.closeActionConfirm?.();
+        a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
+        if (state === "SUCCEEDED" && record.request.kind === "create") avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "admin", "new"));
+        const current = await refreshOverview(true);
+        if (!current) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+        requireActor(record.intent, false);
+        // The status endpoint intentionally supplies no one-time password.
+        if (announce) toast(state === "SUCCEEDED" ? displayAdminError(new Error("A1_ORIGINAL_OPERATION_CONFIRMED"))
+          : displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
+        return true;
+      }
       if (record.request.kind === "permission") await fetchA8PermissionDetail(record.request.input.permissionCode);
       const current = await refreshOverview(true);
       if (!current) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");

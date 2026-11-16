@@ -1123,7 +1123,7 @@ flowchart LR
 
 **材料读与核验**：查看材料GET原申请 `/ambassador-applications/{id}/materials`；附件GET私有files路径，没有PC上传/删除。本版核验分BUSINESS和FINANCE，两类均可直接POST`/materials/review`，不经A2、不批准预算、不付款。各需要对应专权、原材料版本、结论PASSED/NEEDS_MORE及理由；业务场地通过要求有效去重人数≥100且为整数，不能带财务认可金额；财务通过必填非负认可额，小数≤6位、整数≤12位，不能带人数。需补项须属于该类材料。两阶段无硬性先后顺序，页面流程图的顺序不能代替后端许可。缺认可额是尚未认可，0是合法已记录的0；材料申请额/认可额在JSON解析前保留十进制，12位整数+6位小数不经Number丢失。
 
-请求以admin+申请+原号+完整body保留成功回执。发前保存完整原理由和申请快照，持久失败不发；未知冻结原版/原结论/原理由，换账号、刷新和过期均保留。重试按共享明确拒绝收敛；MATERIAL_REVISION_STALE/APPLICATION_NOT_PENDING发生在保留成功回放之后，可以确认原核验未提交。过24小时不POST，仍可GET当前材料/完整历史，失去核验写权但保留读取权时也能查询。原版本已被新材料替代或申请已处理，且完整历史没有任何原版本、原阶段、原结论和原理由的候选记录时，可确定原核验未执行并解除；仍是可核验的原版本、存在候选记录、历史字段不完整或读取失败时继续保留，不能把当前相似结论当原号回执。历史行的材料版本及阶段在读取边界校验。重试成功后重新读材料及总览，历史packet不冒充现在。
+请求以admin+申请+原号+完整body保留成功回执。发前保存完整原理由和申请快照，持久失败不发；未知冻结原版/原结论/原理由，换账号、刷新和过期均保留。重试按共享明确拒绝收敛；MATERIAL_REVISION_STALE/APPLICATION_NOT_PENDING发生在保留成功回放之后，可以确认原核验未提交。过24小时不POST，仍可查询。85401758新增GET `/api/admin/commands/investigations/receipt-status`，以原actor、申请和commandKey查询F4_MATERIAL_REVIEW回执，只需本域read；SUCCEEDED解除后重读材料/总览，REJECTED/FAILED按未执行解除，其它状态或查询失败保留。接口只有state，不给原packet；无确定回执时保留原完整历史排除法，失去核验写权但有读权时也可查询。原版本已被新材料替代或申请已处理，且完整历史没有任何原版本、原阶段、原结论和原理由的候选记录时，可确定原核验未执行并解除；仍是可核验的原版本、存在候选记录、历史字段不完整或读取失败时继续保留，不能把当前相似结论当原号回执。历史行的材料版本及阶段在读取边界校验。重试成功后重新读材料及总览，历史packet不冒充现在。
 
 **批准/驳回**：两者在原材料详情创建`F/f_ui_config`申请、sourceDomain F4、obj申请号、target`F/ambassador_application/{id}`、paramKey`F.ambassador.{id}.status`，值approved/rejected。批准必须带expectedMaterialRevision并以后端canProposeApproval裁决；批准执行人不能是maker，也不能参与本版任何一次业务或财务核验。执行再次核版本/未处理、必要材料/私有文件、两阶段通过、场地人数、认可额≥申请额、活动日期已到、覆盖率。驳回不要求材料通过，不开额度，历史保留。列表只凭两阶段PASSED就显示“可以发起最终批准”的旧文案不构成后端保证，详情已有真实阻断原因，列表状态交视觉修正。
 

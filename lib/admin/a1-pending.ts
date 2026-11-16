@@ -3,6 +3,7 @@ import { createA1Account, resetA1AccountPassword, revokeA1AccountSession, regist
 import { createA2OperationProposal, type A2OperationRow } from "./a2-client";
 import { a1Object, a1Text, parseA1Operator, parseA1Role } from "./a1-read-contract";
 import { accountAvatarFields } from "./account-avatar-contract";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type A1Intent =
   | { kind: "create"; form: A1CreateAccountInput & { reason: string }; approval: boolean }
@@ -103,6 +104,13 @@ export function a1IntentAuthority(intent: A1Intent) {
     : intent.kind === "password" ? "platform_a1_account_password_reset"
     : intent.kind === "session" || intent.kind === "logout" ? "platform_a1_account_sessions_revoke"
     : intent.kind === "permission" ? "platform_a1_rbac_grants_update" : "platform_a1_write";
+}
+export function queryA1DirectReceipt(record: A1Pending) {
+  const kind = record.request.kind;
+  const scope = kind === "create" ? `A1:ACCOUNT_CREATE:${record.actorId}`
+    : kind === "password" ? `A1:ACCOUNT_PASSWORD_RESET:${record.actorId}`
+      : kind === "permission" ? "A1_PERMISSION_REGISTER" : undefined;
+  return scope ? fetchDirectCommandReceipt(scope, record.commandKey, record.actorId) : Promise.resolve(null);
 }
 export async function sendA1Pending(record: A1Pending) {
   const request = record.request, key = record.commandKey;

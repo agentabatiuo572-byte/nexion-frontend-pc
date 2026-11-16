@@ -303,16 +303,29 @@ export default function A6Roles() {
   const queryOriginal = async (record: RbacCommand, announce = true) => {
     requireActor();
     queried.current.add(record.commandKey);
-    if (!rbacProposal(record.original)) {
-      await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-      setToast(displayAdminError(new Error("RBAC_READBACK_ONLY")));
-      return false;
-    }
+    const proposal = rbacProposal(record.original);
+    const state = !proposal || record.original.kind === "a6-status" ? await commands.queryReceipt(record) : null;
     // A lookup failure cannot erase a previously confirmed creation or decision.
-    const ticket = await commands.queryProposal(record);
+    // A status receipt can represent either a direct no-op or an A2 creation. Read the original ticket before settling it.
+    const ticket = proposal ? await commands.queryProposal(record) : null;
     requireActor();
-    commands.observe(record, ticket);
+    if (proposal) commands.observe(record, ticket);
     if (!ticket) {
+      if ((!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
+        && (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED")) {
+        setConfirmReq(null); setReleasing(null);
+        commands.forget(record);
+        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+        requireActor();
+        if (announce) setToast(state === "SUCCEEDED" ? record.original.kind === "a6-create" ? "角色已创建，还没有任何权限" : "已保存"
+          : displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
+        return false;
+      }
+      if (!proposal) {
+        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+        setToast(displayAdminError(new Error("RBAC_READBACK_ONLY")));
+        return false;
+      }
       if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id);
       setToast(displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
     }

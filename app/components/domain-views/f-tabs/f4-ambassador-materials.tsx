@@ -10,6 +10,7 @@ import { F1OutcomeUncertainError, isF1OutcomeUncertainError } from "@/lib/admin/
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { ambassadorApprovalBlocker, ambassadorBucketLabel, ambassadorMaterialStateLabel, F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { fetchF4AmbassadorMaterials, F4MaterialReviewNotAppliedError, reviewF4AmbassadorMaterials, type F4AmbassadorApplication, type F4AmbassadorMaterialPacket, type F4AmbassadorMaterialProposal, type F4AmbassadorReview, type F4AmbassadorReviewInput } from "@/lib/admin/f1-client";
@@ -119,13 +120,22 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const queryOriginal = async () => {
     const original = pendingRef.current;
     if (!original || original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
+    const state = await fetchDirectCommandReceipt(`F4_MATERIAL_REVIEW:${original.actorId}:${original.applicationId}`, original.commandKey, original.actorId);
+    if (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED") {
+      reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
+      setPacket(null); setConfirmation(null);
+      if (state === "SUCCEEDED") ctx.toast("材料核验已记录");
+      else setRecoveryNotice(displayAdminError(new Error("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")));
+      await refresh(); await ctx.refreshF4();
+      return true;
+    }
     const next = await refresh();
     if (!next) throw new Error("材料没读到，刷新后再试");
     if (original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
     const input = original.input;
     // Every successful review is appended to the complete immutable history.
     // An old revision/finished application plus no possible matching review proves non-execution.
-    // A matching review has no command key or reviewer ID, so it remains unknown.
+    // Old history rows may have no command key. Keep the existing non-execution proof for those records.
     const closed = next.materialRevision > input.expectedMaterialRevision || next.approvalBlockers.includes("APPLICATION_NOT_PENDING");
     if (closed && next.reviewHistory && !next.reviewHistory.some(review => review.materialRevision === input.expectedMaterialRevision
       && review.stage === input.stage && review.status === input.decision && review.reason === input.reason.replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, ""))) {
