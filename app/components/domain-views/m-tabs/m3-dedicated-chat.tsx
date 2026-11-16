@@ -1092,6 +1092,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         if (identityRef.current === identity) {
           const busyHold = supportSessionBusy(cause);
           if (conversationPeerChanged(cause)) {
+            if (submitted && !firstPending) {
+              pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
+            }
             setSendError(firstPending ? "发送结果未知，请查询结果。" : `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`);
             await refreshChangedPeer(identity);
           } else if (submitted && !firstPending && busyHold) {
@@ -1181,6 +1184,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     catch (cause) {
       const busyHold = supportSessionBusy(cause);
       if (identityRef.current === identity && conversationPeerChanged(cause)) {
+        if (submitted && !retry) {
+          pendingMessages.forget(pendingKey(adminId)); setPending(null);
+        }
         setSendError(retry ? "发送结果未知，请查询结果。" : "本次发送已被拒绝：这条已不是当前会话。原文还在，客户仍归你时点上方按钮到当前会话再发。");
         await refreshChangedPeer(identity);
         return;
