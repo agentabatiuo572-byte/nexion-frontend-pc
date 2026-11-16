@@ -226,6 +226,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         confirmLabel: "提交审批",
         businessForm: {
           kind: "multi-field",
+          requireAnyChange: true,
           amplifies: (values) => Number(values[rule.key]) > Number(currentNumber),
           fields: [{ key: rule.key, label: `${operatorCopyText(rule.name)}（%）`, inputKind: "number", current: currentNumber, min: 0, max: 100 }],
           feedback: (values) => {
@@ -252,7 +253,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         coverageCheck: "提交审批时不检查；批准时后端检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
         confirmLabel: "提交审批",
         amplifies: true,
-        edit: { kind: "number", current: currentNumber || current, unit: copy?.unit },
+        edit: { kind: "number", current: currentNumber || current, disallowCurrent: true, unit: copy?.unit },
         run: submit,
       });
       return;
@@ -274,7 +275,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           </Facts>
         </div>
       ),
-      edit: { kind: strip || rule.key === "broken" || rule.key === "brokenHours" ? "number" : "text", current: rule.cur, unit: copy?.unit,
+      edit: { kind: strip || rule.key === "broken" || rule.key === "brokenHours" ? "number" : "text", current: rule.cur, disallowCurrent: true, unit: copy?.unit,
         label: strip ? `新值（${copy?.unit}，正整数）` : copy?.unit ? `新值（${copy.unit}）` : "新值",
         validate: strip ? (value) => h5WholeReward(value) ? undefined : displayAdminError(new Error("CHECKIN_REWARD_POSITIVE_INTEGER_REQUIRED")) : undefined },
       confirmLabel: "提交审批",
@@ -310,7 +311,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       coverageLead: "数量变多或换成别的资金、转盘票，平台会多付",
       coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线；变少、不变、改成徽章不检查。",
       amplifies: true,
-      edit: { kind: "text", current: milestone.reward, currentLabel: "现在的名称", hint: "写一种：+5 UVT、+0.5 USDT、转盘票 ×2；UVT、USDT 最多 6 位小数，转盘票填整数",
+      edit: { kind: "text", current: milestone.reward, disallowCurrent: true, currentLabel: "现在的名称", hint: "写一种：+5 UVT、+0.5 USDT、转盘票 ×2；UVT、USDT 最多 6 位小数，转盘票填整数",
         validate: value => { const issue = h5StreakReward(value).issue; return issue ? displayAdminError(new Error(issue)) : undefined; } },
       confirmLabelForValue: value => value && h5StreakReward(value).amount && h5StreakReward(value).type.toLowerCase() !== milestone.kind?.toLowerCase() ? "提交审批" : "确认提交",
       run: async (reason, value) => {
@@ -360,6 +361,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       amplifies: false,
       businessForm: {
         kind: "multi-field",
+        requireAnyChange: true,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
         feedback: values => {
@@ -430,6 +432,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       amplifies: true,
       businessForm: {
         kind: "multi-field",
+        requireAnyChange: true,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
         feedback: values => ({ invalid: !!issue(values), message: issue(values) ?? "" }),
@@ -475,7 +478,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           </Facts>
         </div>
       ),
-      edit: { kind: "number", label: "秒数（1–60）", current: currentSeconds, min: 1, max: 60 },
+      edit: { kind: "number", label: "秒数（1–60）", current: currentSeconds, disallowCurrent: true, min: 1, max: 60 },
       confirmLabel: "确认修改",
       reasonPlaceholder: "例如：工单号或核对依据",
       run: async (reason, value) => {

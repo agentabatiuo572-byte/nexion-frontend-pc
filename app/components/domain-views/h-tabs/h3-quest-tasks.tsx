@@ -246,7 +246,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       detail: detail ?? <>当前值 <b>{current}</b>。</>,
       ...shown,
       amplifies,
-      edit: { kind: "text", current, hint, preview },
+      edit: { kind: "text", current, disallowCurrent: true, hint, preview },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(key, value, casExpected(current), reason, label);
@@ -389,7 +389,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只改这个任务这一种语言的名称，其他语言不动；已填的不能清空。", check: "核对语言和拼写；理由写清依据。" },
       confirmLabel: "确认修改",
-      edit: { kind: "text", current, hint: "最多 512 字" },
+      edit: { kind: "text", current, disallowCurrent: true, hint: "最多 512 字" },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(`content.mission.${code}.name.${locale}`, value, casExpected(current), reason, `${source} ${locale.toUpperCase()} 文案`);
