@@ -50,11 +50,17 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
     return receipt.batch ? "BATCH_RESULT" : "BUSINESS_RESULT_UNAVAILABLE";
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
+  // Verified callbacks return only success or throw. H3 redrive proves requeue, not delivery.
+  // A4 retention is excluded: failing to acquire its lock is also a normal return.
+  const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
+    || receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")
+    || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
+    // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
+    || receipt.scope === "I4_TRUST_DOCUMENT"
+    || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
   if (receipt.businessState !== undefined) {
-    // H3 redrive stores a view and throws every refusal; success proves only that requeue was arranged.
-    if (receipt.businessState === "UNKNOWN" && receipt.businessCode === null && receipt.originalStatus === "SUCCEEDED"
-      && receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")) return "SUCCEEDED";
-    if (receipt.businessState === "UNKNOWN") return "UNRESOLVED";
+    if (receipt.businessState === "UNKNOWN") return receipt.businessCode === null && receipt.originalStatus === "SUCCEEDED" && successOnly
+      ? "SUCCEEDED" : "UNRESOLVED";
     // These code-zero replies carry source/item results that the receipt does not project.
     // OpsNovaService:188–231 may skip refused items; OpsI18nLearningService:215–223 may repair zero items.
     // OpsEmergencyControlService:1385–1398 also replays executions with skipped/rolled-back steps as code zero.
@@ -64,12 +70,6 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
     return receipt.businessState;
   }
   if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
-  const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
-    || receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")
-    || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
-    // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
-    || receipt.scope === "I4_TRUST_DOCUMENT"
-    || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
   return successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
 }
 
