@@ -832,8 +832,8 @@ export async function fetchA2RetentionLatest(): Promise<RetentionExecution | nul
   return response == null ? null : normalizeRetentionExecution(response);
 }
 
-export async function runA2RetentionNow(reason: string, commandKey: string): Promise<RetentionExecution> {
+export async function runA2RetentionNow(reason: string, commandKey: string, expectedRetentionMonths?: number): Promise<RetentionExecution> {
   return normalizeRetentionExecution(await a2Request<RetentionExecution>("/retention-runs", {
-    method: "POST", body: JSON.stringify({ reason }), commandKey,
+    method: "POST", body: JSON.stringify({ reason, ...(expectedRetentionMonths === undefined ? {} : { expectedRetentionMonths }) }), commandKey,
   }));
 }

@@ -541,9 +541,9 @@ export async function fetchA4RetentionLatest(): Promise<A4RetentionExecution | n
   return response == null ? null : normalizeRetentionExecution(response);
 }
 
-export async function runA4RetentionNow(reason: string, commandKey: string): Promise<A4RetentionExecution> {
+export async function runA4RetentionNow(reason: string, commandKey: string, expectedRetentionMonths?: number): Promise<A4RetentionExecution> {
   return normalizeRetentionExecution(await a4Request<unknown>("/events/retention-runs", {
-    method: "POST", body: JSON.stringify({ reason }), stableIdempotencyKey: commandKey,
+    method: "POST", body: JSON.stringify({ reason, ...(expectedRetentionMonths === undefined ? {} : { expectedRetentionMonths }) }), stableIdempotencyKey: commandKey,
   }));
 }
 

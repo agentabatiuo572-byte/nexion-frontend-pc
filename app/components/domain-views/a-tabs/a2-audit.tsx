@@ -456,6 +456,8 @@ type A2PendingCommand = PendingMutationRecord & {
   operator: string;
   /** 机制参数的新值。 */
   value?: string;
+  /** Confirmed retention policy; absent only on commands saved by the old client. */
+  expectedRetentionMonths?: number;
   /** 旧待确认的展示上下文；资格只读后端回执，原键恢复仍由服务端核权。 */
   rule?: (DecisionRule & { unmapped?: boolean }) | null;
   operationCode?: string;
@@ -476,8 +478,9 @@ const a2Commands = createPendingMutationStore<A2PendingCommand>({
   storageKey: "nexion-admin-a2-commands-v1",
   // 过期后不能再用原号重试，记录和锁都留着（OP-96）。
   retainExpiredRecords: true,
-  isValidRecord: record => record.refundAmountUsdtText === undefined
-    || typeof record.refundAmountUsdtText === "string" && /^\d+(?:\.\d{1,6})?$/.test(record.refundAmountUsdtText) && /[1-9]/.test(record.refundAmountUsdtText),
+  isValidRecord: record => (record.refundAmountUsdtText === undefined
+    || typeof record.refundAmountUsdtText === "string" && /^\d+(?:\.\d{1,6})?$/.test(record.refundAmountUsdtText) && /[1-9]/.test(record.refundAmountUsdtText))
+    && (record.expectedRetentionMonths === undefined || Number.isSafeInteger(record.expectedRetentionMonths) && Number(record.expectedRetentionMonths) > 0),
 });
 
 type RefundAmount = { state: "loading" } | { state: "ok"; amount: string } | { state: "error"; message: string };
@@ -1189,8 +1192,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           && ["f4_pool_settle", "f4_leaderboard_period_payout"].includes(extra.operationCode ?? "")
           && isExplicitRejection(cause)
           && ["COVERAGE_SNAPSHOT_UNAVAILABLE", "COVERAGE_BELOW_REDLINE"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
-        if (!unknown && (!retained || payoutCoverageRefused || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope);
+        const retentionRefused = extra.kind === "retention" && isExplicitRejection(cause)
+          && ["RETENTION_PARAMETERS_STALE", "RETENTION_EXPECTED_MONTHS_REQUIRED"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
+        if (!unknown && (!retained || payoutCoverageRefused || retentionRefused || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope);
         syncPending();
+        if (retentionRefused) {
+          ctx.closeActionConfirm?.();
+          await refreshRetentionPreview();
+        }
         await refreshAfterWrite();
         if (unknown) { toast(UNKNOWN_TOAST, "warn"); return "unknown"; }
         throw cause;
@@ -1230,13 +1239,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     async () => paramReadback(await loadMain(), key) === value,
   );
 
-  const runRetention = async (reason: string, by = operator) => {
+  const runRetention = async (reason: string, expectedRetentionMonths: number | undefined, by = operator) => {
     const box: { result?: RetentionExecution } = {};
     const outcome = await sendCommand(
       "retention",
-      { kind: "retention", label: RETENTION_TITLE, target: "retention", reason, operator: by },
+      { kind: "retention", label: RETENTION_TITLE, target: "retention", reason, operator: by, ...(expectedRetentionMonths === undefined ? {} : { expectedRetentionMonths }) },
       "a2-retention-run",
-      (key) => runA2RetentionNow(reason, key),
+      (key) => runA2RetentionNow(reason, key, expectedRetentionMonths),
       async (result) => {
         box.result = result;
         setRetentionRun(result);
@@ -1322,7 +1331,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record),
         refundAmountUsdtText: record.refundAmountUsdtText ?? queued?.refundAmountUsdtText, rule: recordRule(record) };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
-        : record.kind === "retention" ? await runRetention(record.reason, record.operator)
+        : record.kind === "retention" ? await runRetention(record.reason, record.expectedRetentionMonths, record.operator)
           : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)
             : await runDecision(record.kind, ticketLike, record.reason, record.operator);
       // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
@@ -1706,7 +1715,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       reasonMax: 200,
       confirmLabel: "确认清理",
       confirmTone: "danger",
-      run: async (reason) => { await runRetention(reason); },
+      run: async (reason) => { await runRetention(reason, preview.retentionMonths); },
     });
   };
 

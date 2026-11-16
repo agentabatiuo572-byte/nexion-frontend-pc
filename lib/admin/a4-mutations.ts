@@ -10,7 +10,7 @@ import {
 export type A4Original =
   | { kind: "param"; param: A4DimensionParam; value: string }
   | { kind: "lifecycle"; schema: A4SchemaRegistration; target: Exclude<A4SchemaRegistration["lifecycleState"], "new"> }
-  | { kind: "retention"; months: string; cutoff: string | null }
+  | { kind: "retention"; months: string; cutoff: string | null; expectedRetentionMonths?: number }
   | { kind: "redrive"; snapshot: A4H3DeadOutboxRedrivePreview };
 export type A4Command = PendingMutationRecord & { original: A4Original; reason: string; name: string; change: string };
 export const a4Slot = (input: A4Original) => input.kind === "param" ? `param:${input.param.key}`
@@ -23,7 +23,8 @@ function validOriginal(input: unknown): input is A4Original {
     case "param": return object(input.param) && ["day0", "event_retention", "sampling"].includes(String(input.param.key))
       && typeof input.param.value === "string" && typeof input.param.name === "string" && typeof input.param.locked === "boolean"
       && typeof input.value === "string";
-    case "retention": return typeof input.months === "string" && (input.cutoff === null || typeof input.cutoff === "string");
+    case "retention": return typeof input.months === "string" && (input.cutoff === null || typeof input.cutoff === "string")
+      && (input.expectedRetentionMonths === undefined || Number.isSafeInteger(input.expectedRetentionMonths) && Number(input.expectedRetentionMonths) > 0);
     case "lifecycle": return object(input.schema) && typeof input.schema.eventName === "string"
       && states.includes(String(input.schema.lifecycleState)) && states.slice(1).includes(String(input.target))
       && Number.isSafeInteger(input.schema.lifecycleVersion) && Number(input.schema.lifecycleVersion) >= 0;
@@ -76,7 +77,7 @@ export function useA4Commands() {
         case "param": await updateA4DimensionParam(input.param.key, input.value, record.reason, record.commandKey); break;
         case "lifecycle": await transitionA4Lifecycle(input.schema.eventName, input.target, input.schema.lifecycleState,
           input.schema.lifecycleVersion, record.reason, record.commandKey); break;
-        case "retention": result = await runA4RetentionNow(record.reason, record.commandKey); break;
+        case "retention": result = await runA4RetentionNow(record.reason, record.commandKey, input.expectedRetentionMonths); break;
         case "redrive": {
           const s = input.snapshot;
           result = await redriveAuditedH3DeadOutboxEvent(s.eventId, s.retryCount, s.deliveryStatus, s.deliveryAttemptCount, record.reason, record.commandKey);

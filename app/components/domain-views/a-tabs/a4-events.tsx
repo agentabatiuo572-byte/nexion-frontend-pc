@@ -405,7 +405,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       await refreshOverview(true);
     } catch (error) {
       if (!commands.find(record.fingerprint)) {
-        if (retained) { ctx.closeActionConfirm?.(); await refreshOverview(true); }
+        if (retained || original.kind === "retention" && ["RETENTION_PARAMETERS_STALE", "RETENTION_EXPECTED_MONTHS_REQUIRED"].includes((error as { reasonCode?: string }).reasonCode ?? "")) {
+          ctx.closeActionConfirm?.();
+          await refreshOverview(true);
+        }
         else overviewReady.current = (error as { reasonCode?: string }).reasonCode !== "A4_EVENT_LIFECYCLE_STALE";
       }
       toast(displayAdminError(error));
@@ -749,6 +752,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const saved = original?.original.kind === "retention" ? original.original : undefined;
     const reviewedCutoff = saved ? saved.cutoff : retentionCutoff;
     const reviewedMonths = saved?.months ?? liveEventRetention;
+    if (!saved && !Number.isSafeInteger(firstInt(reviewedMonths))) throw new Error("A4_ORIGINAL_READ_REQUIRED");
     openActionConfirm({ briefKind: "record",
       action: <>清理过期事件</>,
       title: "立即清理到期的事件记录",
@@ -773,7 +777,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find("retention")?.reason,
-      run: (reason) => runDirect(saved ?? { kind: "retention", months: reviewedMonths, cutoff: reviewedCutoff },
+      run: (reason) => runDirect(saved ?? { kind: "retention", months: reviewedMonths, cutoff: reviewedCutoff, expectedRetentionMonths: firstInt(reviewedMonths) },
         reason, "立即清理到期的事件记录", `${reviewedMonths} · ${reviewedCutoff ?? "—"}`),
     });
   };
