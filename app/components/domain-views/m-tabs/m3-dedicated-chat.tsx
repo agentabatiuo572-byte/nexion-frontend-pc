@@ -63,6 +63,7 @@ const canSendTo = (convo: SessionConvo, adminId: number) => convo.status !== "tr
 const conversationStateLabel = (status: SessionConvo["status"]) => status === "open" ? "进行中" : status === "transferred" ? "已转出 · 只读" : "已结束";
 const lostPermission = (cause: unknown) => cause != null && typeof cause === "object" && "status" in cause && (cause.status === 403 || cause.status === 404);
 const rejectedSend = (cause: unknown) => cause instanceof SupportClientError
+  && cause.status !== 404
   && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
 
