@@ -36,12 +36,12 @@ const LABELS: Record<E5Intent, string> = { activate: "激活设备", deactivate:
 const CONFIRMS: Record<E5Intent, string> = { activate: "确认激活", deactivate: "确认取消激活", pause: "确认暂停该用户", resume: "确认恢复该用户", "force-activate": "提交强制激活审批", unbind: "提交解绑审批", legacy: "提交终结审批" };
 const EFFECTS: Record<E5Intent, string> = {
   activate: "激活后占用一个设备名额。每人最多 6 台，包含手机。",
-  deactivate: "有运行中任务时，本单完成并结算后自动停用；停用期间不再接新任务。不退款。",
-  pause: "将暂停该用户的全部设备（含手机）。停跑期间不计收益、不补发。",
+  deactivate: "有运行中任务时，本单完成并结算后自动停用；停用后不再接新任务，不退款。要再用只能申请强制激活。",
+  pause: "暂停这位用户的全部设备（含手机），停跑期间不计收益、不补发。之后可以点「恢复该用户」。",
   resume: "只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。",
-  "force-activate": "强制激活也不能绕过每人 6 台上限。批准前设备状态不变。",
+  "force-activate": "待激活、已停用、已解绑的设备都能直接激活，仍受每人 6 台上限。批准前设备状态不变。",
   unbind: "设备将不再属于原用户，不退款，购入时间不变。",
-  legacy: "仅取消这条未确认旧任务，不产生USDT/UVT收益。原请求、任务执行记录和恢复预算保留，不授予重放。",
+  legacy: "只取消这条结果不明的旧任务，不发 USDT 或 UVT 收益；任务记录保留，这条任务不会再执行。",
 };
 interface ActionsState {
   records: E5Command[];
@@ -297,8 +297,8 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
         <Notice tone={candidate.eligible ? "progress" : "neutral"} title={!candidate.caseId ? "无可终结的未确认旧任务" : candidate.resolution ? "已取消 · 不计收益" : candidate.status === "QUIESCENCE_REQUIRED" ? "等待有效退出证明" : candidate.eligible ? "可申请终结" : "终结条件未满足"}>{candidate.reason && <p>{displayAdminError(new Error(candidate.reason))}</p>}</Notice>
-        {candidate.caseId && <Facts><Fact label="案件" value={candidate.caseId} copy mono /><Fact label="原任务" value={candidate.taskNo} copy mono /><Fact label="代际" value={candidate.requestGeneration} /><Fact label="退出证明" value={candidate.proofSha ?? "—"} copy mono /><Fact label="后端实例" value={candidate.backendInstanceId} copy mono />{candidate.resolution && <Fact label="结案审批单" value={candidate.resolution.a2OperationId} copy mono />}</Facts>}
-        <Fold inset title="技术信息" summary="原请求与证据"><Facts><Fact label="请求键哈希" value={candidate.requestKeyHash ?? "—"} mono copy /><Fact label="请求体哈希" value={candidate.requestBodyHash ?? "—"} mono copy /><Fact label="案件集合哈希" value={candidate.caseSetSha256 ?? "—"} mono copy /></Facts></Fold>
+        {candidate.caseId && <Facts><Fact label="案件" value={candidate.caseId} copy mono /><Fact label="原任务" value={candidate.taskNo} copy mono />{candidate.resolution && <Fact label="结案审批单" value={candidate.resolution.a2OperationId} copy mono />}</Facts>}
+        <Fold inset title="技术信息" summary="原请求与证据"><Facts><Fact label="代际" value={candidate.requestGeneration} /><Fact label="退出证明" value={candidate.proofSha ?? "—"} copy mono /><Fact label="后端实例" value={candidate.backendInstanceId} copy mono /><Fact label="请求键哈希" value={candidate.requestKeyHash ?? "—"} mono copy /><Fact label="请求体哈希" value={candidate.requestBodyHash ?? "—"} mono copy /><Fact label="案件集合哈希" value={candidate.caseSetSha256 ?? "—"} mono copy /></Facts></Fold>
         <div className="rd-toolbar"><Button onClick={() => void readCandidate()}>重新核对</Button>{candidate.eligible && <Button variant="danger" disabledReason={locked("legacy")} onClick={async () => {
           setReading(true); setCandidateError("");
           try { const fresh = await fetchLegacyUnknownCandidate(d.deviceId); if (!sameLegacyUnknownProof(candidate, fresh)) throw new Error("退出证据或设备状态已更新，请重新核对。"); setCandidate(fresh); setCandidateOpen(false); setAction("legacy"); }
@@ -309,14 +309,14 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
     </Modal>}
     {action && <OperationConfirmModal action={LABELS[action]} title={LABELS[action]} briefKind="record" confirmLabel={CONFIRMS[action]} reasonMin={8} reasonMax={200}
       confirmTone={action === "unbind" || action === "pause" || action === "legacy" ? "danger" : "primary"}
-      effect={<><StatusTag tone="progress" filled explain={proposal ? "由另一位具备审批权限及对应业务权限的管理员复核后执行；发起人不能批准自己的申请，批准前设备状态不变。" : undefined}>{proposal ? "批准后生效" : "立即生效"}</StatusTag>{(action === "unbind" || action === "legacy") && <IrreversibleTag />}</>}
+      effect={<><StatusTag tone="progress" filled explain={proposal ? "另一位有审批权限和这项操作权限的管理员批准后执行，发起人不能自批；批准前设备状态不变。" : undefined}>{proposal ? "批准后生效" : "立即生效"}</StatusTag>{(action === "unbind" || action === "legacy") && <IrreversibleTag />}</>}
       statedBrief={{ impact: EFFECTS[action], check: "核对设备、归属用户、操作范围和理由，名额包含手机。" }}
-      completionCopy={proposal ? "由另一位具备审批权限及对应业务权限的管理员复核后执行。" : undefined}
+      completionCopy={proposal ? "另一位管理员批准后执行，批准前设备状态不变。" : undefined}
       facts={<><Facts>{action === "pause" || action === "resume" ? <><Fact label="用户" value={d.user} /><Fact label="影响范围" value={action === "pause" ? "这位用户的全部设备（含手机）" : "这位用户被运营暂停的设备（含手机）"} /><Fact label="从这台设备发起" value={<>{d.deviceName}<br /><span className="e5-instance" data-mono>{d.serial}</span></>} /><Fact label="发起设备状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} /></> : <><Fact label="设备" value={d.deviceName} /><Fact label="实例号" value={d.serial} mono /><Fact label="归属用户" value={d.user} /><Fact label="当前状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} /></>}
-        {action === "legacy" && candidate && <><Fact label="原任务 / 代际" value={`${candidate.taskNo} / ${candidate.requestGeneration}`} /><Fact label="案件" value={candidate.caseId} /><Fact label="退出证明" value={candidate.proofSha} mono copy /><Fact label="后端实例" value={candidate.backendInstanceId} /></>}
+        {action === "legacy" && candidate && <><Fact label="原任务" value={candidate.taskNo} /><Fact label="案件" value={candidate.caseId} /></>}
       </Facts>{(action === "activate" || action === "force-activate") && <><E5Slots device={d} phones={phones} /><Facts><RdFact k="激活名额变化"><Change from={`${d.activeDevicesForUser}/${d.maxDevicesPerUser}`} to={`${d.activeDevicesForUser + 1}/${d.maxDevicesPerUser}`} /></RdFact></Facts></>}</>}
       blockedReason={locked(action) ?? ((action === "activate" || action === "force-activate") && full ? "已达 6 台激活上限（含手机）" : undefined)}
-      detail={proposal ? "提案成功只代表申请已收录；批准前设备状态不变。请到操作记录与审批核对原申请。" : action === "resume" ? "实际恢复台数以服务端回执为准，单次最多 200 台。" : "操作结果以服务端回执为准。"}
+      detail={proposal ? "提交后要另一位管理员批准，批准前设备状态不变；进度到「操作记录与审批」看。" : action === "resume" ? "一次最多恢复 200 台，实际恢复几台看提交结果。" : "提交后页面会显示结果。"}
       onClose={() => setAction(null)} onConfirm={async reason => {
         if (locked(action)) throw new Error(String(locked(action)));
         const auth = useAdminAuth.getState();

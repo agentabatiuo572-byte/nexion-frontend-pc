@@ -47,12 +47,12 @@ function amount(value: number | string, digits = 2) {
 }
 
 function RawAmount({ value, digits }: { value: number | string; digits: number }) {
-  return <Tooltip.Provider><Tooltip.Root><Tooltip.Trigger asChild><span tabIndex={0} className="e5-raw-amount" aria-label={`${amount(value, digits)} USDT，后端原值 ${value}`}>{amount(value, digits)}</span></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="rd-tip" sideOffset={6}>后端原值：{String(value)} USDT</Tooltip.Content></Tooltip.Portal></Tooltip.Root></Tooltip.Provider>;
+  return <Tooltip.Provider><Tooltip.Root><Tooltip.Trigger asChild><span tabIndex={0} className="e5-raw-amount" aria-label={`${amount(value, digits)} USDT，完整数值 ${value}`}>{amount(value, digits)}</span></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="rd-tip" sideOffset={6}>完整数值：{String(value)} USDT</Tooltip.Content></Tooltip.Portal></Tooltip.Root></Tooltip.Provider>;
 }
 
 function MonthlyIncome({ device, compact = false, digits, rangeDigits }: { device: E5Device; compact?: boolean; digits?: number; rangeDigits?: number }) {
   const target = device.monthlyTarget;
-  if (!target) return <span className="e5-empty-value">—{!compact && <Explain label="没有设备月数据" content="没有可显示的设备月数据，不能据此认定已到账为 0。" />}</span>;
+  if (!target) return <span className="e5-empty-value">—{!compact && <Explain label="没有设备月数据" content="没有这台设备的设备月数据，不代表到账为 0。" />}</span>;
   const { rangeLowUsdt: low, rangeHighUsdt: high, creditedUsdt: credited } = target;
   const hasRange = low !== null && high !== null;
   const precision = digits ?? Math.max(...[credited, low, high].filter(value => value !== null).map(value => amount(value!).split(".")[1].length));
@@ -82,7 +82,7 @@ function DeviceStatus({ device: d, detail = false }: { device: E5Device; detail?
   const value = E5_STATES[d.simState!];
   const reach = useReach();
   const specific = d.simState !== "SIM_OFF" && (d.simState === "ERROR" || !!d.pausedReason);
-  const reason = <>{d.simState === "ERROR" ? <><p>原错误：{d.simLastError || "未提供错误原因"}</p><p>下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等待调度"}</p><p>系统每 30 秒自动重试。</p></> : <>{d.pausedReason && <p>暂停原因：{pausedReasonText(d.pausedReason)}</p>}<p>{d.simState === "WAITING_CONFIG" && detail && reach("/devices/tasks") ? <>没有可用任务，<Link href="/devices/tasks">去任务池核对</Link>。停跑期间不计收益、不补发。</> : value.reason}</p></>}</>;
+  const reason = <>{d.simState === "ERROR" ? <><p>原错误：{d.simLastError || "未提供错误原因"}</p><p>下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等系统安排"}</p><p>系统每 30 秒自动重试。</p></> : <>{d.pausedReason && <p>暂停原因：{pausedReasonText(d.pausedReason)}</p>}<p>{d.simState === "WAITING_CONFIG" && detail && reach("/devices/tasks") ? <>没有可用任务，<Link href="/devices/tasks">去任务池核对</Link>。停跑期间不计收益、不补发。</> : value.reason}</p></>}</>;
   return <div className="e5-state"><div className="e5-task-head"><StatusTag tone={value.tone} icon={value.icon}>{value.label}</StatusTag>{specific && !detail && <Explain label={`${value.label}的原因`} content={reason} />}</div>
     {detail ? <div className="e5-status-detail">{reason}</div> : <>{d.simState === "LEGACY_PENDING" && <span className="e5-sub">先核对旧任务</span>}{d.simState === "WAITING_CONFIG" && <span className="e5-sub">{reach("/devices/tasks") ? <Link href="/devices/tasks">去任务池核对</Link> : "去任务池核对"}</span>}{d.simState === "CLOSING" && <span className="e5-sub">结算后自动停用</span>}</>}
   </div>;
@@ -202,18 +202,18 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const layout = pageLayout ?? tableLayout;
   if (pageLayout && (pageLayout.noRange !== tableLayout?.noRange || pageLayout.noTask !== tableLayout?.noTask)) setTableLayout(pageLayout);
   return <RdPage><PageHeader pageId="E5" title="设备管理" summary={roleReadOnly || simOff ? "查看用户设备的运行状态和本月到账。" : "看用户设备运行、到账，处理激活和停用。"} meta={readAt ? `${businessClock(readAt)}读取 · ${businessZoneText()} · 打开或筛选时读取` : "打开时读取"} readOnly={simOff ? "任务已关闭，本页只读" : roleReadOnly ? "当前账号只能查看设备" : undefined} actions={<Button icon={<RefreshCw size={14} />} disabled={loading || overviewLoading} onClick={() => void refresh()}>刷新</Button>} />
-    {!ctx.canReadE5 ? <BlockState state="denied" title="无设备管理读取权限" /> : <E5CommandScope refresh={refresh} readBack={readBack} toast={ctx.toast}>
+    {!ctx.canReadE5 ? <BlockState state="denied" title="没有查看设备的权限" /> : <E5CommandScope refresh={refresh} readBack={readBack} toast={ctx.toast}>
       <Panel plain className="e5-summary" aria-label="用户设备概览与状态分布">
-      {overview?.total !== 0 && <Conclusion state={overviewError || attentionTotal ? "warn" : overview ? "neutral" : "unknown"} icon={Boxes} explain={<><p>这里是用户通过购买、置换、试用转正、赠送得到的设备，不含手机。</p><p>手机在{reach("/devices/compute-config", "device_e5_read") ? <Link href="/devices/compute-config">手机算力配置</Link> : "手机算力配置"}的用户手机里。统计不随筛选变。</p><p>等待启动含待激活、等待初始化、旧任务未结清，后两者不能笼统当成点激活。</p><p>其他含等待配置、已暂停、停用中、已解绑、出错重试中、任务已关闭。</p></>}>
+      {overview?.total !== 0 && <Conclusion state={overviewError || attentionTotal ? "warn" : overview ? "neutral" : "unknown"} icon={Boxes} explain={<><p>这里是用户通过购买、置换、试用转正、赠送得到的设备，不含手机。</p><p>手机在{reach("/devices/compute-config", "device_e5_read") ? <Link href="/devices/compute-config">手机算力配置</Link> : "手机算力配置"}的用户手机里。统计不随筛选变。</p><p>等待启动含待激活、等待初始化、旧任务未结清，后两者点「激活」解决不了。</p><p>其他含等待配置、已暂停、停用中、已解绑、出错重试中、任务已关闭。</p></>}>
         {overviewLoading ? "正在读取用户设备概览…" : overview ? simOff ? `任务已关闭，${overview.total} 台用户设备仅可查看` : overview.total ? `${overview.total} 台用户设备，${overview.running} 台运行中${overview.waitingActivation ? `，${overview.waitingActivation} 台等待启动` : ""}${attentionTotal ? `，${attentionTotal} 台需要处理` : ""}` : "还没有用户设备" : "暂时无法判断设备运行情况"}
       </Conclusion>}
       <StatBand label="全部用户设备概览">
         <Stat icon={Boxes} label={<>设备总数 <ArrowUpRight size={12} aria-hidden /></>} value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.total ?? "—"} unit="台" tone="role-2" onOpen={() => { change({ simState: "all" }); setTotalSelected(true); }} openLabel="查看全部设备状态" selected={totalSelected} selectedText="已筛选" />
         <Stat icon={Play} label={<>运行中 <ArrowUpRight size={12} aria-hidden /></>} value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.running ?? "—"} unit="台" tone="ok" onOpen={() => change({ simState: "RUNNING" })} openLabel="查运行中" selected={query.simState === "RUNNING"} selectedText="已筛选" />
-        <Stat icon={Clock3} label={<>等待启动 <ArrowUpRight size={12} aria-hidden /></>} value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.waitingActivation ?? "—"} unit="台" tone="progress" explain="包含待激活、等待初始化和旧任务未结清；请选择一个真实状态筛选。" onOpen={() => setGroup("waiting")} openLabel="选择等待启动状态" selected={selectedGroup === "waiting"} selectedText="已筛选" />
+        <Stat icon={Clock3} label={<>等待启动 <ArrowUpRight size={12} aria-hidden /></>} value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.waitingActivation ?? "—"} unit="台" tone="progress" explain="包含待激活、等待初始化和旧任务未结清；点开后选一个具体状态筛选。" onOpen={() => setGroup("waiting")} openLabel="选择等待启动状态" selected={selectedGroup === "waiting"} selectedText="已筛选" />
         <Stat icon={CirclePause} label={<>已停用 <ArrowUpRight size={12} aria-hidden /></>} value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.stopped ?? "—"} unit="台" tone="done" onOpen={() => change({ simState: "STOPPED" })} openLabel="查已停用" selected={query.simState === "STOPPED"} selectedText="已筛选" />
       </StatBand>
-      {overview?.total !== 0 && <Panel title="状态分布" className="e5-distribution" explain="只统计用户通过购买、置换、试用转正、赠送得到的设备，不含手机；四数不随筛选变。点击等待启动或其他后，选择一个真实状态。">
+      {overview?.total !== 0 && <Panel title="状态分布" className="e5-distribution" explain="只统计用户通过购买、置换、试用转正、赠送得到的设备，不含手机；四数不随筛选变。点等待启动或其他后，选一个具体状态。">
       {overviewLoading && <BlockState compact state="loading" title="正在读取状态分布…" />}
       {overviewError && <BlockState compact state="error" title="概览读取失败" detail={overviewError} onRetry={() => void readOverview()} />}
       {overview && other < 0 ? <BlockState compact state="error" title="状态分布暂时无法核对" onRetry={() => void readOverview()} /> : overview && overview.total > 0 && <StatusDistributionBar label={`用户设备状态分布，共 ${overview.total} 台`} emptyText="暂无用户设备" selectedKey={selectedGroup} segments={[
