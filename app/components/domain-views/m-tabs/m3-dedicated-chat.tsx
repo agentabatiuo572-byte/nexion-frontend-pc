@@ -499,7 +499,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   holdEndView.current = { customerId: holdCustomer, commandKey: holdEndCommand?.commandKey };
   const holdRequest = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
   const hold = holdRead && holdRead.customerId === holdCustomer ? holdRead.hold : undefined;
-  const sessionEndRecoveries = holdEndCommands.filter(record => record.actorId === adminId && record.customerId === holdCustomer).map(record => ({ ...record, isCurrentInstance: Boolean(record.sessionRef && record.sessionRef === hold?.sessionRef) }));
+  const sessionEndRecoveries = holdEndCommands.filter(record => record.actorId === adminId && record.customerId === holdCustomer).map(record => {
+    const instanceState = !record.sessionRef || !hold?.sessionRef ? "unconfirmed" : record.sessionRef === hold.sessionRef ? "current" : "historical";
+    return { ...record, instanceState };
+  });
   useEffect(() => {
     const saved = readSessionEndRecords(adminId, holdCustomer);
     setHoldEndCommands(saved);
@@ -1729,10 +1732,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
         </header>
         {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {!holdEnding && sessionEndRecoveries.filter(record => record.isCurrentInstance).map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
-          {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => !record.isCurrentInstance).length} 条结束记录`} explainLabel="这些记录是什么"
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? "接待实例未确认：可查原结果；结束入口仍按原记录及期限核对。" : "记录缺少接待编号：只能查原结果；结束当前接待仍受原记录核对限制。"}{isRetryExpired(record) && ` ${RETRY_EXPIRED_TEXT}。`}</Notice>)}
+          {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
             explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。时间为${businessZone().label}。`}
-            items={sessionEndRecoveries.filter(record => !record.isCurrentInstance).map(record => {
+            items={sessionEndRecoveries.filter(record => record.instanceState === "historical").map(record => {
               const started = record.sessionRef ? Date.parse(`${record.sessionRef.slice(record.sessionRef.indexOf(":") + 1)}Z`) : NaN;
               const rejected = holdEndRejected.has(record.commandKey);
               return { key: record.commandKey, createdAt: record.createdAt,
