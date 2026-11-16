@@ -780,7 +780,7 @@ function G7RepurchasePage() {
     <>
       {header}
       {confirmModal}
-      {error && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^提交结果(暂未确认|未知)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^(提交结果(暂未确认|未知)|结果未知，可能已经提交)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {recoveryNotice()}
 
