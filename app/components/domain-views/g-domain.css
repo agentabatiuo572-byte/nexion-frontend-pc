@@ -304,6 +304,7 @@
 .g1-no { display: flex; min-width: 0; }
 .g1-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g1-no-tail { flex: none; }
+.g1-exact { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; }
 /* ============================ G7 锁定计划（改版，RdPage） ============================
    只用 --rd-* 令牌。首屏：一笔 1,000 USDT 到期和提前解锁的对照条，和规则参数并排；下面是订单。 */
 .g7x-param { display: grid; gap: 2px; min-width: 0; }

@@ -823,3 +823,10 @@
 .j4-trace .j4-trace-list:not([data-wide]) li { grid-template-columns: 56px auto auto minmax(0, 1fr); }
 
 .j4-trace .rd-facts + .j4-trace-list, .j4-trace .rd-facts + p { margin-top: 12px; }
+/* J2 逐条拦截记录（拦截记录折叠里，近 24 小时汇总下面） */
+.j2-page .j2-hit-log { display: grid; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--rd-line); }
+.j2-page .j2-hit-log .j2-sub-title { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.j2-page .j2-hit-log .j2-note { margin: 0; }
+.j2-page .j2-log-empty { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; }
+.j2-page .j2-log-table th:nth-child(1) { width: 20%; }
+.j2-page .j2-log-table th:nth-child(5) { width: 12%; }

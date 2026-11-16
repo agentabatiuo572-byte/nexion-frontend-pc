@@ -21,13 +21,14 @@ import {
 } from "@/app/components/rd";
 import {
   fetchG3MarketHistory,
-  fetchG3MarketOverview,
+  fetchG3MarketReadOverview,
   g3NumberText,
   serializeG3Frames,
   type G3CurveField,
   type G3HistoryPoint,
   type G3Overview,
   type G3OverrideKey,
+  type G3ReadOverview,
 } from "@/lib/admin/g3-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -73,6 +74,24 @@ const UNKNOWN_TEXT = /^提交结果(暂未确认|未知)/;
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
+}
+
+/** 这次读取里读不到的两样：现价、兑付覆盖率。旧后端不带这两个标记，都按读得到。 */
+type G3ReadGaps = { price: boolean; coverage: boolean };
+const NO_GAPS: G3ReadGaps = { price: false, coverage: false };
+
+/**
+ * 编辑和确认框沿用完整读数：缺价按本页原来的「现价不大于 0 = 读不到」写进去（旧后端缺价就回 0），
+ * 不拿它显示、算差额或当改现价的原值；覆盖率读不准时数字只占位，显示和判断都看 gaps。
+ */
+function readBaseline(read: G3ReadOverview): { overview: G3Overview; gaps: G3ReadGaps } {
+  const gaps = {
+    price: read.priceAvailable === false || read.currentPrice === null || read.overrides.currentPrice === null,
+    coverage: read.coverage.reliable === false || read.coverage.coverageRatio === null || read.coverage.redlinePct === null || read.coverage.redlineBreached === null,
+  };
+  return { gaps, overview: { ...read, currentPrice: read.currentPrice ?? 0,
+    overrides: { ...read.overrides, currentPrice: read.overrides.currentPrice ?? 0 },
+    coverage: { ...read.coverage, coverageRatio: read.coverage.coverageRatio ?? 0, redlinePct: read.coverage.redlinePct ?? 0, redlineBreached: read.coverage.redlineBreached ?? false } } };
 }
 
 /** 价格：去掉补的末尾 0，最少两位、最多八位小数（后端 scale 8，不舍入）。 */
@@ -160,13 +179,14 @@ function ObjectTag({ state }: { state?: G3ObjectState }) {
 }
 
 /** New edits and recovered direct commands use the same existing confirmation contents. */
-function directConfirmation(change: G3DirectChange, value: string | undefined, overview: G3Overview | null): G3ConfirmReq {
+function directConfirmation(change: G3DirectChange, value: string | undefined, overview: G3Overview | null, coverageKnown = true): G3ConfirmReq {
   const current = change.current;
   const priceMissing = !overview || !(overview.currentPrice > 0);
   const curDay = overview ? overview.activeDayIndex + 1 : undefined;
-  const cov = overview?.coverage.coverageRatio.toFixed(1) ?? "—";
-  const redline = overview ? fmtConfigPct(overview.coverage.redlinePct) : "—";
-  const coverageSnapshot = overview ? { coverageRatio: overview.coverage.coverageRatio, redlinePct: overview.coverage.redlinePct } : undefined;
+  const coverageRead = coverageKnown ? overview : null;
+  const cov = coverageRead?.coverage.coverageRatio.toFixed(1) ?? "—";
+  const redline = coverageRead ? fmtConfigPct(coverageRead.coverage.redlinePct) : "—";
+  const coverageSnapshot = coverageRead ? { coverageRatio: coverageRead.coverage.coverageRatio, redlinePct: coverageRead.coverage.redlinePct } : undefined;
   const scheduleControl = overview?.controls.find(row => row.key === "schedule");
   const scheduleMissing = scheduleControl?.value === "";
   const pinV = overview ? controlValue(overview, "pin") : "—";
@@ -254,7 +274,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     action: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     title: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     detail: paused
-      ? <>恢复后在下一次排程时刻重新按计划推进（固定或没配置排程时仍不推进）。计划价更高时平台要多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}）。</>
+      ? <>恢复后在下一次排程时刻重新按计划推进（固定或没配置排程时仍不推进）。计划价更高时平台要多付钱，覆盖率低于红线时无法恢复（{coverageRead ? `当前 ${cov}%，红线 ${redline}` : "覆盖率现在读不准"}）。</>
       : <>暂停后每日推进和 5 分钟采样都停下；应急改现价和固定生效日仍会发布价格。</>,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     coverageLead: paused ? "恢复后价格重新按七天计划推进，计划价更高时平台的 UVT 应付款跟着变" : undefined,
@@ -379,7 +399,11 @@ function G3MarketEditor() {
     : field === "pumpProbability"
       ? "finprod_g3_curve_pump_prob_write"
       : "finprod_g3_write";
-  const [overview, setOverview] = useState<G3Overview | null>(null);
+  const [overview, setOverviewState] = useState<G3Overview | null>(null);
+  const [gaps, setGaps] = useState<G3ReadGaps>(NO_GAPS);
+  // 写入和确认框回来的是完整读数（价格、覆盖率都读到了）；页面自己的读取可能缺其中一样或两样。
+  const setOverview = useCallback((next: G3Overview) => { setOverviewState(next); setGaps(NO_GAPS); }, []);
+  const showRead = useCallback((read: G3ReadOverview) => { const next = readBaseline(read); setOverviewState(next.overview); setGaps(next.gaps); }, []);
   // 按原请求恢复成功后，手里的概览已经不是那次写入之后的状态；重读成功之前不能拿它当新修改的基准。
   const [rereadPending, setRereadPending] = useState(false);
   const [history, setHistory] = useState<G3HistoryPoint[]>([]);
@@ -398,12 +422,12 @@ function G3MarketEditor() {
     setObservedStates(states => Object.fromEntries(Object.entries(states).map(([key, state]) =>
       [key, state && { ...state, verification: "last-observation" as const }])));
     const [overviewResult, historyResult] = await Promise.allSettled([
-      fetchG3MarketOverview(),
+      fetchG3MarketReadOverview(),
       fetchG3MarketHistory(),
       refreshKnownApprovals(),
     ]);
     if (overviewResult.status === "fulfilled") {
-      setOverview(overviewResult.value);
+      showRead(overviewResult.value);
       setRereadPending(false);
     } else {
       setError(messageOf(overviewResult.reason));
@@ -415,7 +439,7 @@ function G3MarketEditor() {
       setHistoryError(messageOf(historyResult.reason));
     }
     if (!silent) setLoading(false);
-  }, [refreshKnownApprovals]);
+  }, [refreshKnownApprovals, showRead]);
 
   // 重读成功之前不留着按旧概览画出来的新修改确认框：它的事实和基准不会随重读更新。
   // 属于已保存原记录的恢复框不受影响。
@@ -437,12 +461,12 @@ function G3MarketEditor() {
       setError("");
       setHistoryError("");
       const [overviewResult, historyResult] = await Promise.allSettled([
-        fetchG3MarketOverview(),
+        fetchG3MarketReadOverview(),
         fetchG3MarketHistory(),
       ]);
       if (cancelled) return;
       if (overviewResult.status === "fulfilled") {
-        setOverview(overviewResult.value);
+        showRead(overviewResult.value);
       } else {
         setError(messageOf(overviewResult.reason));
       }
@@ -458,7 +482,7 @@ function G3MarketEditor() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showRead]);
 
   const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3Overview>, success: string, recovered = false) => {
     setBusyKey(g3MarketObjectKey(change));
@@ -488,7 +512,7 @@ function G3MarketEditor() {
     } finally {
       setBusyKey(null);
     }
-  }, [toast, reconcileObservedAfterSave, reload]);
+  }, [toast, reconcileObservedAfterSave, reload, setOverview]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -504,7 +528,7 @@ function G3MarketEditor() {
 
   const openDirect = (requested: G3DirectChange, value?: string) => {
     const original = session ? pendingG3MarketCommand(session.adminId, requested) : undefined;
-    openActionConfirm(directConfirmation((original?.change ?? requested) as G3DirectChange, original?.value ?? value, overview));
+    openActionConfirm(directConfirmation((original?.change ?? requested) as G3DirectChange, original?.value ?? value, overview, !gaps.coverage));
   };
   const openSavedCommand = (row: G3PendingCommand) => {
     if (row.ticketId) { void refreshKnownApprovals(); return; }
@@ -675,6 +699,10 @@ function G3MarketEditor() {
   const cov = overview.coverage.coverageRatio.toFixed(1);
   const redline = fmtConfigPct(overview.coverage.redlinePct);
   const priceMissing = !(overview.currentPrice > 0);
+  // 新后端明确说没有价格时，改现价没有可对照的原价（后端也会拒绝）；旧后端缺价回 0 时照旧。
+  const priceChangeBlocked = gaps.price ? "现价读不到，没有可以对照的原价，暂不能改" : undefined;
+  const coverageUnknown = gaps.coverage;
+  const resumeBlocked = coverageUnknown ? "兑付覆盖率现在读不准，读准之前不能恢复" : undefined;
   const todayTarget = overview.activeFrame.targetPrice;
   const offPlan = !priceMissing && overview.currentPrice !== todayTarget;
   const oracle = overview.overrides.oracle;
@@ -722,10 +750,13 @@ function G3MarketEditor() {
   const pauseEngine = () => openDirect({ action: "override", key: "paused", current: String(paused) }, String(!paused));
 
   // 一句话结论：只说配置，不说排程「运行正常」（G3-BE-04）；缺价不写成 0（G3-BE-01）。
+  const coverageExplain = "这次算不出可靠的兑付覆盖率，不等于低于红线。降价、改计划、暂停照常能做；提高价格、固定到更高的一天、恢复自动变化会被拒绝，以「资金储备与应付款」为准。";
   const conclusion = priceMissing
-    ? <Conclusion state="warn" explain="后端在没有价格记录时返回 0。0 不是真实价格，页面不按 0 显示，也不按它算任何东西。" hint="先核对价格历史；一直读不到请联系值班同事。">UVT 价格暂时读不到</Conclusion>
+    ? <Conclusion state="warn" explain="没有可用的价格记录时，页面不显示现价，也不拿它算和计划价的差；七天计划、价格历史和运行方式照常能看。" hint="先核对价格历史；一直读不到请联系值班同事。">{coverageUnknown ? "UVT 价格暂时读不到，兑付覆盖率也读不准" : "UVT 价格暂时读不到"}</Conclusion>
     : paused
       ? <Conclusion state="warn" explain="暂停只停自动推进和采样；应急改现价和固定生效日仍会发布价格。">价格已暂停在 {price(overview.currentPrice)} USDT，不再自动推进</Conclusion>
+      : coverageUnknown
+        ? <Conclusion state="warn" explain={coverageExplain}>兑付覆盖率现在读不准，提高价格和恢复自动变化会被拒绝</Conclusion>
       : overview.coverage.redlineBreached
         ? <Conclusion state="warn" explain="后端在提高价格、固定到更高的一天、恢复自动变化时检查兑付覆盖率，低于红线一律拒绝。">兑付覆盖率 {cov}% 低于红线 {redline}，提高价格会被拒绝</Conclusion>
         : scheduleMissing && !pinned
@@ -863,13 +894,15 @@ function G3MarketEditor() {
         <Stat tone="role-4" icon={Star} label="本周最高目标价" value={price(peak)} unit="USDT"
           sub={peakDay >= 0 ? `D${peakDay + 1}` : undefined}
           explain="七天计划里最高的目标价，不是历史最高成交价。提高目标价时，后端按改后的这个值复核兑付覆盖率。" />
-        <Stat tone={overview.coverage.redlineBreached ? "danger" : "role-2"} icon={ShieldCheck} label="兑付覆盖率" value={cov} unit="%"
+        {coverageUnknown
+          ? <Stat tone="warn" icon={ShieldCheck} label="兑付覆盖率" value="读不准" sub="不按低于红线算" explain={coverageExplain} />
+          : <Stat tone={overview.coverage.redlineBreached ? "danger" : "role-2"} icon={ShieldCheck} label="兑付覆盖率" value={cov} unit="%"
           sub={`红线 ${redline}`}
           explain={<>
             <p>现在的储备能付多少应付款，来自「资金储备与应付款」的当前数据，不是这次修改后的值。</p>
             <p>提高价格、固定到更高的一天时，后端按拟发布的价格重估；恢复自动变化时按现在的覆盖率检查。低于红线就拒绝。</p>
             <p>读不到可靠数据时后端也可能返回 0，这时以「资金储备与应付款」为准。</p>
-          </>} />
+          </>} />}
       </StatBand>
 
       <Panel title="七天价格计划" icon={CalendarRange} tone="role-1"
@@ -918,7 +951,7 @@ function G3MarketEditor() {
               value={<span className="g3-value">{paused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag> : <StatusTag tone="ok">自动变化中</StatusTag>}<ObjectTag state={OBJECT_STATES.paused} /></span>}
               action={allowed("finprod_g3_engine_pause_toggle") || hasRecovery("paused") ? (describedBy) => (
                 <Button size="sm" variant={pauseActionResumes ? "secondary" : "danger-outline"} aria-describedby={describedBy}
-                  disabledReason={lockReason("paused") ?? (pauseActionResumes && !isSuper && !hasRecovery("paused") ? "恢复只有超级管理员能操作" : undefined)}
+                  disabledReason={lockReason("paused") ?? (pauseActionResumes && !hasRecovery("paused") ? !isSuper ? "恢复只有超级管理员能操作" : resumeBlocked : undefined)}
                   onClick={pauseEngine}>{pauseActionResumes ? "恢复" : "暂停"}</Button>
               ) : undefined} />
             {controls.map((item) => {
@@ -956,7 +989,7 @@ function G3MarketEditor() {
               <ObjectTag state={OBJECT_STATES.currentPrice} />
               {MANUAL_TUNING === "forbidden" && <StatusTag tone="neutral" icon={Lock}>当前环境不能改</StatusTag>}</span>}
             action={allowed("finprod_g3_override_price_write") || hasRecovery("currentPrice") ? (describedBy) => (
-              <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("currentPrice") ?? (hasRecovery("currentPrice") ? undefined : tuningBlocked)}
+              <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("currentPrice") ?? (hasRecovery("currentPrice") ? undefined : tuningBlocked ?? priceChangeBlocked)}
                 onClick={() => adj("currentPrice", "当前价格", rawValue(overview.currentPrice), "临时改价，下次自动切换时恢复计划值", true)}>调整</Button>
             ) : undefined} />
         </ConfigList>
