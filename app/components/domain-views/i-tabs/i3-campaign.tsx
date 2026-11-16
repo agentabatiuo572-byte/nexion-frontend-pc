@@ -14,7 +14,8 @@ import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Tra
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
+import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
+import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -781,6 +782,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           toast("没有查到原审批单，原操作记录继续保留。");
         }
       } else {
+        let settled = false;
+        try { settled = fundCommandSettled(await queryI3Command(record)); }
+        catch { /* Keep the existing activity read available when receipt lookup has no conclusion. */ }
+        if (settled) { await refreshAfterMutation(record); return; }
         await fetchI3CampaignOverview();
         await actions.reloadIContent();
         toast("已重新读取活动列表；当前状态不能证明原操作结果，原记录继续保留。");

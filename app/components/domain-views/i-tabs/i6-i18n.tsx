@@ -1275,6 +1275,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     setOrdinaryBusy(record.commandKey);
     try {
       const result = await queryI6Command(record);
+      if (result.settled) { await finishRecovery(record.commandKey); return; }
       const message = record.scope.startsWith("message:") ? result.overview.messages.find((row) => row.messageKey === record.target) : undefined;
       const course = record.scope.startsWith("course:") ? result.overview.courses.find((row) => row.id === record.target) : undefined;
       const now = record.scope === "featured" ? `首页推荐现在是 ${result.overview.featuredCourseId || "—"}`
