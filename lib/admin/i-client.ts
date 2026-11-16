@@ -788,7 +788,9 @@ function i1ReceiptMatches(command: I1Command, data: unknown) {
     && Array.isArray(result.variants) && result.variants.length >= 2;
   if (family === "copies") return result.key === (key ?? input.copyKey)
     && result.revision === (key ? Number(input.expectedRevision) + 1 : 1)
-    && (action === "draft" ? result.draftVersion === input.version && result.status === "draft-saved"
+    // 18308d7b preserves the copy's existing publication/archive state. Older
+    // receipts still carry draft-saved; neither state changes the draft proof.
+    && (action === "draft" ? result.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(String(result.status))
       : method === "DELETE" ? result.draftVersion == null
         : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
           && result.status === (action === "archive" ? "archived" : "published"));
