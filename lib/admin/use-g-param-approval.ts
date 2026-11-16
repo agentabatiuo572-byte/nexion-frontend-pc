@@ -131,7 +131,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     const dividend = page === "G4" && (original.request.obj === "dividend" || original.request.command.op === "g4_genesis_rerun_dividend");
     if (!ticket.mine || ticket.obj !== original.request.obj || ticket.action !== (dividend ? "批准创世分红操作" : `${action} · ${ticket.obj}`)
       || ticket.operationCode && ticket.operationCode !== original.request.command.op) {
-      throw new Error("返回的审批单与原参数操作不符，原请求和命令号继续保留，请核对原审批单。");
+      throw new Error("返回的审批单和原参数操作对不上，原请求继续保留，请核对原审批单。");
     }
   };
   const showTicket = (ticket: A2OperationRow) => {

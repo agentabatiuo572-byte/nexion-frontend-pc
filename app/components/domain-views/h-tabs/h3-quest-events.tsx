@@ -637,7 +637,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       && (!tierName || (original.input.command.params.values as Record<string, unknown>).tierName === tierName)) return false;
     const label = original.kind === "proposal" ? `${original.input.action} · ${String((original.input.command.params.values as Record<string, unknown>).tierName ?? original.input.obj)}`
       : `积分退役 · ${original.tierName}`;
-    toast(`原操作「${label}」结果待确认，请先恢复原操作。命令号：${pending.commandKey}`);
+    toast(`原操作「${label}」结果未知，请先查询原结果。`);
     return true;
   };
 

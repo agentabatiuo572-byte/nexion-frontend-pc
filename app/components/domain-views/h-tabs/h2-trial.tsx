@@ -672,7 +672,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
         <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
       </Facts>
-      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`命令号 ${retiredCharge.record.commandKey}`} /></p>
+      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`原请求编号 ${retiredCharge.record.commandKey}`} /></p>
       {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
       {chargeLookup.missing && <p role="status">没找到原申请，旧扣款入口已停用，不能重新提交。可以结束这条核对，后台记录不会删除。</p>}
       {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已停用，不会执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。处理结果到操作记录看。</p>}
@@ -719,7 +719,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
         <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原请求重试。" : " 按原请求重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`命令号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
+        <Explain label="技术信息" content={`原请求编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {!expired && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
       </Notice>
     );
