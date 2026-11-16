@@ -331,7 +331,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
         if (action === "force-activate" || action === "unbind") {
           const def = findHighOp(action === "unbind" ? "e5_device_unbind" : "e5_device_force_activate")!;
           path = "/api/admin/platform/audit/operations";
-          body = { action: `${LABELS[action]} · ${d.serial}`, obj: String(d.deviceId), beforeValue: d.simState ?? d.rawStatus, afterValue: action === "unbind" ? "已解绑" : "已激活", operator: session.operator || session.username, operatorRole: roleLabel(session.role), type: def.type, amplifies: false, sos: false, roleGate: def.gateLabel, reason: normalized, sourceDomain: "E5", command: def.buildCommand({ deviceId: d.deviceId }), target: def.buildTarget({ deviceId: d.deviceId }) };
+          body = { action: `${LABELS[action]} · ${d.serial}`, obj: String(d.deviceId), beforeValue: d.simState ? E5_STATES[d.simState].label : d.rawStatus, afterValue: action === "unbind" ? "已解绑" : "已激活", operator: session.operator || session.username, operatorRole: roleLabel(session.role), type: def.type, amplifies: false, sos: false, roleGate: def.gateLabel, reason: normalized, sourceDomain: "E5", command: def.buildCommand({ deviceId: d.deviceId }), target: def.buildTarget({ deviceId: d.deviceId }) };
         } else if (action === "legacy") {
           if (!candidate?.eligible) throw new Error("请重新核对旧任务资格。");
           const fresh = await fetchLegacyUnknownCandidate(d.deviceId);
