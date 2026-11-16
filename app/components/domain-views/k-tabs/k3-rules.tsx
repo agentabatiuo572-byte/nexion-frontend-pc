@@ -54,6 +54,14 @@ function formatMoney(value: string | undefined) {
   const integer = raw.split(".")[0].replace(/^0+(?=\d)/, "");
   return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
+/** 模拟完成时间：后端同时给了时区偏移才换算成业务时区；没给偏移的旧回包照原样写到分钟，不推定时区。 */
+function dryRunCompletedText(result: K3DryRunResult) {
+  const raw = result.completedAt.trim();
+  if (!result.completedAtOffset) return `${raw.replace("T", " ").slice(0, 16)} · 时区未提供`;
+  const zoned = `${raw.replace(/(\.\d{3})\d+/, "$1")}${result.completedAtOffset}`;
+  const text = formatBusinessTimeCompact(zoned, "");
+  return text ? `${text}（${businessZone().label}）` : `${raw.replace("T", " ").slice(0, 16)} · 时区未提供`;
+}
 function dimensionLabel(value: string) { return DIMENSION_LABELS[value] ?? value ?? "—"; }
 function conditionDisplay(text: string) {
   return text.replace(/\$([\d,]+(?:\.\d+)?)/g, "$1 USD").replace(/addressReputationSource=(internal|third-party|combined)\s*;\s*addressReputationLowThreshold=([\d.]+)/gi, (_m, source: string, threshold: string) => "地址信誉来源：" + ADDRESS_SOURCE_LABEL[source.toLowerCase()] + "；低信誉阈值：" + threshold).replaceAll(">=", "≥").replaceAll("<=", "≤").replace(/single/gi, "单笔").replace(/24h/gi, "24小时").replace(/withdrawals?/gi, "笔").replace(/registered/gi, "注册").replace(/days?/gi, "天").replace(/\bor\b/gi, "或");
@@ -603,7 +611,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         </Panel>
         <Fold title="最近一次模拟" open={simulationOpen} onOpenChange={setSimulationOpen} summary={dryRunResult ? `${dryRunResult.status === "COMPLETED" ? "已完成" : "状态未知"} · 实际评估 ${fmt(dryRunResult.evaluatedWithdrawals)} 笔` : "尚未模拟"}>
           {dryRunResult ? <div className="k3-simulation"><div className="k3-simulation-facts"><KeyValues rows={[
-            { key: "batch", label: "模拟批次", value: dryRunResult.batchNo, mono: true }, { key: "window", label: "样本窗口", value: `${dryRunResult.sampleWindowDays} 天` },
+            { key: "batch", label: "模拟批次", value: dryRunResult.batchNo, mono: true }, { key: "window", label: "样本窗口", value: `${dryRunResult.sampleWindowDays} 天` }, { key: "completed", label: "完成时间", value: dryRunCompletedText(dryRunResult) },
             { key: "evaluated", label: "实际评估", value: `${fmt(dryRunResult.evaluatedWithdrawals)} 笔` }, { key: "active", label: "已启用规则", value: `${fmt(dryRunResult.activeRules)} 条`, explain: "模拟实际执行时读取的当前生效规则，不是草稿预览。" },
             { key: "hits", label: "命中次数", value: `${fmt(dryRunResult.hitCount)} 次`, explain: "按匹配规则次数累计；同一提现可命中多条，因此可以大于样本笔数。" },
           ]} /></div><section className="k3-simulation-dist" aria-label="模拟样本裁决分布"><h3 className="k3-simulation-title">模拟样本裁决分布<Explain label="模拟样本裁决分布的说明" content="这一批实际评估的样本，每笔只计一次最终K3裁决；放行只表示K3没有拦截，不等于已打款。" /></h3><Distribution rows={dryRunResult.routeCounts} total={dryRunResult.evaluatedWithdrawals} simulation /></section></div>
@@ -616,11 +624,11 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         <Panel title="历史命中处置分布" plain explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
         <div className="k3-hit-filters"><Segments label="命中处置筛选" value={hitAction} items={[{ value: "all", label: "全部" }, { value: "delay", label: "延迟" }, { value: "freeze", label: "冻结" }, { value: "manual", label: "转人工" }]} onChange={(value) => setQuery({ hitPage: 1, hitAction: value })} />
           <Button variant="ghost" disabledReason={hitAction === "all" ? "当前没有动作筛选" : undefined} onClick={() => setQuery({ hitAction: "all", hitPage: 1 })}>清除筛选</Button><ColumnPicker columns={hitColumns} /></div>
-        <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="系统没有记下币种，按原金额显示，不推定币种。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>时间<Explain label="触发时间" content={`规则命中的时间，按${businessZone().label}显示。`} /></Th>}</tr></thead>
+        <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="金额和币种取自对应的提现单；查不到提现单的旧记录按原金额显示，不推定币种。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>时间<Explain label="触发时间" content={`规则命中的时间，按${businessZone().label}显示。`} /></Th>}</tr></thead>
           <tbody>{hits.length === 0 && <TableMessage columns={4 + Number(hitColumns.isVisible("reason")) + Number(hitColumns.isVisible("time"))}>{hitAction === "all" ? "暂无触发记录" : "当前处置没有匹配的触发记录"}</TableMessage>}
             {hits.map((hit, index) => <Tr key={`${hit.withdrawalNo}-${hit.ruleId}-${index}`} selected={hitDetail === hit} onOpen={() => setHitDetail(hit)}>
               <Td><Cell mono main={<span className="k3-id"><span>{hit.withdrawalNo.slice(0, -8)}</span><span>{hit.withdrawalNo.slice(-8)}</span></span>} sub={hit.userNo} title={`${hit.withdrawalNo} / ${hit.userNo}`} /></Td>
-              <Td align="right"><Cell num main={hit.amountValue ?? hitAmount(hit.amount)} sub={hit.currency ?? "币种未提供"} title={hit.amount} /></Td>
+              <Td align="right"><Cell num main={hitAmount(hit.amountValue ?? hit.amount)} sub={hit.currency ?? "币种未记录"} title={hit.amount} /></Td>
               <Td><Cell main={hit.ruleId} sub={dimensionLabel(hit.dimension)} title={hit.ruleId} mono /></Td><Td><ActionTag action={hit.action} /></Td>
               {hitColumns.isVisible("reason") && <Td><Cell main={hitSummary(hit)} title={hitSummary(hit)} /></Td>}{hitColumns.isVisible("time") && <Td><Cell num main={formatBusinessTimeCompact(hit.timeText, "—")} title={formatBusinessTimeFull(hit.timeText, "") || undefined} /></Td>}
             </Tr>)}
@@ -639,7 +647,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     <Drawer open={!!hitDetail} onClose={() => setHitDetail(null)} title="触发记录详情" sub={hitDetail?.withdrawalNo} icon={History}>
       {hitDetail && <><KeyValues rows={[
         { key: "withdrawal", label: "提现单号", value: hitDetail.withdrawalNo, mono: true }, { key: "user", label: "账户", value: hitDetail.userNo, mono: true },
-        { key: "amount", label: "金额", value: `${hitDetail.amountValue ?? hitAmount(hitDetail.amount)} ${hitDetail.currency ?? "· 币种未记录"}` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
+        { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amountValue ?? hitDetail.amount)} ${hitDetail.currency ?? "· 币种未记录"}` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
         { key: "dim", label: "维度", value: dimensionLabel(hitDetail.dimension) }, { key: "action", label: "命中处置", value: <ActionTag action={hitDetail.action} /> },
         { key: "reason", label: "触发原因", value: hitSummary(hitDetail) },
         ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "触发时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
