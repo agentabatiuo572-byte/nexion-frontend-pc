@@ -332,12 +332,18 @@ export function assertF4MaterialPacket(value: unknown): asserts value is JsonRec
     for (const key of ["fileId", "kind", "name", "contentType"]) text(item[key], "F4", `materials.attachment.${key}`);
     nonNegativeInteger(item.sizeBytes, "F4", "materials.attachment.sizeBytes");
   });
-  for (const value of [row.businessReview, row.financeReview, ...array(row, "reviewHistory", "F4")]) {
+  for (const [index, value] of [row.businessReview, row.financeReview, ...array(row, "reviewHistory", "F4")].entries()) {
     const review = record(value, "F4", "materials.review");
     if (!["PENDING", "PASSED", "NEEDS_MORE"].includes(String(review.status))) invalid("F4", "materials.review.status");
     for (const key of ["reviewerLabel", "reviewedAt", "reason"]) if (review[key] !== null && typeof review[key] !== "string") invalid("F4", `materials.review.${key}`);
     if (review.verifiedAttendees != null) nonNegativeInteger(review.verifiedAttendees, "F4", "materials.review.verifiedAttendees");
     if (review.recognizedBudgetUsdt != null) nonNegative(review.recognizedBudgetUsdt, "F4", "materials.review.recognizedBudgetUsdt");
+    if (index >= 2) {
+      positiveInteger(review.materialRevision, "F4", "materials.review.materialRevision");
+      if (review.stage !== "BUSINESS" && review.stage !== "FINANCE") invalid("F4", "materials.review.stage");
+      if (review.status !== "PASSED" && review.status !== "NEEDS_MORE") invalid("F4", "materials.review.status");
+      if (typeof review.reason !== "string") invalid("F4", "materials.review.reason");
+    }
   }
 }
 

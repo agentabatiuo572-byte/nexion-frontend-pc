@@ -25,6 +25,7 @@ type PendingReview = PendingMutationRecord & { actorId: number; applicationId: n
 const reviewAttempts = createPendingMutationStore<PendingReview>({
   storageKey: "uvel-f4-ambassador-material-reviews", retainExpiredRecords: true,
   isValidRecord: (record) => Number.isSafeInteger(record.actorId) && Number.isSafeInteger(record.applicationId)
+    && record.fingerprint === `${record.actorId}|${record.applicationId}`
     && Number.isSafeInteger(record.input?.expectedMaterialRevision) && ["BUSINESS", "FINANCE"].includes(record.input?.stage)
     && ["PASSED", "NEEDS_MORE"].includes(record.input?.decision) && typeof record.input?.reason === "string",
 });
@@ -110,10 +111,31 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       const next = await fetchF4AmbassadorMaterials(application.id);
       if (next.applicationId !== application.id) throw new Error("材料详情不完整，请重新加载。");
       setPacket(next);
-    } catch (cause) { setPacket(null); setError(displayAdminError(cause)); }
+      return next;
+    } catch (cause) { setPacket(null); setError(displayAdminError(cause)); return null; }
     finally { setLoading(false); }
   }, [application.id]);
   useEffect(() => { void refresh(); }, [refresh]);
+  const queryOriginal = async () => {
+    const original = pendingRef.current;
+    if (!original || original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
+    const next = await refresh();
+    if (!next) throw new Error("材料没读到，刷新后再试");
+    if (original.actorId !== useAdminAuth.getState().session?.adminId) throw new Error("登录账号已变化，请重新打开申请。");
+    const input = original.input;
+    // Every successful review is appended to the complete immutable history.
+    // An old revision/finished application plus no possible matching review proves non-execution.
+    // A matching review has no command key or reviewer ID, so it remains unknown.
+    const closed = next.materialRevision > input.expectedMaterialRevision || next.approvalBlockers.includes("APPLICATION_NOT_PENDING");
+    if (closed && next.reviewHistory && !next.reviewHistory.some(review => review.materialRevision === input.expectedMaterialRevision
+      && review.stage === input.stage && review.status === input.decision && review.reason === input.reason.replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, ""))) {
+      reviewAttempts.forget(original.fingerprint, original.commandKey); pendingRef.current = undefined; setPending(undefined);
+      setConfirmation(null);
+      setRecoveryNotice(`原材料 V${input.expectedMaterialRevision} 的核验未执行，${next.materialRevision > input.expectedMaterialRevision ? "材料版本已变化，请核对当前材料后重新核验。" : "申请已处理，已刷新原申请。"}`);
+      await ctx.refreshF4();
+    } else setRecoveryNotice(displayAdminError(new Error("RBAC_READBACK_ONLY")));
+    return true;
+  };
   const operable = !!packet && !loading && !error && !pending;
   const final = application.status.toUpperCase() !== "PENDING" || packet?.approvalBlockers.includes("APPLICATION_NOT_PENDING") === true;
   const canProposeApproval = operable && !final && packet.canProposeApproval === true && ctx.can("network_f4_ambassador_approve");
@@ -232,7 +254,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         pending: !!pending,
         initialRecovery: "retry",
         expired: !!pending && (isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")),
-        recover: async () => { await refresh(); return true; },
+        recover: queryOriginal,
       }}
       onClose={() => setConfirmation(null)}
       onConfirm={async (reason) => {
