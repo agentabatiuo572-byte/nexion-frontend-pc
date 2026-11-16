@@ -127,7 +127,8 @@ export function useA3Commands() {
     const contentSave = input.original.kind === "docs" || input.original.kind === "how";
     const auth = useAdminAuth.getState();
     if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !auth.session
-      || auth.session.passwordChangeRequired || !auth.session.authorities.includes("platform_a3_write")) throw new Error("ADMIN_PERMISSION_DENIED");
+      || auth.session.passwordChangeRequired) throw new Error("ADMIN_PERMISSION_DENIED");
+    if ((contentSave || input.original.kind === "param") && !auth.session.authorities.includes("platform_a3_write")) throw new Error("ADMIN_PERMISSION_DENIED");
     const key = `a3-${input.original.kind}-${crypto.randomUUID()}`;
     const fingerprint = contentSave || input.original.kind === "param" ? `${auth.session!.adminId}:${slot}` : slot;
     commands.remember(fingerprint, key, { ...input, ...(contentSave ? { contentCommandActor: auth.session!.adminId } : {}),
