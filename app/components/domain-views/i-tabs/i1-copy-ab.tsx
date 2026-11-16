@@ -18,7 +18,8 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
-import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
+import { fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
@@ -135,30 +136,8 @@ const textsOfForm = (form: BusinessFormValue): Texts => ({ zh: form.zh ?? "", vi
 /** 后端给的是累计数的字符串；读不成整数就当没有。 */
 const countOf = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.trim()) : null);
 
-type I1Pending = { id: string; label: string; change: string; at: string; retryBlocked?: string; record: I1Command };
-
-function PendingNotice({ items, onQuery, onRetry }: { items: readonly I1Pending[]; onQuery: (record: I1Command) => void; onRetry: (record: I1Command) => void }) {
-  // 多条时默认露出三条，其余点开再看，首屏留给文案表（提示不盖正事）。
-  const [all, setAll] = useState(false);
-  if (items.length === 0) return null;
-  return (
-    <Notice tone="warn" title={<>{`${items.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<><p>提交时没收到确定结果，可能已经执行。「查询原结果」只重读现在的内容，不能证明原操作成没成，记录继续保留。</p><p>24 小时内可以「按原请求重试」，不会重复执行；过了 24 小时只能查询。</p></>} /></>} actionBelow>
-      <ul className="i1-pending">
-        {(all ? items : items.slice(0, 3)).map((item) => (
-          <li key={item.id}>
-            <span className="i1-pending-what"><b>{item.label}</b>{item.change}</span>
-            <span className="i1-weak">提交于 {item.at}（{ZONE}）</span>
-            <span className="i1-pending-actions">
-              <Button size="sm" onClick={() => onQuery(item.record)}>查询原结果</Button>
-              <Button size="sm" disabledReason={item.retryBlocked} onClick={() => onRetry(item.record)}>按原请求重试</Button>
-            </span>
-          </li>
-        ))}
-      </ul>
-      {items.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setAll((open) => !open)}>{all ? "只看前 3 条" : `显示全部 ${items.length} 条`}</Button></div>}
-    </Notice>
-  );
-}
+/** 直接到用户面前的操作：「已处理」也不代表用户已经看到。 */
+const USER_FACING = new Set(["发布内容版本", "回滚", "下架当前发布版", "采纳获胜变体"]);
 
 export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | null }) {
   const { toast, actions, content, contentLoading } = ctx;
@@ -228,10 +207,26 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     syncPending();
     await actions.reloadIContent();
   };
+  /** 按原请求查到的结论只用来给运营看；解除与否由 queryI1Command 按后端结论决定。 */
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [checking, setChecking] = useState<string | null>(null);
+  const [closing, setClosing] = useState<I1Command | null>(null);
+  const [settledRows, setSettledRows] = useState<FundSettled[]>([]);
+  const recordLabel = (record: I1Command) => `${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`;
+  const settle = (record: I1Command, receipt: NonNullable<Awaited<ReturnType<typeof queryI1Command>>>) =>
+    setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: recordLabel(record), status: receipt.originalStatus }]);
   const queryOriginal = async (record: I1Command) => {
     let settled = false;
-    try { settled = fundCommandSettled(await queryI1Command(record)); }
-    catch { /* Receipt failure must not prevent the existing content read. */ }
+    setChecking(record.commandKey);
+    try {
+      const receipt = await queryI1Command(record);
+      if (record.original) setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt } }));
+      settled = fundCommandSettled(receipt);
+      if (settled) settle(record, receipt!);
+    } catch (error) {
+      /* Receipt failure must not prevent the existing content read. */
+      setOutcomes((current) => ({ ...current, [record.commandKey]: { error: displayAdminError(error) } }));
+    } finally { setChecking(null); }
     if (settled) { await refreshAfterMutation(record); return; }
     await actions.reloadIContent();
     toast("已重新读取；现在的内容不能证明原操作的结果，记录继续保留。");
@@ -334,13 +329,45 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     catch (error) { toast(displayAdminError(error)); }
     finally { retryInFlight.current = false; setRetrying(null); }
   };
-  const pendingNotice = <PendingNotice items={pending.map((record) => ({
-    id: record.commandKey, label: `${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`, change: record.change,
-    at: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt),
-    retryBlocked: retrying ? "提交中…" : isRetryExpired(record) ? "已超过 24 小时，不能再重试，只能查询。" : !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
-      : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined,
-    record,
-  }))} onRetry={restore} onQuery={(record) => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }} />;
+  /** 没存出处的记录按原请求和原操作人查，和 queryI1Command 一致。 */
+  const investigationRecord = (record: I1Command): FundCommandRecord | undefined => record.original && { ...record, commandOrigin: record.original.commandOrigin
+    ?? { originalMethod: record.original.method as "POST", originalPath: `/api/admin/content${record.original.path}`, readAuthority: "content_i1_read", originalAdminId: String(record.original.owner) } };
+  const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
+    const expired = isRetryExpired(record);
+    const label = recordLabel(record);
+    const outcome = outcomes[record.commandKey];
+    const processed = outcome && "receipt" in outcome && !!outcome.receipt && fundCommandResult(outcome.receipt) === "BUSINESS_RESULT_UNAVAILABLE";
+    const retryBlocked = !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
+      : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+    const target = investigationRecord(record);
+    return {
+      key: record.commandKey, title: <span title={label}>{label}</span>, record: target, outcome, createdAt: record.createdAt, expired,
+      canRetry: !expired && !retryBlocked, canQuery: true,
+      status: target ? undefined : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的内容核对。" },
+      actions: <>
+        {target ? <FundCheckButtons record={target} outcome={outcome} expired={expired} busy={!!checking || !!retrying} checking={checking === record.commandKey}
+          onCheck={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }} onClose={() => setClosing(record)} />
+          : <Button size="sm" loading={checking === record.commandKey} disabled={!!checking || !!retrying} onClick={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }}>查询原结果</Button>}
+        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retrying ? "提交中…" : retryBlocked} onClick={() => restore(record)}>按原请求重试</Button>}
+      </>,
+      detail: <>
+        {record.change && <p>{record.change}</p>}
+        {processed && USER_FACING.has(record.label) && <p>「已处理」不代表用户已经看到改动；用户现在看到的以文案表里的线上版本为准。</p>}
+      </>,
+    };
+  });
+  const pendingNotice = <>
+    <FundRecoveryPanel rows={recoveryRows} settled={settledRows} onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
+    {closing && <FundClosureModal label={recordLabel(closing)} createdAt={closing.createdAt} known={closureKnown(outcomes[closing.commandKey])}
+      facts={closing.change ? <Fact k="改动">{closing.change}</Fact> : undefined}
+      onClose={() => setClosing(null)} onSubmit={async (evidence: FundCommandEvidence) => {
+        const record = closing;
+        const next = await queryI1Command(record, evidence);
+        setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt: next } }));
+        setClosing(null);
+        if (fundCommandSettled(next)) { settle(record, next!); await refreshAfterMutation(record); }
+      }} />}
+  </>;
   const lockReason = (target: string): string | undefined => {
     if (newMutationReason) return newMutationReason;
     const related = target.startsWith("copy:")

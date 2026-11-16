@@ -22,12 +22,13 @@ import {
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
 import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
-import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
+import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from "./i-conflict";
@@ -81,8 +82,6 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     });
   const [pending, setPending] = useState<I2Command[]>([]);
   const [recovering, setRecovering] = useState<string | null>(null);
-  // 结果未知多于三条时默认只露前三条，首屏留给频道和模板。
-  const [unknownAll, setUnknownAll] = useState(false);
   const recoveryInFlight = useRef(false);
   const [requiresReload, setRequiresReload] = useState(false);
   const readBarrier = useRef(data);
@@ -130,10 +129,25 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   /** 结果未知不是失败，不加「操作失败」。 */
   const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
+  /** 按原请求查到的结论只用来给运营看；解除与否由 queryI2Command 按后端结论决定。 */
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [checking, setChecking] = useState<string | null>(null);
+  const [closing, setClosing] = useState<I2Command | null>(null);
+  const [settledRows, setSettledRows] = useState<FundSettled[]>([]);
+  const settle = (record: I2Command, receipt: NonNullable<Awaited<ReturnType<typeof queryI2Command>>>) =>
+    setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: `${record.action} · ${record.object}`, status: receipt.originalStatus }]);
   const queryOriginal = async (record: I2Command) => {
     let settled = false;
-    try { settled = fundCommandSettled(await queryI2Command(record)); }
-    catch { /* Receipt failure must not prevent the existing content read. */ }
+    setChecking(record.commandKey);
+    try {
+      const receipt = await queryI2Command(record);
+      if (record.original) setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt } }));
+      settled = fundCommandSettled(receipt);
+      if (settled) settle(record, receipt!);
+    } catch (error) {
+      /* Receipt failure must not prevent the existing content read. */
+      setOutcomes((current) => ({ ...current, [record.commandKey]: { error: displayAdminError(error) } }));
+    } finally { setChecking(null); }
     if (settled) { await refreshAfterMutation(record); return; }
     await actions.reloadIContent();
     toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。");
@@ -811,23 +825,40 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const { tick = "", cooldown = "" } = row.cadence ?? {};
     return `扫描间隔 ${durationText(tick).text} · 个人间隔 ${durationText(cooldown).text}`;
   };
-  const unknownNotice = pending.length > 0 && (
-    <Notice tone="warn" title={`${pending.length} 项操作结果未知`} actionBelow>
-      <ul className="i2-unknown">
-        {(unknownAll ? pending : pending.slice(0, 3)).map((row) => (
-          <li key={row.commandKey}>
-            <span><b>{row.action}</b>{` · ${[unknownObject(row), unknownChange(row), `${businessStamp(row.createdAt)} 提交`].filter(Boolean).join(" · ")}`}</span>
-            {isRetryExpired(row) ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
-            <span className="rd-row-actions"><Button size="sm" disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={() => {
-              void queryOriginal(row).catch((error) => toast(displayAdminError(error)));
-            }}>查询原结果</Button>{!isRetryExpired(row) && <Button size="sm" disabledReason={recovering ? "等当前操作完成" : !row.original ? "原操作记录不完整，只能查询核对，不能重试。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined} onClick={() => void restore(row)}>按原请求重试</Button>}</span>
-          </li>
-        ))}
-      </ul>
-      {pending.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setUnknownAll((open) => !open)}>{unknownAll ? "只看前 3 条" : `显示全部 ${pending.length} 条`}</Button></div>}
-      <p className="i2-unknown-zone">{`提交时间为${businessZone().label}`}</p>
-    </Notice>
-  );
+  /** 没存出处的记录按原请求和原操作人查，和 queryI2Command 一致。 */
+  const investigationRecord = (row: I2Command): FundCommandRecord | undefined => row.original && { ...row, commandOrigin: row.original.commandOrigin
+    ?? { originalMethod: row.original.method as "POST", originalPath: `/api/admin/content${row.original.path}`, readAuthority: "content_i2_read", originalAdminId: String(row.original.owner) } };
+  const recoveryRows: FundRecoveryRow[] = pending.map((row) => {
+    const expired = isRetryExpired(row);
+    const label = `${row.action} · ${unknownObject(row)}`;
+    const target = investigationRecord(row);
+    const query = () => { void queryOriginal(row).catch((error) => toast(displayAdminError(error))); };
+    const retryBlocked = recovering ? "等当前操作完成" : !row.original ? "原操作记录不完整，只能查询核对，不能重试。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+    return {
+      key: row.commandKey, title: <span title={label}>{label}</span>, record: target, outcome: outcomes[row.commandKey], createdAt: row.createdAt, expired,
+      canRetry: !expired && !!row.original && canWriteI2, canQuery: canReadI2,
+      status: target ? undefined : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的状态核对。" },
+      actions: <>
+        {target ? <FundCheckButtons record={target} outcome={outcomes[row.commandKey]} expired={expired} busy={!!checking || !!recovering} checking={checking === row.commandKey}
+          onCheck={query} onClose={() => setClosing(row)} />
+          : <Button size="sm" loading={checking === row.commandKey} disabled={!!checking} disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={query}>查询原结果</Button>}
+        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retryBlocked} onClick={() => void restore(row)}>按原请求重试</Button>}
+      </>,
+      detail: unknownChange(row) ? <p>{unknownChange(row)}</p> : undefined,
+    };
+  });
+  const unknownNotice = <>
+    <FundRecoveryPanel rows={recoveryRows} settled={settledRows} onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
+    {closing && <FundClosureModal label={`${closing.action} · ${unknownObject(closing)}`} createdAt={closing.createdAt} known={closureKnown(outcomes[closing.commandKey])}
+      facts={unknownChange(closing) ? <Fact k="改动">{unknownChange(closing)}</Fact> : undefined}
+      onClose={() => setClosing(null)} onSubmit={async (evidence: FundCommandEvidence) => {
+        const record = closing;
+        const next = await queryI2Command(record, evidence);
+        setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt: next } }));
+        setClosing(null);
+        if (fundCommandSettled(next)) { settle(record, next!); await refreshAfterMutation(record); }
+      }} />}
+  </>;
 
   if (contentLoading && !data) {
     return <>{header}{unknownNotice}{conflictUi}<BlockState state="loading" title="正在读取推送数据…" /></>;

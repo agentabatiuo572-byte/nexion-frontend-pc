@@ -13,7 +13,7 @@ import Link from "next/link";
 import { BookOpen, Clock3, FlaskConical, History, ListChecks, Megaphone, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, ShieldCheck, Siren, Square, TriangleAlert, Undo2, Workflow } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { businessClock, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
@@ -23,14 +23,17 @@ import {
 } from "@/lib/admin/j-client";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { CommandClosureModal, RECOVERY_LINE } from "../e-tabs/e-command-check";
+import { processedStatus } from "./j-recovery-copy";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
-  DOMAIN_PAGE, ExecutePrepare, PlaybookEditor, StepDots, StepTimeline, TraceDrawer, J4RecoveryNotice, UndoTag,
+  DOMAIN_PAGE, ExecutePrepare, PlaybookEditor, StepDots, StepTimeline, TraceDrawer, UndoTag,
   count, draftChanges, executionModeLabel, initialDraft, isActiveExecution, j4Time, lineStep, notifyLabelText, reversibleGates, rollbackStatusText, roleText, stepInfo, tierText, undoSummary,
-  type EditorSpec, type ExecuteDraft, type J4RecoveryRow, type PlaybookDraft,
+  type EditorSpec, type ExecuteDraft, type PlaybookDraft,
 } from "./j4-parts";
 import type { ActionConfirmReq, JCtx } from "./types";
 
@@ -130,6 +133,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   /** 按原请求查过、后端明确没有这张申请的记录（过期后可以确认解除）。 */
   const [absent, setAbsent] = useState<Record<string, true>>({});
   const [releasing, setReleasing] = useState<J4PendingProposal | null>(null);
+  /** 按原请求查到的结论只用来给运营看；解除与否由 queryJ4Command 按后端结论决定。 */
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [checking, setChecking] = useState<string | null>(null);
+  const [closing, setClosing] = useState<{ record: SlotAttemptRecord; label: string; kind: J4CommandContext["kind"]; change: ReactNode } | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  /** 按原请求重试后后端回了「中途失败」的记录：前面的步骤可能已生效，记录保留。 */
+  const [partial, setPartial] = useState<Record<string, true>>({});
   const current = useRef({ data, contentLoading, contentError, authorities });
   current.current = { data, contentLoading, contentError, authorities };
   const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
@@ -226,22 +236,39 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       && context.playbook.seq.every((step) => !!TARGET_AUTHORITY[step.dom] && grants.includes(TARGET_AUTHORITY[step.dom]));
     return true;
   }
-  const queryOriginal = async (record: { commandKey: string }) => {
+  /** 查询、结案都按原记录的出处定位；没存出处的旧记录按原槽位和当前账号查，和 queryJ4Command 一致。 */
+  const investigationRecord = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }): FundCommandRecord => {
+    const [method, path] = record.fingerprint.split(" ");
+    return { ...record, commandOrigin: record.sop?.commandOrigin
+      ?? { originalMethod: method as "PUT" | "POST", originalPath: `/api/admin/emergency${path}`, readAuthority: "emergency_j4_read", originalAdminId: String(session?.adminId ?? "") } };
+  };
+  /** 查到确定结论（核查确认已执行／未执行）：关掉这条原操作的框，重读页面。 */
+  const finishSettled = async (saved: SlotAttemptRecord, label: string, receipt: NonNullable<Awaited<ReturnType<typeof queryJ4Command>>>) => {
+    setSettled((previous) => [...previous.filter((item) => item.key !== saved.commandKey), { key: saved.commandKey, label, status: receipt.originalStatus }]);
+    if (activeConfirmation.current?.slot === saved.fingerprint) {
+      activeConfirmation.current = null;
+      openActionConfirm(null);
+    }
+    setEditor(null);
+    setPrepare(null);
+    syncPending();
+    await actions.reloadJEmergency().catch(() => undefined);
+  };
+  const queryOriginal = async (record: { commandKey: string }, label: string) => {
     const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.commandKey === record.commandKey);
     if (saved) {
+      setChecking(saved.commandKey);
       try {
-        if (fundCommandSettled(await queryJ4Command(saved))) {
-          if (activeConfirmation.current?.slot === saved.fingerprint) {
-            activeConfirmation.current = null;
-            openActionConfirm(null);
-          }
-          setEditor(null);
-          setPrepare(null);
-          syncPending();
-          await actions.reloadJEmergency().catch(() => undefined);
+        const receipt = await queryJ4Command(saved);
+        setOutcomes((previous) => ({ ...previous, [saved.commandKey]: { receipt } }));
+        if (fundCommandSettled(receipt)) {
+          await finishSettled(saved, label, receipt!);
           return;
         }
-      } catch { /* No receipt conclusion: retain the original and continue the current-state read. */ }
+      } catch (error) {
+        // No receipt conclusion: retain the original and continue the current-state read.
+        setOutcomes((previous) => ({ ...previous, [saved.commandKey]: { error: displayAdminError(error) } }));
+      } finally { setChecking(null); }
     }
     try {
       await actions.reloadJEmergency();
@@ -252,32 +279,78 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const contextName = (context: J4CommandContext) => context.kind === "create" ? context.fields.name
     : "playbook" in context ? `${context.playbook.code} ${context.playbook.name}` : `${context.execution.code} ${context.execution.executionId}`;
   const operationNames = { create: "新增预案", update: "保存预案修改", drill: "演练预案", execute: "提交执行申请", cancel: "登记取消", resume: "恢复核对", rollback: "恢复本次关停的开关" };
-  const recoveryRows: J4RecoveryRow[] = pending.map((record) => ({
-    key: record.commandKey, name: `${contextName(record.sop.context)} · ${operationNames[record.sop.context.kind]}`,
-    change: record.sop.context.kind === "create" || record.sop.context.kind === "update"
-      ? `${record.sop.context.fields.scene} · ${record.sop.context.fields.owner} · ${record.sop.context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
-      : record.sop.context.kind === "drill" ? `${record.sop.context.playbook.seq.length} 步` : "execution" in record.sop.context ? record.sop.context.execution.executionId : "",
-    submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record),
-    onQuery: () => void queryOriginal(record), onRetry: canRetry(record.sop.context) ? () => restoreOriginal(record) : undefined,
-    note: notes[record.commandKey],
+  const legacyKind = (fingerprint: string) => fingerprint.endsWith("/drills") ? "drill" as const : fingerprint.endsWith("/cancel") ? "cancel" as const
+    : fingerprint.endsWith("/resume") ? "resume" as const : fingerprint.endsWith("/rollback") ? "rollback" as const : fingerprint.startsWith("PUT") ? "update" as const : "create" as const;
+  const busy = !!checking;
+  /** 查询原结果、核查结案（共用按钮）；结案框按这类操作后端能给的结论选。 */
+  const checkButtons = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }, label: string, kind: J4CommandContext["kind"], change: ReactNode) =>
+    <FundCheckButtons record={investigationRecord(record)} outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
+      onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
+  const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
+    const context = record.sop.context;
+    const label = `${contextName(context)} · ${operationNames[context.kind]}`;
+    const change = context.kind === "create" || context.kind === "update"
+      ? `${context.fields.scene} · ${context.fields.owner} · ${context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
+      : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
+    const expired = isRetryExpired(record);
+    const retry = !expired && canRetry(context);
+    return {
+      key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
+      createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
+      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : undefined,
+      actions: <>
+        {checkButtons(record, label, context.kind, change)}
+        {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+      </>,
+      detail: <>
+        {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
+        {(context.kind === "resume" || context.kind === "rollback") && <p>{context.kind === "resume" ? "恢复核对" : "恢复开关"}记为失败也可能做了一部分，以执行追溯里每一步的状态为准。</p>}
+        {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+      </>,
+    };
+  });
+  recoveryRows.push(...proposals.filter((record) => verifiedProposals[record.commandKey]?.status !== "pending").map((record): FundRecoveryRow => {
+    const label = `${contextName(record.sopProposal.context)} · ${operationNames.execute}`;
+    const expired = isRetryExpired(record);
+    const missing = absent[record.commandKey] && !record.sopProposal.accepted;
+    const retry = !expired && !record.sopProposal.accepted && canRetry(record.sopProposal.context);
+    return {
+      key: record.commandKey, title: <span title={label}>{label}</span>, createdAt: record.createdAt, expired, canRetry: retry,
+      status: record.sopProposal.accepted ? { tone: "warn", label: "进度没读到", line: RECOVERY_LINE.created }
+        : missing ? expired ? { tone: "warn", label: "没有建成", line: RECOVERY_LINE.missing } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.absent }
+          : expired ? { tone: "warn", label: "结果未知", line: RECOVERY_LINE.expired } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.unknown },
+      actions: <>
+        <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
+        {retry && <Button size="sm" disabled={busy} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
+        {missing && expired && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>确认解除</Button>}
+      </>,
+      detail: <>
+        <p>{`${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`}</p>
+        {!missing && notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+      </>,
+    };
   }));
-  recoveryRows.push(...proposals.filter((record) => verifiedProposals[record.commandKey]?.status !== "pending").map((record): J4RecoveryRow => ({
-    key: record.commandKey, name: `${contextName(record.sopProposal.context)} · ${operationNames.execute}`,
-    change: `${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`,
-    submittedAt: record.createdAt, kind: "approval", expired: isRetryExpired(record),
-    onQuery: () => void queryProposal(record),
-    onRetry: !record.sopProposal.accepted && canRetry(record.sopProposal.context) ? () => restoreProposal(record) : undefined,
-    onRelease: absent[record.commandKey] && !record.sopProposal.accepted ? () => setReleasing(record) : undefined,
-    note: absent[record.commandKey] && !record.sopProposal.accepted
-      ? `按原请求查不到这张申请，说明没建成；${isRetryExpired(record) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
-      : notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
-  })));
-  recoveryRows.push(...legacy.map((record): J4RecoveryRow => ({
-    key: record.commandKey, name: (record.fingerprint.split("/")[3] ? `${decodeURIComponent(record.fingerprint.split("/")[3])} · ` : "") + operationNames[record.fingerprint.endsWith("/drills") ? "drill" : record.fingerprint.endsWith("/cancel") ? "cancel" : record.fingerprint.endsWith("/resume") ? "resume" : record.fingerprint.endsWith("/rollback") ? "rollback" : record.fingerprint.startsWith("PUT") ? "update" : "create"],
-    change: "改版前的旧记录，没存原请求，不能重试",
-    submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record), onQuery: () => void queryOriginal(record), note: notes[record.commandKey],
-    onRelease: isRetryExpired(record) ? () => setReleasingLegacy(record) : undefined,
-  })));
+  recoveryRows.push(...legacy.map((record): FundRecoveryRow => {
+    const kind = legacyKind(record.fingerprint);
+    const code = record.fingerprint.split("/")[3];
+    const label = `${code ? `${decodeURIComponent(code)} · ` : ""}${operationNames[kind]}`;
+    const expired = isRetryExpired(record);
+    const outcome = outcomes[record.commandKey];
+    const processed = outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "SUCCEEDED" && !fundCommandSettled(outcome.receipt);
+    return {
+      key: record.commandKey, title: <span title={`${label} · 改版前的旧记录`}>{label} · 改版前的旧记录</span>, record: investigationRecord(record), outcome,
+      createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
+      status: processed ? processedStatus({ expired, canRetry: false, canClose: fundInvestigationAccess(investigationRecord(record)).canSubmit, legacy: true })
+        : outcome ? undefined : expired
+          ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
+          : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原请求，不能重试，先查询原结果。" },
+      actions: <>
+        {checkButtons(record, label, kind, "改版前的旧记录，没存原请求")}
+        {expired && <Button size="sm" disabled={busy} onClick={() => setReleasingLegacy(record)}>确认解除</Button>}
+      </>,
+      detail: notes[record.commandKey] ? <p>{notes[record.commandKey]}</p> : undefined,
+    };
+  }));
   const releaseOriginal = async (record: J4PendingProposal) => {
     setReleasing(null);
     try {
@@ -288,13 +361,35 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     }
     syncPending();
   };
+  const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
+  const closingStatus = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.originalStatus : undefined;
+  const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
+  const submitClosure = async (evidence: FundCommandEvidence) => {
+    if (!closing) return;
+    const { record, label } = closing;
+    const next = await queryJ4Command(record, evidence);
+    setOutcomes((previous) => ({ ...previous, [record.commandKey]: { receipt: next } }));
+    setClosing(null);
+    if (fundCommandSettled(next)) await finishSettled(record, label, next!);
+  };
+  const closureFacts = closing && <>
+    {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
+    <Fact k="系统记录">{closingStatus === "SUCCEEDED" ? "已处理，看不出成没成，原操作还锁着" : closingStatus === "FAILED" ? "记为失败，原操作还锁着" : "结果未知，原操作还锁着"}</Fact>
+    {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
+  </>;
   const recovery = <>
-    <J4RecoveryNotice rows={recoveryRows} />
+    <FundRecoveryPanel rows={recoveryRows} settled={settled} onDismissSettled={(key) => setSettled((previous) => previous.filter((item) => item.key !== key))} />
+    {/* 新增、编辑、演练、取消只在本地事务里写，后端能按回滚证据判「未执行」；恢复核对和恢复开关会动外部业务，后端只收「已执行」或「仍未知」。 */}
+    {closing && (closing.kind === "resume" || closing.kind === "rollback"
+      ? <FundClosureModal label={closing.label} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
+        onClose={() => setClosing(null)} onSubmit={submitClosure} />
+      : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
+        onClose={() => setClosing(null)} onSubmit={submitClosure} />)}
     {releasing && <ReleaseModal label={`${contextName(releasing.sopProposal.context)} · ${operationNames.execute}`}
       explain="原申请超过 24 小时，按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
       onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
-    {releasingLegacy && <ReleaseModal label={`${recoveryRows.find((row) => row.key === releasingLegacy.commandKey)?.name} · 旧记录`}
-      explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
+    {releasingLegacy && <ReleaseModal label={`${operationNames[legacyKind(releasingLegacy.fingerprint)]} · 改版前的旧记录`}
+      explain={<><p>改版前的旧记录没存原请求，不能重试；核查结案是另一回事，要按证据。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
       onCancel={() => setReleasingLegacy(null)} onConfirm={() => {
         releaseExpiredJLegacyCommand(releasingLegacy);
         setReleasingLegacy(null);
@@ -452,8 +547,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         await actions.reloadJEmergency().catch(() => undefined);
       } else if (isEmergencyOutcomeUncertain(error) || isA2OutcomeUncertainError(error)) {
         // The original modal freezes through getPendingReason; no current data replaces its facts.
-        noteError(original?.commandKey ?? listJ4PendingCommands().find((row) => row.fingerprint === slot)?.commandKey ?? getJ4PendingProposal(contextCode(context) ?? "")?.commandKey ?? slot, error);
-        if ((error as { reasonCode?: string }).reasonCode?.startsWith("J4_EXECUTION_PARTIAL:")) await actions.reloadJEmergency().catch(() => undefined);
+        const key = original?.commandKey ?? listJ4PendingCommands().find((row) => row.fingerprint === slot)?.commandKey ?? getJ4PendingProposal(contextCode(context) ?? "")?.commandKey ?? slot;
+        noteError(key, error);
+        if ((error as { reasonCode?: string }).reasonCode?.startsWith("J4_EXECUTION_PARTIAL:")) {
+          setPartial((previous) => ({ ...previous, [key]: true }));
+          await actions.reloadJEmergency().catch(() => undefined);
+        }
       } else if (error instanceof Error && /J4_EXECUTION_PARTIAL/.test((error as { reasonCode?: string }).reasonCode ?? "")) {
         await actions.reloadJEmergency().catch(() => undefined);
       }
