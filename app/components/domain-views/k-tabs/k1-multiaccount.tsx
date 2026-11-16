@@ -23,9 +23,11 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
+import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand } from "@/lib/admin/a3-command-query";
+import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
 import type { ActionConfirmReq, KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -55,7 +57,8 @@ function isK1PendingCommand(record: PendingMutationRecord): record is K1PendingC
   const value = record as Partial<K1PendingCommand>;
   return value.kind !== undefined && K1_PENDING_KINDS.includes(value.kind) && typeof value.target === "string" && value.target.length > 0
     && typeof value.reason === "string" && typeof value.label === "string"
-    && value.fingerprint === `${value.kind}|${value.target}`;
+    && value.fingerprint === `${value.kind}|${value.target}`
+    && (value.kind !== "registration-param" || isOriginalCommandOrigin(value.commandOrigin, a3ParamCommandRoutes.K1));
 }
 /** 全部写操作共用一张表，刷新后还能用同一命令号按原内容重试。 */
 const commandEvidence = createPendingMutationStore<K1PendingCommand | PendingMutationRecord>({
@@ -65,7 +68,12 @@ const commandEvidence = createPendingMutationStore<K1PendingCommand | PendingMut
   isValidRecord: (record) => isK1PendingCommand(record) || /^cluster-(flag|freeze|release|clear):.+:\d+$/.test(record.fingerprint),
 });
 // test 的旧记录只有命令号，没有原请求内容，保留为只读回执查询，不能拼出新请求重发。
-const pendingCommands = { ...commandEvidence, list: () => commandEvidence.list().filter(isK1PendingCommand) };
+const pendingCommands = { ...commandEvidence,
+  list: () => commandEvidence.list().filter(isK1PendingCommand).filter(record => record.kind !== "registration-param"
+    || (record.commandOrigin ? record.commandOrigin.originalAdminId === String(useAdminAuth.getState().session?.adminId)
+      : hasPersistedPendingCommandOwner(String(useAdminAuth.getState().session?.adminId)))),
+  get: (fingerprint: string) => pendingCommands.list().find(record => record.fingerprint === fingerprint)?.commandKey,
+};
 const LEGACY_CLUSTER_RECEIPTS = {
   flag: ["k1_cluster_flag", "标记可疑账户簇"], freeze: ["k1_cluster_freeze", "批量冻结关联账户"],
   release: ["k1_cluster_release", "解除误判"], clear: ["k1_cluster_cleared", "判定为正常"],
@@ -732,7 +740,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       : extra.kind === "param" ? `${base}params/${target}` : extra.kind === "registration-param" ? `${base}registration-params`
         : extra.kind === "release-param" ? `${base}release-params/${target}` : extra.kind === "entry" ? `${base}releases/${target}/manual` : `${base}whitelist`;
     const method = ["cluster", "entry", "whitelist-add"].includes(extra.kind) ? "POST" : "PATCH";
-    pendingCommands.remember(scope, key, { ...extra, commandOrigin: retained ? original?.commandOrigin : extra.kind === "registration-param" ? undefined : fundCommandOrigin(method, path, "risk_k1_read") });
+    pendingCommands.remember(scope, key, { ...extra, commandOrigin: retained ? original?.commandOrigin : extra.kind === "registration-param" ? a3ParamCommandOrigin("K1") : fundCommandOrigin(method, path, "risk_k1_read") });
     if (!pendingCommands.isDurablyStored(scope, key)) {
       pendingCommands.forget(scope, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -851,7 +859,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const checkInvestigation = async (record: K1PendingCommand, evidence?: FundCommandEvidence) => {
     setChecking(record.fingerprint);
     try {
-      const receipt = await checkFundCommand(record, evidence);
+      const receipt = record.kind === "registration-param" ? (await queryA3ParamCommand(record, "K1", String(useAdminAuth.getState().session?.adminId), evidence)).receipt
+        : await checkFundCommand(record, evidence);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         pendingCommands.forget(record.fingerprint, record.commandKey);

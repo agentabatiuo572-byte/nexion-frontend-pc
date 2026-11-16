@@ -301,7 +301,13 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     if (record.original.kind === "docs" || record.original.kind === "how") setRecovery(record);
     try {
       switch (record.original.kind) {
-        case "flag": case "param": if (!await refreshOverview()) return; break;
+        case "param": {
+          const result = await commands.queryOriginal(record).catch(() => null);
+          if (result?.settled) { ctx.closeActionConfirm?.(); await refreshOverview(true); return; }
+          if (!await refreshOverview()) return;
+          break;
+        }
+        case "flag": if (!await refreshOverview()) return; break;
         case "schedule": case "cancel": await fetchBusinessCalendar(); setCalendarNonce(value => value + 1); break;
         case "experience": await fetchPlatformExperienceConfig(); setReadNonce(value => ({ ...value, experience: value.experience + 1 })); break;
         case "docs": case "how": {

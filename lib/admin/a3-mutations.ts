@@ -9,6 +9,9 @@ import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendar
 import { parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
+import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand } from "./a3-command-query";
+import { isOriginalCommandOrigin } from "./original-command-query";
 
 export type A3Original =
   | { kind: "flag"; row: A3FeatureFlag; value: string }
@@ -19,6 +22,7 @@ export type A3Original =
   | { kind: "docs"; document: PublishedContentDocument; baseline: PublishedContentDocument; mode: "DRAFT" | "PUBLISHED" }
   | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; mode: "DRAFT" | "PUBLISHED" };
 export type A3Command = PendingMutationRecord & {
+  commandOrigin?: FundCommandOrigin;
   original: A3Original;
   path: string;
   method: "PUT" | "POST";
@@ -97,7 +101,9 @@ const commands = createPendingMutationStore<A3Command>({
         && record.method === (record.original.kind === "cancel" ? "POST" : "PUT")
         && typeof record.body === "string" && object(JSON.parse(record.body)) && typeof record.reason === "string"
         && typeof record.name === "string" && typeof record.change === "string"
-        && record.fingerprint === (record.contentCommandActor === undefined ? a3Slot(record.original) : `${record.contentCommandActor}:${a3Slot(record.original)}`);
+        && (record.commandOrigin === undefined || record.original.kind === "param" && isOriginalCommandOrigin(record.commandOrigin, a3ParamCommandRoutes.A3))
+        && record.fingerprint === (record.commandOrigin ? `${record.commandOrigin.originalAdminId}:${a3Slot(record.original)}`
+          : record.contentCommandActor === undefined ? a3Slot(record.original) : `${record.contentCommandActor}:${a3Slot(record.original)}`);
     } catch { return false; }
   },
 });
@@ -105,7 +111,8 @@ const commands = createPendingMutationStore<A3Command>({
 export function useA3Commands() {
   const actorId = useAdminAuth(state => state.session?.adminId);
   const [pending, setPending] = useState<A3Command[]>([]);
-  const sync = useCallback(() => setPending(commands.list().filter(record => record.contentCommandActor === undefined || record.contentCommandActor === actorId)), [actorId]);
+  const sync = useCallback(() => setPending(commands.list().filter(record => (record.contentCommandActor === undefined || record.contentCommandActor === actorId)
+    && (record.commandOrigin === undefined || record.commandOrigin.originalAdminId === String(actorId)))), [actorId]);
   useEffect(sync, [sync]);
   // Expiration affects availability even when the operator leaves the page open.
   useEffect(() => {
@@ -115,24 +122,32 @@ export function useA3Commands() {
     return () => window.clearTimeout(timer);
   }, [pending, sync]);
   const find = (slot: string) => commands.list().find(record => (record.fingerprint === slot
-    || record.contentCommandActor === actorId && record.fingerprint === `${actorId}:${slot}`)
-    && (record.contentCommandActor === undefined || record.contentCommandActor === actorId));
+    || (record.contentCommandActor === actorId || record.commandOrigin?.originalAdminId === String(actorId)) && record.fingerprint === `${actorId}:${slot}`)
+    && (record.contentCommandActor === undefined || record.contentCommandActor === actorId)
+    && (record.commandOrigin === undefined || record.commandOrigin.originalAdminId === String(actorId)));
   const capture = (input: Omit<A3Command, keyof PendingMutationRecord>) => {
     const slot = a3Slot(input.original);
     if (find(slot)) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const contentSave = input.original.kind === "docs" || input.original.kind === "how";
     const auth = useAdminAuth.getState();
-    if (contentSave && (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !auth.session
+    if ((contentSave || input.original.kind === "param") && (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !auth.session
       || auth.session.passwordChangeRequired || !auth.session.authorities.includes("platform_a3_write"))) throw new Error("ADMIN_PERMISSION_DENIED");
     const key = `a3-${input.original.kind}-${crypto.randomUUID()}`;
-    const fingerprint = contentSave ? `${auth.session!.adminId}:${slot}` : slot;
-    commands.remember(fingerprint, key, { ...input, ...(contentSave ? { contentCommandActor: auth.session!.adminId } : {}) });
+    const fingerprint = contentSave || input.original.kind === "param" ? `${auth.session!.adminId}:${slot}` : slot;
+    commands.remember(fingerprint, key, { ...input, ...(contentSave ? { contentCommandActor: auth.session!.adminId } : {}),
+      ...(input.original.kind === "param" ? { commandOrigin: a3ParamCommandOrigin("A3") } : {}) });
     if (!commands.isDurablyStored(fingerprint, key)) {
       commands.forget(fingerprint, key); sync();
       throw new Error("A3_ORIGINAL_STORAGE_FAILED");
     }
     sync();
     return commands.list().find(record => record.commandKey === key)!;
+  };
+  const queryOriginal = async (record: A3Command, evidence?: FundCommandEvidence) => {
+    if (record.original.kind !== "param" || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    const result = await queryA3ParamCommand(record, "A3", String(actorId), evidence);
+    if (result.settled) { commands.forget(record.fingerprint, record.commandKey); sync(); }
+    return result;
   };
   const queryContent = async (record: A3Command) => {
     const original = record.original;
@@ -161,6 +176,7 @@ export function useA3Commands() {
     return { ...result, released: !result.matched };
   };
   const send = async (record: A3Command, retry = false) => {
+    if (record.commandOrigin && record.commandOrigin.originalAdminId !== String(useAdminAuth.getState().session?.adminId)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (retry && (!a3Deduplicates(record) || isRetryExpired(record))) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A3_ORIGINAL_STORAGE_FAILED");
     if (record.contentCommandActor !== undefined) {
@@ -220,7 +236,7 @@ export function useA3Commands() {
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  return { pending, find, capture, send, queryContent, releaseContent, sync };
+  return { pending, find, capture, send, queryOriginal, queryContent, releaseContent, sync };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
 export type A3RecoveryProps = { commands: A3Commands; recovery: A3Command | null; onRecovered: () => void; nonce: number };

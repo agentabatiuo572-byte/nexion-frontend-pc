@@ -20,8 +20,13 @@ export async function queryOriginalCommand(record: FundCommandRecord, route: Ori
   if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || auth.session?.passwordChangeRequired
     || String(auth.session?.adminId) !== owner || !auth.session?.authorities.includes(route.readAuthority)
     || record.commandOrigin && record.commandOrigin.originalAdminId !== owner) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
-  if (record.commandOrigin) return checkFundCommand(record, evidence);
-  if (!hasPersistedPendingCommandOwner(owner)) throw new Error("INVESTIGATION_LEGACY_ORIGIN_UNPROVEN_REMAINS_LOCKED");
-  const locator = { ...route, originalAdminId: owner, commandKey: record.commandKey };
-  return evidence ? investigateECommand(record, locator, evidence, route.readAuthority) : discoverECommand(locator);
+  let receipt;
+  if (record.commandOrigin) receipt = await checkFundCommand(record, evidence);
+  else {
+    if (!hasPersistedPendingCommandOwner(owner)) throw new Error("INVESTIGATION_LEGACY_ORIGIN_UNPROVEN_REMAINS_LOCKED");
+    const locator = { ...route, originalAdminId: owner, commandKey: record.commandKey };
+    receipt = evidence ? await investigateECommand(record, locator, evidence, route.readAuthority) : await discoverECommand(locator);
+  }
+  if (String(useAdminAuth.getState().session?.adminId) !== owner) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  return receipt;
 }
