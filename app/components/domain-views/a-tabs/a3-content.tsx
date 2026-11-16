@@ -104,7 +104,7 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
         ? <Button variant={publish ? "danger" : "primary"} loading={retry.busy} disabledReason={retry.disabledReason} onClick={retry.run}>按原请求重试</Button>
         : <Button variant={publish ? "danger" : "primary"} loading={busy} disabledReason={locked ? "结果未知" : undefined} onClick={onConfirm}>{publish ? "发布" : "保存草稿"}</Button>}
     </>}>
-    {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
+    {error && <Notice tone={locked ? "warn" : "danger"} title={locked ? undefined : "没有保存"}>{error}</Notice>}
     {facts}
     {extra}
     <Field label="变更理由" required help={`${reasonMin}–500 字`}>
@@ -117,7 +117,7 @@ const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下�
 /** 原提交框里还没有对比结果时：能重试的说重试会怎样，不能重试的说查询会怎样。 */
 function OriginalNote({ retryable }: { retryable: boolean }) {
   return retryable
-    ? <>重试按原提交的内容、方式和理由再发一次：已经保存过的不会再存；<KeepText text="内容已被别人改过会被拒绝并重新读取。" /></>
+    ? <>重试按原提交的内容、方式和理由再发一次：<KeepText text="已经保存过的不会重复保存，也不会盖掉别人后来的修改。" /></>
     : <>查询原结果会和现在的内容对比：一致就算已保存，<KeepText text="对不上时可以核对后解除。" /></>;
 }
 
