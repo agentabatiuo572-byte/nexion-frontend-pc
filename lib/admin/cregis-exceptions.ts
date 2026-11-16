@@ -17,18 +17,18 @@ export function exceptionId(value: unknown): string {
 }
 
 export function exceptionObject(value: unknown): ExceptionRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("异常资金响应无效");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("异常资金资料读取异常");
   return value as ExceptionRecord;
 }
 
 export function exceptionPage(value: unknown): ExceptionPage {
   const row = exceptionObject(value);
   if (!Array.isArray(row.records) || typeof row.hasMore !== "boolean"
-      || !(row.nextBeforeId === null || typeof row.nextBeforeId === "string")) throw new Error("异常资金列表响应无效");
+      || !(row.nextBeforeId === null || typeof row.nextBeforeId === "string")) throw new Error("异常资金列表读取异常");
   const records = row.records.map(exceptionObject);
   records.forEach(record => exceptionId(record.id));
   if (row.hasMore && (records.length === 0 || exceptionId(row.nextBeforeId) !== records.at(-1)?.id))
-    throw new Error("异常资金分页响应无效");
+    throw new Error("异常资金分页读取异常");
   return { records, hasMore: row.hasMore, nextBeforeId: row.nextBeforeId as string | null };
 }
 

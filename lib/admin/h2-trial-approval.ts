@@ -117,7 +117,7 @@ export async function submitH2TrialApproval(
   }
   if (!ticket.mine || ticket.obj !== original.obj || ticket.action !== action
       || (ticket.operationCode && ticket.operationCode !== original.op)) {
-    throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+    throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
   }
   attempts.forget(slot, key);
   return ticket;

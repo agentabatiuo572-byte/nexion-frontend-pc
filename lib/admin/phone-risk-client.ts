@@ -45,7 +45,7 @@ export const RISK_CODE_LABELS: Record<string, string> = { ...Object.fromEntries(
 const MODES = new Set<PhoneRiskMode>(["OFF", "OBSERVE", "ENFORCE"]);
 const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-function invalid(): never { throw new Error("机型风控设置响应异常，请刷新后重试。"); }
+function invalid(): never { throw new Error("机型风控设置读取异常，请刷新后重试。"); }
 
 /** The settings themselves, without the reason a save also needs. */
 export function riskModeError(update: Omit<PhoneRiskUpdate, "reason">): string | null {

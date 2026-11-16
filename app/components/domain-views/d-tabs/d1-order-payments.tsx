@@ -44,9 +44,9 @@ const PAGE_SIZE = 20;
 function deliveryNote(record: PurchasePaymentRecord) {
   if (purchaseWasDelivered(record)) {
     if (record.status !== "DELIVERED") return "业务已完成，但资金有异常需要核查。不会再次完成、自动退款或转进钱包。";
-    return record.receipt ? "业务已完成。" : "状态是已完成，但没有业务回执，请核对原业务记录。";
+    return record.receipt ? "业务已完成。" : "状态是已完成，但没有业务确认记录，请核对原业务记录。";
   }
-  return record.receipt ? "已有业务回执，完成状态待确认；请核对原业务记录，不会重复完成。" : "收到钱不等于已完成。系统不会自动退款，也不会把钱转进用户钱包。";
+  return record.receipt ? "已有业务确认记录，完成状态还没确定；请核对原业务记录，不会重复完成。" : "收到钱不等于已完成。系统不会自动退款，也不会把钱转进用户钱包。";
 }
 
 /** 重新核对到账为什么不能点，按顺序写第一条（OP-126）。 */
@@ -54,7 +54,7 @@ function revalidateBlock(record: PurchasePaymentRecord | null, pending: boolean)
   if (!record) return "正在读取这笔付款";
   if (pending) return "这笔有一次操作结果未知";
   if (purchaseWasDelivered(record)) return "已完成";
-  if (record.receipt) return "已有业务回执，请核对原业务记录";
+  if (record.receipt) return "已有业务确认记录，请核对原业务记录";
   if (record.status === "EXPIRED") return "已过期的付款不能重新核对";
   if (record.status === "CREATING") return "付款单正在创建，等创建完再核对";
   if (record.version == null) return "缺付款单版本，不能核对";
@@ -389,7 +389,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         { label: "用户实付", icon: Coins, tone: "money", value: `${usdt(r.totalUsdt)} USDT`, reason: `订单 ${usdt(r.subtotalUsdt)} · 手续费 ${usdt(r.channelFeeUsdt)} · 网络费 ${usdt(r.networkConfirmFeeUsdt)}` },
         { label: "用户", icon: User, tone: "users", value: r.userId, reason: `${kindText[r.kind] ?? "用途待确认"} · ${methodText[r.paymentMethod]}` },
         { label: "状态", state: stateTone(r.status) === "progress" ? undefined : stateTone(r.status), value: stateText[r.status], reason: r.reason ?? undefined },
-        { label: "是否完成", state: purchaseWasDelivered(r) && r.status === "DELIVERED" && r.receipt ? undefined : "warn", value: purchaseWasDelivered(r) ? "已完成" : r.receipt ? "已有回执，待确认" : "还没完成", reason: deliveryNote(r) },
+        { label: "是否完成", state: purchaseWasDelivered(r) && r.status === "DELIVERED" && r.receipt ? undefined : "warn", value: purchaseWasDelivered(r) ? "已完成" : r.receipt ? "业务已确认，待核对" : "还没完成", reason: deliveryNote(r) },
         ...(pending ? [{ label: "结果未知", state: "warn" as const, value: "这笔付款有一次操作结果未知，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
     {r && <>

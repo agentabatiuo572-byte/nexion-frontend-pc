@@ -252,7 +252,7 @@ export async function submitF1Policy(
           return { active: await fetchF1VRankOverview().catch(() => null), resolved: result?.settled === true, receipt: result?.receipt,
             acknowledgement: result?.settled ? result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "刷新页面查看现在的结果。" : formatAdminApiError(result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED"
               ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED" : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED", "INVESTIGATION_RECEIPT_UNREADABLE")
-              : "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
+              : "已读取现在的配置；它证明不了原请求的结果，请保留原操作继续核对。" };
         }
         if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
         if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);

@@ -87,7 +87,7 @@ export async function queryI6CourseProposal(saved: HIRewardCommand): Promise<A2O
   // 24972948 ticketMetadata returns the persisted operationCode for all command-backed I6 tickets.
   if (!ticket.mine || ticket.obj !== input.obj || ticket.operationCode !== input.command.op
     || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-    throw new Error("查询回执与原操作不符，请保留原记录并查询原结果。");
+    throw new Error("查到的审批单和原操作对不上，请保留原记录并查询原结果。");
   }
   if (ticket.status === "pending") commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true, ticketStatus: "pending" });
   else commands.forget(record.fingerprint, record.commandKey);
@@ -114,7 +114,7 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean): Pro
     envelope = await response.json();
   } catch { throw uncertain("结果未知，请查询原结果或按原请求重试。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
-    || envelope.message !== undefined && typeof envelope.message !== "string") throw uncertain("原申请回执无法核实，请保留原记录并查询原结果。");
+    || envelope.message !== undefined && typeof envelope.message !== "string") throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);
   if (!response.ok || envelope.code !== 0 || unknown) {
     const status = response.ok && envelope.code >= 400 && envelope.code < 500 ? envelope.code : response.status;
@@ -123,7 +123,7 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean): Pro
     if (rejected && !unknown) { commands.forget(record.fingerprint, record.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : record }); }
     throw uncertain(failure.message);
   }
-  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw uncertain("原申请回执无法核实，请保留原记录并查询原结果。");
+  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true });
   try {
     const ticket = await queryI6CourseProposal(record);

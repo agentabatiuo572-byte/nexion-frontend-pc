@@ -394,7 +394,7 @@ export async function activateE5Device(deviceId: number, force: boolean, reason:
       idempotencyKey: commandKey,
     }),
   );
-  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作回执无法核对，结果仍未确认。", originalCommandKey);
+  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作返回的内容对不上，结果未知。", originalCommandKey);
   return mapDevices([saved])[0];
 }
 
@@ -411,7 +411,7 @@ export async function deactivateE5Device(deviceId: number, unbind: boolean, reas
       idempotencyKey: commandKey,
     }),
   );
-  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作回执无法核对，结果仍未确认。", originalCommandKey);
+  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作返回的内容对不上，结果未知。", originalCommandKey);
   return mapDevices([saved])[0];
 }
 
@@ -421,7 +421,7 @@ export async function setE5UserDevicesPaused(userId: number, paused: boolean, re
   if (originalCommandKey) {
     const result = await e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: originalCommandKey });
     if (result.userId !== userId || !Number.isSafeInteger(result.changedCount) || result.changedCount < 0 || result.paused !== paused)
-      throw new E5OutcomeUncertainError("用户设备操作回执无法核对，结果仍未确认。", originalCommandKey);
+      throw new E5OutcomeUncertainError("用户设备操作返回的内容对不上，结果未知。", originalCommandKey);
     return result;
   }
   return e5StableDeviceCommand(

@@ -123,7 +123,7 @@ export function B3RestoredInsights({ data }: { data: B3Dashboard }) {
 
 export function B4RestoredInsights() {
   const history = useB4GrowthFlowHistory();
-  if (!history.data) return <div style={GRID}><section data-testid="b3-growth-outflow-ratio" style={CARD}><Header title="新增 / 流出比趋势" meta="健康线 1.2" />{history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`趋势暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section><section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 团队奖励 / 创世节点 / 储备" /><Notice>预算数据未加载，暂不显示图表。</Notice></section></div>;
+  if (!history.data) return <div style={GRID}><section data-testid="b3-growth-outflow-ratio" style={CARD}><Header title="新增 / 流出比趋势" meta="健康线 1.2" />{history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`趋势暂不可用：${history.error ?? "没有读到数据"}`}</Notice>}</section><section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 团队奖励 / 创世节点 / 储备" /><Notice>预算数据未加载，暂不显示图表。</Notice></section></div>;
   const data = history.data;
   const latest = data.currentRatio;
   return <div style={GRID}>

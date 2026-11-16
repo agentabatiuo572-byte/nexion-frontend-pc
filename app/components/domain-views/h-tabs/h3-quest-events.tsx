@@ -624,7 +624,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const session = useAdminAuth.getState().session;
     if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
     const result = await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, op, values, before, after, reason) }, form, editValue);
-    if (result.kind !== "proposal") throw new Error("原退役操作已取得回执，请刷新奖池核对后再修改。");
+    if (result.kind !== "proposal") throw new Error("原退役操作已有结果，请刷新奖池核对后再修改。");
     await reloadH4Approvals();
     toast("已提交，等待审批后执行");
   };
@@ -1510,9 +1510,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               const retire = record.payload.kind === "retire";
               return <div className={`htint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
                 <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{subject}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
+                  <b>{subject}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未知"}</span><br />
                   {expired
-                    ? retire ? "不能再按原请求重发，也查不到回执。请刷新奖池，核对这一档是否已经退役；原记录继续保留。" : "不能再按原请求重发，只能查询原审批单。"
+                    ? retire ? "不能再按原请求重试，也查不到原结果。请刷新奖池，核对这一档是否已经退役；原记录继续保留。" : "不能再按原请求重发，只能查询原审批单。"
                     : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求重发，不会重复执行。"
                       : "没收到系统回复，不知道审批单建没建成。核对时先查原审批单，查不到才按原请求重发，不会重复建单。"}
                 </span>

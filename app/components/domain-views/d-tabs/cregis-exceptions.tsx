@@ -96,11 +96,11 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
     setLoading(true); setError("");
     const [p, pc, rf, cl, ri, rc] = await Promise.allSettled([
       exceptionRead("/refunds/fee-policy", scope).then(value => {
-        if (!(String(value.mode) in MODE)) throw new Error("退款费用规则响应无效");
+        if (!(String(value.mode) in MODE)) throw new Error("退款费用规则读取异常");
         exceptionVersion(value.version); return value;
       }),
       financeAdminRequest<unknown>("/cregis/refunds/fee-policy/cases", { bankManualAuthEpoch: scope.authEpoch }).then(value => {
-        if (!Array.isArray(value)) throw new Error("退款费用规则提案响应无效");
+        if (!Array.isArray(value)) throw new Error("退款费用规则的审批单读取异常");
         return value.map(exceptionObject);
       }),
       exceptionList("/refunds/cases", undefined, scope), exceptionList("/exception-claims", undefined, scope),

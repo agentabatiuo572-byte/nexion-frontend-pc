@@ -108,7 +108,7 @@ async function send(original: I4SectionCommand, retry: boolean): Promise<A2Opera
     envelope = await response.json();
   } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
-    || envelope.message !== undefined && typeof envelope.message !== "string") throw new OutcomeUnknownError("原申请回执无法核实，请保留原记录并查询原结果。");
+    || envelope.message !== undefined && typeof envelope.message !== "string") throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);
   if (!response.ok || envelope.code !== 0 || unknown) {
     const status = response.ok && envelope.code >= 400 && envelope.code < 500 ? envelope.code : response.status;
@@ -118,7 +118,7 @@ async function send(original: I4SectionCommand, retry: boolean): Promise<A2Opera
     if (rejected && !unknown) { pending.forget(original.fingerprint, original.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : original }); }
     throw new OutcomeUnknownError(failure.message);
   }
-  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw new OutcomeUnknownError("原申请回执无法核实，请保留原记录并查询原结果。");
+  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true });
   try {
     const ticket = await queryI4SectionCommand(original);

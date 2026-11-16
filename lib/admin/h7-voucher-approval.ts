@@ -71,7 +71,7 @@ export async function submitH7VoucherApproval(session: AdminSession, input: H7Vo
     // 111e00cd OpsAuditCenterService.ticketMetadata explicitly supplies H7 operationCode.
     if (!ticket.mine || ticket.obj !== original.voucherId || ticket.operationCode !== original.op
       || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) {
-      throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+      throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
     }
   };
   if (previous) {

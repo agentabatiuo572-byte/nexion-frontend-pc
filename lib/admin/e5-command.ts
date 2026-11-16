@@ -123,7 +123,7 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
     });
     const raw: unknown = await response.json();
     if (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") throw new E5CommandError("原操作结果未确认", undefined, "", true);
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new E5CommandError("原操作回执无法读取", undefined, "", true);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new E5CommandError("原操作的结果读不到", undefined, "", true);
     const result = raw as { code?: unknown; message?: unknown; data?: unknown };
     if (!response.ok || result.code !== 0) {
       const status = response.ok && typeof result.code === "number" && result.code >= 400 && result.code < 500 ? result.code : response.status;
@@ -132,15 +132,15 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
         response.status >= 500 || !code || !Number.isInteger(result.code) || typeof result.code === "number" && result.code >= 500 || isIdempotencyOutcomeOpen(code) || retry && record.intent === "legacy" && code.startsWith("LEGACY_UNKNOWN_"),
         response.status, typeof result.code === "number" ? result.code : undefined);
     }
-    if (!result.data || typeof result.data !== "object" || Array.isArray(result.data)) throw new E5CommandError("原操作缺少有效回执", undefined, "", true);
+    if (!result.data || typeof result.data !== "object" || Array.isArray(result.data)) throw new E5CommandError("原操作没有返回有效结果", undefined, "", true);
     data = result.data as Record<string, unknown>;
     if (["force-activate", "unbind", "legacy"].includes(record.intent)) {
       if (typeof data.id !== "string" || !data.id.trim()) throw new E5CommandError("提案缺少有效票号", undefined, "", true);
     } else if (["pause", "resume"].includes(record.intent)) {
       if (!Number.isSafeInteger(data.changedCount) || Number(data.changedCount) < 0 || String(data.userId) !== record.device.userId || data.paused !== (record.intent === "pause"))
-        throw new E5CommandError("用户设备操作回执不完整", undefined, "", true);
+        throw new E5CommandError("用户设备操作返回的内容不完整", undefined, "", true);
     } else if (String(data.id) !== String(record.device.deviceId) || (record.intent === "deactivate" && typeof data.pendingDeactivate !== "boolean" && data.pendingDeactivate !== 0 && data.pendingDeactivate !== 1)) {
-      throw new E5CommandError("设备操作回执不完整", undefined, "", true);
+      throw new E5CommandError("设备操作返回的内容不完整", undefined, "", true);
     }
   } catch (cause) {
     if (!retry && cause instanceof E5CommandError && !cause.unknownOutcome && cause.httpStatus !== undefined

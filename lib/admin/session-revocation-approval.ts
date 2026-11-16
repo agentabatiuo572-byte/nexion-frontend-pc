@@ -90,7 +90,7 @@ export async function proposeSessionRevocation(
   }
   if (!ticket.mine || ticket.obj !== original.userId
       || (ticket.operationCode && ticket.operationCode !== "c2_session_revoke_all")) {
-    throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+    throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
   }
   attempts.forget(slot, key);
   return ticket;

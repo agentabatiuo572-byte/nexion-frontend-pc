@@ -497,7 +497,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
   try {
     text = await res.text();
   } catch {
-    const message = "应急控制服务响应中断，未收到完整执行结果";
+    const message = "应急控制服务连接中断，没收到完整的执行结果";
     throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试`);
   }
   let payload: ApiResult<T> = {};

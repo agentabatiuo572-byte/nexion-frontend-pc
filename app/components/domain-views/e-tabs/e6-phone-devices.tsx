@@ -86,7 +86,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
             throw failure;
           }
         }
-        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已提交成功，但重新读取失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已提交成功，请核对列表":action==="pause"?`暂停成功 · ${result.changedCount} 台设备`:`已恢复 ${result.changedCount} 台运营暂停的设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
+        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已提交成功，但重新读取失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已提交成功，请核对列表":action==="pause"?`暂停成功 · ${result.changedCount} 台设备`:`已恢复 ${result.changedCount} 台运营暂停的设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已收到操作结果并重新读取手机列表，请核对现在的状态",result?.readbackFailed?"warn":undefined);
       }}/>}
   </>;
 }

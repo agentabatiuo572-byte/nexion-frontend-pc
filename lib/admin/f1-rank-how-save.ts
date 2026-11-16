@@ -71,7 +71,7 @@ export async function saveF1RankHow(adminId: number, document: PublishedContentD
     const value = await updateRankHowPolicyAdmin(document, reason);
     if (value.revision !== document.revision + 1 || value.version !== document.version.trim()
         || value.status !== document.status || canonical(value.locales) !== canonical(document.locales)) {
-      throw new OutcomeUnknownError("保存回执与提交内容对不上，请重新读取核对。");
+      throw new OutcomeUnknownError("保存后返回的内容和提交的对不上，请重新读取核对。");
     }
     saves.forget(fingerprint, key);
     return value;

@@ -174,7 +174,7 @@ export function H8SavedUnreadNotice({ name, value, onReload, reloading, hasData 
   return (
     <Notice tone="warn" title={`${name}已保存，但没读到最新值`}
       action={<button type="button" className="rd-inline-retry" disabled={reloading} onClick={onReload}>重新读取</button>}>
-      后端回执是 {value}。{hasData ? "页面上的其他数字还是保存前读到的，重新读取后再核对。" : "页面现在没有读到的数字，重新读取后再核对。"}
+      保存后返回的是 {value}。{hasData ? "页面上的其他数字还是保存前读到的，重新读取后再核对。" : "页面现在没有读到的数字，重新读取后再核对。"}
     </Notice>
   );
 }

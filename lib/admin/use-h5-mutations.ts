@@ -208,7 +208,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       : kind === "power" ? updated?.source === "nx_streak_power_up" && updated.powerUpId === Number(id) && updated.day === body.day && updated.note === body.note
         : kind === "earn" ? updated?.source === "nx_earning_milestone_rule" && updated.key === id && h5Amount(String(updated.newThresholdUsd)) === h5Amount(String(body.thresholdUsd)) && h5Amount(String(updated.newRewardNex)) === h5Amount(String(body.rewardNex))
           : updated?.configKey === "growth.earn_milestone.tick_interval_seconds" && String(updated.seconds) === String(tickSeconds);
-    if (!valid) throw new OutcomeUnknownError("保存回执与原修改不符，原请求继续保留，请查询原结果。");
+    if (!valid) throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原请求继续保留，请查询原结果。");
     forget(original);
     await settled(original.commandKey);
     toast(original.change.success);
