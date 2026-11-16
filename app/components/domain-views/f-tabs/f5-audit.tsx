@@ -10,7 +10,7 @@ import Link from "next/link";
 import { Download, ListChecks, RotateCcw } from "lucide-react";
 import {
   BatchBar, Button, Cell, Change, Checkbox, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Input, IrreversibleTag, MoreMenu,
-  PageHeader, PageTabs, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds,
+  Notice, PageHeader, PageTabs, Panel, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds,
 } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -641,10 +641,14 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   return (
     <div className="f5-page">
       <PageHeader pageId="F5" title="奖励记录核对" summary="核对八类团队奖励的每一笔，处置有问题的记录。"
-        meta="打开时读取，不自动刷新"
         readOnly={anyWrite ? undefined : "你只能查看；处置奖励需要对应的处置权限"} />
       {conclusion()}
       <F5RecoveryNotice rows={recoveryRows} />
+      {/* 审批进度没读全：和 F2 的审批读取警示一个样子，一行，不挡下面的业务概览。 */}
+      {ctx.f5ApprovalReadError && <Notice tone="warn" title="审批进度没读到"
+        action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重新读取</Button>}>
+        {ctx.f5ApprovalReadError}读到之前，页面可能没标出已有待批单的记录。
+      </Notice>}
       <fieldset className="f5-fieldset" disabled={loading} aria-busy={loading}>
         <div className="f5-stack">
         {data && <>

@@ -112,7 +112,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>审批单 <span data-mono>{pending.id}</span>，等另一位管理员批准。</p>
         </Notice></li>}
-        {!pending && submitted && <li><Notice tone="progress" title="申请已提交，等另一位管理员批准"
+        {!pending && submitted && <li><Notice tone="warn" title="申请已提交，等另一位管理员批准"
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
@@ -161,7 +161,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <Notice tone={open ? "warn" : "progress"} title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
+    <Notice tone="warn" title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
         {attempts.map((attempt) => {
           const { name, change } = attemptLabel(attempt);

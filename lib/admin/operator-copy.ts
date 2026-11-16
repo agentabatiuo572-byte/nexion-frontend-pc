@@ -161,5 +161,14 @@ export function skuBaseRateText(sku: OpsSku): string | undefined {
 /** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
 export function a2ActionText(action: string): string {
   return action.replace("A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED", "服务器恢复超级管理员")
+    // A1 建单时动作名带「(A1)」，名称和 A1 页面上的按钮叫法统一。
+    .replace(/\s*\(A1\)$/, "")
+    .replace(/^禁用账号(?= · |$)/, "停用账号")
+    .replace(/^强制登出(?= · |$)/, "撤销全部登录")
+    .replace(/^变更角色(?= · |$)/, "改角色")
+    .replace(/^编辑账号(?= · |$)/, "编辑资料")
+    .replace(/^运营账号重置密码$/, "重置密码")
+    .replace(/^RBAC 授权调整$/, "调整角色授权")
+    .replace(/^RBAC 动作登记$/, "登记动作权限")
     .replace(/七层结算(启用|暂停|恢复)/g, "团队购买奖励结算$1");
 }

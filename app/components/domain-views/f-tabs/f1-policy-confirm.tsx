@@ -157,7 +157,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   };
   const prev = neighbor(-1), next = neighbor(1);
   const effect = opening.pending
-    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。可以查询原结果；24 小时内也可以按原内容重试，后端认得出是同一次提交。">结果未知</StatusTag>
+    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。">结果未知</StatusTag>
     : remove ? <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>
       : <StatusTag tone="neutral" icon={LockOpen} explain={isCondition
         ? `调低是放宽：提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效，你自己不能批。调高或不变是收紧：确认后立即生效。`

@@ -2105,7 +2105,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         guideExtra={canApprove ? undefined : <p>你的账号不能批准，「处理一张审批单」的第二步不适用。</p>}
         actions={tab === "records" && canExport ? <Button icon={<Download size={14} aria-hidden />} disabledReason={submitting ? SUBMITTING : exportBlock} onClick={exportAudit}>导出记录</Button> : undefined}
         meta={<span className="rd-toolbar">
-          <span>{readAt ? `${readAt} 读取（${zone}）· ` : ""}不自动刷新</span>
+          <span>{readAt && `${readAt} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
           <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={mainLoading || filteredLoading} onClick={() => void refreshAll()}>刷新</Button>
         </span>}
         readOnly={readOnly} />

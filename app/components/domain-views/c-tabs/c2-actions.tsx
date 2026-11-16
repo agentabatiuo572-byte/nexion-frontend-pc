@@ -1478,7 +1478,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     <PageHeader pageId="C2" title="账户操作" summary={<AutoGloss>冻结或恢复用户账户，管理名单和注销申请。</AutoGloss>}
       back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）· ` : ""}不自动刷新</span>
+        <span>{readAt && `${businessClock(readAt)} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={overview.loading || deletionCounts.loading} onClick={refreshAll}>刷新</Button>
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；冻结、名单和注销审核要有对应权限的同事办。"}

@@ -717,7 +717,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     <PageHeader pageId="C1" title="查找用户与查看资料" summary={<AutoGloss>按用户编码、昵称或推荐码找用户，点一行看完整资料。</AutoGloss>}
       guideExtra={canExport ? undefined : <p>你的账号不能导出名单，「导出名单」这件事不适用。</p>}
       meta={canRead && <span className="rd-toolbar">
-        <span>{readAt ? `${businessClock(readAt)} 读取（${businessZone().label}），` : ""}不自动刷新</span>
+        <span>{readAt && `${businessClock(readAt)} 读取（${businessZone().label}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={listLoading && !!shown} onClick={refresh}>刷新</Button>
       </span>}
       readOnly={readOnly}

@@ -86,3 +86,5 @@
   .radarpage .b5-quiet-actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
 .radarpage .b5-tab-note { margin: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x) var(--rd-space-1); display: flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+/* 分诊记录中：其余能记分诊的链接显示成禁用，指针显示进行中（点了不动，Ctrl／Cmd、中键照常开新标签）。 */
+.radarpage .rd-link[aria-disabled="true"] { color: var(--rd-text-disabled); text-decoration-color: var(--rd-line-strong); cursor: progress; }

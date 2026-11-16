@@ -217,7 +217,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
 
   return <>
     <PageHeader pageId="D1" title="充值与收款对账" summary="核对订单付款和充值，处理没对上的钱。"
-      meta={<span className="rd-toolbar"><span>打开和点「刷新」时读取，不自动刷新</span>
+      meta={<span className="rd-toolbar">
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => setReloadTick(value => value + 1)}>刷新</Button></span>}
       readOnly={canWriteAny ? undefined : "没有修改权限时，这页只能查看。"} />
     {conclusion}
@@ -515,7 +515,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     key: command.commandKey,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先读回现在的状态；按原请求重试只重发原请求，不会重复执行。",
+    hint: "先查询原结果；按原请求重试不会重复执行。",
     blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),

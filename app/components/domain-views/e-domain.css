@@ -513,6 +513,8 @@
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
 
 /* E2 complete lists expand inside the modal body; product popovers have their own bounded viewport. */
+/* 请求编号整串不折行（连字符处断开像两个编号）；放不下时「复制编号」换到下一行。 */
+.e2-request-key { white-space: nowrap; }
 .e2-command-tasks { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
 /* 停用影响块：商品名之间、名单和「影响设备」、数字框和后果句之间用同一档间距，不再一处松一处贴。 */
 .rd-notice .e2-command-tasks { gap: var(--rd-space-1); margin-top: var(--rd-space-1); }

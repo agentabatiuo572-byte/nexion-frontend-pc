@@ -144,7 +144,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     finally { setBusy(false); }
   };
   return <>
-    <div className="f1-recovery-wrap"><Notice tone={open ? "warn" : "progress"} title={open ? `逐条核对原操作（${rows.length} 项）` : `等批准的申请（${rows.length} 项）`}>
+    <div className="f1-recovery-wrap"><Notice tone="warn" title={open ? `逐条核对原操作（${rows.length} 项）` : `等批准的申请（${rows.length} 项）`}>
       {policyBroken && <p>有一条门槛或奖励的原操作内容不完整，请到「操作记录与审批」核对。</p>}
       {rows.length > 0 && <ul className="f1-recovery" aria-label="还没有结论的原操作">
         {rows.map((row) => <li key={row.key} data-recovery-state={row.state}>
@@ -167,7 +167,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
           <Fact k="理由">{retrying.original.request?.reason ?? "—"}</Fact>
           <Fact k="提交时间">{businessStamp(retrying.original.createdAt)}（{businessZone().label}）</Fact>
         </Facts>
-        <p>用原内容和原理由再提交一次，不能改；后端认得出是同一次提交，不会建第二张审批单。</p>
+        <p>用原内容和原理由再提交一次，不能改，不会建第二张审批单。</p>
         {retryError && <Notice tone="danger" title="重试没有成功">{retryError}</Notice>}
       </div>
     </Modal>}

@@ -421,7 +421,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       title="汇率设置"
       summary="设置 VND/USDT 基准价、买入点差和报价有效期。"
       meta={data ? <span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${zone}）· ` : ""}打开时读取</span>
+        <span>{readAt && `${readAt} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" loading={loading} disabled={retrying} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>刷新</Button>
       </span> : undefined}
       readOnly={data && !canManage ? "你只能查看；这个账号没有调整汇率的权限。" : undefined}

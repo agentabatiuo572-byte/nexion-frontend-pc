@@ -104,7 +104,7 @@ const NET_LABEL: Record<Net, string> = { trc20: "TRC20", bep20: "BEP20", erc20: 
 /** 不舍入，只去掉浮点尾巴：0.57 写 57%，不写 56.99999999999999%。 */
 const clean = (value: number) => Number(value.toPrecision(12));
 const num = (value: number) => clean(value).toLocaleString("en-US", { maximumFractionDigits: 12 });
-const usd = (value: number) => `${num(value)} USD`;
+const usd = (value: number) => `${num(value)} USDT`;
 const pct = (value: number) => `${value.toFixed(1)}%`;
 
 type Group = "limits" | "network" | "fee" | "nex";
@@ -141,18 +141,18 @@ const FEE_WRITE = "finance_d5_fee_write";
 const feeSpec = (net: Net): NumSpec => ({
   key: `fee.${net}`,
   label: NET_LABEL[net],
-  unit: "USD",
+  unit: "USDT",
   min: 0,
   max: 25,
   step: 0.5,
   invalid: `${NET_LABEL[net]} 须在 0–25 之间，每档 0.5，例如 1 或 1.5`,
-  range: "0–25 USD，每档 0.5",
+  range: "0–25 USDT，每档 0.5",
   valid: (value) => value >= 0 && value <= 25 && Number.isInteger(value * 2),
   loosen: "down",
   tightest: 25,
   current: (p) => p.networkConfirmFeeUsd[net],
   show: usd,
-  how: `0–25 USD，每档 0.5，默认 ${D5_NETWORK_CONFIRM_FEE_DEFAULT[net]} USD`,
+  how: `0–25 USDT，每档 0.5，默认 ${D5_NETWORK_CONFIRM_FEE_DEFAULT[net]} USDT`,
   authority: FEE_WRITE,
 });
 
@@ -196,12 +196,12 @@ const SPECS: Record<NumKey, NumSpec> = {
   smallAmountThresholdUsd: {
     key: "smallAmountThresholdUsd",
     label: D5_PARAM_HELP.smallAmountThresholdUsd.label,
-    unit: "USD",
+    unit: "USDT",
     min: 0,
     max: 500,
     step: "any",
-    invalid: "小额免审线要在 0–500 USD 之间。",
-    range: "0–500 USD，0 表示关闭",
+    invalid: "小额免审线要在 0–500 USDT 之间。",
+    range: "0–500 USDT，0 表示关闭",
     valid: (value) => value >= 0 && value <= 500,
     loosen: "up",
     tightest: 0,
@@ -234,7 +234,7 @@ const SPECS: Record<NumKey, NumSpec> = {
   nexFeeOffsetRate: {
     key: "nexFeeOffsetRate",
     label: D5_PARAM_HELP.nexFeeOffsetRate.label,
-    unit: "USD / UVT",
+    unit: "USDT / UVT",
     min: 0.000001,
     max: 999999999999.999999,
     step: "any",
@@ -244,10 +244,10 @@ const SPECS: Record<NumKey, NumSpec> = {
     loosen: "up",
     tightest: 0.000001,
     current: (p) => p.nexFeeOffsetRate,
-    show: (value) => `${num(value)} USD / UVT`,
+    show: (value) => `${num(value)} USDT / UVT`,
     how: D5_PARAM_HELP.nexFeeOffsetRate.how,
     // 后端按整数 UVT 向上取整（AppWithdrawalService.submitOnce）。
-    whatIf: (value) => `改成 ${num(value)}：1 USD 手续费要 ${Math.ceil(clean(1 / value))} UVT 抵满。`,
+    whatIf: (value) => `改成 ${num(value)}：1 USDT 手续费要 ${Math.ceil(clean(1 / value))} UVT 抵满。`,
     authority: FEE_WRITE,
   },
   "fee.trc20": feeSpec("trc20"),
@@ -416,7 +416,7 @@ function describeChanges(changes: Record<string, unknown>) {
   if (fees) parts.push(`网络确认费 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${usd(n(fees[net]))}`).join("、")}`);
   const enabled = changes.networkEnabled as Record<Net, unknown> | undefined;
   if (enabled) parts.push(`提现网络 ${NETWORKS.map((net) => `${NET_LABEL[net]} ${enabled[net] ? "开启" : "关闭"}`).join("、")}`);
-  if (changes.nexFeeOffsetRate !== undefined) parts.push(`UVT 抵扣率 ${num(n(changes.nexFeeOffsetRate))} USD / UVT`);
+  if (changes.nexFeeOffsetRate !== undefined) parts.push(`UVT 抵扣率 ${num(n(changes.nexFeeOffsetRate))} USDT / UVT`);
   return parts.join("；") || "提现参数";
 }
 
@@ -954,7 +954,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       guideExtra={guideExtra}
       meta={<span className="rd-toolbar">
         <span>
-          {readAt && params ? `${readAt} 读取（${zone}）· ` : ""}打开时读取
+          {readAt && params && `${readAt} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" />
         </span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={refresh}>刷新</Button>
       </span>}
@@ -1049,7 +1049,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     const spec = SPECS[key];
     const value = spec.current(p);
     return <ConfigRow key={key} name={help.label} what={help.what} when={help.when} where={help.where} effect={help.effect} note={"note" in help ? help.note : undefined}
-      value={key === "smallAmountThresholdUsd" && value === 0 ? "0 USD（已关闭）" : spec.show(value)}
+      value={key === "smallAmountThresholdUsd" && value === 0 ? "0 USDT（已关闭）" : spec.show(value)}
       action={can(spec.authority) ? action("limits", help.label, key) : undefined} />;
   };
   // 一个网络一行：配置和用户能不能用写在一个标签里；用不了的原因跟在后面，整体原因已在结论句说过的不再写（DT-12）。

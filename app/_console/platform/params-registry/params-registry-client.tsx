@@ -166,7 +166,7 @@ export function PlatformParamsRegistry() {
   const header = (
     <PageHeader pageId="A5" title="平台参数目录" summary="查一个参数现在的值，再去它所在的页面修改。"
       readOnly="这页只能查看，修改要去参数所在的页面"
-      meta={overview ? `读取于 ${stamp(overview.observedAt)}（${zone}）· 不自动刷新` : undefined}
+      meta={overview ? <>读取于 {stamp(overview.observedAt)}（{zone}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : undefined}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>重新加载</Button>} />
   );
 

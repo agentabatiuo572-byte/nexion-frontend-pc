@@ -861,7 +861,7 @@ export default function UserDetailPage() {
         if (!unknown && !retained) c1UserCommands.forget(slot);
         syncPending();
         if (unknown) {
-          toast.warn("结果未知，不要重复操作", "到页面上方读回现在的状态，或按原请求重试。");
+          toast.warn("结果未知，不要重复操作", "到页面上方查询原结果，或按原请求重试。");
           return;
         }
         if (isPermissionDenied(cause)) throw cause;
@@ -1208,10 +1208,10 @@ export default function UserDetailPage() {
       return {
         key: command.fingerprint, object: command.label, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先读回现在的状态。" : command.legacy ? "升级前的记录不能重试，先读回现在的状态。" : !writable ? hasWrite ? "可能已经生效，到用户详情读回或重试。" : "可能已经生效，这个账号只能读回现在的状态。" : "可能已经生效，先读回现在的状态。",
+        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[command.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回现在的状态</Button>
+          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
@@ -1234,7 +1234,7 @@ export default function UserDetailPage() {
     }),
   ];
   const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
-    explain="这些操作发出后没收到明确结果，可能已经生效。先读回现在的状态；按原请求重试只重发原请求，不会重复执行。有结果前，相关对象不能再操作。"
+    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
     foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
     items={recoveryItems} />;
 

@@ -147,7 +147,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       key: row.commandKey,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
-      hint: "先读回现在的状态；按原请求重试不会重复执行。",
+      hint: "先查询原结果；按原请求重试不会重复执行。",
       blocked: !canRetryPurchasePayment(row) ? RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {

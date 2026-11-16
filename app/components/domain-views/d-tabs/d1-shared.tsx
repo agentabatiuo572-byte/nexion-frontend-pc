@@ -160,7 +160,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
   return (
     <>
       <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理"
-        explain="这些操作发出后没收到明确结果，可能已经生效。先读回现在的状态；按原请求重试只重发原请求，不会重复执行。有结果前，相关对象不能再操作。"
+        explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
         foot={auditLinks.length ? auditLinks : undefined}
         items={items.map((item): RecoveryItem => {
           const hint = item.retry ? item.blocked ?? item.hint : item.hint;
@@ -168,10 +168,10 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : "结果未知"}</StatusTag>,
-            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.blocked ? `${item.blocked}。` : "可能已经生效，先读回现在的状态。" : "可能已经生效，这项只能读回现在的状态核对。",
+            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.blocked ? `${item.blocked}。` : "可能已经生效，先查询原结果。" : "可能已经生效，这项只能查询原结果。",
             note: notes[item.key],
             actions: <>
-              {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读回现在的状态</Button>}
+              {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>查询原结果</Button>}
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
             </>,

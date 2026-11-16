@@ -435,7 +435,7 @@ export function A9DeveloperAccess() {
   return <div className="a9-page">
     <PageHeader pageId="A9" title="开发者访问审批" summary="审批外部开发者使用开发者接口的申请。"
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${businessStamp(readAt)}（${zone}）读取 · ` : ""}不自动刷新</span>
+        <span>{readAt && `${businessStamp(readAt)}（${zone}）读取`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => setReloadKey((value) => value + 1)}>刷新</Button>
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；批准、驳回、撤销各要单独的权限"} />
