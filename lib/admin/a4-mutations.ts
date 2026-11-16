@@ -89,9 +89,10 @@ export function useA4Commands() {
       return result;
     } catch (error) {
       const failure = error as { status?: number; httpStatus?: number; apiCode?: number; reasonCode?: string };
-      // BE 111e00cd: cleanup controller:110 and H3DeadLetterRedriveService:47
-      // check the mutable A2 minimum before idempotency replay. A new minimum
-      // rejecting the original reason cannot establish the original outcome.
+      // BE 527c388e moved these services' reason checks into the new-execution
+      // callbacks. At 03e0bba2 AdminReasonConstraintAdvice.invoke still checks
+      // the mutable policy before entering either controller, so this rejection
+      // can still hide a completed receipt. Keep the original body/key intact.
       const reasonRecheck = retry && (record.original.kind === "retention" || record.original.kind === "redrive")
         && /^REASON_TOO_SHORT_MIN_[1-9][0-9]*$/.test(failure.reasonCode ?? "");
       if (reasonRecheck) throw new OutcomeUnknownError("A4_ORIGINAL_REASON_RECHECK", { cause: error });
