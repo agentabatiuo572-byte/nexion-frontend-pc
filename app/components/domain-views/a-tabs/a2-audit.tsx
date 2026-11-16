@@ -1185,7 +1185,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         result = await send(key);
       } catch (cause) {
         const unknown = isA2OutcomeUncertainError(cause);
-        if (!unknown && !retained) a2Commands.forget(scope);
+        const payoutCoverageRefused = extra.kind === "approve"
+          && ["f4_pool_settle", "f4_leaderboard_period_payout"].includes(extra.operationCode ?? "")
+          && isExplicitRejection(cause)
+          && ["COVERAGE_SNAPSHOT_UNAVAILABLE", "COVERAGE_BELOW_REDLINE"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
+        if (!unknown && (!retained || payoutCoverageRefused)) a2Commands.forget(scope);
         syncPending();
         await refreshAfterWrite();
         if (unknown) { toast(UNKNOWN_TOAST, "warn"); return "unknown"; }
@@ -1207,7 +1211,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
       operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
-    (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
+    (key) => kind === "approve" ? approveA2Operation(w.id, reason, key, w.operationCode)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
         : withdrawA2Operation(w.id, reason, by, key),
     async () => {
@@ -1327,6 +1331,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const why = ((record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
+      if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
+        toast(why, "error");
+        return;
+      }
       if (isExplicitRejection(cause)) {
         notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
