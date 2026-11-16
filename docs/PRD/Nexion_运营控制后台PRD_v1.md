@@ -4825,3 +4825,7 @@ backend04d11022 AdminCommandOrigin:66有D7_PAYOUT_VND_CONFIG读权名称，但su
 ### 2026-11-15 用户详情 B38 支持核实
 
 调查报告以页号估算的 C1/C2 支持不等于现页命令scope。backend04d11022 OpsUserPaymentMethodService.unbind:57–65/notifyRebind:68–76/resetNickname:79–97 真实scope为 USER_PAYMENT_METHOD_UNBIND:{环境}、USER_PAYMENT_METHOD_REBIND_NOTICE:{环境}、USER_NICKNAME_RESET；OpsDeviceService.executeUserTradeinAction:3176–3197委托executeTradeinAction:3103–3120，真实scope E3_TRADEIN_RECYCLE/REPLACE。AdminCommandOrigin.supported:77–82均不支持，因此本页五类未知操作不连接通用核查，不伪来源/证据；原处理不改，后端支持待办保留。既有支付安全原回执/通知校正流程不在本项改动范围。
+
+### 2026-11-17 用户详情五命令来源交付（234baa67/89684bd4，hd-sync24b）
+
+本节替代2026-11-15「五类不支持」的历史结论。支付解绑、换绑提醒和昵称重置按原 user_c1hub_read，C2设备回收/置换按原 user_c2_read，保存真实POST路径、原adminId与命令号；回执目标分别必须匹配原methodId/userId/deviceId。现有读取先原号再现状，辅助查询失败不中断原读取；旧完整无origin记录由持久owner及服务端证明原人，不补历史hash/origin。支付/昵称回调拒绝全部抛异常，正常返回仅成功，精确范围SUCCEEDED可解除；解绑只保证平台解绑和撤销请求入列、提醒只保证入队，不把异步支付商撤销或通知送达说成已完成。设备回调可正常返回非零，raw事务完成保留，只有原号回放确定业务结果或受控终态才解除并独立重读。受控表单与旧本地解除问题交视觉/协调，不以当前值代原命令结论；已有支付安全/通知校正不改。

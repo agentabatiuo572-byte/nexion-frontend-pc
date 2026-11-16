@@ -3,7 +3,7 @@ import { hasPersistedPendingCommandOwner } from "./pending-mutation-store";
 import { fundCommandOrigin, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord } from "./fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "./original-command-query";
 
-type UserDetailTarget = { kind: "nickname" | "unbind" | "rebind" | "replace" | "recycle"; userId: string; methodId?: number };
+type UserDetailTarget = { kind: "nickname" | "unbind" | "rebind" | "replace" | "recycle"; userId: string; methodId?: number; deviceId?: number };
 
 export function userDetailCommandRoute(command: UserDetailTarget): OriginalCommandRoute {
   const user = encodeURIComponent(command.userId);
@@ -23,5 +23,7 @@ export async function queryUserDetailCommand(record: FundCommandRecord & UserDet
   const actor = String(useAdminAuth.getState().session?.adminId);
   const owner = record.adminKey || (record.legacy && hasPersistedPendingCommandOwner(actor) ? actor : "");
   const receipt = await queryOriginalCommand(record, userDetailCommandRoute(record), owner, evidence);
+  const target = record.kind === "nickname" ? record.userId : String(record.kind === "replace" || record.kind === "recycle" ? record.deviceId : record.methodId);
+  if (receipt && receipt.originalTarget !== target) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   return { receipt, settled: fundCommandSettled(receipt) };
 }
