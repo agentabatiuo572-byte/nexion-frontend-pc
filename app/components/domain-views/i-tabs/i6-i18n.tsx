@@ -483,10 +483,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rescan = () => {
     const blocked = newWriteProblem("rescan");
     if (blocked) { toast(blocked, "warn"); return; }
-    let original: I6Command | undefined, resolved = false;
+    let original: I6Command | undefined, resolved = false, remark = "";
     const confirmation: ConfirmReq = { briefKind: "record",
       freezePendingInput: true, replayPendingInput: true,
-      getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason : undefined,
+      getPendingReason: () => original && pendingI6Commands().some(row => row.commandKey === original!.commandKey) ? remark : undefined,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
       title: "重新检查全部文案",
       detail: <>按 6 类重新检查全部已登记文案：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。不改文案，结果覆盖下面的问题报告。</>,
@@ -494,7 +494,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       statedBrief: { impact: "重新算一遍问题报告，文案和 App 都不变。", check: "检查完看问题报告，有问题的逐条修。" },
       remarkHint: "选填，不会保存",
       okLabel: "开始检查",
-      run: async () => {
+      run: async (reason) => {
+        remark = reason;
         if (resolved) { ctx.closeConfirm(confirmation); return false; }
         try {
           if (original) await runBackend(retryI6Command(original), "检查完成，请看下表的问题");
