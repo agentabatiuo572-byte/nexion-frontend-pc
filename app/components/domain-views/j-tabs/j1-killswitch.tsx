@@ -15,7 +15,7 @@ import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, Confi
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
@@ -283,7 +283,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     try {
       await sendCommand(fingerprint, extra);
     } catch (cause) {
-      if (isExplicitRejection(cause)) { toast(displayAdminError(cause), "warn"); return; }
+      if (isExplicitRejection(cause)) { toast(`原操作被拒绝，记录已解除：${displayAdminError(cause)}`, "warn"); return; }
       notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
       if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, commandKey]);
     }
@@ -402,7 +402,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const expired = record.expiresAt <= Date.now();
     return { key: record.commandKey, title: `${record.input.action}（恢复申请）`, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canResume,
       actions: <>
-        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={checkingRestore !== null || !!submitting} checking={submitting === record.fingerprint}
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={checkingRestore !== null || !!submitting} checking={submitting === record.fingerprint}
           onCheck={() => void checkInvestigation(record).catch(() => undefined)} onClose={() => setClosing(record)} />
         {!expired && <Button size="sm" loading={checkingRestore === record.input.obj} disabled={checkingRestore !== null || !!submitting} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => retryRestore(record)}>按原请求重试</Button>}
       </>,
@@ -417,7 +417,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const expired = record.expiresAt <= Date.now();
     return { key: record.fingerprint, title: record.label, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record),
       actions: <>
-        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={() => void verifyPending(record)} onClose={() => setClosing(record)} />
         {!expired && <Button size="sm" disabled={!!submitting} disabledReason={canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原请求重试</Button>}
       </>,
@@ -427,7 +427,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const recoveryPanel = <FundRecoveryPanel rows={[...pendingRows, ...restoreRows]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
     link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link>} />;
 
-  const releaseModal = closing && <FundClosureModal label={"input" in closing ? closing.input.action : closing.label} createdAt={closing.createdAt}
+  const releaseModal = closing && <FundClosureModal label={"input" in closing ? closing.input.action : closing.label} createdAt={closing.createdAt} known={closureKnown(investigationResults[closing.commandKey])}
     onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />;
 
   const header = (

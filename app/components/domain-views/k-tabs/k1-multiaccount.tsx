@@ -21,7 +21,7 @@ import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-mult
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -825,7 +825,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       await runRecord(record);
     } catch (cause) {
-      if (isExplicitRejection(cause)) { ctx.toast(errorText(cause), "warn"); return; }
+      if (isExplicitRejection(cause)) { ctx.toast(`原操作被拒绝，记录已解除：${errorText(cause)}`, "warn"); return; }
       setPendingNotes((current) => ({ ...current, [record.fingerprint]: `重试被拒绝：${errorText(cause)} 这说明不了原操作的结果，原操作继续保留。` }));
       if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, record.commandKey]);
     } finally {
@@ -1408,7 +1408,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             actions: <>
               {record.kind === "cluster" && canQueryProposal && !fundInvestigationAccess(record).canRead
                 ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>
-                : !registration && <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
+                : !registration && <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
               {registration && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
@@ -1783,7 +1783,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       })()}
 
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认；解除后这项设置仍可能被系统锁住。" />}
-      {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
+      {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} known={closureKnown(investigationResults[closing.commandKey])}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>
   );

@@ -30,6 +30,12 @@ export function useFreshFirst<T extends { key: string; createdAt?: number }>(row
 }
 
 /** 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。 */
+/** 按原号查到已处理完或记为失败：后端对这两种不收「仍未知」，结案框只给能提交的结论。 */
+export function closureKnown(outcome?: { receipt: { originalStatus: string } | null } | { error: string }) {
+  const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
+  return status === "SUCCEEDED" || status === "FAILED";
+}
+
 export function recoveryTitle(unknown: number, waiting = 0, ended = 0) {
   return [unknown ? `${unknown} 项操作结果未知` : "", waiting ? `${waiting} 项${unknown ? "" : "操作"}在等审批` : "", ended ? `${ended} 项${unknown || waiting ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
 }
@@ -97,7 +103,7 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
           <span className="fund-row-text">{item.line}</span>
           <span className="fund-row-actions">{item.actions}</span>
         </div>
-        {expanded && <div className="fund-row-detail" id={id}>{item.detail}{item.note && <p role="status">{item.note}</p>}{item.tech}</div>}
+        {expanded && <div className="fund-row-detail" id={id}>{item.detail}{item.note && <div role="status">{item.note}</div>}{item.tech}</div>}
       </li>;
     })}</ul>
     {(items.length > 3 || foot) && <div className="fund-rows-foot">

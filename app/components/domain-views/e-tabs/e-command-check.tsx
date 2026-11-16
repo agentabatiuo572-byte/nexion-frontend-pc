@@ -2,9 +2,9 @@
 import { useState, type ReactNode } from "react";
 import { SearchCheck, ShieldCheck } from "lucide-react";
 import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import type { ECommandEvidence, ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
@@ -34,7 +34,12 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "原操作以失败结束", text: expired
     ? "这次操作记为失败。记录继续保留，请到操作记录与审批核对。"
     : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
-  return { tone: "warn", title: "结果仍未知", text: "原操作处理到一半中断了，按原请求重试也是同样结果；需要按证据核查结案。" };
+  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
+  if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", title: "已处理", text: expired
+    ? "后台已处理，看不出成没成；已过 24 小时，需要按证据核查结案。"
+    : "后台已处理，看不出成没成；重试原请求可确认，不会重复执行。" };
+  return { tone: "warn", title: "结果仍未知", text: expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。"
+    : "原操作处理到一半中断了，按原请求重试也是同样结果；需要按证据核查结案。" };
 }
 
 /** One line under a pending notice: what the backend says about the original command. */
@@ -65,11 +70,13 @@ export function SettledCommandNotices({ items, onDismiss }: { items: SettledComm
 }
 
 /** Evidence form for a super administrator with investigation rights; the backend decides what the evidence proves. */
-export function CommandClosureModal({ label, commandKey, createdAt, facts, onClose, onSubmit }: {
+export function CommandClosureModal({ label, commandKey, createdAt, facts, known, onClose, onSubmit }: {
   label: string;
   commandKey: string;
   createdAt: number;
   facts?: ReactNode;
+  /** The lookup found SUCCEEDED or FAILED: the backend refuses STILL_UNKNOWN for these. */
+  known?: boolean;
   onClose: () => void;
   onSubmit: (evidence: ECommandEvidence) => Promise<void>;
 }) {
@@ -91,23 +98,25 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, onClo
       setBusy(true); setError("");
       try {
         await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(conclusion === "SUCCEEDED" && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
-      } catch (failure) { setError(displayAdminError(failure)); }
+      } catch (failure) {
+        const shown = displayAdminError(failure);
+        setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT ? "没有结案：证据和后台的处理记录对不上，记录继续保留。" : shown);
+      }
       finally { setBusy(false); }
     }}>提交核查结论</Button></>}>
     <div className="rd-stack">
       <Facts>
         <Fact k="原操作">{label}</Fact>
         {facts}
-        <Fact k="首次提交">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}</Fact>
-        <Fact k="原请求编号"><span data-mono>{commandKey}</span></Fact>
+        <Fact k="首次提交">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span></>} /></Fact>
       </Facts>
-      <Notice tone="warn">按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。<span className="rd-keep">确认后不能撤销或改结论。</span></Notice>
+      <Notice tone="warn">{known ? "这次请求后台有处理记录：证据对得上才确认并解除锁定，对不上会退回，记录保留。" : "按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。"}<span className="rd-keep">确认后不能撤销或改结论。</span></Notice>
       <Field label="核查结论" required help={conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
-          options={(["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"] as const).map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
+          options={(known ? ["SUCCEEDED", "NOT_EXECUTED"] as const : ["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"] as const).map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
       </Field>
       <Field label="核查依据" required hint="最多 512 字" error={touched && (!referenceLength || referenceLength > 512) ? referenceLength ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
-        <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder="写明核对了什么、在哪里看到，例如：操作记录里这条命令 10:42 的成功记录" value={reference} onChange={event => setReference(event.target.value)} />
+        <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder="写明核对了什么、在哪里看到，例如：操作记录里 10:42 这次操作的成功记录" value={reference} onChange={event => setReference(event.target.value)} />
       </Field>
       {conclusion === "SUCCEEDED" && <Field label="成功记录编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "成功记录编号须为正整数" : undefined}>
         <Input aria-label="成功记录编号" className="e-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
@@ -145,7 +154,7 @@ export const RECOVERY_LINE = {
 } as const;
 
 /** Device pages use the shared recovery panel, so their rows look exactly like the fund pages' rows. */
-export { RecoveryPanel, SettledLine, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+export { RecoveryPanel, SettledLine, closureKnown, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 
 /**
  * Release of an approval request the backend has no record of (expired, never created).
