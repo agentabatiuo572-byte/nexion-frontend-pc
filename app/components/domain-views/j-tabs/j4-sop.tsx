@@ -291,7 +291,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     const label = `${contextName(context)} · ${operationNames[context.kind]}`;
     const change = context.kind === "create" || context.kind === "update"
       ? `${context.fields.scene} · ${context.fields.owner} · ${context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
-      : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <>执行 <span data-mono="">{context.execution.executionId}</span></> : "";
+      : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
     const expired = isRetryExpired(record);
     const retry = !expired && canRetry(context);
     return {
@@ -303,7 +303,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
       </>,
       detail: <>
-        {change && <p>{change}</p>}
+        {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
         {(context.kind === "resume" || context.kind === "rollback") && <p>{context.kind === "resume" ? "恢复核对" : "恢复开关"}记为失败也可能做了一部分，以执行追溯里每一步的状态为准。</p>}
         {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
       </>,
@@ -373,7 +373,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (fundCommandSettled(next)) await finishSettled(record, label, next!);
   };
   const closureFacts = closing && <>
-    {closing.change && <Fact k="改动">{closing.change}</Fact>}
+    {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
     <Fact k="系统记录">{closingStatus === "SUCCEEDED" ? "已处理，看不出成没成，原操作还锁着" : closingStatus === "FAILED" ? "记为失败，原操作还锁着" : "结果未知，原操作还锁着"}</Fact>
     {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
   </>;

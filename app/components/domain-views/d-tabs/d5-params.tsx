@@ -875,7 +875,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 收紧（直接保存）：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
   const [directClosing, setDirectClosing] = useState<TightenRecord | null>(null);
   const settleDirect = async (record: TightenRecord, status: FundSettled["status"]) => {
-    setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label.replace(/^调整提现参数 · /, ""), status }]);
+    setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: editTitle(record.label.replace(/^调整提现参数 · /, "")), status }]);
     syncPending();
     await load();
   };
@@ -956,7 +956,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} known={closureKnown(investigationResults[loosenRecord.commandKey])} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
-    {directClosing && <CommandClosureModal label={directClosing.label.replace(/^调整提现参数 · /, "")} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
+    {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
       known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="改动">{describeChanges(directClosing.changes)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
         const record = directClosing;

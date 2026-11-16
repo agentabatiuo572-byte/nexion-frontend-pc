@@ -471,7 +471,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
-        <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
+        {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>}
         {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>
