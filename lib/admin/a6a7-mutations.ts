@@ -32,6 +32,7 @@ export type RbacCommand = PendingMutationRecord & {
   actorId: number; original: Original; body: string; reason: string; operator: string; name: string; change: string;
   /** A POST receipt proves creation; only ticket is the last authoritative current-state lookup. */
   receipt?: RbacTicket; ticket?: RbacTicket; proposalNotFound?: boolean;
+  directRejection?: true;
 };
 
 export const rbacProposal = (original: Original) => ["a6-status", "a6-delete", "a6-grants"].includes(original.kind);
@@ -116,7 +117,8 @@ function validRecord(record: RbacCommand) {
       && record.fingerprint === `${record.actorId}:${rbacObject(record.original)}` && record.body === wire(record.original, record.reason, record.operator).body
       && (record.ticket === undefined || (checkTicket(record.original, record.ticket), true))
       && (record.receipt === undefined || (checkTicket(record.original, record.receipt), true))
-      && (record.proposalNotFound === undefined || typeof record.proposalNotFound === "boolean");
+      && (record.proposalNotFound === undefined || typeof record.proposalNotFound === "boolean")
+      && (record.directRejection === undefined || record.directRejection === true);
   } catch { return false; }
 }
 
@@ -189,6 +191,11 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     if (!scope) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     const state = await fetchDirectCommandReceipt(scope, record.commandKey, record.actorId);
     requireOriginalActor(record);
+    const current = saved(record.commandKey);
+    if (state === "REJECTED" && current) {
+      commands.remember(record.fingerprint, record.commandKey, { ...current, directRejection: true, proposalNotFound: false });
+      sync();
+    }
     return state;
   };
   const queryInvestigation = async (record: RbacCommand, evidence?: ECommandEvidence) => {
@@ -212,12 +219,12 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     const current = saved(record.commandKey);
     if (!current) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
     commands.remember(record.fingerprint, record.commandKey, { ...current, ticket: ticket ?? current.ticket,
-      proposalNotFound: !ticket && !current.ticket && !current.receipt });
+      proposalNotFound: !ticket && !current.ticket && !current.receipt && !current.directRejection });
     sync();
   };
   const releaseExpiredProposal = async (record: RbacCommand, confirmed: boolean) => {
     const current = saved(record.commandKey);
-    if (!confirmed || !current || !rbacProposal(current.original) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    if (!confirmed || !current || !rbacProposal(current.original) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt || current.directRejection) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     if (await queryProposal(current)) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     // A status PATCH can also return a direct no-op when the target status already matches.
     // Missing the proposal alone cannot settle that union: confirm the requested status too.
