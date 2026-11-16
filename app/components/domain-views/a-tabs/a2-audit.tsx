@@ -209,9 +209,10 @@ function approvalRefusedText(operationCode: string | null | undefined, cause: un
   const code = backendCode(cause);
   const f4 = operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout";
   if (!f4 && operationCode !== "f_commission_status") return undefined;
-  const kept = f4 ? "这次批准没有执行，钱没有动；审批单还是待审批。" : "这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。";
-  if (code === "COVERAGE_BELOW_REDLINE") return `兑付覆盖率低于红线，${kept}等覆盖率恢复后再批准，或驳回。`;
-  if (code === "COVERAGE_SNAPSHOT_UNAVAILABLE") return `兑付覆盖率暂时读不到，${kept}等能读到后再批准，或驳回。`;
+  if (code === "COVERAGE_BELOW_REDLINE") return f4 ? "兑付覆盖率低于红线，这次批准没有执行，钱没有动；审批单还是待审批。等覆盖率恢复后再批准，或驳回。"
+    : "兑付覆盖率低于红线，这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
+  if (code === "COVERAGE_SNAPSHOT_UNAVAILABLE") return f4 ? "兑付覆盖率暂时读不到，这次批准没有执行，钱没有动；审批单还是待审批。等能读到后再批准，或驳回。"
+    : "兑付覆盖率暂时读不到，这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。等能读到后再批准，或驳回。";
   if (f4) return undefined;
   if (code === "COMMISSION_USER_SUSPENDED") return "这位用户的这类奖励正在暂停，这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。先在「奖励记录核对」的暂停名单恢复这类奖励再批准，或驳回。";
   if (code === "F5_COOLDOWN_DEADLINE_UNRECOVERABLE") return "这笔是以前暂停时冻结的旧记录，到期时间已被清空，这次解冻没有执行，奖励仍是已冻结；审批单还是待审批。请联系值班人员核对，或驳回。";
@@ -1530,11 +1531,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (!fund) return undefined;
     if (fund.kind === "f4Payout") return {
       irreversible: true,
-      impact: `批准后按那一刻的${fund.period ?? "排行榜"}重新计算，真实入账给上榜的人。`,
+      impact: fund.period === "总榜" ? "批准后按那一刻的总榜重新计算，真实入账给上榜的人。" : "批准后按那一刻的排行榜重新计算，真实入账给上榜的人。",
       completion: F4_COVERAGE_COPY,
       check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
       detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。",
       coverageLead: "这次派奖按算出的金额真实发钱",
+      coverageUnknown: "这次派奖按算出的金额真实发钱，兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
@@ -1547,6 +1549,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       check: "核对本周奖池和发起理由，理由写清依据或工单号。",
       detail: "本周已经结算过的会跳过，不补发差额；没有合格票时不发钱。",
       coverageLead: "这次结算按算出的金额真实发钱",
+      coverageUnknown: "这次结算按算出的金额真实发钱，兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
       facts: undefined,
       lead: <F4SettleFacts />,
@@ -1561,6 +1564,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       check: "核对这笔奖励和发起理由，理由写清为什么要提前。",
       detail: "要收回只能冲正，不能改回冷却中。",
       coverageLead: undefined,
+      coverageUnknown: undefined,
       coverageCheck: "普通奖励批准时先查兑付覆盖率：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。结算组的奖励不查覆盖率。",
       facts: <>{state}<Fact k="批准时核对">普通奖励查有没有暂停、兑付覆盖率够不够<Explain label="结算组的奖励" content="属于结算组的奖励不查覆盖率，只核冷却有没有真正到期；没到期会被拒，钱不会提前流出。" /></Fact></>,
       lead: undefined,
@@ -1572,6 +1576,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       check: "核对冻结的原因是否已经解除，理由写清依据。",
       detail: "",
       coverageLead: undefined,
+      coverageUnknown: undefined,
       coverageCheck: undefined,
       facts: <>{state}<Fact k="到期时间">接着冻结时剩下的时间冷却<Explain label="什么时候会被拒" content="以前暂停用户奖励时冻结的旧记录，到期时间已被清空，批准时会被拒，这笔继续冻结。属于结算组的奖励，用户还在暂停或风险冻结中时也会被拒。" /></Fact></>,
       lead: undefined,
@@ -1583,6 +1588,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       check: "核对这笔奖励和发起理由，理由写清为什么要先按住。",
       detail: "冻结可以再解冻，回到冷却中。",
       coverageLead: undefined,
+      coverageUnknown: undefined,
       coverageCheck: undefined,
       facts: state,
       lead: undefined,
@@ -1638,7 +1644,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       amplifies,
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       coverage: amplifies ? coverage : undefined,
-      coverageLead: amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />{fund?.coverageLead ?? "会让平台多付钱"}，兑付覆盖率暂时读不到</span> : fund?.coverageLead,
+      coverageLead: amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
       coverageCheck: fund?.coverageCheck ?? "批准时系统检查兑付覆盖率，低于红线不执行。",
       reasonMin,
       reasonMax: 200,
@@ -2238,7 +2244,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownOwn = shown ? isMine(shown) : false;
   // F4 派奖和结算、F5 提前解锁：被覆盖率挡住时单子留着，可以等恢复后再批，不只是驳回。
   const shownFund = shown ? fundTicket(shown) : undefined;
-  const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? `真实发钱，不能撤销。${F4_COVERAGE_COPY}`
+  const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "真实发钱，不能撤销。批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
     : shownFund?.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率（结算组的奖励只核冷却到没到期），不满足就不放钱，审批单留着待审批。" : undefined;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
