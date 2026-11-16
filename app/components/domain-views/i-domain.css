@@ -131,12 +131,6 @@
 .rd-drawer .i1-split-total[data-ok] { color: var(--rd-ok); }
 .rd-drawer .i1-weak { color: var(--rd-text-3); }
 
-/* 结果未知的逐条提醒：改的是什么、提交时间、两个按钮一行。 */
-.i1-page .i1-pending { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
-.i1-page .i1-pending li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); }
-.i1-page .i1-pending-what { display: flex; gap: var(--rd-space-2); }
-.i1-page .i1-pending-actions { display: flex; gap: var(--rd-space-2); margin-left: auto; }
-
 /* 确认框里的内容对比：语言一列只占字宽，现在和之后两列平分，长句省略、悬停看全文。 */
 .i1-compare .rd-table { table-layout: fixed; }
 .i1-compare .rd-table th:first-child { width: 64px; }
@@ -391,9 +385,6 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i2-duration { display: flex; align-items: center; gap: var(--rd-space-2); }
 .i2-duration > :last-child { width: 112px; flex: none; }
 .i2-sample { display: grid; gap: var(--rd-space-2); max-width: 420px; margin-bottom: var(--rd-space-4); }
-.i2-unknown { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
-.i2-unknown li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
-.i2-unknown-zone { margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 
 /* 事件详情里四个动作各一行：名称和后果在左，按钮在右。 */
 .i2-event-ops { display: grid; gap: var(--rd-space-3); }

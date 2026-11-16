@@ -31,6 +31,7 @@ import {
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
@@ -54,7 +55,7 @@ const CONFLICT = "越南盾提现参数已被其他人员更新，当前输入�
 /** 抽屉没有改动时，底部问号只写规则，不说哪条路（「写的必须是真的」）。 */
 const RULE = "有一项放宽，整组要另一位超级管理员批准，批准前参数不变；没有放宽的修改提交后立即生效。只影响之后的报价。";
 const COVERAGE_CHECK = "提交和批准时都会检查兑付覆盖率，低于红线或读不到时不能提交，也不能批准。";
-/** 过期后继续锁住，受控核查后端已交付，但本页本轮未接入结案入口（OP-153）；不引导关标签页绕过。到不了操作记录的账号写这页上能走的路，再交财务负责人（同汇率设置）。 */
+/** 过期后继续锁住（OP-153），不引导关标签页绕过；有调查权限的人在行内核查结案。到不了操作记录的账号写这页上能走的路，再交财务负责人（同汇率设置）。 */
 const EXPIRED_DIRECT_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「查询原结果」，查不出结论再交财务负责人处理。";
 const EXPIRED_APPROVAL_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「查询原结果」核对有没有生成审批单，核对后交财务负责人处理。";
 const EXPIRED_NO_QUERY = "已超过 24 小时，不能再重试。这个账号看不到操作记录，也查不了原审批单，请交财务负责人处理。";
@@ -505,26 +506,35 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const restoreDefaults = () => setEditing((current) => current && { ...current, drafts: draftsFrom(current.base.defaults), bad: [] });
 
-  /** 先按原请求查结果，查到确定结论才解除；查不出结论再读回现在的值，版本对比只是现在的事实，记录保留（OP-95）。 */
+  /** 直接保存业务上确认成功或核查确认：换成一行完成提示，重读参数。 */
+  const settleDirect = async (record: DirectRecord, status: FundSettled["status"]) => {
+    setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "参数修改", status }]);
+    syncPending();
+    setEditing(null);
+    await reload();
+  };
+  /** 先按原请求查结果，查到的结论写在这一行，确定结论才解除；查不出结论再读回现在的值，版本对比只是现在的事实，记录保留（OP-95）。 */
   const verifyDirect = async (record: DirectRecord) => {
     setRecovering(`verify:${record.commandKey}`);
-    let settled = false;
-    try { settled = (await queryD7DirectCommand(record)).settled; }
-    catch { /* The current-values read remains available without a receipt conclusion. */ }
-    if (settled) {
-      syncPending();
-      setEditing(null);
-      await reload();
-      setRecovering("");
-      return;
+    try {
+      const { receipt, settled: done } = await queryD7DirectCommand(record);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (done) {
+        await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+        setRecovering("");
+        return;
+      }
+    } catch (cause) {
+      // The current-values read remains available without a receipt conclusion.
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
     }
     const latest = await reload();
     setRecovering("");
     note(record.commandKey, !latest
-      ? "原结果没查出结论，现在的值也暂时读不到。记录继续保留。"
+      ? "现在的值暂时读不到。"
       : latest.version === record.expectedVersion
-        ? `原结果没查出结论。现在还是版本 v${latest.version}，和发出时一样，暂时没看到这次修改；可以按原请求重试。`
-        : `原结果没查出结论。现在是版本 v${latest.version}，发出时是 v${record.expectedVersion}，可能是这次修改生效了，也可能是别人改的，记录继续保留。`);
+        ? "现在的参数和发出时一样，还没看到这次修改。"
+        : "现在的参数在发出后被改过，可能是这次修改，也可能是别人改的。");
   };
 
   /** 按原操作重试：同命令号、同内容、同理由（OP-94）。只有成功才解除；被明确拒绝后人核实过才能解除。 */
@@ -563,6 +573,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState(false);
+  const [directClosing, setDirectClosing] = useState<DirectRecord | null>(null);
   const [settled, setSettled] = useState<FundSettled[]>([]);
   const checkProposalInvestigation = async (record: NonNullable<ReturnType<typeof pendingConfigApproval>>, evidence?: FundCommandEvidence) => {
     setRecovering(record.commandKey);
@@ -590,7 +601,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
   const releasePending = () => {
     if (!releasing || releasing.kind !== "direct") return;
-    // The version-guarded direct update has no supported command origin in this backend.
+    // Local release only; evidence-based closure is the separate 核查结案 entry.
     directCommands.forget(releasing.record.fingerprint, releasing.record.commandKey);
     syncPending(); setReleasing(null);
     toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
@@ -673,10 +684,12 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const directRows = direct.map((record): FundRecoveryRow => {
     const expired = isRetryExpired(record);
     const canRetry = canManage && (!record.forceInverted || canForce);
-    return { key: record.commandKey, title: "参数修改", createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
-      status: { tone: "warn", label: expired ? "已过期" : "结果未知", line: expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。" },
+    // 改版前没存出处的记录按当前账号查，queryD7DirectCommand 再核原操作人。
+    const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D7") };
+    return { key: record.commandKey, title: "参数修改", record: target, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
       actions: <>
-        <Button size="sm" disabled={!!recovering} loading={recovering === `verify:${record.commandKey}`} onClick={() => void verifyDirect(record)}>查询原结果</Button>
+        <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === `verify:${record.commandKey}`}
+          onCheck={() => void verifyDirect(record)} onClose={() => setDirectClosing(record)} />
         {!expired && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={canRetry ? undefined : NO_WRITE} onClick={() => void retryDirect(record)}>按原请求重试</Button>}
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
       </>,
@@ -717,6 +730,15 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const releaseModal = <>
     {releasing && <ReleaseModal label="参数修改" onCancel={() => setReleasing(null)} onConfirm={releasePending}
       explain="重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。" />}
+    {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
+      known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
+      onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
+        const record = directClosing;
+        const { receipt, settled: done } = await queryD7DirectCommand(record, evidence);
+        setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+        setDirectClosing(null);
+        if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
+      }} />}
     {closing && approval && <FundClosureModal label="放宽提交" createdAt={approval.createdAt} known={closureKnown(investigationResults[approval.commandKey])}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(approval, evidence); setClosing(false); }} />}
   </>;

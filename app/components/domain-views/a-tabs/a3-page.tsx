@@ -20,6 +20,7 @@ import { a3Deduplicates, useA3Commands, type A3Command, type A3ContentComparison
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { fetchPlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
 import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { toast as notify } from "@/lib/store/ui";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import {
   fetchA3Overview,
@@ -303,7 +304,12 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       switch (record.original.kind) {
         case "param": {
           const result = await commands.queryOriginal(record).catch(() => null);
-          if (result?.settled) { ctx.closeActionConfirm?.(); await refreshOverview(true); return; }
+          if (result?.settled) {
+            const status = result.receipt?.originalStatus;
+            notify.success(record.name, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+              : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
+            ctx.closeActionConfirm?.(); await refreshOverview(true); return;
+          }
           if (!await refreshOverview()) return;
           break;
         }

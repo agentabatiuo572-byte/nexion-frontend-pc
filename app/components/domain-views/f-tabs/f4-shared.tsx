@@ -146,7 +146,7 @@ export function unknownTag(kind: "direct" | "approval") {
 export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
   if (!rows.length) return null;
   return (
-    <Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里，关掉标签页或换账号登录后就没了。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；申请过期、按原单号又查不到单时，可以确认后解除。" /></>}>
+    <Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；申请过期、按原单号又查不到单时，可以确认后解除。" /></>}>
       <ul className="f4-recovery" aria-label="还没有结论的原操作">
         {rows.map((row) => (
           <li key={row.key}>
