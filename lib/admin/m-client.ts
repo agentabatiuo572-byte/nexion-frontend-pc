@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { M4FaqCommand } from "./m4-faq-command";
+import { m4FaqCommandOrigin } from "./m4-faq-command";
 import type { M5Command } from "./m5-command";
 import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { compareM3Messages } from "./m3-message-order";
@@ -1648,7 +1649,8 @@ export function buildM4FaqCommand(kind: M4FaqCommand["kind"], row: SupportFaq, b
     && row.answer === before.answer && row.surface === before.surface && row.language === before.language && row.sortOrder === before.sortOrder;
   const expectation = before ? { expectedStatus: before.status, expectedVersion: before.version } : {};
   const body = kind === "delete" ? expectation : statusOnly ? { status: row.status, ...expectation } : { ...payload, ...expectation };
-  return { actorId, kind, row, before, request: { method: kind === "create" ? "POST" : kind === "delete" ? "DELETE" : "PATCH", path: statusOnly && kind !== "delete" ? `${path}/status` : path, body: JSON.stringify(withReason(body, reason)) } };
+  const request: M4FaqCommand["request"] = { method: kind === "create" ? "POST" : kind === "delete" ? "DELETE" : "PATCH", path: statusOnly && kind !== "delete" ? `${path}/status` : path, body: JSON.stringify(withReason(body, reason)) };
+  return { actorId, kind, row, before, request, commandOrigin: m4FaqCommandOrigin(request) };
 }
 
 export async function sendM4FaqCommand(command: M4FaqCommand, commandKey: string): Promise<void> {

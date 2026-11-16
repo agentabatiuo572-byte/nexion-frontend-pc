@@ -101,6 +101,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     if (event && (event[2] ? locator.originalMethod === "PATCH" : locator.originalMethod === "DELETE")) novaScope = `I2_NOVA_SOCIAL_EVENT_${event[2] ? "STATUS" : "DELETE"}:${BigInt(event[1])}`;
   }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : locator.originalPath === "/api/admin/content/knowledge/faqs" ? locator.originalMethod === "POST" && row.scope === "M4_SUPPORT_FAQ_CREATE"
+    : /^\/api\/admin\/content\/knowledge\/faqs\/[^/]+(?:\/status)?$/.test(locator.originalPath) ? row.scope === normalizeScope(`M4_SUPPORT_FAQ_${locator.originalMethod === "DELETE" ? "DELETE" : locator.originalPath.endsWith("/status") ? "STATUS" : "UPDATE"}:${decodeURIComponent(locator.originalPath.split("/").at(locator.originalPath.endsWith("/status") ? -2 : -1)!)}`) && ["PATCH", "DELETE"].includes(locator.originalMethod)
     : /^\/api\/admin\/users\/profiles\/[^/]+\/nickname\/reset$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "USER_NICKNAME_RESET"
     : /^\/api\/admin\/users\/profiles\/[^/]+\/payment-methods\/[1-9]\d*\/(?:unbind|rebind-notification)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && new RegExp(`^USER_PAYMENT_METHOD_${locator.originalPath.endsWith("/unbind") ? "UNBIND" : "REBIND_NOTICE"}:(?:PRODUCTION|SANDBOX)$`).test(String(row.scope))
     : /^\/api\/admin\/devices\/users\/[^/]+\/tradein\/(?:replace|recycle)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `E3_TRADEIN_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
@@ -204,6 +206,7 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^(?:M4_SUPPORT_FAQ_CREATE|M4_SUPPORT_FAQ_(?:UPDATE|STATUS|DELETE):.+)$/.test(original.scope)
     || original.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(original.scope)
     || /^E3_TRADEIN_(?:RECYCLE|REPLACE)$/.test(original.scope)
     || /^A3_PLATFORM_PARAM:/.test(original.scope)

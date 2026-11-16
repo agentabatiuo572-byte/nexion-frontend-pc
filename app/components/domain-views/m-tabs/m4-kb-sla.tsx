@@ -6,6 +6,7 @@ import { BookOpenText, CheckCircle2, FilePen, Pencil, Plus, Trash2, Upload, Arch
 import { buildM4FaqCommand, sendM4FaqCommand } from "@/lib/admin/m-client";
 import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
 import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
+import { queryM4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
@@ -311,10 +312,19 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       setEditFaq(record.faq.before); setShowAddFaq(record.faq.kind === "create");
     }
   };
+  const queryOriginal = async (record: MCommandRecord) => {
+    const result = await queryM4FaqCommand(record).catch(() => null);
+    if (actorId !== useAdminAuth.getState().session?.adminId) return;
+    if (result?.settled) {
+      mCommands.forget(record.fingerprint, record.commandKey); syncPending();
+      closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
+    }
+    await readCurrent();
+  };
   const pendingRows = pendingCommands.map((record) => ({ key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
     submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
+      <Button size="sm" disabled={writePending} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
     </>,
   }));
