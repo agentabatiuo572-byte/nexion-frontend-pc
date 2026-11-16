@@ -1019,7 +1019,7 @@ function G2ExchangePage() {
             <span className="g2x-value-num">{paramValueText(cap.key, cap.value, cap.displayValue)}</span>
             {recovery && recoveryTag(recovery)}
             {!recovery && direct && (g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
-            {!record && (cap.pendingApproval === true || lockedParams[cap.key]) && <StatusTag tone="warn" icon={Lock} explain={`${cap.pendingApproval === true && cap.pendingOperationId ? `审批单 ${cap.pendingOperationId} 还没处理完。` : ""}${lockedParams[cap.key] || messageOf("OBJECT_LOCKED_BY_A2")}`}>审批锁定中</StatusTag>}
+            {!record && (cap.pendingApproval === true || lockedParams[cap.key]) && <StatusTag tone="warn" icon={Lock} explain={`${cap.pendingApproval === true && cap.pendingOperationId ? `审批单 ${cap.pendingOperationId}：` : ""}${lockedParams[cap.key] || messageOf("OBJECT_LOCKED_BY_A2")}`}>审批锁定中</StatusTag>}
           </span>
           {copy && <span className="g2x-dir">{copy.short}要批准</span>}
         </span>}
