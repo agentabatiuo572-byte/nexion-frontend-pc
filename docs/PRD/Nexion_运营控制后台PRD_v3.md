@@ -243,6 +243,8 @@
 
 #### [G3] UVT 价格管理
 
+**2026-11-17 写入部分概览（hd-patch-g3w）**：写入和旧写入封装均按 normalizeReadOverview 解析成功概览，合法缺价/不可靠覆盖率不产生结果未知或保留原号。结构非法与传输未知仍保留；审批要求拒绝后的重读改部分合同，仅 current-price 建审批基线须现价正数。当前分支完整编辑器另行重读，不把其失败归成写失败；待与 rd/vis-be20 的 showRead 接线集成。
+
 **2026-11-17 非正现价读取（hd-sync27-1 / cd78b851）**：currentPriceOrNull只接同一latestNexUsdtPrice中的正值，缺行、0、负值都以null/priceAvailable=false/空priceRevision返回，overrides使用同次价格。无新业务拒绝码、无改源/兜底/换算，PC前一读取状态接线已覆盖，不改G3固定生效日。此提交配套H5文档的“正整数”仅指基础/第7天既有项与SPIN：连签UVT/USDT仍是大于0、最多6位小数，不能把它们改成只收整数，旧值不追溯改写。
 
 **2026-11-17 G3 读取状态（hd-sync27-1 / e21d20c4）**：/api/admin/market/nex/curve 新增priceAvailable，currentPrice/overrides.currentPrice可空，缺价priceRevision为空；coverage.reliable=false时数值和redlineBreached为null。新fetchG3MarketReadOverview保留合法空值及独立状态，可靠0覆盖率仍为0；现有编辑器的完整基线读取遇不可用时抛G3MarketReadUnavailableError，reason区分价格/覆盖率/两者，并携带类型化overview，不补0或判低于红线。旧后端缺新增标志保留原数值行为，原0价仍由旧页按缺价处理。当前屏幕没准备部分可读/不可靠覆盖率位置，保留现有读取失败框，完整分状态显示与“后端缺价返0”的旧说明交视觉；未改G3页面、固定生效日、写/审批规则。
