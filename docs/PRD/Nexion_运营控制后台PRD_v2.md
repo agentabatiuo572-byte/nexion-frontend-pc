@@ -1139,7 +1139,7 @@ flowchart LR
 | 写入口 | 合同与真实效果 |
 |---|---|
 | 四榜奖池 | `F.pool.periodPrize`单个JSON数字对象含today/week/month/allTime四项≥0，仍一张A2单，不拆请求；金额不经Number重写丢精度。日周月下个未结算周期读新值，总榜人工批准时读，已派周期不重发 |
-| 周榜覆盖额 | `F.leaderboard.poolUsd`，资金权+A2；消费者仅合法且>0时优先，否则用periodPrize.week。0不是关周池，保存端没有独立金额格式校验 |
+| 周榜覆盖额 | `F.leaderboard.poolUsd`，资金权+A2；消费者仅合法且>0时优先，否则用periodPrize.week。0不是关周池，保存端没有独立金额格式校验。页面这一行显示的是本周实际生效的周榜奖池（leaderboardPoolLabel 来自周榜 poolUsd），写「本周实际生效 X USDT」，看不出是否另设覆盖额（2026-11-16 hd-final-va，待协调人核后接配置值） |
 | 统一上榜门槛 | d1b04645改为 `F.leaderboard.minComputePoints`，0–9007199254740991整数点，默认1；0也不纳入零点用户；全周期共用、暂停快照不重算。原minUsd写入409拒绝，原存量不迁移。页面门槛行、确认框、摘要和校验都按整数点数，提交新键；0 写「不设门槛」，没读到写「未设置（按 1 点）」。本机保存的旧 minUsd 申请只能查询结果，按原请求重试会被后端拒绝，错误码 F4_LEADERBOARD_MIN_USD_RETIRED_USE_COMPUTE_POINTS 的提示让运营改用点数门槛 |
 | 第1/前5最高占比 | `F.pool.top1MaxPct/top5MaxPct`，0–100%，资金权+A2；只限榜单派奖，不限团队池，没有两值大小关系校验。前5按合计剩余额度封顶，超出不重分 |
 | 暂停 | `F.leaderboard.paused=on`，榜单处置权+A2；批准时事务捕获四周期不可变快照，失败不改成功。重复暂停409。有效FROZEN才显示暂停名单，无快照明确不可用，不补实时榜 |
