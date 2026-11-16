@@ -1023,7 +1023,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       throw error;
     }
     setRetentionOutcomes((all) => ({ ...all, [record.commandKey]: { receipt } }));
-    if (eCommandSettled(receipt)) setRetentionSettled((all) => [...all.filter((item) => item.key !== record.commandKey), { key: record.commandKey, status: receipt!.originalStatus }]);
+    // 只有核查确认才有这行提示；不写「查询后自动解除」。
+    if (eCommandSettled(receipt) && receipt!.originalStatus.startsWith("CONFIRMED_")) setRetentionSettled((all) => [...all.filter((item) => item.key !== record.commandKey), { key: record.commandKey, status: receipt!.originalStatus }]);
     return receipt;
   };
   const queryOriginal = async (record: A4Command) => {
