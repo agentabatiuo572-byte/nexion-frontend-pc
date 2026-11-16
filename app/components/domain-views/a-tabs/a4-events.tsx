@@ -38,7 +38,7 @@ import {
   type A4Overview,
   type A4RetentionExecution,
 } from "@/lib/admin/a4-client";
-import { a4Slot, queryA4RetentionCommand, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
+import { a4Slot, queryA4DirectCommand, queryA4RetentionCommand, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
 import { canInvestigateECommand, eCommandResult, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, closureKnown } from "../fund-command-check";
@@ -1031,6 +1031,17 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     currentRegistryActor(false);
     setQuerying(record.commandKey);
     try {
+      if (record.original.kind !== "retention") {
+        const result = await queryA4DirectCommand(record);
+        if (result.settled) {
+          commands.sync(); ctx.closeActionConfirm?.(); overviewReady.current = false;
+          if (record.original.kind === "lifecycle") resetSchemaLookup(record.original.schema.eventName);
+          if (record.original.kind === "redrive") { setRedrivePreview(null); setRedriveResult(null); }
+          await refreshOverview(true);
+          if (record.original.kind === "redrive" && canReadOutbox) await outbox.load(outbox.applied);
+          return;
+        }
+      }
       switch (record.original.kind) {
         case "retention": {
           const receipt = await queryRetention(record);

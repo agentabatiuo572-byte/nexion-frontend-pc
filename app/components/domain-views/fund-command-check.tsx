@@ -6,7 +6,7 @@ import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messa
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { SettledLine, useFreshFirst } from "./recovery-panel";
-import { fundCommandResult, fundInvestigationAccess, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 export { closureKnown } from "./recovery-panel";
 
 /**
@@ -25,7 +25,7 @@ export type FundCheckCopy = {
   missingOrigin?: string;
 };
 /** proposal：原请求是提交审批申请，查到已执行只说明审批单建成了。 */
-export type FundSettled = { key: string; label: string; status: FundCommandInvestigation["originalStatus"]; proposal?: boolean };
+export type FundSettled = { key: string; label: string; status: FundCommandInvestigation["originalStatus"]; proposal?: boolean; batch?: FundCommandBatch };
 export type FundRecoveryRow = {
   key: string;
   /** 操作和对象，一行写得下。 */
@@ -89,7 +89,7 @@ function shown(row: FundRecoveryRow): Shown {
   if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: !access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
-  if (fundCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", label: "已处理", line: row.expired ? `后台已处理，看不出成没成；${closure}`
+  if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", line: row.expired ? `后台已处理，看不出成没成；${closure}`
     : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
@@ -98,7 +98,7 @@ function shown(row: FundRecoveryRow): Shown {
 export const CLOSURE_KNOWN = "成功记录对得上才解除，对不上会退回，记录保留。操作记录里没有这次成功记录的，现在结不了案。";
 export const CLOSURE_CONFLICT = "没有结案：证据和后台的处理记录对不上，记录继续保留。核对成功记录编号后可以再提交。";
 
-const CONCLUSION_TEXT: Record<FundCommandEvidence["conclusion"], string> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
+const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
 
 function RecoveryRow({ row }: { row: FundRecoveryRow }) {
   const [open, setOpen] = useState(false);
@@ -124,7 +124,7 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
       {(row.createdAt !== undefined || checkedAt) && <p>{[row.createdAt !== undefined ? `${formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")} 发出` : "", checkedAt ? `${formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询` : ""].filter(Boolean).join("，")}（{businessZone().label}）。</p>}
       {row.detail}
       {error && <p>{error}</p>}
-      {last && <p>上次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：结论「{CONCLUSION_TEXT[last.conclusion]}」{last.requestedConclusion !== last.conclusion && `（申请的是「${CONCLUSION_TEXT[last.requestedConclusion as FundCommandEvidence["conclusion"]] ?? last.requestedConclusion}」，证据不够）`}。</p>}
+      {last && <p>上次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：结论「{CONCLUSION_TEXT[last.conclusion] ?? "已有结论"}」{last.requestedConclusion !== last.conclusion && `（申请的是「${CONCLUSION_TEXT[last.requestedConclusion as FundCommandEvidence["conclusion"]] ?? last.requestedConclusion}」，证据不够）`}。</p>}
       {tech && <p className="fund-row-tech"><Explain label="技术信息" content={tech}>技术信息</Explain></p>}
     </div>}
   </li>;
@@ -144,7 +144,7 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, headi
   const { ordered, box } = useFreshFirst(rows);
   const visible = all ? ordered : ordered.slice(0, 3);
   return <>
-    {settled?.map(item => <SettledLine key={item.key} label={item.label} text={item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
+    {settled?.map(item => <SettledLine key={item.key} label={item.label} text={item.status === "CONFIRMED_REJECTED" || item.batch ? "刷新页面查看现在的结果。" : item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
       : item.proposal ? "审批申请已提交，记录已解除；到操作记录与审批看审批进度，不要再提交一次。"
       : item.status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"}
       onDismiss={onDismissSettled && (() => onDismissSettled(item.key))} />)}

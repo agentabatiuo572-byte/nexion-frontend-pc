@@ -5,6 +5,12 @@ import { isRetryExpired, type PendingMutationRecord } from "./pending-mutation-s
 export type ECommandLocator = {
   commandKey: string; originalMethod: "POST" | "PUT" | "PATCH" | "DELETE"; originalPath: string; originalAdminId: string;
 };
+export type ECommandBusinessState = "PROCESSING" | "FAILED" | "SUCCEEDED" | "REJECTED" | "UNKNOWN";
+export type ECommandBatch = {
+  accepted: string[];
+  rejected: string[];
+  conflicts: { withdrawalId: string; reason: string }[];
+};
 export type ECommandInvestigation = {
   originalRecordId: number;
   scope: string;
@@ -15,38 +21,77 @@ export type ECommandInvestigation = {
   originalTarget: string | null;
   originalTargets: string | null;
   originalAdminId: number;
-  originalStatus: "PROCESSING" | "UNKNOWN" | "SUCCEEDED" | "FAILED" | "CONFIRMED_SUCCEEDED" | "CONFIRMED_NOT_EXECUTED";
+  originalStatus: "PROCESSING" | "UNKNOWN" | "SUCCEEDED" | "FAILED" | "CONFIRMED_SUCCEEDED" | "CONFIRMED_NOT_EXECUTED" | "CONFIRMED_REJECTED";
   locked: boolean;
   newOperationAllowed: boolean;
+  businessCode?: number | null;
+  businessState?: ECommandBusinessState;
+  batch?: ECommandBatch | null;
   investigation: {
-    id: number; conclusion: "SUCCEEDED" | "NOT_EXECUTED" | "STILL_UNKNOWN";
+    id: number; conclusion: "SUCCEEDED" | "NOT_EXECUTED" | "STILL_UNKNOWN" | "REJECTED";
     requestedConclusion: string; evidenceReference: string; evidenceType: string;
     investigatorId: number; investigatedAt: string;
   } | null;
 };
 export type ECommandEvidence = {
-  conclusion: "SUCCEEDED" | "NOT_EXECUTED" | "STILL_UNKNOWN";
+  conclusion: "SUCCEEDED" | "NOT_EXECUTED" | "STILL_UNKNOWN" | "REJECTED";
   evidenceReference: string;
   evidenceAuditId?: number;
 };
 
-/** Raw completion proves business success only for these verified writers. */
-export function eCommandResult(receipt: ECommandInvestigation | null): "SUCCEEDED" | "NOT_EXECUTED" | "BUSINESS_RESULT_UNAVAILABLE" | "UNRESOLVED" {
+export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCESSING" | "FAILED" | "BATCH_RESULT" | "BUSINESS_RESULT_UNAVAILABLE" | "UNRESOLVED";
+
+/** Governed conclusions take precedence; unconfirmed replies use business results and one verified legacy list. */
+export function eCommandResult(receipt: ECommandInvestigation | null): ECommandResult {
+  if (receipt?.businessState === "PROCESSING") return "PROCESSING";
   if (!receipt || receipt.locked) return "UNRESOLVED";
+  if (receipt.originalStatus === "CONFIRMED_REJECTED") return "REJECTED";
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
   if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
-  if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
+  if (receipt.businessState === "SUCCEEDED" && /^D2_BATCH_(?:APPROVE|REJECT|DELAY|FREEZE)$/.test(receipt.scope))
+    return receipt.batch ? "BATCH_RESULT" : "BUSINESS_RESULT_UNAVAILABLE";
+  // Verified callbacks return only success or throw. H3 redrive proves requeue, not delivery.
+  // A4 retention is excluded: failing to acquire its lock is also a normal return.
   const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
+    || receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")
     || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
     // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
     || receipt.scope === "I4_TRUST_DOCUMENT"
     || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
+  if (receipt.businessState !== undefined) {
+    // A completed command whose reply carries no code is "processed", not "still unknown": the backend refuses STILL_UNKNOWN for it.
+    if (receipt.businessState === "UNKNOWN") return receipt.businessCode !== null || receipt.originalStatus !== "SUCCEEDED" ? "UNRESOLVED"
+      : successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
+    // These code-zero replies carry source/item results that the receipt does not project.
+    // OpsNovaService:188–231 may skip refused items; OpsI18nLearningService:215–223 may repair zero items.
+    // OpsEmergencyControlService:1385–1398 also replays executions with skipped/rolled-back steps as code zero.
+    if (receipt.businessState === "SUCCEEDED" && (receipt.scope === "I2_NOVA_SOCIAL_SYNC" || receipt.scope.startsWith("I6_I18N_INTEGRITY_FIX:")
+      || receipt.scope.startsWith("J4_PLAYBOOK_EXECUTE:")))
+      return "BUSINESS_RESULT_UNAVAILABLE";
+    return receipt.businessState;
+  }
+  if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
   return successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
 }
 
 export function eCommandSettled(receipt: ECommandInvestigation | null) {
+  if (receipt?.originalStatus === "CONFIRMED_REJECTED" && !receipt.locked) return true;
   const result = eCommandResult(receipt);
   return result === "SUCCEEDED" || result === "NOT_EXECUTED";
+}
+
+/** A batch is resolved only when every original target has exactly one retained item result. */
+export function eCommandBatchResolved(receipt: ECommandInvestigation | null, targets: readonly string[]) {
+  if (eCommandResult(receipt) !== "BATCH_RESULT" || !receipt?.batch) return false;
+  const ids = [...receipt.batch.accepted, ...receipt.batch.rejected, ...receipt.batch.conflicts.map(item => item.withdrawalId)];
+  const expected = new Set(targets);
+  return expected.size > 0 && ids.length === expected.size && ids.every(id => expected.has(id));
+}
+
+/** Only an original completed nonzero reply can authorize the new rejection conclusion. */
+export function eCommandCanConcludeRejected(receipt: ECommandInvestigation | null) {
+  return receipt?.originalStatus === "SUCCEEDED" && receipt.businessState === "REJECTED"
+    && receipt.businessCode != null && receipt.businessCode !== 0 && !receipt.locked;
 }
 
 /** UI eligibility only; the endpoint also enforces active employment, original read scope and evidence. */
@@ -126,7 +171,21 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : /^\/api\/admin\/users\/profiles\/[^/]+\/nickname\/reset$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "USER_NICKNAME_RESET"
     : /^\/api\/admin\/users\/profiles\/[^/]+\/payment-methods\/[1-9]\d*\/(?:unbind|rebind-notification)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && new RegExp(`^USER_PAYMENT_METHOD_${locator.originalPath.endsWith("/unbind") ? "UNBIND" : "REBIND_NOTICE"}:(?:PRODUCTION|SANDBOX)$`).test(String(row.scope))
     : /^\/api\/admin\/devices\/users\/[^/]+\/tradein\/(?:replace|recycle)$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === `E3_TRADEIN_${locator.originalPath.split("/").at(-1)!.toUpperCase()}`
-    : locator.originalPath === "/api/admin/platform/config" ? locator.originalMethod === "PUT" && ["platform.global_rate_limit_per_minute", "withdrawal.strong_review_threshold_usdt"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
+    : /^\/api\/admin\/platform\/events\/params\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH"
+      && ["day0", "event_retention", "sampling"].includes(decodeURIComponent(locator.originalPath.split("/").at(-1)!))
+      && row.originalTarget === decodeURIComponent(locator.originalPath.split("/").at(-1)!)
+      && row.scope === normalizeScope(`A4_PARAM:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
+    : /^\/api\/admin\/platform\/events\/schema-registrations\/[^/]+\/lifecycle$/.test(locator.originalPath) ? locator.originalMethod === "POST"
+      && row.originalTarget === decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim().toLowerCase()
+      && row.scope === normalizeScope(`A4_EVENT_LIFECYCLE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim().toLowerCase()}`)
+    : /^\/api\/admin\/platform\/events\/outbox\/[^/]+\/redrive$/.test(locator.originalPath) ? locator.originalMethod === "POST"
+      && row.originalTarget === decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()
+      && row.scope === normalizeScope(`A4_H3_OUTBOX_REDRIVE:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()}`)
+    : locator.originalPath === "/api/admin/platform/config" ? locator.originalMethod === "PUT" && (
+      ["platform.global_rate_limit_per_minute", "withdrawal.strong_review_threshold_usdt"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
+      || typeof row.originalTarget === "string" && /^feature\.[A-Za-z0-9_.-]{1,80}$/.test(row.originalTarget)
+        && row.scope === normalizeScope(`A3_FEATURE_FLAG:${row.originalTarget.slice("feature.".length)}`))
+    : locator.originalPath === "/api/admin/platform/config/experience" ? locator.originalMethod === "PUT" && row.scope === "A3_PLATFORM_EXPERIENCE" && row.originalTarget === "A3_PLATFORM_EXPERIENCE"
     : locator.originalPath === "/api/admin/risk/multi-account/registration-params" ? locator.originalMethod === "PATCH" && ["auth.risk.h5_register_captcha", "auth.risk.h5_register_device_limit", "auth.risk.h5_freeze_newcomer_gift"].includes(String(row.originalTarget)) && row.scope === normalizeScope(`A3_PLATFORM_PARAM:${row.originalTarget}`)
     : /^\/api\/admin\/teams\/ranks\/[^/]+\/thresholds\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === "F1_VRANK_THRESHOLD_UPDATE"
     : /^\/api\/admin\/teams\/ranks\/[^/]+\/rewards(?:\/[^/]+)?$/.test(locator.originalPath) ? row.scope === ({ POST: "F1_VRANK_REWARD_ADD", PUT: "F1_VRANK_REWARD_UPDATE", DELETE: "F1_VRANK_REWARD_REMOVE" } as Record<string, string>)[locator.originalMethod]
@@ -178,16 +237,37 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     || row.commandKey !== locator.commandKey || row.originalMethod !== locator.originalMethod || row.originalPath !== locator.originalPath
     || !Number.isSafeInteger(row.originalAdminId) || Number(row.originalAdminId) < 1
     || String(row.originalAdminId) !== locator.originalAdminId
-    || typeof row.requestHash !== "string" || !/^[a-fA-F0-9]{64}$/.test(row.requestHash)
+    || typeof row.requestHash !== "string" || !(/^[a-fA-F0-9]{64}$/.test(row.requestHash)
+      || row.scope === "A3_PLATFORM_EXPERIENCE" && /^[0-9a-f]{1,8}$/.test(row.requestHash))
     || row.originalTarget !== null && typeof row.originalTarget !== "string"
     || row.originalTargets !== null && typeof row.originalTargets !== "string"
-    || !["PROCESSING", "UNKNOWN", "SUCCEEDED", "FAILED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(String(row.originalStatus))
+    || !["PROCESSING", "UNKNOWN", "SUCCEEDED", "FAILED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus))
     || row.locked !== ["PROCESSING", "UNKNOWN"].includes(String(row.originalStatus))
     || row.newOperationAllowed !== (row.originalStatus === "CONFIRMED_NOT_EXECUTED")) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  if (row.businessCode !== undefined && row.businessCode !== null
+    && (!Number.isInteger(row.businessCode) || Number(row.businessCode) < -2147483648 || Number(row.businessCode) > 2147483647)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  if (row.businessState !== undefined) {
+    if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
+      || row.businessCode === undefined
+      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
+      || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
+      || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
+      || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  }
+  if (row.batch != null) {
+    if (!/^D2_BATCH_(?:APPROVE|REJECT|DELAY|FREEZE)$/.test(row.scope) || typeof row.batch !== "object" || Array.isArray(row.batch)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+    const batch = row.batch as Record<string, unknown>;
+    if (!Array.isArray(batch.accepted) || !Array.isArray(batch.rejected) || !Array.isArray(batch.conflicts)
+      || [...batch.accepted, ...batch.rejected].some(id => typeof id !== "string" || !id.trim())
+      || batch.conflicts.some(item => !item || typeof item !== "object" || Array.isArray(item)
+        || typeof item.withdrawalId !== "string" || !item.withdrawalId.trim() || typeof item.reason !== "string" || !item.reason.trim())) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+    const ids = [...batch.accepted, ...batch.rejected, ...batch.conflicts.map(item => item.withdrawalId)];
+    if (new Set(ids).size !== ids.length) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  }
   if (row.investigation !== null) {
     if (!row.investigation || typeof row.investigation !== "object" || Array.isArray(row.investigation)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
     const entry = row.investigation as Record<string, unknown>;
-    if (!Number.isSafeInteger(entry.id) || !["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"].includes(String(entry.conclusion))
+    if (!Number.isSafeInteger(entry.id) || !["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN", "REJECTED"].includes(String(entry.conclusion))
       || typeof entry.evidenceReference !== "string" || typeof entry.evidenceType !== "string"
       || !Number.isSafeInteger(entry.investigatorId) || typeof entry.investigatedAt !== "string") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   }
@@ -230,11 +310,14 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (!canInvestigateECommand(authority)) throw Object.assign(new Error("COMMAND_INVESTIGATION_FORBIDDEN"), { status: 403, backendMessage: "COMMAND_INVESTIGATION_FORBIDDEN" });
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
+  if (evidence.conclusion === "REJECTED" && original.originalStatus !== "CONFIRMED_REJECTED" && !eCommandCanConcludeRejected(original))
+    throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^(?:A4_PARAM:|A4_EVENT_LIFECYCLE:|A4_H3_OUTBOX_REDRIVE:)/.test(original.scope)
     || /^(?:M4_SUPPORT_FAQ_CREATE|M4_SUPPORT_FAQ_(?:UPDATE|STATUS|DELETE):.+)$/.test(original.scope)
     || original.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(original.scope)
     || /^E3_TRADEIN_(?:RECYCLE|REPLACE)$/.test(original.scope)
-    || /^A3_PLATFORM_PARAM:/.test(original.scope)
+    || /^(?:A3_PLATFORM_PARAM:|A3_FEATURE_FLAG:)/.test(original.scope) || original.scope === "A3_PLATFORM_EXPERIENCE"
     || /^L_BI_REPORT_ACTION_(?:APPROVE|RERUN|GENERATE|DOWNLOAD)$/.test(original.scope)
     || /^(?:F1_VRANK_(?:THRESHOLD_UPDATE|REWARD_ADD|REWARD_UPDATE|REWARD_REMOVE)|F_TEAM_CONFIG_UPDATE|F4_AMBASSADOR_POLICY_UPDATE|F5_COMMISSION_(?:REVERSE|REISSUE|SUSPENSION|ANOMALY_CONFIG))$/.test(original.scope)
     || /^F4_MATERIAL_REVIEW:[1-9]\d*:[1-9]\d*$/.test(original.scope)
@@ -244,7 +327,7 @@ export async function investigateECommand(record: PendingMutationRecord, locator
     || original.scope.startsWith("GROWTH:H4:WHEEL_TIER_RETIRE:")
     || original.scope === "GROWTH:H9:PUBLIC_STATS_UPDATE:PUBLIC_STATS" || /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(original.scope)
     || original.scope === "A4_EVENT_RETENTION_RUN";
-  if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
+  if (!fundCommand && !isRetryExpired(record) && !original.locked && evidence.conclusion !== "REJECTED") throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {
     scope: original.scope, commandKey: original.commandKey, requestHash: original.requestHash,

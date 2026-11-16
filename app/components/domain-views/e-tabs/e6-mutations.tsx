@@ -253,7 +253,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     setAnswered(values => ({ ...values, [record.commandKey]: m.notes[record.commandKey] }));
     if (receipt && eCommandSettled(receipt)) {
       const status = receipt.originalStatus;
-      settle(record, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
+      settle(record, status === "CONFIRMED_REJECTED" ? "刷新页面查看现在的结果。" : status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
     } else setOutcomes(values => ({ ...values, [record.commandKey]: { receipt } }));
   };
   const riskDone = (status: PhoneRiskReceipt["status"] | "RETRIED") => toast(status === "CONFIRMED_NOT_EXECUTED"

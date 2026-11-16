@@ -113,7 +113,14 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     }
     finally { setLoading(false); }
   }, [canRead]);
-  useEffect(() => { void refresh(); }, [refresh, nonce]);
+  useEffect(() => {
+    if (!commands.find("experience")) {
+      setReadReady(false); setConfirmOpen(false); setReason(""); conflictDraft.current = false;
+    }
+    void refresh();
+    // The parent changes nonce after original-result queries; the command store is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refresh, nonce]);
 
   const changed = useMemo(() => {
     if (!config || !baseline) return [] as string[];

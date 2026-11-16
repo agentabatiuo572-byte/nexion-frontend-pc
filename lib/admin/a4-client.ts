@@ -105,6 +105,7 @@ export type A4Overview = {
 
 export type A4RetentionExecution = {
   retentionMonths: number;
+  /** Execution time; the retention cutoff is stored separately in the backend audit, not in this view. */
   evaluatedAt: string;
   lockAcquired: boolean;
   archivedRows: number;

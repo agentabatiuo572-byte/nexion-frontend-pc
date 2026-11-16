@@ -34,8 +34,8 @@ export async function queryDConfigCommand(record: FundCommandRecord, page: Confi
     const locator = { ...origin, originalAdminId: String(actor), commandKey: record.commandKey };
     receipt = evidence ? await investigateECommand(record, locator, evidence, origin.readAuthority) : await discoverECommand(locator);
   }
-  // The detailed status describes the transaction; this endpoint also checks the retained business code.
-  const settled = fundCommandSettled(receipt) || !!receipt && receipt.originalStatus === "SUCCEEDED"
+  // New receipts carry the business result; only legacy responses need the extra code lookup.
+  const settled = fundCommandSettled(receipt) || !!receipt && receipt.businessState === undefined && receipt.originalStatus === "SUCCEEDED"
     && await fetchDirectCommandReceipt(receipt.scope, receipt.commandKey, receipt.originalAdminId) === "SUCCEEDED";
   return { receipt, settled };
 }

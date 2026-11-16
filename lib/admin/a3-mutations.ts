@@ -10,7 +10,7 @@ import { parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
-import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand } from "./a3-command-query";
+import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand, queryA3ConfigCommand } from "./a3-command-query";
 import { isOriginalCommandOrigin } from "./original-command-query";
 
 export type A3Original =
@@ -141,8 +141,12 @@ export function useA3Commands() {
     return commands.list().find(record => record.commandKey === key)!;
   };
   const queryOriginal = async (record: A3Command, evidence?: FundCommandEvidence) => {
-    if (record.original.kind !== "param" || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
-    const result = await queryA3ParamCommand(record, "A3", String(actorId), record.original.row.key, evidence);
+    const original = record.original;
+    if (original.kind !== "param" && original.kind !== "flag" && original.kind !== "experience"
+      || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
+    const result = original.kind === "param"
+      ? await queryA3ParamCommand(record, "A3", String(actorId), original.row.key, evidence)
+      : await queryA3ConfigCommand(record, original, String(actorId), evidence);
     if (result.settled) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return result;
   };

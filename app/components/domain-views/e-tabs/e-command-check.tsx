@@ -9,9 +9,9 @@ import { eCommandResult, type ECommandEvidence, type ECommandInvestigation } fro
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
 export type SettledCommand = { key: string; label: string; status: ECommandInvestigation["originalStatus"] };
-type Conclusion = ECommandEvidence["conclusion"];
+type Conclusion = Exclude<ECommandEvidence["conclusion"], "REJECTED">;
 
-const CONCLUSION_TEXT: Record<Conclusion, string> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
+const CONCLUSION_TEXT: Partial<Record<ECommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
 const CONCLUSION_HELP: Record<Conclusion, string> = {
   SUCCEEDED: "原操作有完成记录，或填的成功记录编号指向这次操作时才能确认；确认后解除锁定，不再重试。",
   NOT_EXECUTED: "原操作确认已整体撤销、没有生效时才能选；确认后解除锁定，可以重新发起。",
@@ -35,7 +35,7 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
     ? "这次操作记为失败。记录继续保留，请到操作记录与审批核对。"
     : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
-  if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", title: "已处理", text: expired
+  if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
     ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。"
     : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
   return { tone: "warn", title: "结果仍未知", text: expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。"
@@ -50,7 +50,7 @@ export function CommandOutcomeLine({ outcome, expired }: { outcome?: CommandOutc
   return <div className="e-check-outcome" role="status">
     <StatusTag tone={shown.tone}>{shown.title}</StatusTag>
     <p>{shown.text}</p>
-    {last && <p className="e-check-last">最近一次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：记为「{CONCLUSION_TEXT[last.conclusion]}」{last.requestedConclusion !== last.conclusion && `，申请的「${CONCLUSION_TEXT[last.requestedConclusion as Conclusion] ?? last.requestedConclusion}」证据不足`}。</p>}
+    {last && <p className="e-check-last">最近一次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：记为「{CONCLUSION_TEXT[last.conclusion] ?? "已有结论"}」{last.requestedConclusion !== last.conclusion && `，申请的「${CONCLUSION_TEXT[last.requestedConclusion as Conclusion] ?? last.requestedConclusion}」证据不足`}。</p>}
   </div>;
 }
 
@@ -62,7 +62,8 @@ export function ClosureContact() {
 /** Settled commands leave the pending list; this keeps the authoritative outcome visible until dismissed. */
 export function SettledCommandNotices({ items, onDismiss }: { items: SettledCommand[]; onDismiss: (key: string) => void }) {
   return <>{items.map(item => {
-    const text = item.status === "CONFIRMED_NOT_EXECUTED" ? { title: "核查确认未执行", body: "原操作没有执行，记录已解除，可以重新发起。" }
+    const text = item.status === "CONFIRMED_REJECTED" ? { title: "已有结论", body: "刷新页面查看现在的结果。" }
+      : item.status === "CONFIRMED_NOT_EXECUTED" ? { title: "核查确认未执行", body: "原操作没有执行，记录已解除，可以重新发起。" }
       : item.status === "CONFIRMED_SUCCEEDED" ? { title: "核查确认已执行", body: "超级管理员按证据确认原操作已执行，记录已解除，不再重试。结果以刷新后的状态为准。" }
         : { title: "原操作已完成", body: "原操作已执行，记录已解除，不要再做一次。结果以刷新后的状态为准。" };
     return <Notice key={item.key} tone="done" title={<>{item.label} · <span className="rd-keep">{text.title}</span></>} action={<Button size="sm" onClick={() => onDismiss(item.key)}>知道了</Button>}>{text.body}</Notice>;

@@ -615,7 +615,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       const receipt = await checkFundCommand(record, evidence);
       setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
-        if (receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED") {
+        if (receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt!.originalStatus === "CONFIRMED_REJECTED") {
           e4PendingCommands.forget(record.fingerprint, record.commandKey);
           syncE4Pending();
           setActionConfirm(null); setSelOrder(null); setE4Detail(null);
