@@ -763,7 +763,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   LEGACY_UNKNOWN_RESPONSE_INVALID: "原任务终结资格返回不完整，请重新核对；本次没有提交。",
   LEGACY_UNKNOWN_DEVICE_IDENTITY_CHANGED: "设备或用户归属已变化，请刷新设备列表后重新核对。",
   LEGACY_UNKNOWN_PROPOSAL_INVALID: "请重新核对退出证明和操作理由，本次没有提交。",
-  CONVERSATION_PEER_CHANGED: "当前会话的客服归属已变化，请返回客户列表重新进入当前会话。",
+  CONVERSATION_PEER_CHANGED: "这条已不是你和客户当前的会话。客户仍归你时，刷新页面后按提示继续。",
   SKU_DOCUMENT_INVALID: "请填写资料名称和有效的 HTTPS 链接；移除资料时请同时清空两项。",
   CREGIS_AUTO_ACTIVATION_NOT_APPROVED: "自动资金流程运行总闸尚未批准或渠道风控条件未满足，不能开启。",
   CREGIS_AUTO_DIFFERENT_CHECKER_REQUIRED: "自动资金开关须由另一位有效且有权限的管理员复核。",
