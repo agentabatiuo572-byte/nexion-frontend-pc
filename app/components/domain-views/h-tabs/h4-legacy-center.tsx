@@ -907,6 +907,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     setLookupKey(record.commandKey);
     try {
       const ticket = await queryH4Command(record);
+      if (!pendingH4Commands().some(row => row.commandKey === record.commandKey) && activeRecovery.current === record.commandKey) {
+        activeRecovery.current = null; ctx.openActionConfirm(null);
+      }
       if (ticket === null) toast("暂未查到原审批单，原请求继续保留。", "warn");
       await refreshAll();
     } catch (cause) { toast(displayAdminError(cause), "warn"); }

@@ -9,12 +9,13 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { formatAdminApiError, guardedFetch } from "./error-messages";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "./outcome-classification";
 import type { A2OperationRow } from "./a2-client";
+import { fundCommandOrigin, type FundCommandOrigin } from "./fund-command-investigation";
 
 import type { I6CommandSnapshot } from "./i-client";
 
 export type HIProposal = Parameters<typeof createA2OperationProposal>[0];
 type Payload = { kind: "proposal"; input: HIProposal } | { kind: "retire"; tierName: string; input: { reason: string; operator: string; confirmed: true; expectedSignature: string } };
-export type HIRewardCommand = PendingMutationRecord & { owner: number; scope: string; body: string; payload: Payload; form?: Record<string, string>; editValue?: string; snapshot?: I6CommandSnapshot; receiptKnown?: boolean; ticketStatus?: A2OperationRow["status"] };
+export type HIRewardCommand = PendingMutationRecord & { owner: number; scope: string; body: string; payload: Payload; form?: Record<string, string>; editValue?: string; snapshot?: I6CommandSnapshot; receiptKnown?: boolean; ticketStatus?: A2OperationRow["status"]; commandOrigin?: FundCommandOrigin };
 const commands = h4CommandStores.hi as PendingMutationStore<HIRewardCommand>;
 
 export const HI_WHEEL_SCOPE = "H/h4_wheel_pool/ACTIVE_POOL";
@@ -169,7 +170,8 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
   const key = previous?.commandKey ?? createA2CommandKey(original.kind === "retire" ? "h4-tier-retire" : original.input.command.op);
   if (!previous) {
     commands.remember(`${session.adminId}:${scope}`, key, { owner: session.adminId, scope, payload: original,
-      body: JSON.stringify(original.input), form, editValue });
+      body: JSON.stringify(original.input), form, editValue,
+      ...(original.kind === "retire" ? { commandOrigin: fundCommandOrigin("POST", `/api/admin/growth/quest-events/wheel-tiers/${encodeURIComponent(original.tierName)}/retire`, "growth_h4_read") } : {}) });
     if (!commands.isDurablyStored(`${session.adminId}:${scope}`, key)) {
       commands.forget(`${session.adminId}:${scope}`, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");

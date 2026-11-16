@@ -14,6 +14,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { promotionRead } from "./promotion-client";
 import type { Promotion, RewardAdmin } from "./promotion-types";
+import { checkFundCommand, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Resource = "overview" | "rules" | "raffles";
@@ -28,6 +30,7 @@ export type H4Command = H4StoredCommand & {
   asset?: UploadedAsset;
   uploadTarget?: H4UploadTarget;
   restoration?: H4UploadRestoration;
+  commandOrigin?: FundCommandOrigin;
 };
 export type H4ApprovalReceipt = { h4Approval: true; ticket: A2OperationRow };
 export const isH4ApprovalReceipt = (value: unknown): value is H4ApprovalReceipt => !!(value as H4ApprovalReceipt | null)?.h4Approval;
@@ -79,6 +82,10 @@ export function pendingH4Commands(): H4Command[] {
       if (store === "hi") {
         if (raw.owner !== actor.adminId || !raw.scope.startsWith("H/")) return [];
         const p = raw.payload;
+        const origin = raw.commandOrigin as FundCommandOrigin | undefined;
+        if (origin && (p.kind !== "retire" || origin.originalMethod !== "POST"
+          || origin.originalPath !== `/api/admin/growth/quest-events/wheel-tiers/${encodeURIComponent(p.tierName)}/retire`
+          || origin.originalAdminId !== String(raw.owner) || origin.readAuthority !== "growth_h4_read")) return [];
         const request = p.kind === "proposal" ? { proposal: p.input as Proposal }
           : { path: `/quest-events/wheel-tiers/${encodeURIComponent(p.tierName)}/retire`, method: "POST" as const, body: raw.body };
         return [{ ...raw, store, action: p.kind === "proposal" ? p.input.action : `退役积分奖项 · ${p.tierName}`, reason: p.input.reason, request } as H4Command];
@@ -195,7 +202,11 @@ function checkTicket(r: H4Command, ticket: A2OperationRow) {
 export async function queryH4Command(r: H4Command): Promise<A2OperationRow | null | undefined> {
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
-  if (!("proposal" in r.request)) return undefined;
+  if (!("proposal" in r.request)) {
+    try { await queryH4RetirementCommand(r); }
+    catch { /* Keep the existing overview read available when the auxiliary receipt query fails. */ }
+    return undefined;
+  }
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
   requireActor(r.owner, false, r.scope);
   if (ticket) {
@@ -208,6 +219,19 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
     notify();
   }
   return ticket;
+}
+
+export async function queryH4RetirementCommand(saved: H4Command, evidence?: FundCommandEvidence) {
+  const record = pendingH4Commands().find(row => row.commandKey === saved.commandKey);
+  if (!record) throw new Error("H4_ORIGINAL_RESOLVED");
+  if ("proposal" in record.request || record.request.method !== "POST" || !/^\/quest-events\/wheel-tiers\/[^/]+\/retire$/.test(record.request.path)) return null;
+  requireActor(record.owner, false, record.scope);
+  const locator = { commandKey: record.commandKey, originalMethod: record.request.method,
+    originalPath: `/api/admin/growth${record.request.path}`, originalAdminId: String(record.owner) };
+  const receipt = record.commandOrigin ? await checkFundCommand(record, evidence)
+    : evidence ? await investigateECommand(record, locator, evidence, "growth_h4_read") : await discoverECommand(locator);
+  if (fundCommandSettled(receipt)) { markH4Read(resourceOf(record.scope), false); forget(record); }
+  return receipt;
 }
 export async function releaseExpiredH4Proposal(r: H4Command) {
   if (!("proposal" in r.request) || !isRetryExpired(r) || await queryH4Command(r) !== null) throw new Error("H4_ORIGINAL_NOT_RELEASABLE");
