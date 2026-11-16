@@ -461,7 +461,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
   const save = async (target: Mode) => {
     if (!document || locked || busyRef.current) return;
     if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需至少 8 个字符。"); return; }
-    if (target === "PUBLISHED" && publishBlockedReasons.length) { setError(publishBlockedReasons.join("；")); return; }
+    if (target === "PUBLISHED" && publishBlockedReasons.length) { setError(`还有没替换的占位符，不能发布：${spotsShown.join("；")}${spotsMore ? ` 等 ${spotsMore + spotsShown.length} 处` : ""}`); return; }
     if (!canSave(target)) { setError("内容没有变化，无需提交。"); return; }
     busyRef.current = true; setSaving(true); setError(null);
     try {
@@ -489,10 +489,15 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
   const pageChanged = (item: string) => JSON.stringify(document.contents[item]) !== JSON.stringify(baseline?.contents[item]);
   const changedPages = KEYS.filter(pageChanged);
   const refPages = KEYS.filter((item) => refBlocksOf(document.contents[item]).length > 0);
-  /** A3-PD01：检查全部页面/语言，草稿维护保留；发布不能把未解析占位符送到App。 */
-  const publishBlockedReasons = Object.entries(document.contents).filter(([, entry]) => Object.values(row(entry.locales)).some(locale =>
-    blocks(row(locale).blocks).some(block => [block.title, block.body, ...list(block.items)].some(value => text(value).includes("{value}")))
-  )).map(([key]) => `${PAGE_LABELS[key] ?? key}：App 会打不开整页，{value} 没有换成数值`);
+  /** A3-PD01：和后端发布检查一样查全部页面、语言的标题、正文、列表项；草稿不受影响。每处写哪一页、哪种语言、第几块的哪几部分。 */
+  const placeholderSpots = Object.entries(document.contents).flatMap(([page, entry]) => Object.entries(row(entry.locales)).flatMap(([lang, locale]) =>
+    blocks(row(locale).blocks).flatMap((block, index) => {
+      const parts = [text(block.title).includes("{value}") && "标题", text(block.body).includes("{value}") && "正文",
+        list(block.items).some(value => text(value).includes("{value}")) && "列表项"].filter(Boolean);
+      return parts.length ? [`${PAGE_LABELS[page] ?? page} · ${localeName(lang)} · 第 ${index + 1} 块的${parts.join("、")}`] : [];
+    })));
+  const publishBlockedReasons = placeholderSpots;
+  const spotsShown = placeholderSpots.slice(0, 3), spotsMore = placeholderSpots.length - spotsShown.length;
   const entry = row(document.contents[key]);
   const localeKeys = Object.keys(row(entry.locales));
   const entryVersion = text(entry.version);
@@ -501,7 +506,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
       <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "这份内容现在不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "还有没替换的占位符，不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
       ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交"
@@ -515,7 +520,11 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
           }),
         ] : []} />
       : error && !mode && <Notice tone="danger">{error}</Notice>}
-    {publishBlockedReasons.length > 0 && <Notice tone="danger" title="这份内容现在不能发布">{publishBlockedReasons.join("；")}。可以先保存草稿。</Notice>}
+    {placeholderSpots.length > 0 && <Notice tone="danger" title={`${placeholderSpots.length} 处还有没替换的占位符，现在不能发布`}>
+      {spotsShown.map((spot) => <span key={spot} className="a3-check-line">{spot}</span>)}
+      {spotsMore > 0 && <span className="a3-check-line">还有 {spotsMore} 处</span>}
+      <span className="a3-check-line">把占位符（如 {"{value}"}）换成实际文字，或删掉那一块，再发布；保存草稿不受影响。</span>
+    </Notice>}
     <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(document)} · 文档版本 ${versionName(document.version)}`}
       explain={<>
         <p>App 的「怎么玩」「规则说明」读这六页内容；锁定计划说明的入口已退役，内容仍一起维护。六页一起保存、一起发布，发布时六页都要有内容。</p>
@@ -567,9 +576,9 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
                 <Field label="类型">{(control) => <Select {...control} aria-label={`内容块 ${index + 1} 类型`} value={text(item.kind)} disabled={locked} onChange={(value) => changeKind(index, value)} options={[{ value: "text", label: "正文" }, { value: "list", label: "列表" }, { value: "callout", label: "提示说明" }, { value: "ruleRef", label: "引用系统规则" }]} />}</Field>
               </div>
               <Field label="标题">{(control) => <Input {...control} value={text(item.title)} maxLength={256} disabled={locked} onChange={e => patchBlock(index, { title: e.target.value })} />}</Field>
-              <Field label="正文" help={item.kind === "ruleRef" ? <>规则块必须保留 {"{value}"} 占位符</> : undefined}>{(control) => <Textarea {...control} rows={3} value={text(item.body)} maxLength={20000} disabled={locked} onChange={e => patchBlock(index, { body: e.target.value })} />}</Field>
+              <Field label="正文" help={item.kind === "ruleRef" ? <>必须保留 {"{value}"}，不然草稿也存不了</> : undefined}>{(control) => <Textarea {...control} rows={3} value={text(item.body)} maxLength={20000} disabled={locked} onChange={e => patchBlock(index, { body: e.target.value })} />}</Field>
               {item.kind === "ruleRef" && <>
-                <Notice tone="warn" title="App 目前显示不了规则引用">{"{value}"} 不会被换成数值，App 收到后会整页打不开。可以保存草稿，先别发布含这种块的说明。</Notice>
+                <Notice tone="warn" title="规则引用块发布不了">发布时系统会拒绝含这种块的说明，草稿照常能存。要发布，先删掉这一块或改成「正文」。</Notice>
                 <div className="rd-form-grid" data-cols="2">
                   <Field label="规则标识">{(control) => <Input {...control} value={text(row(item.ref).key)} maxLength={160} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", key: e.target.value } })} />}</Field>
                   <Field label="引用版本">{(control) => <Input {...control} value={text(row(item.ref).version)} maxLength={128} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", version: e.target.value } })} />}</Field>
@@ -596,7 +605,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
               {text(item.title) && <h4>{text(item.title)}</h4>}
               {text(item.body) && <p>{item.kind === "ruleRef" ? text(item.body).split("{value}").flatMap((part, i) => i === 0 ? [part] : [<mark key={i}>{"{value}"}</mark>, part]) : text(item.body)}</p>}
               {item.kind === "list" && <ul>{list(item.items).map((value, i) => <li key={i}>{text(value)}</li>)}</ul>}
-              {item.kind === "ruleRef" && <span className="a3-preview-empty">App 会打不开整页：{"{value}"} 没有换成数值</span>}
+              {item.kind === "ruleRef" && <span className="a3-preview-empty">规则引用块，不能发布</span>}
             </section>)}
           </div>
         </Preview>
@@ -612,7 +621,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
         { key: "pages", label: "有改动的页面", before: "—", after: changedPages.map((item) => PAGE_LABELS[item]).join("、") || "—" },
       ]} />}
       extra={<>
-        {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页打不开。</Notice>}
+        {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="规则引用块发布不了">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，系统会拒绝这次发布。先删掉这些块，或改成「正文」写上实际文字。</Notice>}
         {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
           : <Notice tone="neutral">{original ? <OriginalNote retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
       </>} />}

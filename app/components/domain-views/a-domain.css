@@ -859,3 +859,11 @@
 
 /* A3 上方结果未知提示条：说明内容读回对不上时，每条一行。 */
 .a3-check-line { display: block; }
+
+/* A2 批准 F5 补发、冲正、状态变更：这笔奖励现在的样子（金额一行，状态和说明一行）；多笔清单超过 6 行时框内滚动，不把批准按钮挤出屏幕。 */
+.a2-f5-now { display: grid; gap: 2px; }
+.a2-f5-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a2-f5-list { border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); overflow: hidden; }
+.a2-f5-list[data-long] { max-height: 272px; overflow-y: auto; }
+.a2-f5-list[data-long] .rd-table th { position: sticky; top: 0; z-index: 1; }
+.a2-f5-table { width: 100%; }

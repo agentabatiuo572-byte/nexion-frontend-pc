@@ -92,7 +92,7 @@ function bounceLevel(rate: number): number {
 /* ---------------- 四个合计（L6-V01） ---------------- */
 export function SummaryBand({ summary, scope, device }: { summary: HeatSummary; scope: string; device: string }) {
   const noView = summary.totalPv === 0;
-  const scopeNote = `${scope}；含这段时间有事件的已退役页面。`;
+  const scopeNote = `${scope}；含这段时间有事件的被排除和已退役页面。`;
   return (
     <StatBand label="这段时间的合计">
       <Stat label="浏览次数" icon={Eye} tone="role-2" value={n(summary.totalPv)} unit="次"
@@ -386,10 +386,13 @@ export function TrendPanel({ daily, weekly, scope, zone }: { daily: TrendPoint[]
 
 /* ---------------- 统计范围和口径（L6-V06、L6-V08、L6-C04、L6-X03–X05） ---------------- */
 export function ScopeFold({ data }: { data: L6BehaviorHeatmapData }) {
+  // 页面目录分两组：在统计的列进热力表，被排除的只在这里列名字。这块只在目录读到后出现，读不到时整页是读取失败，不显示清单。
+  const excluded = data.excludedPages;
   return (
-    <Fold title="统计范围和口径" summary={`页面目录 ${n(data.trackedCount)} 个页面 · 时区 ${zoneWord(data.businessTimeZone)} · 只读`}>
+    <Fold title="统计范围和口径" summary={`页面目录 ${n(data.totalPages)} 个页面${excluded.length ? `，${n(excluded.length)} 个被排除` : ""} · 时区 ${zoneWord(data.businessTimeZone)} · 只读`}>
       <Facts>
-        <Fact k="统计哪些页面">页面目录里的 {n(data.trackedCount)} 个页面都在统计<Explain label="页面目录" content="页面目录是从 App 的页面清单复制到后台的一份，不随 App 实时更新。已退役的页面不在目录里：热力表不列，但合计和导出的 CSV 还会算它们这段时间的历史事件。" /></Fact>
+        <Fact k="统计哪些页面">{excluded.length ? `${n(data.trackedCount)} 个页面在统计，${n(excluded.length)} 个被排除` : `页面目录里的 ${n(data.trackedCount)} 个页面都在统计`}<Explain label="页面目录" content="页面目录是从 App 的页面清单复制到后台的一份，不随 App 实时更新。被排除的和已退役的页面热力表不列；合计和导出的 CSV 仍含它们在所选条件下已有的历史事件。" /></Fact>
+
         <Fact k="事件从哪来">App 记下的页面浏览和元素点击，只算正式环境的事件</Fact>
         <Fact k="什么时候记浏览">离开这一页、换到下一页时记一次浏览和停留<Explain label="哪些不记" content="切到后台、退出 App 时正在看的那一页会丢掉，不补记；所以浏览次数不是「进入页面」的次数。" /></Fact>
         <Fact k="抽样">只算抽样记下的事件，不按比例放大<Explain label="抽样是什么" content="记录时按「用户行为事件」页的采集比例抽样，没抽中的不进统计；发送失败或被限流的也不在里面，所以不是全部真实操作。" /></Fact>
@@ -397,6 +400,9 @@ export function ScopeFold({ data }: { data: L6BehaviorHeatmapData }) {
         <Fact k="时间">从读取那一刻往前滚动；时区 {zoneWord(data.businessTimeZone)}</Fact>
         <Fact k="这页能做什么">只能查看和导出，不改页面目录、采集设置和任何业务规则；每次导出留一条操作记录</Fact>
       </Facts>
+      {excluded.length > 0 && <Fold inset title={`被排除的 ${n(excluded.length)} 个页面`} summary="热力表不列，点开看名字">
+        <ul className="l6-excluded">{excluded.map((page) => <li key={page.route}>{page.titleZh || page.route}{page.titleZh && <span className="l6-excluded-route" data-mono>{page.route}</span>}</li>)}</ul>
+      </Fold>}
     </Fold>
   );
 }

@@ -181,7 +181,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
     <Explain label="八列分别是什么" content={<>
       <p>每个页面一行：页面路径、页面名、层级（1–3）、浏览次数、浏览人数、点击次数、平均停留（毫秒）、跳出率（0–1 的小数）。数字是原值，不换算。</p>
       <p>不含点击位置、区域占比、访问趋势，也不含任何用户身份。</p>
-      <p>已退役、但这段时间还有历史事件的页面也在里面，所以行数可能比页面热力表多；查不到名字的页面，页面名写路径、层级写 3。</p>
+      <p>被排除的、已退役的页面这段时间有事件的也在里面，所以行数可能比页面热力表多；查不到名字的页面，页面名写路径、层级写 3。</p>
     </>} />
   );
   const openExportAll = () => {
@@ -399,8 +399,8 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   const catalogRoutes = new Set(heatmapData.pageTree.map((node) => depth === "L1" ? node.parentL1 : depth === "L2" ? node.parentL2 : node.route));
   const outside = stats.filter((stat) => !catalogRoutes.has(stat.route));
   const outsideNotice = outside.length ? (
-    <Notice tone="progress" title={`合计里含 ${n(outside.length)} 个已不在页面目录里的页面`}>
-      这些页面已退役，这段时间还有 {n(outside.reduce((sum, stat) => sum + stat.pv, 0))} 次浏览、{n(outside.reduce((sum, stat) => sum + stat.clicks, 0))} 次点击。合计和导出的 CSV 算它们，热力表不列，所以表里加起来比合计少，不是数错了。
+    <Notice tone="progress" title={`合计里含 ${n(outside.length)} 个热力表不列的页面`}>
+      这些页面被排除或已退役，这段时间还有 {n(outside.reduce((sum, stat) => sum + stat.pv, 0))} 次浏览、{n(outside.reduce((sum, stat) => sum + stat.clicks, 0))} 次点击。合计和导出的 CSV 算它们，热力表不列，所以表里加起来比合计少，不是数错了。
     </Notice>
   ) : null;
 
