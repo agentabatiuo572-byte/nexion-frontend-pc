@@ -28,7 +28,8 @@ import {
   PAYOUT_VND_FIELDS, derivePayoutVndRates, isPayoutVndInverted, vndText,
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
-import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -70,7 +71,7 @@ const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处�
 
 /** 直接保存的原操作：结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。 */
 type DirectCommand = { values: PayoutVndValues; expectedVersion: number; reason: string; forceInverted: boolean };
-type DirectRecord = PendingMutationRecord & DirectCommand;
+type DirectRecord = PendingMutationRecord & DirectCommand & { commandOrigin?: FundCommandOrigin };
 const DIRECT_SCOPE = "config";
 
 const directCommands = createPendingMutationStore<DirectRecord>({
@@ -79,8 +80,17 @@ const directCommands = createPendingMutationStore<DirectRecord>({
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.reason === "string" && record.reason.length > 0
     && Number.isSafeInteger(record.expectedVersion) && typeof record.forceInverted === "boolean"
-    && !!record.values && KEYS.every((key) => typeof record.values[key] === "number" && Number.isFinite(record.values[key])),
+    && !!record.values && KEYS.every((key) => typeof record.values[key] === "number" && Number.isFinite(record.values[key]))
+    && isDConfigCommandOrigin(record.commandOrigin, "D7"),
 });
+
+export async function queryD7DirectCommand(record: DirectRecord, evidence?: FundCommandEvidence) {
+  const saved = directCommands.list().find(row => row.commandKey === record.commandKey);
+  if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
+  const receipt = await queryDConfigCommand(saved, "D7", evidence);
+  if (fundCommandSettled(receipt)) directCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
 
 function newCommandKey() {
   const uuid = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -425,7 +435,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
             return;
           }
           const key = newCommandKey();
-          directCommands.remember(DIRECT_SCOPE, key, { values, expectedVersion: base.version, reason, forceInverted });
+          directCommands.remember(DIRECT_SCOPE, key, { values, expectedVersion: base.version, reason, forceInverted, commandOrigin: dConfigCommandOrigin("D7") });
           if (!directCommands.isDurablyStored(DIRECT_SCOPE, key)) {
             directCommands.forget(DIRECT_SCOPE, key);
             throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -498,6 +508,16 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   /** 直接保存的读回：只给现在的事实。版本没变说明还没看到这次修改；变了也可能是别人改的，待确认都保留（OP-95）。 */
   const verifyDirect = async (record: DirectRecord) => {
     setRecovering(`verify:${record.commandKey}`);
+    let settled = false;
+    try { settled = fundCommandSettled(await queryD7DirectCommand(record)); }
+    catch { /* The current-values read remains available without a receipt conclusion. */ }
+    if (settled) {
+      syncPending();
+      setEditing(null);
+      await reload();
+      setRecovering("");
+      return;
+    }
     const latest = await reload();
     setRecovering("");
     note(record.commandKey, !latest

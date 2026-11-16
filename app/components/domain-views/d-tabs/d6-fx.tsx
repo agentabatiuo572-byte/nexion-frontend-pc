@@ -19,6 +19,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
   d6QuoteRate,
@@ -132,8 +133,17 @@ const pendingFx = createPendingMutationStore<PendingFx>({
     && [record.before, record.after, record.expectedVersion].every(Number.isFinite)
     && typeof record.reason === "string" && record.reason.length > 0
     && typeof record.operator === "string"
-    && (record.proposal === undefined || record.proposal.command?.op === "d6_fx_quote" && record.proposal.reason === record.reason),
+    && (record.proposal === undefined || record.proposal.command?.op === "d6_fx_quote" && record.proposal.reason === record.reason)
+    && (record.proposal !== undefined || isDConfigCommandOrigin(record.commandOrigin, "D6")),
 });
+
+export async function queryD6DirectCommand(record: PendingFx, evidence?: FundCommandEvidence) {
+  const saved = pendingFx.list().find(row => row.commandKey === record.commandKey && !row.proposal);
+  if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
+  const receipt = await queryDConfigCommand(saved, "D6", evidence);
+  if (fundCommandSettled(receipt)) pendingFx.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
 
 function fxCommandKey() {
   const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}${Math.random().toString(36).slice(2)}`;
@@ -228,7 +238,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const sendCommand = async (item: FxCommand, retry?: PendingFx) => {
     if (!retry && pendingFx.get(SCOPE)) throw new Error(LOCKED);
     const key = retry?.commandKey ?? fxCommandKey();
-    pendingFx.remember(SCOPE, key, { ...item, commandOrigin: retry ? retry.commandOrigin : item.proposal ? fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "finance_d6_read") : undefined });
+    pendingFx.remember(SCOPE, key, { ...item, commandOrigin: retry ? retry.commandOrigin : item.proposal ? fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "finance_d6_read") : dConfigCommandOrigin("D6") });
     if (!pendingFx.isDurablyStored(SCOPE, key)) {
       if (!retry) pendingFx.forget(SCOPE, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -299,7 +309,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   };
   const releasePending = (record: PendingFx) => {
     setReleasing(false);
-    // Direct D6_FX_QUOTE_UPDATE has no supported investigation origin in this backend.
+    // Legacy manual release is separate from evidence-based command closure.
     pendingFx.forget(record.fingerprint, record.commandKey);
     syncPending(); setRetryRejected(""); setPendingNote("");
     toast("已解除本页这条原操作记录；原操作没有结案时系统仍会阻止新提交", "success");
