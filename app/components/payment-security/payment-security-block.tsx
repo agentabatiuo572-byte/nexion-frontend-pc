@@ -84,15 +84,15 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             <div className="rd-toolbar">
               <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>
               {record.state === "ACTIVE" && canRelease && <Button size="sm" variant="primary"
-                disabledReason={pending ? "有一笔解除结果等待确认，先查询原操作" : record.capabilities.releaseAllowed ? undefined : record.capabilities.disabledReason || "现在不能解除"}
+                disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? undefined : record.capabilities.disabledReason || "现在不能解除"}
                 onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
             </div>
             {record.state === "ACTIVE" && canRelease && !pending && !record.capabilities.releaseAllowed && <p className="rd-toolbar-note">{record.capabilities.disabledReason || "现在不能解除"}</p>}
           </>}
           {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
           {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}
-          {pending && <Notice tone="warn" title="有一笔解除结果等待确认。"
-            action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</Button>} />}
+          {pending && <Notice tone="warn" title="有一笔解除结果未知。"
+            action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原结果</Button>} />}
         </div>
       </Fold>
       {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
