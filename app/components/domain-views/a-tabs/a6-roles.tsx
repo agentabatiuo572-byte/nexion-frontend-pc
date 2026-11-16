@@ -18,6 +18,8 @@ import { buildRoleMetadataPayload, PlatformMutationReadbackError } from "@/lib/a
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { a6GrantsProblem, rbacAuthority, rbacProposal, useRbacCommands, type A6Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import {
@@ -59,7 +61,7 @@ type Submitted = {
 };
 
 /** 已备好的原操作提醒，由持久保存的完整请求驱动。 */
-type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; actions: ReactNode };
+type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; line?: string; actions: ReactNode };
 
 /** 审批单最后一次查到的状态；只有回执、还没查到状态时单独写。 */
 const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; tone: "warn" | "progress" | "ok" | "neutral"; icon: LucideIcon }> = {
@@ -149,6 +151,8 @@ export default function A6Roles() {
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
   const [recheckOriginal, setRecheckOriginal] = useState<A6Original | null>(null);
   const [releasing, setReleasing] = useState<RbacCommand | null>(null);
+  /** 查询原结果后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
+  const [outcomes, setOutcomes] = useState<Record<string, RbacOutcome>>({});
   const freshOverview = useRef<A6RoleOverview | null>(null);
   const freshDetail = useRef<A6RoleDetail | null>(null);
   const busy = useRef(false);
@@ -313,10 +317,23 @@ export default function A6Roles() {
     const state = !ticket && (!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
       ? await commands.queryReceipt(record).catch(() => null) : null;
     requireActor();
+    // The minimal status cannot tell a rolled-back refusal apart; the detailed receipt can (eCommandSettled).
+    const receipt = state === "REJECTED" ? await commands.queryInvestigation(record).catch(() => undefined) : undefined;
+    requireActor();
+    const keep = (outcome: RbacOutcome) => setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
     if (!ticket) {
       // A6 may return its trusted business refusal after writes began and rolled back.
       // Keep the original; the minimal status supplies neither its reason nor a governed conclusion.
       if (state === "REJECTED") {
+        if (receipt && eCommandSettled(receipt)) {
+          setConfirmReq(null); setReleasing(null);
+          commands.forget(record);
+          await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+          requireActor();
+          if (announce) setToast(rbacSettledText(receipt));
+          return false;
+        }
+        keep({ state, receipt });
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
         return false;
       }
@@ -333,8 +350,13 @@ export default function A6Roles() {
         return false;
       }
       if (!proposal) {
+        keep({ state: state ?? "ERROR" });
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-        setToast("没查到原结果，记录保留。");
+        return false;
+      }
+      if (record.original.kind === "a6-status" && state === "PROCESSING") {
+        keep({ state });
+        await reloadCurrent(record.original.role.id);
         return false;
       }
       if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id);
@@ -409,6 +431,7 @@ export default function A6Roles() {
       try {
         if (saved && !getRecord()) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
         const retry = !!saved;
+        if (saved) { const key = saved.commandKey; setOutcomes(all => { const next = { ...all }; delete next[key]; return next; }); }
         if (!saved) {
           requireNew(original);
           saved = commands.capture(original, reason, operator, String(view.action), describeOriginal(original));
@@ -576,11 +599,14 @@ export default function A6Roles() {
     const expired = isRetryExpired(record);
     // Status can also have succeeded as a direct no-op; release requires its current target state.
     const original = record.original;
+    const outcome = outcomes[record.commandKey];
+    const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: authorities.includes(rbacAuthority(original)), canClose: false });
     const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && (original.kind === "a6-delete" || original.kind === "a6-grants"
       || original.kind === "a6-status" && overview?.roles.some(role => role.id === original.role.id && role.status === original.status));
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
-      tag: expired
+      line: shown?.line,
+      tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? original.kind === "a6-status" ? "原请求超过 24 小时，不能再重试。没查到审批单和原结果，但角色已经是要改成的状态，可以解除这条记录。" : "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原请求重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>,
       actions: <>
@@ -637,7 +663,7 @@ export default function A6Roles() {
       {conclusion}
 
       {unknownRows.length > 0 && (
-        <Notice tone="warn" title="有原操作结果未知">
+        <Notice tone="warn" title={unknownRows.some(row => row.line) ? "有原操作要处理" : "有原操作结果未知"}>
           <ul className="a6-recovery" aria-label="结果未知的原操作">
             {unknownRows.map((row) => (
               <li key={row.key}>
@@ -646,6 +672,7 @@ export default function A6Roles() {
                 <span className="a6-recovery-time">{businessStamp(row.submittedAt)} 提交</span>
                 {row.tag}
                 <span className="a6-recovery-actions">{row.actions}</span>
+                {row.line && <span className="a6-recovery-line" role="status">{row.line}</span>}
               </li>
             ))}
           </ul>

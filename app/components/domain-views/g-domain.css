@@ -269,6 +269,7 @@
 .g1-tier-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .g1-tier-head b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
 .g1-tools { display: grid; gap: 16px; padding: 0 var(--rd-panel-pad-x) 16px; }
+.g1-missing { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .g1-lane { display: flex; flex-wrap: wrap; gap: 12px; }
 .g1-lane-stage { display: grid; align-content: start; gap: 8px; flex: 1 1 auto; min-width: 0; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .g1-lane-stage[data-stage="locked"] { flex-grow: 2; }
