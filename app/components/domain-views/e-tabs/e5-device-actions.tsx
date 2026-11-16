@@ -36,11 +36,11 @@ const LABELS: Record<E5Intent, string> = { activate: "激活设备", deactivate:
 const CONFIRMS: Record<E5Intent, string> = { activate: "确认激活", deactivate: "确认取消激活", pause: "确认暂停该用户", resume: "确认恢复该用户", "force-activate": "提交强制激活审批", unbind: "提交解绑审批", legacy: "提交终结审批" };
 const EFFECTS: Record<E5Intent, string> = {
   activate: "激活后占用一个设备名额。每人最多 6 台，包含手机。",
-  deactivate: "停用后不接新任务、不占名额，不退款；要再用可以申请强制激活。",
+  deactivate: "停用后不接新任务、不占名额，不退款；之后用户能在 App 里重新激活，后台也能申请强制激活。",
   pause: "暂停这位用户的全部设备（含手机），停跑期间不计收益、不补发。之后可以点「恢复该用户」。",
   resume: "只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。",
   "force-activate": "设备激活后占用一个名额；每人最多 6 台，包含手机。",
-  unbind: "设备不再归原用户，不退款，购入时间不变；解绑期间没有收益。要恢复可以申请强制激活，批准后回到原用户；之后被回收或退役就不能恢复。",
+  unbind: "设备不再归原用户，后台不能再恢复；不退款，购入时间不变，解绑后没有收益。",
   legacy: "只取消这条结果不明的旧任务，不发 USDT 或 UVT 收益；任务记录保留，这条任务不会再执行。",
 };
 interface ActionsState {
@@ -313,7 +313,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
     </Modal>}
     {action && <OperationConfirmModal action={LABELS[action]} title={LABELS[action]} briefKind="record" confirmLabel={CONFIRMS[action]} reasonMin={8} reasonMax={200}
       confirmTone={action === "unbind" || action === "pause" || action === "legacy" ? "danger" : "primary"}
-      effect={<><StatusTag tone="progress" filled explain={proposal ? "另一位有审批权限和这项操作权限的管理员批准后执行，发起人不能自批；批准前设备状态不变。" : undefined}>{proposal ? "批准后生效" : "立即生效"}</StatusTag>{action === "legacy" && <IrreversibleTag />}</>}
+      effect={<><StatusTag tone="progress" filled explain={proposal ? "另一位有审批权限和这项操作权限的管理员批准后执行，发起人不能自批；批准前设备状态不变。" : undefined}>{proposal ? "批准后生效" : "立即生效"}</StatusTag>{(action === "legacy" || action === "unbind") && <IrreversibleTag />}</>}
       statedBrief={{ impact: action === "legacy" && d.pendingDeactivate ? `${EFFECTS.legacy}${LEGACY_CLOSING}` : EFFECTS[action], check: "核对设备、归属用户、操作范围和理由，名额包含手机。" }}
       completionCopy={proposal ? "另一位管理员批准后执行，批准前设备状态不变。" : undefined}
       facts={<><Facts>{action === "pause" || action === "resume" ? <><Fact label="用户" value={d.user} /><Fact label="影响范围" value={action === "pause" ? "这位用户的全部设备（含手机）" : "这位用户被运营暂停的设备（含手机）"} /><Fact label="从这台设备发起" value={<>{d.deviceName}<br /><span className="e5-instance" data-mono>{d.serial}</span></>} /><Fact label="发起设备状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} /></> : <><Fact label="设备" value={d.deviceName} /><Fact label="实例号" value={d.serial} mono /><Fact label="归属用户" value={d.user} /><Fact label="当前状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} />{action === "deactivate" && <><Fact label="什么时候停" value="有任务时这一单结算后停，没有任务立即停" /><Fact label="旧任务" value="还没入账的直接取消，不结算" /></>}</>}
