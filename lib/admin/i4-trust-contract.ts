@@ -49,10 +49,24 @@ export function i4AppFieldIssue(fields: readonly TrustField[]): string | undefin
   return undefined;
 }
 
-/** I4-BE-05: replacing fields deletes omitted translations; never silently merge or discard them. */
+/** Publication still replaces fields, including omitted translations. */
 export function i4OmittedTranslations(current: readonly TrustField[], next: readonly TrustField[]): boolean {
   const keys = new Set(next.map(field => field.key.trim()));
   return current.some(field => /[._-](id|ms|fil|ru|kk|uz)$/i.test(field.key) && !keys.has(field.key.trim()));
+}
+
+/** 98a1aad7 retains omitted additional locales with an English family, draft before published. */
+export function i4DraftOmittedTranslations(published: readonly TrustField[], draft: readonly TrustField[], next: readonly TrustField[]): boolean {
+  const existing = new Map([...published, ...draft].map(field => [field.key.trim().toLowerCase(), field]));
+  const supplied = new Set(next.map(field => field.key.trim().toLowerCase()));
+  const known = [...existing.values(), ...next];
+  return [...existing].some(([key, field]) => {
+    const locale = /^(.+?)[._-](id|ms|fil|ru|kk|uz)$/i.exec(field.key.trim());
+    return locale && !supplied.has(key) && !known.some(candidate => {
+      const english = /^(.+?)[._-]en$/i.exec(candidate.key.trim());
+      return english?.[1].toLowerCase() === locale[1].toLowerCase();
+    });
+  });
 }
 
 export function i4TrilingualFields(fields: readonly Pick<TrustField, "key" | "value">[]) {

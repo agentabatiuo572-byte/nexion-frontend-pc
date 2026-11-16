@@ -349,10 +349,19 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
   if (command.action !== "delete") {
     try {
       const row = parseI4SectionVersion(payload.data);
+      const submitted = command.input!.fields;
+      // New servers append retained locales after the supplied fields; older servers return only the supplied fields.
+      const retainedLocales = row.fields.slice(submitted.length).every(field => {
+        const locale = /^(.+?)[._-](id|ms|fil|ru|kk|uz)$/i.exec(field.key.trim());
+        return locale && row.fields.some(candidate => {
+          const english = /^(.+?)[._-]en$/i.exec(candidate.key.trim());
+          return english?.[1].toLowerCase() === locale[1].toLowerCase();
+        });
+      });
       valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
         && row.revision === (command.action === "create" ? 1 : command.input!.expectedRevision! + 1)
         && row.description === command.input!.description && row.structure === command.input!.structure
-        && JSON.stringify(row.fields) === JSON.stringify(command.input!.fields);
+        && JSON.stringify(row.fields.slice(0, submitted.length)) === JSON.stringify(submitted) && retainedLocales;
     } catch { /* An unreadable success cannot resolve the original command. */ }
   }
   if (!valid) throw new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。");

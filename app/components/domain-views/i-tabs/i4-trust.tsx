@@ -28,7 +28,7 @@ import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
-import { i4AppFieldIssue, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
+import { i4AppFieldIssue, i4DraftOmittedTranslations, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -412,7 +412,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     }
     const fields = draftEditor.fields.map(field => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() }));
     // The App contract applies at publication; drafts retain the backend authoring contract.
-    if (i4OmittedTranslations(currentSectionFields(sectionSnapshot), fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
+    const existingDraft = draftEditor.mode === "edit" ? TRUST_SECTION_VERSIONS.find(row => row.sectionKey === draftEditor.sectionKey && row.version === draftEditor.version) : undefined;
+    if (i4DraftOmittedTranslations(currentSectionFields(sectionSnapshot), existingDraft?.fields ?? [], fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
     const payload = {
       version: draftEditor.version,
       description: draftEditor.description.trim(),
