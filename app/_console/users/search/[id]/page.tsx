@@ -1208,7 +1208,7 @@ export default function UserDetailPage() {
       return {
         key: command.fingerprint, object: command.label, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情读回或重试。" : "可能已经生效，这个账号只能读回现在的状态。" : "可能已经生效，先读回现在的状态。",
+        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : command.legacy ? "升级前的记录不能重试，先查询原结果。" : !writable ? hasWrite ? "可能已经生效，到用户详情查询原结果或重试。" : "可能已经生效，这个账号只能查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>查询原结果</Button>
