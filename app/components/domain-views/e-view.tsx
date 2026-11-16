@@ -542,7 +542,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       const receipt = await fetchA2ProposalByKey(record.commandKey);
       if (!receipt?.mine || receipt.obj !== record.orderNo
           || (receipt.operationCode && receipt.operationCode !== record.fingerprint.split("|")[0])) {
-        setToast("暂未找到对应的原审批单，请稍后再查。原命令号继续保留。", "warn");
+        setToast("暂未找到对应的原审批单，请稍后再查。原操作记录继续保留。", "warn");
         return;
       }
       commandAttempts.forget(record.fingerprint, record.commandKey);
@@ -604,7 +604,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     e4PendingCommands.remember(scope, key, { ...saved, receivedTicketId: createdTicket.id, creationConfirmed: true, proposalStatus: undefined });
     syncE4Pending();
     if (!e4PendingCommands.isDurablyStored(scope, key) || !createdTicket.mine || createdTicket.obj !== spec.obj
-      || createdTicket.operationCode && createdTicket.operationCode !== spec.command.op) throw new A2OutcomeUncertainError("提交结果暂未确认，请到操作记录里核对。", key);
+      || createdTicket.operationCode && createdTicket.operationCode !== spec.command.op) throw new A2OutcomeUncertainError("结果未知，请到「操作记录与审批」核对。", key);
     await readE4CurrentProposal(e4PendingCommands.list().find(row => row.fingerprint === scope && row.commandKey === key)!);
     return true;
   };
