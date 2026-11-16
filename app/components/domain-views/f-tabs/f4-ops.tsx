@@ -138,7 +138,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const waitFinance = stages.filter((stage) => stage.key === "finance").length;
   const waitApproval = stages.filter((stage) => stage.key === "approve").length;
   const board = leaderboardState(data);
-  const week = data.leaderboardPeriods?.week;
+  const week = data.leaderboardComputePointPeriods?.week;
   const tightQuota = data.quotaRows.filter((row) => row.tight).length;
 
   const cadence = settlement.ready ? settleCadenceNote(data.configValues["F.pool.settleCron"] ?? "") : null;
@@ -212,7 +212,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           value={board.available && week ? usdt(week.poolUsdText ?? week.poolUsd) : "—"} unit={board.available && week ? "USDT" : undefined} tone="role-1">
           <span className="f4-card-line">
             {board.paused ? <StatusTag tone="warn">已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
-            {board.available && week?.podium[0] ? <span>第 1 名 {week.podium[0].userId}</span> : <span className="f4-muted">{board.available ? "本周还没有上榜的人" : "名次暂不显示"}</span>}
+            {board.available && week?.podium[0] ? <span>第 1 名 {week.podium[0].userId}</span> : <span className="f4-muted">{board.available && week ? "本周还没有上榜的人" : "名次读不出来"}</span>}
           </span>
         </Stat>
       </StatBand>

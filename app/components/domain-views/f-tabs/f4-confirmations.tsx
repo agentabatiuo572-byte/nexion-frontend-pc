@@ -6,7 +6,7 @@ import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
-import { count, describeSettleCron, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
+import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import { decimalText } from "./f4-shared";
 import { f4Decimal, f4HeadCapAmplifies, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
@@ -63,8 +63,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const settled = data.weeklyInjectedUsd > 0;
   const pool = data.currentWeekPoolAmount ?? data.currentWeekPoolUsd;
   const board = leaderboardState(data);
-  const current = data.leaderboardPeriods?.[period];
-  const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "0";
+  const current = data.leaderboardComputePointPeriods?.[period];
+  const lbMinPoints = data.configValues["F.leaderboard.minComputePoints"];
   const top1MaxPct = data.configValues["F.pool.top1MaxPct"]?.trim() || "25";
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
@@ -72,7 +72,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const currentPeriodPrize = (key: Period) => {
     const configured = periodPrizes?.[key === "all" ? "allTime" : key];
     if (configured !== undefined) return configured;
-    const liveAmount = board.paused ? undefined : data.leaderboardPeriods?.[key]?.poolUsdText ?? data.leaderboardPeriods?.[key]?.poolUsd;
+    const liveAmount = board.paused ? undefined : data.leaderboardComputePointPeriods?.[key]?.poolUsdText ?? data.leaderboardComputePointPeriods?.[key]?.poolUsd;
     return liveAmount === undefined ? "" : String(liveAmount);
   };
   const ppToday = currentPeriodPrize("today");
@@ -231,7 +231,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     amplify: true,
     title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给累计已解锁奖励最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
+      impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给团队订单算力点最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
       check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。执行时不检查兑付覆盖率。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
@@ -242,13 +242,14 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
       <Fact k="头部上限"><span className="rd-keep">第 1 名最多 {top1MaxPct}%，</span><span className="rd-keep">前 5 名合计最多 {top5MaxPct}%，</span><span className="rd-keep">超出的不再分给别人</span></Fact>
     </Facts>,
-    detail: `总榜不会自动清零。按累计奖励前 100 名发放当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
+    detail: `总榜不会自动清零。名次按算力点排，发的是 USDT：当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
     run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
   };
       break;
     }
     case action.startsWith("F.leaderboard.week.user."): {
-      const member = data.leaderboardPeriods?.week?.podium.find(row => action === `F.leaderboard.week.user.${row.memberUserId}.status`)!;
+      const member = (data.leaderboardComputePointPeriods?.week?.podium ?? data.leaderboardPeriods?.week?.podium ?? [])
+        .find(row => action === `F.leaderboard.week.user.${row.memberUserId}.status`)!;
       spec = { briefKind: "record",
     name: `取消 ${member.userId} 本周榜单资格`, op: "dispose",
     paramKey: `F.leaderboard.week.user.${member.memberUserId}.status`, fixedVal: "disqualified",
@@ -260,7 +261,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     completionCopy: approvalCopy("榜单处置权限"),
     facts: <KeyValues rows={[
       { key: "who", label: "谁", value: `用户 ${member.userId}` },
-      { key: "rank", label: "本周名次", value: `第 ${member.rank} 名 · ${prizeText(member.gmvLabel)} USDT` },
+      { key: "rank", label: "本周名次", value: "computePoints" in member ? `第 ${member.rank} 名 · ${count(member.computePoints as number)} 点` : `第 ${member.rank} 名 · ${prizeText(member.gmvLabel)} USDT` },
     ]} />,
     detail: `把成员 ${member.memberUserId} 移出本周榜单，排名和奖池发放都不再算他。`,
   };
@@ -308,13 +309,23 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
               detail: `本周榜单奖池总额 · 当前 ${lbPool}。` };
       break;
     }
-    case action === "F.leaderboard.minUsd": {
-      spec = { briefKind: "config", name: "调整上榜最低奖励", op: "param", paramKey: "F.leaderboard.minUsd",
-              edit: { kind: "number", current: lbMinUsd, unit: "USDT" },
+    case action === "F.leaderboard.minComputePoints": {
+      spec = { briefKind: "config", name: "调整上榜门槛", op: "param", paramKey: "F.leaderboard.minComputePoints",
+              edit: { kind: "number", current: lbMinPoints ?? "1", unit: "点", min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, maxDecimals: 0 },
               title: "调整上榜门槛", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，本期已解锁奖励低于新门槛的人不参与四个榜的排名和派奖；已发的不变。", check: "只能填 0 或正数。" },
+              statedBrief: { impact: "批准后，本期团队订单算力点低于新门槛的人不参与四个榜的排名和派奖；已发的不变。", check: "只能填 0 或正整数，0 表示不设门槛。" },
               completionCopy: approvalCopy("F4 写权限"),
-              detail: `上榜最低奖励 · 当前 ${lbMinUsd} USDT · 低于这个金额不参与排名。` };
+              detail: `上榜门槛 · 当前 ${minPointsText(lbMinPoints)} · 低于这个点数不参与排名。` };
+      break;
+    }
+    case action === "F.leaderboard.minUsd": {
+      // 只用来显示本机保存的旧申请：旧的 USDT 门槛已经停用，新提交走上面的算力点门槛。
+      spec = { briefKind: "config", name: "调整上榜最低奖励（已停用）", op: "param", paramKey: "F.leaderboard.minUsd",
+              edit: { kind: "number", current: data.configValues["F.leaderboard.minUsd"] ?? "0", unit: "USDT" },
+              title: "调整上榜最低奖励（已停用）", effect: approvalTag(), confirmLabel: "提交审批",
+              statedBrief: { impact: "这一项已经停用，排名不再看它；要改门槛请用「上榜门槛」（算力点）。", check: "按原请求重试会被拒绝，不会生效。" },
+              completionCopy: approvalCopy("F4 写权限"),
+              detail: "旧的 USDT 上榜门槛已停用，只能查询原申请的结果。" };
       break;
     }
     case action === "F.pool.top1MaxPct": {

@@ -9,7 +9,7 @@ import { Pause, Play, ShieldAlert, SlidersHorizontal, Trophy } from "lucide-reac
 import { BlockState, Button, ConfigList, ConfigRow, Explain, Notice, Panel, Segments, StatusTag } from "@/app/components/rd";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
-import { count, decimalText, stamp, usdt, zoneNote } from "./f4-shared";
+import { count, decimalText, minPointsText, periodRange, stamp, usdt, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { f4Confirmation } from "./f4-confirmations";
@@ -35,15 +35,22 @@ function prizeText(label: string) {
   return amount ? decimalText(amount[1]) : label;
 }
 
+/** 榜读不出来的原因。和「这一期没有人上榜」分开写。 */
+function unavailableText(paused: boolean, reason: string | undefined) {
+  if (!paused) return "这个榜的算力点没读到，名次暂不显示，不代表没有人上榜。";
+  if (reason === "SNAPSHOT_SCHEMA_UNSUPPORTED") return "暂停时存的是旧版榜单（按奖励金额排名），不能换算成算力点。恢复榜单后按算力点重新显示。";
+  if (reason === "PRE_SNAPSHOT_PAUSE") return "暂停时没有存下榜单，名次暂不显示。恢复榜单后按算力点重新显示。";
+  return "暂停时存的榜单读不出来，名次暂不显示。恢复榜单后按算力点重新显示。";
+}
+
 export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4LeadershipPoolOverview }) {
   const [period, setPeriod] = useState<Period>("week");
   const canWrite = ctx.can("network_f4_write");
   const canFund = ctx.can("network_f4_pool_fund");
   const canControl = ctx.can("network_f4_leaderboard_control");
   const board = leaderboardState(data);
-  const current = data.leaderboardPeriods?.[period];
+  const current = data.leaderboardComputePointPeriods?.[period];
   const available = !!current && board.available;
-  const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "0";
   const top1MaxPct = data.configValues["F.pool.top1MaxPct"]?.trim() || "25";
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
@@ -51,7 +58,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const currentPeriodPrize = (key: Period) => {
     const configured = periodPrizes?.[key === "all" ? "allTime" : key];
     if (configured !== undefined) return configured;
-    const liveAmount = board.paused ? undefined : data.leaderboardPeriods?.[key]?.poolUsdText ?? data.leaderboardPeriods?.[key]?.poolUsd;
+    const liveAmount = board.paused ? undefined : data.leaderboardComputePointPeriods?.[key]?.poolUsdText ?? data.leaderboardComputePointPeriods?.[key]?.poolUsd;
     return liveAmount === undefined ? "" : String(liveAmount);
   };
   const ppToday = currentPeriodPrize("today");
@@ -65,7 +72,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
 
   const openPayout = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "payout", overview: data, policy: ctx.f4AmbassadorPolicy, period }));
 
-  const openDisqualify = (row: F4LeadershipPoolOverview["podium"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.leaderboard.week.user.${row.memberUserId}.status`, overview: data, policy: ctx.f4AmbassadorPolicy, period }));
+  const openDisqualify = (row: { memberUserId: number }) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.leaderboard.week.user.${row.memberUserId}.status`, overview: data, policy: ctx.f4AmbassadorPolicy, period }));
 
   const paramRow = (spec: { name: string; value: string; what: string; when: string; effect: string; note?: string; allowed: boolean; open: () => void }) => (
     <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note} value={spec.value}
@@ -74,9 +81,10 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
 
   return (
     <div className="f4-stack">
-      <Panel title="排行榜" icon={Trophy} tone="role-1" sub={`按业务日历切日、周、月 · 时间为${zoneNote()} · 金额 USDT`}
+      <Panel title="排行榜" icon={Trophy} tone="role-1" sub={`按团队订单的算力点排名 · 奖池 USDT · 时间为${zoneNote()}`}
         explain={<>
-          <p>按本期已解锁的 USDT 奖励排名，不是成交额；这里只显示前三名。</p>
+          <p>名次按本期下级（七层内）已付款订单的算力点合计排，不含本人的订单；退款或拒付的订单整单不算。这里只显示前三名。</p>
+          <p>派奖发的是 USDT：按名次分这一期的奖池。</p>
           <p>参赛人数是参与排名的人数，日榜最多统计 20 人、周榜 50 人、月榜和总榜 100 人，不是全部用户。</p>
         </>}
         actions={<>
@@ -88,10 +96,10 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
           {board.paused ? <StatusTag tone="warn" icon={Pause}>已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
         </div>
         {board.paused && <Notice tone="warn" title="排行榜已暂停">
-          {board.frozen ? `榜单停在 ${stamp(data.leaderboardSnapshotAt)}。` : "暂停时的榜单快照不可用，名次和金额暂不显示。"}
+          {board.frozen ? `榜单停在 ${stamp(data.leaderboardSnapshotAt)}。` : "暂停时存的榜单不能显示。"}
           榜单奖励暂停发放，暂停期间到期的周期恢复后不会补发。
         </Notice>}
-        {!available ? <BlockState state="empty" title={board.paused ? "暂停时的榜单数据未确认" : "这个榜暂时无法显示"} />
+        {!available ? <BlockState state="error" title={board.paused ? "暂停时的榜单读不出来" : "这个榜暂时读不出来"} detail={unavailableText(board.paused, data.leaderboardSnapshotUnavailableReason)} />
           : current!.podium.length === 0 ? <BlockState state="empty" title={`${PERIODS.find((item) => item.value === period)!.label}还没有人上榜`} />
           : <ol className="f4-podium" data-count={current!.podium.length}>
             {current!.podium.map((row) => {
@@ -100,7 +108,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
                 <div className="f4-podium-card">
                   <span className="f4-podium-rank">第 <b>{row.rank}</b> 名</span>
                   <span className="f4-podium-user" data-mono>{row.userId}</span>
-                  <span className="f4-podium-value"><b>{prizeText(row.gmvLabel)}</b><small>USDT</small></span>
+                  <span className="f4-podium-value"><b>{count(row.computePoints)}</b><small>点</small></span>
                   <span className="f4-podium-tip">{operatorCopyText(row.tip)}{dq && <StatusTag tone="done">已取消资格</StatusTag>}</span>
                   {canControl && period === "week" && row.memberUserId > 0 && !dq && <Button size="sm" variant="danger-outline" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => openDisqualify(row)}>取消资格</Button>}
                 </div>
@@ -111,7 +119,9 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
           <div><dt>{board.paused ? "暂停时奖池" : "本期奖池"}</dt><dd>{available ? <>{usdt(current!.poolUsdText ?? current!.poolUsd)}<small>USDT</small></> : "—"}</dd></div>
           <div><dt>{board.paused ? "暂停时参赛人数" : "参赛人数"}<Explain label="参赛人数怎么算" content={`参与这个榜排名的人数，这个榜最多统计 ${limit} 人，不是全部用户。`} /></dt><dd>{available ? <>{count(current!.participantCount)}<small>人</small></> : "—"}</dd></div>
           <div><dt>有奖励的名次</dt><dd>{available ? (current!.topN > 0 ? `前 ${current!.topN} 名` : "没有奖励名次") : "—"}</dd></div>
-          <div><dt>更新于</dt><dd>{available ? stamp(current!.snapshotAt) : "—"}</dd></div>
+          <div><dt>{board.paused ? "暂停时门槛" : "上榜门槛"}</dt><dd>{available ? minPointsText(current!.minComputePoints) : "—"}</dd></div>
+          <div className="f4-board-span"><dt>统计时段</dt><dd>{available ? periodRange(current!.fromInclusive, current!.toExclusive, current!.businessTimezone, data.settlementZone) : "—"}</dd></div>
+          <div><dt>取数时间</dt><dd>{available ? stamp(current!.snapshotAt) : "—"}</dd></div>
         </dl>
         <p className="f4-risk"><ShieldAlert size={14} aria-hidden />本周风控命中 {count(data.leaderboardFraudHitCount)} 个账户{data.leaderboardDisqualified ? "（含已处理）" : ""}
           <Explain label="风控命中怎么算" content="本周有风险记录的账户和本周已被取消资格的账户合计去重，不是榜里待处理的精确人数。取消资格只在本周榜前三名上点。" /></p>
@@ -132,11 +142,11 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             effect: "填 0 不是关掉周榜奖池，而是改回用四榜奖池里的周榜金额。",
             note: "保存时不检查金额格式，写错时按四榜奖池的周榜金额发。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.poolUsd", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
-          {paramRow({ name: "上榜门槛", value: data.configValues["F.leaderboard.minUsd"] !== undefined ? `${decimalText(lbMinUsd)} USDT` : "未设置（按 0 USDT）", allowed: canWrite,
-            what: "本期已解锁奖励低于这个金额的人不参与排名，四个榜共用。",
-            when: "批准后从还没结算的周期起用；暂停期间的快照仍按暂停时的门槛。",
+          {paramRow({ name: "上榜门槛", value: minPointsText(data.configValues["F.leaderboard.minComputePoints"]), allowed: canWrite,
+            what: "本期团队订单算力点低于这个数的人不参与排名和派奖，四个榜共用。填 0 不设门槛。",
+            when: "批准后从还没结算的周期起用；暂停期间的榜仍按暂停时的门槛。",
             effect: "调高上榜的人变少。",
-            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.minUsd", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
+            open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.minComputePoints", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
           {paramRow({ name: "第 1 名最高占比", value: data.configValues["F.pool.top1MaxPct"]?.trim() ? `${top1MaxPct}%` : "未设置（按 25%）", allowed: canFund,
             what: "排行榜派奖时第 1 名最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
             when: "批准后对还没结算的榜生效，已发的不追回。",

@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
-import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact, type BusinessZone } from "@/lib/admin/business-time";
+import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact, parseBusinessTime, type BusinessZone } from "@/lib/admin/business-time";
 import { f4Decimal } from "@/lib/admin/f4-money";
 
 /** 接口给的 USDT 金额：保留接口十进制，千分位、至少两位，不舍入、不缩写。 */
@@ -32,6 +32,26 @@ export function count(value: number | null | undefined) {
 /** 「2026-11-14 10:20」，读不到写「—」。时区由区块标一次。 */
 export function stamp(value: string | null | undefined) {
   return formatBusinessTimeCompact(value ?? "", "—");
+}
+
+/** 排行榜周期的统计时段：按后端给的业务时区和周期边界写，不用浏览器时间推算；总榜没有边界。 */
+export function periodRange(from: string | null, to: string | null, zoneId: string, zone?: BusinessZone | null): string {
+  if (!from && !to) return "不限时段";
+  const text = (value: string | null) => {
+    const timestamp = value ? parseBusinessTime(value) : Number.NaN;
+    if (!Number.isFinite(timestamp)) return "—";
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: zoneId, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(timestamp).map((part) => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  };
+  const label = zoneId === businessZone().zoneId ? "" : zone?.zoneId === zoneId ? `（${zone.label}）` : zoneId === "Asia/Shanghai" ? "（北京时间）" : `（${zoneId}）`;
+  return `${text(from)} 至 ${text(to)}${label}`;
+}
+
+/** 上榜门槛：整数算力点，0 是不设门槛；后端没给时按后端默认 1 点。 */
+export function minPointsText(raw: string | number | undefined) {
+  if (raw === undefined || String(raw).trim() === "") return "未设置（按 1 点）";
+  const value = Number(raw);
+  return value === 0 ? "0 点（不设门槛）" : Number.isSafeInteger(value) ? `${count(value)} 点` : String(raw);
 }
 
 /** 区块标一次的时区说明，比如「北京时间（UTC+8）」。 */
@@ -126,7 +146,7 @@ export function unknownTag(kind: "direct" | "approval") {
 export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
   if (!rows.length) return null;
   return (
-    <Notice tone={rows.every((row) => row.pending) ? "progress" : "warn"} title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里，关掉标签页或换账号登录后就没了。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；申请过期、按原单号又查不到单时，可以确认后解除。" /></>}>
+    <Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里，关掉标签页或换账号登录后就没了。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；申请过期、按原单号又查不到单时，可以确认后解除。" /></>}>
       <ul className="f4-recovery" aria-label="还没有结论的原操作">
         {rows.map((row) => (
           <li key={row.key}>
