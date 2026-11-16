@@ -1993,6 +1993,17 @@ export function parseM3MessagePage(value: unknown, no: string): M3MessagePage {
   if (new Set(readContexts.map(context => context.conversationNo)).size !== readContexts.length) invalid();
   return { conversation, messages, hasMore: row.hasMore as boolean, nextBeforeMessageId, customerIdentity, replyContext: { ready: reply.ready as boolean, targets }, readContexts };
 }
+/** Resolves the current assignment's thread without changing the historical thread owner. */
+export async function resolveMConversationContinuation(no: string, actorId: number) {
+  const detail = await fetchMConversationDetail(no);
+  const customerId = String(detail.customerId);
+  const customer = await supportClient.customerDetail(customerId);
+  if (customer.agentAdminId !== actorId || !customer.assignmentId) throw new Error("CONVERSATION_PEER_CHANGED");
+  const state = detail.writeState;
+  if (!state || state.currentAssignmentAgentId !== String(actorId)) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  return { customerId, conversationNo: state.writableConversationNo };
+}
+
 export async function fetchM3MessagePage(no: string, beforeMessageId?: number, signal?: AbortSignal): Promise<M3MessagePage> {
   const cursor = beforeMessageId === undefined ? "" : `?beforeMessageId=${supportWireId(beforeMessageId, "beforeMessageId")}`;
   return parseM3MessagePage(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}/messages${cursor}`, { signal }), no);

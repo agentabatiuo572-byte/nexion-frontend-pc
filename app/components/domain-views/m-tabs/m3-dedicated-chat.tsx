@@ -12,7 +12,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
-import { markM3MessagePageRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -374,7 +374,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   // 「我接待中」 needs the inbox holder field (B15); hidden while the backend does not send it.
   const holderKnown = customerRows.some(row => row.holder !== undefined);
   const tabs = LIST_TABS.filter(([value]) => (value !== "unassigned" || reviewing) && (value !== "holding" || holderKnown));
-  const requestedConvo = validCustomerId(requestedCustomerId) ? customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
+  const [continuation, setContinuation] = useState<{ customerId: string; conversationNo: string | null } | null>(null);
+  const requestedConvo = validCustomerId(requestedCustomerId) ? continuation?.customerId === requestedCustomerId
+    ? visible.find(convo => convo.id === continuation.conversationNo) ?? null
+    : customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
   const selectedCustomer = visible.find(row=>row.id===selectedId)?.customerId;
   const selectedSummary = requestedCustomerId ? requestedConvo ?? null : selectedId ? customerRows.find(row=>row.customerId===selectedCustomer) ?? null : customerRows.find(convo=>!convo.archived) ?? null;
   const pageScope = `${scopeIdentity}:${scopeGeneration.current}:${scopeRetry}:${qualificationUnknown}:${conversationsAvailable}`;
@@ -1264,13 +1267,24 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       },
     });
   };
-  const continueClosed = () => {
-    if (!canWriteM3 || !selected?.detailReady || !selected.customerId || selected.ownerAdminId !== adminId || !canSendTo({ ...selected, status: "open" }, adminId)) return;
-    const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", String(selected.customerId)); window.history.replaceState(null, "", url);
-    setRequestedCustomerId(String(selected.customerId));
-    setScreen("chat");
-    setActionError("");
+  const continueClosed = async () => {
+    if (!canWriteM3 || !selected?.detailReady || !selected.customerId || actionChecking) return;
+    const stamp = identityRef.current;
+    setActionChecking(true); setActionError("");
+    try {
+      const next = await resolveMConversationContinuation(selected.id, adminId);
+      if (stamp !== identityRef.current) return;
+      if (next.conversationNo) await ctx.loadConversationDetail(next.conversationNo);
+      if (stamp !== identityRef.current) return;
+      setContinuation(next);
+      const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", next.customerId); window.history.replaceState(null, "", url);
+      setRequestedCustomerId(next.customerId);
+      setScreen("chat");
+    } catch (cause) {
+      if (stamp === identityRef.current) setActionError(displayAdminError(cause));
+    } finally { if (stamp === identityRef.current) setActionChecking(false); }
   };
+
   const endPending = Boolean(holdEndCommand && holdEndCommand.customerId === holdCustomer);
   // The ref contains the UTC started_at (SupportReceptionMapper.receive). Only an expired legacy
   // intent followed by a demonstrably later reception can coexist with a new, independently bound intent.
