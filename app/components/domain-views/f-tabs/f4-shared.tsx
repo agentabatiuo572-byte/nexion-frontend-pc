@@ -115,7 +115,7 @@ export type F4RecoveryRow = {
 /** 结果未知：提交时没收到确定结果。直接记录的写操作和走审批的申请各一句。 */
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经记录。24 小时内可以按原请求重试，后端认得出是同一次提交，不会记两次。"
+    ? "提交时没收到确定结果，可能已经记录。24 小时内可以按原请求重试，不会记两次。"
     : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；按原请求重试不会建第二张。"}>结果未知</StatusTag>;
 }
 
