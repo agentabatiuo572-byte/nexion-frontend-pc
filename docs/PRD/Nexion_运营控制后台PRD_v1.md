@@ -1637,7 +1637,7 @@ GET与SSE同源，SSE只给连接初始快照；前端每30秒GET，运输断线
 |---|---|
 | 黄线/不提高红线 | `PUT /api/admin/risk/bankrun-thresholds`，yellowPct/redPct/expectedVersion/reason/operator，`overview_b5_threshold_write`；服务端同时接受ROLE_SUPER_ADMIN/ROLE_RISK_LEAD，PC仍逐实际写码；version+1、审计后返回完整radar |
 | 提高红线审批 | `POST /api/admin/platform/audit/operations`；sourceDomain=B5、obj=current、command=B/b5_bankrun_thresholds、params.values带原版本及两线、target=B/bankrun_thresholds/current，fund/amplifies=true；另一位有效超级管理员且有platform_a2_operation_approve批准，自己不能批；批准仍复核版本 |
-| 共享订阅 | GET/PUT `/api/admin/risk/alert-subscription`，`overview_b5_subscribe`；全平台与B1共用，保存者成为唯一subscriber；email不开放，webhook须HTTPS/≤500/公网DNS/允许名单/受控代理，保存不试发；队列发送使用当前URL |
+| 共享订阅 | GET `/api/admin/risk/alert-subscription` 要 `overview_b5_read`，同路径 PUT 要 `overview_b5_subscribe`；全平台与B1共用，保存者成为唯一subscriber；email不开放，webhook须HTTPS/≤500/公网DNS/允许名单/受控代理，保存不试发；队列发送使用当前URL |
 | 主卡及队列分诊 | `POST /api/admin/risk/radar/triage`，dimension/target/operator；triage+目标读权及菜单；FINANCE仅bankrun/withdraw-backlog/coverage。队列K1→abnormal-accounts、D2→withdraw-backlog、K2→abuse、J3→tamper、K4→scoring，均为精确固定目标；回执仅dimension/target，匹配后跳转，失败不导航，按B4-PD02可重新点，不套R1：明确失败提示「没有跳转：分诊记录没记上，请再点一次。」，断网、超时、回执不符提示「没有跳转：分诊记录结果未知，请再点一次。」；后端回`B5_TRIAGE_TARGET_INVALID`（还不认K2、J3、K4三个目标的旧后端）时这三类直接跳转、不提示；403时提示只写没记上和原因、不叫人再点（裸「无权限访问」换成全站无权限说明）；无分诊资格的队列链接仍按useReach只导航 |
 | 确认已读 | `POST /api/admin/risk/radar/inbox/{id}/acknowledge`，Idempotency-Key、无body；`overview_b5_triage`；只更新本人DELIVERED的read_at/acknowledged_at，回deliveryId/acknowledged，不改信号进度 |
 | 处理进度 | `PATCH /api/admin/risk/radar/signals/{signalNo}/status`，targetStatus/expectedStatus/expectedVersion/reason/operator；triage，理由8–200，仅open→handled→resolved；回signalNo/handlingStatus/handlingVersion，不解冻/放款/重发/改已读 |
