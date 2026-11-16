@@ -1,6 +1,6 @@
 import type { StateTone } from "@/app/components/rd";
 import type { DirectCommandReceiptState } from "@/lib/admin/direct-command-receipt";
-import { eCommandCanConcludeRejected, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { eCommandCanConcludeRejected, eCommandCanRequestRbacRollback, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { SETTLED_REJECTED, receiptExplain, rejectedStatus } from "../recovery-panel";
 
 /**
@@ -8,6 +8,17 @@ import { SETTLED_REJECTED, receiptExplain, rejectedStatus } from "../recovery-pa
  * state 是最小状态（ERROR＝这次没查成）；receipt 是被拒时再读的详细结果，没读到是 undefined。
  */
 export type RbacOutcome = { state: DirectCommandReceiptState | "ERROR"; receipt?: ECommandInvestigation | null };
+
+/** Available requests, not a guarantee of closure: only the server can verify the rollback marker. */
+export function rbacClosureConclusions(outcome: RbacOutcome | undefined, expired: boolean): ECommandEvidence["conclusion"][] {
+  const receipt = outcome?.receipt;
+  if (!receipt || !expired && receipt.originalStatus !== "UNKNOWN") return [];
+  if (receipt.originalStatus === "UNKNOWN") return eCommandCanRequestRbacRollback(receipt) ? ["NOT_EXECUTED", "STILL_UNKNOWN"] : ["STILL_UNKNOWN"];
+  if (eCommandCanRequestRbacRollback(receipt)) return ["NOT_EXECUTED"];
+  if (eCommandCanConcludeRejected(receipt)) return ["REJECTED"];
+  if (receipt.originalStatus === "SUCCEEDED" && receipt.businessCode === 0) return ["SUCCEEDED"];
+  return [];
+}
 
 /** 这一行的标签和一句话。句子沿用共用恢复面板定稿的说法（rejectedStatus、A4 同类行）。 */
 export function rbacOutcomeView(outcome: RbacOutcome, { expired, canRetry, canClose }: { expired: boolean; canRetry: boolean; canClose: boolean }): { tone: StateTone; label: string; line: string; more?: string } {
@@ -28,6 +39,7 @@ export function rbacOutcomeView(outcome: RbacOutcome, { expired, canRetry, canCl
 export function rbacSettledText(receipt: ECommandInvestigation) {
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return SETTLED_REJECTED;
   if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "核查确认已执行，记录已解除，不要再做一次。";
+  if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED") return "查到原结果：没有执行，记录已解除。";
   if (receipt.originalStatus === "FAILED") return "查到原结果：后台拒绝了，没有生效，记录已解除。";
   return "原操作已执行，记录已解除，不要再做一次。";
 }

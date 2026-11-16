@@ -16,10 +16,10 @@ import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useRbacCommands, type A7Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { canInvestigateECommand, eCommandCanConcludeRejected, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import { FundClosureModal, closureKnown } from "../fund-command-check";
 import { receiptFact } from "../recovery-panel";
-import { rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
+import { rbacClosureConclusions, rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { CONSOLE_NAV, resolveVisibleDomains, type EffectiveMenuNode, type NavDomain } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
@@ -217,12 +217,12 @@ export default function A7Menus() {
     requireActor();
     const state = await commands.queryReceipt(record).catch(() => null);
     requireActor();
-    // A minimal rejection omits its reason; rejection audits may already have committed.
-    // Its detailed receipt says whether a governed conclusion has since settled it (eCommandSettled).
-    const receipt = state === "REJECTED" ? await commands.queryInvestigation(record).catch(() => undefined) : undefined;
+    // UNKNOWN also covers governed nonexecution; expired failures need server-owned rollback proof.
+    const receipt = state === "REJECTED" || state === "UNKNOWN" || state === "FAILED" && isRetryExpired(record)
+      ? await commands.queryInvestigation(record).catch(() => undefined) : undefined;
     requireActor();
     const concluded = !!receipt && eCommandSettled(receipt);
-    const settled = state === "SUCCEEDED" || state === "FAILED" || concluded;
+    const settled = state === "SUCCEEDED" || state === "FAILED" && !receipt || concluded;
     if (settled) {
       freshOverview.current = null;
       setConfirmReq(null); setMode(null);
@@ -385,8 +385,9 @@ export default function A7Menus() {
               const expired = isRetryExpired(record);
               const outcome = outcomes[record.commandKey];
               const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: canWrite, canClose: canClose });
-              // 过期后只有原回包是后台拒绝的能核查结案；后端不认这类操作的成功记录，结案框只给「后台拒绝」。
-              const closable = expired && canClose && !!outcome?.receipt && eCommandCanConcludeRejected(outcome.receipt);
+              const conclusions = rbacClosureConclusions(outcome, expired);
+              // The existing fund form cannot submit NOT_EXECUTED; its shared owner must add that option first.
+              const closable = canClose && conclusions.some(conclusion => conclusion === "REJECTED" || conclusion === "SUCCEEDED");
               return (
                 <li key={record.commandKey}>
                   <span className="a7-recovery-name">{record.name}</span>
@@ -467,7 +468,7 @@ export default function A7Menus() {
       {closing && (() => {
         const receipt = outcomes[closing.commandKey]?.receipt ?? null;
         const basis = closureKnown({ receipt });
-        return <FundClosureModal label={closing.name} createdAt={closing.createdAt} known={basis && { ...basis, success: "never" }}
+        return <FundClosureModal label={closing.name} createdAt={closing.createdAt} known={basis && { ...basis, success: basis.success === "receipt" ? "receipt" : "never" }}
           facts={<>
             <Fact k="菜单"><span data-mono>{closing.change}</span></Fact>
             <Fact k="系统记录">{receiptFact(receipt, "记录保留")}</Fact>
@@ -478,7 +479,7 @@ export default function A7Menus() {
             const next = await commands.queryInvestigation(record, evidence);
             requireActor();
             setClosing(null);
-            if (!next || !eCommandSettled(next)) { setOutcomes(all => ({ ...all, [record.commandKey]: { state: "REJECTED", receipt: next } })); return; }
+            if (!next || !eCommandSettled(next)) { setOutcomes(all => ({ ...all, [record.commandKey]: { state: next?.businessState === "PROCESSING" ? "PROCESSING" : next?.businessState === "REJECTED" ? "REJECTED" : "UNKNOWN", receipt: next } })); return; }
             freshOverview.current = null;
             setConfirmReq(null); setMode(null);
             commands.forget(record);

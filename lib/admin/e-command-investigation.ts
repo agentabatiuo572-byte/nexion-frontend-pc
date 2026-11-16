@@ -47,6 +47,12 @@ export function eCommandCanRequestResumeRollback(receipt: ECommandInvestigation 
     || receipt.originalStatus === "FAILED" && receipt.businessCode === null);
 }
 
+/** A6/A7 local transactions may ask for rollback proof; the receipt does not expose rollback_confirmed. */
+export function eCommandCanRequestRbacRollback(receipt: ECommandInvestigation | null | undefined) {
+  return !!receipt && /^(?:A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d{0,18})|A7_MENU_(?:CREATE:[A-Z0-9_-]{1,64}|(?:UPDATE|DELETE):[1-9]\d{0,18}))$/.test(receipt.scope)
+    && receipt.businessCode === null && (receipt.originalStatus === "UNKNOWN" || receipt.originalStatus === "FAILED");
+}
+
 /** Governed conclusions take precedence; unconfirmed replies use business results and one verified legacy list. */
 export function eCommandResult(receipt: ECommandInvestigation | null): ECommandResult {
   if (receipt?.businessState === "PROCESSING") return "PROCESSING";
