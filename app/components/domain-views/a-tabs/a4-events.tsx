@@ -38,7 +38,8 @@ import {
   type A4Overview,
   type A4RetentionExecution,
 } from "@/lib/admin/a4-client";
-import { a4Slot, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
+import { a4Slot, queryA4RetentionCommand, useA4Commands, type A4Command, type A4Original } from "@/lib/admin/a4-mutations";
+import { eCommandSettled } from "@/lib/admin/e-command-investigation";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 
 import { fetchA2ProposalByKey, fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -1010,7 +1011,20 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     setQuerying(record.commandKey);
     try {
       switch (record.original.kind) {
-        case "retention": if (!await refreshRetentionRun()) return; setTab("params"); break;
+        case "retention": {
+          const receipt = await queryA4RetentionCommand(record);
+          if (eCommandSettled(receipt)) {
+            commands.sync();
+            ctx.closeActionConfirm?.();
+            overviewReady.current = false;
+            await refreshOverview(true);
+            await refreshRetentionRun();
+            setTab("params");
+            return;
+          }
+          if (!await refreshRetentionRun()) return;
+          setTab("params"); break;
+        }
         case "param": if (!await refreshOverview(true)) return; setTab("params"); break;
         case "lifecycle": {
           resetSchemaLookup(record.original.schema.eventName);
