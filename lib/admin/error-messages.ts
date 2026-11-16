@@ -649,6 +649,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PHONE_MODEL_LOCK_RELEASE_RECEIPT_FORBIDDEN: "当前账号或客户范围不允许查看原解除回执。请恢复原操作者及客户范围后查询，原记录继续保留。",
   TASK_POOL_FORMAT_RETIRED: "这份操作使用了已停用的任务格式，请先核对原提案；不要修改未知请求或换号重发。核实原结果后，商品配置回商品管理、商城任务回任务池、手机任务回手机算力配置重新配置任务等级。",
   A2_PROPOSAL_READ_FORBIDDEN: "这个账号看不了原审批单，记录先留着；请有查看权限的管理员核对。",
+  A2_TICKET_OBJECT_DISPLAY_NAME_INVALID: "审批单的显示信息读不出来，这不代表审批已经执行或失败；请重新读取，一直不行联系值班人员。",
   ASSET_ID_INVALID: "媒体标识无效，请核对原媒体记录；不要删除已有商品关联。",
   ASSET_ID_REQUIRED: "缺少媒体标识，请重新读取商品媒体记录。",
   BUNDLE_DISCOUNT_POLICY_UNAVAILABLE: "组合折扣策略暂时读不到，请重新加载后核对。",
