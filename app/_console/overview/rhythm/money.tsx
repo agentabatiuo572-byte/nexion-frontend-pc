@@ -92,7 +92,7 @@ function BudgetPanel({ data }: { data: B4GrowthFlowHistory }) {
     : budget.reason === "B4_OPERATION_BUDGET_SOURCE_INCOMPLETE" && missing.length ? `缺${missing.join("、")}。` : undefined;
   return (
     <Panel data-testid="b6-monthly-budget-allocation" title="本月运营预算怎么分" sub="四类 · USDT" icon={PieChart} tone="role-1"
-      explain="运营预算配置里本月四类的金额和占比，是配好的预算，不是已经花掉的钱。占比保留两位小数，加起来可能和 100% 差一点。">
+      explain="这里只有配好的本月预算，不是已经花掉的钱；已用金额暂时没有数据，算不出剩余。占比保留两位小数，加起来可能和 100% 差一点。">
       {budget.available && budget.totalUsdt !== undefined ? (
         <div className="b4-stack">
           {usdt(budget.totalUsdt).length > 10 && <p className="b4-line">合计 <b className="b4-strong">{usdt(budget.totalUsdt)}</b> USDT</p>}
