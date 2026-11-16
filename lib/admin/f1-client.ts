@@ -759,6 +759,23 @@ export interface F4ComputePointPeriod extends Omit<F4LeaderboardPeriod, "podium"
 }
 export type F4ComputePointPeriods = Partial<Record<"today" | "week" | "month" | "all", F4ComputePointPeriod>>;
 
+export type F4PayoutPeriod = "today" | "week" | "month" | "allTime";
+export interface F4LeaderboardPayoutPreview {
+  period: F4PayoutPeriod; periodKey: string; paused: boolean; alreadySettled: boolean;
+  available: boolean; reason: string; rankingMetric: "COMPUTE_POINTS";
+  prizePoolUsdt: string; minComputePoints: string; topN: number; top1MaxPct: string; top5MaxPct: string;
+  // Not returned when the pool is absent; absence must not be turned into zero.
+  candidateCount?: number; rankedCount?: number; paidCount?: number;
+  amountBeforeCaps?: string; payableAmount?: string; reducedByCaps?: string;
+  rows: { rank: number; userId: number; userNo: string; computePoints: string;
+    amountBeforeCaps: string; amount: string; limitedBy: ("top1MaxPct" | "top5MaxPct")[] }[];
+}
+export interface F4LeaderboardDisqualificationReadiness {
+  period: "week"; periodKey: string; rankingMetric: "COMPUTE_POINTS"; minComputePoints: string;
+  rows: { rank: number; memberUserId: number; userNo: string; computePoints: string;
+    disqualificationAvailable: boolean; riskEvidenceRef: string; reason: string }[];
+}
+
 export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
 export type F4AmbassadorBucket = "venue" | "kol" | "print" | "dev";
 export interface F4AmbassadorReview {
@@ -1785,6 +1802,9 @@ async function f1Request<T>(
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("(?:budgetUsdt|recognizedBudgetUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (/^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:prizePoolUsdt|minComputePoints|computePoints|top1MaxPct|top5MaxPct|amountBeforeCaps|amount|payableAmount|reducedByCaps)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else if (path === "/leadership-pool/vote-projection" && !isWrite) {
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("(?:poolUsd|perVoteUsd|totalVotes)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
@@ -1856,7 +1876,7 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+    if (/^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
@@ -1908,6 +1928,74 @@ export async function fetchF4LeadershipPoolOverview() {
 
 export async function fetchF4VoteProjection() {
   return readF4VoteProjection(await f1Request<unknown>("/leadership-pool/vote-projection"));
+}
+
+/** Both new reads validate only their HTTP boundary; money stays in its original decimal text. */
+function f4LeaderboardRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return value as Record<string, unknown>;
+}
+function f4LeaderboardDecimal(value: unknown): string {
+  if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return value;
+}
+function f4LeaderboardCount(value: unknown, minimum = 0): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return value;
+}
+
+export async function fetchF4LeaderboardPayoutPreview(period: F4PayoutPeriod, periodKey?: string): Promise<F4LeaderboardPayoutPreview | null> {
+  const query = new URLSearchParams({ period });
+  if (periodKey !== undefined) query.set("periodKey", periodKey);
+  let data: unknown;
+  try { data = await f1Request<unknown>(`/leadership-pool/payout-preview?${query}`); }
+  catch (error) { if ((error as { status?: number }).status === 404) return null; throw error; }
+  const row = f4LeaderboardRecord(data);
+  if (row.period !== period || typeof row.periodKey !== "string" || !row.periodKey
+    || typeof row.paused !== "boolean" || typeof row.alreadySettled !== "boolean"
+    || typeof row.available !== "boolean" || typeof row.reason !== "string"
+    || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  const preview: F4LeaderboardPayoutPreview = {
+    period, periodKey: row.periodKey, paused: row.paused, alreadySettled: row.alreadySettled,
+    available: row.available, reason: row.reason, rankingMetric: "COMPUTE_POINTS",
+    prizePoolUsdt: f4LeaderboardDecimal(row.prizePoolUsdt), minComputePoints: f4LeaderboardDecimal(row.minComputePoints),
+    topN: f4LeaderboardCount(row.topN, 1), top1MaxPct: f4LeaderboardDecimal(row.top1MaxPct), top5MaxPct: f4LeaderboardDecimal(row.top5MaxPct),
+    rows: row.rows.map(value => {
+      const entry = f4LeaderboardRecord(value);
+      if (typeof entry.userNo !== "string" || !entry.userNo || !Array.isArray(entry.limitedBy)
+        || !entry.limitedBy.every(cap => cap === "top1MaxPct" || cap === "top5MaxPct")) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+      return { rank: f4LeaderboardCount(entry.rank, 1), userId: f4LeaderboardCount(entry.userId, 1), userNo: entry.userNo,
+        computePoints: f4LeaderboardDecimal(entry.computePoints), amountBeforeCaps: f4LeaderboardDecimal(entry.amountBeforeCaps),
+        amount: f4LeaderboardDecimal(entry.amount), limitedBy: entry.limitedBy as ("top1MaxPct" | "top5MaxPct")[] };
+    }),
+  };
+  if (row.reason !== "F4_LEADERBOARD_POOL_NOT_CONFIGURED") {
+    preview.candidateCount = f4LeaderboardCount(row.candidateCount);
+    preview.rankedCount = f4LeaderboardCount(row.rankedCount);
+    preview.paidCount = f4LeaderboardCount(row.paidCount);
+    preview.amountBeforeCaps = f4LeaderboardDecimal(row.amountBeforeCaps);
+    preview.payableAmount = f4LeaderboardDecimal(row.payableAmount);
+    preview.reducedByCaps = f4LeaderboardDecimal(row.reducedByCaps);
+  }
+  return preview;
+}
+
+export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): Promise<F4LeaderboardDisqualificationReadiness | null> {
+  let data: unknown;
+  try { data = await f1Request<unknown>(`/leadership-pool/disqualification-readiness?${new URLSearchParams({ limit: String(limit) })}`); }
+  catch (error) { if ((error as { status?: number }).status === 404) return null; throw error; }
+  const row = f4LeaderboardRecord(data);
+  if (row.period !== "week" || typeof row.periodKey !== "string" || !row.periodKey
+    || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return { period: "week", periodKey: row.periodKey, rankingMetric: "COMPUTE_POINTS", minComputePoints: f4LeaderboardDecimal(row.minComputePoints),
+    rows: row.rows.map(value => {
+      const entry = f4LeaderboardRecord(value);
+      if (typeof entry.userNo !== "string" || !entry.userNo || typeof entry.disqualificationAvailable !== "boolean"
+        || typeof entry.riskEvidenceRef !== "string" || typeof entry.reason !== "string") throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+      return { rank: f4LeaderboardCount(entry.rank, 1), memberUserId: f4LeaderboardCount(entry.memberUserId, 1), userNo: entry.userNo,
+        computePoints: f4LeaderboardDecimal(entry.computePoints), disqualificationAvailable: entry.disqualificationAvailable,
+        riskEvidenceRef: entry.riskEvidenceRef, reason: entry.reason };
+    }) };
 }
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {

@@ -17,8 +17,8 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[], method: string) {
-  if (method === "GET" && parts.length === 2 && parts.join("/") === "leadership-pool/vote-projection") {
-    return "/api/admin/teams/leadership-pool/vote-projection";
+  if (method === "GET" && parts.length === 2 && parts[0] === "leadership-pool" && ["vote-projection", "payout-preview", "disqualification-readiness"].includes(parts[1])) {
+    return `/api/admin/teams/leadership-pool/${parts[1]}`;
   }
   if (parts.length === 1 && parts[0] === "direct-referral-policy") {
     return "/api/admin/teams/direct-referral-policy";
