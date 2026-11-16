@@ -29,6 +29,7 @@ export type B5Subscription = {
   emailMode: string;
   webhookMode: string;
   subscriber: string;
+  subscriberDisplayName?: string | null;
 };
 
 export type B5InboxItem = {
@@ -111,6 +112,7 @@ export function normalizeB5Subscription(value: unknown): B5Subscription {
     emailMode: text(subscription.emailMode, "subscription.emailMode"),
     webhookMode: text(subscription.webhookMode, "subscription.webhookMode"),
     subscriber: text(subscription.subscriber, "subscription.subscriber"),
+    subscriberDisplayName: optionalText(subscription.subscriberDisplayName, "subscription.subscriberDisplayName"),
   };
 }
 

@@ -81,6 +81,7 @@ interface BackendTicket {
   id: string;
   action: string;
   obj: string;
+  objDisplayName?: string | null;
   beforeValue?: string | null;
   afterValue?: string | null;
   phoneCalibrationProposal?: string | null;
@@ -199,6 +200,7 @@ export interface A2OperationRow {
   id: string;
   action: string;
   obj: string;
+  objDisplayName?: string;
   before: string;
   after: string;
   operator: string;
@@ -348,6 +350,7 @@ function formatTime(value: string | null | undefined) {
 
 function fromTicket(ticket: BackendTicket): A2OperationRow {
   if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
+  if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
   const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
   let ambassadorMaterialProposal: F4AmbassadorMaterialProposal | undefined;
   let ambassadorMaterialError: string | undefined;
@@ -399,6 +402,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,
+    objDisplayName: ticket.objDisplayName?.trim() || undefined,
     before: ticket.beforeValue?.trim() || "—",
     after: ticket.afterValue?.trim() || "—",
     operator: ticket.operator?.trim() || "系统",

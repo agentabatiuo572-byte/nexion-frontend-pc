@@ -79,7 +79,7 @@ const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
 const subscriptionChannels = (value: { inApp: boolean; webhook: boolean; webhookUrl: string }) =>
   [value.inApp && "站内告警", value.webhook && `外部通知 ${value.webhookUrl}`].filter(Boolean).join("、") || "没有开渠道";
 /** 后端没人保存过订阅时接收人是 unassigned。 */
-const subscriberText = (value: string) => (value === "unassigned" ? "暂无接收人" : value || "—");
+const subscriberText = (value: string, displayName?: string | null) => (value === "unassigned" ? "暂无接收人" : displayName || value || "—");
 
 /** 全页时间一种写法：2026-11-13 14:30（北京时间），和资金与应付款总览一致。 */
 const timeText = (value: string) => `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
@@ -171,6 +171,7 @@ export default function RiskRadarPage() {
   const [subscriptionOriginal, setSubscriptionOriginal] = useState<Extract<B5PendingWrite, { kind: "subscription" }> | null>(null);
   const [statusOriginal, setStatusOriginal] = useState<Extract<B5PendingWrite, { kind: "signal" }> | null>(null);
   const [subscriber, setSubscriber] = useState("");
+  const [subscriberDisplayName, setSubscriberDisplayName] = useState<string | null>(null);
   const [needsFreshRadar, setNeedsFreshRadar] = useState(false);
   const [subscriptionNeedsRead, setSubscriptionNeedsRead] = useState(false);
   const [inboxNeedsRead, setInboxNeedsRead] = useState(false);
@@ -207,6 +208,7 @@ export default function RiskRadarPage() {
         setSubscriptionVersion(next.version);
         setWebhookMode(next.webhookMode);
         setSubscriber(next.subscriber);
+        setSubscriberDisplayName(next.subscriberDisplayName ?? null);
         setSubscriptionNeedsRead(false);
       })
       .catch((cause) => {
@@ -499,7 +501,7 @@ export default function RiskRadarPage() {
       original ??= rememberB5Command(String(session.adminId), SUBSCRIPTION_SLOT, "b5-subscription", {
         kind: "subscription", method: "PUT", path: "/api/admin/risk/alert-subscription",
         body: JSON.stringify({ ...subscription, expectedVersion: subscriptionVersion, operator }),
-        facts: { ...savedSubscription, version: subscriptionVersion, subscriber, emailMode: "disabled", webhookMode, sharedWith: "B1" },
+        facts: { ...savedSubscription, version: subscriptionVersion, subscriber, subscriberDisplayName, emailMode: "disabled", webhookMode, sharedWith: "B1" },
       }) as Extract<B5PendingWrite, { kind: "subscription" }>;
       setSubscriptionOriginal(original);
       await executeB5Command(original, !!subscriptionOriginal);
@@ -547,6 +549,7 @@ export default function RiskRadarPage() {
       else {
         setSavedSubscription({ inApp: current.data.inApp, email: current.data.email, webhook: current.data.webhook, webhookUrl: current.data.webhookUrl });
         setSubscriber(current.data.subscriber); setSubscriptionVersion(current.data.version); setWebhookMode(current.data.webhookMode);
+        setSubscriberDisplayName(current.data.subscriberDisplayName ?? null);
         setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false);
       }
       setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，待确认记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原请求重试，不会重复执行。");
@@ -829,7 +832,7 @@ export default function RiskRadarPage() {
                   );
                 })()}
                 <Facts>
-                  <Fact k={subscriptionOriginal ? "提交时的接收人" : "现在的接收人"}>{session?.username && (subscriptionOriginal?.facts.subscriber ?? subscriber) === maskAuditActor(session.username) ? "你" : subscriberText(subscriptionOriginal?.facts.subscriber ?? subscriber)}</Fact>
+                  <Fact k={subscriptionOriginal ? "提交时的接收人" : "现在的接收人"}>{session?.username && (subscriptionOriginal?.facts.subscriber ?? subscriber) === maskAuditActor(session.username) ? "你" : subscriberText(subscriptionOriginal?.facts.subscriber ?? subscriber, subscriptionOriginal ? subscriptionOriginal.facts.subscriberDisplayName : subscriberDisplayName)}</Fact>
                   <Fact k="保存后的接收人">你</Fact>
                 </Facts>
                 <Notice tone="warn">

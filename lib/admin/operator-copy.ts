@@ -158,6 +158,11 @@ export function skuBaseRateText(sku: OpsSku): string | undefined {
     : sku.baseRate;
 }
 
+/** Only the server supplies account names. Keep the original object alongside it for display. */
+export function a2ObjectText(row: { obj: string; objDisplayName?: string }): string {
+  return row.objDisplayName && row.objDisplayName !== row.obj ? `${row.objDisplayName}（${row.obj}）` : row.obj;
+}
+
 /** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
 export function a2ActionText(action: string): string {
   return action.replace("A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED", "服务器恢复超级管理员")

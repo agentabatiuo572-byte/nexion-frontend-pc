@@ -28,6 +28,9 @@ const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
   // callback before reading/updating the rule or applying notification retention.
   // Stored successful commands replay before this guard.
   "NOTIFICATION_CAP_APPROVAL_REQUIRED",
+  // Backend db65d2e7: the exact test profile rejects formal I6/I7 catalog
+  // mutations before command idempotency, audit, outbox or business writes.
+  "LEARNING_ACCEPTANCE_PRODUCTION_MUTATION_FORBIDDEN",
 ]);
 
 export function isExplicitRejection(error: unknown): boolean {

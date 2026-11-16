@@ -268,7 +268,6 @@ function G7RepurchasePage() {
     latest.current.readFailed = true;
     setReadFailed(true);
     setOverview(await fetchG7RepurchaseOverview());
-    setLockedParams({});
     setReadFailed(false);
   });
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -278,8 +277,23 @@ function G7RepurchasePage() {
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  /** 只用于显示：直接修改时后端答复这一项被审批锁住，在这一行标出来。下一次提交仍由后端核对。 */
+  /** 当前读取的待审锁；旧后端缺投影时保留提交被拒后观察到的锁。 */
   const [lockedParams, setLockedParams] = useState<Record<string, { message: string; operationId?: string | null }>>({});
+  useEffect(() => {
+    if (!overview || loading || readFailed) return;
+    setLockedParams(current => {
+      const next = { ...current };
+      for (const param of overview.params) {
+        if (param.pendingApproval === true) {
+          next[param.key] = { message: messageOf("OBJECT_LOCKED_BY_A2"), operationId: param.pendingOperationId };
+        } else if (param.pendingApproval === false && authorities.includes(gParamAuthority("G7", param.key))) {
+          // An unauthorized false/null does not establish that the lock ended.
+          delete next[param.key];
+        }
+      }
+      return next;
+    });
+  }, [overview, loading, readFailed, authorities]);
   const requestGeneration = useRef(0);
   const moreInFlight = useRef(false);
   const latest = useRef({ overview, loading, busyKey, readFailed });
@@ -297,7 +311,6 @@ function G7RepurchasePage() {
       ]);
       if (generation !== requestGeneration.current) return;
       setOverview(nextOverview);
-      setLockedParams({});
       setReadFailed(false);
       setOrders(nextOrders.orders);
       setNextCursor(nextOrders.nextCursor);
@@ -339,7 +352,6 @@ function G7RepurchasePage() {
     try {
       const result = await queryG7DirectCommand(direct.adminId, direct.commandKey);
       setOverview(result.overview);
-      setLockedParams({});
       setReadFailed(false);
       setError(result.message);
     } catch (err) {
@@ -498,6 +510,7 @@ function G7RepurchasePage() {
     if (original === false) return;
     const view = latest.current;
     if (!direct && !original && (!view.overview || view.loading || view.busyKey || view.readFailed)) return;
+    if (!direct && !original && view.overview?.params.find(row => row.key === param.key)?.pendingApproval === true) return;
     // Saved context drives the recovery facts, even when the original write
     // actually succeeded and today's configuration is different.
     if (original) param = { ...param, value: String(original.request.command.params.expectedValue), displayValue: String(original.request.command.params.expectedValue) };
@@ -614,6 +627,7 @@ function G7RepurchasePage() {
         setBusyKey(param.key);
         setError("");
         try {
+          if (!savedDirect && !saved && currentParam?.pendingApproval === true) throw new Error(messageOf("OBJECT_LOCKED_BY_A2"));
           if (savedDirect) {
             // A replay returns the stored overview; close the original and GET
             // current state before allowing another intention on any parameter.
@@ -627,7 +641,6 @@ function G7RepurchasePage() {
           }
           const result = await paramApproval.run({ key: param.key, current: currentParam!.value, value: String(value), reason },
             () => updateG7RepurchaseParam(param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "", currentParam!.value, view.overview!.g4Capacity));
-          setLockedParams(rows => { const next = { ...rows }; delete next[param.key]; return next; });
           if ("direct" in result) {
             setOverview(result.direct);
             toast(`${label} 已生效`);
