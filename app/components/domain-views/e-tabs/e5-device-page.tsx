@@ -9,10 +9,10 @@ import { useReach } from "@/lib/nav/use-reach";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { displayAdminReadError, guardedFetch } from "@/lib/admin/error-messages";
 import { businessClock, businessZoneText, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
-import { fetchE5Devices, fetchE5Overview, fetchE5Observability, type E5Device, type E5Overview, type E5Observability, type E5SimState } from "@/lib/admin/e5-client";
+import { fetchE5Devices, fetchE5Overview, fetchE5Observability, pausedReasonText, type E5Device, type E5Overview, type E5Observability, type E5SimState } from "@/lib/admin/e5-client";
 import { BlockState, Button, Cell, ColumnPicker, Conclusion, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, JudgmentPoints, Modal, PageHeader, Panel, RatioBar, RdPage, RecordList, ScaleBar, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, TaskClassTag, Td, Th, Tr, useTableColumns, type TaskClass } from "@/app/components/rd";
 import { E5CommandScope, E5DeviceActions, E5PendingMark, E5Slots } from "./e5-device-actions";
-import { E5_STATES, e5StateNote, pausedReasonText } from "./e5-device-state";
+import { E5_STATES, e5StateNote } from "./e5-device-state";
 import type { EViewCtx } from "./types";
 
 const SOURCES: Record<string, string> = { ORDER: "购买", TRADE_IN: "置换", TRIAL: "试用转正", PROMOTION_GIFT: "赠送" };

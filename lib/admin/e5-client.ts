@@ -82,6 +82,12 @@ export interface E5Device {
 }
 
 /** userDeviceSlotNo proves effective ownership; system pause reasons are never cleared by batch resume. */
+/** Known backend pause codes are translated; operator-written reasons stay readable. */
+export function pausedReasonText(reason: string) {
+  const labels: Record<string, string> = { ORDER_REFUND: "订单已退款", PROMOTION_REFUND: "赠送来源订单已退款", DEVICE_PAUSED: "设备已暂停", PHONE_OFFLINE: "手机离线", PHONE_LOW_BATTERY: "手机电量不足", deactivate: "运营取消激活", unbind: "运营解绑" };
+  return labels[reason] ?? (/^[A-Z][A-Z0-9_]+$/.test(reason) ? "已暂停，原始原因请核对技术信息" : reason);
+}
+
 export function canResumeE5UserDevicesFrom(device: E5Device) {
   const reason = device.pausedReason.trim().toUpperCase();
   return device.slotNo !== null && reason !== "" && ![

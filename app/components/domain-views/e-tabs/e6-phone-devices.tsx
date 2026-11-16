@@ -4,13 +4,12 @@ import { Activity, AlertTriangle, Battery, Info, CircleMinus, MoreHorizontal, Pa
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { Button, Cell, ColumnPicker, Conclusion, Explain, Fact, Facts, FilterBar, IconButton, Input, MoreMenu, Pager, Panel, RatioBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type MoreMenuItem } from "@/app/components/rd";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { canResumeE5UserDevicesFrom, type E5Device } from "@/lib/admin/e5-client";
+import { canResumeE5UserDevicesFrom, pausedReasonText, type E5Device } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { E6PendingNotice, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { pausedReasonText } from "./e5-device-state";
 const STATES: Record<E5Device["state"],string>={active:"在线",busy:"任务中",offline:"离线",inventory:"待激活","pending-deactivate":"停用中",unbound:"已解绑 / 停用",abnormal:"异常",unknown:"状态未知"};
 const STATE_STYLE = { active: {tone:"ok"}, busy: {tone:"progress",icon:Activity}, offline: {tone:"done",icon:WifiOff}, inventory: {tone:"neutral",icon:Power}, "pending-deactivate": {tone:"progress"}, unbound: {tone:"done",icon:CircleMinus}, abnormal: {tone:"warn",icon:AlertTriangle}, unknown: {tone:"neutral",icon:Info} } as const;
 const LABELS={activate:"激活手机",deactivate:"取消激活",force:"强制激活",unbind:"解绑手机",pause:"暂停该用户",resume:"恢复该用户"};
