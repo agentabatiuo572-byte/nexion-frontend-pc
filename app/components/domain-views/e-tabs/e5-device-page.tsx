@@ -82,8 +82,8 @@ function DeviceStatus({ device: d, detail = false }: { device: E5Device; detail?
   const value = E5_STATES[d.simState!];
   const note = e5StateNote(d);
   const reach = useReach();
-  // 取消激活、解绑时后端写的停跑原因就是这两个动作本身，状态已经说了，不再当暂停原因列出。
-  const paused = (d.simState === "STOPPED" || d.simState === "UNBOUND") && ["deactivate", "unbind"].includes(d.pausedReason.trim().toLowerCase()) ? "" : d.pausedReason;
+  // 取消激活、解绑、置换回收时后端写的停跑原因就是这个动作本身，状态已经说了，不再当暂停原因列出。
+  const paused = (d.simState === "STOPPED" || d.simState === "UNBOUND") && ["deactivate", "unbind", "recycle", "replace"].includes(d.pausedReason.trim().toLowerCase()) ? "" : d.pausedReason;
   const specific = d.simState !== "SIM_OFF" && (d.simState === "ERROR" || !!paused);
   const reason = <>{d.simState === "ERROR" ? <><p>原错误：{d.simLastError || "未提供错误原因"}</p><p>下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等系统安排"}</p><p>系统每 30 秒自动重试。</p></> : <>{paused && <p>暂停原因：{pausedReasonText(paused)}</p>}<p>{d.simState === "WAITING_CONFIG" && detail && reach("/devices/tasks") ? <>没有可用任务，<Link href="/devices/tasks">去任务池核对</Link>。停跑期间不计收益、不补发。</> : note.reason}</p></>}</>;
   return <div className="e5-state"><div className="e5-task-head"><StatusTag tone={value.tone} icon={value.icon}>{value.label}</StatusTag>{specific && !detail && <Explain label={`${value.label}的原因`} content={reason} />}</div>

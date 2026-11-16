@@ -538,6 +538,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ACTIVE_USER_DEVICES_NOT_FOUND: "没有找到这个用户可处置的设备，请刷新列表核对当前状态。",
   DEVICE_ACTIVATION_LOCK_UNAVAILABLE: "暂时无法核对用户设备名额，请稍后刷新再处理。",
   DEVICE_USER_REQUIRED: "设备缺少有效归属用户，请核对原设备记录。",
+  DEVICE_OWNERSHIP_NOT_OWNED: "这台设备已不归这位用户（已解绑或回收），这次没有激活。强制激活申请批不了，请驳回。",
   E5_BATCH_STATE_CHANGED: "用户设备状态已变化，请读回列表核对原操作。",
   E5_PAGE_NUM_INVALID: "设备页码无效，请回到第一页重新查询。",
   IDEMPOTENCY_RESPONSE_DESERIALIZE_FAILED: "原操作回执暂时无法读取或解析，结果仍未确认；请保留原请求和命令号核对操作记录，不要换号重发。",

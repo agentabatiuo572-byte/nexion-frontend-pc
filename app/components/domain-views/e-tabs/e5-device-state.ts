@@ -11,13 +11,13 @@ export const E5_STATES: Record<E5SimState, { label: string; tone: StateTone; rea
   PAUSED: { icon: CirclePause, label: "已暂停", tone: "neutral", reason: "按暂停原因核对；停跑期间不计收益、不补发。" },
   CLOSING: { label: "停用中", tone: "progress", reason: "当前单结束后停用，仍占设备名额，不再接新任务。" },
   STOPPED: { label: "已停用", tone: "done", reason: "设备已停止。普通停用的可以申请强制激活；已回收、已退役的不能再激活。" },
-  UNBOUND: { label: "已解绑", tone: "done", reason: "不再归属原用户，历史记录保留。可以申请强制激活回到原用户；解绑后又被回收或退役的不能。" },
+  UNBOUND: { label: "已解绑", tone: "done", reason: "已不归原用户，不能再激活。" },
   ERROR: { label: "出错重试中", tone: "danger", reason: "系统每 30 秒自动重试，原错误和下次重试时间见设备详情。" },
   SIM_OFF: { icon: PowerOff, label: "任务已关闭", tone: "neutral", reason: "任务已关闭，本页只读。" },
 };
 
 /**
- * 「待激活」「已停用」「已解绑」各混着几种设备，能不能再用要看设备真实的状态（rawStatus，和行上的激活入口同一个依据）。
+ * 「待激活」「已停用」各混着几种设备，能不能再用要看设备真实的状态（rawStatus，和行上的激活入口同一个依据）；已解绑的一律不能再激活。
  * sub 是列表里状态下面的一行，reason 是详情里的说明；其他状态沿用 E5_STATES。
  */
 export function e5StateNote(d: Pick<E5Device, "simState" | "rawStatus">): { sub?: string; reason: string } {
@@ -35,11 +35,6 @@ export function e5StateNote(d: Pick<E5Device, "simState" | "rawStatus">): { sub?
     if (raw === "RETIRED") return { sub: "已退役，不能再激活", reason: "设备已退役，不能再激活。" };
     return { reason: "设备已停止运行，这页不能重新激活。" };
   }
-  if (d.simState === "UNBOUND") {
-    if (raw === "UNBOUND") return { sub: again, reason: "不再归属原用户，历史记录保留；可以申请强制激活，另一位管理员批准后回到原用户。" };
-    if (raw === "RECYCLED") return { sub: "已回收，不能再激活", reason: "解绑后又在置换中回收，不能再激活，也不能回到原用户。" };
-    if (raw === "RETIRED") return { sub: "已退役，不能再激活", reason: "解绑后已退役，不能再激活，也不能回到原用户。" };
-    return { reason: "不再归属原用户，历史记录保留；这页不能恢复。" };
-  }
+  if (d.simState === "UNBOUND") return { sub: "不能再激活", reason: E5_STATES.UNBOUND.reason };
   return { reason: d.simState ? E5_STATES[d.simState].reason : "" };
 }
