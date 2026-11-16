@@ -9,7 +9,7 @@ import "./risk-radar.css";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BellRing, CheckCheck, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, BellRing, CheckCheck, Eye, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
 import {
   BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
   PageHeader, PageTabs, Panel, RdPage, ReleaseModal, StatusTag, Textarea, useTabIds,
@@ -798,14 +798,16 @@ export default function RiskRadarPage() {
             onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} retryLabel="重新读取" />
         );
         const subscriptionConflict = subscriptionDraftPreserved && !subscriptionOriginal && !subscriptionLoading && !subscriptionError;
+        // 只有查看权限：只看现在的订阅，不讲保存后会怎样。
+        const subscriptionViewOnly = !canSubscribe && !subscriptionOriginal;
         return (
         <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChannelsChanged}
-          sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
+          sub={subscriptionViewOnly ? <StatusTag tone="neutral" icon={Eye}>只能查看</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>}
           onClose={() => setSubscriptionOpen(false)}
           footer={<>
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
             <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
-              disabledReason={!canSubscribe ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : subscriptionOriginal ? isRetryExpired(subscriptionOriginal) ? "已超过 24 小时，只能核对，不能重试。" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
+              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? isRetryExpired(subscriptionOriginal) ? "已超过 24 小时，只能核对，不能重试。" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
               onClick={() => void saveSubscription()}>{subscriptionOriginal ? "按原请求重试" : "保存订阅"}</Button>
           </>}>
           <div className="b5-dialog">
@@ -834,11 +836,11 @@ export default function RiskRadarPage() {
                 })()}
                 <Facts>
                   <Fact k={subscriptionOriginal ? "提交时的接收人" : "现在的接收人"}>{session?.username && (subscriptionOriginal?.facts.subscriber ?? subscriber) === maskAuditActor(session.username) ? "你" : subscriberText(subscriptionOriginal?.facts.subscriber ?? subscriber, subscriptionOriginal ? subscriptionOriginal.facts.subscriberDisplayName : subscriberDisplayName)}</Fact>
-                  <Fact k="保存后的接收人">你</Fact>
+                  {!subscriptionViewOnly && <Fact k="保存后的接收人">你</Fact>}
                 </Facts>
-                <Notice tone="warn">
+                {subscriptionViewOnly ? <Notice tone="neutral">改接收人和发送渠道需要告警订阅权限。</Notice> : <Notice tone="warn">
                   全平台只有一份，和「资金与应付款总览」共用。保存后新告警只发给你，排队中的外部通知也按新地址发。
-                </Notice>
+                </Notice>}
                 <CheckGroup legend="发送渠道" summary={subscriptionValid ? undefined : "至少开一个"}>
                   <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
                   <Check name="email" label="邮件" checked={false} disabled help="邮件服务没接通，暂不可用。" />

@@ -680,6 +680,8 @@
 }
 
 .e5-slots[data-phones][data-full] { color: var(--rd-warn); }
+/* 确认框里名额点阵跟在「2/6 → 3/6」后面，不单独夹在两行事实中间。 */
+.e5-slot-change { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .e5-amount[data-zero] { color: var(--rd-text-3); font-weight: 400; }
 .rd-drawer[data-e5-detail] .e5-amount[data-zero] { font-size: var(--rd-text-body); }

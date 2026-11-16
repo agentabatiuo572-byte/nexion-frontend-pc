@@ -12,7 +12,7 @@ import { businessClock, businessZoneText, formatBusinessTimeCompact, parseBusine
 import { fetchE5Devices, fetchE5Overview, fetchE5Observability, type E5Device, type E5Overview, type E5Observability, type E5SimState } from "@/lib/admin/e5-client";
 import { BlockState, Button, Cell, ColumnPicker, Conclusion, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, JudgmentPoints, Modal, PageHeader, Panel, RatioBar, RdPage, RecordList, ScaleBar, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, TaskClassTag, Td, Th, Tr, useTableColumns, type TaskClass } from "@/app/components/rd";
 import { E5CommandScope, E5DeviceActions, E5PendingMark, E5Slots } from "./e5-device-actions";
-import { E5_STATES, pausedReasonText } from "./e5-device-state";
+import { E5_STATES, e5StateNote, pausedReasonText } from "./e5-device-state";
 import type { EViewCtx } from "./types";
 
 const SOURCES: Record<string, string> = { ORDER: "购买", TRADE_IN: "置换", TRIAL: "试用转正", PROMOTION_GIFT: "赠送" };
@@ -80,11 +80,14 @@ function CurrentTask({ device, readAt }: { device: E5Device; readAt: number }) {
 }
 function DeviceStatus({ device: d, detail = false }: { device: E5Device; detail?: boolean }) {
   const value = E5_STATES[d.simState!];
+  const note = e5StateNote(d);
   const reach = useReach();
-  const specific = d.simState !== "SIM_OFF" && (d.simState === "ERROR" || !!d.pausedReason);
-  const reason = <>{d.simState === "ERROR" ? <><p>原错误：{d.simLastError || "未提供错误原因"}</p><p>下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等系统安排"}</p><p>系统每 30 秒自动重试。</p></> : <>{d.pausedReason && <p>暂停原因：{pausedReasonText(d.pausedReason)}</p>}<p>{d.simState === "WAITING_CONFIG" && detail && reach("/devices/tasks") ? <>没有可用任务，<Link href="/devices/tasks">去任务池核对</Link>。停跑期间不计收益、不补发。</> : value.reason}</p></>}</>;
+  // 取消激活、解绑时后端写的停跑原因就是这两个动作本身，状态已经说了，不再当暂停原因列出。
+  const paused = (d.simState === "STOPPED" || d.simState === "UNBOUND") && ["deactivate", "unbind"].includes(d.pausedReason.trim().toLowerCase()) ? "" : d.pausedReason;
+  const specific = d.simState !== "SIM_OFF" && (d.simState === "ERROR" || !!paused);
+  const reason = <>{d.simState === "ERROR" ? <><p>原错误：{d.simLastError || "未提供错误原因"}</p><p>下次自动重试：{d.simNextActionAt ? formatBusinessTimeCompact(d.simNextActionAt) : "等系统安排"}</p><p>系统每 30 秒自动重试。</p></> : <>{paused && <p>暂停原因：{pausedReasonText(paused)}</p>}<p>{d.simState === "WAITING_CONFIG" && detail && reach("/devices/tasks") ? <>没有可用任务，<Link href="/devices/tasks">去任务池核对</Link>。停跑期间不计收益、不补发。</> : note.reason}</p></>}</>;
   return <div className="e5-state"><div className="e5-task-head"><StatusTag tone={value.tone} icon={value.icon}>{value.label}</StatusTag>{specific && !detail && <Explain label={`${value.label}的原因`} content={reason} />}</div>
-    {detail ? <div className="e5-status-detail">{reason}</div> : <>{d.simState === "LEGACY_PENDING" && <span className="e5-sub">先核对旧任务</span>}{d.simState === "WAITING_CONFIG" && <span className="e5-sub">{reach("/devices/tasks") ? <Link href="/devices/tasks">去任务池核对</Link> : "去任务池核对"}</span>}{d.simState === "CLOSING" && <span className="e5-sub">结算后自动停用</span>}</>}
+    {detail ? <div className="e5-status-detail">{reason}</div> : <>{d.simState === "LEGACY_PENDING" && <span className="e5-sub">先核对旧任务</span>}{d.simState === "WAITING_CONFIG" && <span className="e5-sub">{reach("/devices/tasks") ? <Link href="/devices/tasks">去任务池核对</Link> : "去任务池核对"}</span>}{d.simState === "CLOSING" && <span className="e5-sub">结算后自动停用</span>}{note.sub && <span className="e5-sub">{note.sub}</span>}</>}
   </div>;
 }
 const EVENTS: Record<string, string> = { E5_DEVICE_ACTIVATED: "激活", E5_DEVICE_DEACTIVATED: "取消激活", E5_DEVICE_UNBOUND: "解绑", E5_DEVICE_FORCE_ACTIVATED: "强制激活", E5_DEVICE_BATCH_PAUSED: "暂停该用户", E5_DEVICE_BATCH_RESUMED: "恢复该用户", "admin.device_activated": "激活", "admin.device_deactivation_requested": "取消激活", "admin.device_deactivated": "设备已停用", "admin.device_unbound": "解绑", "admin.device_paused": "暂停该用户", "admin.device_resumed": "恢复该用户" };
