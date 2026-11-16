@@ -411,8 +411,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       return;
     }
     const fields = draftEditor.fields.map(field => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() }));
-    const fieldIssue = i4AppFieldIssue(fields);
-    if (fieldIssue) { toast(fieldIssue); return; }
+    // The App contract applies at publication; drafts retain the backend authoring contract.
     if (i4OmittedTranslations(currentSectionFields(sectionSnapshot), fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
     const payload = {
       version: draftEditor.version,
@@ -565,6 +564,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       },
       run: async (reason, nv) => {
         if (!nv) return false;
+        const target = versionOf(nv);
+        const fieldIssue = target && i4AppFieldIssue(target.fields);
+        if (fieldIssue) throw new Error(fieldIssue);
         const def = findHighOp("i4_trust_section_manage")!;
         const fingerprint = JSON.stringify(["rollback", s.key, s.v, s.status, nv, reason]);
         return proposeTrustSection(`${s.key}:rollback`, fingerprint, {

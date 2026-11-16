@@ -38,12 +38,12 @@ export function parseI4SectionVersion(value: unknown): TrustSectionVersionView {
   return row as TrustSectionVersionView;
 }
 
-/** App b52d3152 src/api/trust-section-api.ts:41–82; backend 24972948 allows 150 and looser keys. */
+/** App field contract; backend 19eb16f5 enforces it on new publish/rollback, drafts remain wider. */
 export function i4AppFieldIssue(fields: readonly TrustField[]): string | undefined {
-  if (!fields.length) return "请完整填写版本、说明、结构、字段和保存说明";
+  if (!fields.length || fields.some(field => !field.label.trim())) return "请完整填写版本、说明、结构、字段和保存说明";
   if (fields.length > APP_FIELD_LIMIT) return "字段超过 80 个，App 会拒收整份内容，请先核对字段模板。";
-  if (fields.some(field => !APP_FIELD_KEY.test(field.key) || field.key.length > 64)
-    || new Set(fields.map(field => field.key.toLowerCase())).size !== fields.length) {
+  if (fields.some(field => !APP_FIELD_KEY.test(field.key.trim()))
+    || new Set(fields.map(field => field.key.trim().toLowerCase())).size !== fields.length) {
     return "字段标识不符合 App 规则，请核对字段模板；不能包含连续或结尾的分隔符。";
   }
   return undefined;
