@@ -5,7 +5,7 @@ import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { isPaymentRecord, paymentPolicyFields, parsePaymentPolicy, parsePaymentStatus, parsePaymentAttempts, parsePaymentReceipt, type PaymentPolicyValues } from "@/lib/admin/payment-password-contract";
+import { isPaymentRecord, paymentPolicyFields, trimPaymentReason, parsePaymentPolicy, parsePaymentStatus, parsePaymentAttempts, parsePaymentReceipt, type PaymentPolicyValues } from "@/lib/admin/payment-password-contract";
 import { parsePaymentSecuritySummary, parsePaymentSecurityDetail, parsePaymentSecurityPage, parsePaymentReleaseReceipt, type PaymentSecuritySummary, type PaymentSecurityDetail, type PaymentSecurityRecord, type PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 
 const base = "/api/admin/users/security/payment-password-policy";
@@ -44,7 +44,7 @@ export function pendingPaymentPolicy(owner: number) { return pending.list().find
 /** Old incomplete records remain query-only; never fill their original request from current policy. */
 export function isCompletePaymentPolicy(row: PendingPaymentPolicy): row is PendingPaymentPolicy & PaymentPolicyOriginal {
   return !!row.oldValues && !!row.values && paymentPolicyFields.every(key => Number.isSafeInteger(row.oldValues![key]) && row.oldValues![key] > 0 && Number.isSafeInteger(row.values![key]) && row.values![key] > 0)
-    && Number.isSafeInteger(row.expectedVersion) && row.expectedVersion! >= 0 && typeof row.reason === "string" && row.reason.trim().length >= 8 && row.reason.trim().length <= 200
+    && Number.isSafeInteger(row.expectedVersion) && row.expectedVersion! >= 0 && typeof row.reason === "string" && trimPaymentReason(row.reason).length >= 8 && trimPaymentReason(row.reason).length <= 200
     && row.confirmed === true && typeof row.operator === "string" && row.operator.length > 0
     && row.body === JSON.stringify({ values: row.values, expectedVersion: row.expectedVersion, reason: row.reason, confirmed: true });
 }

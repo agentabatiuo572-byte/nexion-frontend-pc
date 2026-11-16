@@ -1,3 +1,8 @@
+/** Java String.trim removes only leading/trailing UTF-16 units at or below U+0020. */
+export function trimPaymentReason(reason: string): string {
+  return reason.replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+}
+
 export const paymentPolicyFields = ["maxAttempts", "windowMinutes", "lockMinutes"] as const;
 export type PaymentPolicyField = typeof paymentPolicyFields[number];
 export type PaymentPolicyValues = Record<PaymentPolicyField, number>;

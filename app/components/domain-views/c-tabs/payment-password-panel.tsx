@@ -6,7 +6,7 @@ import { BlockState, Button, Cell, Change, Check, ConfigList, ConfigRow, Decisio
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTimeCompact, businessZoneText } from "@/lib/admin/business-time";
 import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts, retryPaymentPolicy, releaseRejectedPaymentPolicy, isCompletePaymentPolicy, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
-import { paymentPolicyFields, type PaymentPolicy, type PaymentPolicyValues, type PaymentPasswordStatus, type PaymentPasswordAttempts, type PaymentPolicyReceipt } from "@/lib/admin/payment-password-contract";
+import { paymentPolicyFields, trimPaymentReason, type PaymentPolicy, type PaymentPolicyValues, type PaymentPasswordStatus, type PaymentPasswordAttempts, type PaymentPolicyReceipt } from "@/lib/admin/payment-password-contract";
 import { PaymentSecurityList } from "@/app/components/payment-security/payment-security-list";
 import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
 import "./payment-password-panel.css";
@@ -55,7 +55,7 @@ function PaymentPolicySection({ owner, canWrite, visible, onPendingChange, onBus
   const parsed = Object.fromEntries(paymentPolicyFields.map(key => [key, Number(values[key])])) as PaymentPolicyValues;
   const valid = !!policy?.constraints && paymentPolicyFields.every(key => /^\d+$/.test(values[key]) && Number.isSafeInteger(parsed[key]) && parsed[key] >= policy.constraints![key].min && parsed[key] <= policy.constraints![key].max);
   const changed = !!policy && paymentPolicyFields.some(key => parsed[key] !== policy.values[key]);
-  const trimmedReason = reason.replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+  const trimmedReason = trimPaymentReason(reason);
   const reasonValid = trimmedReason.length >= 8 && trimmedReason.length <= 200;
   const editable = !!policy && canWrite && policy.editable && !!policy.constraints && !!policy.effectDescription && !pending;
   const editReason = pending ? "请先查询上一笔调整结果" : !policy ? "当前规则尚未读取" : !policy.constraints || !policy.effectDescription ? "可调整范围或生效说明尚未确认" : !policy.editable ? "当前规则只能查看" : undefined;
