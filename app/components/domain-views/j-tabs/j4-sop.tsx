@@ -436,6 +436,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       } else if (isEmergencyOutcomeUncertain(error) || isA2OutcomeUncertainError(error)) {
         // The original modal freezes through getPendingReason; no current data replaces its facts.
         noteError(original?.commandKey ?? listJ4PendingCommands().find((row) => row.fingerprint === slot)?.commandKey ?? getJ4PendingProposal(contextCode(context) ?? "")?.commandKey ?? slot, error);
+        if ((error as { reasonCode?: string }).reasonCode?.startsWith("J4_EXECUTION_PARTIAL:")) await actions.reloadJEmergency().catch(() => undefined);
       } else if (error instanceof Error && /J4_EXECUTION_PARTIAL/.test((error as { reasonCode?: string }).reasonCode ?? "")) {
         await actions.reloadJEmergency().catch(() => undefined);
       }

@@ -496,9 +496,10 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       reasonCode: payload.message,
       unknownOutcome: res.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
     });
-    const rejected = isOriginalRetry ? isExplicitRejection(error)
+    const partialExecution = isJ4Write && payload.message?.startsWith("J4_EXECUTION_PARTIAL:");
+    const rejected = !partialExecution && (isOriginalRetry ? isExplicitRejection(error)
       : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
-        && isDeterministicRejection(res.status, payload.code);
+        && isDeterministicRejection(res.status, payload.code));
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
       useAdminAuth.getState().signOut();
     }
@@ -507,7 +508,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       throw error;
     }
     // 5xx 的通用中文是给读取失败写的（请稍后重新加载）；写入没收到确定结果时换成结果未知的说法。
-    throw new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原请求重试。" : error.message);
+    throw Object.assign(new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原请求重试。" : error.message), { reasonCode: payload.message });
   }
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
     || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message))))) {
