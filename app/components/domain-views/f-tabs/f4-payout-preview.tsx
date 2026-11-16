@@ -119,7 +119,8 @@ export function F4DisqualifyEvidenceFact({ memberUserId }: { memberUserId: numbe
   const read = useRead<F4LeaderboardDisqualificationReadiness>(() => fetchF4LeaderboardDisqualificationReadiness(50));
   if (read.state !== "ok") return <Fact k="依据" tone={read.state === "failed" ? "warn" : undefined}>{read.state === "loading" ? "正在加载…" : "读不到，提交后由系统核对"}</Fact>;
   const row = read.data.rows.find((item) => item.memberUserId === memberUserId);
-  if (!row) return <Fact k="依据" tone="warn">读不到：本周候选名单里没有这个人</Fact>;
+  // 这项读取最多给本周前 50 名，也不能按人查：没读到不等于没有依据。
+  if (!row) return <Fact k="依据" tone="warn">读不到，提交后由系统核对<Explain label="为什么读不到" content="这里只核对本周排名前 50 的人；排在后面或名次刚变动的人读不到。提交和批准时系统都会按这个人核对依据。" /></Fact>;
   if (!row.disqualificationAvailable) return <Fact k="依据" tone="warn">没有找到，提交会被拒绝<Explain label="要什么依据" content="本周的风险记录，或这个人在生效中的关联账户簇里。提交和批准时系统都会核对。" /></Fact>;
   const k2 = row.riskEvidenceRef.startsWith("K2-");
   return <Fact k="依据"><StatusTag tone="warn">{k2 ? "本周风险记录" : "关联账户簇"}</StatusTag> <span data-mono className="f4-payout-ref">{row.riskEvidenceRef}</span></Fact>;
