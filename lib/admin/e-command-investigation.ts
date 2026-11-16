@@ -30,12 +30,20 @@ export type ECommandEvidence = {
   evidenceAuditId?: number;
 };
 
-/** These writers retain nonzero business responses under the raw SUCCEEDED transaction status. */
+/** Raw completion proves business success only for these verified writers. */
+export function eCommandResult(receipt: ECommandInvestigation | null): "SUCCEEDED" | "NOT_EXECUTED" | "BUSINESS_RESULT_UNAVAILABLE" | "UNRESOLVED" {
+  if (!receipt || receipt.locked) return "UNRESOLVED";
+  if (receipt.originalStatus === "CONFIRMED_SUCCEEDED") return "SUCCEEDED";
+  if (receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed) return "NOT_EXECUTED";
+  if (receipt.originalStatus !== "SUCCEEDED") return "UNRESOLVED";
+  const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS"
+    || /^(?:D3_FORECAST_CONFIG_UPDATE|D3_RESERVE_INJECTION|D3_SENSITIVE_EXPORT_(?:RECONCILIATION|LIABILITIES)|E2_POOL_(?:RANDOM|STATUS))$/.test(receipt.scope);
+  return successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
+}
+
 export function eCommandSettled(receipt: ECommandInvestigation | null) {
-  const needsBusinessResult = !!receipt && /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(receipt.scope);
-  return !!receipt && !receipt.locked && (receipt.originalStatus === "CONFIRMED_SUCCEEDED"
-    || receipt.originalStatus === "SUCCEEDED" && !needsBusinessResult
-    || receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed);
+  const result = eCommandResult(receipt);
+  return result === "SUCCEEDED" || result === "NOT_EXECUTED";
 }
 
 /** UI eligibility only; the endpoint also enforces active employment, original read scope and evidence. */
