@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Inbox, RefreshCw } from "lucide-react";
-import { fetchA4OutboxDiagnostics } from "@/lib/admin/a4-client";
-import type { OutboxDiagnostics, OutboxFilters } from "@/lib/admin/a4-outbox-diagnostics";
+import { Ban, Inbox, RefreshCw } from "lucide-react";
+import { fetchA4OutboxDeadLetters, fetchA4OutboxDiagnostics } from "@/lib/admin/a4-client";
+import type { OutboxDeadLetters, OutboxDiagnostics, OutboxFilters } from "@/lib/admin/a4-outbox-diagnostics";
 import { BarList, BlockState, Button, Cell, Check, Explain, FilterBar, FilterField, Input, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
-import { BACKLOG_STATUS, RECEIPT_STATUS, errorText, minute, waited, zoneNote } from "./a4-event-views";
+import { BACKLOG_STATUS, H3_TYPE_TEXT, RECEIPT_STATUS, errorText, minute, waited, zoneNote } from "./a4-event-views";
 
 const statusText = (value: string) => BACKLOG_STATUS[value] ?? RECEIPT_STATUS[value] ?? "未知状态";
 const emptyFilters: OutboxFilters = { eventType: "", status: "", unresolvedOnly: false };
@@ -57,14 +57,14 @@ export function A4OutboxDiagnostics({ state, describe, canOpenUser }: { state: A
   return (
     <Panel data-proof="a4-outbox-diagnostics" title="没投递出去的事件" icon={Inbox} tone="role-2"
       sub={data ? `共 ${data.total} 条 · ${zoneNote()}` : undefined}
-      explain={<><p>还在等发送或发送失败、等下次重试的事件，只能查询。上面的总数和按类型汇总不受筛选影响。</p><p>已终止（死信）的不在这里，见「重新排队一条任务事件」。奖励池结算告警显示「已处理」，不代表结算已恢复。</p></>}
+      explain={<><p>还在等发送或发送失败、等下次重试的事件，只能查询。上面的总数和按类型汇总不受筛选影响。</p><p>已终止（死信）的不在这里，见下方「周任务死信」。奖励池结算告警显示「已处理」，不代表结算已恢复。</p></>}
       actions={canRead ? <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={busy && !filtered} onClick={() => void load(applied)}>重新查询</Button> : undefined}>
       {!canRead ? <BlockState state="denied" title="你没有查看事件的权限" detail="查看投递积压要有用户行为事件的查看权限。" /> : <>
         {error && <BlockState state="error" title="查询失败，请重试。" onRetry={() => void load(applied)} retrying={busy} />}
         {!data && !error && busy && <BlockState state="loading" title="正在查询投递积压…" />}
         {!data && !error && !busy && <BlockState state="empty" title="还没有查询" detail="点「重新查询」读一次。" onRetry={() => void load(emptyFilters)} retryLabel="查询" />}
         {data && <>
-          {data.total === 0 ? <Notice tone="ok">没有积压：现在没有待发送或发送失败的事件。</Notice> : (
+          {data.total === 0 ? <Notice tone="ok">没有积压：现在没有待发送或等重试的事件。死信另算，见下方。</Notice> : (
             <div className="a4-backlog-sum">
               <dl className="a4-backlog-facts">
                 <div><dt>积压</dt><dd><b>{data.total}</b> 条</dd></div>
@@ -133,3 +133,49 @@ export function A4OutboxDiagnostics({ state, describe, canOpenUser }: { state: A
   );
 }
 
+
+/** 「投递与死信」页签中间：5 种周任务事件已终止（死信）的按类型汇总。只读，不触发重新排队。 */
+export function A4DeadLetterSummary({ canRead }: { canRead: boolean }) {
+  const [data, setData] = useState<OutboxDeadLetters | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const request = useRef(0);
+  async function load() {
+    const sequence = ++request.current;
+    setError(false); setBusy(true);
+    try {
+      const result = await fetchA4OutboxDeadLetters();
+      if (sequence === request.current) setData(result);
+    } catch {
+      if (sequence === request.current) { setData(null); setError(true); }
+    } finally {
+      if (sequence === request.current) setBusy(false);
+    }
+  }
+  useEffect(() => { if (canRead) void load(); }, [canRead]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!canRead) return null;
+  const total = data?.types.reduce((sum, row) => sum + row.outboxDeadCount, 0) ?? 0;
+  const both = data?.types.reduce((sum, row) => sum + row.bothLayersDeadCount, 0) ?? 0;
+  return (
+    <Panel title="周任务死信" icon={Ban} tone="role-2"
+      sub={data && total ? `原事件终止 ${total} 条 · 两层都终止 ${both} 条 · ${zoneNote()}` : undefined}
+      explain={<><p>5 种周任务事件里，原事件已终止、不再自动重发的条数；「两层都终止」是其中任务处理也已终止的。</p><p>两层都终止不等于能重新排队：要在下面逐条查询，满足条件才能排。时间是最早一条变成终止的时间，不一定是第一次失败的时间。</p></>}
+      actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={busy} onClick={() => void load()}>重新查询</Button>}>
+      {error ? <BlockState state="error" title="死信汇总没查到，请重试。" onRetry={() => void load()} retrying={busy} />
+        : !data ? <BlockState state="loading" title="正在查询死信…" />
+        : total === 0 ? <p className="a4-note">5 种周任务事件现在都没有死信。</p>
+        : <Table label="周任务死信按类型" className="a4-dead-table">
+          <thead><tr><Th>周任务事件</Th><Th align="right">原事件终止</Th><Th align="right">两层都终止</Th><Th>最早一条</Th></tr></thead>
+          <tbody>{data.types.map((row) => (
+            <Tr key={row.questCode}>
+              <Td><Cell main={H3_TYPE_TEXT[row.eventType] ?? row.eventType} /></Td>
+              <Td align="right"><span data-num>{row.outboxDeadCount}</span> 条</Td>
+              <Td align="right"><span data-num>{row.bothLayersDeadCount}</span> 条</Td>
+              <Td><Cell main={minute(row.oldestOutboxLastStateAt)}
+                sub={row.bothLayersDeadCount === 0 ? undefined : !row.bothLayersDeadTimeComplete ? "两层：有的没记时间" : `两层 ${minute(row.oldestBothLayersDeadObservedAt)}`} /></Td>
+            </Tr>
+          ))}</tbody>
+        </Table>}
+    </Panel>
+  );
+}

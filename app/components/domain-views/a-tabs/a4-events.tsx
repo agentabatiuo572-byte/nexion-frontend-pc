@@ -2,7 +2,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-import { A4OutboxDiagnostics, A4_USER_NOTE, a4UserCell, useA4OutboxDiagnostics } from "./a4-outbox-diagnostics";
+import { A4DeadLetterSummary, A4OutboxDiagnostics, A4_USER_NOTE, a4UserCell, useA4OutboxDiagnostics } from "./a4-outbox-diagnostics";
 
 /**
  * A4 用户行为事件（改版）。App 里用户做的每件事都记成一条事件，报表、任务完成、奖励发放都靠它。
@@ -1121,11 +1121,11 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         : diag.total > 0
           ? <Conclusion state="warn" icon={Inbox}
               hint={<>到「投递与死信」看卡在哪一步；{pendingCount > 0 ? `另有 ${pendingCount} 个模块待接入。` : "模块都已接入。"}</>}
-              explain="积压是还在等发送或发送失败、等下次重试的事件，不含已终止（死信）的；死信没有汇总数，要按事件编号逐条查。">
+              explain="积压是还在等发送或发送失败、等下次重试的事件，不含已终止（死信）的；死信在「投递与死信」按类型看。">
               有 {diag.total} 条事件没投递出去，最久的已等 {waited(diag.oldestSeconds)}
             </Conclusion>
-          : <Conclusion state="ok" icon={Inbox} explain="积压是还在等发送或发送失败、等下次重试的事件，不含已终止（死信）的；死信没有汇总数，要按事件编号逐条查。">
-              事件投递正常，没有积压{pendingCount > 0 ? `；还有 ${pendingCount} 个模块待接入` : ""}
+          : <Conclusion state="ok" icon={Inbox} hint="死信另算，到「投递与死信」看。" explain="积压是还在等发送或发送失败、等下次重试的事件，不含已终止（死信）的。">
+              没有积压的事件{pendingCount > 0 ? `；还有 ${pendingCount} 个模块待接入` : ""}
             </Conclusion>;
 
   const stats = (
@@ -1293,8 +1293,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const deliveryTab = (
     <>
       <A4OutboxDiagnostics state={outbox} describe={(eventType) => eventDesc(overview, eventType)} canOpenUser={reach("/users/search", "user_c1hub_read")} />
+      <A4DeadLetterSummary canRead={canReadOutbox} />
       <Panel title="重新排队一条任务事件" icon={RotateCcw} tone="role-2" sub="每次一条 · 只限 5 种周任务事件"
-        explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到原事件和任务处理都已终止，就能把它重新排队一次。</p><p>死信没有汇总数，要按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
+        explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到原事件和任务处理都已终止，就能把它重新排队一次。</p><p>各类有多少条死信看上方「周任务死信」，这里按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
         <FilterBar onSubmit={() => void previewH3DeadEvent()} querying={redrivePreviewing}
           notice={redrivePreviewError ? `查询失败：${redrivePreviewError}` : undefined}
           action={<Button variant="primary" disabledReason={redriveBlocked ?? (redrivePreviewing ? "正在查询" : undefined)} loading={redrivePreviewing} onClick={() => void previewH3DeadEvent()}>查询</Button>}>
