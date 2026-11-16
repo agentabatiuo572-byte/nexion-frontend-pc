@@ -178,6 +178,15 @@ const CONTROL_NAMES: Record<string,
   pin: "锁定当前阶段",
   override: "单独覆盖策略"
 };
+/** 阶段配置诊断里各项的叫法（后端 rhythmState 的 missing / invalid 列的是配置项）。 */
+const H1_CONFIG_NAMES: Record<string, string> = {
+  "H1.rhythm.totalMonths": "运营总月数",
+  "H1.rhythm.currentMonth": "当前月份",
+  "H1.rhythm.phaseProgressPct": "本阶段进度",
+  "growth.phase.current": "当前阶段",
+  "platform.phase.config": "阶段基础配置",
+};
+
 const LOCKED = "这项有一次提交结果未知或在等审批，先到页面上方处理";
 const APPROVER = "另一位超级管理员，需有审批权限和这页的修改权限；不能自己批。";
 const CONTROL_EFFECT = "批准后只保存设置，系统目前不会按它执行。";
@@ -342,9 +351,22 @@ export default function H1Phase({ ctx,
   monthValid && !currentRow && "缺本月参数"].filter(Boolean).join("；");
   // Diagnostics describe primary configuration; legacy numbers can be fallback values.
   // Keep the existing write preconditions independent of this read-only diagnosis.
-  const configUnavailable = rhythm?.rhythmState
-    ? rhythm.rhythmState.available ? "" : "阶段配置不可用"
+  const rhythmState = rhythm?.rhythmState;
+  const configName = (key: string) => H1_CONFIG_NAMES[key] ?? "另一项阶段配置";
+  const configIssue = (key: string) => rhythmState?.missing.includes(key) ? "未配置" : rhythmState?.invalid.some((issue) => issue.key === key) ? "值不合法" : undefined;
+  const configIssues = rhythmState ? [
+    rhythmState.missing.length ? `缺${rhythmState.missing.map(configName).join("、")}` : "",
+    rhythmState.invalid.length ? `${rhythmState.invalid.map((issue) => configName(issue.key)).join("、")}的值不合法` : "",
+  ].filter(Boolean).join("；") : "";
+  const configUnavailable = rhythmState
+    ? rhythmState.available ? "" : configIssues || "阶段配置不可用"
     : unavailable;
+  const monthIssueText = rhythmState ? [
+    configIssue("H1.rhythm.totalMonths") && `运营总月数${configIssue("H1.rhythm.totalMonths")}，现按 ${rhythmState.totalMonths} 个月算`,
+    configIssue("H1.rhythm.currentMonth") && `当前月份${configIssue("H1.rhythm.currentMonth")}，现按第 ${rhythmState.currentMonth} 月算`,
+  ].filter(Boolean).join("；") : "";
+  const progressIssue = configIssue("H1.rhythm.phaseProgressPct");
+  const progressZero = !!rhythmState?.zero.includes("H1.rhythm.phaseProgressPct");
   const coverage = model?.coverage;
   const ratio = number(coverage?.coverageRatio);
   const redline = number(coverage?.redlinePct);
@@ -843,6 +865,7 @@ export default function H1Phase({ ctx,
               <span className="h1-value-label">当前月份</span>
               <strong data-empty={monthValid ? undefined : ""}>{monthValid ? `第 ${rhythm.currentMonth} 月` : "—"} <small>/ 共 {totalValid ? rhythm.totalMonths : "—"} 月</small>
               </strong>
+              {monthIssueText && <span className="rd-note">{monthIssueText}</span>}
               {canWrite && <span className="h1-arrangement-actions">
                 <Button size="sm" disabledReason={scopeBlock("rhythm")} onClick={openTotal}>修改总月数</Button>
                 <Button size="sm" disabledReason={scopeBlock("rhythm") ?? (!totalValid ? "请先补齐合法运营总月数" : undefined)} onClick={openPosition}>校准</Button>
@@ -850,8 +873,9 @@ export default function H1Phase({ ctx,
             <div className="h1-progress">
               <span className="h1-value-label">本阶段进度 <Explain label="本阶段进度是什么" content="人工设置的 0–100% 进度，不是月份完成率，不会自动推进阶段。" />
               </span>
-              <strong data-empty={progressValid && rhythm.phaseProgressPct !== 0 ? undefined : ""}>{progressValid ? rhythm.phaseProgressPct : "—"}<small>{progressValid ? "%" : " · 不可用"}</small>
+              <strong data-empty={!progressIssue && progressValid && (rhythm.phaseProgressPct !== 0 || progressZero) ? undefined : ""}>{!progressIssue && progressValid ? rhythm.phaseProgressPct : "—"}<small>{progressIssue ? ` · ${progressIssue}` : progressValid ? "%" : " · 不可用"}</small>
               </strong>
+              {rhythmState && progressIssue && <span className="rd-note">现按 {rhythmState.phaseProgressPct}% 算，不是保存的设置</span>}
               <ScaleBar label="本阶段进度" valueText={progressValid ? `本阶段进度 ${rhythm.phaseProgressPct}%` : "进度不可用"} max={100} value={rhythm.phaseProgressPct} state={progressValid ? "ready" : "empty"} emptyText="没有可用的进度" fill tone="role-3" ticks={[{
                 value: 0,
                 text: "0%"
