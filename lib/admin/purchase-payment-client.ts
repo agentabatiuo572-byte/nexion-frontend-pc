@@ -15,7 +15,7 @@ async function request(path: string, method = "GET", body?: unknown, key?: strin
   const epoch = adminAuthLifecycleEpoch();
   let response: Response;
   try { response = await guardedFetch(`${base}${path}`, { method, cache: "no-store", signal: AbortSignal.timeout(25_000), ...(body === undefined ? {} : { headers: { "Content-Type": "application/json", "Idempotency-Key": key! }, body: JSON.stringify(body) }) }); }
-  catch { throw new PurchasePaymentApiError(body === undefined ? "订单付款服务暂时无法连接，请重新加载。" : "操作结果未确认，请保留原请求并核对，不能重新提交。", 0, body !== undefined); }
+  catch { throw new PurchasePaymentApiError(body === undefined ? "订单付款服务暂时无法连接，请重新加载。" : "操作结果未知，请保留原请求并核对，不能重新提交。", 0, body !== undefined); }
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   const raw = await response.json().catch(() => null);
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
@@ -23,7 +23,7 @@ async function request(path: string, method = "GET", body?: unknown, key?: strin
   if (!response.ok || raw?.code !== 0 || raw?.data == null) {
     const unknown = body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, raw?.code)
       || raw?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || raw?.message === "IDEMPOTENCY_RESULT_UNKNOWN");
-    if (unknown) throw new PurchasePaymentOutcomeUnknownError("操作结果未确认，请保留原请求并核对，不能重新提交。", response.status);
+    if (unknown) throw new PurchasePaymentOutcomeUnknownError("操作结果未知，请保留原请求并核对，不能重新提交。", response.status);
     throw new PurchasePaymentApiError(formatAdminApiError(raw?.message, "订单付款请求未完成，请重新加载后核对。"), response.status, false, typeof raw?.message === "string" ? raw.message : undefined);
   }
   return raw.data;
@@ -46,7 +46,7 @@ async function execute(row: PendingPurchasePayment, retry: boolean) {
     let result;
     // 写成功了但响应读不懂：可能已经执行，按结果未确认保留原命令（OP-91）。
     try { result = row.scope === "policy" ? parsePurchasePaymentPolicy(raw) : parsePurchasePaymentRecord(raw, row.scope); }
-    catch { throw new PurchasePaymentOutcomeUnknownError("已提交，但返回的结果读不懂，结果未确认；请保留原请求并核对。", 200); }
+    catch { throw new PurchasePaymentOutcomeUnknownError("已提交，但返回的结果读不懂，结果未知；请保留原请求并核对。", 200); }
     commands.forget(row.fingerprint, row.commandKey);
     return result;
   } catch (failure) {

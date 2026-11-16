@@ -25,7 +25,7 @@ export function isCompleteC5Command(row: C5Pending): row is C5Pending & C5Origin
 }
 export function prepareC5Command(original: C5Original) {
   const scope = original.kind === "credential" ? `credential|${original.target}` : `user|${original.userId}`;
-  if (pendingC5Commands(original.owner).some(row => !isCompleteC5Command(row) || row.fingerprint === scope)) throw new Error("此对象有待确认的原操作，请先到页面上方核对。");
+  if (pendingC5Commands(original.owner).some(row => !isCompleteC5Command(row) || row.fingerprint === scope)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
   const key = createA2CommandKey("c5-command");
   commands.remember(scope, key, original);
   if (!commands.isDurablyStored(scope, key)) {

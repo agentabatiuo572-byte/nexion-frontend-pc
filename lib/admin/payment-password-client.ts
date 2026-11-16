@@ -82,7 +82,7 @@ export async function retryPaymentPolicy(owner: number) {
 }
 export function releaseRejectedPaymentPolicy(owner: number, commandKey: string) {
   const row = pendingPaymentPolicy(owner);
-  if (!row || row.commandKey !== commandKey || !row.rejection) throw new Error("原调整尚未被明确拒绝，不能解除待确认。");
+  if (!row || row.commandKey !== commandKey || !row.rejection) throw new Error("原调整尚未被明确拒绝，不能解除原操作记录。");
   pending.forget(row.fingerprint, row.commandKey);
 }
 export async function queryPaymentPolicy(owner: number) {
@@ -158,14 +158,14 @@ export async function retryPaymentRelease(owner: number, port: PaymentSecurityPo
 }
 export function releaseRejectedPaymentRelease(owner: number, port: PaymentSecurityPort, commandKey: string) {
   const row = pendingPaymentRelease(owner, port.userId);
-  if (!row || row.portKey !== port.key || row.commandKey !== commandKey || !row.rejection) throw new Error("原解除尚未被明确拒绝，不能解除待确认。");
+  if (!row || row.portKey !== port.key || row.commandKey !== commandKey || !row.rejection) throw new Error("原解除尚未被明确拒绝，不能解除原操作记录。");
   releases.forget(row.fingerprint, row.commandKey);
   if (typeof window !== "undefined") window.dispatchEvent(new Event("nexion-payment-security-updated"));
 }
 export async function queryPaymentRelease(owner: number, port: PaymentSecurityPort) {
   const row = pendingPaymentRelease(owner, port.userId);
   if (!row) throw new Error("没有待查询的解除记录。");
-  if (row.portKey !== port.key) throw new Error("该用户在其他入口有待确认的操作，请回原入口查询，期间不能重复解除。");
+  if (row.portKey !== port.key) throw new Error("该用户在其他入口有结果未知的操作，请回原入口查询，期间不能重复解除。");
   const receipt = parsePaymentReleaseReceipt(await port.receipt(row.commandKey), row);
   if (receipt.status === "APPLIED" || receipt.status === "REJECTED") {
     await port.detail(row.recordId);

@@ -275,7 +275,7 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
       : <StatusTag tone="neutral" icon={Hourglass} explain={direct
         ? "原请求超过 24 小时，不能再重试。查询只看现在的标准，证明不了原操作有没有执行。"
-        : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。"}>已过期</StatusTag>;
+        : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
   return (
     <Notice tone="warn" title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
       <ul className="f5-recovery" aria-label="还没有结论的处置">

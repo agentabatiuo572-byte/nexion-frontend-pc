@@ -141,7 +141,7 @@ const FAILURE_REASON_LABELS: Record<string, string> = {
   K3_RULE_FREEZE: "触发提现风险规则（冻结），需人工核实",
   K3_ROUTE_UNAVAILABLE: "提现风险规则暂时无法判断，已转人工复核",
   K4_RISK_SCORE_UNAVAILABLE: "风险分暂时算不出来，已转人工复核",
-  WITHDRAWAL_PAYOUT_SUBMISSION_UNKNOWN: "打款结果待确认，请勿重复放行",
+  WITHDRAWAL_PAYOUT_SUBMISSION_UNKNOWN: "打款结果未知，请勿重复放行",
   WITHDRAWAL_PAYOUT_PROVIDER_FAILED: "打款服务返回失败，等待人工处理",
 };
 

@@ -78,7 +78,7 @@ export async function proposeSessionRevocation(
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批命令仍待确认，请重试原操作。", key);
+      throw new A2OutcomeUncertainError("原审批申请还没有结果，请按原请求重试。", key);
     }
     // 新提交被确定拒绝时丢号；重试的是保留下来的原命令时，只有后端明确拒绝（isExplicitRejection，且不是 404）才清，
     // 限流、超时、幂等层要求核查这些都说明不了原命令的结果，记录和对象锁留着（R3）。安全与登录设备也用这里，只会更严。

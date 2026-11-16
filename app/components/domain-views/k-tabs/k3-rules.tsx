@@ -552,7 +552,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         {canCreate && <Button variant="primary" disabledReason={blocked("create")} onClick={() => openWrite("create")}><Plus size={14} />新建规则</Button>}</>} />
     {pending.map((record) => {
       const saved = isSavedCommand(record) ? record : null;
-      const noRetry = !saved ? "旧记录没有保存原请求，不能猜测原内容或理由重发" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !canRead || !permissionFor(saved.kind) ? "当前账号缺少原操作权限，原记录仍保留" : saved.rejected ? "原操作已明确拒绝，请人工核实后解除本页待确认" : undefined;
+      const noRetry = !saved ? "旧记录没有保存原请求，不能猜测原内容或理由重发" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !canRead || !permissionFor(saved.kind) ? "当前账号缺少原操作权限，原记录仍保留" : saved.rejected ? "原操作已明确拒绝，请人工核实后解除本页的原操作记录" : undefined;
       return <Notice key={record.commandKey} tone="warn" title={`${saved?.label ?? "旧操作"} · ${busyKey === record.commandKey ? "提交中…" : saved?.rejected ? "已被拒绝" : "结果未知"}`} actionBelow action={<>
         <Button size="sm" loading={busyKey === `read:${record.commandKey}`} disabledReason={!canRead ? "缺少查看提现风险规则权限" : undefined} onClick={async () => {
           setBusyKey(`read:${record.commandKey}`);
@@ -560,7 +560,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           catch (error) { setReadback(`读取失败 · ${errorText(error)}`); } finally { setBusyKey(null); }
         }}>查询原结果</Button>
         <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原请求重试</Button>
-        {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>解除待确认</Button>}
+        {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>解除原操作记录</Button>}
         <Button size="sm" variant="ghost" onClick={() => setInspecting(record)}>技术信息</Button>
       </>}>
         <p>{targetLabel(saved?.target ?? legacyTarget(record))} · 提交于 {formatBusinessTimeCompact(new Date(record.createdAt).toISOString())}（{businessZone().label}）</p>
@@ -602,7 +602,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
               {rules.map((rule) => <Tr key={rule.ruleId} selected={detail?.ruleId === rule.ruleId} onOpen={() => setDetail(rule)}>
                 <Td><Cell main={<span className="k3-id"><span>{rule.ruleId.slice(0, -8)}</span><span>{rule.ruleId.slice(-8)}</span></span>} sub={dimensionLabel(rule.dimension)} mono title={rule.ruleId} /></Td>
                 <Td><Cell main={<><ConditionText text={conditionCopy(rule)} /><Explain label={`${rule.ruleId}条件全文`} content={conditionCopy(rule)} /></>} title={conditionCopy(rule)} /></Td>
-                <Td><ActionTag action={rule.action} /></Td><Td><RuleTag state={rule.state} />{locked(rule.ruleId) && <div className="k3-pending-marker"><StatusTag tone="warn">{pending.some((record) => isSavedCommand(record) && record.target === rule.ruleId && busyKey === record.commandKey) ? "提交中…" : "待确认"}</StatusTag></div>}</Td><Td className="k3-version-col"><Cell main={`P${rule.priority}`} sub={`v${rule.version}`} num /></Td>
+                <Td><ActionTag action={rule.action} /></Td><Td><RuleTag state={rule.state} />{locked(rule.ruleId) && <div className="k3-pending-marker"><StatusTag tone="warn">{pending.some((record) => isSavedCommand(record) && record.target === rule.ruleId && busyKey === record.commandKey) ? "提交中…" : "结果未知"}</StatusTag></div>}</Td><Td className="k3-version-col"><Cell main={`P${rule.priority}`} sub={`v${rule.version}`} num /></Td>
                 {columns.isVisible("builtIn") && <Td>{rule.builtIn ? "内置" : "自建"}</Td>}{showActions && <Td sticky="end">{ruleActions(rule)}</Td>}
               </Tr>)}
             </tbody></Table>
@@ -669,10 +669,10 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       <p>保留这次实际使用的方法、路径、原请求内容与原请求编号。本地记录属于本标签页，不提供跨设备恢复。</p>
       {reach("/platform/audit") ? <p><Link className="rd-link" href="/platform/audit">操作记录与审批</Link></p> : <p>请有权限的风控或超级管理员核对原操作。</p>}
     </Modal>}
-    {releasing && <Modal title="解除待确认" icon={ShieldCheck} onClose={() => setReleasing(null)} dirty={releaseVerified}
+    {releasing && <Modal title="解除原操作记录" icon={ShieldCheck} onClose={() => setReleasing(null)} dirty={releaseVerified}
       footer={<><Button onClick={() => setReleasing(null)}>取消</Button><Button variant="primary" disabledReason={!releaseVerified ? "请先勾选已核实原操作" : undefined} onClick={() => {
         if (!releaseVerified || !releasing.rejected) return;
-        commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); setReleasing(null); ctx.toast("已解除本页待确认，请继续核对后端原操作记录", "info");
+        commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); setReleasing(null); ctx.toast("已解除本页的原操作记录，请继续到操作记录核对原操作", "info");
       }}>确认解除</Button></>}>
       <ReleaseBody label={releasing.label} />
       <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="原请求编号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>

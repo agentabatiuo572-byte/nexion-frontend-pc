@@ -249,7 +249,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
 /** The same lock predicate used by actions also marks the affected E5 row. */
 export function E5PendingMark({ device }: { device: E5Device }) {
   const state = useContext(CommandsContext);
-  return state && (state.records.some(record => e5CommandBlocks(record, device)) || state.phoneBlocks(device)) ? <span className="e5-pending-mark" title="此设备有待确认操作，请核对页首原操作">待确认</span> : null;
+  return state && (state.records.some(record => e5CommandBlocks(record, device)) || state.phoneBlocks(device)) ? <span className="e5-pending-mark" title="此设备有结果未知的操作，请核对页首原操作">结果未知</span> : null;
 }
 
 export function E5Slots({ device: d, phones = false }: { device: E5Device; phones?: boolean }) {
@@ -275,7 +275,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const platform = session.authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
-  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有待确认操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined;
+  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有结果未知的操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined;
   const options: MoreMenuItem[] = [];
   const add = (intent: E5Intent, label: string, extra?: string) => options.push({ key: intent, label, danger: intent === "unbind" || intent === "pause", disabledReason: locked(intent) ?? extra, onSelect: () => setAction(intent) });
   if (!readOnly) {

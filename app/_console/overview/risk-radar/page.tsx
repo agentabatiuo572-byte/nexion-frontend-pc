@@ -553,7 +553,7 @@ export default function RiskRadarPage() {
         setSubscriberDisplayName(current.data.subscriberDisplayName ?? null);
         setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false);
       }
-      setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，待确认记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原请求重试，不会重复执行。");
+      setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，原记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原请求重试，不会重复执行。", isRetryExpired(record) ? "warn" : undefined);
     }
     catch (cause) { setToast(displayAdminError(cause)); }
   };
@@ -588,7 +588,7 @@ export default function RiskRadarPage() {
       setReleasingApproval(false);
       if (!released) { setToast("这条记录现在不能解除，请先查询原结果。"); return; }
       setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
-      setToast("已解除本页的待确认记录");
+      setToast("已解除本页的原操作记录");
     } catch (error) { setToast(displayAdminError(error)); }
     finally { syncPending(value => value + 1); }
   };
@@ -655,11 +655,11 @@ export default function RiskRadarPage() {
           <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
               <Button size="sm" onClick={openThreshold}>查询原结果</Button>
-              {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>解除待确认</Button>}
+              {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>解除原操作记录</Button>}
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。"
+              : approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除原操作记录。"
                 : pendingApproval.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询原审批单。"
                   : "先查原审批单；查不到时 24 小时内可以按原请求重试，不会建第二张单。"}</p>
           </Notice>
@@ -746,7 +746,7 @@ export default function RiskRadarPage() {
             onClose={() => setThreshold(null)}
             footer={<>
               <Button disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</Button>
-              {approvalRecovery && approvalReleasable && <Button disabled={savingThreshold} onClick={() => { setThreshold(null); setReleasingApproval(true); }}>解除待确认</Button>}
+              {approvalRecovery && approvalReleasable && <Button disabled={savingThreshold} onClick={() => { setThreshold(null); setReleasingApproval(true); }}>解除原操作记录</Button>}
               {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原结果</Button>}
               {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
             </>}>
@@ -754,9 +754,9 @@ export default function RiskRadarPage() {
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原请求重试，不会建第二张单。"
+                ? approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除原操作记录。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原请求重试，不会建第二张单。"
                 : thresholdUnknown ? "可能已经生效。可以按原请求重试，不会重复执行；也可以关掉后点「查询原结果」。" : thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除原操作记录。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
                 {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}

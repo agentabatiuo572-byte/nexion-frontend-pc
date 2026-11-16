@@ -38,11 +38,11 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     // Use the same ownership evidence and allowed raw statuses as E5.
     const activatable=canActivateE5Device(d),forceActivatable=canActivateE5Device(d,true);
     const result:MoreMenuItem[]=[],deactivatable=["active","busy","offline","abnormal","unknown"].includes(d.state),full=d.activeDevicesForUser>=6;
-    const add=(action:Action,blocked?:string,danger=false)=>result.push({key:action,label:LABELS[action],danger,disabledReason:blocked??((m.locked(phoneScope(d))||m.legacyPhoneLocked(d.serial,d.deviceId,d.userId))?"这个手机或用户有原操作待确认":undefined),onSelect:()=>setConfirm({device:d,action})});
+    const add=(action:Action,blocked?:string,danger=false)=>result.push({key:action,label:LABELS[action],danger,disabledReason:blocked??((m.locked(phoneScope(d))||m.legacyPhoneLocked(d.serial,d.deviceId,d.userId))?"这个手机或用户有结果未知的原操作":undefined),onSelect:()=>setConfirm({device:d,action})});
     if(activatable&&ctx.canWriteE5)add("activate",full?"已达 6 台上限，请先停用其他设备":undefined);
     if(forceActivatable&&ctx.canForceActivateE5&&m.canPropose)add("force",full?"已达 6 台上限，强制激活也不能绕过":undefined);
     if(deactivatable&&ctx.canWriteE5)add("deactivate");
-    if(ctx.canWriteE5&&(d.pausedReason?canResumeE5UserDevicesFrom(d):deactivatable))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
+    if(ctx.canWriteE5&&(d.pausedReason?canResumeE5UserDevicesFrom(d):deactivatable))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有结果未知的原操作":undefined,!d.pausedReason);
     if(deactivatable&&ctx.canUnbindE5&&m.canPropose)add("unbind",undefined,true);
     return result;
   };

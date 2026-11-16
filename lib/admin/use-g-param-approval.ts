@@ -209,7 +209,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     },
     retry: (key: string) => {
       const original = record(key);
-      if (!original) throw new Error("原审批命令已处理，请刷新页面后重新操作。");
+      if (!original) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
       return send(original);
     },
     // Release only after a matching terminal receipt and a successful current read.

@@ -467,7 +467,7 @@ export default function DualLedgerPage() {
       setReleasableApproval(null);
       if (!released) { setToast(displayAdminReadError(new Error("OPERATION_RESULT_UNKNOWN"))); return; }
       void refreshB1();
-      setToast("已解除本页的待确认记录");
+      setToast("已解除本页的原操作记录");
     } catch (error) { setToast(displayAdminReadError(error)); }
     finally { syncPending(); }
   };
