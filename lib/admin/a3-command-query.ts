@@ -11,7 +11,8 @@ export function a3ParamCommandOrigin(page: keyof typeof a3ParamCommandRoutes) {
   return fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority);
 }
 
-export async function queryA3ParamCommand(record: FundCommandRecord, page: keyof typeof a3ParamCommandRoutes, owner: string, evidence?: FundCommandEvidence) {
+export async function queryA3ParamCommand(record: FundCommandRecord, page: keyof typeof a3ParamCommandRoutes, owner: string, paramKey: string, evidence?: FundCommandEvidence) {
   const receipt = await queryOriginalCommand(record, a3ParamCommandRoutes[page], owner, evidence);
+  if (receipt && receipt.originalTarget !== paramKey) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   return { receipt, settled: fundCommandSettled(receipt) };
 }

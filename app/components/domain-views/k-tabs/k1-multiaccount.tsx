@@ -859,7 +859,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const checkInvestigation = async (record: K1PendingCommand, evidence?: FundCommandEvidence) => {
     setChecking(record.fingerprint);
     try {
-      const receipt = record.kind === "registration-param" ? (await queryA3ParamCommand(record, "K1", String(useAdminAuth.getState().session?.adminId), evidence)).receipt
+      const receipt = record.kind === "registration-param" ? (await queryA3ParamCommand(record, "K1", String(useAdminAuth.getState().session?.adminId), record.target, evidence)).receipt
         : await checkFundCommand(record, evidence);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
