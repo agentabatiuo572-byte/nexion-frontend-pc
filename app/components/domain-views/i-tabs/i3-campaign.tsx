@@ -1237,10 +1237,10 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
                 { value: "en", label: enEmpty ? "英语（选填）" : "英语" },
               ]} />
             </div>
-            <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, title.trim(), SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字`}>
+            <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, title.trim(), SAVE_TITLE_MAX) ? undefined : `${titleLen}/${TITLE_SENT} 字`} error={lengthHelp(titleLen, TITLE_SENT, title.trim(), SAVE_TITLE_MAX)}>
               {(control) => <Input {...control} disabled={frozen} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
-            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时英语用户收到系统默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。")}>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX) ? undefined : lang === "en" && enEmpty ? "不填时英语用户收到系统默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。"} error={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX)}>
               {(control) => <Textarea {...control} disabled={frozen} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
@@ -1289,7 +1289,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-budget">
             <h3 id="i3-f-budget" className="i3-sub-title">预算记录</h3>
-            <Field label="预算" hint="选填" help={budgetPlacesOver(form.budget) ? "最多两位小数，多了不能保存" : "只记录，不扣款、不发奖；不填就不记。最多两位小数。"}>
+            <Field label="预算" hint="选填" help={budgetPlacesOver(form.budget) ? undefined : "只记录，不扣款、不发奖；不填就不记。最多两位小数。"} error={budgetPlacesOver(form.budget) ? "最多两位小数，多了不能保存" : undefined}>
               {(control) => <NumberInput {...control} disabled={frozen} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
             </Field>
           </section>
