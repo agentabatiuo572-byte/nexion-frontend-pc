@@ -65,11 +65,13 @@ interface BackendPositionRow {
   nickname?: string | null;
   tier?: string | null;
   amount?: string | null;
+  amountMissing?: boolean;
   lockedApy?: string | null;
   earlyPenalty?: string | null;
   lockedAt?: string | null;
   unlockAt?: string | null;
   estimatedInterest?: string | null;
+  estimatedInterestMissing?: boolean;
   status?: string | null;
   storedStatus?: string;
   statusLabel?: string | null;
@@ -163,12 +165,14 @@ export interface G1PositionRow {
   userNo: string;
   nickname: string;
   tier: string;
-  amount: string;
+  amount: string | null;
+  amountMissing?: boolean;
   lockedApy: string;
   earlyPenalty: string;
   lockedAt: string;
   unlockAt: string;
-  estimatedInterest: string;
+  estimatedInterest: string | null;
+  estimatedInterestMissing?: boolean;
   status: string;
   storedStatus?: string;
   statusLabel: string;
@@ -272,12 +276,14 @@ function normalizePositionRow(row: BackendPositionRow): G1PositionRow {
     userNo: asText(row.userNo),
     nickname: asText(row.nickname, "—"),
     tier: asText(row.tier),
-    amount: asText(row.amount),
+    amount: row.amountMissing === true ? null : asText(row.amount),
+    amountMissing: row.amountMissing,
     lockedApy: asText(row.lockedApy),
     earlyPenalty: asText(row.earlyPenalty),
     lockedAt: asText(row.lockedAt),
     unlockAt: asText(row.unlockAt),
-    estimatedInterest: asText(row.estimatedInterest),
+    estimatedInterest: row.estimatedInterestMissing === true ? null : asText(row.estimatedInterest),
+    estimatedInterestMissing: row.estimatedInterestMissing,
     status: asText(row.status),
     ...(row.storedStatus !== undefined ? { storedStatus: row.storedStatus } : {}),
     statusLabel: asText(row.statusLabel),

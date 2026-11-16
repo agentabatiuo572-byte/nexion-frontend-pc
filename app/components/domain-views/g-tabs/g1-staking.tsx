@@ -40,7 +40,8 @@ function usdtText(value: number) {
 }
 
 /** 后端明细金额是「$1234.5」这种文本：去掉 $，补千分位和两位小数；认不出的原样显示。 */
-function rowAmount(value: string) {
+function rowAmount(value: string | null) {
+  if (value === null) return "—";
   const match = /^\$?(-?)([\d,]+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) return operatorCopyText(value);
   const int = match[2].replace(/,/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -67,11 +68,11 @@ function dateText(value: string) {
 }
 
 /** 备注是后端英文模板，operatorCopyText 译成中文；再把 $ 金额写成 USDT，「累计奖励」其实是整期估计，改成真实口径。 */
-function noteText(value: string) {
+function noteText(value: string, estimatedInterestMissing = false) {
   return operatorCopyText(value)
     .replace(/^D(\d+)\s*\/\s*(\d+)/, "已锁 $1 / $2 天")
     .replace(/累计奖励\s*/, "整期奖励估计 ")
-    .replace(/\$(-?[\d,]+(?:\.\d+)?)/g, (_, amount: string) => `${rowAmount(amount)} USDT`);
+    .replace(/\$(-?[\d,]+(?:\.\d+)?)/g, (_, amount: string) => `${estimatedInterestMissing ? "—" : rowAmount(amount)} USDT`);
 }
 
 /** 最低额是「1000 USDT」这种文本：数字按金额写法补千分位和两位小数，认不出的原样显示。 */
@@ -441,7 +442,7 @@ export function G1Staking() {
                   <Td><Cell main={operatorCopyText(row.tier)} sub={row.lockedApy} title={`${operatorCopyText(row.tier)}，下单时年奖励率 ${row.lockedApy}`} /></Td>
                   <Td align="right"><Cell num main={rowAmount(row.amount)} /></Td>
                   <Td><Cell num main={dateText(row.unlockAt)} sub={dateText(row.lockedAt)} title={`到期 ${timeText(row.unlockAt)}，开始 ${timeText(row.lockedAt)}`} /></Td>
-                  <Td><Cell main={meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : <StatusTag tone="neutral">{operatorCopyText(row.statusLabel)}</StatusTag>} sub={noteText(row.note)} title={noteText(row.note)} /></Td>
+                  <Td><Cell main={meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : <StatusTag tone="neutral">{operatorCopyText(row.statusLabel)}</StatusTag>} sub={noteText(row.note, row.estimatedInterestMissing)} title={noteText(row.note, row.estimatedInterestMissing)} /></Td>
                 </Tr>
               );
             })}
@@ -470,7 +471,7 @@ export function G1Staking() {
               <Fact k="提前解锁扣款">{current.earlyPenalty}</Fact>
               <Fact k="开始时间">{timeText(current.lockedAt)}</Fact>
               <Fact k="预计质押奖励" unit="USDT">{rowAmount(current.estimatedInterest)}</Fact>
-              <Fact k="备注">{noteText(current.note)}</Fact>
+              <Fact k="备注">{noteText(current.note, current.estimatedInterestMissing)}</Fact>
               <Fact k="读取">{exactRead ? `${businessClock(exactRead.at)} 按编号单独读取` : readAt ? `${businessClock(readAt)} 随这页读取` : "随这页读取"}（{businessZone().label}）</Fact>
             </Facts>
           </Drawer>
