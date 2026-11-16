@@ -1200,7 +1200,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       title: "移出允许名单",
       facts: <Facts><Fact k="网段"><span data-mono="">{cidr}</span></Fact></Facts>,
       detail: "",
-      statedBrief: { impact: "这个网段恢复按 IP 检测。下次检查可能重新成组，新组不能提现、新增收益锁定；账户不会自动冻结。移除属于收紧，不受新增名单的覆盖率门槛阻断。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
+      statedBrief: { impact: "这个网段恢复按 IP 检测，下次检查可能重新成组：新组不能提现、新增收益锁定，账户不会自动冻结。移除不查覆盖率。", check: "确认网段和授权来源，理由写清工单号和处理依据。" },
       effect: IMMEDIATE_EFFECT,
       confirmLabel: "立即移除",
       reasonPlaceholder: "写清调整原因和依据",
@@ -1335,7 +1335,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           {legacyProposals.length > 0 && <Notice tone="warn" title="原提交结果未知" action={canQueryProposal && <Button size="sm" loading={checking === c.id} onClick={() => void recoverLegacyProposal()}>找回提交结果</Button>}>这组账户的原提交结果仍待核对。状态变化不代表原操作已结束。{!canQueryProposal && "请有操作记录读取权限的同事核对。"}</Notice>}
           {(actions.length > 0 || canWrite) && (
             <Decision
-              explain={actions.length > 0 ? "处置要提交审批，超级管理员批准后才生效，批准前这组不变。" : undefined}
+              explain={actions.length > 0 ? "处置要提交审批，另一位超级管理员批准后才生效，批准前这组不变。" : undefined}
               others={<>
                 {/* 「判定为正常」「解除误判」是判断不是止损，用次按钮：红描边只给不可撤销或直接动钱的入口（VS-25），放宽的资金风险在确认框里按覆盖率提示。 */}
                 {loosen && <Button disabledReason={loosen.blocked} onClick={loosen.run}>{loosen.label}</Button>}
@@ -1438,8 +1438,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Stat icon={ShieldAlert} iconTone={Number(stats.highClusters) > 0 ? "warn" : "role-other"} label="高风险账户组" value={statText("highClusters")} unit="组" sub={`建议冻结的关联程度 ${formatThreshold(freezeSuggestThreshold)}（0–1 分）`}
               explain="待判定或可疑、达到建议冻结的关联程度的组。这只是建议，不会自动冻结。" />
             <Stat tone={Number(stats.frozenClusters) > 0 ? "warn" : undefined} icon={Snowflake} label="已冻结账户组" value={statText("frozenClusters")} unit="组" sub={`共 ${statText("frozenAccounts")} 个账户`} />
-            <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}
-              explain={statKnown("giftBlockedUsd") ? undefined : "这里指重复领取被拦下的新人礼金额和笔数，后端还没有提供这项统计；其他三个数字是真实读取的，不受影响。「异常套利与刷量排查」里的「已拦截新人礼」是处置为拦截新人礼的命中条数，不是同一个数。"} />
+            <Stat tone="role-1" icon={Gift} label="新人礼拦截" value={statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"} sub={statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "还没有这项数据，不是 0"}
+              explain={statKnown("giftBlockedUsd") ? undefined : "重复领取被拦下的新人礼金额和笔数，系统还没有这项统计；其他三个数是真实读到的。「异常套利与刷量排查」的「已拦截新人礼」数的是处置条数，不是同一个数。"} />
           </StatBand>
           )}
 
@@ -1539,7 +1539,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </div>
             <div className="rd-config-groups">
               <Panel id={nav.anchor("risk")} title="风险判断标准" icon={ShieldAlert} tone="role-4"
-                explain="决定哪些账户算同一组。成组后这组账户不能提现、新增收益锁定。这页的修改保存后立即生效，不走审批，参数和允许名单一保存就影响用户；只有账户组的四种处置要超级管理员批准。">
+                explain="决定哪些账户算同一组；成组后这组不能提现、新增收益锁定。这里的修改保存后立即生效，不走审批；只有账户组的四种处置要另一位超级管理员批准。">
                 <ConfigList>
                   {params.map((p) => (
                     <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} effect={K1_PARAM_HELP[p.key]?.direction} value={riskValueText(p.key, p.value, p.unit)}
@@ -1564,7 +1564,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               </Panel>
 
               {/* 收益审核规则与账户组处置分开。 */}
-              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。保存后立即生效，不走审批，一保存就影响用户。">
+              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。保存后立即生效，不走审批。">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">
                     <ConfigList>
@@ -1581,7 +1581,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       })}
                     </ConfigList>
                     <Fold inset title="处理规则" summary="从上往下判断，满足哪条就按哪条"
-                      explain={<>收益锁定不用先冻结账户组，和账户冻结是两种处理。待审核收益<b>不会因等待时间到期自动放行</b>，只能人工放行。前两条同时让这组账户不能提现。放宽审核起点、锁定起点可能增加资金支出，请写明依据。</>}>
+                      explain={<>收益锁定和账户冻结是两种处理，不用先冻结账户组。待审核收益<b>不会到期自动放行</b>，只能人工放行。前两条会让这组账户不能提现。放宽起点可能增加资金支出，写明依据。</>}>
                       <KeyValues rows={[
                         { key: "status", label: "1. 账户组待判定、可疑或已冻结", value: "锁定奖励" },
                         { key: "freeze", label: `2. 同组账号数达到 ${overviewReady.releaseParams.find((p) => p.key === "duplicateAccountFreezeFrom")?.value ?? "—"}`, value: "锁定奖励" },
@@ -1595,7 +1595,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 )}
               </Panel>
 
-              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" explain="名单内的网段不再按 IP 检测，设备和支付工具照常。只影响后续检测，既有组和成员限制保留，须在「账户组排查」人工判定或解除。新增、重新启用或延长有效期时，保存会检查兑付覆盖率，低于红线或无法读取时不能保存。移除不受这项门槛阻断。" icon={ListChecks} tone="role-2" flush
+              <Panel id={nav.anchor("whitelist")} title="IP 允许名单" explain="名单内的网段不再按 IP 检测，设备和支付工具照常；已有的组不会自动解除。新增、重新启用或延长有效期时检查兑付覆盖率，低于红线或读不到时不能保存；移除不查。" icon={ListChecks} tone="role-2" flush
                 actions={canWrite && <Button size="sm" onClick={addWl}>+ 添加允许名单</Button>}>
                 <Table label="IP 允许名单">
                   <thead><tr><Th>IP / 网段</Th><Th>备注</Th><Th>添加人</Th><Th>失效时间</Th><Th align="right">操作</Th></tr></thead>
@@ -1644,7 +1644,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {help?.whatIf?.(riskValueText(param.key, value))}
                 {limitChange && (numeric > Number(param.value)
                   ? <span className="rd-diff-note" data-tone="warn"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>调大上限时，保存会检查兑付覆盖率，低于红线或无法读取时不能保存。</span></span>
-                  : "调小上限属于收紧，不受这项覆盖率门槛阻断。")}
+                  : "调小上限是收紧，不查覆盖率。")}
               </>}
               error={fieldError(problem, typed, "value")}>
               {(control) => <NumberInput {...control} unit={accountUnit(param.unit)} min={limits.min} max={limits.max} step={limits.step} disabled={busy} value={value} onChange={(event) => update({ value: event.target.value })} onBlur={() => touch("value")} />}
@@ -1713,13 +1713,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {whitelistDraft && (() => {
         const cidr = whitelistDraft.cidr.trim();
         const note = whitelistDraft.note.trim();
-        const cidrProblem = isValidCidr(whitelistDraft.cidr) ? undefined : "请输入合法 IPv4 CIDR（每段不使用前导零）";
+        const cidrProblem = isValidCidr(whitelistDraft.cidr) ? undefined : "要填 IPv4 网段，例如 203.0.113.0/24，每段数字前不补 0";
         const noteProblem = note.length < 2 ? "备注至少 2 个字" : note.length > 200 ? "备注不能超过 200 字" : undefined;
         const expiryProblem = futureIsoDate(whitelistDraft.expireText) ? undefined : "失效日期必须晚于今天";
         const update = (patch: Partial<WhitelistDraft>) => setWhitelistDraft((current) => current ? { ...current, ...patch } : current);
         const busy = draftSubmitting === "whitelist";
         return (
-          <DraftModal title="添加 IP 允许名单" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "只影响后续 IP 检测；设备和支付工具仍照常检测。既有组和成员限制保留，须在「账户组排查」人工判定或解除。" }, { k: "生效时间", v: "保存后立即生效，系统约每分钟检查一次，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
+          <DraftModal title="添加 IP 允许名单" icon={ShieldCheck} effect={IMMEDIATE_EFFECT} explain={[{ k: "影响", v: "只影响之后的 IP 检测，设备和支付工具照常。已有的组不会自动解除，要到「账户组排查」处理。" }, { k: "生效时间", v: "保存后立即生效，系统约每分钟检查一次，到失效日期后恢复检测。" }]} busy={busy} busyLabel="提交中…" saveLabel="加入并立即生效"
             blocked={cidrProblem ?? noteProblem ?? expiryProblem ?? (pendingBlocks.has(`cidr:${cidr}`) ? "这个网段有结果未知的操作，先到页面上方处理" : undefined)}
             reason={whitelistDraft.reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onClose={() => setWhitelistDraft(null)} onSave={saveWhitelistDraft}>
@@ -1732,7 +1732,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <Field label="失效日期" required error={fieldError(expiryProblem, Boolean(whitelistDraft.expireText), "expire")}>
               {(control) => <Input {...control} disabled={busy} type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} onBlur={() => touch("expire")} />}
             </Field>
-            <p className="rd-note">新增、重新启用或延长有效期时，保存会检查兑付覆盖率，低于红线或无法读取时不能保存。</p>
+            <p className="rd-note">新增、重新启用或延长有效期时，保存会检查兑付覆盖率，低于红线或读不到时不能保存。</p>
           </DraftModal>
         );
       })()}
