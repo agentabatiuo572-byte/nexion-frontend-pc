@@ -6,6 +6,8 @@ import {
   createA4IdempotencyKey, redriveAuditedH3DeadOutboxEvent, runA4RetentionNow, transitionA4Lifecycle, updateA4DimensionParam,
   type A4DimensionParam, type A4H3DeadOutboxRedrivePreview, type A4SchemaRegistration,
 } from "./a4-client";
+import { discoverECommand, eCommandSettled, investigateECommand, type ECommandEvidence } from "./e-command-investigation";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export type A4Original =
   | { kind: "param"; param: A4DimensionParam; value: string }
@@ -43,6 +45,26 @@ const commands = createPendingMutationStore<A4Command>({
   isValidRecord: record => validOriginal(record.original) && record.fingerprint === a4Slot(record.original)
     && typeof record.reason === "string" && typeof record.name === "string" && typeof record.change === "string",
 });
+
+/** Only the original retention command can settle its record; current cleanup statistics cannot. */
+export async function queryA4RetentionCommand(record: A4Command, evidence?: ECommandEvidence) {
+  const saved = commands.list().find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved || saved.original.kind !== "retention") throw new Error("A4_ORIGINAL_UNRESOLVED");
+  const session = useAdminAuth.getState().session;
+  if (!session?.authorities.includes("platform_a4_read")) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  const locator = { commandKey: saved.commandKey, originalMethod: "POST" as const,
+    originalPath: "/api/admin/platform/events/retention-runs", originalAdminId: String(session.adminId) };
+  let receipt;
+  try {
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "platform_a4_read") : await discoverECommand(locator);
+  } catch (error) {
+    // Older backends reject unsupported scopes; retain the existing current-data readback.
+    if (!evidence && (error as { status?: number }).status === 422) return null;
+    throw error;
+  }
+  if (eCommandSettled(receipt)) commands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
 
 export function useA4Commands() {
   const [pending, setPending] = useState<A4Command[]>([]);
