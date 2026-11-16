@@ -75,7 +75,7 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
   if (submitted) return <>
     <Conclusion state="neutral" icon={Layers3}>首次配置已提交审批，批准前这里仍是空的</Conclusion>
     <Panel title="首次配置" icon={ListChecks} tone="role-4">
-      <Notice tone="progress" title="等另一位管理员批准" actionBelow action={<>
+      <Notice tone="warn" title="等另一位管理员批准" actionBelow action={<>
         <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f1Loading} onClick={() => void ctx.refreshF1()}>刷新等级</Button>
         {auditLink}
       </>}>
