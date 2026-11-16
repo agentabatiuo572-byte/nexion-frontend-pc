@@ -79,7 +79,7 @@ const PARAM: Record<string, {
     tighten: "调低",
     existing: "已有订单保留下单时的奖励率和预计奖励，不重算",
     future: "之后新开的订单按新奖励率算预计奖励",
-    hint: "0–300，最多两位小数",
+    hint: "大于 0，最多 300",
     unit: "%",
   },
   penalty: {
