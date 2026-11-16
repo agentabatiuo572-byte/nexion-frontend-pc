@@ -211,6 +211,7 @@ export function clearPendingCommandRecords(storage?: Storage, previousOwner?: st
         const slot = String(row.fingerprint ?? "");
         return key === "nexion-a1-support-avatar-account-create"
           || key === "nexion-admin-a6-pending-commands-v1"
+          || key === "nexion-admin-a7-pending-commands-v1"
           || key === "uvel-f4-ambassador-material-reviews"
           || key === "nexion-admin-withdrawal-config-proposals" && /^\d+:F4$/.test(slot)
           || key === "nexion-admin-f-commands-v1" && (/^f-config:F\.(?:pool|quota|ambassador|leaderboard)\./.test(slot)
