@@ -165,10 +165,15 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         primary={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="primary" disabledReason={canProposeApproval ? undefined : !operable ? (loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试") : proposalBlockers[0] ?? "还不满足批准条件"} onClick={approve}>发起批准</Button> : undefined} />}>
       <div className="f4-materials" aria-busy={loading}>
         {recoveryNotice && <Notice tone="progress">{recoveryNotice}</Notice>}
-        {pending && <Notice tone="warn" title={<>{pending.input.stage === "BUSINESS" ? "业务" : "财务"}核验结果未知{isRetryExpired(pending) ? <StatusTag tone="neutral">已过期</StatusTag> : unknownTag("direct")}</>}
-          action={<Button size="sm" onClick={() => setConfirmation(pending.input)}>{isRetryExpired(pending) ? "查询原结果" : "按原请求重试"}</Button>}>
-          {`材料第 ${pending.input.expectedMaterialRevision} 版 · ${pending.input.decision === "PASSED" ? "通过" : "需补材料"} · ${businessStamp(pending.createdAt)} 提交（${zoneNote()}）。${isRetryExpired(pending) ? "原请求超过 24 小时，只能查询，不能再重试。" : "原内容和理由已保留，可以按原请求重试，不能改。"}`}
-        </Notice>}
+        {pending && (() => {
+          // 过期或这个账号已没有这项核验权限时，恢复框里只能查询（和恢复框的 expired 判断一致）。
+          const expired = isRetryExpired(pending);
+          const revoked = !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review");
+          return <Notice tone="warn" title={<>{pending.input.stage === "BUSINESS" ? "业务" : "财务"}核验结果未知{expired ? <StatusTag tone="neutral">已过期</StatusTag> : unknownTag("direct")}</>}
+          action={<Button size="sm" onClick={() => setConfirmation(pending.input)}>{expired || revoked ? "查询原结果" : "按原请求重试"}</Button>}>
+          {`材料第 ${pending.input.expectedMaterialRevision} 版 · ${pending.input.decision === "PASSED" ? "通过" : "需补材料"} · ${businessStamp(pending.createdAt)} 提交（${zoneNote()}）。${expired ? "原请求超过 24 小时，只能查询，不能再重试。" : revoked ? "这个账号已经没有这项核验权限，只能查询，不能再重试。" : "原内容和理由已保留，可以按原请求重试，不能改。"}`}
+        </Notice>;
+        })()}
         <Steps label="申请进度" items={["提交材料", "业务核验", "财务核验", "最终批准"].map((label, index) => ({
           label, sub: index === 3 ? "开通所选类别额度" : undefined,
           state: stage.done > index ? "done" as const : stage.done === index && !final ? "current" as const : "todo" as const,
@@ -247,7 +252,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       </Facts>}
       detail={`材料 V${confirmation.expectedMaterialRevision} · 结论：${confirmation.decision === "PASSED" ? "通过" : "需补材料"}`}
       confirmLabel="记录核验结论"
-      completionCopy={pending ? "按原请求重试：原版本、原结论和原理由不变，已经记录过的不会记两次。" : "核验结论和理由立即记录到这一版材料，不经审批。"}
+      completionCopy={pending ? isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")
+        ? "只能查询原结果；能确定这次核验没有记下时才解除记录。"
+        : "按原请求重试：原版本、原结论和原理由不变，已经记录过的不会记两次。" : "核验结论和理由立即记录到这一版材料，不经审批。"}
       getPendingReason={() => pendingRef.current?.input.reason}
       inlineApproval={{
         resolve: () => undefined,
