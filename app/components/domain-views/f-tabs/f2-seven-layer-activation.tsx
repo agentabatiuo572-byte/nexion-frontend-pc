@@ -116,7 +116,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
-        {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError === "审批进度没读到" ? canAudit ? "点页头「刷新」重读；读到之前不能提交整体结算的申请。" : "这个账号没有查看审批的权限。" : ctx.f2ActivationPendingError}</Notice></li>}
+        {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError === "审批进度没读到" ? canAudit ? "点页头「刷新」重读；读到之前不能提交整体结算的申请。" : "这个账号没有查看审批的权限。" : <>{ctx.f2ActivationPendingError}{canAudit && "点页头「刷新」重读。"}</>}</Notice></li>}
         {policy && !supported && <li><Notice tone="warn" title="暂时只能查看">后台版本和后端的结算接口对不上，刷新后再试；仍不行请联系值班人员。</Notice></li>}
       </ul>}
     </Panel>
