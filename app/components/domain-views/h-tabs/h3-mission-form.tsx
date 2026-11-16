@@ -9,6 +9,8 @@ import { useMemo, useState } from "react";
 import { ListChecks } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, Modal, Notice, NumberInput, Select, StatusTag } from "@/app/components/rd";
 import { TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
+import { h3MissionCreationRefusal } from "@/lib/admin/h3-contract";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 export type H3MissionForm = Record<string, string>;
 
@@ -16,9 +18,11 @@ export type H3MissionForm = Record<string, string>;
 export const MISSION_FORM_INITIAL: H3MissionForm = { category: "explore", actionRoute: "/pages/missions/missions" };
 
 /** 原表单的校验（design-kit mission-create），一条不改；按字段归位，好写在字段下面。 */
-export function missionFormErrors(state: H3MissionForm): Record<string, string> {
+export function missionFormErrors(state: H3MissionForm, missionType: string): Record<string, string> {
   const e: Record<string, string> = {};
   if (!state.missionCode?.trim()) e.missionCode = "请填写任务编号";
+  const refusal = h3MissionCreationRefusal(missionType, state.missionCode?.trim() ?? "");
+  if (refusal) e.missionCode = displayAdminError(new Error(refusal));
   if (!state.missionName?.trim()) e.missionName = "请填写任务名称";
   if (!state.rewardPoints?.trim()) e.rewardPoints = "请填写奖励 UVT 数";
   if (!state.category?.trim()) e.category = "请选择任务类别";
@@ -43,7 +47,8 @@ export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview
   const [value, setValue] = useState<H3MissionForm>(MISSION_FORM_INITIAL);
   const [attempted, setAttempted] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const errors = useMemo(() => missionFormErrors(value), [value]);
+  const errors = useMemo(() => missionFormErrors(value, missionType), [value, missionType]);
+  const creationRefusal = h3MissionCreationRefusal(missionType, value.missionCode?.trim() ?? "");
   const shown = attempted ? errors : {};
   const missing = Object.values(errors);
   const dirty = JSON.stringify(value) !== JSON.stringify(MISSION_FORM_INITIAL);
@@ -58,7 +63,7 @@ export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview
       <Drawer open wide onClose={close} title={`新建${subject}`} sub="建好后是已停用" icon={ListChecks} tone="role-4"
         explain="左边填，右边看它在 App 上的样子。名称建好后可以在任务详情里分别填英文、中文、越南语。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
-          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : undefined} onClick={review}>下一步：核对并提交</Button>}
+          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined} onClick={review}>下一步：核对并提交</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h3-form-split" data-detail="" data-preview="">
           <div className="h3-form">
