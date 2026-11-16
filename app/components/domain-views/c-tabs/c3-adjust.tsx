@@ -83,9 +83,9 @@ const ACCOUNT_STATUS: Record<string, string> = { ACTIVE: "正常", FROZEN: "冻�
 const C01_FLOW = "提交后余额不会马上变，需由另一位同事复核批准后才生效。";
 const C01_RULE = "余额调整只用于纠错和补偿。调错了用「冲正」抵消，原记录会保留。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
-const UNKNOWN_TOAST = "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。";
-const LOCKED_ROW = "这张单有结果未确认的操作，先到页面上方核对";
-const LOCKED_USER = "这个用户有一笔结果未确认的提交，先到页面上方核对";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。";
+const LOCKED_ROW = "这张单有结果未知的操作，先到页面上方核对";
+const LOCKED_USER = "这个用户有一笔结果未知的提交，先到页面上方核对";
 const MINE = "这是你发起的，需要另一位管理员处理";
 /** 行内只有一格宽，写短句；完整的一句在抽屉里（OP-66）。 */
 const MINE_SHORT = "需另一位管理员处理";
@@ -1079,7 +1079,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     setPendingNotes((notes) => { const next = { ...notes }; delete next[record.fingerprint]; return next; });
     setReleasing(null);
     setRetryRejected((keys) => keys.filter((key) => key !== record.commandKey));
-    toast("已解除待确认，可以重新处理", "success");
+    toast("已解除原操作记录，可以重新处理", "success");
   };
 
   /* ── 渲染用的值 ── */
@@ -1416,15 +1416,15 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const pendingNotices = pending.map((record) => {
     const expired = isRetryExpired(record);
     return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
+      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
         action={<>
-          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>}
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
+          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
+          {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>}>
         <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会重发同一份原请求，不会多建单，也不会重复入账。"}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
           <Explain label="这次操作的技术信息" rows={[
             { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
@@ -1520,6 +1520,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     </Drawer>
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain={`重试被拒说明不了原操作的结果。先读回核对，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
+      explain={`重试被拒说明不了原操作的结果。先查询原结果，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
   </>;
 }
