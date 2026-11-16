@@ -230,7 +230,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, selected, onO
                 <Td>{reach(alert.target)
                   ? <Link className="rd-link" href={alert.target} prefetch={false} aria-disabled={triageState(alert.target) ? true : undefined}
                     title={triageState(alert.target) === "blocked" ? "正在记录另一条分诊，记完再点" : undefined}
-                    onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}>{page}{triageState(alert.target) === "active" && <span className="b5-muted"> · 正在记录…</span>}</Link>
+                    onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}>{triageState(alert.target) === "active" ? "正在记录…" : page}</Link>
                   : <span className="b5-muted">没有{page}权限</span>}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
