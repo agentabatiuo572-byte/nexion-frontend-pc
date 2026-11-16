@@ -687,6 +687,7 @@ function G7RepurchasePage() {
   const byKey = (key: string) => overview.params.find((param) => param.key === key);
   const records = paramApproval.list();
   const lockedNames = Object.keys(lockedParams).filter((key) => !paramApproval.record(key)).map((key) => PARAM[key]?.name ?? key);
+  const lockedIds = Object.keys(lockedParams).filter((key) => !paramApproval.record(key) && lockedParams[key].operationId);
   const openCount = overview.statusBreakdown.filter((row) => OPEN_STATES.includes(row.status.toLowerCase())).reduce((sum, row) => sum + row.count, 0);
   const capacity = overview.g4Capacity;
 
@@ -707,14 +708,14 @@ function G7RepurchasePage() {
         note={[
           copy?.note,
           editable && copy?.loosen && !canPropose ? `这个账号没有发起审批的权限，只能${copy.tighten}；${copy.loosen}请有提案权的同事发起。` : undefined,
-          lockedParams[param.key] && !record && !lockedParams[param.key].operationId ? "这一项有一张审批单还没处理完，页面看不到单号；批准、驳回或撤回之前，调高调低都改不了。" : undefined,
+          lockedParams[param.key] && !record ? `这一项有一张审批单还没处理完，${lockedParams[param.key].operationId ? `单号 ${lockedParams[param.key].operationId}` : "页面看不到单号"}；批准、驳回或撤回之前，调高调低都改不了。` : undefined,
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g7x-param">
           <span className="g7x-value">
             <span className="g7x-value-num" data-empty={param.value.trim() ? undefined : ""}>{paramValueText(param.key, param.value)}</span>
             {recovery && recoveryTag(recovery)}
             {!recovery && direct && (g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
-            {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={LockKeyhole} explain={lockedParams[param.key].message}>审批锁定中{lockedParams[param.key].operationId && ` · ${lockedParams[param.key].operationId}`}</StatusTag>}
+            {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={LockKeyhole} explain={lockedParams[param.key].operationId ? `审批单 ${lockedParams[param.key].operationId} 还没处理完。${lockedParams[param.key].message}` : lockedParams[param.key].message}>审批锁定中</StatusTag>}
           </span>
           <span className="g7x-dir">{copy?.loosen ? `${copy.loosen}要批准` : "改了立即生效"}</span>
         </span>}
@@ -744,8 +745,8 @@ function G7RepurchasePage() {
   const originalCount = records.length + (session ? listG7DirectCommands(session.adminId).length : 0);
   const conclusion = lockedNames.length > 0
       ? <Conclusion state="warn" icon={LockKeyhole}
-          hint="到「操作记录与审批」找这张审批单，有结论后再改。"
-          explain="直接修改时后端答复这一项有一张审批单还没处理完：批准、驳回或撤回之前调高调低都改不了，其他参数照常可改。页面看不到单号，也不知道是谁提交的。">
+          hint={lockedNames.length === 1 && lockedIds.length === 1 ? `到「操作记录与审批」找审批单 ${lockedParams[lockedIds[0]].operationId}，有结论后再改。` : "到「操作记录与审批」找这张审批单，有结论后再改。"}
+          explain={`直接修改时后端答复这一项有一张审批单还没处理完：批准、驳回或撤回之前调高调低都改不了，其他参数照常可改。${lockedIds.length === lockedNames.length ? "单号在这一行「审批锁定中」的说明里" : lockedIds.length ? "有单号的写在这一行「审批锁定中」的说明里，其余没给单号" : "页面看不到单号"}，也看不到是谁提交的。`}>
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : originalCount > 0
       ? <Conclusion state="warn" icon={Clock3}

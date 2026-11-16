@@ -1011,14 +1011,14 @@ function G2ExchangePage() {
         note={[
           copy?.extra,
           canEdit && !canPropose && copy ? `这个账号没有发起审批的权限，只能${copy.tighten}；${copy.loosen}请有提案权的同事发起。` : undefined,
-          (cap.pendingApproval === true || lockedParams[cap.key]) && !record && !cap.pendingOperationId ? "这一项有一张审批单还没处理完，页面看不到单号；批准、驳回或撤回之前，调高调低都改不了。" : undefined,
+          (cap.pendingApproval === true || lockedParams[cap.key]) && !record ? `这一项有一张审批单还没处理完，${cap.pendingApproval === true && cap.pendingOperationId ? `单号 ${cap.pendingOperationId}` : "页面看不到单号"}；批准、驳回或撤回之前，调高调低都改不了。` : undefined,
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g2x-param">
           <span className="g2x-value">
             <span className="g2x-value-num">{paramValueText(cap.key, cap.value, cap.displayValue)}</span>
             {recovery && recoveryTag(recovery)}
             {!recovery && direct && (g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
-            {!record && (cap.pendingApproval === true || lockedParams[cap.key]) && <StatusTag tone="warn" icon={Lock} explain={lockedParams[cap.key] || messageOf("OBJECT_LOCKED_BY_A2")}>审批锁定中{cap.pendingApproval === true && cap.pendingOperationId && ` · ${cap.pendingOperationId}`}</StatusTag>}
+            {!record && (cap.pendingApproval === true || lockedParams[cap.key]) && <StatusTag tone="warn" icon={Lock} explain={`${cap.pendingApproval === true && cap.pendingOperationId ? `审批单 ${cap.pendingOperationId} 还没处理完。` : ""}${lockedParams[cap.key] || messageOf("OBJECT_LOCKED_BY_A2")}`}>审批锁定中</StatusTag>}
           </span>
           {copy && <span className="g2x-dir">{copy.short}要批准</span>}
         </span>}
