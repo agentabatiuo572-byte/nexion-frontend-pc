@@ -304,12 +304,15 @@ export default function A6Roles() {
     requireActor();
     queried.current.add(record.commandKey);
     const proposal = rbacProposal(record.original);
-    const state = !proposal || record.original.kind === "a6-status" ? await commands.queryReceipt(record) : null;
     // A lookup failure cannot erase a previously confirmed creation or decision.
     // A status receipt can represent either a direct no-op or an A2 creation. Read the original ticket before settling it.
     const ticket = proposal ? await commands.queryProposal(record) : null;
     requireActor();
     if (proposal) commands.observe(record, ticket);
+    // Receipt errors leave no conclusion; the existing readback/recovery path must still run.
+    const state = !ticket && (!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
+      ? await commands.queryReceipt(record).catch(() => null) : null;
+    requireActor();
     if (!ticket) {
       if ((!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
         && (state === "SUCCEEDED" || state === "REJECTED" || state === "FAILED")) {
