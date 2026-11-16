@@ -40,7 +40,7 @@ export const fDirectCommands = createPendingMutationStore<FDirectAttempt>({
   retainExpiredRecords: row => /^(?:\d+:)?f4-ambassador-policy$/.test(row.fingerprint) || /^(?:\d+:)?f5-anomaly-config$/.test(row.fingerprint),
   isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0
     && (row.commandOrigin === undefined || isOriginalCommandOrigin(row.commandOrigin, {
-      originalMethod: "PUT", originalPath: /f4-ambassador-policy$/.test(row.fingerprint) ? "/api/admin/teams/ambassador-policy" : "/api/admin/teams/commissions/anomaly-config",
+      originalMethod: "PUT", originalPath: /f4-ambassador-policy$/.test(row.fingerprint) ? "/api/admin/teams/ambassador-policy" : row.commandOrigin?.originalPath === "/api/admin/teams/commissions/anomaly-config" ? row.commandOrigin.originalPath : "/api/admin/commissions/anomaly-config",
       readAuthority: /f4-ambassador-policy$/.test(row.fingerprint) ? "network_f4_read" : "network_f5_read",
     }) && row.commandOrigin.originalAdminId === String(row.adminId)),
 });

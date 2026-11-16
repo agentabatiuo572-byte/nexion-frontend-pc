@@ -9,7 +9,7 @@ import { useAdminAuth } from "../store/admin-auth";
 import { fundCommandOrigin, fundCommandSettled, type FundCommandEvidence } from "./fund-command-investigation";
 import { queryOriginalCommand } from "./original-command-query";
 
-const anomalyRoute = { originalMethod: "PUT", originalPath: "/api/admin/teams/commissions/anomaly-config", readAuthority: "network_f5_read" } as const;
+const anomalyRoute = { originalMethod: "PUT", originalPath: "/api/admin/commissions/anomaly-config", readAuthority: "network_f5_read" } as const;
 
 export function listF5AnomalyWrites(adminId: number) {
   return fDirectCommands.list().filter(row => row.fingerprint === `${adminId}:f5-anomaly-config`
@@ -61,7 +61,7 @@ export async function sendF5Anomaly(adminId: number, values?: { commissionAnomal
 export async function queryF5Anomaly(adminId: number, original: FDirectAttempt, evidence?: FundCommandEvidence) {
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId || original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  const query = () => queryOriginalCommand(original, anomalyRoute, String(adminId), evidence);
+  const query = () => queryOriginalCommand(original.commandOrigin ? { ...original, commandOrigin: { ...original.commandOrigin, originalPath: anomalyRoute.originalPath } } : original, anomalyRoute, String(adminId), evidence);
   const receipt = evidence ? await query() : await query().catch(() => null);
   const settled = fundCommandSettled(receipt);
   if (settled) fDirectCommands.forget(original.fingerprint, original.commandKey);
