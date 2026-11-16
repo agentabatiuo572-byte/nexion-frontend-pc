@@ -1,6 +1,9 @@
+import { f4Decimal } from "./f4-money";
+
 /** Keep backlog DECIMAL lexemes before JSON.parse can round them through Number. */
 export function parseB5MoneyJson(value: string): unknown {
-  return JSON.parse(value.replace(/("(?:amountUsdt|totalAmountUsdt|walletShortfallUsdt|feeBufferShortfallUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'));
+  return JSON.parse(value.replace(/("(?:ratioReserveUsdt|ratioLiabilitiesUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+    (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`).replace(/("(?:amountUsdt|totalAmountUsdt|walletShortfallUsdt|feeBufferShortfallUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'));
 }
 
 export function readB5Amount(value: unknown, field: string, signed = false): string {

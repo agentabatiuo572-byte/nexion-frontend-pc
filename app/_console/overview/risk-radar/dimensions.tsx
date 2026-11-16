@@ -199,8 +199,8 @@ function coverageDimension(data: B5Radar): Dimension {
   const ratio = c.ratio === null ? null : fmtConfigPct(c.ratio);
   const facts = (
     <Facts>
-      <Fact k="储备">{usdt(c.ratioReserveUsdt)}</Fact>
-      <Fact k="应付款">{usdt(c.ratioLiabilitiesUsdt)}</Fact>
+      <Fact k="储备">{c.ratioReserveUsdtText === undefined ? usdt(c.ratioReserveUsdt) : `${b5AmountText(c.ratioReserveUsdtText, b5AmountDigits([c.ratioReserveUsdtText]))} ${c.unit ?? "USDT"}`}</Fact>
+      <Fact k="应付款">{c.ratioLiabilitiesUsdtText === undefined ? usdt(c.ratioLiabilitiesUsdt) : `${b5AmountText(c.ratioLiabilitiesUsdtText, b5AmountDigits([c.ratioLiabilitiesUsdtText]))} ${c.unit ?? "USDT"}`}</Fact>
     </Facts>
   );
   return {

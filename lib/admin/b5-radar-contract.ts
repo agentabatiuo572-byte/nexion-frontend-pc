@@ -65,6 +65,9 @@ export type B5Radar = {
     liabilitiesUsdt: number;
     ratioReserveUsdt: number;
     ratioLiabilitiesUsdt: number;
+    unit?: string;
+    ratioReserveUsdtText?: string;
+    ratioLiabilitiesUsdtText?: string;
   };
   pressureHistory: Array<{ label: string; ratio: number | null }>;
   alertSeverity: Array<{ level: "P0" | "P1" | "P2" | "P3"; count: number }>;
@@ -390,6 +393,9 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       liabilitiesUsdt: coverageLiabilitiesUsdt,
       ratioReserveUsdt: coverageRatioReserveUsdt,
       ratioLiabilitiesUsdt: coverageRatioLiabilitiesUsdt,
+      unit: coverage.unit == null ? undefined : text(coverage.unit, "coverage.unit"),
+      ratioReserveUsdtText: readB5Amount(String(coverage.ratioReserveUsdt), "coverage.ratioReserveUsdt"),
+      ratioLiabilitiesUsdtText: readB5Amount(String(coverage.ratioLiabilitiesUsdt), "coverage.ratioLiabilitiesUsdt"),
     },
     pressureHistory,
     alertSeverity,
