@@ -4,8 +4,8 @@ import { useReach } from "@/lib/nav/use-reach";
 import { customerConversations, replyTimeout } from "@/lib/admin/customer-conversations";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, SendHorizontal, Square } from "lucide-react";
-import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, Search, SendHorizontal, Square, TimerOff } from "lucide-react";
+import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, Fold, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -13,7 +13,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
-import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
+import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import type { ConversationWriteState, SessionConvo, SessionMsg } from "./data";
@@ -28,6 +28,7 @@ import { ownerLabel } from "./hd-ui";
 import { AssignAdvisorDialog, hasPendingFirstAssignment } from "./m3-assign-advisor";
 import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-alerts";
 import { legacySupportDestination, privateMessageRecovery, supportEnhancements, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
+import { RecoveryPanel } from "../recovery-panel";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
 
@@ -574,11 +575,17 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const reassigned = Boolean(state.threadOwnerAgentId && state.currentAssignmentAgentId && state.threadOwnerAgentId !== state.currentAssignmentAgentId);
     const otherNo = state.writableConversationNo && state.writableConversationNo !== selected?.id ? state.writableConversationNo : null;
     const current = otherNo ? visible.find((convo) => convo.id === otherNo) : undefined;
+    // BUG-424：客户现在归本人时给下一步；按钮写的去向跟着后端给的当前会话走（有就打开，没有就首次联系）。
+    if (canContinueConversation && !current) return <Notice tone="neutral" action={<>
+      {!state.writableConversationNo && <Explain label="点了会怎样" content="进入首次联系。发出第一条消息后才有新会话。" />}
+      <Button size="sm" variant="primary" loading={actionChecking} loadingText="正在核对…" onClick={() => void continueClosed()}>{state.writableConversationNo ? "打开当前会话" : "发起会话"}</Button>
+    </>}>{reassigned ? `旧会话发不出：客户已从${state.threadOwnerAgentName ?? "原客服"}改分给你。` : "这是旧会话，这里发不出。"}</Notice>;
     const text = reassigned ? `这条会话原属${state.threadOwnerAgentName ?? "其他客服"}，客户已改分给${state.currentAssignmentAgentName ?? "其他客服"}，这里不能再回复。`
+      : state.currentAssignmentAgentId ? `这是旧会话，客户现在归${state.currentAssignmentAgentName ?? "其他客服"}，这里不能再回复。`
       : otherNo ? "这是旧会话，客户现在的会话是另一条，这里不能再回复。"
       : "读不到这条会话现在归谁，暂时不能回复。";
     return <Notice tone="neutral" action={current ? <Button size="sm" onClick={() => select(current)}>打开当前会话</Button>
-      : !reassigned && !otherNo ? <Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button> : undefined}>{text}</Notice>;
+      : !reassigned && !otherNo && !state.currentAssignmentAgentId ? <Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button> : undefined}>{text}</Notice>;
   };
   // M-25: only a thread this account can answer shows the editor; unassigned and supervisor review get one clear next step.
   const composerMode: "write" | "unbound" | "review" | "locked" | "checking" = selected && selectedUnbound ? "unbound" : heldByOther ? "locked" : !selected || actsAsAdvisor || holdAllowsOther ? "write" : canReviewAll && canWriteM3 && hold === undefined ? "checking" : "review";
@@ -1687,14 +1694,27 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
           <div className="m3s-chat-actions">
             {(selected || profileCustomerId) && <Button size="sm" className="m3s-profile-toggle" onClick={() => setScreen("profile")}>客户资料</Button>}
-            {canContinueConversation && <Button size="sm" title="重新核对当前专属客服归属，继续当前对话" onClick={continueClosed}>前往当前会话</Button>}
-            {writable && actsAsAdvisor && <Button size="sm" disabled={actionChecking} disabledReason={currentReplyTarget ? "客户还有消息没回，先回复才能标记已解决" : undefined} icon={<CheckIcon size={14} />} onClick={closeConversation}>标记已解决</Button>}
+            {canContinueConversation && selected?.status !== "open" && <Button size="sm" title="重新核对当前专属客服归属，继续当前对话" onClick={continueClosed}>前往当前会话</Button>}
+            {writable && actsAsAdvisor && selected && <Button size="sm" disabled={actionChecking} disabledReason={currentReplyTarget ? "客户还有消息没回，先回复才能标记已解决" : undefined} icon={<CheckIcon size={14} />} onClick={closeConversation}>标记已解决</Button>}
             {(hold?.state === "MINE" || endPending) && !actsAsAdvisor && <Button size="sm" loading={holdEnding} loadingText="正在结束…" icon={<Square size={14} />} onClick={() => void endHold()}>结束会话</Button>}
             {chatMenu.length > 0 && <MoreMenu items={chatMenu} />}
           </div>
         </header>
         {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {!holdEnding && sessionEndRecoveries.map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{!record.sessionRef ? "上次结束请求没记下是哪一次接待：点「结束会话」只查原结果，不会重发，也不算到这次接待上。" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "上次结束会话结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.isCurrentInstance).map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
+          {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => !record.isCurrentInstance).length} 条结束记录`} explainLabel="这些记录是什么"
+            explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。时间为${businessZone().label}。`}
+            items={sessionEndRecoveries.filter(record => !record.isCurrentInstance).map(record => {
+              const started = record.sessionRef ? Date.parse(`${record.sessionRef.slice(record.sessionRef.indexOf(":") + 1)}Z`) : NaN;
+              const rejected = holdEndRejected.has(record.commandKey);
+              return { key: record.commandKey, createdAt: record.createdAt,
+                object: Number.isFinite(started) ? `${businessStamp(started)} 开始的接待` : "没记下是哪次接待",
+                tag: rejected ? <StatusTag tone="warn">被拒绝</StatusTag> : isRetryExpired(record) ? <StatusTag tone="done" icon={TimerOff}>已过期</StatusTag> : <StatusTag tone="neutral" icon={Search}>只能查询</StatusTag>,
+                line: rejected ? "结束被拒绝，核实后可以解除这条记录。" : isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}。` : "结果未知，只能查原结果。",
+                detail: <p>发出时间：{businessStamp(record.createdAt)}</p>,
+                tech: <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{record.commandKey}</span></Fact></Facts></Fold>,
+                actions: <><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{rejected && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</> };
+            })} />}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
           {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}
