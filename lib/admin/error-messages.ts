@@ -1589,6 +1589,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   UNILEVEL_CHAIN_ENVIRONMENT_MISMATCH: "团队奖励来源的环境信息不一致，已停止结算。请联系技术值班核对原始来源。",
   UNILEVEL_SNAPSHOT_INVALID: "七层奖励快照不完整或无效，已停止结算。请联系技术值班核对原始预算。",
   DIRECT_REFERRAL_SNAPSHOT_INVALID: "好友奖励快照不完整或无效，已停止结算。请联系技术值班核对原始政策。",
+  F2_USDT_RATE_PRECISION_INVALID: "比例按百分数最多 4 位小数（末尾的 0 不算），这次没有保存。请改后再提交。",
   F2_PARAMETER_NOT_CONSUMED: "这个旧参数目前不参与结算，不能在此调整。请核对当前团队奖励规则。",
   UNILEVEL_ORDER_AMOUNT_INVALID: "订单金额无效或超过结算精度范围，不能计算团队奖励。请联系技术值班核对原订单金额。",
   UNILEVEL_RELATIONSHIP_INVALID: "团队邀请关系存在重复或无效记录，已停止结算。请联系技术值班核对邀请链。",

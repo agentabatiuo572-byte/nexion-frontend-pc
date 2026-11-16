@@ -5,6 +5,7 @@ import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from 
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 
 /**
@@ -182,6 +183,43 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
 }
 
 /**
+ * F4 派奖、F4 本周结算、F5 奖励状态变更：后端存的对象是榜单代号和配置键（「排行榜 allTime」「F.commission.CM-1040.status」）、
+ * 状态是英文代码。批准人看到的写运营的话；单号 CM-… 是运营要对照的，照原样等宽写在后面。
+ */
+const F4_PERIOD_NAME: Record<string, string> = { allTime: "总榜", week: "周榜", month: "月榜", today: "日榜" };
+/** 和「奖励记录核对」页的状态叫法一致（f5-shared STATUS_META）。 */
+const F5_STATE_NAME: Record<string, string> = { cooling: "冷却中", unlocked: "已解锁", frozen: "已冻结", rejected: "已拒绝", settled: "已结算", paid: "已提现", reversed: "已冲正" };
+/** 改成这个状态之前只能是哪一种（OpsTeamService 状态转换表）；能从几种状态改过来的不写。 */
+const F5_STATE_FROM: Record<string, string> = { cooling: "已冻结", unlocked: "冷却中", frozen: "冷却中" };
+const F4_COVERAGE_COPY = "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。";
+
+type FundTicket = { kind: "f4Payout"; period?: string } | { kind: "f4Settle" } | { kind: "f5Status"; eventId?: string; state: string };
+function fundTicket(w: { operationCode?: string | null; obj?: string; after?: string }): FundTicket | undefined {
+  if (w.operationCode === "f4_leaderboard_period_payout") return { kind: "f4Payout", period: F4_PERIOD_NAME[/^排行榜 (\S+)$/.exec(w.obj ?? "")?.[1] ?? ""] };
+  if (w.operationCode === "f4_pool_settle") return { kind: "f4Settle" };
+  if (w.operationCode === "f_commission_status") return { kind: "f5Status", eventId: /^F\.commission\.(CM-\d+)\.status$/.exec(w.obj ?? "")?.[1], state: (w.after ?? "").trim().toLowerCase() };
+  return undefined;
+}
+
+/**
+ * 这三类批准被业务拒绝（后端在写任何东西之前拒，单子不变、锁还在）时，批准人看到的话：没执行、钱没动、单子还待审批、能做什么。
+ * 覆盖率两句全站共用的说法不改（别处是直接执行），这里按批准的场景另写。重试被拒时原记录已清掉，同一句也成立。
+ */
+function approvalRefusedText(operationCode: string | null | undefined, cause: unknown) {
+  const code = backendCode(cause);
+  const f4 = operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout";
+  if (!f4 && operationCode !== "f_commission_status") return undefined;
+  if (code === "COVERAGE_BELOW_REDLINE") return f4 ? "兑付覆盖率低于红线，这次批准没有执行，钱没有动；审批单还是待审批。等覆盖率恢复后再批准，或驳回。"
+    : "兑付覆盖率低于红线，这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
+  if (code === "COVERAGE_SNAPSHOT_UNAVAILABLE") return f4 ? "兑付覆盖率暂时读不到，这次批准没有执行，钱没有动；审批单还是待审批。等能读到后再批准，或驳回。"
+    : "兑付覆盖率暂时读不到，这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。等能读到后再批准，或驳回。";
+  if (f4) return undefined;
+  if (code === "COMMISSION_USER_SUSPENDED") return "这位用户的这类奖励正在暂停，这次提前解锁没有执行，奖励还在冷却中；审批单还是待审批。先在「奖励记录核对」的暂停名单恢复这类奖励再批准，或驳回。";
+  if (code === "F5_COOLDOWN_DEADLINE_UNRECOVERABLE") return "这笔是以前暂停时冻结的旧记录，到期时间已被清空，这次解冻没有执行，奖励仍是已冻结；审批单还是待审批。请联系值班人员核对，或驳回。";
+  return undefined;
+}
+
+/**
  * 批准、驳回要的权限，和后端 AuditReplayBusinessPermissionGuard 对齐（M5、F02、T02）。认单只用后端给的东西：
  * - 退款、J1 恢复、A4 登记、代金券、F5 暂停、试用扣费按后端给的 operationCode 和 fundEffect；
  * - 其余按后端写死的动作名、对象和摘要（validateProposalContext 等用命令生成的描述换掉发起方写的），
@@ -308,6 +346,9 @@ function approvalTiming(w: A2OperationRow) {
   if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
   if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
   if (w.coverageCheckOnApproval) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
+  const fund = fundTicket(w);
+  if (fund && fund.kind !== "f5Status") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
+  if (fund?.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
   if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
   return { tag: "立即生效", impact: "", drawer: "点「批准」确认后立即执行，失败不改原值；点「驳回」原操作不执行。" };
 }
@@ -351,10 +392,14 @@ function middle(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
 }
 
-function actionName(ticket: string | { action: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
+function actionName(ticket: string | { action: string; obj?: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
+  // 和 F4 页确认框的标题同名；审批结果里没有对象，认不出是哪个榜时只写「排行榜」。
+  const fund = typeof ticket === "string" ? undefined : fundTicket(ticket);
+  if (fund?.kind === "f4Payout") return fund.period === "总榜" ? "发放总榜奖励" : fund.period ? `发放${fund.period}奖励` : "发放排行榜奖励";
+  if (fund?.kind === "f4Settle") return "提前结算本周团队激励池";
   const action = typeof ticket === "string" ? ticket : ticket.operationCode === "h5_streak_milestone" ? "放宽连签里程碑奖励" : ticket.action;
   const gParam = G_PARAM_ACTION.exec(action);
   if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
@@ -594,8 +639,11 @@ const G_PARAM_NAMES: Record<string, string> = {
 };
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
-function objectText(w: { action: string; obj: string; objDisplayName?: string }) {
+function objectText(w: { action: string; obj: string; objDisplayName?: string; operationCode?: string | null }) {
   if (w.objDisplayName) return a2ObjectText(w);
+  const fund = fundTicket(w);
+  if (fund?.kind === "f4Payout" && fund.period) return fund.period;
+  if (fund?.kind === "f5Status" && fund.eventId) return `奖励记录 ${fund.eventId}`;
   if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
   return w.obj;
@@ -812,8 +860,21 @@ function fieldPairs(before: string, after: string): Array<[string, string, strin
   return a.map((m, i) => [m![1], b[i]![2] || "未设置", m![2] || "未设置"]);
 }
 
-/** 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。 */
-const changeBefore = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
+/**
+ * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
+ * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
+ */
+const changeBefore = (row: { before: string; after?: string; obj?: string; operationCode?: string; ambassadorMaterialProposal?: unknown }) => {
+  const fund = fundTicket(row);
+  if (fund?.kind === "f5Status") return F5_STATE_FROM[fund.state] ?? "批准时的状态";
+  return changeBeforeText(row);
+};
+const changeAfter = (row: { after: string; obj?: string; operationCode?: string }) => {
+  const fund = fundTicket(row);
+  if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
+  return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : row.after;
+};
+const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
   : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
     .replace(/；(NOT_SUBMITTED|PENDING|NEEDS_MORE|PASSED)$/, (_, state: string) => `；${ambassadorMaterialStateLabel(state)}`);
 
@@ -1339,7 +1400,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      const why = ((record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
+      const why = ((record.kind === "approve" ? approvalRefusedText(record.operationCode, cause) : undefined)
+        ?? (record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
       if ((cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true) { toast(why, "warn"); return; }
       if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
         toast(why, "error");
@@ -1436,22 +1498,102 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   /** 框里的关键信息：退款单第一行是退款金额（VS-102）。动作名在标题下面，这里不再写「操作」，单号只写一次（建议 8）。 */
-  const ticketFacts = (w: A2OperationRow, kind: "approve" | "reject") => {
+  const ticketFacts = (w: A2OperationRow, kind: "approve" | "reject", lead?: ReactNode) => {
     const amount = refundAmount(w);
     const name = kind === "approve" ? "退款金额" : "申请退款金额";
     const timing = kind === "approve" ? g3PolicyExecutionTiming(w) ?? phoneScheduledAt(w) : undefined;
+    const fund = fundTicket(w);
     return (
       <Facts>
         {amount && (amount.state === "ok"
           ? <Fact k={name} lead tone="role-1" unit="USDT">{orderAmount(amount.amount)}</Fact>
           : <Fact k={name} tone="warn">{refundAmountText(amount)}</Fact>)}
+        {fund?.kind === "f5Status" && fund.eventId
+          ? <Fact k="对象">奖励记录 <span data-mono className="a2-code">{fund.eventId}</span></Fact>
+          : fund?.kind === "f4Settle" ? <Fact k="对象">本周团队激励池<span className="rd-note">（按批准那一刻所在的周）</span></Fact>
+            : fund?.kind === "f4Payout" && fund.period ? <Fact k="对象">{fund.period}</Fact> : null}
+        {lead}
         <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
-        <Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact>
+        {!(fund?.kind === "f5Status" && fund.eventId || fund?.kind === "f4Settle" || fund?.kind === "f4Payout" && fund.period) && <Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact>}
         <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
         {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
         {timing && <Fact k="生效时间">{timing}</Fact>}
       </Facts>
     );
+  };
+
+  /**
+   * F4 派奖、F4 本周结算、F5 奖励状态变更的批准框：先写这一次批的是什么、批准后会怎样，再放这一次的结果，规则收进折叠。
+   * 句子和发起人那边（f4-confirmations、f5-audit）同一套说法；没有的事实不写（F5 单子里没有用户和金额）。
+   */
+  const fundSpec = (w: A2OperationRow) => {
+    const fund = fundTicket(w);
+    if (!fund) return undefined;
+    if (fund.kind === "f4Payout") return {
+      irreversible: true,
+      impact: fund.period === "总榜" ? "批准后按那一刻的总榜重新计算，真实入账给上榜的人。" : "批准后按那一刻的排行榜重新计算，真实入账给上榜的人。",
+      completion: F4_COVERAGE_COPY,
+      check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
+      detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。",
+      coverageLead: "这次派奖按算出的金额真实发钱",
+      coverageUnknown: "这次派奖按算出的金额真实发钱，兑付覆盖率暂时读不到",
+      coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+      facts: undefined,
+      // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules /> : undefined,
+    };
+    if (fund.kind === "f4Settle") return {
+      irreversible: true,
+      impact: "批准后按那一刻所在的周重新计算，真实入账给有资格的人。",
+      completion: F4_COVERAGE_COPY,
+      check: "核对本周奖池和发起理由，理由写清依据或工单号。",
+      detail: "本周已经结算过的会跳过，不补发差额；没有合格票时不发钱。",
+      coverageLead: "这次结算按算出的金额真实发钱",
+      coverageUnknown: "这次结算按算出的金额真实发钱，兑付覆盖率暂时读不到",
+      coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+      facts: undefined,
+      lead: <F4SettleFacts />,
+    };
+    const from = F5_STATE_FROM[fund.state] ?? "批准时的状态";
+    const to = F5_STATE_NAME[fund.state] ?? fund.state;
+    const state = <Fact k="状态"><Change from={from} to={to} /></Fact>;
+    if (fund.state === "unlocked") return {
+      irreversible: true,
+      impact: "批准后这笔改为已解锁，释放到用户钱包。",
+      completion: "批准时先核对，不满足就不放钱，审批单留着待审批。",
+      check: "核对这笔奖励和发起理由，理由写清为什么要提前。",
+      detail: "要收回只能冲正，不能改回冷却中。",
+      coverageLead: undefined,
+      coverageUnknown: undefined,
+      coverageCheck: "普通奖励批准时先查兑付覆盖率：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。结算组的奖励不查覆盖率。",
+      facts: <>{state}<Fact k="批准时核对">普通奖励查有没有暂停、兑付覆盖率够不够<Explain label="结算组的奖励" content="属于结算组的奖励不查覆盖率，只核冷却有没有真正到期；没到期会被拒，钱不会提前流出。" /></Fact></>,
+      lead: undefined,
+    };
+    if (fund.state === "cooling") return {
+      irreversible: false,
+      impact: "批准后这笔回到冷却中，到期自动解锁；解冻本身不动用户余额。",
+      completion: undefined,
+      check: "核对冻结的原因是否已经解除，理由写清依据。",
+      detail: "",
+      coverageLead: undefined,
+      coverageUnknown: undefined,
+      coverageCheck: undefined,
+      facts: <>{state}<Fact k="到期时间">接着冻结时剩下的时间冷却<Explain label="什么时候会被拒" content="以前暂停用户奖励时冻结的旧记录，到期时间已被清空，批准时会被拒，这笔继续冻结。属于结算组的奖励，用户还在暂停或风险冻结中时也会被拒。" /></Fact></>,
+      lead: undefined,
+    };
+    if (fund.state === "frozen") return {
+      irreversible: false,
+      impact: "批准后这笔停在冷却里，到期也不解锁；用户余额不变。",
+      completion: undefined,
+      check: "核对这笔奖励和发起理由，理由写清为什么要先按住。",
+      detail: "冻结可以再解冻，回到冷却中。",
+      coverageLead: undefined,
+      coverageUnknown: undefined,
+      coverageCheck: undefined,
+      facts: state,
+      lead: undefined,
+    };
+    return undefined;
   };
 
   const approveRequest = (w: A2OperationRow): ActionConfirmReq => {
@@ -1478,29 +1620,32 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
     const amplifies = w.amplifies && !w.coverageCheckOnApproval;
+    const fund = fundSpec(w);
     return {
       briefKind,
       title: "批准审批单",
       action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
-      effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{isRefund && <IrreversibleTag />}</>,
-      detail: j4
+      effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
+      detail: fund ? <>{fund.detail}谁能批准：{approvalExecutorLabel(w)}。</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
         : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>谁能批准：{approvalExecutorLabel(w)}。{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
-      facts: ticketFacts(w, "approve"),
-      content: (
+      completionCopy: fund?.completion,
+      // 派奖、结算：这一次的结果放在关键信息层（和发起人那边同一块），审批单信息放在后面。
+      facts: fund?.lead ?? ticketFacts(w, "approve", fund?.facts),
+      content: fund?.lead ? <div className="rd-confirm-facts">{ticketFacts(w, "approve")}</div> : fund?.facts ? undefined : (
         <div className="rd-stack">
-          <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
         </div>
       ),
-      statedBrief: { impact, check },
+      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact, check },
       amplifies,
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       coverage: amplifies ? coverage : undefined,
-      coverageLead: amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />会让平台多付钱，兑付覆盖率暂时读不到</span> : undefined,
-      coverageCheck: "批准时系统检查兑付覆盖率，低于红线不执行。",
+      coverageLead: amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
+      coverageCheck: fund?.coverageCheck ?? "批准时系统检查兑付覆盖率，低于红线不执行。",
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认批准",
@@ -1515,6 +1660,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
           // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
           if (backendCode(cause) === "J4_PLAYBOOK_NOT_FOUND") throw new Error("应急预案不存在，可能已被删除，这张单不能批准。请驳回后按最新的预案重新发起。");
+          const refused = approvalRefusedText(w.operationCode, cause);
+          if (refused) throw new Error(refused);
           const denied = decisionDeniedText("approve", cause);
           if (denied) throw new Error(denied);
           throw cause;
@@ -1874,7 +2021,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = changeSummary(changeBefore(w), w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
+                  const change = changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -2095,6 +2242,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
   const shownOwn = shown ? isMine(shown) : false;
+  // F4 派奖和结算、F5 提前解锁：被覆盖率挡住时单子留着，可以等恢复后再批，不只是驳回。
+  const shownFund = shown ? fundTicket(shown) : undefined;
+  const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "真实发钱，不能撤销。批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
+    : shownFund?.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率（结算组的奖励只核冷却到没到期），不满足就不放钱，审批单留着待审批。" : undefined;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
     <Decision
@@ -2152,12 +2303,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次操作结果未知，先到页面上方查询原结果，不要重复处理；单子状态变了也不算查到结果。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shown.coverageCheckOnApproval && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
-          {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">会让平台多付钱：批准时系统检查兑付覆盖率，低于红线不执行。如已跌破红线请驳回并写明原因。</Notice>}
+          {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">{shownFundCheck ?? "会让平台多付钱：批准时系统检查兑付覆盖率，低于红线不执行。如已跌破红线请驳回并写明原因。"}</Notice>}
           {/* J4 逐步执行，中途失败时前面的步骤不回滚，不能写「失败不改原值」（M3）。 */}
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}
