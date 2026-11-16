@@ -409,6 +409,8 @@ A2 承载各域操作记录、已提交的业务审批与后台记录机制设�
 
 **2026-11-17 A2 手动清理读取合同（hd-sync30 / f0497f79）**：POST `/api/admin/platform/audit/retention-runs` 与 GET `/retention-runs/latest` 的七个字段保持 `retentionMonths/evaluatedAt/lockAcquired/archivedRows/deletedRows/outboxRows/behaviorFactRows`，没有新增或改名的 HTTP `cutoff`。`evaluatedAt` 表示执行/判定时刻；截止点单独存于后端手动清理审计明细，前端不从月数反推。已有边界解析继续严格校验必填时间、锁标记和非负整数计数，兼容旧回包；未知输入在解析后才交给页面。只有成功空回包表示没有手动清理记录；有记录但读不出来时后端返回 `500 A2_RETENTION_RUN_UNREADABLE`，沿用已有读取失败位置和“上次清理结果读取失败”，不会显示为“还没有手动清理过”。查询最近一次清理不能证明是原命令的结果，原结果未知记录继续保留。
 
+**528b8c92 文档更正**：旧服务字段虽然叫 `cutoff`，实际存的也是 `runNowInternal` 的 `now`，所以历史 `evaluatedAt` 原本就是执行/判定时刻，不需要前端修正，也不重写历史。最新记录读取先解析已存 `evaluatedAt`，缺失才由后端回退该审计行的 `createdAt`，不会使用读取时刻；连 `createdAt` 也缺失的内部原因 `A2_RETENTION_EXECUTION_TIME_MISSING` 与解析失败统一对外为 `500 A2_RETENTION_RUN_UNREADABLE`，不新增第二个对外错误码。只有手动清理审计 `A2_AUDIT_RETENTION_MANUAL_EXECUTED` 增写独立 `cutoff`；系统清理审计 `A2_AUDIT_RETENTION_EXECUTED` 的明细保持原样，latest 只读手动行。
+
 **④ 谁能批准与第五轮规则（后端待办 B44）**
 
 前端处理审批先认 `platform_a2_operation_approve`，不是“超管恒可”或业务发起权等于批准权；再分别算该单批准、驳回所需的已知条件。发起人不得批准或驳回自己的单。撤回须本人及 `platform_a2_proposal_create`。
