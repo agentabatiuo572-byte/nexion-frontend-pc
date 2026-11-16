@@ -55,7 +55,7 @@ export async function proposeSessionRevocation(
     try {
       ticket = await fetchA2ProposalByKey(key);
     } catch (error) {
-      throw new Error(`原操作结果尚未确认，暂时无法查询审批单。${displayAdminError(error)} 请稍后重试原操作。操作编号：${key}`);
+      throw new Error(`原操作结果未知，暂时查不到审批单。${displayAdminError(error)} 请稍后再查。`);
     }
     if (!ticket && previous.expiresAt <= Date.now()) {
       throw new A2OutcomeUncertainError("原命令已过期，暂未查到审批单。请继续核对原操作。", key);
