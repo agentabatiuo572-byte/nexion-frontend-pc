@@ -67,9 +67,9 @@ type TrialThreshold = { kind: "trial"; operator: string; count: string; days: st
 type GiftThreshold = { kind: "gift"; operator: string; count: string; scope: string };
 type BoardThreshold = { kind: "board"; operator: string; multiplier: string; baseline: string };
 type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
-// 阈值文本里的四个基线词都是后端正则接受的存储值，检测时一律按本期全体（未标记）用户增长中位数比较，
+// 阈值文本里的四个基线词都是后端正则接受的存储值，检测时一律按本周最近两次统计里、未标记刷榜账户的正增长中位数比较，
 // 所以页面只显示这一种比较方式，保存时沿用已存的基线词。
-const BOARD_COMPARISON = "全体增长中位数";
+const BOARD_COMPARISON = "正增长中位数";
 const boardBaselineText = (value: string) => value.replace(/基线|上周期|7日均值|同层级均值/g, BOARD_COMPARISON);
 
 /** 三项检测阈值：页面上的名字和气泡里的说明（后端 W05–W07 的真实口径）。 */
@@ -86,8 +86,8 @@ const K2_PARAM_HELP: Record<string, { label: string; what: string; effect: strin
     note: "目前只按账户组检测：选同一人或组织、手机号、设备也按账户组算，后端还没有接上这三种。",
   },
   leaderboardVelocityMultiplier: {
-    label: "刷榜增速倍数",
-    what: "本周佣金在最近两次统计之间的增长，达到全体正增长中位数的多少倍算刷榜；比较符选「超过」时要严格大于。已标记刷榜的账户不参与算中位数。",
+    label: "刷榜奖励增长倍数",
+    what: "账户本周奖励在最近两次统计之间的增加额，达到正增长中位数的多少倍算刷榜；比较符选「超过」时要严格大于。中位数只取奖励在增长、且没被标记刷榜的账户。",
     effect: "调低会多出命中；调高后不再达到的未处置命中会消失。",
   },
 };
@@ -188,7 +188,7 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
     kind: "multi-field",
     fields: [
       { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">", ">="], optionLabels: OPERATOR_LABELS },
-      { key: "multiplier", label: `增速倍数（对比${BOARD_COMPARISON}）`, current: current.multiplier, inputKind: "number", min: 2, max: 20, step: 1, help: "2–20 的整数" },
+      { key: "multiplier", label: `奖励增长倍数（对比${BOARD_COMPARISON}）`, current: current.multiplier, inputKind: "number", min: 2, max: 20, step: 1, help: "2–20 的整数" },
     ],
   };
 }
@@ -226,7 +226,7 @@ function thresholdText(key: string, value: string): string {
   if (!parts) return boardBaselineText(value);
   if (parts.kind === "trial") return `${parts.days} 天内开始试用 ${opSign(parts.operator)} ${parts.count} 次`;
   if (parts.kind === "gift") return `账户组已结算 ${opSign(parts.operator)} ${parts.count} 笔`;
-  return `增速 ${opSign(parts.operator)} ${parts.multiplier} 倍${BOARD_COMPARISON}`;
+  return `奖励增长 ${opSign(parts.operator)} ${parts.multiplier} 倍${BOARD_COMPARISON}`;
 }
 
 function otpValueText(definition: ExtraParamDef, value: string | undefined): string {
@@ -272,12 +272,12 @@ const VIEW_UI: Record<string, ViewUi> = {
   },
   board: {
     name: "排行榜刷榜", icon: TrendingUp, subject: "账户", objectSub: { label: "账户组", index: 4 },
-    what: "本周佣金在最近两次统计（每 5 分钟一次）之间的增长，达到全体正增长中位数的检测倍数；比较符选「超过」时要严格大于。",
+    what: "账户本周奖励在最近两次统计（每 5 分钟一次）之间的增加额，达到正增长中位数的检测倍数；比较符选「超过」时要严格大于。中位数只取奖励在增长、且没被标记刷榜的账户。",
     levelRule: "增长超过中位数 10 倍为 4 级，否则 3 级。",
-    measure: "本周累计佣金和增速倍数都保留 2 位小数。",
+    measure: "本周累计奖励和奖励增长倍数都保留 2 位小数。",
     columns: [
-      { label: "本周累计佣金", main: 1, num: true, kind: "amounts", explain: "本周有效佣金的累计，保留 2 位小数。" },
-      { label: "增速", main: 2, sub: 3, num: true, kind: "multiple", explain: "最近一次增长是全体正增长中位数的多少倍，保留 2 位小数。" },
+      { label: "本周累计奖励", main: 1, num: true, kind: "amounts", explain: "本周有效奖励的累计，保留 2 位小数。" },
+      { label: "奖励增长倍数", main: 2, sub: 3, num: true, kind: "multiple", explain: "最近两次统计之间这个账户的奖励增加额，是正增长中位数的多少倍，保留 2 位小数。" },
     ],
   },
 };
@@ -298,8 +298,9 @@ function columnValue(row: K2Row, column: Column): { main: string[]; sub?: string
     return { main: [settled ? `${settled[1]} 笔` : raw], sub };
   }
   if (column.kind === "multiple") {
-    const multiple = raw.match(/^([\d.]+)\s*x(?:\s*(?:基线|上周期|7日均值|同层级均值))?$/i);
-    return { main: [multiple ? `${multiple[1]} 倍中位数` : raw], sub };
+    // 新后端直接给「X 倍」，旧后端是「Xx 基线」：两种都写成「X 倍」，数字原样；认不出的原样写。
+    const multiple = raw.match(/^([\d.]+)\s*(?:倍|x(?:\s*(?:基线|上周期|7日均值|同层级均值))?)$/i);
+    return { main: [multiple ? `${multiple[1]} 倍` : raw], sub };
   }
   return { main: [raw], sub };
 }
@@ -652,7 +653,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       content: rowFacts(r),
       statedBrief: {
         impact: "记为已标记刷榜，作为「奖励池、名额与排行榜」的风险证据。不取消榜单资格、不从奖池剔除；这个账户已经发过刷榜信号的，不会再发新通知。",
-        check: "核对账户、本周累计佣金和增速；取消资格要去「奖励池、名额与排行榜」。本页没有撤销入口。",
+        check: "核对账户、本周累计奖励和奖励增长倍数；取消资格要去「奖励池、名额与排行榜」。本页没有撤销入口。",
       },
       reasonPlaceholder: "写清核查依据，例如：邀请集中在同一时段、客服工单号",
       reason: true,
