@@ -65,9 +65,9 @@ export function gParamAuthority(page: Page, key: string) {
 
 export function canProposeGParam(page: Page, key: string, authorities: readonly string[]) {
   return authorities.includes(gParamAuthority(page, key))
-    // royalty/airdropPct/emissionCurve/airdropLockDays: the backend admits the POST on the exact grant,
-    // but not the by-key lookup (G4-BE-18), so they keep the global proposal grant until it does.
-    && (page === "G4" && ["supply", "price", "divBase"].includes(key)
+    // 4fa0dd69 admits all four exact G4 grants on the maker's by-key lookup too.
+    // Keep the dividend business-grant path aligned with rd/issues-b (4f5e8444).
+    && (page === "G4" && ["supply", "price", "divBase", "dividend", "royalty", "airdropPct", "emissionCurve", "airdropLockDays"].includes(key)
       || authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write"));
 }
 
