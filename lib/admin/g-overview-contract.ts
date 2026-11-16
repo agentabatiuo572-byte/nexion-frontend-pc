@@ -330,7 +330,13 @@ export function assertG7OverviewContract<T>(value: T): T {
   text(module, capacity.source, "data.g4Capacity.source");
   const params = array(module, root.params, "data.params");
   if (params.length !== 0 && params.length !== G7_PARAM_KEYS.size) fail(module, "data.params");
-  params.forEach((param, index) => validateParam(module, param, `data.params[${index}]`, G7_PARAM_KEYS, ["newOnly", "b1RedlineTriggered"]));
+  params.forEach((param, index) => {
+    const path = `data.params[${index}]`;
+    validateParam(module, param, path, G7_PARAM_KEYS, ["newOnly", "b1RedlineTriggered"]);
+    const row = param as JsonRecord;
+    if (row.pendingApproval !== undefined && typeof row.pendingApproval !== "boolean") fail(module, `${path}.pendingApproval`);
+    if (row.pendingOperationId !== undefined && row.pendingOperationId !== null) text(module, row.pendingOperationId, `${path}.pendingOperationId`);
+  });
   const phaseGate = record(module, root.phaseGate, "data.phaseGate");
   requiredKeys(module, phaseGate, "data.phaseGate", ["key", "label", "value", "linkedDomain", "readonly"]);
   ["key", "label", "value"].forEach((key) => text(module, phaseGate[key], `data.phaseGate.${key}`));

@@ -32,6 +32,8 @@ interface BackendParam {
   newOnly?: boolean | string | null;
   b1RedlineTriggered?: boolean | string | null;
   valueType?: string | null;
+  pendingApproval?: boolean;
+  pendingOperationId?: string | null;
 }
 
 interface BackendPhaseGate {
@@ -118,6 +120,8 @@ export interface G7Param {
   newOnly: boolean;
   b1RedlineTriggered: boolean;
   valueType: string;
+  pendingApproval?: boolean;
+  pendingOperationId?: string | null;
 }
 
 export interface G7PhaseGate {
@@ -230,6 +234,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G7Overview
       newOnly: toBool(param.newOnly, false),
       b1RedlineTriggered: toBool(param.b1RedlineTriggered, false),
       valueType: asText(param.valueType, "STRING"),
+      pendingApproval: param.pendingApproval,
+      pendingOperationId: param.pendingOperationId,
     })),
     phaseGate: {
       key: asText(phaseGate.key, ""),
