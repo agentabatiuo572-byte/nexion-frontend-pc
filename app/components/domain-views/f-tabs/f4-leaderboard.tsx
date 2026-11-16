@@ -136,11 +136,11 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             effect: "调高会多发钱，提交前看兑付覆盖率。周榜如果另设了大于 0 的覆盖额，以覆盖额为准。",
             note: periodPrizes ? undefined : "四榜奖池的设置没读到或读不懂，这里显示的是榜单现在用的金额（周榜是生效后的金额）；读不到的写「—」。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.periodPrize", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
-          {paramRow({ name: "周榜奖池覆盖额", value: !data.leaderboardPoolLabel || /^\$?0(?:\.0+)?$/.test(data.leaderboardPoolLabel.trim()) ? "未单独设置（按四榜奖池的周榜金额）" : `${prizeText(data.leaderboardPoolLabel)} USDT`, allowed: canFund,
+          {paramRow({ name: "周榜奖池覆盖额", value: data.leaderboardPoolLabel ? `本周实际生效 ${prizeText(data.leaderboardPoolLabel)} USDT` : "—", allowed: canFund,
             what: "只给周榜用的奖池金额，大于 0 时代替四榜奖池里的周榜金额。",
             when: "批准后从还没结算的周起用；已发的不改。暂停期间读暂停时的奖池。",
             effect: "填 0 不是关掉周榜奖池，而是改回用四榜奖池里的周榜金额。",
-            note: "保存时不检查金额格式，写错时按四榜奖池的周榜金额发。",
+            note: "这里是本周实际生效的奖池，看不出有没有另设覆盖额；保存时不检查金额格式，写错时按四榜奖池的周榜金额发。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.poolUsd", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
           {paramRow({ name: "上榜门槛", value: minPointsText(data.configValues["F.leaderboard.minComputePoints"]), allowed: canWrite,
             what: "本期团队订单算力点低于这个数的人不参与排名和派奖，四个榜共用。填 0 不设门槛。",
