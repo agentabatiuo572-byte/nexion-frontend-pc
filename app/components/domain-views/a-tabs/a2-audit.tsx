@@ -398,7 +398,7 @@ function actionName(ticket: string | { action: string; obj?: string; operationCo
   }
   // 和 F4 页确认框的标题同名；审批结果里没有对象，认不出是哪个榜时只写「排行榜」。
   const fund = typeof ticket === "string" ? undefined : fundTicket(ticket);
-  if (fund?.kind === "f4Payout") return `发放${fund.period ?? "排行榜"}奖励`;
+  if (fund?.kind === "f4Payout") return fund.period === "总榜" ? "发放总榜奖励" : fund.period ? `发放${fund.period}奖励` : "发放排行榜奖励";
   if (fund?.kind === "f4Settle") return "提前结算本周团队激励池";
   const action = typeof ticket === "string" ? ticket : ticket.operationCode === "h5_streak_milestone" ? "放宽连签里程碑奖励" : ticket.action;
   const gParam = G_PARAM_ACTION.exec(action);
