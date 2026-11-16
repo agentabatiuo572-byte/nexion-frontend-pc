@@ -323,7 +323,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
       <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
         link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=L">到操作记录与审批核对</Link> : undefined}
         rows={pending ? [{ key: pending.commandKey, title: pending.label, record: pending, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !expired && !!ctx.canExport,
-          copy: { where: `「${pageName}」和操作记录与审批` },
+          copy: { where: `「${pageName}」` },
           actions: <>
             <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
             {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原请求重试</Button>}
