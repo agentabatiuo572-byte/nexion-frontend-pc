@@ -1,6 +1,8 @@
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2CommandKey } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
+import { discoverECommand, investigateECommand } from "./e-command-investigation";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchTrustDocuments, normalizeTrustDocument, restoreTrustDocumentBody, uploadTrustDocument, type TrustDocument, type TrustDocumentUpload } from "./trust-documents-client";
@@ -9,6 +11,7 @@ export type I4DocumentCommand = PendingMutationRecord & {
   owner: number; mode: "upload" | "restore"; document: TrustDocument; fields: TrustDocumentUpload; body: string;
   file?: { name: string; type: string; size: number; lastModified: number; sha256: string };
   observation?: TrustDocument;
+  commandOrigin?: FundCommandOrigin;
 };
 const pending = createPendingMutationStore<I4DocumentCommand>({ storageKey: "nexion-admin-i4-document-commands-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && !!row.document && ["upload", "restore"].includes(row.mode)
@@ -40,6 +43,9 @@ export function pendingI4DocumentCommands(): I4DocumentCommand[] {
   return pending.list().filter(row => row.owner === owner).flatMap(row => {
     try {
       const document = normalizeTrustDocument(row.document);
+      const origin = row.commandOrigin;
+      if (origin && (origin.originalMethod !== "POST" || origin.originalPath !== `/api/admin/content/trust-documents/${document.slot}${row.mode === "restore" ? "/restore-default" : ""}`
+        || origin.originalAdminId !== String(row.owner) || origin.readAuthority !== "content_i4_read")) return [];
       if (row.fingerprint !== `${owner}|${document.slot}` || !["version", "language", "referenceNo", "verifyUrl", "reason"].every(key => typeof row.fields[key as keyof TrustDocumentUpload] === "string")
         || row.mode === "restore" && row.body !== JSON.stringify({ reason: row.fields.reason.trim(), expectedSha256: document.sha256 })
         || row.mode === "upload" && (!row.file || !/^[0-9a-f]{64}$/.test(row.file.sha256) || !Number.isSafeInteger(row.file.size))) return [];
@@ -105,7 +111,8 @@ export async function submitI4Document(document: TrustDocument, fields: TrustDoc
     catch { throw new Error("浏览器无法保存原文件，尚未上传。请允许本地存储后再试。"); }
   }
   const original = { owner, mode: file ? "upload" as const : "restore" as const, document, fields,
-    body: file ? "" : JSON.stringify({ reason: fields.reason.trim(), expectedSha256: document.sha256 }), file: metadata };
+    body: file ? "" : JSON.stringify({ reason: fields.reason.trim(), expectedSha256: document.sha256 }), file: metadata,
+    commandOrigin: fundCommandOrigin("POST", `/api/admin/content/trust-documents/${document.slot}${file ? "" : "/restore-default"}`, "content_i4_read") };
   pending.remember(fingerprint, commandKey, original);
   if (!pending.isDurablyStored(fingerprint, commandKey)) {
     await finish({ ...original, fingerprint, commandKey, createdAt: 0, expiresAt: 1 });
@@ -120,11 +127,19 @@ export async function retryI4DocumentRestore(saved: I4DocumentCommand) {
   await send(command, true);
 }
 
-/** Readback is an observation, never proof that the original upload did or did not execute. */
-export async function queryI4DocumentCommand(saved: I4DocumentCommand): Promise<TrustDocument> {
+/** Only an original receipt settles the command; current-file readback remains an observation. */
+export async function queryI4DocumentCommand(saved: I4DocumentCommand, evidence?: FundCommandEvidence) {
   const command = pendingI4DocumentCommands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  let receipt: FundCommandInvestigation | null = null;
+  try {
+    const locator = { commandKey: command.commandKey, originalMethod: "POST" as const,
+      originalPath: `/api/admin/content/trust-documents/${command.document.slot}${command.mode === "restore" ? "/restore-default" : ""}`, originalAdminId: String(command.owner) };
+    receipt = command.commandOrigin ? await checkFundCommand(command, evidence)
+      : evidence ? await investigateECommand(command, locator, evidence, "content_i4_read") : await discoverECommand(locator);
+  } catch { /* Auxiliary receipt failures must not disable the existing file readback. */ }
+  if (fundCommandSettled(receipt)) { await finish(command); return { settled: true as const, receipt }; }
   const current = (await fetchTrustDocuments()).find(row => row.slot === command.document.slot)!;
   pending.remember(command.fingerprint, command.commandKey, { ...command, observation: current });
-  return current;
+  return { settled: false as const, receipt, current };
 }

@@ -311,6 +311,8 @@
 
 **2026-11-12 通用参数审批接入（后端 `66ecdb47`）**
 
+2026-11-17交付复核（hd-sync24a，后端45815e4c/6d9da2ba）：price的name/sub/note现明确为系列当前价，用于现有有效持仓的每日分红，生效后按新价计算后续应付，已结算不回算；档位另决定新购买报价。返回字段/内部key/数值/算法/权限没有变，PC解析已兼容。改版静态“旧单价不生效”等句和有档位时入口的呈现交视觉决定，本轮不改页面。后端TEST限定验收与本地8cf61c07分开，空奖池/I4/FAQ不补造；完整边界见《后台后端交付同步》第十六批。
+
 - `supply` 调高、旧系列 `price` 按有效单价调高、`royalty` 按生效整数基点调低，以及 `divBase`、`emissionCurve`、`airdropPct`、`airdropLockDays` 规范化后任何变化，提交 A2。供应减少、旧系列降价及版税有效基点不降低沿用直接写；服务端返回 `G4_GENESIS_PARAM_APPROVAL_REQUIRED` 时转提案。已有价格档位的系列继续只用档位专用流程，不恢复一级单价编辑。
 - 请求为 `command={domain:"G",op:"g4_genesis_param",params:{paramKey,value,expectedValue,decisionRef?}}`，`sourceDomain="G4"`，`obj=paramKey`，`target={domain:"G",type:"genesis_param",id:paramKey}`。`divBase`、`airdropPct`、`emissionCurve` 的 `decisionRef` 必须保留在原提案请求中；服务端绑定当前值、规范化候选值、当前系列 `expectedSeries` 及原发起人，浏览器不能指定审批所作用的系列。变更前后和原票结果只使用服务端返回的摘要。
 - 发起通用参数提案须有对应参数精确业务权限；节点总量、购买单价、收益计算基数不再额外要求全局 A2 提案权（`801de970`），转让手续费、空投占比、收益发放曲线、锁仓天数仍要求（查单接口未放行，G4-BE-18）；批准和驳回须由另一位超级管理员（需有审批批准权限和该参数业务权限）处理。批准前当前值不变；待审锁阻止同参数直接修改，批准重新核对旧值及现行系列，变化时以 `G4_GENESIS_PARAM_STALE` 拒绝。
@@ -714,6 +716,8 @@ P1–P6逐档维护，有值按原文本CAS，缺值用__MISSING__而非0。提�
 ---
 
 #### [H4] 活动中心 CMS
+
+2026-11-17原号恢复接续（hd-sync24a，3499f565）：仅积分奖档退役接GROWTH:H4:WHEEL_TIER_RETIRE:{tier}，精确growth_h4_read及WHEEL_CONFIG/H4_WHEEL_TIER_RETIRED成功证据。PC原记录保存原来源，现有查询先查原号，辅助失败继续现有读取；callback可正常返回业务拒绝，raw SUCCEEDED不清记录，受控确定结论才解除并独立重读。退役改变公开奖池，不以回滚/当前停用证未执行；其它H4入口、概率与奖励政策不变，受控表单交视觉。
 
 **2026-11-16 本人只读恢复（b0755cba / hd-sync13）**：写权被收回但保留 growth_h4_read 的原发起人可按原号查本人H4申请；促销原回执凭 growth_promotion_read 查询。PC查询原本未绑写权，保持现成入口与原记录归属；重试写入仍核当前权限和期限，全局审批队列另按原权判断。
 

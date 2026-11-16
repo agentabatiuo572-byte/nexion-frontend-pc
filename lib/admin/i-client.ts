@@ -158,7 +158,7 @@ function readI6Command(row: IContentPending): I6Command | undefined {
       if (snapshot.stats && (![snapshot.stats.managedKeys, snapshot.stats.totalKeys, snapshot.stats.integrityIssues, snapshot.stats.coursesOnline]
         .every(value => Number.isSafeInteger(value) && value >= 0) || typeof snapshot.stats.weeklyNexPayout !== "string")) return { ...fallback, scope, target, version };
     }
-    const commandOrigin = parts[2] === "courses" ? undefined : readICommandOrigin(row.i6, method, path, owner, "content_i6_read");
+    const commandOrigin = readICommandOrigin(row.i6, method, path, owner, parts[2] === "courses" ? "content_i7_read" : "content_i6_read");
     return { ...row, original: { owner, method, path, body, commandOrigin }, scope, operation, label: labels[operation], target, version, reason: input.reason, input, snapshot };
   } catch { return fallback; }
 }
@@ -238,7 +238,7 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   const owner = useAdminAuth.getState().session?.adminId;
   if (!owner) throw new Error("请先登录后再提交。");
   const i6 = { owner, path, method: init.method!, body: String(init.body), snapshot,
-    ...(!path.startsWith("/i18n-learning/courses/") ? { commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i6_read") } : {}) };
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") };
   const fingerprint = `${i6.method}:${path}:${i6.body}`, commandKey = idempotencyKey();
   const command = readI6Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i6 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
@@ -253,17 +253,15 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   return sendI6Command(command, false);
 }
 
-/** I18n receipts can settle originals; course writes retain their existing current-state readback. */
+/** Message and course receipts use their own exact read domain; current-state readback is only an observation. */
 export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvidence) {
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   let receipt: FundCommandInvestigation | null = null;
-  if (command.scope.startsWith("message:") || command.scope === "rescan") {
-    try {
-      receipt = await queryIContentCommand(command, "content_i6_read", evidence);
-      if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
-    } catch { /* Auxiliary receipt errors must not stop the existing current-content reads. */ }
-  }
+  try {
+    receipt = await queryIContentCommand(command, command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read", evidence);
+    if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
+  } catch { /* Auxiliary receipt errors must not stop the existing current-content reads. */ }
   const overview = parseI6Overview(await apiRequest("/i18n-learning/overview"));
   const messageVersions = command.scope.startsWith("message:")
     ? await iContentActions.fetchI6MessageVersions(command.target) : undefined;
@@ -302,7 +300,8 @@ function readI4DraftCommand(row: IContentPending): I4DraftCommand | undefined {
         || !Array.isArray(input.fields) || !input.fields.every(field => field && typeof field === "object" && ["key", "label", "value"].every(key => typeof field[key] === "string"))
         || (action === "edit" && input.version !== parts[5])) return fallback;
     }
-    return { ...fallback, original: { owner, method, path, body }, reason: input.reason,
+    const commandOrigin = readICommandOrigin(row.i4, method, path, owner, "content_i4_read");
+    return { ...fallback, original: { owner, method, path, body, commandOrigin }, reason: input.reason,
       version: action === "create" ? String(input.version) : parts[5],
       input: action === "delete" ? undefined : input as I4DraftCommand["input"],
       snapshot: row.i4?.snapshot ? parseI4SectionVersion(row.i4.snapshot) : undefined };
@@ -311,6 +310,17 @@ function readI4DraftCommand(row: IContentPending): I4DraftCommand | undefined {
 
 export function pendingI4DraftCommands(): I4DraftCommand[] {
   return uncertainCommandKeys.list().flatMap(row => { const value = readI4DraftCommand(row); return value ? [value] : []; });
+}
+
+export async function queryI4DraftCommand(saved: I4DraftCommand, evidence?: FundCommandEvidence) {
+  const command = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  let receipt: FundCommandInvestigation | null = null;
+  try {
+    receipt = await queryIContentCommand(command, "content_i4_read", evidence);
+    if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
+  } catch { /* Auxiliary receipt failures leave the existing overview read available. */ }
+  return { settled: false as const, receipt, overview: await fetchI4TrustOverview() };
 }
 
 export function i4DraftPermission(): string | undefined {
@@ -349,10 +359,19 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
   if (command.action !== "delete") {
     try {
       const row = parseI4SectionVersion(payload.data);
+      const submitted = command.input!.fields;
+      // New servers append retained locales after the supplied fields; older servers return only the supplied fields.
+      const retainedLocales = row.fields.slice(submitted.length).every(field => {
+        const locale = /^(.+?)[._-](id|ms|fil|ru|kk|uz)$/i.exec(field.key.trim());
+        return locale && row.fields.some(candidate => {
+          const english = /^(.+?)[._-]en$/i.exec(candidate.key.trim());
+          return english?.[1].toLowerCase() === locale[1].toLowerCase();
+        });
+      });
       valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
         && row.revision === (command.action === "create" ? 1 : command.input!.expectedRevision! + 1)
         && row.description === command.input!.description && row.structure === command.input!.structure
-        && JSON.stringify(row.fields) === JSON.stringify(command.input!.fields);
+        && JSON.stringify(row.fields.slice(0, submitted.length)) === JSON.stringify(submitted) && retainedLocales;
     } catch { /* An unreadable success cannot resolve the original command. */ }
   }
   if (!valid) throw new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。");
@@ -370,7 +389,8 @@ async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?:
   if (!owner) throw new Error("请先登录后再提交。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const commandKey = idempotencyKey();
-  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot };
+  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot,
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i4_read") };
   const command = readI4DraftCommand({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i4 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   if (pendingI4DraftCommands().some(row => row.sectionKey === command.sectionKey)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");

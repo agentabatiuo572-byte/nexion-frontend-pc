@@ -24,11 +24,11 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField } from "@/lib/admin/trust-section-validation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { pendingI4DraftCommands, retryI4DraftCommand, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
+import { pendingI4DraftCommands, queryI4DraftCommand, retryI4DraftCommand, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
-import { i4AppFieldIssue, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
+import { i4AppFieldIssue, i4DraftOmittedTranslations, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -412,7 +412,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     }
     const fields = draftEditor.fields.map(field => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() }));
     // The App contract applies at publication; drafts retain the backend authoring contract.
-    if (i4OmittedTranslations(currentSectionFields(sectionSnapshot), fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
+    const existingDraft = draftEditor.mode === "edit" ? TRUST_SECTION_VERSIONS.find(row => row.sectionKey === draftEditor.sectionKey && row.version === draftEditor.version) : undefined;
+    if (i4DraftOmittedTranslations(currentSectionFields(sectionSnapshot), existingDraft?.fields ?? [], fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
     const payload = {
       version: draftEditor.version,
       description: draftEditor.description.trim(),
@@ -653,7 +654,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     try {
       if (retry) { await retryI4DraftCommand(record); await rereadAfterResolution([record.sectionKey], [record.commandKey]); toast(`${record.sectionKey} ${record.version} 草稿已${record.action === "delete" ? "删除" : "保存"}`); }
       else {
-        const current = await fetchI4TrustOverview();
+        const result = await queryI4DraftCommand(record);
+        if (result.settled) { await rereadAfterResolution([record.sectionKey], [record.commandKey]); return; }
+        const current = result.overview;
         const row = current.trustSectionVersions.find(row => row.sectionKey === record.sectionKey && row.version === record.version);
         toast(`${sectionName(record.sectionKey)} ${record.version} · ${row ? `${statusZh(row.status)} · ${row.revision}` : "暂无版本"}。当前读取不能证明原操作结果，原记录继续保留。`);
         await actions.reloadIContent();
@@ -695,7 +698,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         note: upload ? "上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝，结果还是查不清。点「查询原结果」，对照现在用的文件指纹和上传时间。" : undefined,
         actions: <Button size="sm" onClick={() => {
           setDocumentRecovery({ ...record });
-          void queryI4DocumentCommand(record).then(current => { setDocumentRecovery({ ...record, observation: current }); syncCommands(); }, error => toast(displayAdminError(error)));
+          void queryI4DocumentCommand(record).then(result => { setDocumentRecovery({ ...record, observation: result.current }); syncCommands(); }, error => toast(displayAdminError(error)));
         }}>查询原结果</Button> };
     }),
     ...draftCommands.map(record => ({ key: record.commandKey, kind: "unknown" as const, name: `${sectionName(record.sectionKey)} · ${{ create: "新建草稿", edit: "编辑草稿", delete: "删除草稿" }[record.action]}`,

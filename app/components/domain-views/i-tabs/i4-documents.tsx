@@ -74,6 +74,10 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   }, []);
   useEffect(() => {
     if (!recovery) return;
+    if (!pendingI4DocumentCommands().some(row => row.commandKey === recovery.commandKey)) {
+      setEditor(null); setPendingKey(null); setFresh(false); void refresh();
+      return;
+    }
     setConflicted(false);
     setPendingKey(recovery.commandKey);
     setEditor(recovery.mode === "upload" ? { mode: "upload", document: recovery.document, file: null, fields: recovery.fields }
@@ -177,7 +181,12 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
       if (original) {
         try {
-          const current = await queryI4DocumentCommand(original);
+          const result = await queryI4DocumentCommand(original);
+          if (result.settled) {
+            setEditor(null); setPendingKey(null); setFresh(false);
+            onPendingChange(); await refresh(); return;
+          }
+          const current = result.current;
           setEditorError(`${original.mode === "upload" ? "文件可能已经对外公开。" : "可能已经恢复。"}刚读到现在用的：${observedText(current)}`);
         } catch (cause) { setEditorError(displayAdminError(cause)); }
         onPendingChange();
