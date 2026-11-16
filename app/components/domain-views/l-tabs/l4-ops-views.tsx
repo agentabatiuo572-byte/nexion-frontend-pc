@@ -61,6 +61,34 @@ function Sub({ children, explain, explainLabel }: { children: ReactNode; explain
   return <h3 className="l4-sub">{children}{explain && <Explain label={explainLabel ?? "这一块的口径"} content={explain} />}</h3>;
 }
 
+/* ---------------- 比上一时段 ---------------- */
+
+const COMPARISON_REASON: Record<string, string> = {
+  CURRENT_WINDOW_OUTSIDE_RETENTION_FLOOR: "这段时间早于可查的历史，没有上一时段可比",
+  PREVIOUS_WINDOW_OUTSIDE_RETENTION_FLOOR: "上一时段早于可查的历史，不比",
+  CURRENT_WINDOW_NO_FACTS: "这段时间没有事件，不比",
+  PREVIOUS_WINDOW_NO_FACTS: "上一时段没有事件，不比",
+};
+
+/** 「这段时间」标题旁：上一时段是哪几天，或为什么不比。旧接口没有对比时什么也不写。 */
+function CompareNote({ data }: { data: L4OperationsData }) {
+  const c = data.comparison;
+  if (!c) return null;
+  const range = `${c.previousPeriod.from} 至 ${c.previousPeriod.to}`;
+  return c.available
+    ? <span className="l4-sub-note">上一时段 {range}</span>
+    : <span className="l4-sub-note">{COMPARISON_REASON[c.reason ?? ""] ?? "没有上一时段可比"}<Explain label="上一时段" content={`上一时段是紧挨在前、同样长的 ${range}。两段都有事件、都在可查的历史里才比；不比时不写 0 或持平。`} side="top" align="start" /></span>;
+}
+
+/** 某个数在上一时段的值，写在数字下面；没有对比时返回 undefined。 */
+function previous(data: L4OperationsData, section: "device" | "tasks" | "network", key: string, format: (value: number | null) => string, unit = "") {
+  const c = data.comparison;
+  if (!c?.available) return undefined;
+  const value = c[section]?.summary[key];
+  const text = format(value ?? null);
+  return `上一时段 ${text}${unit && text !== "—" ? ` ${unit}` : ""}`;
+}
+
 /** 按时间段的柱图：只画有事件的时间段；全是 0 或没有时间段时写一句话，不画 0 长度的柱。 */
 function BucketChart({ label, history, pick, series, format, unit }: {
   label: string;
@@ -116,17 +144,17 @@ export function DeviceReport({ data, scope, links, panel }: { data: L4Operations
       <div className="l4-stack">
         <div className="l4-groups">
           <section className="l4-group">
-            <Sub>这段时间</Sub>
+            <Sub>这段时间<CompareNote data={data} /></Sub>
             <Nums label="这段时间的设备数" rows={[
-              { key: "buy", name: "购置", value: count(s.periodPurchasedDevices), unit: "台", explain: "这段时间完成购买的设备，同一台只算一次；不等于期末还在用的台数。" },
-              { key: "retire", name: "退役", value: count(s.periodRetiredDevices), unit: "台", explain: "这段时间退役的设备，同一台只算一次。" },
-              { key: "lock", name: "锁定", value: count(s.periodLockedDevices), unit: "台", explain: "这段时间被锁定的设备，同一台只算一次。" },
-              { key: "first", name: "首次产出", value: count(s.periodFirstYieldDevices), unit: "台", explain: "这段时间第一次拿到收益的设备，同一台只算一次。" },
+              { key: "buy", name: "购置", value: count(s.periodPurchasedDevices), unit: "台", sub: previous(data, "device", "periodPurchasedDevices", count, "台"), explain: "这段时间完成购买的设备，同一台只算一次；不等于期末还在用的台数。" },
+              { key: "retire", name: "退役", value: count(s.periodRetiredDevices), unit: "台", sub: previous(data, "device", "periodRetiredDevices", count, "台"), explain: "这段时间退役的设备，同一台只算一次。" },
+              { key: "lock", name: "锁定", value: count(s.periodLockedDevices), unit: "台", sub: previous(data, "device", "periodLockedDevices", count, "台"), explain: "这段时间被锁定的设备，同一台只算一次。" },
+              { key: "first", name: "首次产出", value: count(s.periodFirstYieldDevices), unit: "台", sub: previous(data, "device", "periodFirstYieldDevices", count, "台"), explain: "这段时间第一次拿到收益的设备，同一台只算一次。" },
             ]} />
             <Nums label="这段时间的产出" rows={[
-              { key: "usdt", name: "产出", value: money(s.dailyYieldUsdt, digits), unit: "USDT", explain: "这段时间收益入账的 USDT 合计。" },
-              { key: "uvt", name: "产出", value: money(s.dailyYieldNex), unit: "UVT", explain: "这段时间收益入账的 UVT 合计。" },
-              { key: "loss", name: "衰减影响", value: money(s.degradationLossUsdt, digits), unit: "USDT", explain: "每笔收益比基准少产出的部分加起来，多产出的不抵。" },
+              { key: "usdt", name: "产出", value: money(s.dailyYieldUsdt, digits), unit: "USDT", sub: previous(data, "device", "dailyYieldUsdt", (value) => money(value), "USDT"), explain: "这段时间收益入账的 USDT 合计。" },
+              { key: "uvt", name: "产出", value: money(s.dailyYieldNex), unit: "UVT", sub: previous(data, "device", "dailyYieldNex", (value) => money(value), "UVT"), explain: "这段时间收益入账的 UVT 合计。" },
+              { key: "loss", name: "衰减影响", value: money(s.degradationLossUsdt, digits), unit: "USDT", sub: previous(data, "device", "degradationLossUsdt", (value) => money(value), "USDT"), explain: "每笔收益比基准少产出的部分加起来，多产出的不抵。" },
             ]} />
           </section>
           <section className="l4-group" data-now="">
@@ -206,10 +234,11 @@ export function TaskReport({ data, scope, links, panel }: { data: L4OperationsDa
     <Panel {...panel} title="任务" icon={ListChecks} tone="role-2" sub={scope} actions={links}
       explain="按所选时间段和阶段里的任务事件算。这页只能看，不改任务规则。">
       <div className="l4-stack">
+        {data.comparison && <Sub>这段时间<CompareNote data={data} /></Sub>}
         <div className="l4-flow" role="group" aria-label="派发、完成和承接率">
-          <div className="l4-flow-cell"><span className="l4-flow-label">派发</span><b data-empty={s.dispatched === 0 ? "" : undefined}>{count(s.dispatched)}<small>次</small></b></div>
+          <div className="l4-flow-cell"><span className="l4-flow-label">派发</span><b data-empty={s.dispatched === 0 ? "" : undefined}>{count(s.dispatched)}<small>次</small></b>{previous(data, "tasks", "dispatched", count, "次") && <small className="rd-note">{previous(data, "tasks", "dispatched", count, "次")}</small>}</div>
           <span className="l4-flow-arrow" aria-hidden />
-          <div className="l4-flow-cell"><span className="l4-flow-label">完成</span><b data-empty={s.completed === 0 ? "" : undefined}>{count(s.completed)}<small>次</small></b></div>
+          <div className="l4-flow-cell"><span className="l4-flow-label">完成</span><b data-empty={s.completed === 0 ? "" : undefined}>{count(s.completed)}<small>次</small></b>{previous(data, "tasks", "completed", count, "次") && <small className="rd-note">{previous(data, "tasks", "completed", count, "次")}</small>}</div>
           <div className="l4-flow-cell" data-ratio="" data-tone={low ? "warn" : undefined}>
             <span className="l4-flow-label">任务承接率（完成 ÷ 派发）<Explain label="任务承接率怎么算" content={ACCEPTANCE_EXPLAIN} /></span>
             <b data-empty={rate === null ? "" : undefined}>{pct(rate)}</b>
@@ -217,11 +246,12 @@ export function TaskReport({ data, scope, links, panel }: { data: L4OperationsDa
               ? <small className="rd-note">{s.dispatched === 0 ? "没有派发记录，算不出" : "有的事件缺少用户或任务编号，算不出"}</small>
               : <ScaleBar label="任务承接率" valueText={`任务承接率 ${pct(rate)}，预警线 60%，刻度 0 到 ${max}%`} max={max} value={rate} fill target={ACCEPTANCE_WARN}
                 tone={low ? "warn" : "role-2"} ticks={[{ value: 0, text: "0" }, { value: ACCEPTANCE_WARN, text: "预警 60%" }, { value: max, text: `${max}%` }]} />}
+            {previous(data, "tasks", "acceptanceRate", pct) && <small className="rd-note">{previous(data, "tasks", "acceptanceRate", pct)}</small>}
           </div>
         </div>
         <Nums label="任务的其他数" rows={[
           { key: "queue", name: "队列饱和度", value: pct(s.queueSaturation), sub: "这段时间最后一次记录", explain: "取这段时间里最后一条带队列饱和度的事件；没有记录时写「—」。" },
-          { key: "checkin", name: "签到活跃", value: count(s.checkinActive), unit: "人", explain: "这段时间签到过的人数，同一个人只算一次。" },
+          { key: "checkin", name: "签到活跃", value: count(s.checkinActive), unit: "人", sub: previous(data, "tasks", "checkinActive", count, "人"), explain: "这段时间签到过的人数，同一个人只算一次。" },
         ]} />
         <div className="rd-split" data-even="">
           <div className="l4-block">
@@ -251,15 +281,15 @@ export function TeamReport({ data, scope, links, panel }: { data: L4OperationsDa
       <div className="l4-stack">
         <div className="l4-groups">
           <section className="l4-group">
-            <Sub>这段时间</Sub>
+            <Sub>这段时间<CompareNote data={data} /></Sub>
             <Nums label="这段时间的团队数" rows={[
-              { key: "refs", name: "新增直接邀请", value: count(s.directRefs), unit: "人", explain: "这段时间绑定了邀请关系的好友，同一个人只算一次。" },
-              { key: "gmv", name: "团队成交额", value: money(s.teamGmvUsdt, digits), unit: "USDT", explain: "这段时间新绑定邀请、之后又下过单的人，他们这段时间的全部订单金额，含绑定前的单。" },
-              { key: "paid", name: "团队奖励发放", value: money(s.commissionPaidUsdt, digits), unit: "USDT", sub: `${count(s.commissionEvents)} 笔`, explain: "这段时间发出的全部奖励，不只团队奖励一类。" },
+              { key: "refs", name: "新增直接邀请", value: count(s.directRefs), unit: "人", sub: previous(data, "network", "directRefs", count, "人"), explain: "这段时间绑定了邀请关系的好友，同一个人只算一次。" },
+              { key: "gmv", name: "团队成交额", value: money(s.teamGmvUsdt, digits), unit: "USDT", sub: previous(data, "network", "teamGmvUsdt", (value) => money(value), "USDT"), explain: "这段时间新绑定邀请、之后又下过单的人，他们这段时间的全部订单金额，含绑定前的单。" },
+              { key: "paid", name: "团队奖励发放", value: money(s.commissionPaidUsdt, digits), unit: "USDT", sub: [`${count(s.commissionEvents)} 笔`, previous(data, "network", "commissionPaidUsdt", (value) => money(value), "USDT")].filter(Boolean).join(" · "), explain: "这段时间发出的全部奖励，不只团队奖励一类。" },
             ]} />
             <Nums label="这段时间的比例" rows={[
-              { key: "promo", name: "推广率", value: pct(s.promotionRate), explain: "这段时间买了设备、之后又发出邀请的人 ÷ 这段时间买了设备的人；不是全部持有设备的人。业务上也叫 L4→L5 推广率。算不出时写「—」。" },
-              { key: "trigger", name: "团队奖励触发率", value: pct(s.commissionTriggerRate), explain: "新增直接邀请的好友里，绑定之后带来团队奖励的人数 ÷ 新增直接邀请的人数。奖励缺少来源时算不出，写「—」。" },
+              { key: "promo", name: "推广率", value: pct(s.promotionRate), sub: previous(data, "network", "promotionRate", pct), explain: "这段时间买了设备、之后又发出邀请的人 ÷ 这段时间买了设备的人；不是全部持有设备的人。业务上也叫 L4→L5 推广率。算不出时写「—」。" },
+              { key: "trigger", name: "团队奖励触发率", value: pct(s.commissionTriggerRate), sub: previous(data, "network", "commissionTriggerRate", pct), explain: "新增直接邀请的好友里，绑定之后带来团队奖励的人数 ÷ 新增直接邀请的人数。奖励缺少来源时算不出，写「—」。" },
             ]} />
           </section>
           <section className="l4-group" data-now="">
