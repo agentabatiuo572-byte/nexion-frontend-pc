@@ -613,13 +613,13 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
-/** 提示里的「命令号：xxx」「请求号：xxx」整串不在连字符处断开（e- / domain-action），放不下就整串换到下一行。文字不变。 */
+/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「原请求编号」（全站-结果未知叫法）。前面的话不变。 */
 function keepCommandKey(text: ReactNode): ReactNode {
   if (typeof text !== "string") return text;
   const at = Math.max(text.lastIndexOf("命令号："), text.lastIndexOf("请求号："));
   const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
   if (!key) return text;
-  return <>{text.slice(0, at + 4)}<span data-mono className="rd-keep">{key}</span>{text.slice(at + 4 + key.length)}</>;
+  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
 }
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -3921,7 +3921,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
-        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `提交结果暂未确认，可能已生成审批单。请查询原操作，或按原配置和理由重试。命令号：${error.commandKey}`);
+        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
         setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
@@ -3938,7 +3938,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     try {
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
-        setSubmitError("暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+        setSubmitError(inlineApproval?.expired ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
       }
     } catch (error) {
       setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
@@ -3967,7 +3967,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
-  const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
+  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
   // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
@@ -3981,7 +3981,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageUnknown && "，暂时读不到"}
           <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
         </div>}
-        {covBlocked && <p>{coverageUnknown ? "读到之前不能提交。" : <>{checkCopy}低于红线，暂时无法提交。</>}</p>}
+        {covBlocked && <p>{coverageUnknown ? "读到之前不能提交。" : "低于红线，暂时不能提交。"}</p>}
         {!coverage && auditSink === "local-history" && <p>{checkCopy}本页暂不自动检查覆盖率，请自行确认资金影响。</p>}
       </RdNotice>
     </div> : <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
@@ -4011,7 +4011,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
-            {submitting ? "查询中…" : "查询原操作"}
+            {submitting ? "查询中…" : "查询原结果"}
           </Btn>
         )}
         {!approvalOnlyLookup && (surface ? (
@@ -4040,8 +4040,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
         : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
-        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上一次审批结果待确认，请查询原操作。</RdNotice></div>
-        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原结果。</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原结果。</div>
       )}
       {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
         ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
@@ -4187,7 +4187,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
         {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
-        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
+        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>{surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
         {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
           {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
           {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}

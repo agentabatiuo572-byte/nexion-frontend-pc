@@ -119,7 +119,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             ? <Notice tone="warn" title="已过期，只能查询">原请求超过 24 小时，不能再重试。关掉这个框，在页面上方的提醒里点「查询原结果」，或到「操作记录与审批」核对。</Notice>
             : req.blockedReason
               ? <Notice tone="warn" title="结果未知，当前账号不能重试">{req.blockedReason}原请求和理由继续保留；关掉这个框，在页面上方的提醒里点「查询原结果」。</Notice>
-            : <Notice tone="warn" title="结果未知">{unknown && !reopened ? "刚才提交时没收到确定结果，可能已经生效。" : "这是之前提交、结果未知的原操作。"}按原请求重试会原样再发一次（理由和内容都不变），后端认得出是同一次提交，不会重复执行。也可以关掉，在页面上方的提醒里查询原结果。</Notice>}
+            : <Notice tone="warn" title="结果未知">{unknown && !reopened ? "刚才提交时没收到确定结果，可能已经生效。" : "这是之前提交、结果未知的原操作。"}按原请求重试会原样再发一次（理由和内容都不变），不会重复执行。也可以关掉，在页面上方的提醒里查询原结果。</Notice>}
         </div>
       )}
       {error && <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>}

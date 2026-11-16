@@ -28,8 +28,8 @@ export type GRecoveryRow = {
 /** 结果未知：直接生效的写操作和走审批的申请各一句。 */
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 export function pendingTag(note = "批准前参数不变；这一项被审批锁住，调高调低都改不了。") {
@@ -38,13 +38,13 @@ export function pendingTag(note = "批准前参数不变；这一项被审批锁
 
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
-    ? "原请求超过 24 小时，不能再重试，只能查询。查询读到的是现在的值，不能据此认定原操作成没成，记录继续保留。"
-    : "原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。"}>已过期</StatusTag>;
+    ? "已超过 24 小时，不能再重试，只能查询。查到的是现在的值，说明不了原操作成没成，记录继续保留。"
+    : "已超过 24 小时，不能再重试，只能查询原审批单。查不到也说明不了没提交。"}>已过期</StatusTag>;
 }
 
 export function resolvedTag(status: "approved" | "rejected" | "withdrawn") {
   const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回" }[status];
-  return <StatusTag tone="done" explain="原审批单已有结论。点「查询原结果」读回当前值后，这条记录会清掉。">{label}</StatusTag>;
+  return <StatusTag tone="done" explain="原审批单已有结论。点「查询原结果」，读到现在的值后这条记录会清掉。">{label}</StatusTag>;
 }
 
 export function GRecoveryNotice({ title, explain, lead, rows, label = "原操作" }: {
