@@ -3390,7 +3390,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A1_PROPOSAL_RECEIPT_MISMATCH: "返回的审批单与原账号操作不符，请核对原审批单；原记录继续保留。",
   A1_PROPOSAL_STATUS_UNKNOWN: "原申请已建单，但现在的审批状态还没查到。请查询原结果，原记录继续保留。",
   A1_EXPIRED_PROPOSAL_NOT_FOUND: "原请求已超过24小时，按原号查询明确没有这张审批单。确认后只解除本地记录，不会执行原操作。",
-  A1_AVATAR_CANCEL_QUERY_ONLY: "取消新头像的结果未知，不能再取消一次。请到「账号原操作」点「查询原结果」，原记录继续保留。",
+  A1_AVATAR_CANCEL_QUERY_ONLY: "没收到取消的结果，原记录继续保留。",
   A1_AVATAR_READBACK_ONLY: "已重新读取账号资料。准备头像查不到原结果，现在的头像也说明不了成没成；原记录继续保留，24 小时内可以点「处理原头像」按原请求重试。",
   FORCE_LOGOUT_FORBIDDEN: "不能撤销自己、超级管理员或已无在线设备的账号登录，请重新核对目标。",
   ROLE_ASSIGNMENT_FORBIDDEN: "执行账号创建或角色变更需要当前有效的超级管理员，请核对执行身份。",

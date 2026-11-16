@@ -219,7 +219,7 @@ export default function A7Menus() {
     requireActor();
     setToast(settled ? state === "SUCCEEDED" ? record.original.kind === "a7-delete" ? "查到原结果：已删除。" : "查到原结果：已保存。"
       : "查到原结果：没有执行，记录已解除。"
-      : "没查到原结果，记录保留。菜单树已重新读取，只供对照。");
+      : "没查到原结果，记录保留。");
   };
   const openOperation = (original: A7Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand, rechecked = false) => {
     let blockedReason: string | undefined;
@@ -376,7 +376,7 @@ export default function A7Menus() {
                   <span className="a7-recovery-change" data-mono>{record.change}</span>
                   <span className="a7-recovery-time">{businessStamp(record.createdAt)} 提交</span>
                   {expired
-                    ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，仍可以查询原结果。">已过期</StatusTag>
+                    ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试，仍可以查询原结果。">已过期</StatusTag>
                     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>}
                   <span className="a7-recovery-actions">
                     <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>

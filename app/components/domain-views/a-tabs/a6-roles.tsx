@@ -328,7 +328,7 @@ export default function A6Roles() {
       }
       if (!proposal) {
         await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-        setToast("没查到原结果，记录保留。角色已重新读取，只供对照。");
+        setToast("没查到原结果，记录保留。");
         return false;
       }
       if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id);
@@ -573,7 +573,7 @@ export default function A6Roles() {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? original.kind === "a6-status" ? "原请求超过 24 小时，不能再重试。没查到审批单和原结果，但角色已经是要改成的状态，可以解除这条记录。" : "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="没收到确定结果，可能已生效或已建审批单。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原请求重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
         {!expired && <Button variant="ghost" onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
@@ -741,7 +741,7 @@ export default function A6Roles() {
       {releasing && (
         <ReleaseModal label={<>{releasing.name}<br />{businessStamp(releasing.createdAt)} 提交</>}
           explain={releasing.original.kind === "a6-status"
-            ? `提交时间为${businessZone().label}。没查到原结果，按角色现在的状态核对：确认时再查一次，没有审批单、角色仍是「${releasing.original.status === 1 ? "启用" : "停用"}」才解除。解除只清这条记录，不会再发原请求；查到审批单就不解除。`
+            ? `提交时间为${businessZone().label}。没查到原结果，按角色现在的状态核对：确认时再查一次，没有审批单、角色仍是「${releasing.original.status === 1 ? "启用" : "停用"}」才解除，不会再发原请求。`
             : `提交时间为${businessZone().label}。确认后先按原请求再查一次审批单：明确没有这张单才解除，原操作不会执行；查到了就不解除，请点「查询原结果」。`}
           onCancel={() => setReleasing(null)}
           onConfirm={() => {
