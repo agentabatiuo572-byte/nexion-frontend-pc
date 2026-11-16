@@ -733,7 +733,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         explain="每天签到给多少、抽倍率的机会多大。改动都要提交审批，另一位管理员批准后才生效；批准前仍按现在的值发。">
         {signRules.length
           ? <ConfigList label="签到规则">{signRules.map(ruleRow)}</ConfigList>
-          : <BlockState state="empty" title="没有读到签到规则" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有签到规则" />}
       </Panel>
     ),
     streak: (
@@ -763,7 +763,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={blocked(`streak:${milestone.id}`)} onClick={conflictDraft.register(JSON.stringify(["openStreak:1", milestone.id]), () => openStreak(milestone))}>改奖励</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有连签奖励" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有连签奖励" />}
         <ChartLegend items={[
           { key: "fund", slot: 4, label: "UVT、USDT、转盘票：数量变多要批准" },
           { key: "badge", slot: "other", label: "徽章：只能改文字，立即生效" },
@@ -800,7 +800,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 : canWrite && retired ? <span className="h5-readonly">只读</span> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有成长权益" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有成长权益" />}
       </Panel>
     ),
     earn: (
@@ -825,7 +825,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={blocked(`earn:${milestone.key}`)} onClick={conflictDraft.register(JSON.stringify(["openEarn:1", milestone.id ?? milestone.key]), () => openEarn(milestone))}>调整</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有收益里程碑" detail="也可能是读取失败，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有收益里程碑" />}
       </Panel>
     ),
     idle: (
@@ -887,10 +887,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           sub={`签到率 ${text(stats.signRate, "—")}`}
           explain="今天（业务日期）签到的人数，同一个人一天只算一次。签到率的分母是有连签记录的人，不是注册总人数；读不到时后端也返回 0。" />
         <Stat tone="role-4" icon={Dices} label="今天抽中加倍" value={text(stats.lucky15Actual, "—")}
-          sub={`2 倍 ${text(stats.lucky2Actual, "—")} · 设置 ${text(stats.lucky15Config, "—")} + ${text(stats.lucky2Config, "—")}`}
+          sub={`其中 2 倍 ${text(stats.lucky2Actual, "—")} · 设置 ${text(stats.lucky15Config, "—")} + ${text(stats.lucky2Config, "—")}`}
           explain={<>
-            <p>今天的签到里抽中 1.5 倍及以上的占比，包括抽中 2 倍的；后面是其中抽中 2 倍的占比。</p>
-            <p>每次签到只抽一次，两档的概率区间不重叠：落在 2 倍的拿 2 倍，落在 1.5 倍的拿 1.5 倍。所以「抽中加倍」要和两档设置加起来比。</p>
+            <p>按今天的签到次数算，不是人数：抽中 1.5 倍及以上的签到占多少，包括抽中 2 倍的；「其中 2 倍」是抽中 2 倍及以上的占比。</p>
+            <p>设置里两档不重叠，落在 2 倍的只拿 2 倍。所以「抽中加倍」要和两档设置之和比，「其中 2 倍」和 2 倍那一档比。</p>
           </>} />
         <Stat tone="role-2" icon={Trophy} label="近 7 天收益里程碑" value={stats.weekMsTrigger == null ? "—" : countText(stats.weekMsTrigger)} unit="次"
           sub={`奖励 ${weekMsNexAmount} UVT`}
@@ -945,7 +945,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 series={[{ label: "人数", slot: 3 }]} format={(value) => `${countText(value)} 人`} axisFormat={(value) => countText(value)} />
               <p className="h5-note">{topGroup ? `最多的是连签 ${topGroup.day}，${countText(topGroup.count)} 人` : ""}{` · 近 7 天补救记录 ${stats.weekRevive == null ? "—" : `${countText(stats.weekRevive)} 条`}`}</p>
             </div>
-            : <BlockState state="empty" title="还没有人在连签" detail="也可能是读取失败，这页分不出来。" />}
+            : <BlockState state="empty" title="还没有人在连签" />}
         </Panel>
       </div>
 

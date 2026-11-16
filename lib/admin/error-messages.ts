@@ -1224,7 +1224,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   I18N_MESSAGE_NOT_FOUND: "没有找到这条文案，请重新读取后核对原对象。",
   I18N_MESSAGE_VERSION_CONFLICT: "这条文案已被其他操作改过，本次未保存；请重新读取后核对最新版本。",
   I18N_DRAFT_VERSION_NOT_FOUND: "这条文案没有可发布的草稿，请先保存三语草稿。",
-  I18N_DRAFT_OVERWRITE_CONFLICT: "这个词条有内容不同的未发布草稿，本次未发布；请到多语言文案重新读取并核对草稿后再处理发布。",
+  I18N_DRAFT_OVERWRITE_CONFLICT: "这个词条有内容不同的未发布草稿，这次没有执行。到「多语言与课程」→「App 文案」打开这个词条，发布这份草稿或把它改成和这次一样，再提交。",
   I18N_DRAFT_VERSION_CONFLICT: "草稿版本已变化，本次未发布；请重新读取草稿后核对。",
   I18N_DRAFT_CHANGED_SAVE_BEFORE_PUBLISH: "提交内容与已保存草稿不同，请先保存草稿，再核对发布。",
   I18N_DRAFT_MUST_BE_PUBLISHED_OR_REMOVED_BEFORE_ROLLBACK: "这条文案仍有草稿，暂不能回滚；请先处理当前草稿。",

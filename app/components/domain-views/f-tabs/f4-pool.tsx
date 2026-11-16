@@ -144,12 +144,15 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       <Panel title="这周的钱怎么分" icon={Vote} tone="role-4" sub={`按等级票数 · 有资格的 ${count(data.participantCount)} 人`}
         explain={<>
           <p>每个等级每人的票数。结算时按「人数 × 票数」分池：票数越高，同一等级每人分得越多，池的总额不变。</p>
-          <p>只显示票数大于 0 的等级。每级的人数和「每人约」按现在有资格的人估算，人数按结算时的分法数，和「有资格分的人」统计方式不同，合计可能对不上。</p>
+          <p>0 票的等级也列在这里，可以再改票数；它不分池，也不算进「有资格分的人」。每级的人数和「每人约」按现在有资格的人估算，人数按结算时的分法数，和「有资格分的人」统计方式不同，合计可能对不上。</p>
           <p>每票值是平均数：保留 6 位小数、多出的位数舍去，末位差额给最后一人，所以每人实收可能和估算差一点。已结算的周只记了全池的数，没有各等级分了多少。</p>
         </>}>
-        <StepBar label="各等级每人的票数" unit="票" state={data.voteWeights.length ? "ready" : "empty"}
-          emptyText="票数还没设置：没有票数大于 0 的等级，结算时没有人能分到钱。"
-          items={data.voteWeights.map((row) => ({ key: row.v, label: row.v, value: row.votes, valueText: count(row.votes), secondary: rankShare(row.v), actions: voteButton(row) }))} />
+        <div className="rd-stack">
+          {data.voteWeights.length > 0 && data.voteWeights.every((row) => row.votes === 0) && <Notice tone="warn" title="所有等级都是 0 票">结算时没有人能分到钱。</Notice>}
+          <StepBar label="各等级每人的票数" unit="票" state={data.voteWeights.length ? "ready" : "empty"}
+            emptyText="还没有等级票数，结算时没有人能分到钱。"
+            items={data.voteWeights.map((row) => ({ key: row.v, label: row.v, value: row.votes, valueText: count(row.votes), secondary: row.votes === 0 ? "不分池" : rankShare(row.v), actions: voteButton(row) }))} />
+        </div>
         {projectionState ?? <div className="f4-vote-values">{estimateBlock}{settledBlock}</div>}
       </Panel>
 

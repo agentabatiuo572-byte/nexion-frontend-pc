@@ -181,7 +181,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
       explain="好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。">
-      {!complete ? <Notice tone="warn" title={rates.length ? "七层规则不完整" : "七层规则还没配置"}>缺的层或字段要由后端补齐，后台只能改已有的规则；配齐前不能启用整体结算。</Notice> : (
+      {!complete ? <Notice tone="warn" title={rates.length ? "七层规则不完整" : "七层规则还没配置"}>{rates.length ? "缺整层的要后端先建好；已有的层缺比例或系数，在下表点这一层的按钮补上。" : "七层规则要后端先建好。"}配齐前不能启用整体结算。</Notice> : (
         <Figure width={420} stack="wide" graphic={
           <div className="f2-sum-graphic">
             <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"
@@ -223,10 +223,10 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                   <strong>{rate.usdt === null ? "未配置" : `${num(rate.usdtText)}%`}</strong>
                 </span> : <span className="f2-muted">未配置</span>}</Td>
                 <Td align="right">{rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
-                <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">—</span>}</Td>
+                <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
                   {!rate ? <StatusTag tone="neutral" explain="这一层还没有规则，目前要由后端初始化；没有规则时这一层不发。">没有规则</StatusTag>
-                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的${rate.usdt === null ? "USDT 比例" : "UVT 系数"}后端没给，这页无法判断这一层怎么发；目前要由后端补齐。`}>规则不完整</StatusTag>
+                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，要后端补上。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
                       : pausedRaw ? <StatusTag tone="danger" explain={`后端存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
