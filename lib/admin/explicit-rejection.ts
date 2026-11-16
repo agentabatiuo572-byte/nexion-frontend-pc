@@ -42,6 +42,8 @@ export function isExplicitRejection(error: unknown): boolean {
   // These receipts exist, but their original actor cannot be verified. The
   // refusal to replay them does not establish whether the original write ran.
   if (code === "ACCOUNT_LEGACY_COMMAND_REVIEW_REQUIRED" || code === "A6_RECEIPT_OWNER_UNVERIFIED") return false;
+  // ef4b1a5a refuses to expose an existing K4 batch receipt when its owner or content cannot be proved.
+  if (code === "K4_SCORE_BATCH_RECEIPT_OWNER_UNPROVEN" || code === "K4_SCORE_BATCH_RECEIPT_UNREADABLE") return false;
   // 441c412b OpsRiskService.requireK3CoveragePrecheck rejects before either rule UPDATE,
   // inside the idempotency callback. Only this exact 503 is a business verdict.
   if (value.status === 503 && code === "K3_COVERAGE_UNAVAILABLE") return true;
