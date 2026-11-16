@@ -9,7 +9,7 @@ import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
@@ -304,7 +304,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>保存配置</Button>} />}>
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) : undefined} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
   </Panel>;

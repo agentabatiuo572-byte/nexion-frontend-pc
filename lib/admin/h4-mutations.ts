@@ -167,7 +167,18 @@ export function h4Scope(path: string, body: Record<string, any>) {
   if (parts[2] === "wheel-tiers") return "H/h4_wheel_pool/ACTIVE_POOL";
   return `H/h4_legacy_event/${id ?? body.id}`;
 }
-export function h4ApprovalPending(scope: string) { const [, type, id] = scope.split("/"); return h4TicketObservations().some(t => t.status === "pending" && t.obj === id && findHighOp(t.operationCode ?? "")?.targetType === type); }
+export function h4ApprovalPending(scope: string) {
+  const [, type, id] = scope.split("/");
+  const event = type === "h4_event_rule" || type === "h4_legacy_event";
+  return h4TicketObservations().some(t => {
+    const targetType = findHighOp(t.operationCode ?? "")?.targetType;
+    return t.status === "pending" && t.obj === id && (targetType === type
+      || event && (targetType === "h4_event_rule" || targetType === "h4_legacy_event"));
+  });
+}
+export function h4ApprovalLockedReason(scope: string) {
+  return h4ApprovalPending(scope) ? formatAdminApiError("OBJECT_LOCKED_BY_A2", "OBJECT_LOCKED_BY_A2") : undefined;
+}
 export function h4Blocked(scope: string) { return !!h4PendingFor(scope) || h4ApprovalPending(scope); }
 function rejected(error: unknown, recovery: boolean) {
   if (isA2OutcomeUncertainError(error) || isOutcomeUnknownError(error)) return false;
@@ -184,13 +195,12 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) return undefined;
-  observations.delete(r.commandKey);
-  for (const [key, ticket] of observations) if (ticket.obj === r.request.proposal.obj && ticket.operationCode === r.request.proposal.command.op) observations.delete(key);
-  notify();
   const ticket = await fetchA2ProposalByKey(r.commandKey, true);
   requireActor(r.owner, false, r.scope);
   if (ticket) {
     checkTicket(r, ticket);
+    observations.delete(r.commandKey);
+    for (const [key, old] of observations) if (old.obj === ticket.obj && old.operationCode === ticket.operationCode) observations.delete(key);
     if (ticket.status !== "pending") markH4Read(resourceOf(r.scope), false);
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true }); observations.set(r.commandKey, ticket); }
     else forget(r);
@@ -277,6 +287,7 @@ export async function submitH4Proposal(scope: string, proposal: Proposal, form?:
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
   requireActor(actor.adminId, true, scope); assertH4Fresh(resourceOf(scope), h4ReadVersion(resourceOf(scope)));
+  if (h4ApprovalPending(scope)) throw new Error("OBJECT_LOCKED_BY_A2");
   if (h4Blocked(scope)) throw new Error("H4_ORIGINAL_UNRESOLVED");
   return send({ store: "hi", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: createA2CommandKey(proposal.command.op),
     createdAt: Date.now(), expiresAt: Date.now() + 86400000, action: proposal.action, reason: proposal.reason,
@@ -290,6 +301,7 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
   if (!actor) throw new Error("ADMIN_AUTH_REQUIRED");
   const body = JSON.parse(init.body), scope = h4Scope(path, body), parts = path.split("/").map(decodeURIComponent);
   requireActor(actor.adminId, true, scope); assertH4Fresh(resourceOf(scope), h4ReadVersion(resourceOf(scope)));
+  if (h4ApprovalPending(scope)) throw new Error("OBJECT_LOCKED_BY_A2");
   if (h4Blocked(scope)) throw new Error("H4_ORIGINAL_UNRESOLVED");
   let op: string | undefined, values: Record<string, unknown> = {};
   if (parts[1] === "event-rules" && body.enabled) { op = "h4_event_rule_enable"; const { reason, ...change } = body; values = { eventCode: parts[2], ...change }; }

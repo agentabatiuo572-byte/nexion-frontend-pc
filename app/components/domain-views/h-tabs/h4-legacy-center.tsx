@@ -40,7 +40,7 @@ import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
+import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
@@ -280,7 +280,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const reloadH4Approvals = async () => {
     const owner = useAdminAuth.getState().session?.adminId;
     setH4Approvals(null);
-    clearH4AuditProjection();
     const originals = pendingH4Commands().filter(r => "proposal" in r.request);
     await Promise.allSettled(originals.map(r => queryH4Command(r)));
     if (!canReadA2) { setH4Approvals("error"); return; }
@@ -433,7 +432,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
-    if (h4Blocked(hiEventScope(code))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = localizedValue(code, field, locale);
     const saved = localizedDraft.current;
     const draft = saved?.code === code && saved.field === field && saved.locale === locale ? saved : undefined;
@@ -1033,20 +1032,21 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const eventMenu = (event: LegacyEvent): MoreMenuItem[] => {
     const life = lifecycleOf(event);
     const ended = life.key === "ended";
+    const lockedReason = h4ApprovalLockedReason(hiEventScope(event.id));
     const wheelEvent = text(event.kind).toLowerCase() === "wheel";
     return [
-      ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : rules === null ? "玩法规则没读到，判断不了改奖励的后果。到「玩法与抽奖」刷新「七类玩法」后再改。" : ended ? "已结束的活动不能改奖励" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
+      ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : rules === null ? "玩法规则没读到，判断不了改奖励的后果。到「玩法与抽奖」刷新「七类玩法」后再改。" : ended ? "已结束的活动不能改奖励" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
         : [{ key: "wheel", label: "去转盘奖池改奖品", onSelect: () => go("wheel", "h4l-wheel") }]),
-      ...(!ended && event.state === "ongoing" ? [{ key: "featured", label: event.featured ? "取消主推" : "设为主推", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventFeatured:1", event.id]), () => openEventFeatured(event)) }] : []),
+      ...(!ended && event.state === "ongoing" ? [{ key: "featured", label: event.featured ? "取消主推" : "设为主推", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventFeatured:1", event.id]), () => openEventFeatured(event)) }] : []),
       { key: "content", label: "三语内容与 App 上的样子", onSelect: () => setContentId(event.id) },
-      ...(!ended && event.state !== "ended" ? [{ key: "end", label: "结束活动", danger: true, disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventStatus:1", event.id]), () => openEventStatus(event, "ended")) }] : []),
-      { key: "delete", label: "删除", danger: true, disabledReason: !canModuleWrite ? "没有删除活动的权限" : !isDeletableQuestEvent(event) ? "只能删除草稿或已结束的活动" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventDelete:1", event.id]), () => openEventDelete(event)) },
+      ...(!ended && event.state !== "ended" ? [{ key: "end", label: "结束活动", danger: true, disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventStatus:1", event.id]), () => openEventStatus(event, "ended")) }] : []),
+      { key: "delete", label: "删除", danger: true, disabledReason: !canModuleWrite ? "没有删除活动的权限" : !isDeletableQuestEvent(event) ? "只能删除草稿或已结束的活动" : lockedReason, onSelect: conflictDraft.register(JSON.stringify(["openEventDelete:1", event.id]), () => openEventDelete(event)) },
     ];
   };
   const eventPrimary = (event: LegacyEvent) => {
     const life = lifecycleOf(event);
     if (life.key === "ended") return null;
-    if (event.state === "upcoming") return <Button size="sm" disabledReason={!canModuleWrite ? "没有修改既有活动的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openEventStatus:2", event.id]), () => openEventStatus(event, "ongoing"))}>开放</Button>;
+    if (event.state === "upcoming") return <Button size="sm" disabledReason={!canModuleWrite ? "没有修改既有活动的权限" : h4ApprovalLockedReason(hiEventScope(event.id))} onClick={conflictDraft.register(JSON.stringify(["openEventStatus:2", event.id]), () => openEventStatus(event, "ongoing"))}>开放</Button>;
     return null;
   };
   const contentEvent = contentId ? events.find((event) => event.id === contentId) : undefined;
@@ -1102,7 +1102,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       <Panel id="h4l-wheel" title="转盘奖池" icon={Disc3} tone="role-1" sub={`${tiers.length} 档 · 合计 ${percentText(probabilitySum)}%`}
         explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档：真钱档概率调高，用户中真钱的次数变多，平台多付；调低反之。</p><p>奖池有一项不合格，App 整个转盘都抽不了。调整时保持合计 100%，并至少留一档不发真钱的 UVT 安慰奖。</p>
           <details className="h4l-explain-more"><summary>App 检查的四项</summary><ul><li>2–12 档</li><li>奖型只有 UVT、USDT、代金券</li><li>概率合计正好 100%</li><li>至少一档不发真钱的 UVT 安慰奖</li></ul></details></>}
-        actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
+        actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="抽不了的原因">
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
@@ -1139,10 +1139,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
                     <RatioBar compact quiet label={`${text(tier.tier)} 今天已用`} value={Math.min(used, stock)} total={stock} tone={used >= stock ? "warn" : "role-2"} valueText={`已用 ${used} 次，库存 ${stock} 次`} /></span>;
                 })()}</Td>
                 <Td sticky="end" data-fit=""><span className="h4-row h4l-ops">{wheelPointsTier(tier)
-                  ? <Button size="sm" variant="danger-outline" aria-label={`退役 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openRetirePointsTier:1", tier.tier]), () => openRetirePointsTier(tier))}>退役</Button>
+                  ? <Button size="sm" variant="danger-outline" aria-label={`退役 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openRetirePointsTier:1", tier.tier]), () => openRetirePointsTier(tier))}>退役</Button>
                   : <>
-                    <Button size="sm" aria-label={`编辑 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : wheelLegacyNexTier(tier) ? "这一档存的是旧奖型，整档保存会把奖型改掉；要改只能调概率。" : undefined} onClick={conflictDraft.register(JSON.stringify(["openEditWheelTier:1", tier.tier]), () => openEditWheelTier(tier))}>编辑</Button>
-                    <Button size="sm" icon={<Trash2 size={13} aria-hidden />} aria-label={`删除 ${text(tier.tier)}（${name.text}）`} disabledReason={numericValue(tier.prob) !== 0 ? "先把概率调成 0%" : !canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openDeleteWheelTier:1", tier.tier]), () => openDeleteWheelTier(tier))}>删除</Button>
+                    <Button size="sm" aria-label={`编辑 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : wheelLegacyNexTier(tier) ? "这一档存的是旧奖型，整档保存会把奖型改掉；要改只能调概率。" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openEditWheelTier:1", tier.tier]), () => openEditWheelTier(tier))}>编辑</Button>
+                    <Button size="sm" icon={<Trash2 size={13} aria-hidden />} aria-label={`删除 ${text(tier.tier)}（${name.text}）`} disabledReason={numericValue(tier.prob) !== 0 ? "先把概率调成 0%" : !canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openDeleteWheelTier:1", tier.tier]), () => openDeleteWheelTier(tier))}>删除</Button>
                   </>}</span></Td>
               </Tr>;
             })}</tbody>
@@ -1157,10 +1157,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           {kill && <GuardCard title={GUARD_NAME.kill} icon={<Power size={14} aria-hidden />} value={killState ? "开" : "关"} valueTone={killState ? "ok" : "danger"}
             sub={killState ? "抽中 USDT 按预算和覆盖率发真钱" : "抽中 USDT 改发 UVT 安慰奖"}
             explain="关掉后不再发真钱奖，抽中 USDT 改发 UVT 安慰奖。从关到开要另一位超级管理员批准。"
-            action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelKill:1"]), () => openWheelKill(kill))}>{killState ? "关闭" : "开启"}</Button>} />}
+            action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(`H/h4_wheel_guard/${kill.key}`)} onClick={conflictDraft.register(JSON.stringify(["openWheelKill:1"]), () => openWheelKill(kill))}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
             explain={<><p>每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。调高预算，平台每天最多多付；调低，更多真钱奖改发 UVT。后端按美元记，真钱奖只有 USDT。</p><p>今天已发{USAGE_DAY}</p></>}
-            action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelBudget:1"]), () => openWheelBudget(budget))}>调整</Button>}>
+            action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(`H/h4_wheel_guard/${budget.key}`)} onClick={conflictDraft.register(JSON.stringify(["openWheelBudget:1"]), () => openWheelBudget(budget))}>调整</Button>}>
             <div className="h4l-usage">
               {Number(budgetText) > 0 && <RatioBar label="今天已发占每日预算" quiet tone={budgetSpent ? "warn" : "role-1"} state={usedPayout === null ? wheelDailyUsageError ? "empty" : "loading" : "ready"}
                 value={usedPayout === null ? 0 : Math.min(Number(usedPayout), Number(budgetText))} total={Number(budgetText)} valueText={`今天已发 ${usedPayout ?? "—"} USDT，预算 ${budgetText} USDT`} />}

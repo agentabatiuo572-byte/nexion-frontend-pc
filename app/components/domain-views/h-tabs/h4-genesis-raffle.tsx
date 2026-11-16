@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
 import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
@@ -275,7 +275,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
         others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
-        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
+        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(`H/h4_genesis_raffle/${draft.id}`) : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
         {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} overwrites={overwrites} structure={structure} mergeDisabledReason={mergeBlocked ? "奖项有增删时不能合并。" : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
         {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
