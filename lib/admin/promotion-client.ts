@@ -69,6 +69,21 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
     error.unknownOutcome = unknown; error.bodyUnreadable = body === null;
     throw error;
   }
+  // Only admin policy projections carry this optional identity. Older servers omit it.
+  if ((!init?.method || init.method === 'GET') && (path === '/promotion-policies' || /^\/promotion-policies\/[^/]+\/versions\/[0-9]+$/.test(path))) {
+    const data = body.data as Record<string, unknown>;
+    const rows = path === '/promotion-policies' && Array.isArray(data.items) ? data.items : [data];
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
+      const identity: unknown = (row as Record<string, unknown>).approvedByAdmin;
+      if (identity === undefined || identity === null) continue;
+      if (typeof identity !== 'object' || Array.isArray(identity)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
+      const admin = identity as Record<string, unknown>;
+      if (!Number.isSafeInteger(admin.id) || Number(admin.id) < 1
+        || admin.displayName !== null && typeof admin.displayName !== 'string'
+        || admin.username !== null && typeof admin.username !== 'string') throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
+    }
+  }
   return body.data;
 }
 const fingerprint = (i: PromotionCommandIntent) => `${i.operation}:${i.targetId}`;
