@@ -7,7 +7,6 @@ import { BatchBar, BlockState, Button, Cell, Check, CheckGroup, Checkbox, Conclu
   FilterBar, FilterField, Fold, KeepText, LevelStrip, Modal, Notice, NumberInput, PageHeader, Pager, Panel, RatioBar,
   ReleaseBody, ScaleBar, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, TaskClassTag, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { businessClock, businessStamp, businessZoneText } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -189,8 +188,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         : !e2Commands.isDurablyStored(record.fingerprint, record.commandKey) ? "原操作没有完整持久保存，不能重试" : undefined;
   }
   const countReady = /^\d+$/.test(count) && Number(count) >= 1 && Number(count) <= 50;
-  const reasonLength = visibleReasonLength(reason);
-  const reasonReady = reasonLength >= 8 && reasonLength <= 200 && reason.trim().length <= 200;
+  const reasonLength = Array.from(reason.trim()).length;
+  const reasonReady = reasonLength >= 8 && reasonLength <= 200;
   const formBlock = writeBlock ?? (!reasonReady ? "请填写 8–200 字的操作理由" : dialog?.kind === "random" && !countReady ? "任务数量要填 1–50 的整数"
     : dialog?.kind === "status" && !dialog.tasks.length ? "没有可执行的任务" : dialog?.kind === "status" && !dialog.enabled && (!impact || impactLoading || impactError) ? "请先成功读取停用影响" : undefined);
 
@@ -369,7 +368,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               {TASK_CLASSES.map(value => <Check key={value} label={<TaskClassTag taskClass={value} />} aria-label={TASK_CLASS_LABELS[value]} disabled={saving} checked={classes.includes(value)} onChange={event => setClasses(event.target.checked ? TASK_CLASSES.filter(item => classes.includes(item) || item === value) : classes.filter(item => item !== value))} />)}</CheckGroup></>}
           {dialog.original ? <Facts><Fact k="原操作理由">{dialog.original.request.body.reason}</Fact></Facts>
             : <Field label="操作理由" required hint="至少 8 字" explain="记录这次调整的依据，随命令写入操作记录。" error={touched.reason && !reasonReady ? "请填写 8–200 字的操作理由" : undefined}>
-              <Textarea rows={3} maxLength={200} count={`${reasonLength}/200`} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
+              <Textarea rows={3} maxLength={400} count={`${reasonLength}/200`} placeholder="例如：按本周运营计划补充候选任务" value={reason} disabled={saving} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(old => ({ ...old, reason: true }))} /></Field>}
           {dialogError && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>

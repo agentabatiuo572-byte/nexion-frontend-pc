@@ -1,7 +1,6 @@
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { parseTaskPool, type DisableImpact, type PoolTask, type TaskPool, type TaskPoolCommand } from "@/lib/admin/task-pool-client";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
-import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
 
 export type E2Pending = PendingMutationRecord & {
@@ -26,8 +25,8 @@ export const e2Commands = createPendingMutationStore<E2Pending>({
         || !["random", "status"].includes(command.kind)
         || command.path !== `/task-pools/${pool.code}/${command.kind === "random" ? "random-tasks" : "tasks/status"}`
         || command.body.idempotencyKey !== value.commandKey || typeof command.body.reason !== "string"
-        || command.body.reason !== command.body.reason.trim() || command.body.reason.length > 200
-        || visibleReasonLength(command.body.reason) < 8 || !Array.isArray(value.tasks)) return false;
+        || command.body.reason !== command.body.reason.trim() || Array.from(command.body.reason).length > 200
+        || Array.from(command.body.reason).length < 8 || !Array.isArray(value.tasks)) return false;
       if (command.kind === "random") return Number.isInteger(command.body.count) && command.body.count >= 1 && command.body.count <= 50
         && (command.body.taskClasses === undefined || Array.isArray(command.body.taskClasses)
           && command.body.taskClasses.length > 0 && command.body.taskClasses.every(item => TASK_CLASSES.includes(item))
