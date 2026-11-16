@@ -13,7 +13,8 @@ export type PendingL5Task = PendingMutationRecord & {
 };
 
 export function lReportReadAuthority(reportType: string) {
-  return ({ KPI_SERIES: "bi_l1_read", FUNNEL_COHORT: "bi_l2_read", FINANCE_AGG: "bi_l3_read", OPERATIONS_AGG: "bi_l4_read", REGULATORY: "bi_l5_read" } as const)[reportType.trim().toUpperCase() as "KPI_SERIES"] ?? null;
+  const authorities = { KPI_SERIES: "bi_l1_read", FUNNEL_COHORT: "bi_l2_read", FINANCE_AGG: "bi_l3_read", OPERATIONS_AGG: "bi_l4_read", REGULATORY: "bi_l5_read" } as const;
+  return authorities[reportType.trim().toUpperCase() as keyof typeof authorities] ?? null;
 }
 
 function taskRoute(task: LExportTask, action: PendingL5Task["action"]) {
