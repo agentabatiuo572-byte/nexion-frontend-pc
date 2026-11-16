@@ -1,6 +1,15 @@
 import { f4Decimal } from "./f4-money";
 
+export type H4WheelAwards = {
+  basis: string;
+  spinDate?: string;
+  available: boolean;
+  reason?: string;
+  byAsset: Record<string, { count: number; amount: string | null }>;
+};
+
 export type H4Statistics = {
+  wheelAwardsToday?: H4WheelAwards | null;
   wheelEvUsd?: string | null;
   wheelEvByAsset?: Record<string, string | null> | null;
   h4Stats?: Record<string, unknown> & {
@@ -45,6 +54,24 @@ export function readH4Statistics(raw: Record<string, unknown>): H4Statistics {
     }
     if (stats.regionRestrictionsAvailable != null && typeof stats.regionRestrictionsAvailable !== "boolean") throw new Error("H4_RESPONSE_INVALID");
     result.h4Stats = stats;
+  }
+  if (raw.wheelAwardsToday !== undefined) {
+    if (raw.wheelAwardsToday === null) result.wheelAwardsToday = null;
+    else {
+      const awards = object(raw.wheelAwardsToday);
+      if (typeof awards.basis !== "string" || typeof awards.available !== "boolean"
+        || awards.spinDate !== undefined && (typeof awards.spinDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(awards.spinDate))
+        || awards.reason !== undefined && typeof awards.reason !== "string") throw new Error("H4_RESPONSE_INVALID");
+      result.wheelAwardsToday = {
+        basis: awards.basis, available: awards.available, spinDate: awards.spinDate as string | undefined,
+        reason: awards.reason as string | undefined,
+        byAsset: Object.fromEntries(Object.entries(object(awards.byAsset)).map(([asset, value]) => {
+          const award = object(value);
+          if (!Number.isSafeInteger(award.count) || Number(award.count) < 0) throw new Error("H4_RESPONSE_INVALID");
+          return [asset, { count: award.count as number, amount: decimal(award.amount) }];
+        })),
+      };
+    }
   }
   return result;
 }

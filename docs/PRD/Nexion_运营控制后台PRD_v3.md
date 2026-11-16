@@ -727,6 +727,8 @@ P1–P6逐档维护，有值按原文本CAS，缺值用__MISSING__而非0。提�
 
 #### [H4] 活动中心 CMS
 
+2026-11-17（db343ba3）：wheelAwardsToday按转盘UTC日提供available/reason、basis/spinDate、byAsset.count/amount。spin写入及wallet/voucher同事务，提交行才算发奖；本版本amount包含coupon面额，不能解释为实付款。读层保留原精度与空值，未新建显示区域；原真钱统计仍取独立日用量接口。79815419真实出账修正另记。
+
 2026-11-17（e147302f）：统计新增h4Stats.wheelSpinsToday（UTC spin_date行数，源不可用null）、regionRestrictionCount（无来源null）及regionRestrictionsAvailable=false/原因。wheelEvByAsset分资产提供金额×概率÷100逐档6位期望值，不是实发；USDT卡只消费USDT组，不混币、不舍入，缺字段旧后端沿用旧scalar。原“保留2位”解释待视觉同步；地区限制数尚无真实数据源，H4-BE-08仅次数/真钱/库存已交付。
 
 2026-11-17原号恢复接续（hd-sync24a，3499f565）：仅积分奖档退役接GROWTH:H4:WHEEL_TIER_RETIRE:{tier}，精确growth_h4_read及WHEEL_CONFIG/H4_WHEEL_TIER_RETIRED成功证据。PC原记录保存原来源，现有查询先查原号，辅助失败继续现有读取；callback可正常返回业务拒绝，raw SUCCEEDED不清记录，受控确定结论才解除并独立重读。退役改变公开奖池，不以回滚/当前停用证未执行；其它H4入口、概率与奖励政策不变，受控表单交视觉。
