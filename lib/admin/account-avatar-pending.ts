@@ -1,4 +1,4 @@
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { avatarGender, avatarKey, parsePreparedAvatar, selfAvatarSaveInput, type AvatarGender, type AvatarScope, type PreparedAvatar, type SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
 
@@ -36,6 +36,7 @@ export function rememberAvatarDraft(draft: AvatarDraft, recovering = false): Ava
 }
 /** Only a retained original cancellation receipt settles the cancel; image/current-account reads do not. */
 export async function queryAvatarCancellation(draft: AvatarDraft) {
+  if (!isPendingCommandOwnedBy(draft)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
   if (draft.scope !== "admin" || !draft.asset || !draft.cancelKey) throw new Error("A1_AVATAR_CANCEL_QUERY_ONLY");
   const state = await fetchDirectCommandReceipt(`A1:AVATAR_CANCEL:${draft.actorId}:${draft.asset.assetId}`, draft.cancelKey, draft.actorId);
   if (state === "SUCCEEDED") avatarDrafts.forget(draft.fingerprint, draft.commandKey);

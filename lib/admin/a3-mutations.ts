@@ -3,7 +3,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
 import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendarVersion, type BusinessZoneOption } from "@/lib/admin/business-calendar-client";
 import { parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
@@ -111,9 +111,7 @@ const commands = createPendingMutationStore<A3Command>({
 export function useA3Commands() {
   const actorId = useAdminAuth(state => state.session?.adminId);
   const [pending, setPending] = useState<A3Command[]>([]);
-  const sync = useCallback(() => setPending(commands.list().filter(record => (record.contentCommandActor === undefined || record.contentCommandActor === actorId)
-    && (record.commandOrigin ? record.commandOrigin.originalAdminId === String(actorId)
-      : record.original.kind !== "param" || hasPersistedPendingCommandOwner(String(actorId))))), [actorId]);
+  const sync = useCallback(() => setPending(commands.list()), [actorId]);
   useEffect(sync, [sync]);
   // Expiration affects availability even when the operator leaves the page open.
   useEffect(() => {
@@ -122,18 +120,14 @@ export function useA3Commands() {
     const timer = window.setTimeout(sync, Math.max(1, next - Date.now()));
     return () => window.clearTimeout(timer);
   }, [pending, sync]);
-  const find = (slot: string) => commands.list().find(record => (record.fingerprint === slot
-    || (record.contentCommandActor === actorId || record.commandOrigin?.originalAdminId === String(actorId)) && record.fingerprint === `${actorId}:${slot}`)
-    && (record.contentCommandActor === undefined || record.contentCommandActor === actorId)
-    && (record.commandOrigin ? record.commandOrigin.originalAdminId === String(actorId)
-      : record.original.kind !== "param" || hasPersistedPendingCommandOwner(String(actorId))));
+  const find = (slot: string) => commands.list().find(record => record.fingerprint === slot || record.fingerprint === `${actorId}:${slot}`);
   const capture = (input: Omit<A3Command, keyof PendingMutationRecord>) => {
     const slot = a3Slot(input.original);
     if (find(slot)) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const contentSave = input.original.kind === "docs" || input.original.kind === "how";
     const auth = useAdminAuth.getState();
-    if ((contentSave || input.original.kind === "param") && (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !auth.session
-      || auth.session.passwordChangeRequired || !auth.session.authorities.includes("platform_a3_write"))) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !auth.session
+      || auth.session.passwordChangeRequired || !auth.session.authorities.includes("platform_a3_write")) throw new Error("ADMIN_PERMISSION_DENIED");
     const key = `a3-${input.original.kind}-${crypto.randomUUID()}`;
     const fingerprint = contentSave || input.original.kind === "param" ? `${auth.session!.adminId}:${slot}` : slot;
     commands.remember(fingerprint, key, { ...input, ...(contentSave ? { contentCommandActor: auth.session!.adminId } : {}),
@@ -178,6 +172,7 @@ export function useA3Commands() {
     return { ...result, released: !result.matched };
   };
   const send = async (record: A3Command, retry = false) => {
+    if (!isPendingCommandOwnedBy(record)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.commandOrigin && record.commandOrigin.originalAdminId !== String(useAdminAuth.getState().session?.adminId)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.original.kind === "param" && find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     if (retry && (!a3Deduplicates(record) || isRetryExpired(record))) throw new Error("A3_ORIGINAL_QUERY_ONLY");
@@ -195,7 +190,7 @@ export function useA3Commands() {
       });
       const result: unknown = await response.json().catch(() => null);
       const body = object(result) ? result : null;
-      if (record.contentCommandActor !== undefined && useAdminAuth.getState().session?.adminId !== record.contentCommandActor) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
+      if (!isPendingCommandOwnedBy(record)) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
       if (!response.ok || body?.code !== 0) {
         const reasonCode = typeof body?.message === "string" ? body.message : undefined;
