@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Table, Th, Tr, Td } from "@/app/components/rd";
+import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Notice, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
 import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
@@ -185,8 +185,8 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
       {!result && !error && <BlockState state="loading" title="正在读取明细…" />}
       {error === "read" && <BlockState state="error" title="明细读取失败，请重试。" onRetry={() => setRetry(n => n + 1)} retryLabel="重试" />}
-      {error === "historyIncomplete" && <BlockState state="empty" title="业绩历史还未同步完整，请稍后重新读取。" onRetry={() => setRetry(n => n + 1)} retryLabel="重新读取" />}
-      {error === "unreconciled" && <BlockState state="empty" title="业绩明细现在核对不上，先不显示" detail="工作台汇总卡写着「资料未同步」时多半就是这个原因；稍后再看，一直这样请联系技术同事。" onRetry={() => setRetry(n => n + 1)} retryLabel="重新读取" />}
+      {error === "historyIncomplete" && <Notice tone="progress" title="业绩历史还在同步" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重新读取</Button>}>同步完再看明细，不用处理。</Notice>}
+      {error === "unreconciled" && <Notice tone="warn" title="明细和已确认的金额或笔数对不上，先不显示" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重新读取</Button>}>一直这样请联系技术同事。</Notice>}
       {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title="没有你能看到的记录" />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
     </section>
   </Drawer>;
