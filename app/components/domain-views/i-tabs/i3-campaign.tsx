@@ -20,7 +20,7 @@ import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
@@ -630,6 +630,15 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       toast("请完整填写中文和越南语标题与正文");
       return;
     }
+    // Match delivery's split-before-trim contract as well as the existing authoring limit.
+    const textTooLong = form.name.trim().length > 160 || (["zh", "vi", "en"] as const).some(language => {
+      const title = form[TITLE_KEY[language]].trim(), body = form[BODY_KEY[language]].trim();
+      if (title.length > SAVE_TITLE_MAX || body.length > SAVE_BODY_MAX) return true;
+      const combined = title + "\n" + body, newline = combined.indexOf("\n");
+      const deliveredTitle = combined.slice(0, newline).trim() || (language === "en" ? "UVEL notification" : form.name.trim());
+      return chars(deliveredTitle).length > TITLE_SENT || chars(combined.slice(newline + 1).trim()).length > BODY_SENT;
+    });
+    if (textTooLong) { toast(formatAdminApiError("NOTIFICATION_CAMPAIGN_TEXT_TOO_LONG", "CONTENT_API_422")); return; }
     const minIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMin) ?? -1;
     const maxIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMax) ?? -1;
     if (minIndex < 0 || maxIndex < 0 || minIndex > maxIndex) {

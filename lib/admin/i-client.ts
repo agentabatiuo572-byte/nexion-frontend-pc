@@ -383,6 +383,12 @@ function i3CampaignBody(body: Record<string, unknown>, reason: string): string {
   let decimal: string | undefined;
   if (typeof budget === "string") {
     if (!/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(budget)) throw new Error("预算记录格式不正确，请核对 USD 金额。");
+    const [coefficient, exponent = "0"] = budget.toLowerCase().split("e");
+    const digits = coefficient.replace(/[-.]/g, ""), fraction = coefficient.split(".")[1] ?? "";
+    const trailingZeros = digits.length - digits.replace(/0+$/, "").length;
+    if (/[1-9]/.test(digits) && BigInt(fraction.length) - BigInt(exponent) - BigInt(trailingZeros) > BigInt(2)) {
+      throw new Error(formatAdminApiError("NOTIFICATION_BUDGET_INVALID", "CONTENT_API_422"));
+    }
     decimal = budget.replace(/^(-?)0+(?=\d)/, "$1").replace(/^(-?)\./, (_, sign: string) => `${sign}0.`).replace(/\.(?=$|[eE])/, "");
   }
   return "{" + Object.entries(withReason(body, reason)).filter(([, value]) => value !== undefined)
