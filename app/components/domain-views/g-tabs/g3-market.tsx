@@ -27,8 +27,8 @@ import {
   type G3CurveField,
   type G3HistoryPoint,
   type G3Overview,
-  type G3OverrideKey,
   type G3ReadOverview,
+  type G3OverrideKey,
 } from "@/lib/admin/g3-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -402,7 +402,6 @@ function G3MarketEditor() {
   const [overview, setOverviewState] = useState<G3Overview | null>(null);
   const [gaps, setGaps] = useState<G3ReadGaps>(NO_GAPS);
   // 写入和确认框回来的是完整读数（价格、覆盖率都读到了）；页面自己的读取可能缺其中一样或两样。
-  const setOverview = useCallback((next: G3Overview) => { setOverviewState(next); setGaps(NO_GAPS); }, []);
   const showRead = useCallback((read: G3ReadOverview) => { const next = readBaseline(read); setOverviewState(next.overview); setGaps(next.gaps); }, []);
   // 按原请求恢复成功后，手里的概览已经不是那次写入之后的状态；重读成功之前不能拿它当新修改的基准。
   const [rereadPending, setRereadPending] = useState(false);
@@ -484,15 +483,15 @@ function G3MarketEditor() {
     };
   }, [showRead]);
 
-  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3Overview>, success: string, recovered = false) => {
+  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3ReadOverview>, success: string, recovered = false) => {
     setBusyKey(g3MarketObjectKey(change));
     setError("");
     try {
-      const next = await action();
+      await action();
       reconcileObservedAfterSave(change);
       // 按原请求恢复时，后端回放的是当时保存的回包，不是现在的读取：不拿它当当前概览，改为重读；
       // 重读失败只报读取失败，新修改继续不可用，原操作照常算完成。
-      if (!recovered) setOverview(next);
+      // The write receipt is not applied as the current reading; the page rereads it.
       // 写入成功后回读历史属于附加刷新:历史面失败不能把已成功的写入报成失败。
       const [historyResult] = await Promise.allSettled([fetchG3MarketHistory()]);
       if (historyResult.status === "fulfilled") {
@@ -503,7 +502,7 @@ function G3MarketEditor() {
         setHistoryError(messageOf(historyResult.reason));
       }
       toast(recovered ? REREAD_TEXT : success);
-      if (recovered) { setRereadPending(true); void reload(true); }
+      setRereadPending(true); void reload(true);
     } catch (err) {
       const message = messageOf(err);
       setError(message);
@@ -512,7 +511,7 @@ function G3MarketEditor() {
     } finally {
       setBusyKey(null);
     }
-  }, [toast, reconcileObservedAfterSave, reload, setOverview]);
+  }, [toast, reconcileObservedAfterSave, reload]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -587,13 +586,13 @@ function G3MarketEditor() {
         today={overview?.activeDayIndex} frames={overview?.frames ?? (marketConfirm.action === "curve-cell"
           ? marketConfirm.expectedFrames.map(frame => ({ dayIndex: frame.dayIndex, targetPrice: Number(frame.targetPrice), pumpProbability: Number(frame.pumpProbability), volatilityPct: Number(frame.volatilityPct) })) : [])} tuning={MANUAL_TUNING}
         onStateChange={syncCommands} onFailure={onCommandFailure} onBusy={value => setBusyKey(value ? "market-confirm" : null)}
-        onCurrent={current => { setOverview(current); setRereadPending(false); }}
+        onCurrent={() => { setRereadPending(true); void reload(true); }}
         onClose={() => setMarketConfirm(null)}
         onDone={(result) => {
           setMarketConfirm(null);
           if (result.active) reconcileObservedAfterSave(marketConfirm);
-          if (result.active && !result.recovered) setOverview(result.active);
-          if (result.recovered) setRereadPending(true);
+          // The write receipt may have unavailable readings; reload the editor baseline separately.
+          setRereadPending(true);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
           toast(result.recovered ? REREAD_TEXT : result.acknowledgement);
           void reload(true);

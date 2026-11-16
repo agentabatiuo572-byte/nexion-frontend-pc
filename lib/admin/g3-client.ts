@@ -362,7 +362,7 @@ function g3OverviewMutation(
       headers: { "Idempotency-Key": commandKey },
       body: serialized,
     }),
-    normalizeOverview,
+    normalizeReadOverview,
   );
 }
 
@@ -415,7 +415,7 @@ export async function updateG3CurveFrame(
 
 /** Every G3 confirmation persists this exact request before sending it. */
 export async function submitG3MarketCommand(path: string, method: "PUT" | "PATCH", body: string, commandKey: string) {
-  return normalizeOverview(await g3Request<BackendOverview>(path, {
+  return normalizeReadOverview(await g3Request<BackendOverview>(path, {
     method,
     headers: { "Idempotency-Key": commandKey },
     body,

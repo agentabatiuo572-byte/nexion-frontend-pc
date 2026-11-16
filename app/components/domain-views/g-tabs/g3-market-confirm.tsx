@@ -6,7 +6,7 @@ import {
   type G3CommandResult, type G3MarketChange, type G3ReviewedChange,
 } from "@/lib/admin/g3-market-command";
 import { useState } from "react";
-import { fetchG3MarketOverview, g3NumberText, serializeG3Frames, type G3CurveFrame, type G3Overview } from "@/lib/admin/g3-client";
+import { fetchG3MarketReadOverview, g3NumberText, serializeG3Frames, type G3CurveFrame, type G3ReadOverview } from "@/lib/admin/g3-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { Info } from "lucide-react";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
@@ -36,7 +36,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   newWriteBlockedReason?: string;
   onClose: () => void; onDone: (result: G3CommandResult) => void;
   onStateChange: () => void; onFailure: (change: G3MarketChange, failure: unknown) => void; onBusy: (busy: boolean) => void;
-  onCurrent: (overview: G3Overview) => void;
+  onCurrent: (overview: G3ReadOverview) => void;
 }) {
   const [forceApproval, setForceApproval] = useState(false);
   const [approvalBasis, setApprovalBasis] = useState<G3ReviewedChange>();
@@ -118,13 +118,14 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       return !!result;
     } catch (failure) {
       if (g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {
-        const latest = await fetchG3MarketOverview();
+        const latest = await fetchG3MarketReadOverview();
         ensureOwner(false);
         if (change.action === "curve-cell") {
           const frame = latest.frames.find(row => row.dayIndex === change.dayIndex)!;
           setApprovalBasis({ ...change, current: g3NumberText(frame[change.field], change.field === "pumpProbability" ? 6 : 8),
             expectedFrames: serializeG3Frames(latest.frames), expectedRevision: latest.curveRevision ?? "" });
         } else if (change.action === "current-price") {
+          if (latest.priceAvailable === false || latest.currentPrice === null || latest.currentPrice <= 0) throw new Error("当前配置版本未就绪，请关闭弹窗后重新读取页面。");
           setApprovalBasis({ ...change, current: g3NumberText(latest.currentPrice), expectedRevision: latest.priceRevision ?? "" });
         } else {
           const control = latest.controls.find(row => row.key === "schedule");
