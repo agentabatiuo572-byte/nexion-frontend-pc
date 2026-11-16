@@ -55,6 +55,7 @@ export interface E5Device {
   maxDevicesPerUser: number;
   state: E5DeviceState;
   rawStatus: string;
+  ownershipStatus: string | null;
   runtimeStatus: string;
   hashrate: number;
   dailyUsdt: number | null;
@@ -96,14 +97,13 @@ export function canResumeE5UserDevicesFrom(device: E5Device) {
   ].includes(reason);
 }
 
-/** Since 64f53ce0 activation requires ownership OWNED, and an unbind writes both the raw status and the
- * ownership as UNBOUND: an unbound device cannot be put back into service from the console.
- * simState UNBOUND covers either column (store lists); phone JSON omits simState, so the raw status decides there.
- */
-export function canActivateE5Device(device: Pick<E5Device, "simState" | "rawStatus">, force = false) {
+/** Explicit ownership takes precedence over the merged UNBOUND projection; absent ownership keeps the legacy rule. */
+export function canActivateE5Device(device: Pick<E5Device, "simState" | "rawStatus" | "ownershipStatus">, force = false) {
   const raw = device.rawStatus.trim().toUpperCase();
-  if (device.simState === "UNBOUND" || raw === "UNBOUND") return false;
-  return force ? ["INVENTORY", "DEACTIVATED", "INACTIVE"].includes(raw) : raw === "INVENTORY";
+  if (device.ownershipStatus === null) {
+    if (device.simState === "UNBOUND" || raw === "UNBOUND") return false;
+  } else if (device.ownershipStatus !== "OWNED") return false;
+  return force ? ["INVENTORY", "DEACTIVATED", "INACTIVE", "UNBOUND"].includes(raw) : raw === "INVENTORY";
 }
 
 export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number; errorRetry: number; legacyPending: number; waitingConfig: number }
@@ -147,6 +147,7 @@ interface BackendDevice {
   productTier?: string | null;
   productCode?: string | null;
   status?: string | null;
+  ownershipStatus?: string | null;
   hostingLabel?: string | null;
   sourceChannel?: string | null;
   simState?: E5SimState | null;
@@ -284,6 +285,8 @@ function queryString(query: E5DeviceQuery) {
 }
 
 export function mapE5Device(row: BackendDevice): E5Device {
+  if (row.ownershipStatus != null && typeof row.ownershipStatus !== "string") throw new Error("E5_DEVICE_PAGE_CONTRACT_INVALID");
+  const ownershipStatus = row.ownershipStatus?.trim().toUpperCase() || null;
   const deviceId = toNumber(row.id);
   const identity = parseE5DeviceIdentity(row.instanceNo, row.name, deviceId);
   const userId = text(row.userId);
@@ -317,6 +320,7 @@ export function mapE5Device(row: BackendDevice): E5Device {
     maxDevicesPerUser: row.maxDevicesPerUser ?? 6,
     state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate, row.activatedAt, row.deactivatedAt),
     rawStatus: text(row.status, "UNKNOWN"),
+    ownershipStatus,
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
     hashrate: toNumber(row.hashrate),
     dailyUsdt: dailyRate.dailyUsdt,

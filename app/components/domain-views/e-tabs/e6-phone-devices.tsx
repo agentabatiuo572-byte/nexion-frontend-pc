@@ -17,7 +17,7 @@ type Action=keyof typeof LABELS;
 // 主状态和后端的先后一致：停用、停用中排在运营暂停前面（暂停原因仍在问号里）。
 const shownPaused=(d:E5Device)=>!!d.pausedReason&&d.state!=="unbound"&&d.state!=="pending-deactivate";
 // 「已解绑 / 停用」合并了几种手机：显示时按真实状态分开，并写明还能不能再用（请求里的原状态仍用 STATES）。
-const stopped=(d:E5Device)=>{const raw=d.rawStatus.trim().toUpperCase();return raw==="UNBOUND"?{label:"已解绑",sub:"不能再激活"}:raw==="RECYCLED"?{label:"已停用",sub:"已回收，不能再激活"}:raw==="RETIRED"?{label:"已停用",sub:"已退役，不能再激活"}:{label:"已停用",sub:"可以重新激活"};};
+const stopped=(d:E5Device)=>{const raw=d.rawStatus.trim().toUpperCase(),sub=canActivateE5Device(d,true)?"可以重新激活":"不能再激活";return raw==="UNBOUND"?{label:"已解绑",sub}:raw==="RECYCLED"?{label:"已停用",sub:"已回收，不能再激活"}:raw==="RETIRED"?{label:"已停用",sub:"已退役，不能再激活"}:{label:"已停用",sub};};
 // 取消激活、解绑、置换回收时后端写的停跑原因就是动作本身，标签已经说了；其余原因按 E5 的叫法翻译。
 const pauseShown=(d:E5Device)=>!!d.pausedReason&&!(d.state==="unbound"&&["deactivate","unbind","recycle","replace"].includes(d.pausedReason.trim().toLowerCase()));
 const stateLabel=(d:E5Device)=>shownPaused(d)?"已暂停":d.state==="unbound"?stopped(d).label:STATES[d.state];

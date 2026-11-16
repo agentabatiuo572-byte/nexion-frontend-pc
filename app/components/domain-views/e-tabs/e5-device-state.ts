@@ -1,5 +1,5 @@
 import { CirclePause, PowerOff, type LucideIcon } from "lucide-react";
-import type { E5Device, E5SimState } from "@/lib/admin/e5-client";
+import { canActivateE5Device, type E5Device, type E5SimState } from "@/lib/admin/e5-client";
 import type { StateTone } from "@/app/components/rd";
 
 export const E5_STATES: Record<E5SimState, { label: string; tone: StateTone; reason: string; icon?: LucideIcon }> = {
@@ -17,24 +17,27 @@ export const E5_STATES: Record<E5SimState, { label: string; tone: StateTone; rea
 };
 
 /**
- * 「待激活」「已停用」各混着几种设备，能不能再用要看设备真实的状态（rawStatus，和行上的激活入口同一个依据）；已解绑的一律不能再激活。
+ * 激活说明与行上的入口共用归属和原始状态判断；缺少归属时保留旧规则。
  * sub 是列表里状态下面的一行，reason 是详情里的说明；其他状态沿用 E5_STATES。
  */
-export function e5StateNote(d: Pick<E5Device, "simState" | "rawStatus">): { sub?: string; reason: string } {
+export function e5StateNote(d: Pick<E5Device, "simState" | "rawStatus" | "ownershipStatus">): { sub?: string; reason: string } {
   const raw = d.rawStatus.trim().toUpperCase();
   const again = "可以重新激活";
   if (d.simState === "WAITING_ACTIVATION") {
-    if (raw === "INVENTORY") return { reason: "可以点「激活」；每人最多 6 台，包含手机。" };
-    if (raw === "INACTIVE") return { reason: "不能直接激活，可以申请强制激活，批准后生效；每人最多 6 台，包含手机。" };
+    if (canActivateE5Device(d)) return { reason: "可以点「激活」；每人最多 6 台，包含手机。" };
+    if (raw === "INACTIVE" && canActivateE5Device(d, true)) return { reason: "不能直接激活，可以申请强制激活，批准后生效；每人最多 6 台，包含手机。" };
     return { reason: "这台设备不能在这页激活。" };
   }
   if (d.simState === "STOPPED") {
-    if (raw === "DEACTIVATED" || raw === "INACTIVE") return { sub: again, reason: "设备已停用；要再用可以申请强制激活，另一位管理员批准后生效。" };
-    if (raw === "INVENTORY") return { sub: again, reason: "设备已停用；要再用可以点「激活」，每人最多 6 台，包含手机。" };
+    if (canActivateE5Device(d)) return { sub: again, reason: "设备已停用；要再用可以点「激活」，每人最多 6 台，包含手机。" };
+    if (canActivateE5Device(d, true)) return { sub: again, reason: "设备已停用；要再用可以申请强制激活，另一位管理员批准后生效。" };
     if (raw === "RECYCLED") return { sub: "已回收，不能再激活", reason: "设备已在置换中回收，不能再激活。" };
     if (raw === "RETIRED") return { sub: "已退役，不能再激活", reason: "设备已退役，不能再激活。" };
-    return { reason: "设备已停止运行，这页不能重新激活。" };
+    return { ...(d.ownershipStatus !== null && d.ownershipStatus !== "OWNED" ? { sub: "不能再激活" } : {}), reason: "设备已停止运行，这页不能重新激活。" };
   }
-  if (d.simState === "UNBOUND") return { sub: "不能再激活", reason: E5_STATES.UNBOUND.reason };
+  if (d.simState === "UNBOUND") {
+    if (canActivateE5Device(d, true)) return { sub: again, reason: "设备已停用；要再用可以申请强制激活，另一位管理员批准后生效。" };
+    return { sub: "不能再激活", reason: d.ownershipStatus === "OWNED" ? "这台设备不能在这页激活。" : E5_STATES.UNBOUND.reason };
+  }
   return { reason: d.simState ? E5_STATES[d.simState].reason : "" };
 }
