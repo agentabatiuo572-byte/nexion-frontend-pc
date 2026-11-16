@@ -44,6 +44,8 @@ export function isExplicitRejection(error: unknown): boolean {
   if (code === "ACCOUNT_LEGACY_COMMAND_REVIEW_REQUIRED" || code === "A6_RECEIPT_OWNER_UNVERIFIED") return false;
   // ef4b1a5a refuses to expose an existing K4 batch receipt when its owner or content cannot be proved.
   if (code === "K4_SCORE_BATCH_RECEIPT_OWNER_UNPROVEN" || code === "K4_SCORE_BATCH_RECEIPT_UNREADABLE") return false;
+  // J4 reconciliation can persist partial progress after RECOVERY_STARTED; it is not a nonexecution verdict.
+  if (code.startsWith("J4_EXECUTION_PARTIAL:")) return false;
   // 441c412b OpsRiskService.requireK3CoveragePrecheck rejects before either rule UPDATE,
   // inside the idempotency callback. Only this exact 503 is a business verdict.
   if (value.status === 503 && code === "K3_COVERAGE_UNAVAILABLE") return true;

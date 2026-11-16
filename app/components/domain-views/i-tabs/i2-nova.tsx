@@ -26,7 +26,8 @@ import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact }
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
-import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from "./i-conflict";
@@ -129,6 +130,14 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   /** 结果未知不是失败，不加「操作失败」。 */
   const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
+  const queryOriginal = async (record: I2Command) => {
+    let settled = false;
+    try { settled = fundCommandSettled(await queryI2Command(record)); }
+    catch { /* Receipt failure must not prevent the existing content read. */ }
+    if (settled) { await refreshAfterMutation(record); return; }
+    await actions.reloadIContent();
+    toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。");
+  };
   const replay = async (record: I2Command) => {
     try {
       await retryI2Command(record);
@@ -810,7 +819,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <span><b>{row.action}</b>{` · ${[unknownObject(row), unknownChange(row), `${businessStamp(row.createdAt)} 提交`].filter(Boolean).join(" · ")}`}</span>
             {isRetryExpired(row) ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
             <span className="rd-row-actions"><Button size="sm" disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={() => {
-              void actions.reloadIContent().then(() => toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。"));
+              void queryOriginal(row).catch((error) => toast(displayAdminError(error)));
             }}>查询原结果</Button>{!isRetryExpired(row) && <Button size="sm" disabledReason={recovering ? "等当前操作完成" : !row.original ? "原操作记录不完整，只能查询核对，不能重试。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined} onClick={() => void restore(row)}>按原请求重试</Button>}</span>
           </li>
         ))}

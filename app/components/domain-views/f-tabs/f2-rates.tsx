@@ -111,7 +111,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       slot: `f-config:F.unilevel.${level}`,
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true,
       effect: effectTag,
-      edit: { kind: "number", current, min: 0, unit: "%", maxDecimals: 4, amplifiesWhen: "increase",
+      edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
+        validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "填百分数：0.5 就是 0.5%，最多 4 位小数" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
         preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={Number(next || current || 0)} field="usdt" /> : null },
       facts: (next) => {

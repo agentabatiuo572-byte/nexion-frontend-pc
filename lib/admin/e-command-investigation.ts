@@ -30,9 +30,11 @@ export type ECommandEvidence = {
   evidenceAuditId?: number;
 };
 
-/** A retained completed response settles the command; only confirmed nonexecution authorizes replacement. */
+/** These writers retain nonzero business responses under the raw SUCCEEDED transaction status. */
 export function eCommandSettled(receipt: ECommandInvestigation | null) {
-  return !!receipt && !receipt.locked && (["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(receipt.originalStatus)
+  const needsBusinessResult = !!receipt && /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(receipt.scope);
+  return !!receipt && !receipt.locked && (receipt.originalStatus === "CONFIRMED_SUCCEEDED"
+    || receipt.originalStatus === "SUCCEEDED" && !needsBusinessResult
     || receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed);
 }
 
@@ -46,11 +48,66 @@ export function canInvestigateECommand(authority: string) {
 function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvestigation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const row = value as Record<string, unknown>;
+  const copyPath = locator.originalPath.match(/^\/api\/admin\/content\/copy-ab\/(.+)$/)?.[1];
+  const copyRoutes: [string, RegExp, string][] = [
+    ["POST", /^copies$/, "I1_COPY_CREATE"],
+    ["PATCH", /^copies\/[^/]+\/draft$/, "I1_COPY_DRAFT_SAVE"],
+    ["POST", /^copies\/[^/]+\/versions$/, "I1_COPY_VERSION_PUBLISH"],
+    ["POST", /^copies\/[^/]+\/versions\/[^/]+\/rollback$/, "I1_COPY_VERSION_ROLLBACK"],
+    ["POST", /^copies\/[^/]+\/archive$/, "I1_COPY_VERSION_ARCHIVE"],
+    ["DELETE", /^copies\/[^/]+\/versions\/[^/]+$/, "I1_COPY_DRAFT_VERSION_DELETE"],
+    ["POST", /^positions$/, "I1_COPY_POSITION_CREATE"],
+    ["PATCH", /^positions\/[^/]+$/, "I1_COPY_POSITION_UPDATE"],
+    ["DELETE", /^positions\/[^/]+$/, "I1_COPY_POSITION_DELETE"],
+    ["POST", /^version-options$/, "I1_COPY_VERSION_OPTION_CREATE"],
+    ["PUT", /^version-options\/[^/]+$/, "I1_COPY_VERSION_OPTION_UPDATE"],
+    ["DELETE", /^version-options\/[^/]+$/, "I1_COPY_VERSION_OPTION_DELETE"],
+    ["PATCH", /^framework\/[^/]+$/, "I1_COPY_EXPERIMENT_FRAMEWORK_UPDATE"],
+    ["POST", /^experiments$/, "I1_COPY_EXPERIMENT_CREATE"],
+    ["POST", /^experiments\/[^/]+\/start$/, "I1_COPY_EXPERIMENT_START"],
+    ["POST", /^experiments\/[^/]+\/stop$/, "I1_COPY_EXPERIMENT_STOP"],
+    ["POST", /^experiments\/[^/]+\/adopt$/, "I1_COPY_EXPERIMENT_ADOPT"],
+    ["POST", /^experiments\/[^/]+\/discard$/, "I1_COPY_EXPERIMENT_DISCARD"],
+  ];
+  const copyScope = copyPath && copyRoutes.find(([method, path]) => method === locator.originalMethod && path.test(copyPath))?.[2];
+  const novaPath = locator.originalPath.match(/^\/api\/admin\/content\/nova\/(.+)$/)?.[1];
+  const novaObject = novaPath?.match(/^(channels|templates)(?:\/([^/]+)(?:\/(status))?)?$/);
+  let novaScope: string | undefined;
+  if (novaObject) {
+    const [, family, key, status] = novaObject;
+    const action = !key && locator.originalMethod === "POST" ? "CREATE"
+      : key && locator.originalMethod === "PATCH" ? status ? "STATUS" : "UPDATE"
+        : key && !status && locator.originalMethod === "DELETE" ? "DELETE" : undefined;
+    if (action) novaScope = `I2_NOVA_${family === "channels" ? "CHANNEL" : "TEMPLATE"}_${action}${key ? `:${decodeURIComponent(key)}` : ""}`;
+  } else if (novaPath === "social-distribution" && locator.originalMethod === "PATCH") novaScope = "I2_NOVA_SOCIAL_DISTRIBUTION";
+  else if (novaPath === "social-events/sync" && locator.originalMethod === "POST") novaScope = "I2_NOVA_SOCIAL_SYNC";
+  else if (novaPath === "social-events/expire" && locator.originalMethod === "POST") novaScope = "I2_NOVA_SOCIAL_EXPIRE";
+  else {
+    const event = novaPath?.match(/^social-events\/([1-9]\d*)(?:\/(status))?$/);
+    if (event && (event[2] ? locator.originalMethod === "PATCH" : locator.originalMethod === "DELETE")) novaScope = `I2_NOVA_SOCIAL_EVENT_${event[2] ? "STATUS" : "DELETE"}:${BigInt(event[1])}`;
+  }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : copyPath ? row.scope === copyScope
+    : novaPath ? row.scope === novaScope
+    : locator.originalPath === "/api/admin/withdraw/limits" ? ["D5_WITHDRAWAL_LIMITS_UPDATE", "D5_WITHDRAWAL_LIMITS"].includes(String(row.scope))
+    : locator.originalPath === "/api/admin/finance/fx-quote" ? ["D6_FX_QUOTE_UPDATE", "D6_FX_QUOTE"].includes(String(row.scope))
+    : locator.originalPath === "/api/admin/finance/payout-vnd/config" ? ["FINANCE:D7:CONFIG_UPDATE", "D7_PAYOUT_VND_CONFIG"].includes(String(row.scope))
+    : locator.originalPath === "/api/admin/content/campaigns" ? row.scope === "I3_NOTIFICATION_CAMPAIGN_CREATE"
+    : /^\/api\/admin\/content\/campaigns\/[^/]+$/.test(locator.originalPath) ? row.scope === "I3_NOTIFICATION_CAMPAIGN_DELETE"
+    : /^\/api\/admin\/content\/campaigns\/[^/]+\/(?:draft|schedule|send-now|cancel)$/.test(locator.originalPath) ? row.scope === `I3_NOTIFICATION_CAMPAIGN_${({ draft: "DRAFT_UPDATE", schedule: "SCHEDULE", "send-now": "SEND_NOW", cancel: "CANCEL" })[locator.originalPath.split("/").at(-1)! as "draft"]}`
+    : locator.originalPath === "/api/admin/content/i18n-learning/rescan" ? row.scope === "I6_I18N_RESCAN"
+    : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+$/.test(locator.originalPath) ? row.scope === `I6_I18N_ARCHIVE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`
+    : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+\/(?:draft|publish)$/.test(locator.originalPath) ? row.scope === `I6_I18N_${locator.originalPath.split("/").at(-1)!.toUpperCase()}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`
+    : /^\/api\/admin\/content\/i18n-learning\/messages\/[^/]+\/versions\/[^/]+\/rollback$/.test(locator.originalPath) ? row.scope === `I6_I18N_ROLLBACK:${decodeURIComponent(locator.originalPath.split("/").at(-4)!)}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`
+    : /^\/api\/admin\/content\/i18n-learning\/integrity\/[^/]+\/fix$/.test(locator.originalPath) ? row.scope === `I6_I18N_INTEGRITY_FIX:${decodeURIComponent(locator.originalPath.split("/").at(-2)!)}`
     : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? /^D2(?:[_:])/.test(String(row.scope))
       : locator.originalPath.startsWith("/api/admin/treasury/") ? /^D3(?:[_:])/.test(String(row.scope))
         : locator.originalPath.startsWith("/api/admin/devices/orders/") ? /^E4(?:[_:])/.test(String(row.scope))
           : locator.originalPath === "/api/admin/emergency/tamper/alert-config" ? row.scope === "J3_ALERT_CONFIG"
+          : locator.originalPath === "/api/admin/emergency/sop/playbooks" ? row.scope === "J4_PLAYBOOK_CREATE"
+          : /^\/api\/admin\/emergency\/sop\/playbooks\/[^/]+$/.test(locator.originalPath) ? row.scope === `J4_PLAYBOOK_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!).trim().toUpperCase()}`
+          : /^\/api\/admin\/emergency\/sop\/playbooks\/[^/]+\/(?:drills|executions)$/.test(locator.originalPath) ? row.scope === `J4_PLAYBOOK_${locator.originalPath.endsWith("/drills") ? "DRILL" : "EXECUTE"}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim().toUpperCase()}`
+          : /^\/api\/admin\/emergency\/sop\/playbooks\/[^/]+\/executions\/[^/]+\/(?:cancel|resume|rollback)$/.test(locator.originalPath) ? row.scope === `J4_PLAYBOOK_${locator.originalPath.split("/").at(-1)!.toUpperCase()}:${decodeURIComponent(locator.originalPath.split("/").at(-2)!).trim()}`
           : /^\/api\/admin\/emergency\/geo-block\/countries\/[^/]+$/.test(locator.originalPath) ? row.scope === `J2_COUNTRY:${decodeURIComponent(locator.originalPath.split("/").at(-1)!).toUpperCase()}`
           : /^\/api\/admin\/emergency\/geo-block\/country-lists\/(?:blocked|limited)$/.test(locator.originalPath) ? row.scope === `J2_COUNTRY_LIST:${locator.originalPath.split("/").at(-1)}`
           : /^\/api\/admin\/emergency\/geo-block\/endpoints\/[^/]+$/.test(locator.originalPath) ? row.scope === `J2_ENDPOINT:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`
@@ -117,7 +174,8 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (!canInvestigateECommand(authority)) throw Object.assign(new Error("COMMAND_INVESTIGATION_FORBIDDEN"), { status: 403, backendMessage: "COMMAND_INVESTIGATION_FORBIDDEN" });
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND";
+  const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || /^(?:J4_PLAYBOOK_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(original.scope);
   if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {

@@ -17,7 +17,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
+import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
+import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
@@ -227,6 +228,14 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     syncPending();
     await actions.reloadIContent();
   };
+  const queryOriginal = async (record: I1Command) => {
+    let settled = false;
+    try { settled = fundCommandSettled(await queryI1Command(record)); }
+    catch { /* Receipt failure must not prevent the existing content read. */ }
+    if (settled) { await refreshAfterMutation(record); return; }
+    await actions.reloadIContent();
+    toast("已重新读取；现在的内容不能证明原操作的结果，记录继续保留。");
+  };
   const replay = async (record: I1Command) => {
     try {
       await retryI1Command(record);
@@ -329,7 +338,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     retryBlocked: retrying ? "提交中…" : isRetryExpired(record) ? "已超过 24 小时，不能再重试，只能查询。" : !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
       : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined,
     record,
-  }))} onRetry={restore} onQuery={() => { void actions.reloadIContent().then(() => toast("已重新读取；现在的内容不能证明原操作的结果，记录继续保留。")); }} />;
+  }))} onRetry={restore} onQuery={(record) => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }} />;
   const lockReason = (target: string): string | undefined => {
     if (newMutationReason) return newMutationReason;
     const related = target.startsWith("copy:")

@@ -54,7 +54,8 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
-import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -421,7 +422,7 @@ function describeChanges(changes: Record<string, unknown>) {
 }
 
 /** 收紧（直接生效）的原操作。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。版本可能已变，确认前整页不能再改。 */
-type TightenRecord = PendingMutationRecord & { label: string; changes: D5OwnedChanges; expectedVersion: number; reason: string; operator: string };
+type TightenRecord = PendingMutationRecord & { label: string; changes: D5OwnedChanges; expectedVersion: number; reason: string; operator: string; commandOrigin?: FundCommandOrigin };
 const TIGHTEN_SCOPE = "d5|limits";
 const tightenCommands = createPendingMutationStore<TightenRecord>({
   storageKey: "nexion-admin-d5-withdrawal-commands-v1",
@@ -431,8 +432,17 @@ const tightenCommands = createPendingMutationStore<TightenRecord>({
     && typeof record.reason === "string" && record.reason.length > 0
     && typeof record.operator === "string"
     && Number.isSafeInteger(record.expectedVersion)
-    && !!record.changes && typeof record.changes === "object" && !Array.isArray(record.changes),
+    && !!record.changes && typeof record.changes === "object" && !Array.isArray(record.changes)
+    && isDConfigCommandOrigin(record.commandOrigin, "D5"),
 });
+
+export async function queryD5DirectCommand(record: TightenRecord, evidence?: FundCommandEvidence) {
+  const saved = tightenCommands.list().find(row => row.commandKey === record.commandKey);
+  if (!saved) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
+  const result = await queryDConfigCommand(saved, "D5", evidence);
+  if (result.settled) tightenCommands.forget(saved.fingerprint, saved.commandKey);
+  return result;
+}
 
 function tightenKey() {
   const uuid = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -663,7 +673,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     const retained = tightenCommands.get(TIGHTEN_SCOPE);
     if (retained && !retry) throw new Error(TIGHTEN_LOCK);
     const key = retained ?? tightenKey();
-    tightenCommands.remember(TIGHTEN_SCOPE, key, record);
+    tightenCommands.remember(TIGHTEN_SCOPE, key, { ...record, commandOrigin: retained ? record.commandOrigin : dConfigCommandOrigin("D5") });
     if (!tightenCommands.isDurablyStored(TIGHTEN_SCOPE, key)) {
       if (!retained) tightenCommands.forget(TIGHTEN_SCOPE, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");

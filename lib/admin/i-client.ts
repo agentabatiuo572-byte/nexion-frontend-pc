@@ -7,6 +7,8 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview } from "./i6-learning-contract";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
+import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
 type ApiResult<T> = {
   code?: number;
@@ -23,7 +25,28 @@ function idempotencyKey() {
 // replays the same command instead of creating a second write.
 // 落 sessionStorage 而非内存:刷新页面后重试必须仍是同一命令号,否则后端无法去重。
 // fingerprint = `${method}:${path}:${body}` —— path 带目标对象 id,method + path 区分动作类型。
-type I1Original = { owner: number; method: string; path: string; body: string };
+type I1Original = { owner: number; method: string; path: string; body: string; commandOrigin?: FundCommandOrigin };
+
+/** Validate optional persisted metadata at the same boundary that decodes the saved request. */
+function readICommandOrigin(original: I1Original | undefined, method: string, path: string, owner: number, authority: FundCommandOrigin["readAuthority"]) {
+  const origin = original?.commandOrigin;
+  if (origin && (origin.originalMethod !== method || origin.originalPath !== `/api/admin/content${path}`
+    || origin.originalAdminId !== String(owner) || origin.readAuthority !== authority)) throw new Error("INVESTIGATION_ORIGINAL_LOCATOR_INVALID");
+  return origin;
+}
+
+/** Original server bindings settle the saved command; reading today's content never does. */
+async function queryIContentCommand(command: PendingMutationRecord & { original?: I1Original }, authority: FundCommandOrigin["readAuthority"], evidence?: FundCommandEvidence) {
+  const original = command.original;
+  if (!original) return null;
+  if (original.owner !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  const locator = { commandKey: command.commandKey, originalMethod: original.method as FundCommandOrigin["originalMethod"],
+    originalPath: `/api/admin/content${original.path}`, originalAdminId: String(original.owner) };
+  const receipt = original.commandOrigin ? await checkFundCommand({ ...command, commandOrigin: original.commandOrigin }, evidence)
+    : evidence ? await investigateECommand(command, locator, evidence, authority) : await discoverECommand(locator);
+  if (fundCommandSettled(receipt)) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  return receipt;
+}
 export type I3FormSnapshot = {
   audienceCatalog: NotificationAudienceCatalog;
   deliveryCatalog: NotificationCampaignOverview["deliveryCatalog"];
@@ -135,7 +158,8 @@ function readI6Command(row: IContentPending): I6Command | undefined {
       if (snapshot.stats && (![snapshot.stats.managedKeys, snapshot.stats.totalKeys, snapshot.stats.integrityIssues, snapshot.stats.coursesOnline]
         .every(value => Number.isSafeInteger(value) && value >= 0) || typeof snapshot.stats.weeklyNexPayout !== "string")) return { ...fallback, scope, target, version };
     }
-    return { ...row, original: { owner, method, path, body }, scope, operation, label: labels[operation], target, version, reason: input.reason, input, snapshot };
+    const commandOrigin = parts[2] === "courses" ? undefined : readICommandOrigin(row.i6, method, path, owner, "content_i6_read");
+    return { ...row, original: { owner, method, path, body, commandOrigin }, scope, operation, label: labels[operation], target, version, reason: input.reason, input, snapshot };
   } catch { return fallback; }
 }
 
@@ -213,7 +237,8 @@ export async function retryI6Command(saved: I6Command): Promise<unknown> {
 async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6CommandSnapshot): Promise<unknown> {
   const owner = useAdminAuth.getState().session?.adminId;
   if (!owner) throw new Error("请先登录后再提交。");
-  const i6 = { owner, path, method: init.method!, body: String(init.body), snapshot };
+  const i6 = { owner, path, method: init.method!, body: String(init.body), snapshot,
+    ...(!path.startsWith("/i18n-learning/courses/") ? { commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i6_read") } : {}) };
   const fingerprint = `${i6.method}:${path}:${i6.body}`, commandKey = idempotencyKey();
   const command = readI6Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i6 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
@@ -228,16 +253,23 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   return sendI6Command(command, false);
 }
 
-/** Readback is evidence of current state, never proof that an old command executed. It never releases a direct record. */
-export async function queryI6Command(saved: I6Command) {
+/** I18n receipts can settle originals; course writes retain their existing current-state readback. */
+export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvidence) {
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  let receipt: FundCommandInvestigation | null = null;
+  if (command.scope.startsWith("message:") || command.scope === "rescan") {
+    try {
+      receipt = await queryIContentCommand(command, "content_i6_read", evidence);
+      if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
+    } catch { /* Auxiliary receipt errors must not stop the existing current-content reads. */ }
+  }
   const overview = parseI6Overview(await apiRequest("/i18n-learning/overview"));
   const messageVersions = command.scope.startsWith("message:")
     ? await iContentActions.fetchI6MessageVersions(command.target) : undefined;
   const courseVersions = command.scope.startsWith("course:") && overview.courses.some(course => course.id === command.target)
     ? await iContentActions.fetchI7CourseVersions(command.target) : undefined;
-  return { overview, messageVersions, courseVersions };
+  return { settled: false as const, receipt, overview, messageVersions, courseVersions };
 }
 
 export type I4DraftCommand = PendingMutationRecord & {
@@ -444,7 +476,8 @@ function readI3Command(row: IContentPending): I3Command | undefined {
     const change = action === "schedule" ? String(input.schedule) : action === "send-now" ? "已排期 → 已发送"
       : action === "cancel" ? "已排期 → 已取消" : action === "delete" ? "从列表移除"
         : `${input.tier} · ${JSON.stringify(input.audienceTarget)}`;
-    return { ...row, original: { owner, method, path, body }, snapshot, formSnapshot, action,
+    const commandOrigin = readICommandOrigin(row.i3, method, path, owner, "content_i3_read");
+    return { ...row, original: { owner, method, path, body, commandOrigin }, snapshot, formSnapshot, action,
       name: snapshot?.name ?? String(input.name ?? id), target: id ?? "create", reason: input.reason, change };
   } catch { return fallback; }
 }
@@ -524,12 +557,19 @@ export async function retryI3Command(saved: I3Command): Promise<void> {
   return sendI3Command(command, true);
 }
 
+export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvidence) {
+  const command = pendingI3Commands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  return queryIContentCommand(command, "content_i3_read", evidence);
+}
+
 async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {
   const owner = useAdminAuth.getState().session?.adminId;
   if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const commandKey = idempotencyKey();
-  const i3 = { owner, method: init.method!, path, body: String(init.body), snapshot, formSnapshot };
+  const i3 = { owner, method: init.method!, path, body: String(init.body), snapshot, formSnapshot,
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i3_read") };
   const command = readI3Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i3 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   if (pendingI3Commands().some((row) => !row.original || row.target === command.target)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
@@ -612,7 +652,8 @@ function readI2Command(row: IContentPending): I2Command | undefined {
       } else if (method === "DELETE" && parts.length === 2) action = "删除事件";
       else return fallback;
     } else return fallback;
-    return { ...row, original: { owner, method, path, body }, action, object, target, reason: input.reason, change, cadence };
+    const commandOrigin = readICommandOrigin(row.i2, method, path, owner, "content_i2_read");
+    return { ...row, original: { owner, method, path, body, commandOrigin }, action, object, target, reason: input.reason, change, cadence };
   } catch { return fallback; }
 }
 
@@ -667,11 +708,12 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
     || payload.message !== undefined && typeof payload.message !== "string") {
     throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   }
-  if (!response.ok || payload.code !== 0) {
+  const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
+  if (!response.ok || payload.code !== 0 || unknown) {
     // I2 services return ApiResult.fail(4xx, reason) inside HTTP 200. Preserve that business status for the shared retry verdict.
     const status = response.ok && payload.code >= 400 && payload.code < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
-    if (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code < 500 && !isIdempotencyOutcomeOpen(payload.message)) {
+    if (!unknown && (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code < 500)) {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
@@ -688,12 +730,19 @@ export async function retryI2Command(saved: I2Command): Promise<void> {
   await sendI2Command(command, true);
 }
 
+export async function queryI2Command(saved: I2Command, evidence?: FundCommandEvidence) {
+  const command = pendingI2Commands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  return queryIContentCommand(command, "content_i2_read", evidence);
+}
+
 async function prepareI2Command(path: string, init: RequestInit) {
   const owner = useAdminAuth.getState().session?.adminId;
   if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const commandKey = idempotencyKey();
-  const original = { owner, method: init.method!, path, body: String(init.body) };
+  const original = { owner, method: init.method!, path, body: String(init.body),
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i2_read") };
   const command = readI2Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i2: original });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原结果。");
@@ -757,7 +806,8 @@ function readI1Command(row: IContentPending): I1Command | undefined {
     } else return fallback;
     const from = input.expectedValue ?? input.expectedVersion;
     const to = input.value ?? input.version ?? (tail === "rollback" ? version : undefined);
-    return { ...row, original: { owner, method, path, body }, label, target, permission, reason: input.reason,
+    const commandOrigin = readICommandOrigin(row.i1, method, path, owner, "content_i1_read");
+    return { ...row, original: { owner, method, path, body, commandOrigin }, label, target, permission, reason: input.reason,
       change: from !== undefined || to !== undefined ? `${from ?? "—"} → ${to ?? "—"}` : "" };
   } catch { return fallback; }
 }
@@ -844,12 +894,19 @@ export async function retryI1Command(saved: I1Command): Promise<void> {
   await sendI1Command(command, true);
 }
 
+export async function queryI1Command(saved: I1Command, evidence?: FundCommandEvidence) {
+  const command = pendingI1Commands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  return queryIContentCommand(command, "content_i1_read", evidence);
+}
+
 async function prepareI1Command(path: string, init: RequestInit) {
   const owner = useAdminAuth.getState().session?.adminId;
   if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
   const key = idempotencyKey();
-  const original = { owner, method: init.method!, path, body: String(init.body) };
+  const original = { owner, method: init.method!, path, body: String(init.body),
+    commandOrigin: fundCommandOrigin(init.method as FundCommandOrigin["originalMethod"], `/api/admin/content${path}`, "content_i1_read") };
   const command = readI1Command({ fingerprint, commandKey: key, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i1: original });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");

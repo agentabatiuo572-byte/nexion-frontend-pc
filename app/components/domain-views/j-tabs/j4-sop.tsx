@@ -18,11 +18,12 @@ import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messag
 import {
   createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
   j4ProposalSlot, listJ4LegacyCommands, listJ4PendingCommands, listJ4PendingProposals,
-  queryJ4Proposal, releaseExpiredJ4Proposal, releaseExpiredJLegacyCommand, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
+  queryJ4Command, queryJ4Proposal, releaseExpiredJ4Proposal, releaseExpiredJLegacyCommand, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
   type J4CommandContext, type J4PendingCommand, type J4PendingProposal, type J4PlaybookCreateInput, type Playbook, type SopExecution,
 } from "@/lib/admin/j-client";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { fundCommandSettled } from "@/lib/admin/fund-command-investigation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -226,6 +227,22 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return true;
   }
   const queryOriginal = async (record: { commandKey: string }) => {
+    const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.commandKey === record.commandKey);
+    if (saved) {
+      try {
+        if (fundCommandSettled(await queryJ4Command(saved))) {
+          if (activeConfirmation.current?.slot === saved.fingerprint) {
+            activeConfirmation.current = null;
+            openActionConfirm(null);
+          }
+          setEditor(null);
+          setPrepare(null);
+          syncPending();
+          await actions.reloadJEmergency().catch(() => undefined);
+          return;
+        }
+      } catch { /* No receipt conclusion: retain the original and continue the current-state read. */ }
+    }
     try {
       await actions.reloadJEmergency();
       noteError(record.commandKey, new Error("J4_CURRENT_STATE_ONLY"));
@@ -436,6 +453,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       } else if (isEmergencyOutcomeUncertain(error) || isA2OutcomeUncertainError(error)) {
         // The original modal freezes through getPendingReason; no current data replaces its facts.
         noteError(original?.commandKey ?? listJ4PendingCommands().find((row) => row.fingerprint === slot)?.commandKey ?? getJ4PendingProposal(contextCode(context) ?? "")?.commandKey ?? slot, error);
+        if ((error as { reasonCode?: string }).reasonCode?.startsWith("J4_EXECUTION_PARTIAL:")) await actions.reloadJEmergency().catch(() => undefined);
       } else if (error instanceof Error && /J4_EXECUTION_PARTIAL/.test((error as { reasonCode?: string }).reasonCode ?? "")) {
         await actions.reloadJEmergency().catch(() => undefined);
       }
