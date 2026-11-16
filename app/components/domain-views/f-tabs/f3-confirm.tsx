@@ -7,8 +7,6 @@
  */
 import type { ReactNode } from "react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { operationConfirmPlainMessage } from "@/lib/admin/operation-confirm-error";
 import type { FViewCtx } from "./types";
 import { canRetryF3Proposal, listF3Proposals } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
@@ -99,11 +97,7 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
           if (confirm.done) ctx.toast(confirm.done);
           onClose();
         } catch (error) {
-          // 和 F 域外壳一致：结果未知不算失败，审批单可能已经建了，冠以失败会让人换个办法重做。
-          const uncertain = error instanceof Error && error.name.endsWith("OutcomeUncertainError");
-          const message = uncertain ? operationConfirmPlainMessage(error) : displayAdminError(error);
-          ctx.toast(uncertain ? message : "提交失败 · " + message);
-          // 确认框自己管重试和错误样子，要把错误交回去。
+          // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹轻提示，免得同一句同屏两次。
           throw error;
         }
       }}
