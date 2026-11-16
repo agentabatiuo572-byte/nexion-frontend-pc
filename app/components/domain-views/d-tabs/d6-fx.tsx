@@ -350,7 +350,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const lookupProposal = async (record: PendingFx) => {
     await queryOriginal(record);
     const left = pendingFx.list()[0];
-    if (left?.commandKey === record.commandKey && !fundInvestigationAccess(left).unavailableReason) await checkProposalInvestigation(left).catch(() => undefined);
+    if (left?.commandKey !== record.commandKey || fundInvestigationAccess(left).unavailableReason) return;
+    // 查到原请求的执行记录后，这一行按它写结论；审批单查询留下的「没找到、仍未知」会和结论打架，清掉。
+    if (await checkProposalInvestigation(left).catch(() => undefined)) setPendingNote("");
   };
 
   /** 先填新值再进入共用确认框，方向和按钮始终一致；输入框不随方向跳动。 */
@@ -464,8 +466,11 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
     // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
     const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
+    // 查到记为失败时，「可能已经提交」不再写。
+    const outcome = investigationResults[pending.commandKey];
+    const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
     return { key: pending.commandKey, title: what, record: target, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
-      canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "操作记录与审批和调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
+      canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
         {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
@@ -475,7 +480,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>
-        <p>这次修改可能已经提交，已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
+        <p>{failed ? "" : "这次修改可能已经提交，"}已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
         {expired && pending.proposal && <p>{canAudit ? "请财务负责人到操作记录与审批和下面的调整历史核对这次修改有没有生效。" : "这个账号看不到操作记录，请在下面的调整历史里核对，再交财务负责人处理。"}</p>}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
         {retryRejected && !expired && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
@@ -496,6 +501,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         if (done) await settleDirect(pending, receipt?.originalStatus ?? "SUCCEEDED");
       }} />}
     {pending && closing && pending.proposal && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
+      facts={<Fact k="改动"><Change from={valueText(pending.param, pending.before)} to={valueText(pending.param, pending.after)} /></Fact>}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(pending, evidence); setClosing(false); }} />}
   </>;
 

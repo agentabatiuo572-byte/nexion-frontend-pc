@@ -1431,17 +1431,19 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内按原请求重试不会多建单，也不会重复入账。"
     items={pending.map((record) => {
       const expired = isRetryExpired(record);
+      // 重试被明确拒绝后，和账户操作、用户详情同一个说法：标签换成「重试被拒绝」，这句说可以解除。
+      const refused = retryRejected.includes(record.commandKey);
       return {
         key: record.fingerprint,
         object: record.label,
         createdAt: record.createdAt,
-        tag: expired ? <StatusTag tone="warn" icon={Hourglass}>已过期</StatusTag> : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>,
-        line: record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时，不能再重试。" : "可能已经生效，先查询原结果。",
+        tag: refused ? <StatusTag tone="danger">重试被拒绝</StatusTag> : expired ? <StatusTag tone="warn" icon={Hourglass}>已过期</StatusTag> : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>,
+        line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[record.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
           {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+          {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
         detail: <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。

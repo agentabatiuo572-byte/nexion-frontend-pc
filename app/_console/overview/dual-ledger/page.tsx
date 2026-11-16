@@ -480,7 +480,8 @@ export default function DualLedgerPage() {
     object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
     tag: { tone: "warn", label: record.expiresAt <= Date.now() ? "已过期" : "结果未知" },
     line: record.expiresAt <= Date.now() ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
-    body: `${record.kind === "threshold" ? `红线 ${fmtConfigPct(record.facts.redlinePct)} → ${fmtConfigPct(Number(record.form.redlinePct))} · 健康线 ${fmtConfigPct(record.facts.healthyPct)} → ${fmtConfigPct(Number(record.form.healthyPct))}` : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
+    body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
+      .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
     expired: record.expiresAt <= Date.now(),
     note: record.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询；查到的是现在的值，说明不了原操作成没成。" : "24 小时内只能按原请求重试，不能改值。",
     onRetry: () => recoverWrite(record),

@@ -597,7 +597,9 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const lookupApproval = async () => {
     await queryApproval();
     const original = session ? pendingConfigApproval("D7", session.adminId) : undefined;
-    if (original && !fundInvestigationAccess(original).unavailableReason) await checkProposalInvestigation(original).catch(() => undefined);
+    if (!original || fundInvestigationAccess(original).unavailableReason) return;
+    // 查到原请求的执行记录后，这一行按它写结论；审批单查询留下的「没查到、可以重试」会和结论打架，清掉。
+    if (await checkProposalInvestigation(original).catch(() => undefined)) note(original.commandKey, "");
   };
   const releasePending = () => {
     if (!releasing || releasing.kind !== "direct") return;
@@ -686,6 +688,9 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     const canRetry = canManage && (!record.forceInverted || canForce);
     // 改版前没存出处的记录按当前账号查，queryD7DirectCommand 再核原操作人。
     const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D7") };
+    // 查到记为失败时，「可能已经生效」不再写。
+    const outcome = investigationResults[record.commandKey];
+    const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
     return { key: record.commandKey, title: "参数修改", record: target, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
       actions: <>
         <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === `verify:${record.commandKey}`}
@@ -694,7 +699,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
       </>,
       detail: <>
-        <p>可能已经生效，这组参数有结果前不能再改。{expired ? expiredDirect : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
+        <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? expiredDirect : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
         {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
       </>,
       tech: `原请求编号 ${record.commandKey} ｜ 发出时版本 v${record.expectedVersion} ｜ 理由 ${record.reason} ｜ 拟改值：${valuesSummary(record.values)}${record.forceInverted ? " ｜ 强制保存倒挂价" : ""}` };
