@@ -35,7 +35,7 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
       const succeeded = retry ? !!await retryModelLockCommand(row) : await recoverModelLockCommand(row);
       if (!live.current) return;
       setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.();
-      if (succeeded) { setMessage("原解除已成功，用户仍需在 App 重新校准。"); if (!await load()) setMessage("已取得原解除成功回执，当前安装状态尚未刷新，请读回核对。"); }
+      if (succeeded) { setMessage("原解除已成功，用户仍需在 App 重新校准。"); if (!await load()) setMessage("已取得原解除成功回执，当前安装状态尚未刷新，请查询原结果。"); }
       else setMessage(row.rejection ? "原操作重试已被明确拒绝，原记录继续保留；核实原结果后可解除本页待确认。" : "原解除结果尚未确认，原记录继续保留，请稍后查询。");
     } catch (failure) { if (live.current) { setError(failure instanceof Error ? failure.message : "原解除结果尚未确认，原记录继续保留。"); if (failure instanceof PhoneApiError && [401, 403].includes(failure.status)) { setDenied(true); setTarget(null); setDetail(null); setRelease(null); announcePermissionDenied(); } } }
     finally { mutation.current = false; onBusyChange?.(false); if (live.current) { setBusy(false); setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.(); } }
@@ -56,7 +56,7 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
       finally { mutation.current = false; onBusyChange?.(false); if (live.current) { setBusy(false); setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.(); } }
     }} />}
     {active && !denied && release && <ReleaseModal label={`解除手机机型锁 · ${release.installationId}`} explain={release.rejection} onCancel={() => setRelease(null)} onConfirm={() => {
-      forgetModelLockCommand(release); setRelease(null); setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.(); setError(""); setMessage("已解除本页待确认，后端原操作不受影响，请读回核对。"); void load();
+      forgetModelLockCommand(release); setRelease(null); setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.(); setError(""); setMessage("已解除原操作记录，原操作不受影响，请查询原结果。"); void load();
     }} />}
   </Panel>;
 }
