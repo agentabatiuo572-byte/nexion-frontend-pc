@@ -1505,9 +1505,16 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       return;
     }
     const found = ticketStatus(next, record.target);
-    notePending(record, found
-      ? `查到：这张单现在是「${HIST_LABEL[found.status] ?? found.status}」${found.actor ? `，处理人 ${found.actor}` : ""}，发出时是「待审批」。状态可能是别人处理的，原记录继续保留。`
-      : "查询失败，这张单暂时读不到。原记录继续保留。");
+    if (!found) { notePending(record, "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
+    // 批准、驳回、撤回只能对待审批的单发出；按单现在的状态说这次操作的结果，记录照旧保留。
+    const kind = record.kind as "approve" | "reject" | "withdraw";
+    const verb = DECISION_VERB[kind];
+    const step = retryBlock(record) ? "原记录继续保留。" : "按原请求重试可确认，不会重复执行。";
+    const now = `「${HIST_LABEL[found.status] ?? found.status}」${found.actor ? `，处理人 ${found.actor}` : ""}`;
+    notePending(record, found.status === "pending" ? `查到：这张单还是「待审批」，这次${verb}还没生效。${step}`
+      : found.status === DECISION_STATUS[kind] ? `查到：这张单现在是${now}，和这次${verb}对得上。${step}`
+        : found.status === "expired" ? `查到：这张单已过期，这次${verb}没有生效。原记录继续保留。`
+          : `查到：这张单现在是${now}，不是这次的${verb}，可能是别人处理的。原记录继续保留。`);
   };
 
   /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，后端仍按这张单现在的状态校验。 */
