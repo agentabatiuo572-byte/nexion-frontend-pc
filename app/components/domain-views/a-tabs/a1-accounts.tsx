@@ -144,7 +144,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [pendingOperations, setPendingOperations] = useState<A1Pending[]>([]);
   const reloadPending = () => setPendingOperations(a1PendingCommands.list().filter(r => r.actorId === useAdminAuth.getState().session?.adminId));
   useEffect(() => { setPendingOperations(a1PendingCommands.list().filter(r => r.actorId === currentAdminId)); }, [currentAdminId]);
-  const creationPending = pendingOperations.find(r => r.intent.kind === "create");
+  const creationPendingCount = pendingOperations.filter(r => r.intent.kind === "create").length;
   const restoring = useRef<A1Pending | null>(null);
   const submitting = useRef<{ intent: A1Intent; snapshot: A1Snapshot; reason: string; businessValue?: BusinessFormValue } | null>(null);
   const freshOverview = useRef<A1Overview | null>(null);
@@ -367,7 +367,20 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     requireActor(record.intent, false);
     if (record.request.kind !== "proposal") {
       if (record.request.kind === "permission") await fetchA8PermissionDetail(record.request.input.permissionCode);
-      if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+      const current = await refreshOverview(true);
+      if (!current) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+      requireActor(record.intent, false);
+      if (record.request.kind === "session") {
+        const request = record.request;
+        const account = current.operators.find(item => item.id === request.accountId);
+        // A revoked session ID cannot become active again; a later login has another ID.
+        if (account?.sessionDetails && !account.sessionDetails.some(item => item.sessionId === request.sessionId)) {
+          a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
+          ctx.closeActionConfirm?.();
+          toast("该设备已下线");
+          return true;
+        }
+      }
       toast(displayAdminError(new Error("A1_READBACK_ONLY")));
       return false;
     }
@@ -1134,7 +1147,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       readOnly={overview && !canWriteSomething ? "当前账号只能查看，账号操作都不可用" : undefined}
       actions={<>
         <Button icon={<RefreshCw size={14} />} loading={loading && Boolean(overview)} disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void refreshOverview(true)}>刷新</Button>
-        <Button variant="primary" icon={<UserPlus size={14} />} disabledReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : !canCreateAccount ? "需要超级管理员和账号管理权限" : governanceFrozen && !canPropose ? errorMessage(new Error("A1_OPERATION_FORBIDDEN")) : creationPending ? errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : !roles.length ? "角色目录没有读到" : mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => setNaOpen(true)}>{governanceFrozen && overview ? "新建超级管理员" : "新建账号"}</Button>
+        <Button variant="primary" icon={<UserPlus size={14} />} disabledReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : !canCreateAccount ? "需要超级管理员和账号管理权限" : governanceFrozen && !canPropose ? errorMessage(new Error("A1_OPERATION_FORBIDDEN")) : !roles.length ? "角色目录没有读到" : mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => setNaOpen(true)}>{governanceFrozen && overview ? "新建超级管理员" : "新建账号"}</Button>
       </>} />
   );
 
@@ -1273,8 +1286,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ? { state: "warn" as const, text: "账号统计没有读到，有效的超级管理员人数这部分没有判断", hint: "点「刷新」重读。" }
     : governanceFrozen
       ? { state: "danger" as const, text: `有效的超级管理员只有 ${effectiveSupers} 人，账号管理进入恢复期`, hint: "先新建或提升一位超级管理员，要另一位超级管理员批准。" }
-      : creationPending
-        ? { state: "warn" as const, text: "有 1 个新建账号结果未知，先核对再继续", hint: "在上方点「按原请求重试」，不会建第二个。" }
+      : creationPendingCount
+        ? { state: "warn" as const, text: `有 ${creationPendingCount} 个新建账号结果未知，先核对再继续`, hint: "在上方点「按原请求重试」，不会建第二个。" }
         : unboundOps.length
           ? { state: "warn" as const, text: `${unboundOps.length} 个启用中的账号还没绑定两步验证`, hint: "提醒本人登录后完成绑定。" }
           : effectiveSupers === 2
@@ -1391,7 +1404,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             </div>
           </div>
           <div className="rd-toolbar" data-end="">
-            <Button variant="primary" disabledReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingOperations.some(r => r.intent.kind === "permission") ? errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能登记" : !canRegisterPermission ? "你没有登记权限的权限" : mutatingAction ? "正在提交，请稍候" : !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim() ? "先填权限编码、名称和资源路径" : undefined} onClick={() => submitPermissionRegistration()}>登记权限</Button>
+            <Button variant="primary" disabledReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingFor({ kind: "permission", draft: permissionDraft }) ? errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能登记" : !canRegisterPermission ? "你没有登记权限的权限" : mutatingAction ? "正在提交，请稍候" : !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim() ? "先填权限编码、名称和资源路径" : undefined} onClick={() => submitPermissionRegistration()}>登记权限</Button>
           </div>
         </div>
       </Fold>
@@ -1401,8 +1414,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           roles={roles}
           codesByRole={permissionDiffReady ? permissionCodesByRole : null}
           recoveryMode={governanceFrozen}
-          disabled={!!mutatingAction||Boolean(creationPending)}
-          initialForm={creationPending?.intent.kind === "create" ? creationPending.intent.form : undefined}
+          disabled={!!mutatingAction}
           onClose={() => setNaOpen(false)}
           onSubmit={createAccount}
         />

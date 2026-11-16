@@ -93,7 +93,8 @@ export const a1PendingCommands = {
 };
 
 export function a1IntentSlot(intent: A1Intent) {
-  return intent.kind === "create" ? "create" : intent.kind === "permission" ? `permission:${intent.draft.code.trim()}` : `account:${intent.account.id}`;
+  // All account mutations share expectedVersion and the A2 account target lock.
+  return intent.kind === "create" ? `create:${intent.form.username.trim().toLowerCase()}` : intent.kind === "permission" ? `permission:${intent.draft.code.trim().toLowerCase()}` : `account:${intent.account.id}`;
 }
 export function a1IntentAuthority(intent: A1Intent) {
   return intent.kind === "role" ? "platform_a1_account_role_change"

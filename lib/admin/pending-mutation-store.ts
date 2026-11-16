@@ -204,12 +204,13 @@ export function clearPendingCommandRecords(storage?: Storage, previousOwner?: st
       if (key && isPendingCommandTable(target.getItem(key))) doomed.push(key);
     }
     doomed.forEach((key) => {
-      // F4 originals belong to their maker and must survive account switching.
-      // Keep only this page's evidence; other domains retain their existing cleanup.
+      // Scoped originals belong to their maker and survive account switching.
+      // Each consuming page filters by its recorded actor before query, lock or retry.
       const records = JSON.parse(target.getItem(key)!) as Record<string, Record<string, unknown>>;
       const retained = Object.fromEntries(Object.entries(records).filter(([, row]) => {
         const slot = String(row.fingerprint ?? "");
-        return key === "uvel-f4-ambassador-material-reviews"
+        return key === "nexion-a1-support-avatar-account-create"
+          || key === "uvel-f4-ambassador-material-reviews"
           || key === "nexion-admin-withdrawal-config-proposals" && /^\d+:F4$/.test(slot)
           || key === "nexion-admin-f-commands-v1" && (/^f-config:F\.(?:pool|quota|ambassador|leaderboard)\./.test(slot)
             || /^f4-(?:settle|leaderboard):/.test(slot) || slot === "f-config-batch:F4")
