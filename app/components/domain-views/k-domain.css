@@ -338,6 +338,7 @@
 
 /* 涉及金额按币种成行，各自完整，不省略。 */
 .k2-amount-line { display: block; }
+.k2-raw-note { display: block; margin-top: 2px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 
 /* 处置列：按钮一行排开，不折成两行。 */
 .k2-row-actions { display: inline-flex; flex-wrap: nowrap; justify-content: flex-end; gap: 8px; }
