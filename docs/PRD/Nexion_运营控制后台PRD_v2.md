@@ -626,6 +626,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 #### [E5] 设备管理
 
+2026-11-16 单台恢复/激活（后端 `64f53ce0`，E5-BE-15）：两条业务路径都先要求真实 ownership_status=OWNED，否则 409 DEVICE_OWNERSHIP_NOT_OWNED，状态/审计/事件均不写。runtime 仅清 UNBIND/DEACTIVATE，保留其它系统暂停；状态允许集合、容量、A2 和成功原号回放不变。直接 restore 仍无 PC 调用入口，既有精确转发白名单保留。读取没有独立 ownershipStatus，不能从空名额反推归属或把允许的旧 OWNED/UNBOUND 行一概挡住；执行前归属继续由后端核。正常解绑写 ownership=UNBOUND，不能再承诺批准强制激活会交回原用户；下列旧状态说明和解绑后果中的相应句子由视觉修改，本次仅登记事实。E6 复用相同动作和拒绝分类。新码中文交共用字典负责线。
+
 2026-11-16 App 合法再次激活（后端 `a9658470`，E5-BE-12）：原有 DEACTIVATED → ACTIVE 路径在同一用户、仍 OWNED、非手机、已激活且未停用的范围内，精确清除 runtime 的 `deactivate` 或 `USER_DEACTIVATED`，其余系统暂停保留。没有新增可自激活状态，没有回扫已经 ACTIVE 的历史残留。后台仍使用后端当次 simState/pausedReason，不缓存运营停用身份，不需要另造“用户已恢复”状态；未据此引导所有用户去 App 激活。现有“可以申请强制激活”只描述后台的一种合法途径，不表示唯一途径。真实 App/后台/库验证另列交接步骤。
 
 2026-11-16 后端 9137b6cb / 3f59be7e：激活入口按原始 status 判断，普通激活仅 INVENTORY，强制激活仅 INVENTORY/DEACTIVATED/INACTIVE/UNBOUND；STOPPED 还包含 RECYCLED/RETIRED 以及模拟运行结束，不再仅凭展示状态给强制激活。E5 设备列表和详情的动作采用这组状态集合（E6 用户手机有自己的入口判断，仍按合并后的手机状态给激活和强制激活，待代码侧对齐），已打开确认框也用现有状态拒绝原因阻断不再合法的新请求；SIM_OFF、权限、名额和原请求恢复保持原约束。后端非法状态为 HTTP 409 / code 409 / INVALID_STATE_TRANSITION，首次确定拒绝沿现有分类清记录；审批执行拒绝不当结果未知。UNBOUND 仍可审批强制激活回原用户，不能据本次收紧称解绑不可恢复。“已停用只能强制激活”对回收、退役和 ACTIVE 模拟结束并不成立，状态说明已按原始状态区分（见下一段）。
