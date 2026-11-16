@@ -7,6 +7,9 @@ import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
+import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 
 /**
  * A2 操作记录与审批（列表页·队列模式，PG-44）。三个页签：待审批（默认）、操作记录（含审批结果）、机制设置。
@@ -193,11 +196,47 @@ const F5_STATE_NAME: Record<string, string> = { cooling: "冷却中", unlocked: 
 const F5_STATE_FROM: Record<string, string> = { cooling: "已冻结", unlocked: "冷却中", frozen: "冷却中" };
 const F4_COVERAGE_COPY = "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。";
 
-type FundTicket = { kind: "f4Payout"; period?: string } | { kind: "f4Settle" } | { kind: "f5Status"; eventId?: string; state: string };
-function fundTicket(w: { operationCode?: string | null; obj?: string; after?: string }): FundTicket | undefined {
+type FundTicket = { kind: "f4Payout"; period?: string } | { kind: "f4Settle" } | { kind: "f5Status"; eventId?: string; state: string }
+  | { kind: "fConfig"; key: string; spec?: FConfigSpec }
+  | { kind: "f5Suspension"; userId?: string; kinds: string[]; suspended: boolean }
+  | { kind: "f5Reissue"; ids: string[]; count?: number }
+  | { kind: "f5Reverse"; eventId?: string };
+const F_CONFIG_CODES = ["f_config", "f_ui_config", "f_unilevel_rule"];
+/**
+ * F 域配置、F5 暂停／恢复、补发、冲正：后端的描述器写「F 域配置调整 · 键」「暂停用户奖励 123」+ 对象「123:binary,network」、
+ * 「批量补发奖励 · N 笔」+ 逗号连起来的记录号、「撤销奖励记录 CM-1」（delegatedFDescriptor）。审批结果里没有对象，从动作名里认。
+ */
+function fundTicket(w: { operationCode?: string | null; obj?: string; after?: string; action?: string }): FundTicket | undefined {
+  const action = w.action ?? "";
   if (w.operationCode === "f4_leaderboard_period_payout") return { kind: "f4Payout", period: F4_PERIOD_NAME[/^排行榜 (\S+)$/.exec(w.obj ?? "")?.[1] ?? ""] };
   if (w.operationCode === "f4_pool_settle") return { kind: "f4Settle" };
   if (w.operationCode === "f_commission_status") return { kind: "f5Status", eventId: /^F\.commission\.(CM-\d+)\.status$/.exec(w.obj ?? "")?.[1], state: (w.after ?? "").trim().toLowerCase() };
+  const configKey = /^F 域配置调整 · (.+)$/.exec(action)?.[1];
+  // 同一个 f_ui_config 也承载大使申请（动作名是「批准区域大使申请」），那种不在这里。
+  if (configKey && (!w.operationCode || F_CONFIG_CODES.includes(w.operationCode))) return { kind: "fConfig", key: configKey, spec: fConfigSpec(configKey, w.after) };
+  if (w.operationCode === "f5_commission_suspension") {
+    const [user, kinds] = (w.obj ?? "").split(":");
+    return { kind: "f5Suspension", userId: /^\d+$/.test(user ?? "") ? user : /^(?:暂停|恢复)用户奖励 (\d+)$/.exec(action)?.[1],
+      kinds: kinds ? kinds.split(",").filter(Boolean) : [], suspended: w.after ? w.after === "SUSPENDED" : action.startsWith("暂停") };
+  }
+  if (w.operationCode === "f5_commission_reissue") {
+    const ids = (w.obj ?? "").split(",").map((id) => id.trim()).filter((id) => /^CM-\d+$/.test(id));
+    return { kind: "f5Reissue", ids, count: ids.length || Number(/^批量补发奖励 · (\d+) 笔$/.exec(action)?.[1]) || undefined };
+  }
+  if (w.operationCode === "f5_commission_reverse") return { kind: "f5Reverse", eventId: /^CM-\d+$/.test(w.obj ?? "") ? w.obj : /^撤销奖励记录 (CM-\d+)$/.exec(action)?.[1] };
+  return undefined;
+}
+const REISSUE_INLINE = 5;
+const kindNames = (kinds: readonly string[]) => kinds.map((kind) => F5_KIND_LABELS[kind] ?? "未知奖励类型").join("、");
+const userCode = (id: string) => `U${id.padStart(8, "0")}`;
+/** 兑付覆盖率：批准时后端到底查不查，按各类的回放方法核过的（8cf61c07）。认不出的类型只写页面自己拦的那一步。 */
+const PAGE_COVERAGE_COPY = "页面读到的兑付覆盖率低于红线时不能批准。";
+const F2_POLICY_COVERAGE = "批准时先查兑付覆盖率：读不到或低于红线就不执行，审批单留着待审批。";
+function coverageFacts(w: { operationCode?: string | null; obj?: string; after?: string; action?: string }) {
+  const fund = fundTicket(w);
+  if (fund?.kind === "fConfig" && fund.spec?.loosen) return { lead: `这次${fund.spec.loosen}，会让平台多付钱`, check: "批准时先查兑付覆盖率：低于红线就不改，审批单留着待审批。" };
+  if (fund?.kind === "f5Reissue") return { lead: "补发会给每笔生成一条新的应付奖励", check: "批准时先查兑付覆盖率，读不到或低于红线就不补，审批单留着待审批。" };
+  if (w.operationCode === "f_seven_layer_activation" || w.operationCode === "f_direct_referral_policy") return { lead: undefined, check: F2_POLICY_COVERAGE };
   return undefined;
 }
 
@@ -207,6 +246,9 @@ function fundTicket(w: { operationCode?: string | null; obj?: string; after?: st
  */
 function approvalRefusedText(operationCode: string | null | undefined, cause: unknown) {
   const code = backendCode(cause);
+  // F 域配置（放宽方向）和 F5 补发：后端在改之前拒（OpsTeamService.updateUiConfig 等、F5CommissionService.reissueInternal），单子和锁都不动。
+  if (code === "COVERAGE_BELOW_REDLINE" && F_CONFIG_CODES.includes(operationCode ?? "")) return "兑付覆盖率低于红线，这次批准没有执行，设置没有改；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
+  if (code === "COVERAGE_BELOW_REDLINE" && operationCode === "f5_commission_reissue") return "兑付覆盖率低于红线，这次补发没有执行，一笔都没补；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
   const f4 = operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout";
   if (!f4 && operationCode !== "f_commission_status") return undefined;
   if (code === "COVERAGE_BELOW_REDLINE") return f4 ? "兑付覆盖率低于红线，这次批准没有执行，钱没有动；审批单还是待审批。等覆盖率恢复后再批准，或驳回。"
@@ -347,8 +389,10 @@ function approvalTiming(w: A2OperationRow) {
   if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
   if (w.coverageCheckOnApproval) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
   const fund = fundTicket(w);
-  if (fund && fund.kind !== "f5Status") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
-  if (fund?.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
+  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
+  if (fund?.kind === "f5Status" && fund.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
+  if (w.amplifies && fund?.kind === "fConfig" && fund.spec?.loosen) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
+  if (fund?.kind === "f5Reissue") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才补发；点「驳回」原操作不执行。" };
   if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
   return { tag: "立即生效", impact: "", drawer: "点「批准」确认后立即执行，失败不改原值；点「驳回」原操作不执行。" };
 }
@@ -392,7 +436,7 @@ function middle(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
 }
 
-function actionName(ticket: string | { action: string; obj?: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
+function actionName(ticket: string | { action: string; obj?: string; after?: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
@@ -400,6 +444,10 @@ function actionName(ticket: string | { action: string; obj?: string; operationCo
   const fund = typeof ticket === "string" ? undefined : fundTicket(ticket);
   if (fund?.kind === "f4Payout") return fund.period === "总榜" ? "发放总榜奖励" : fund.period ? `发放${fund.period}奖励` : "发放排行榜奖励";
   if (fund?.kind === "f4Settle") return "提前结算本周团队激励池";
+  if (fund?.kind === "fConfig") return fund.spec?.action ?? "调整未识别的配置项";
+  if (fund?.kind === "f5Suspension") return `${fund.suspended ? "暂停" : "恢复"}用户奖励${fund.userId ? ` · ${userCode(fund.userId)}` : ""}`;
+  if (fund?.kind === "f5Reissue") return fund.count ? `批量补发 ${fund.count} 笔奖励` : "批量补发奖励";
+  if (fund?.kind === "f5Reverse") return `冲正奖励记录${fund.eventId ? ` ${fund.eventId}` : ""}`;
   const action = typeof ticket === "string" ? ticket : ticket.operationCode === "h5_streak_milestone" ? "放宽连签里程碑奖励" : ticket.action;
   const gParam = G_PARAM_ACTION.exec(action);
   if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
@@ -639,11 +687,15 @@ const G_PARAM_NAMES: Record<string, string> = {
 };
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
-function objectText(w: { action: string; obj: string; objDisplayName?: string; operationCode?: string | null }) {
+function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null }) {
   if (w.objDisplayName) return a2ObjectText(w);
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" && fund.period) return fund.period;
   if (fund?.kind === "f5Status" && fund.eventId) return `奖励记录 ${fund.eventId}`;
+  if (fund?.kind === "fConfig") return fund.spec ? `${fund.spec.page} · ${fund.spec.item}` : "未识别的配置项";
+  if (fund?.kind === "f5Suspension") return `用户 ${fund.userId ? userCode(fund.userId) : "—"} · ${fund.kinds.length ? kindNames(fund.kinds) : "所选奖励"}`;
+  if (fund?.kind === "f5Reissue") return fund.ids.length ? `${fund.ids.length} 笔奖励记录` : w.obj;
+  if (fund?.kind === "f5Reverse" && fund.eventId) return `奖励记录 ${fund.eventId}`;
   if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
   return w.obj;
@@ -864,14 +916,21 @@ function fieldPairs(before: string, after: string): Array<[string, string, strin
  * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
  * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
  */
-const changeBefore = (row: { before: string; after?: string; obj?: string; operationCode?: string; ambassadorMaterialProposal?: unknown }) => {
+const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown }) => {
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_FROM[fund.state] ?? "批准时的状态";
+  if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.before);
+  if (fund?.kind === "f5Suspension") return fund.suspended ? "批准时的状态" : "暂停中";
+  if (fund?.kind === "f5Reissue") return "";
+  if (fund?.kind === "f5Reverse") return "批准时的状态";
   return changeBeforeText(row);
 };
-const changeAfter = (row: { after: string; obj?: string; operationCode?: string }) => {
+const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string }) => {
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
+  if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
+  if (fund?.kind === "f5Suspension") return fund.suspended ? "暂停中" : "已恢复";
+  if (fund?.kind === "f5Reissue") return `生成 ${fund.count ?? "—"} 条新记录`;
   return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : row.after;
 };
 const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
@@ -1497,24 +1556,46 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return `这张单现在${found && found.status !== "pending" ? `是${now}` : now}，这次${DECISION_VERB[kind]}没有执行。关闭后看最新状态。`;
   };
 
+  /** 对象一格：认得出的写运营的话，编号等宽跟在后面；配置键这类只给技术同事看的收进「技术信息」。 */
+  const objectNode = (w: A2OperationRow): ReactNode => {
+    const fund = fundTicket(w);
+    if (fund?.kind === "f5Status" && fund.eventId || fund?.kind === "f5Reverse" && fund.eventId) return <>奖励记录 <span data-mono className="a2-code">{fund.eventId}</span></>;
+    if (fund?.kind === "f4Settle") return <>本周团队激励池<span className="rd-note">（按批准那一刻所在的周）</span></>;
+    if (fund?.kind === "f4Payout" && fund.period) return fund.period;
+    if (fund?.kind === "fConfig") return <>{objectText(w)}<Explain label="技术信息" content={`配置键 ${fund.key}${fund.spec?.cron || !fund.spec ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} /></>;
+    if (fund?.kind === "f5Suspension") return <>用户 <span data-mono className="a2-code">{fund.userId ? userCode(fund.userId) : "—"}</span> · {fund.kinds.length ? kindNames(fund.kinds) : "所选奖励"}</>;
+    if (fund?.kind === "f5Reissue" && fund.ids.length) return fund.ids.length <= REISSUE_INLINE
+      ? <>奖励记录 <span data-mono className="a2-code">{fund.ids.join("、")}</span></> : `${fund.ids.length} 笔奖励记录（记录号见下方）`;
+    // 整组政策单（七层结算、好友奖励政策、首次配置等）后端写的对象是 current，不是运营要对照的编号。
+    if (w.obj === "current" && !w.objDisplayName) return "当前设置";
+    return <span data-mono className="a2-code">{objectText(w)}</span>;
+  };
+  /** 补发的记录号超过 5 笔时收进折叠，不拼成一长串（同「完整变更内容」的成组记录）。 */
+  const reissueList = (w: A2OperationRow) => {
+    const fund = fundTicket(w);
+    if (fund?.kind !== "f5Reissue" || fund.ids.length <= REISSUE_INLINE) return null;
+    return <Fold inset title={`这次补发的 ${fund.ids.length} 笔`} summary="申请单里只有记录号">
+      <p className="rd-note" data-mono>{fund.ids.join("、")}</p>
+    </Fold>;
+  };
+
   /** 框里的关键信息：退款单第一行是退款金额（VS-102）。动作名在标题下面，这里不再写「操作」，单号只写一次（建议 8）。 */
   const ticketFacts = (w: A2OperationRow, kind: "approve" | "reject", lead?: ReactNode) => {
     const amount = refundAmount(w);
     const name = kind === "approve" ? "退款金额" : "申请退款金额";
     const timing = kind === "approve" ? g3PolicyExecutionTiming(w) ?? phoneScheduledAt(w) : undefined;
     const fund = fundTicket(w);
+    const objectLead = fund?.kind === "f5Status" && fund.eventId || fund?.kind === "f4Settle" || fund?.kind === "f4Payout" && fund.period
+      || fund?.kind === "fConfig" || fund?.kind === "f5Suspension" || fund?.kind === "f5Reissue" || fund?.kind === "f5Reverse" && fund.eventId;
     return (
       <Facts>
         {amount && (amount.state === "ok"
           ? <Fact k={name} lead tone="role-1" unit="USDT">{orderAmount(amount.amount)}</Fact>
           : <Fact k={name} tone="warn">{refundAmountText(amount)}</Fact>)}
-        {fund?.kind === "f5Status" && fund.eventId
-          ? <Fact k="对象">奖励记录 <span data-mono className="a2-code">{fund.eventId}</span></Fact>
-          : fund?.kind === "f4Settle" ? <Fact k="对象">本周团队激励池<span className="rd-note">（按批准那一刻所在的周）</span></Fact>
-            : fund?.kind === "f4Payout" && fund.period ? <Fact k="对象">{fund.period}</Fact> : null}
+        {objectLead ? <Fact k="对象">{objectNode(w)}</Fact> : null}
         {lead}
         <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
-        {!(fund?.kind === "f5Status" && fund.eventId || fund?.kind === "f4Settle" || fund?.kind === "f4Payout" && fund.period) && <Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact>}
+        {!objectLead && <Fact k="对象">{objectNode(w)}</Fact>}
         <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
         {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
         {timing && <Fact k="生效时间">{timing}</Fact>}
@@ -1526,7 +1607,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
    * F4 派奖、F4 本周结算、F5 奖励状态变更的批准框：先写这一次批的是什么、批准后会怎样，再放这一次的结果，规则收进折叠。
    * 句子和发起人那边（f4-confirmations、f5-audit）同一套说法；没有的事实不写（F5 单子里没有用户和金额）。
    */
-  const fundSpec = (w: A2OperationRow) => {
+  type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string; coverageLead?: string; coverageUnknown?: string;
+    coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; review?: boolean; extra?: ReactNode };
+  const fundSpec = (w: A2OperationRow): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
     if (fund.kind === "f4Payout") return {
@@ -1553,6 +1636,69 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
       facts: undefined,
       lead: <F4SettleFacts />,
+    };
+    if (fund.kind === "fConfig") {
+      const item = fund.spec;
+      const cover = w.amplifies ? coverageFacts(w) : undefined;
+      const change = <Fact k={item ? item.item : "这一项"}><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact>;
+      return {
+        irreversible: false,
+        impact: item?.impact ?? "批准后立即改这项设置，失败不改原值。",
+        completion: cover?.check,
+        check: "核对修改前后的值和发起理由，理由写清依据或工单号。",
+        detail: item?.detail ? `${item.detail}` : item ? "" : "这一项在团队相关页面上找不到，原配置键在「对象」旁的技术信息里。",
+        coverageLead: cover?.lead,
+        coverageUnknown: cover?.lead ? `${cover.lead}，兑付覆盖率暂时读不到` : undefined,
+        coverageCheck: cover?.check,
+        // 一组值（各榜奖池、头衔、门槛）逐项比，放「完整变更内容」；单个值一行写在事实区。
+        facts: item?.json ? undefined : change,
+        lead: undefined,
+        review: !!item?.json,
+      };
+    }
+    if (fund.kind === "f5Suspension") {
+      const friendOnly = fund.kinds.length > 0 && fund.kinds.every((kind) => kind === "direct_purchase" || kind === "direct_device_earning");
+      return {
+        irreversible: false,
+        impact: fund.suspended ? "批准后所选类型里未发完的记录改为已冻结；等价格、待追回的不动。"
+          : friendOnly ? "批准后没有其他冻结条件的好友奖励回到冷却中。" : "批准后只解除暂停，已冻结的记录不会自动解冻。",
+        completion: undefined,
+        check: fund.suspended ? "核对用户和要暂停的类型，理由写清依据。" : "核对用户和奖励类型，理由写清为什么可以恢复。",
+        detail: fund.suspended ? "能撤回：在「奖励记录核对」的暂停名单恢复，也要审批。好友两类以后算出金额的先冻结；其他类型以后不一定停发。" : friendOnly ? "" : "已冻结的要在「奖励记录核对」逐笔解冻。",
+        coverageLead: undefined, coverageUnknown: undefined, coverageCheck: undefined,
+        facts: <><Fact k="状态"><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact>{fund.suspended && <Fact k="能不能撤回">能，恢复也要审批</Fact>}</>,
+        lead: undefined,
+      };
+    }
+    if (fund.kind === "f5Reissue") {
+      const cover = coverageFacts(w);
+      return {
+        irreversible: true,
+        impact: "批准后每笔生成一条新记录，原记录不变。",
+        completion: cover?.check,
+        check: "核对每一笔为什么能补发，理由写清依据。",
+        detail: "有一笔不合格整批都不补，不会只补一部分；好友奖励不能补发。",
+        coverageLead: cover?.lead,
+        coverageUnknown: cover?.lead ? `${cover.lead}，兑付覆盖率暂时读不到` : undefined,
+        coverageCheck: cover?.check,
+        facts: <>
+          <Fact k="补发后">团队购买、团队平衡重新冷却；其余四类马上解锁</Fact>
+          <Fact k="金额">申请单里没有，到「奖励记录核对」按记录号查</Fact>
+          <Fact k="能不能撤回">不能；新记录可以再冲正</Fact>
+        </>,
+        lead: undefined,
+        extra: reissueList(w),
+      };
+    }
+    if (fund.kind === "f5Reverse") return {
+      irreversible: true,
+      impact: "批准后收回这笔奖励，状态改为已冲正。",
+      completion: undefined,
+      check: "核对这笔奖励和发起理由，理由写清收回的原因。",
+      detail: "余额不够时：属于结算组的奖励扣不够的记为待追回；其他奖励整次失败，什么都不改。",
+      coverageLead: undefined, coverageUnknown: undefined, coverageCheck: undefined,
+      facts: <><Fact k="状态"><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact><Fact k="凭证单号">申请单里没有，批准时系统再核对</Fact></>,
+      lead: undefined,
     };
     const from = F5_STATE_FROM[fund.state] ?? "批准时的状态";
     const to = F5_STATE_NAME[fund.state] ?? fund.state;
@@ -1621,6 +1767,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
     const amplifies = w.amplifies && !w.coverageCheckOnApproval;
     const fund = fundSpec(w);
+    const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
     return {
       briefKind,
       title: "批准审批单",
@@ -1632,8 +1779,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       completionCopy: fund?.completion,
       // 派奖、结算：这一次的结果放在关键信息层（和发起人那边同一块），审批单信息放在后面。
       facts: fund?.lead ?? ticketFacts(w, "approve", fund?.facts),
-      content: fund?.lead ? <div className="rd-confirm-facts">{ticketFacts(w, "approve")}</div> : fund?.facts ? undefined : (
+      content: fund?.lead ? <div className="rd-confirm-facts">{ticketFacts(w, "approve")}</div> : fund?.facts && !fund.review ? fund.extra ?? undefined : (
         <div className="rd-stack">
+          {fund?.extra}
           <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
@@ -1643,9 +1791,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact, check },
       amplifies,
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
-      coverage: amplifies ? coverage : undefined,
-      coverageLead: amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
-      coverageCheck: fund?.coverageCheck ?? "批准时系统检查兑付覆盖率，低于红线不执行。",
+      // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
+      coverage: amplifies && !belowRedline ? coverage : undefined,
+      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
+        : amplifies && !coverage ? <span className="a2-coverage-unknown"><AlertTriangle size={14} aria-hidden />{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
+      coverageCheck: fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
+      blockedReason: amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认批准",
@@ -1705,7 +1856,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     action: <>撤回我的申请 · {w.id}</>,
     effect: <>{subject(w)}{immediate}</>,
     detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
-    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact></Facts>,
+    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象">{objectNode(w)}</Fact></Facts>,
     statedBrief: { impact: "改为已撤回，原操作不执行。", check: "理由写清撤回原因或工单号。" },
     amplifies: false,
     reasonMin,
@@ -2233,7 +2384,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     { label: "要做什么", value: actionName(shown) },
-    { label: "对象", value: <span data-mono className="a2-code">{objectText(shown)}</span> },
+    { label: "对象", value: objectNode(shown) },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
@@ -2244,8 +2395,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownOwn = shown ? isMine(shown) : false;
   // F4 派奖和结算、F5 提前解锁：被覆盖率挡住时单子留着，可以等恢复后再批，不只是驳回。
   const shownFund = shown ? fundTicket(shown) : undefined;
+  const shownCover = shown ? coverageFacts(shown) : undefined;
   const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "真实发钱，不能撤销。批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
-    : shownFund?.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率（结算组的奖励只核冷却到没到期），不满足就不放钱，审批单留着待审批。" : undefined;
+    : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率（结算组的奖励只核冷却到没到期），不满足就不放钱，审批单留着待审批。"
+      : shownFund?.kind === "f5Reissue" ? `真实补发，不能撤销。${shownCover?.check ?? ""}`
+        : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
     <Decision
@@ -2303,12 +2457,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次操作结果未知，先到页面上方查询原结果，不要重复处理；单子状态变了也不算查到结果。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shown.coverageCheckOnApproval && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
-          {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">{shownFundCheck ?? "会让平台多付钱：批准时系统检查兑付覆盖率，低于红线不执行。如已跌破红线请驳回并写明原因。"}</Notice>}
+          {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">{shownFundCheck}</Notice>}
           {/* J4 逐步执行，中途失败时前面的步骤不回滚，不能写「失败不改原值」（M3）。 */}
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
           <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          {reissueList(shown)}
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}
@@ -2322,7 +2477,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <JudgmentPoints rows={[
             { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
-            { label: "对象", value: <span className="a2-code">{shownLog.obj}</span> },
+            // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
+            { label: "对象", value: shownLog.obj },
             { label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> },
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
