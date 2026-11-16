@@ -529,8 +529,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const holderRole = hold?.holder ? SUPPORT_SESSION_ROLE_LABEL[hold.holder.role] : "";
   const myRoleLabel = session?.role === "super" || session?.role === "superadmin" ? "超级管理员" : "客服主管";
   const myName = session?.operator || session?.username || "";
-  const canContinueClosed = Boolean(canWriteM3 && selected?.detailReady && selected.status !== "open" && selected.ownerAdminId === adminId);
-  const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueClosed ? "可以前往当前会话继续。" : "");
+  const canContinueConversation = Boolean(!qualificationUnknown && canWriteM3 && !heldByOther && selected?.detailReady
+    && selected.ownerAdminId === adminId && selected.writeState?.currentAssignmentAgentId === String(adminId)
+    && (selected.status !== "open" || selected.writeState.canReply === false));
+  const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueConversation ? "可以前往当前会话继续。" : "");
   // M-26 / M-54: messages are service replies by default. Per SPEC FEAT-M04 and CONTRACTS §5 (owner decision R05),
   // maintenance is counted only through an explicit 联系维护 intent, so it is an opt-in switch, never inferred.
   const intentSource = requestedCustomerId && !selected ? firstDetail : profileDetail?.customerId === selected?.customerId ? profileDetail : null;
@@ -1673,7 +1675,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
           <div className="m3s-chat-actions">
             {(selected || profileCustomerId) && <Button size="sm" className="m3s-profile-toggle" onClick={() => setScreen("profile")}>客户资料</Button>}
-            {canContinueClosed && <Button size="sm" title="重新核对当前专属客服归属，继续当前对话" onClick={continueClosed}>前往当前会话</Button>}
+            {canContinueConversation && <Button size="sm" title="重新核对当前专属客服归属，继续当前对话" onClick={continueClosed}>前往当前会话</Button>}
             {writable && actsAsAdvisor && <Button size="sm" disabled={actionChecking} disabledReason={currentReplyTarget ? "客户还有消息没回，先回复才能标记已解决" : undefined} icon={<CheckIcon size={14} />} onClick={closeConversation}>标记已解决</Button>}
             {(hold?.state === "MINE" || endPending) && !actsAsAdvisor && <Button size="sm" loading={holdEnding} loadingText="正在结束…" icon={<Square size={14} />} onClick={() => void endHold()}>结束会话</Button>}
             {chatMenu.length > 0 && <MoreMenu items={chatMenu} />}
