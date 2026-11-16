@@ -2,11 +2,12 @@
 
 /** CP-46 / VS-109：只读时间线，最新在上；审计主体统一在渲染边界打码。
  * <Timeline entries={[{ id: "1", action: "提交提现", actor: "admin:42", at: "2026-11-06T09:00:00+08:00" }]} />
- * at 传原始时间，组件按业务时区写到分钟「2026-11-06 09:00」，时区只写在第一条有时间的记录上（TX-25）；先后按原始时间排，同一分钟的也不乱。加载、失败由外层 BlockState 处理。
+ * <Timeline precision="second" entries={…} />  用来对时间先后、同一处还有到秒的时间时才传
+ * at 传原始时间，组件按业务时区默认写到分钟「2026-11-06 09:00」，precision="second" 时到秒「2026-11-06 09:00:00」，时区只写在第一条有时间的记录上（TX-25）；先后按原始时间排，同一分钟的也不乱。加载、失败由外层 BlockState 处理。
  */
 import { useSyncExternalStore, type ReactNode } from "react";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
-import { businessZone, formatBusinessTimeCompact, parseBusinessTime, subscribeBusinessZone } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime, subscribeBusinessZone } from "@/lib/admin/business-time";
 
 export interface TimelineEntry {
   id: string;
@@ -20,7 +21,7 @@ export interface TimelineEntry {
   tone?: "danger" | "warn";
 }
 
-export function Timeline({ entries, label = "操作记录" }: { entries: readonly TimelineEntry[]; label?: string }) {
+export function Timeline({ entries, label = "操作记录", precision = "minute" }: { entries: readonly TimelineEntry[]; label?: string; precision?: "minute" | "second" }) {
   const zone = useSyncExternalStore(subscribeBusinessZone, businessZone, businessZone);
   if (!entries.length) return <p className="rd-record-empty">暂无操作记录</p>;
   const sorted = [...entries].sort((a, b) => parseBusinessTime(b.at) - parseBusinessTime(a.at));
@@ -34,7 +35,7 @@ export function Timeline({ entries, label = "操作记录" }: { entries: readonl
             <div className="rd-timeline-event">{entry.action}</div>
             {entry.detail && <div className="rd-timeline-detail">{entry.detail}</div>}
             <div className="rd-record-meta">
-              <time dateTime={entry.at}>{formatBusinessTimeCompact(entry.at)}{entry === zoned && `（${zone.label}）`}</time>
+              <time dateTime={entry.at}>{precision === "second" ? formatBusinessTimeFull(entry.at) : formatBusinessTimeCompact(entry.at)}{entry === zoned && `（${zone.label}）`}</time>
               <span>{maskAuditActor(entry.actor)}</span>
               {entry.role && <span>{entry.role}</span>}
               {entry.ip && <span>{entry.ip}</span>}

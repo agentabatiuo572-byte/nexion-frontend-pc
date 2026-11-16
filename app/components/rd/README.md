@@ -381,7 +381,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 ]} />
 ```
 
-`TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示按业务时区写成 `2026-11-06 09:00`（`Timeline` 带秒），时区只写在第一条有时间的记录上（TX-25、TX-26）；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
+`TimelineEntry` 的 `id`、`action`、`actor`、`at` 必填，`detail`、`role`、`ip`、`tone` 选填。组件复制后排序，不改写输入记录。`RecordListEntry` 的 `id`、`value` 必填，`unit`、`at`、`object`、`status`、`reference` 选填，保持调用方的顺序。两者的 `at` 都传原始时间，显示按业务时区写成 `2026-11-06 09:00`（`Timeline` 传 `precision="second"` 时带秒，只用于要对时间先后、同一处还有到秒时间的地方），时区只写在第一条有时间的记录上（TX-25、TX-26）；不把后端无时区时间当浏览器时间。金额由调用方按业务精度格式化，组件提供 tabular-nums 和单位层级。单号等宽、换行、复制有成功或失败反馈，复制按钮有完整名称。
 
 `DiffField` 的 `hint` 和 `error` 写在新值输入框正下方，和输入框左对齐（Ant Design Form.Item 的 help、extra，VS-103「范围写在输入框下面」）；`note`（改了会怎样）仍在整块下面占整行。原有输入框的 `aria-describedby` 仍连接这些提示。
 
