@@ -62,15 +62,18 @@ export function rejectedStatus({ expired, canRetry, canClose, legacy }: { expire
 /** 资金动账的操作：被拒时单独提醒钱可能已经动过。 */
 const MONEY_SCOPE = /^(?:D2|E4)[_:]|^D3_RESERVE_INJECTION$|^F5_COMMISSION_(?:REVERSE|REISSUE)$/;
 
-/** 展开后的说明：「后台拒绝」不等于没执行；「已处理」里缺逐项结果的几类为什么看不出。旧后端返回 undefined，和原来一样。 */
+/**
+ * 展开后的说明：只补收起那一行没说的事。「后台拒绝」不等于没执行；「已处理」里看不出的原因。
+ * 下一步（重试、核查结案）已经写在收起那一行，按时间换说法，这里不再说。旧后端返回 undefined，和原来一样。
+ */
 export function receiptExplain(receipt: ECommandInvestigation | null | undefined, where = "操作记录与审批") {
   if (!receipt || receipt.businessState === undefined || receipt.originalStatus !== "SUCCEEDED") return undefined;
   const result = eCommandResult(receipt);
-  if (result === "REJECTED") return `${MONEY_SCOPE.test(receipt.scope) ? "被拒不等于资金没有变动" : "被拒不等于什么都没执行"}，先到${where}核对再决定。拒绝原因：24 小时内按原请求重试会原样拿回，不会重复执行；过期后请有调查权限的超级管理员核查结案。`;
+  if (result === "REJECTED") return `${MONEY_SCOPE.test(receipt.scope) ? "被拒不等于资金没有变动" : "被拒不等于什么都没执行"}，先到${where}核对再决定。`;
   if (result !== "BUSINESS_RESULT_UNAVAILABLE") return undefined;
   return receipt.businessState === "SUCCEEDED"
-    ? "这类操作逐项执行，后台只记了整体做完，没记每一项的结果，看不出是否全部做成。按原请求重试会拿回当时的完整结果，不会重复执行；过期后请核查结案。"
-    : "后台记下这次处理完了，但没记成没成。按原请求重试会原样返回当时的结果，不会重复执行；过期后请核查结案。";
+    ? `这类操作逐项执行，后台只记了整体做完，看不出每一项成没成；先到${where}核对再决定。`
+    : `后台只记了处理完，没记成没成；先到${where}核对再决定。`;
 }
 
 /** 原回包的业务码（后端只给数字，不给原因文字），只放技术信息；0 和没有码时不写。接受查询结果或回执本身。 */
@@ -91,9 +94,13 @@ export function receiptFact(receipt: ECommandInvestigation | null | undefined, h
 /** 核查确认是后台拒绝之后的一句：记录解除了，但不等于没执行，也不能重发原来那一次。 */
 export const SETTLED_REJECTED = "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。";
 
-/** 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。 */
-export function recoveryTitle(unknown: number, waiting = 0, ended = 0) {
-  return [unknown ? `${unknown} 项操作结果未知` : "", waiting ? `${waiting} 项${unknown ? "" : "操作"}在等审批` : "", ended ? `${ended} 项${unknown || waiting ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
+/**
+ * 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。
+ * open：查到了后台拒绝、已处理、记为失败，但记录还留着的（还要重试或核查结案），叫「还没结案」，不算结果未知。
+ */
+export function recoveryTitle(unknown: number, waiting = 0, ended = 0, open = 0) {
+  return [unknown ? `${unknown} 项操作结果未知` : "", open ? `${open} 项${unknown ? "" : "操作"}还没结案` : "", waiting ? `${waiting} 项${unknown || open ? "" : "操作"}在等审批` : "",
+    ended ? `${ended} 项${unknown || open || waiting ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
 }
 
 /** 查到已解决的记录：一行轻提示，不占一张卡。 */
