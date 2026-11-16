@@ -125,6 +125,7 @@ export default function RiskRadarPage() {
   const authorities = session?.authorities ?? [];
   const role = session?.role ?? "auditor";
   const canThreshold = authorities.includes("overview_b5_threshold_write");
+  const canReadSubscription = authorities.includes("overview_b5_read");
   const canSubscribe = authorities.includes("overview_b5_subscribe");
   const canTriage = authorities.includes("overview_b5_triage");
   const canCross = useReach();
@@ -195,7 +196,7 @@ export default function RiskRadarPage() {
   }, [inboxReload]);
 
   useEffect(() => {
-    if (!canSubscribe) return;
+    if (!canReadSubscription) return;
     let alive = true;
     setSubscriptionLoading(true);
     setSubscriptionError("");
@@ -218,7 +219,7 @@ export default function RiskRadarPage() {
     return () => {
       alive = false;
     };
-  }, [canSubscribe, subscriptionReload, subscriptionDraftPreserved]);
+  }, [canReadSubscription, subscriptionReload, subscriptionDraftPreserved]);
 
   const yellowPct = Number(yellowInput);
   const redPct = Number(redInput);
@@ -632,9 +633,9 @@ export default function RiskRadarPage() {
       {radar.streamWarning && <span className="b5-muted"> · 实时连接正在重连，先显示最近一次数据</span>}
     </span>
   );
-  const headerActions = (killSwitchLink || canSubscribe) ? (
+  const headerActions = (killSwitchLink || canReadSubscription) ? (
     <>
-      {canSubscribe && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { const saved = pendingWrites.find(record => record.fingerprint === SUBSCRIPTION_SLOT); if (saved) { recoverWrite(saved); return; } setSubscriptionOriginal(null); setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
+      {canReadSubscription && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { const saved = pendingWrites.find(record => record.fingerprint === SUBSCRIPTION_SLOT); if (saved) { recoverWrite(saved); return; } setSubscriptionOriginal(null); setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
       {killSwitchLink}
     </>
   ) : undefined;
@@ -790,7 +791,7 @@ export default function RiskRadarPage() {
         );
       })()}
 
-      {subscriptionOpen && (canSubscribe || subscriptionOriginal) && (() => {
+      {subscriptionOpen && (canReadSubscription || subscriptionOriginal) && (() => {
         // 恢复原请求时，上面是冻结的原内容（重试只发它），现在的订阅读不到放在后面，不挡原内容。
         const subscriptionReadState = (
           <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原请求重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
