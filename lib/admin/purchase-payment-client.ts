@@ -4,8 +4,9 @@ import { isAdminAuthFailure } from "@/lib/admin/auth-session";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { parsePurchasePaymentPolicy, parsePurchasePaymentPage, parsePurchasePaymentRecord, type PurchasePaymentChannelInput } from "@/lib/admin/purchase-payment-contract";
+import { fundCommandOrigin, type FundCommandRecord } from "@/lib/admin/fund-command-investigation";
 
 const base = "/api/admin/finance";
 /** reasonCode 是后端给的拒绝原因码；只有带原因码的 4xx 才算后端明确拒绝（OP-153）。 */
@@ -31,7 +32,7 @@ async function request(path: string, method = "GET", body?: unknown, key?: strin
 export const fetchPurchasePaymentPolicy = async () => parsePurchasePaymentPolicy(await request("/purchase-payment-policy"));
 export const fetchPurchasePaymentRecord = async (intentNo: string) => parsePurchasePaymentRecord(await request(`/purchase-payment-records/${encodeURIComponent(intentNo)}`), intentNo);
 export async function fetchPurchasePaymentRecords(query: { status: string; paymentMethod: string; pageNum: number; pageSize: number }) { return parsePurchasePaymentPage(await request(`/purchase-payment-records?${new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]))}`)); }
-export type PendingPurchasePayment = PendingMutationRecord & { owner: number; scope: string; path: string; method: "PATCH" | "POST"; body: Record<string, unknown> };
+export type PendingPurchasePayment = FundCommandRecord & { owner: number; scope: string; path: string; method: "PATCH" | "POST"; body: Record<string, unknown> };
 const commands = createPendingMutationStore<PendingPurchasePayment>({ storageKey: "nexion-admin-purchase-payment-commands-v1", retainExpiredRecords: true,
   isValidRecord: row => Number.isSafeInteger(row.owner) && typeof row.scope === "string" && typeof row.path === "string" && ["PATCH", "POST"].includes(row.method) && !!row.body });
 export const pendingPurchasePayments = (owner: number) => commands.list().filter(row => row.owner === owner);
@@ -59,7 +60,8 @@ async function submit(owner: number, scope: string, path: string, method: "PATCH
   if (session?.adminId !== owner || !session.authorities.includes(authority) && !["superadmin", "super"].includes(session.role)) throw new Error("登录身份或权限已变化，请重新打开页面。");
   if (pendingPurchasePayments(owner).some(row => row.scope === scope)) throw new Error("上一次操作还没确认结果，请先查看最新结果，确认后再提交。");
   const key = createA2CommandKey("purchase-payment"), fingerprint = `${owner}|${scope}`;
-  commands.remember(fingerprint, key, { owner, scope, path, method, body });
+  commands.remember(fingerprint, key, { owner, scope, path, method, body,
+    commandOrigin: scope === "policy" ? fundCommandOrigin(method, `${base}${path}`, "finance_d1_read") : undefined });
   if (!commands.isDurablyStored(fingerprint, key)) { commands.forget(fingerprint, key); throw new Error("浏览器无法保存这次操作的记录，未提交。请允许浏览器存储后重试。"); }
   return execute(commands.list().find(row => row.commandKey === key)!, false);
 }
