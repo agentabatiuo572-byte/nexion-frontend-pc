@@ -1195,7 +1195,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             }, <>从注册算，过了这个时间新手任务过期。</>))}>调整</Button> : undefined} />
           {/* 任务时长说明文字已停用（后端 d9e2038f：新保存被拒，返回里带 dayOneWindowConfig 只读标记）：只读显示原来的文字，不再给调整入口。 */}
           {windowRaw && <ConfigRow name="任务时长说明文字" value={operatorCopyText(windowRaw)}
-            sub={<StatusTag tone="neutral">已停用，不能再改</StatusTag>}
+            sub={<StatusTag tone="neutral" icon={CircleSlash}>已停用，不能再改</StatusTag>}
             what="以前填的一段展示文字，现在只显示，不能再改。"
             effect="不改变 App 的倒计时和奖励：倒计时按完成期限走，全额时限固定 24 小时。" />}
         </ConfigList>
