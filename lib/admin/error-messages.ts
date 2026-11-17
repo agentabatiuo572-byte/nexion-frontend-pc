@@ -103,7 +103,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   E3_ORIGINAL_PROPOSAL_UNRESOLVED: "这些参数有原申请待核对，请先核对原操作结果；本次没有提交新的修改。",
   E3_PROPOSAL_RETRY_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。",
   E3_PROPOSAL_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。",
-  E3_CONFIG_KEY_RETIRED: "这项设备规则已退役，不能修改；请重新读取当前规则。",
+  E3_CONFIG_KEY_RETIRED: "这项设备设置已停用，不能再提交。之前那次有没有提交成功，请到「操作记录与审批」核对。",
   E3_CONFIG_VALUES_REQUIRED: "成组修改缺少参数，本次没有执行；请重新打开整组修改。",
   E3_VALUE_UNCHANGED: "这些规则和当前值相同，没有执行修改；请重新读取后核对。",
   "Unsupported E3 config key": "这项设备规则不受支持，请重新读取当前规则。",
