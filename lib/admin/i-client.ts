@@ -182,14 +182,6 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
   if (command.original?.owner !== useAdminAuth.getState().session?.adminId) throw new Error("登录身份已变更，请重新打开页面。");
   const permission = i6RetryPermission(command);
   if (permission) throw new Error(permission);
-  if (command.operation === "course-create" || command.operation === "course-draft" && command.snapshot?.course) {
-    validateI6CourseOptions(command.input, command.operation === "course-create" ? undefined : command.snapshot?.course);
-  }
-  if (command.operation === "version-create" && command.snapshot?.course) {
-    validateI6CourseOptions(command.input, command.snapshot.course);
-  } else if (command.operation === "version-draft" && command.snapshot?.courseVersion) {
-    validateI6CourseOptions(command.input, command.snapshot.courseVersion.payload);
-  }
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   let response: Response, payload: ApiResult<unknown>;
@@ -252,6 +244,14 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   const permission = i6RetryPermission(command);
   if (permission) throw new Error(permission);
+  if (command.operation === "course-create" || command.operation === "course-draft" && command.snapshot?.course) {
+    validateI6CourseOptions(command.input, command.operation === "course-create" ? undefined : command.snapshot?.course);
+  }
+  if (command.operation === "version-create" && command.snapshot?.course) {
+    validateI6CourseOptions(command.input, command.snapshot.course);
+  } else if (command.operation === "version-draft" && command.snapshot?.courseVersion) {
+    validateI6CourseOptions(command.input, command.snapshot.courseVersion.payload);
+  }
   if (pendingI6Commands().some(row => row.scope === "unknown" || row.scope === command.scope)) throw new Error("此对象有结果未知的原操作，请先查询原结果。");
   uncertainCommandKeys.remember(fingerprint, commandKey, { i6 });
   if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {

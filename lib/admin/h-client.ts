@@ -683,6 +683,9 @@ export function parseH7Voucher(raw: unknown): H7Voucher {
     }
     pendingApproval = pending as H7PendingApproval;
   }
+  if (row.splittableWriteBlockedReason !== undefined && typeof row.splittableWriteBlockedReason !== "string") {
+    throw new Error("H7_VOUCHER_RESPONSE_INVALID:splittableWriteBlockedReason");
+  }
   return {
     id: row.id, name: row.name, type: row.type, audience: row.audience, status: row.status,
     amountUSD: number("amountUSD", false), percent: number("percent", false),
@@ -697,10 +700,7 @@ export function parseH7Voucher(raw: unknown): H7Voucher {
     stackWithTrial: boolean("stackWithTrial"), stackWithOthers: boolean("stackWithOthers"), splittable: boolean("splittable"),
     splittableConfigurable: row.splittableConfigurable === undefined ? undefined : boolean("splittableConfigurable"),
     splittableRetired: row.splittableRetired === undefined ? undefined : boolean("splittableRetired"),
-    splittableWriteBlockedReason: row.splittableWriteBlockedReason === undefined ? undefined : (() => {
-      if (typeof row.splittableWriteBlockedReason !== "string") throw new Error("H7_VOUCHER_RESPONSE_INVALID:splittableWriteBlockedReason");
-      return row.splittableWriteBlockedReason;
-    })(),
+    splittableWriteBlockedReason: row.splittableWriteBlockedReason,
     pendingApproval,
   };
 }

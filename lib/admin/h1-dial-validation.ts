@@ -1,3 +1,5 @@
+import { formatAdminApiError } from "./error-messages";
+
 /** OpsGrowthService.normalizePhaseDialValue; fee bounds are in the existing percent display unit. */
 export const H1_DIAL_LIMITS = {
   newUserBonusMultiplier: { min: 1, max: 4 },
@@ -24,8 +26,6 @@ export function h1DialIssue(key: string, value: string): string | undefined {
   const limits = H1_DIAL_LIMITS[key as keyof typeof H1_DIAL_LIMITS] ?? H1_DIAL_LIMITS.newUserBonusMultiplier;
   if (key === "withdrawCooldownDays") return Number.isInteger(next) && next >= limits.min && next <= limits.max ? undefined : "到账审查窗口须为 0–90 的整数天；0 天也要人工审查";
   // B4-BE-05 changes new saves only. Keep the shared read minimum at zero for historical snapshots.
-  if (key === "binaryDailyCap") return next > 0 && next <= limits.max ? undefined : formatAdminApiError("H1_BINARY_DAILY_CAP_INVALID");
+  if (key === "binaryDailyCap") return next > 0 && next <= limits.max ? undefined : formatAdminApiError("H1_BINARY_DAILY_CAP_INVALID", "H1_BINARY_DAILY_CAP_INVALID");
   return next >= limits.min && next <= limits.max ? undefined : "加成须为 1–4 倍";
 }
-import { formatAdminApiError } from "./error-messages";
-

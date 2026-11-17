@@ -50,13 +50,17 @@ export function requireH7Actor(adminId: number, write: boolean): AdminSession {
 }
 
 export function createH7VoucherMutation(session: AdminSession, context: H7DirectContext, voucher: H7Voucher, reason: string): H7DirectMutation {
-  if (context.kind !== "status") validateH7VoucherWrite(voucher);
+  const voucherInput: Omit<H7Voucher, "splittable"> & { splittable?: boolean } = { ...voucher };
+  // An unchanged historical toggle is not a new configuration write. The original
+  // context still retains its value; retries send these exact prepared bytes.
+  if (context.kind === "update" && voucher.splittable === context.voucher.splittable) delete voucherInput.splittable;
+  if (context.kind !== "status") validateH7VoucherWrite(voucherInput);
   const status = context.kind === "status" ? context.voucher.status === "active" ? "paused" : "active" : undefined;
   const label = context.kind === "create" ? "新增" : context.kind === "update" ? "编辑" : status === "active" ? "投放" : "暂停";
   const operator = session.operator || session.username;
   const body = context.kind === "status"
     ? { key: "status", value: status, reason, operator, expectedValue: String(context.voucher.version) }
-    : { ...voucher, ...(context.kind === "update" ? { expectedVersion: context.voucher.version } : {}), reason, operator };
+    : { ...voucherInput, ...(context.kind === "update" ? { expectedVersion: context.voucher.version } : {}), reason, operator };
   const now = Date.now();
   return {
     fingerprint: `${session.adminId}:${voucher.id}`, commandKey: createA2CommandKey(`h7-${context.kind}`),
