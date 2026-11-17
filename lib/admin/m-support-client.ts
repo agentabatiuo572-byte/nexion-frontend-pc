@@ -140,7 +140,7 @@ export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { 
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
   return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";
 }
-export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; businessCode?: number | null };
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null };
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
   kind: "TEXT" | "IMAGE" | "SKU" | "LINK";
@@ -535,7 +535,9 @@ export const supportClient = {
     if (result) malformed("command.result.code");
     const businessCode = row.businessCode;
     if (businessCode != null && (!Number.isInteger(businessCode) || Number(businessCode) < -2147483648 || Number(businessCode) > 2147483647)) malformed("command.businessCode");
-    return { status, businessCode: businessCode as number | null | undefined };
+    const businessReason = row.businessReason == null ? row.businessReason as null | undefined
+      : enumValue(row.businessReason, ["M3_TIMEOUT_POLICY_STALE", "M3_TIMEOUT_POLICY_UNCHANGED"] as const, "command.businessReason");
+    return { status, businessCode: businessCode as number | null | undefined, businessReason };
   }, { signal }),
   attachmentPolicy: (signal?: AbortSignal) => request("/conversations/attachments/policy", (value): SupportAttachmentPolicy => {
     const row = object(value, "attachment.policy");
