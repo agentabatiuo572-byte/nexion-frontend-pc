@@ -29,11 +29,12 @@ function price(value: number) {
  * 提交、查询原审批单和按原操作重试统一走 executeG3MarketChange，保留原确认框：
  * 标题写动作和对象，标题下是生效方式，事实区随填写的新值说清生效方式、对兑换的影响和后端检查什么。
  */
-export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, newWriteBlockedReason, onClose, onDone, onStateChange, onFailure, onBusy, onCurrent }: {
+export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, newWriteBlockedReason, getReadBlockedReason, onClose, onDone, onStateChange, onFailure, onBusy, onCurrent }: {
   session: AdminSession; epoch: number; requested: G3ReviewedChange;
-  /** 以下只用于显示：今天是第几天、七天计划、后端在当前环境是否允许人工改价（界面已备好，PC 现在读不到环境）。 */
+  /** 今天是第几天、七天计划与读取提供的环境能力。 */
   today?: number; frames: G3CurveFrame[]; tuning: "unknown" | "forbidden" | "allowed";
   newWriteBlockedReason?: string;
+  getReadBlockedReason: (change: G3MarketChange, value?: string, forceApproval?: boolean) => string | undefined;
   onClose: () => void; onDone: (result: G3CommandResult) => void;
   onStateChange: () => void; onFailure: (change: G3MarketChange, failure: unknown) => void; onBusy: (busy: boolean) => void;
   onCurrent: (overview: G3ReadOverview) => void;
@@ -108,7 +109,8 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   }
   async function execute(mode: "submit" | "lookup" | "retry", reason = "", value = "") {
     ensureOwner(mode !== "lookup");
-    if (mode !== "lookup" && newWriteBlockedReason && !pendingG3MarketCommand(session.adminId, requested)) throw new Error(newWriteBlockedReason);
+    const blocked = newWriteBlockedReason ?? getReadBlockedReason(change, value, forceApproval);
+    if (mode !== "lookup" && blocked && !pendingG3MarketCommand(session.adminId, requested)) throw new Error(blocked);
     const recovered = !!pendingG3MarketCommand(session.adminId, requested);
     onBusy(true);
     try {
@@ -157,7 +159,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       : change.action === "current-price"
         ? { impact: "发布后新的兑换按新价成交，已完成的兑换不变；七天计划不变，下次推进时恢复计划价。", check: "核对新价和生效方式，理由写清为什么要应急改价。" }
         : { impact: "只改自动推进的时间，现价不当场变；同一个 UTC 日期最多推进一次。", check: "核对时刻和时区，理由写清依据或工单号。" }}
-    blockedReason={!pending ? newWriteBlockedReason ?? (tuning === "forbidden" && restricted ? G3_TUNING_FORBIDDEN : undefined) : undefined}
+    blockedReason={!pending ? newWriteBlockedReason ?? getReadBlockedReason(change) ?? (tuning === "forbidden" && restricted ? G3_TUNING_FORBIDDEN : undefined) : undefined}
     confirmLabel="确认修改"
     detail={<>
       当前 {before}{unit}。{schedule ? <>填写运行时间与时区，例如「每日 08:30 Asia/Shanghai 自动推进」（北京时间 08:30）。未填时区按 UTC。</> : <>提高走审批，降低直接保存。</>}
@@ -187,7 +189,8 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
         return {
           heading: initialSchedule ? "首次配置要另一位超级管理员（需有审批批准权限）批准" : "要另一位超级管理员（需有审批批准权限）批准后生效",
           completionCopy: timing,
-          disabledReason: !/^[0-9a-f]{64}$/.test(change.expectedRevision) ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。" : undefined,
+          disabledReason: (!pending ? getReadBlockedReason(change, value, forceApproval) : undefined)
+            ?? (!/^[0-9a-f]{64}$/.test(change.expectedRevision) ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。" : undefined),
         };
       },
       recover: () => execute("lookup"),

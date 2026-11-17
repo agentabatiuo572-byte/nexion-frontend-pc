@@ -34,6 +34,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import {
   executeG3MarketChange, canWriteG3MarketChange, g3MarketCommandExpired, g3MarketFailureCode, g3MarketObjectKey,
+  g3MarketObjectReadState, g3MarketReadBlockedCode,
   G3_ENVIRONMENT_FORBIDDEN, listG3MarketCommands, pendingG3MarketCommand, refreshG3MarketApprovals,
   type G3MarketChange, type G3DirectChange, type G3ReviewedChange, type G3PendingCommand,
 } from "@/lib/admin/g3-market-command";
@@ -62,7 +63,7 @@ type G3ConfirmReq = {
   success: string;
 };
 
-/** Object states use saved original commands or actual backend rejection signals. */
+/** Object states use the authoritative GET when present, plus saved unknown commands. */
 export type G3ObjectState = { kind: "unknown" | "approval" | "locked"; detail: string; verification: "current" | "last-observation"; observedAt: number };
 const TUNING_RULE = "开发环境以外，后端拒绝人工改上涨概率和直接改现价：直接保存、提交审批和批准都会被拒。";
 const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pumpProbability: "上涨概率", volatilityPct: "波动幅度" };
@@ -351,6 +352,7 @@ function G3MarketEditor() {
   const [verifiedApprovals, setVerifiedApprovals] = useState<Record<string, number>>({});
   const [observedStates, setObservedStates] = useState<Partial<Record<string, G3ObjectState>>>({});
   const [MANUAL_TUNING, setManualTuning] = useState<"unknown" | "forbidden" | "allowed">("unknown");
+  const [overview, setOverviewState] = useState<G3Overview | null>(null);
   const commandRows = useMemo(() => session ? listG3MarketCommands(session.adminId) : [], [session, commandVersion]);
   const OBJECT_STATES = { ...observedStates };
   for (const row of commandRows) {
@@ -358,6 +360,18 @@ function G3MarketEditor() {
       ? { kind: "approval", detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。`,
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
       : { kind: "unknown", detail: "提交时没收到确定结果，可能已经生效。打开这一项查询原结果，24 小时内也可以按原请求重试。", verification: "current", observedAt: row.createdAt };
+  }
+  for (const state of overview?.objectStates ?? []) {
+    const keys = state.target.type === "nex_market_curve"
+      ? Array.from({ length: 7 }, (_, day) => (["targetPrice", "pumpProbability", "volatilityPct"] as const).map(field => `weekly:D${day + 1}:${field}`)).flat()
+      : [state.target.id];
+    for (const key of keys) {
+      if (commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key)) continue;
+      if (!state.locked) delete OBJECT_STATES[key];
+      else OBJECT_STATES[key] = { kind: state.pendingApproval ? "approval" : "locked",
+        detail: state.pendingOperationId ? `原审批单 ${state.pendingOperationId} 在等另一位超级管理员批准，批准前不生效。` : messageOf(new Error("OBJECT_LOCKED_BY_A2")),
+        verification: "current", observedAt: Date.now() };
+    }
   }
   const hasRecovery = (key: string) => commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key);
   const syncCommands = useCallback(() => setCommandVersion(version => version + 1), []);
@@ -400,10 +414,12 @@ function G3MarketEditor() {
     : field === "pumpProbability"
       ? "finprod_g3_curve_pump_prob_write"
       : "finprod_g3_write";
-  const [overview, setOverviewState] = useState<G3Overview | null>(null);
   const [gaps, setGaps] = useState<G3ReadGaps>(NO_GAPS);
   // 写入和确认框回来的是完整读数（价格、覆盖率都读到了）；页面自己的读取可能缺其中一样或两样。
-  const showRead = useCallback((read: G3ReadOverview) => { const next = readBaseline(read); setOverviewState(next.overview); setGaps(next.gaps); }, []);
+  const showRead = useCallback((read: G3ReadOverview) => {
+    const next = readBaseline(read); setOverviewState(next.overview); setGaps(next.gaps);
+    if (read.environmentWriteState) setManualTuning(read.environmentWriteState.manualTuningAllowedByEnvironment ? "allowed" : "forbidden");
+  }, []);
   // 按原请求恢复成功后，手里的概览已经不是那次写入之后的状态；重读成功之前不能拿它当新修改的基准。
   const [rereadPending, setRereadPending] = useState(false);
   const [history, setHistory] = useState<G3HistoryPoint[]>([]);
@@ -581,9 +597,14 @@ function G3MarketEditor() {
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
   const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
     : rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined;
+  const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
+    const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
+    return code === G3_ENVIRONMENT_FORBIDDEN ? G3_TUNING_FORBIDDEN : code ? messageOf(new Error(code)) : undefined;
+  };
   const confirmationPanels = <>
       {marketConfirm && session && <G3MarketConfirm session={session} epoch={epoch} requested={marketConfirm}
         newWriteBlockedReason={newWriteBlockedReason}
+        getReadBlockedReason={readBlockedReason}
         today={overview?.activeDayIndex} frames={overview?.frames ?? (marketConfirm.action === "curve-cell"
           ? marketConfirm.expectedFrames.map(frame => ({ dayIndex: frame.dayIndex, targetPrice: Number(frame.targetPrice), pumpProbability: Number(frame.pumpProbability), volatilityPct: Number(frame.volatilityPct) })) : [])} tuning={MANUAL_TUNING}
         onStateChange={syncCommands} onFailure={onCommandFailure} onBusy={value => setBusyKey(value ? "market-confirm" : null)}
@@ -614,7 +635,7 @@ function G3MarketEditor() {
           completionCopy={confirm.completionCopy}
           confirmLabel={confirm.confirmLabel}
           reasonPlaceholder={confirm.reasonPlaceholder}
-          blockedReason={!pendingDirect ? newWriteBlockedReason : undefined}
+          blockedReason={!pendingDirect ? newWriteBlockedReason ?? readBlockedReason(confirm.change, confirm.value) : undefined}
           getPendingReason={() => session ? pendingG3MarketCommand(session.adminId, confirm.change)?.reason : undefined}
           inlineApproval={{
             pending: !!pendingDirect,
@@ -632,7 +653,8 @@ function G3MarketEditor() {
           onClose={() => openActionConfirm(null)}
           onConfirm={async (reason, newValue) => {
             if (!session) return;
-            if (newWriteBlockedReason && !pendingG3MarketCommand(session.adminId, confirm.change)) throw new Error(newWriteBlockedReason);
+            const blocked = newWriteBlockedReason ?? readBlockedReason(confirm.change, newValue ?? confirm.value);
+            if (blocked && !pendingG3MarketCommand(session.adminId, confirm.change)) throw new Error(blocked);
             try {
               await mutate(confirm.change, async () => {
                 const result = await executeG3MarketChange(session, confirm.change, newValue ?? pendingDirect?.value ?? confirm.value ?? "", reason);
@@ -689,7 +711,9 @@ function G3MarketEditor() {
   const busyReason = busy ? "正在保存上一项，稍候再改" : undefined;
   // 原操作重试成功后在重读：新修改先不可用，带着原因；还有原记录的那一项照样能打开。
   const rereadReason = rereadPending ? "原操作已完成，正在重新读取 UVT 价格；读取成功后再改" : undefined;
-  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason);
+  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason
+    ?? (!key.startsWith("weekly:") && key !== "currentPrice" && g3MarketObjectReadState(overview, key)?.locked
+      ? messageOf(new Error("OBJECT_LOCKED_BY_A2")) : undefined));
   const paused = overview.overrides.paused;
   const pendingPause = commandRows.find(row => !row.ticketId && g3MarketObjectKey(row.change) === "paused");
   const pauseActionResumes = pendingPause ? pendingPause.value === "false" : paused;
