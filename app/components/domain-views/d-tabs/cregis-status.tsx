@@ -506,25 +506,25 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
-      return `重新读取：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
+      return `读取结果：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
     }
     const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
     setData(next);
     const network = new URLSearchParams(record.path.split("?")[1] ?? "").get("network") as FundsNetwork | null;
     if (record.path.startsWith("/cregis/addresses/provision") && network) {
       const pool = poolOf(next, network);
-      return pool?.available ? `重新读取：${network} 可分配 ${pool.unassigned}、待创建 ${pool.queued ?? 0}、总计 ${pool.total}。看待创建有没有多出这一个，再到操作记录确认。` : `重新读取：${network} 地址池暂时读不到。记录继续保留。`;
+      return pool?.available ? `读取结果：${network} 可分配 ${pool.unassigned}、待创建 ${pool.queued ?? 0}、总计 ${pool.total}。看待创建有没有多出这一个，再到操作记录确认。` : `读取结果：${network} 地址池暂时读不到。记录继续保留。`;
     }
     if (record.path.startsWith("/cregis/reconciliation/run") && network) {
       const run = next.reconcileRuns?.find(row => rowNetwork(row) === network);
-      return run ? `重新读取：${network} 最近一次完整对账「${cregisStateText(run.status)}」，${time(run.completedAt ?? run.startedAt)}（${zoneLabel()}）。${kept}` : `重新读取：${network} 还没有完整对账记录。${kept}`;
+      return run ? `读取结果：${network} 最近一次完整对账「${cregisStateText(run.status)}」，${time(run.completedAt ?? run.startedAt)}（${zoneLabel()}）。${kept}` : `读取结果：${network} 还没有完整对账记录。${kept}`;
     }
     if (record.path.startsWith("/cregis/review-cases")) {
       let cid = "";
       try { cid = String((JSON.parse(record.body) as { cid?: unknown }).cid ?? ""); } catch { /* 复核决定的 body 里没有 cid */ }
       const id = record.path.split("/")[3];
       const found = (next.reviewCases ?? []).find(row => (id && id !== "" && String(row.id) === id) || (cid && String(row.cid) === cid));
-      return found ? `重新读取：复核工单 #${text(found.id)} 现在是「${cregisStateText(found.status)}」。${kept}` : `重新读取：待复核列表里没有这条工单，可能已经处理完。请到操作记录确认。`;
+      return found ? `读取结果：复核工单 #${text(found.id)} 现在是「${cregisStateText(found.status)}」。${kept}` : `读取结果：待复核列表里没有这条工单，可能已经处理完。请到操作记录确认。`;
     }
     return `收款状态已重新读取。${kept}`;
   };
@@ -568,7 +568,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       setData(next);
       const gateNow = next.provisionGate;
       const nets = (next.networkSwitches ?? []).map(row => `${text(row.network)} 充值${row.depositEnabled ? "开" : "关"}`).join("、");
-      return `重新读取：${nets || "各网充值开关读不到"}，链上出款${gateNow?.payoutEnabled ? "开" : "关"}，待复核提案 ${next.switchCases?.filter(row => row.status === "MAKER_DONE").length ?? 0} 个。状态可能是别人改的，记录继续保留。`;
+      return `读取结果：${nets || "各网充值开关读不到"}，链上出款${gateNow?.payoutEnabled ? "开" : "关"}，待复核提案 ${next.switchCases?.filter(row => row.status === "MAKER_DONE").length ?? 0} 个。状态可能是别人改的，记录继续保留。`;
     },
     auditHref: "/platform/audit?domain=D",
     retry: async () => { setBusy(true); try { await retryD1PendingCregisSwitchCommand(record.commandKey); } finally { setBusy(false); } },
