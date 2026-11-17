@@ -22,6 +22,24 @@ import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
 import { FReleaseButton } from "./f-release";
 import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
 import type { FViewCtx } from "./types";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import { fConfigSpec } from "../a-tabs/a2-f-config";
+
+/**
+ * 没有确认快照的旧申请：原记录存的是「动作 · 配置键」和「键=值」，显示时换成页面上这一项的名字（和 A2 同一张表），
+ * 配置键不上屏；记录里存的值不改。整批改动按「名字 原值 → 新值」逐项写。
+ */
+function legacyF4(spec: ProposeSpec) {
+  const keys = spec.obj.split(",");
+  const items = keys.map((key) => fConfigSpec(key)?.item);
+  const pairs = (text: string) => new Map(text.split(" / ").flatMap((part) => { const m = /^(F\.[\w.]+)=(.*)$/.exec(part.trim()); return m ? [[m[1], m[2]] as const] : []; }));
+  if (keys.length === 1) return { name: fConfigSpec(keys[0], spec.after)?.action ?? spec.action.replace(/ · F\.[\w.]+$/, ""), change: `${spec.before} → ${spec.after}` };
+  const before = pairs(spec.before), after = pairs(spec.after);
+  return {
+    name: items.every(Boolean) ? `调整${items.join("、")}` : `调整 ${keys.length} 项设置`,
+    change: keys.map((key, index) => `${items[index] ?? "其他设置"} ${before.get(key) ?? "—"} → ${after.get(key) ?? "—"}`).join("；"),
+  };
+}
 
 type Section = "pool" | "quota" | "board";
 const SECTIONS: readonly Section[] = ["pool", "quota", "board"];
@@ -46,20 +64,22 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     const original = record.original;
     const spec = record.kind === "proposal" ? record.original.spec : undefined;
     const confirm = original.f4Snapshot ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const legacy = spec && legacyF4(spec);
     const snapshot = original.f4Snapshot;
     const form = confirm?.businessForm;
     const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${decimalText(value)} USDT` : value;
     const change = form?.kind === "multi-field" && snapshot?.businessValue
       ? form.fields.filter(field => snapshot.businessValue![field.key] !== field.current).map(field => `${field.label} ${amount(field.key, field.current ?? "")} → ${amount(field.key, snapshot.businessValue![field.key])}`).join("；")
       : confirm?.edit ? `${confirm.edit.current ?? "—"} → ${snapshot?.value ?? spec?.after ?? "—"}`
-        : confirm?.statedBrief?.impact ?? (spec ? `${spec.before} → ${spec.after}` : "—");
+        : confirm?.statedBrief?.impact ?? legacy?.change ?? "—";
     return {
       key: original.commandKey,
       line: ctx.f4QueryNotes[original.commandKey],
-      name: confirm?.name ?? spec?.action ?? "调整区域大使申请规则",
+      name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
       pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
+      expired: isRetryExpired(original),
       tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
         : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
           : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={record.kind === "proposal"
@@ -73,7 +93,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
         }}>查询原结果</Button>
         {record.kind === "proposal" && isRetryExpired(record.original) && record.original.absent && !record.original.ticket && !record.original.received
-          && <FReleaseButton label={confirm?.name ?? spec?.action ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
+          && <FReleaseButton label={confirm?.name ?? legacy?.name ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
       </>,
     };
   });
@@ -84,6 +104,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       name: `${record.input.stage === "BUSINESS" ? "业务" : "财务"}核验 · 申请 #${record.applicationId}`,
       change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: record.createdAt,
+      expired: isRetryExpired(record),
       tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，只能查询，不能再重试。">已过期</StatusTag> : unknownTag("direct"),
       actions: application
         ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
