@@ -1922,7 +1922,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const k1 = k1TicketView(w);
     const k1Spec: FundSpec | undefined = k1 && (k1.kind === "release" ? {
       irreversible: true,
-      impact: "批准后这笔收益放行，能否提现还看账户组和其他提现条件。",
+      impact: "批准后这笔收益放行，钱不再锁住。",
       check: "核对用户、净额、来源和发起理由，理由写清依据或工单号。",
       detail: "只放行这一笔，不另发奖、不生成提现单。",
       coverageLead: "批准后这笔钱不再锁住",
