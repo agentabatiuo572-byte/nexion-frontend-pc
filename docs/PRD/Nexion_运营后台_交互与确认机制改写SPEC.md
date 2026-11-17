@@ -104,6 +104,8 @@
 
 确认框汇总校验原因时，统一处理每项末尾句号，列表末尾只显示一个句号；字段旁完整反馈不改写。没有覆盖率数值时，放大方向只保留一句提交时检查覆盖率的说明，不重复宣称实时检查（BUG-258 Follow-up 1）。
 
+确认框提交失败（含结果未知）的提示仍放在正文最上方；正文长、已滚到下面时，提示出现后正文自动滚回让它露出来，已在视野里就不动（2026-11-17，hd-rewalk-b）。
+
 ### 2.2a 业务弹窗契约
 
 弹窗内容必须匹配触发按钮的业务语义。改角色必须有角色选择;改授权必须有权限 diff;编辑文案必须有 en/zh 或对应业务字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。纯展示弹窗必须显式 readonly,不得出现可执行主按钮。
