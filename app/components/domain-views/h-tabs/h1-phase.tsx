@@ -60,7 +60,7 @@ import {
   type H1Phases,
   type H1RhythmOverview
 } from "@/lib/admin/h-client";
-import { h1DialIssue } from "@/lib/admin/h1-dial-validation";
+import { H1_DIAL_LIMITS, h1DialIssue } from "@/lib/admin/h1-dial-validation";
 import {
   beginH1,
   executeH1,
@@ -94,8 +94,7 @@ const DIALS = [
     key: "newUserBonusMultiplier",
     label: "新用户加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.newUserBonusMultiplier,
     what: "本月新用户相关奖励的倍率",
     effect: "调高是放大，要审批；已结算的奖励不保证补发。"
   },
@@ -103,8 +102,7 @@ const DIALS = [
     key: "inviteRewardMultiplier",
     label: "邀请加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.inviteRewardMultiplier,
     what: "本月邀请奖励的倍率",
     effect: "调高是放大，要审批；已结算的邀请奖励不重算。"
   },
@@ -112,8 +110,7 @@ const DIALS = [
     key: "reinvestMultiplier",
     label: "锁定计划加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.reinvestMultiplier,
     what: "参与锁定计划使用的阶段倍率",
     effect: "调高是放大，要审批；已参与的仍按参与时的倍率。"
   },
@@ -121,8 +118,7 @@ const DIALS = [
     key: "withdrawCooldownDays",
     label: "到账审查窗口",
     unit: "天",
-    min: 0,
-    max: 90,
+    ...H1_DIAL_LIMITS.withdrawCooldownDays,
     what: "提现从提交起要等多少天才能放行",
     effect: "调低是放大，要审批。越南盾提现每笔都等；USDT 在加强合规审查开着，且超过 1,000\u00a0USDT 时才等；风控延迟、冻结的也按它算。"
   },
@@ -130,8 +126,7 @@ const DIALS = [
     key: "binaryDailyCap",
     label: "团队平衡奖励每日上限",
     unit: "USD",
-    min: 0,
-    max: 50000,
+    ...H1_DIAL_LIMITS.binaryDailyCap,
     what: "每日团队平衡奖励的封顶额",
     effect: "调高是放大，要审批；可以设成 0。"
   },
@@ -139,8 +134,7 @@ const DIALS = [
     key: "questBonusMultiplier",
     label: "任务加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.questBonusMultiplier,
     what: "本月任务奖励的倍率",
     effect: "调高是放大，要审批；已结算的任务奖励不重算。"
   },
@@ -148,8 +142,7 @@ const DIALS = [
     key: "complianceHoldEnabled",
     label: "加强合规审查",
     unit: "",
-    min: 0,
-    max: 1,
+    ...H1_DIAL_LIMITS.complianceHoldEnabled,
     what: "USDT 提现加强人工审查的开关",
     effect: "关闭是放大，要审批。开启时 USDT 三个网络的提现每笔人工审查，本金超过 1,000 USDT 的还要等到账审查窗口；关闭后也不保证自动通过。"
   },

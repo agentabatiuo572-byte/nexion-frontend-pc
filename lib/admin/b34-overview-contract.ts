@@ -1,3 +1,4 @@
+import { H1_DIAL_LIMITS } from "./h1-dial-validation";
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 import { isConsecutiveDayLabels, isIncreasingIsoWeekLabels } from "./time-series-contract.ts";
 
@@ -303,14 +304,15 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
     if (key === "complianceHoldEnabled") {
       boolean(dial.currentValue, "B4", `dials.${index}.currentValue`);
     } else if (["newUserBonusMultiplier", "inviteRewardMultiplier", "reinvestMultiplier", "questBonusMultiplier"].includes(key)) {
-      numberInRange(dial.currentValue, 0.01, 10, "B4", `dials.${index}.currentValue`);
+      const limits = H1_DIAL_LIMITS[key as keyof typeof H1_DIAL_LIMITS];
+      numberInRange(dial.currentValue, limits.min, limits.max, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawPenaltyFeeRate") {
-      numberInRange(dial.currentValue, 0, 100, "B4", `dials.${index}.currentValue`);
+      numberInRange(dial.currentValue, H1_DIAL_LIMITS.withdrawPenaltyFeeRate.min, H1_DIAL_LIMITS.withdrawPenaltyFeeRate.max, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawCooldownDays") {
       const days = nonNegativeInteger(dial.currentValue, "B4", `dials.${index}.currentValue`);
-      if (days > 365) invalid("B4", `dials.${index}.currentValue`);
+      if (days > H1_DIAL_LIMITS.withdrawCooldownDays.max) invalid("B4", `dials.${index}.currentValue`);
     } else if (key === "binaryDailyCap") {
-      numberInRange(dial.currentValue, 0, 1_000_000_000, "B4", `dials.${index}.currentValue`);
+      numberInRange(dial.currentValue, H1_DIAL_LIMITS.binaryDailyCap.min, H1_DIAL_LIMITS.binaryDailyCap.max, "B4", `dials.${index}.currentValue`);
     }
     if (typeof dial.unit !== "string") invalid("B4", `dials.${index}.unit`);
     boolean(dial.v1Active, "B4", `dials.${index}.v1Active`);
