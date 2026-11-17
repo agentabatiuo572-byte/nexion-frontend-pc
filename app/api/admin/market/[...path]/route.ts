@@ -38,6 +38,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "nex" && parts[1] === "curve" && parts[2] === "history") {
     return "/api/admin/market/nex/curve/history";
   }
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "curve" && parts[2] === "schedule-execution") {
+    return "/api/admin/market/nex/curve/schedule-execution";
+  }
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "repurchase") {
     return "/api/admin/market/nex/repurchase";
   }

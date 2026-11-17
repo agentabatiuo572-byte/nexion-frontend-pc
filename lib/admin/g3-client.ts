@@ -152,12 +152,87 @@ export interface G3EnvironmentWriteState {
 
 /** The read contract includes legitimate unknowns; the existing editor requires complete baselines. */
 export type G3ReadOverview = Omit<G3Overview, "currentPrice" | "overrides" | "coverage"> & {
+  scheduleExecutionRead?: G3ScheduleExecutionRead;
   currentPrice: number | null;
   overrides: Omit<G3Overrides, "currentPrice"> & { currentPrice: number | null };
   coverage: Omit<G3Coverage, "coverageRatio" | "redlinePct" | "redlineBreached"> & {
     coverageRatio: number | null; redlinePct: number | null; redlineBreached: boolean | null;
   };
 };
+
+export type G3ScheduleAttempt = {
+  auditId: number | string;
+  attemptedAt: string;
+  completedAt: string;
+  recordedAt: string;
+  runDate: string | null;
+  outcome: "ADVANCED" | "PRICE_CHANGED" | "NO_CHANGE" | "SKIPPED" | "COMPLETED" | "FAILED";
+  reasonCode: string | null;
+  claimed: boolean | null;
+  frameApplied: boolean | null;
+  frameAdvanced: boolean | null;
+  priceChanged: boolean | null;
+  beforeDayIndex: number | null;
+  afterDayIndex: number | null;
+  beforePrice: string | null;
+  afterPrice: string | null;
+  storage: "nx_audit_log" | "nx_audit_log_archive";
+};
+
+export type G3ScheduleExecution = {
+  available: boolean;
+  execution: { runDate: string; status: string; createdAt: string; updatedAt: string } | null;
+  lastAttempt: G3ScheduleAttempt | null;
+  lastAdvance: G3ScheduleAttempt | null;
+  executionOutcomeKnown: boolean;
+  priceChangeKnown: boolean;
+  lastAttemptKnown: boolean;
+  attemptSelection: "LATEST_PERSISTED_COMPLETION_BY_AUDIT_ID";
+  attemptTimestampBasis: "UTC_APPLICATION_CLOCK";
+  executionTimestampBasis: "DB_SESSION_TIME";
+  runDateBasis: "UTC_CLAIM_DAY";
+  reason: string | null;
+  sources: string[];
+};
+export type G3ScheduleExecutionRead = { state: "ready"; data: G3ScheduleExecution }
+  | { state: "unsupported" } | { state: "unavailable"; error: string };
+
+function normalizeScheduleExecution(value: unknown): G3ScheduleExecution {
+  const invalid = () => { throw new Error("G3_SCHEDULE_EXECUTION_RESPONSE_INVALID"); };
+  const object = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+    return value as Record<string, unknown>;
+  };
+  const text = (value: unknown) => typeof value === "string" && value.length > 0;
+  const date = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const stamp = (value: unknown) => text(value) && Number.isFinite(Date.parse(value as string));
+  const instant = (value: unknown) => stamp(value) && /Z$/.test(value as string);
+  const attempt = (value: unknown): G3ScheduleAttempt | null => {
+    if (value === null) return null;
+    const row = object(value);
+    if (!(typeof row.auditId === "number" && Number.isSafeInteger(row.auditId) && row.auditId > 0
+        || typeof row.auditId === "string" && /^[1-9]\d*$/.test(row.auditId))
+      || !instant(row.attemptedAt) || !instant(row.completedAt) || !stamp(row.recordedAt)
+      || row.runDate !== null && !date(row.runDate)
+      || !["ADVANCED", "PRICE_CHANGED", "NO_CHANGE", "SKIPPED", "COMPLETED", "FAILED"].includes(row.outcome as string)
+      || row.reasonCode !== null && !text(row.reasonCode)
+      || [row.claimed, row.frameApplied, row.frameAdvanced, row.priceChanged].some(cell => cell !== null && typeof cell !== "boolean")
+      || [row.beforeDayIndex, row.afterDayIndex].some(cell => cell !== null && !(typeof cell === "number" && Number.isInteger(cell) && cell >= 0 && cell <= 6))
+      || [row.beforePrice, row.afterPrice].some(cell => cell !== null && !(typeof cell === "string" && /^\d+(?:\.\d+)?$/.test(cell) && /[1-9]/.test(cell)))
+      || !["nx_audit_log", "nx_audit_log_archive"].includes(row.storage as string)) return invalid();
+    return row as unknown as G3ScheduleAttempt;
+  };
+  const row = object(value);
+  if ([row.available, row.executionOutcomeKnown, row.priceChangeKnown, row.lastAttemptKnown].some(cell => typeof cell !== "boolean")
+    || row.attemptSelection !== "LATEST_PERSISTED_COMPLETION_BY_AUDIT_ID" || row.attemptTimestampBasis !== "UTC_APPLICATION_CLOCK"
+    || row.executionTimestampBasis !== "DB_SESSION_TIME" || row.runDateBasis !== "UTC_CLAIM_DAY"
+    || row.reason !== null && !text(row.reason) || !Array.isArray(row.sources) || !row.sources.every(text)) return invalid();
+  if (row.execution !== null) {
+    const execution = object(row.execution);
+    if (!date(execution.runDate) || !text(execution.status) || !stamp(execution.createdAt) || !stamp(execution.updatedAt)) return invalid();
+  }
+  return { ...row, lastAttempt: attempt(row.lastAttempt), lastAdvance: attempt(row.lastAdvance) } as G3ScheduleExecution;
+}
 export class G3MarketReadUnavailableError extends Error {
   readonly reason: "PRICE_UNAVAILABLE" | "COVERAGE_UNAVAILABLE" | "PRICE_AND_COVERAGE_UNAVAILABLE";
   constructor(readonly overview: G3ReadOverview) {
@@ -447,7 +522,20 @@ export function serializeG3Frames(frames: G3CurveFrame[]) {
 
 /** Read-only consumers can display available facts and each unknown independently. */
 export async function fetchG3MarketReadOverview(): Promise<G3ReadOverview> {
-  return normalizeReadOverview(await g3Request<BackendOverview>("/nex/curve"));
+  const [overview, scheduleExecutionRead] = await Promise.all([
+    g3Request<BackendOverview>("/nex/curve"), fetchG3MarketScheduleExecution(),
+  ]);
+  return { ...normalizeReadOverview(overview), scheduleExecutionRead };
+}
+
+/** Independent read: old servers keep their overview, and failures never become no execution. */
+export async function fetchG3MarketScheduleExecution(): Promise<G3ScheduleExecutionRead> {
+  try {
+    return { state: "ready", data: normalizeScheduleExecution(await g3Request<unknown>("/nex/curve/schedule-execution")) };
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return { state: "unsupported" };
+    return { state: "unavailable", error: formatAdminApiError(error instanceof Error ? error.message : undefined, "G3_SCHEDULE_EXECUTION_READ_FAILED") };
+  }
 }
 
 export async function fetchG3MarketOverview() {
