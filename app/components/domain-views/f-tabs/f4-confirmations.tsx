@@ -2,7 +2,7 @@
 
 /** Existing F4 confirmation markup, shared by new edits and saved originals. */
 import { Facts, Fact, KeyValues, StatusTag } from "@/app/components/rd";
-import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
+import { f4WeeklyCronIssue, validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
@@ -155,6 +155,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.pool.settleCron": {
       spec = { briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式",
+                validate: value => { const issue = f4WeeklyCronIssue(value); return issue ? displayAdminError(new Error(issue)) : undefined; },
                 hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
                 preview: (value) => `这样写是：${describeSettleCron(value, data.settlementZone) ?? "自定义时间，页面读不出，系统按原文执行"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? (value.trim() ? "每周自动结算一次，结算刚结束的那一周。" : "")}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
