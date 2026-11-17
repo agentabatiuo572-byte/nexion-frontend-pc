@@ -200,6 +200,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const feeGap = unconfiguredFees ? `手续费 ${unconfiguredFees} 种未配置` : "";
   const retryAll = <Button size="sm" onClick={() => setReloadTick(value => value + 1)}>重试</Button>;
   const alertLead = usdtAlert ? "USDT 有未解除的紧急或严重告警" : "";
+  const openAreas = D1_SECTIONS.filter(key => activity[key].length > 0).map(key => `「${D1_SECTION_NAME[key]}」`).join("、");
   const conclusion = failed.length === D1_SECTIONS.length
     ? <Conclusion state="danger" explain={explain} action={retryAll}>读取失败，不知道有没有要处理的事</Conclusion>
     : loadingCount && !usdtAlert
@@ -212,7 +213,10 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
           ? <Conclusion state="danger" explain={explain} hint="到「USDT 充值」看告警。">{alertLead}{failed.length ? `；${failedNames}读取失败` : ""}</Conclusion>
           : failed.length
             ? <Conclusion state="warn" explain={explain} action={retryAll}>{failedNames}读取失败，不知道这部分有没有要处理的事</Conclusion>
-            : <Conclusion state="neutral" explain={explain} hint={feeGap || undefined}>没有发现要处理的事</Conclusion>;
+            : openAreas
+              // 结果未知等没做完的操作不加进订单的数；这句只说订单和对账，没做完的在哪一区另说（细节在下面的提示和那一区里）。
+              ? <Conclusion state="warn" explain={explain} hint={feeGap || undefined}>订单和对账没有待办；{openAreas}还有操作没做完</Conclusion>
+              : <Conclusion state="neutral" explain={explain} hint={feeGap || undefined}>订单和对账没有待办</Conclusion>;
   const crossRows = D1_SECTIONS.filter(key => key !== section && activity[key].length > 0).map(key => ({ section: key, lines: activity[key] }));
 
   return <>
