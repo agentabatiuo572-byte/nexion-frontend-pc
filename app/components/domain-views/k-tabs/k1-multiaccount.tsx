@@ -60,6 +60,8 @@ function isK1PendingCommand(record: PendingMutationRecord): record is K1PendingC
   return value.kind !== undefined && K1_PENDING_KINDS.includes(value.kind) && typeof value.target === "string" && value.target.length > 0
     && typeof value.reason === "string" && typeof value.label === "string"
     && value.fingerprint === `${value.kind}|${value.target}`
+    && (value.kind !== "param" && value.kind !== "release-param" || typeof value.operator === "string" && !!value.operator
+      && typeof value.value === "string" && (value.kind !== "release-param" || Number.isSafeInteger(value.version) && value.version! >= 0))
     && (value.kind !== "registration-param" || isOriginalCommandOrigin(value.commandOrigin, a3ParamCommandRoutes.K1));
 }
 /** 全部写操作共用一张表，刷新后还能用同一命令号按原内容重试。 */
@@ -254,10 +256,12 @@ function releaseRange(key: string, limits: { min: number; max: number }, params:
   return { min: limits.min, max: limits.max, problem: "", next: "" };
 }
 
-/** 待批单占着对象时也回 409，这时不是别人改过，文字按 OP-64 走错误码。 */
+/** 审批要求和待批对象锁都不是版本冲突，保留后端的具体拒绝原因。 */
 function isVersionConflict(error: unknown) {
-  const { status, backendMessage } = error as { status?: number; backendMessage?: string };
-  return status === 409 && backendMessage !== "OBJECT_LOCKED_BY_A2" && backendMessage !== "OBJECT_ALREADY_PENDING";
+  const { status, reasonCode, backendMessage } = error as { status?: number; reasonCode?: string; backendMessage?: string };
+  const code = reasonCode ?? backendMessage;
+  return code === "K1_RELEASE_PARAM_STALE" || status === 409 && code !== "OBJECT_LOCKED_BY_A2" && code !== "OBJECT_ALREADY_PENDING"
+    && code !== "K1_RELEASE_PARAM_APPROVAL_REQUIRED";
 }
 
 const paramHelpRows = (help: K1ParamHelp | undefined, fallback: string): ExplainRow[] => [
@@ -791,7 +795,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         return sendCommand(record, (key) => ctx.actions.updateK1ClusterReviewNote(target, record.version!, reason, key),
           () => reloadAfter(`${target} 复审备注已保存`, `${target} 复审备注已保存，但页面刷新失败；请点「重试」核对`));
       case "param":
-        return sendCommand(record, (key) => ctx.actions.updateK1Param(target, record.value!, reason, key),
+        return sendCommand(record, (key) => ctx.actions.updateK1Param(target, record.value!, reason, key, record.operator),
           () => reloadAfter(`${name}已更新为 ${record.value}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
       case "registration-param":
         return sendCommand(record, (key) => updateK1RegistrationParam({ key: target, value: record.expectedValue! }, record.value!, reason, key),
@@ -800,7 +804,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const effect = target === "duplicateAccountPendingFrom" ? "后续新增收益按新审核起点处理"
           : target === "duplicateAccountFreezeFrom" ? "后续新增收益和当前提现资格按新锁定起点判断"
             : "当前仅人工放行，不影响收益和提现";
-        return sendCommand(record, (key) => ctx.actions.updateK1ReleaseParam(target, record.value!, record.version!, reason, key),
+        return sendCommand(record, (key) => ctx.actions.updateK1ReleaseParam(target, record.value!, record.version!, reason, key, record.operator),
           () => reloadAfter(`${name}已保存，${effect}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
       }
       case "entry":
@@ -1151,7 +1155,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     void submitDraft("release", { kind: "release-param", target: releaseDraft.param.key, label: `调整收益审核规则 · ${name}`, name, operator, reason: releaseDraft.reason.trim(), value: releaseDraft.value, version: releaseDraft.param.version }, () => setReleaseDraft(null));
   };
 
-  /** 别人改过：读最新值，新值留着，理由清空，在最新版本上重新核对（OP-97）。读到之前冲突一直留着，保存不可用。 */
+  /** 别人改过：读最新值，保留新值和理由，在最新版本上重新核对。读到之前冲突一直留着，保存不可用。 */
   const readLatestReleaseParam = async () => {
     if (!releaseDraft) return;
     setReadingLatest(true);
@@ -1161,7 +1165,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         setDraftError({ text: "读取最新失败，稍后再试。已填写的内容还在。", conflict: true });
         return;
       }
-      setReleaseDraft((current) => current ? { ...current, param: latest, reason: "" } : current);
+      setReleaseDraft((current) => current ? { ...current, param: latest } : current);
       setDraftError(null);
     } catch {
       setDraftError({ text: "读取最新失败，稍后再试。已填写的内容还在。", conflict: true });

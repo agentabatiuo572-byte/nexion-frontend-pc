@@ -1450,6 +1450,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K1_CLUSTER_FLAG_REQUIRED: "这组账户要先在「多账户风险排查」标记为可疑，才能提交冻结。",
   K1_RELEASE_PARAM_RELATION_INVALID: "审核起点须为 2–50 的整数，且不大于锁定起点。请在「规则与名单」核对这两项后再保存。",
   K1_RELEASE_VERSION_CONFLICT: "这项刚被别人改过。",
+  K1_RELEASE_PARAM_APPROVAL_REQUIRED: "放宽收益审核规则需要另一位超级管理员批准后才生效。",
+  K1_RELEASE_PARAM_STALE: "收益审核规则已变化，本次没有生效；请读取最新规则后重新核对。",
   K1_COVERAGE_UNAVAILABLE: "兑付覆盖率暂时无法可靠读取，本次操作被阻止；请到「资金与应付款」核对数据来源。",
   K3_COVERAGE_UNAVAILABLE: "兑付覆盖率现在读不到，这次没有保存，规则保持原样。资金数据恢复后再提交。",
   K1_RELEASE_CONFIG_UNAVAILABLE: "收益审核规则暂时无法读取；请联系风控值班人员核对配置，有结果未知的原记录时先到操作记录核查。",
