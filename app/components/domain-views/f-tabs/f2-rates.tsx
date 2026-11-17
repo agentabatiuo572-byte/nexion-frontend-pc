@@ -46,9 +46,6 @@ const SETTLEMENT_FALLBACK: Record<string, string> = {
   "F.unilevel.depthGateRank": "没配或不是 V0–V8 时，结算会停",
 };
 
-/** B02：只有委托权限的账号这两项会被后端拒（单项权限映射缺失，已提后端）；按层暂停的整批已按单项同权核。 */
-const DELEGATED_GAP = "只有委托权限、没有全权审批写入的账号提交会被后端拒绝：后端还没给这一项配发起权限（已提后端修）。";
-
 const pendingFor = (ctx: FViewCtx, key: string) => ctx.f2PendingFor(key);
 
 const PARTNER_TIERS = [
@@ -264,11 +261,11 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 
 const PARAM_HELP: Record<string, { what: string; effect: string; hint?: string; note?: string; perm: string; unit?: string }> = {
   "F.unilevel.depthGate": { what: "从哪一层起要看上级的等级", effect: "比如选 L3：L3–L7 的上级要到解锁等级才拿得到；可以选 L1", perm: "团队奖励规则" },
-  "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: "团队奖励规则", note: DELEGATED_GAP },
+  "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: "团队奖励规则" },
   "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。后端不检查下限是否不大于上限", perm: "团队奖励规则" },
   "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。后端不检查下限是否不大于上限", perm: "团队奖励规则" },
   "F.promo.weekMultiplier": { what: "活动周每层奖励再乘的倍数，含 L1", effect: "调高平台多付钱", hint: "1–3 倍", perm: "团队奖励比例", unit: "倍" },
-  "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: "团队奖励规则", note: DELEGATED_GAP, unit: "%" },
+  "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: "团队奖励规则", unit: "%" },
 };
 
 function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: ReturnType<typeof useF2Model>; paramKey: string; openConfirm: Open; shown?: ReactNode }) {
@@ -420,7 +417,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
         { key: "diamond", label: "钻石档门槛(USD)", current: ptDiamond, inputKind: "number", min: 0, showDiff: true },
       ],
     },
-    content: <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">后端只存这四个数，还没有按门槛给伙伴开通权益的执行（已提后端）。不影响任何奖励比例。</Notice>,
+    content: <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">只存这四个数，不按门槛开通权益，也不改奖励比例。</Notice>,
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "后端检查四个都是数字且逐档不降低。" },
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
     completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
@@ -445,7 +442,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
       explain="四档门槛不改任何奖励比例。目前只保存门槛，不会自动开通权益。"
       actions={m.canPolicyAmplify ? <Button size="sm" disabledReason={pending ? "等另一位管理员批准" : ctx.f2WriteBlocked("f-config:F.partner.tiers")} onClick={open}>{partnerConfigured ? "调整权益门槛" : "配置权益门槛"}</Button> : undefined}>
       <div className="f2-stack">
-      <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">后端还没有按门槛给伙伴开通权益的执行，已提后端；权益说明里的名称是规划，不代表已经提供。</Notice>
+      <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">权益说明里的名称只是规划，不代表已经开通。</Notice>
       {partnerConfigured ? <ol className="f2-tiers" aria-label="合作伙伴四档门槛">
         {PARTNER_TIERS.map((tier, index) => <li key={tier.key}>
           <span className="f2-tier-name"><span className="f2-tier-step" data-step={index + 1} aria-hidden />{tier.name}</span>
