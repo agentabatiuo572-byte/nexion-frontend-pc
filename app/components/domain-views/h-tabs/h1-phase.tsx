@@ -66,6 +66,8 @@ import {
   executeH1,
   h1Pending,
   h1Request,
+  h1ClosureConclusions,
+  investigateH1Request,
   lookupH1,
   lookupH1Direct,
   type H1Pending,
@@ -86,8 +88,9 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
-import { eCommandResult } from "@/lib/admin/e-command-investigation";
-import { receiptExplain, receiptFact, SETTLED_REJECTED } from "../recovery-panel";
+import { canInvestigateECommand, eCommandResult, eCommandSettled, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { receiptExplain, receiptFact, rejectedStatus, SETTLED_REJECTED } from "../recovery-panel";
+import { FAILED_EXPIRED_LINE, FundClosureModal, UNKNOWN_LINE } from "../fund-command-check";
 
 const DIALS = [
   {
@@ -270,6 +273,11 @@ export default function H1Phase({ ctx,
       boolean>>({});
   const [deepLink,
     setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
+  /** 上次「查询原结果」查到的每个原请求（按原请求编号），决定这一步给不给「核查结案」。 */
+  const [receipts,
+    setReceipts] = useState<Record<string, ECommandInvestigation | null>>({});
+  const [closing,
+    setClosing] = useState<{ row: H1Pending; request: H1Request } | null>(null);
   const sequence = useRef(0);
   const syncPending = useCallback(() => setPending(h1Pending.list().filter((row) => row.actorId === session?.adminId)),
     [session?.adminId]);
@@ -385,6 +393,49 @@ export default function H1Phase({ ctx,
   const permitted = (row: H1Pending) => !(row.requests.some((request) => request.kind === "proposal") && !canPropose) && (row.scope === "rhythm" || row.scope.startsWith("dial:") ? canWrite : row.scope.startsWith("control:") ? canControl && canPropose : canRevoke && canPropose);
   const canQueryOriginal = (row: H1Pending) => row.requests.some(request => request.kind === "proposal")
     ? !row.scope.startsWith("override:") || canRevoke && canPropose : canRead;
+  const canClose = canInvestigateECommand("growth_h1_read");
+  /** 直接修改里能核查结案的步骤：查过、还没确认、结论列表不空（h1ClosureConclusions）。审批类没有。 */
+  const closableSteps = (row: H1Pending) => canClose ? row.requests.filter((request) => request.kind === "patch" && !request.acknowledged
+    && request.commandKey in receipts && h1ClosureConclusions(receipts[request.commandKey], isRetryExpired(row)).length > 0) : [];
+  /** 每一步现在的样子。排在没确认的那一步后面的，一定还没发出（逐步发，前一步确认了才发下一步）。 */
+  const stepState = (row: H1Pending, index: number) => {
+    const request = row.requests[index];
+    if (request.acknowledged) return "已保存";
+    if (row.requests.slice(0, index).some((item) => !item.acknowledged)) return "还没发出";
+    if (!(request.commandKey in receipts)) return row.state === "rejected" ? row.retryRejected ? "重试被拒绝" : "未保存" : "结果未知";
+    const receipt = receipts[request.commandKey];
+    const result = eCommandResult(receipt);
+    return !receipt ? "查不到记录" : result === "PROCESSING" ? "还在执行" : receipt.originalStatus === "FAILED" ? "记为失败"
+      : result === "REJECTED" ? "后台拒绝" : result === "BUSINESS_RESULT_UNAVAILABLE" ? "已处理，看不出成没成" : "结果未知";
+  };
+  /** 查过的行一直留着自己的结论：第一条没确认、查过的那一步。 */
+  const rowLine = (row: H1Pending) => {
+    const request = row.requests.find((item) => !item.acknowledged);
+    if (!request || request.kind !== "patch" || !(request.commandKey in receipts)) return undefined;
+    return `${row.requests.length > 1 ? `${request.label}：` : ""}${stepLine(row, receipts[request.commandKey])}`;
+  };
+  /** 查到原结果后，标题换成查到的结果（全站同一套标签）；没查过的照旧。 */
+  const rowTitle = (row: H1Pending) => {
+    const index = row.requests.findIndex((item) => !item.acknowledged);
+    if (index < 0 || row.requests[index].kind !== "patch" || !(row.requests[index].commandKey in receipts)) return undefined;
+    const state = stepState(row, index);
+    return state === "已处理，看不出成没成" ? "已处理" : state === "查不到记录" ? "没有查到" : state;
+  };
+  const stepsText = (row: H1Pending) => row.requests.map((request, index) => `${request.label}${stepState(row, index)}`).join("，");
+  /** 查询后没确认的那一步怎么说、下一步做什么。 */
+  const stepLine = (row: H1Pending, receipt: ECommandInvestigation | null) => {
+    const expired = isRetryExpired(row);
+    const result = eCommandResult(receipt);
+    if (!receipt) return !expired && permitted(row) ? "查不到不等于没执行；按原请求重试不会重复执行。" : displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"));
+    if (result === "PROCESSING") return displayAdminError(new Error("IDEMPOTENCY_REQUEST_IN_PROGRESS"));
+    if (receipt.originalStatus === "UNKNOWN") return canClose ? UNKNOWN_LINE : "系统也没有结果；请有调查权限的超级管理员核查结案。";
+    if (receipt.originalStatus === "FAILED") return expired ? canClose ? FAILED_EXPIRED_LINE : "有这次的成功记录时，请有调查权限的超级管理员核查结案。"
+      : permitted(row) ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" : "系统记录这次失败了；请有修改权限的人按原请求重试。";
+    if (result === "REJECTED") return rejectedStatus({ expired, canRetry: permitted(row), canClose }).line;
+    if (result === "BUSINESS_RESULT_UNAVAILABLE") return `后台已处理，看不出成没成；${!expired ? permitted(row) ? "按原请求重试可确认，不会重复执行。" : "请有修改权限的人按原请求重试确认。"
+      : canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。"}`;
+    return receiptExplain(receipt) ?? receiptFact(receipt, "原记录继续保留");
+  };
 
   const afterWrite = async (row: H1Pending,
     retry = false) => {
@@ -802,7 +853,7 @@ export default function H1Phase({ ctx,
           reason)])
     });
   };
-  const readOriginal = async (row: H1Pending) => {
+  const readOriginal = async (row: H1Pending, lead = "") => {
     if (!canQueryOriginal(row)) return;
     setBusy(true);
     try {
@@ -810,14 +861,27 @@ export default function H1Phase({ ctx,
         try {
           const result = await lookupH1Direct(row);
           syncPending();
+          setReceipts((all) => ({ ...all, ...Object.fromEntries(result.outcomes.map((outcome) => [outcome.request.commandKey, outcome.receipt])) }));
+          const steps = row.requests.length > 1;
           const unresolved = result.outcomes.find(outcome => eCommandResult(outcome.receipt) !== "SUCCEEDED");
           setChecked(row.commandKey);
-          setFeedback(result.settled ? unresolved ? SETTLED_REJECTED : `${row.label}已保存`
-            : !unresolved?.receipt ? displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"))
-              : eCommandResult(unresolved.receipt) === "PROCESSING" ? displayAdminError(new Error("IDEMPOTENCY_REQUEST_IN_PROGRESS"))
-                : eCommandResult(unresolved.receipt) === "FAILED" ? displayAdminError(new Error("IDEMPOTENCY_PREVIOUS_REQUEST_FAILED"))
-                  : receiptExplain(unresolved.receipt) ?? receiptFact(unresolved.receipt, "原记录继续保留"));
-          if (result.settled) setConfirm(current => current?.scope === row.scope ? null : current);
+          if (result.settled) {
+            // 整条了结：后台拒绝和没有执行分开说；两步的，另一步已保存要一起说。
+            const saved = steps ? row.requests.filter((request) => !result.outcomes.some((outcome) => outcome.request.commandKey === request.commandKey && eCommandResult(outcome.receipt) !== "SUCCEEDED")).map((request) => `${request.label}已保存`).join("，") : "";
+            const ended = !unresolved ? "" : eCommandResult(unresolved.receipt) === "REJECTED" ? SETTLED_REJECTED : "核查确认没有执行，记录已解除，可以重新修改。";
+            const confirmed = result.outcomes.some((outcome) => outcome.receipt?.originalStatus === "CONFIRMED_SUCCEEDED");
+            const text = ended ? `${lead}${saved ? `${saved}；${unresolved!.request.label}：` : ""}${ended}`
+              : confirmed ? `${row.label}：核查确认已执行，记录已解除，不要再做一次。` : `${lead}${row.label}已保存`;
+            if (ended) setFeedback(text); else { setFeedback(undefined); ctx.toast(text, "success"); }
+            setConfirm(current => current?.scope === row.scope ? null : current);
+          } else {
+            // 没了结时说第一条还开着的那一步；它前面有已结案却没保存的步骤时，它一定还没发出。
+            const current = h1Pending.list().find((item) => item.fingerprint === row.fingerprint && item.commandKey === row.commandKey) ?? row;
+            const open = result.outcomes.find((outcome) => !eCommandSettled(outcome.receipt));
+            const index = open ? current.requests.findIndex((request) => request.commandKey === open.request.commandKey) : -1;
+            const unsent = index > 0 && current.requests.slice(0, index).some((request) => !request.acknowledged);
+            setFeedback(`${lead}${steps && open ? `${open.request.label}${unsent ? "" : "："}` : ""}${unsent ? "还没发出，原记录继续保留；请到操作记录与审批核对。" : stepLine(row, open?.receipt ?? null)}`);
+          }
         } finally { syncPending(); await reload(); }
         return;
       }
@@ -850,7 +914,8 @@ export default function H1Phase({ ctx,
       <b>从「运营阶段状态」跳转而来</b> {deepLink.phase} {deepLink.dial === "phaseAttribution" ? "阶段归因" : DIALS.find((dial) => dial.key === deepLink.dial)?.label ?? deepLink.dial}{deepLink.dial && deepLink.dial !== "phaseAttribution" && !DIALS.some((dial) => dial.key === deepLink.dial) && " · 未找到对应参数"}</Notice>}
     {pending.filter((row) => row.commandKey !== sending).map((row) => <Notice key={row.commandKey} tone={row.state === "approval" ? "progress" : "warn"} actionBelow action={<>
       <Button size="sm" onClick={() => setDetail(row)}>原操作详情</Button>
-      <Button size="sm" disabledReason={!canQueryOriginal(row) ? "你没有原操作的权限" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
+      <Button size="sm" disabledReason={!canQueryOriginal(row) ? row.requests.some((request) => request.kind === "proposal") ? "你没有原操作的权限" : "你没有这页的查看权限，查不了原结果" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
+      {closableSteps(row).map((request) => <Button key={request.commandKey} size="sm" variant="danger-outline" onClick={() => setClosing({ row, request })}>{row.requests.length > 1 ? `核查结案 · ${request.label}` : "核查结案"}</Button>)}
       {row.state !== "approval" && <Button size="sm" disabledReason={!permitted(row) ? "你没有原操作的权限" : isRetryExpired(row) ? RETRY_EXPIRED_TEXT : undefined} loading={busy} onClick={async () => {
         setBusy(true); try {
           await afterWrite(row,
@@ -862,11 +927,11 @@ export default function H1Phase({ ctx,
       }}>按原请求重试</Button>}
       {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除原操作记录</Button>}
     </>}>
-      <b>{row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知"}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
+      <b>{rowTitle(row) ?? (row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知")}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
       {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
-      {row.requests.some((item) => item.acknowledged && item.kind === "patch") && <p>{row.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，")}；{row.requests.filter((item) => !item.acknowledged).map((item) => `${item.label}${row.state === "rejected" ? row.retryRejected ? "重试被拒绝" : "未保存" : "结果未知"}`).join("，")}。重试只会重发没确认的那一步。</p>}
-      {row.state !== "approval" && isRetryExpired(row) && <p>{RETRY_EXPIRED_TEXT}；原记录继续保留，这项暂时不能再改。</p>}
-      {feedback && checked === row.commandKey && <p>{feedback}</p>}
+      {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !rowLine(row) && !(feedback && checked === row.commandKey) && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
+      {row.state !== "approval" && isRetryExpired(row) && !(feedback && checked === row.commandKey) && !rowLine(row) && <p>{RETRY_EXPIRED_TEXT}；原记录继续保留，这项暂时不能再改。</p>}
+      {feedback && checked === row.commandKey ? <p>{feedback}</p> : rowLine(row) && <p>{rowLine(row)}</p>}
     </Notice>)}
     {feedback && !pending.some((row) => row.commandKey === checked && row.commandKey !== sending) && <Notice tone="warn">{feedback}</Notice>}
     {!canRead ? <BlockState state="denied" title="没有运营阶段读取权限" /> : loading && !model ? <BlockState state="loading" title="正在加载运营阶段…" /> : error && !model ? <BlockState state="error" title="运营阶段数据加载失败" detail={error} onRetry={() => void reload()} /> : model && rhythm && <>
@@ -1010,6 +1075,31 @@ export default function H1Phase({ ctx,
         value,
         form);
     }} />}
+    {closing && (() => {
+      const { row, request } = closing;
+      const receipt = receipts[request.commandKey] ?? null;
+      const expired = isRetryExpired(row);
+      const index = row.requests.findIndex((item) => item.commandKey === request.commandKey);
+      const later = row.requests.slice(index + 1).filter((item) => !item.acknowledged).map((item) => item.label).join("、");
+      const others = row.requests.filter((item) => item.commandKey !== request.commandKey);
+      return <FundClosureModal label={row.label} createdAt={row.createdAt}
+        offer={{ conclusions: h1ClosureConclusions(receipt, expired), success: receipt?.originalStatus === "SUCCEEDED" ? "receipt" : "audit" }}
+        facts={<>
+          <Fact k="前后值"><Change from={pendingValue(row, row.before)} to={pendingValue(row, row.after)} /></Fact>
+          {row.requests.length > 1 && <Fact k="核查这一步">{request.label}（第 {index + 1} 步，共 {row.requests.length} 步）</Fact>}
+          {row.requests.length > 1 && <Fact k="结案以后">{later ? `${later}还没发出，${expired ? "已过 24 小时发不了，记录继续保留" : "结案后按原请求重试接着发"}。`
+            : `${others.map((item) => `${item.label}已保存`).join("，")}，只剩这一步。`}</Fact>}
+          <Fact k="系统记录">{receiptFact(receipt, "这项还锁着")}</Fact>
+        </>}
+        onClose={() => setClosing(null)}
+        onSubmit={async (evidence) => {
+          const next = await investigateH1Request(row, request, evidence);
+          setClosing(null);
+          const current = h1Pending.list().find((item) => item.fingerprint === row.fingerprint && item.commandKey === row.commandKey) ?? row;
+          // 结论以后台为准，再按每一步查一次，整条记录才收敛。
+          await readOriginal(current, next.investigation?.conclusion === "STILL_UNKNOWN" ? "已记为「仍未知」。" : "");
+        }} />;
+    })()}
     <Drawer open={!!detail} onClose={() => setDetail(null)} title="原操作详情" footer={<Decision primary={<Button onClick={() => setDetail(null)}>关闭</Button>} />}>
       {detail && <>
         <Facts>

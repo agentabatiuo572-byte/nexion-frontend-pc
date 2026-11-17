@@ -9,13 +9,12 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, BookOpen, Clock3, Gauge, Hourglass, Info, PackageOpen, RefreshCw, SearchCheck, ShieldCheck, Wallet } from "lucide-react";
 import { useReach } from "@/lib/nav/use-reach";
-import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
-import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel,
+import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, PageHeader, Panel,
   Modal, ReleaseBody, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
@@ -136,7 +135,6 @@ const OVER_HUNDRED = "App 目前不接受超过 100% 的产能";
 
 export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const reach = useReach();
-  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const [manualOpen, setManualOpen] = useState(false);
   const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations, e3Proposals } = ctx;
   const E3_PROPOSALS = e3Proposals.records.map(p => ({ ...p, original: p, id: p.commandKey, reason: p.input.reason,
@@ -254,8 +252,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     const proposals = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k)));
     return proposals.length ? { ...proposals[0], after: Object.assign({}, ...proposals.map(p => p.after)) } : undefined;
   };
-  const proposalOnly = authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write");
-  const BATCH_BLOCKED = "只有提案权的账号现在提交不了成组修改（已提后端），单项不受影响。这组请有完整审批写权限的同事提交。";
   const LEGACY_LOCKED = "这一项有一次早期版本的提交结果未知，先在页面上方查询原结果";
 
   const effect = (batch: boolean) => <StatusTag tone="progress" filled explain={batch ? E3_APPROVER_BATCH : E3_APPROVER_SINGLE}>批准后生效</StatusTag>;
@@ -304,7 +300,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? displayAdminError(new Error("FORBIDDEN")) : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，修改要先提交审批" : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
@@ -408,8 +404,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         </Panel>
       </div>
     </div>
-
-    {proposalOnly && ctx.canWriteE3 && !e3Proposals.allowed(true) && <Notice tone="warn" title="成组修改暂时不能提交">{BATCH_BLOCKED}</Notice>}
 
     {/* 任务产能节奏：产能随月龄下降（参与任务递减的商品） */}
     <Panel title="产能规则" icon={Gauge} tone="role-4" sub="7 项" data-proof="e3-capacity-rules"

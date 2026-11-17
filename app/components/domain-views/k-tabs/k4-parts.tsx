@@ -4,10 +4,11 @@
  * K4 风险评分规则的展示件：只画已读到的数据，不发请求、不判权限、不改请求内容。
  * 状态和提交处理都在 k4-scoring.tsx，这里只收值和回调。
  */
-import { useId, type ReactNode } from "react";
-import { CircleOff, Crosshair, Minus } from "lucide-react";
-import { BarList, Cell, Check, DiffList, Explain, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
-import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings } from "@/lib/admin/k-client";
+import { Fragment, useId, useState, type ReactNode } from "react";
+import { ChevronDown, CircleOff, Crosshair, Minus } from "lucide-react";
+import { BarList, Button, Cell, Check, DiffList, Explain, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings, type K4WithdrawalEvidence } from "@/lib/admin/k-client";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 export const fmt = (value: number) => value.toLocaleString("en-US");
 
@@ -218,29 +219,89 @@ export function ModelDiff({ rows }: { rows: DiffRow[] }) {
   return <DiffList rows={rows} emptyNote="草稿和生效版本的配置完全相同" restTitle="没有改的项" />;
 }
 
-/** 一个用户五维贡献：子分、权重、贡献和后端证据原文。贡献条是这一维占系统评分的多少。看它能判断：系统评分主要来自哪一维。 */
+/** 原文金额按自己的位数写：去掉末尾的 0、最少 2 位、不舍入，整数部分加千分位。 */
+function decimalText(raw: string) {
+  const [whole, fraction = ""] = raw.split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`;
+}
+
+/** 提现速度打分那一刻的原始记录：每个币种一行，金额是申请提现的原额，不换算、不相加。 */
+function WithdrawEvidence({ data, id }: { data: K4WithdrawalEvidence; id: string }) {
+  const time = (value: string | null) => (value ? formatBusinessTimeCompact(value, "—") : "—");
+  const amount = (count: number, value: string, currency: string) => <Cell num main={`${count} 笔`} sub={`${decimalText(value)} ${currency}`} />;
+  return (
+    <div className="k4-withdraw" id={id}>
+      <p className="k4-withdraw-head">
+        <span>{data.assets.length === 0 ? `打分时 ${time(data.capturedAt)}（${businessZone().label}），近 7 天和此前 30 天都没有提现。`
+          : `打分时 ${time(data.capturedAt)}（${businessZone().label}）的提现记录 · 申请金额，按各币种原额`}</span>
+        <Explain label="这些数怎么统计" content={<>
+          <p>近 24 小时、近 7 天都截到打分那一刻；「此前 30 天」是 7 天以前的 30 天（{time(data.windows.baseline.fromInclusive)} 至 {time(data.windows.baseline.toExclusive)}），日均按 {data.baselineDivisorDays} 天平均。</p>
+          <p>不分是否成功，全部提现都算。金额是用户申请提现的数，不是到账额，不换算成别的币种。</p>
+        </>} />
+      </p>
+      {data.assets.length > 0 && (
+        <Table label="各币种的提现记录" className="k4-withdraw-assets">
+          <thead><tr>
+            <Th>币种</Th>
+            <Th align="right">近 24 小时</Th>
+            <Th align="right">近 7 天</Th>
+            <Th align="right">此前 30 天日均</Th>
+            <Th align="right">24 小时内最大一笔</Th>
+          </tr></thead>
+          <tbody>
+            {data.assets.map((asset) => (
+              <Tr key={asset.currency}>
+                <Td><Cell mono main={asset.currency} /></Td>
+                <Td align="right">{amount(asset.count24h, asset.amount24h, asset.currency)}</Td>
+                <Td align="right">{amount(asset.count7d, asset.amount7d, asset.currency)}</Td>
+                <Td align="right"><Cell num main={`${decimalText(asset.baselineDailyCount)} 笔`} sub={`${decimalText(asset.baselineDailyAmount)} ${asset.currency}`} /></Td>
+                <Td align="right"><Cell num main={asset.max24h === null ? "—" : `${decimalText(asset.max24h)} ${asset.currency}`} /></Td>
+              </Tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 一个用户五维贡献：子分、权重、贡献和后端证据原文。贡献条是这一维占系统评分的多少。看它能判断：系统评分主要来自哪一维。
+ * 提现速度带了打分时的原始记录（structured）时，这一行可以展开看各币种；旧评分记录没有，只显示原文。
+ */
 export function ContributionTable({ rows, total, label }: { rows: K4Contribution[]; total: number; label: string }) {
+  const [open, setOpen] = useState(false);
+  const detailId = useId();
   return (
     <Table label={label} className="k4-contrib">
       <thead><tr>
         <Th>维度 · 命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
-        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="评分时记下的原文：金额带美元符号、保留 2 位小数，没有单独的币种和精确金额。这里原样显示，不作为精确金额（已提后端 K4-BE-01）。" /></span></Th>
+        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="评分时记下的原文。提现速度一项把各币种合在一起算，「$」不代表美元；点「各币种明细」看各币种原额，旧评分记录没有明细。" /></span></Th>
       </tr></thead>
       <tbody>
         {rows.map((row) => (
-          <Tr key={row.dimKey}>
-            <Td><span className="k4-dim">{row.name}{row.hit ? <StatusTag tone="warn" icon={Crosshair}>命中</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未命中</StatusTag>}</span></Td>
-            <Td align="right"><Cell num main={`${row.subScore} 分`} sub={`权重 ${row.weightPct}%`} /></Td>
-            <Td>
-              <span className="k4-weight">
-                {total > 0 ? <RatioBar compact quiet label={`${row.name}贡献`} value={row.points} total={total} valueText={`${row.points} 分，系统评分 ${total} 分`} tone="role-4" /> : <span className="k4-bar-gap" aria-hidden />}
-                <span className="k4-weight-num">{row.points} 分</span>
-              </span>
-            </Td>
-            <Td grow><span className="k4-evidence" data-user-content="" title={row.evidence || undefined}>{row.evidence || "—"}</span></Td>
-          </Tr>
+          <Fragment key={row.dimKey}>
+            <Tr>
+              <Td><span className="k4-dim">{row.name}{row.hit ? <StatusTag tone="warn" icon={Crosshair}>命中</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未命中</StatusTag>}</span></Td>
+              <Td align="right"><Cell num main={`${row.subScore} 分`} sub={`权重 ${row.weightPct}%`} /></Td>
+              <Td>
+                <span className="k4-weight">
+                  {total > 0 ? <RatioBar compact quiet label={`${row.name}贡献`} value={row.points} total={total} valueText={`${row.points} 分，系统评分 ${total} 分`} tone="role-4" /> : <span className="k4-bar-gap" aria-hidden />}
+                  <span className="k4-weight-num">{row.points} 分</span>
+                </span>
+              </Td>
+              <Td grow>
+                <span className="k4-evidence-cell">
+                  <span className="k4-evidence" data-user-content="" title={row.evidence || undefined}>{row.evidence || "—"}</span>
+                  {row.structured && <Button size="sm" variant="ghost" className="k4-evidence-toggle" aria-expanded={open} aria-controls={detailId}
+                    icon={<ChevronDown size={14} aria-hidden className="k4-chevron" data-open={open ? "" : undefined} />} onClick={() => setOpen((value) => !value)}>各币种明细</Button>}
+                </span>
+              </Td>
+            </Tr>
+            {row.structured && open && <tr className="k4-withdraw-row"><td colSpan={4}><WithdrawEvidence data={row.structured} id={detailId} /></td></tr>}
+          </Fragment>
         ))}
       </tbody>
       <tfoot><tr className="k4-contrib-total"><Td>系统评分</Td><Td /><Td><b>{total} 分</b></Td><Td /></tr></tfoot>
