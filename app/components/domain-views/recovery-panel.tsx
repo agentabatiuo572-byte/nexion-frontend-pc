@@ -63,6 +63,10 @@ export function rejectedStatus({ expired, canRetry, canClose, legacy }: { expire
 /** 资金动账的操作：被拒时单独提醒钱可能已经动过。 */
 const MONEY_SCOPE = /^(?:D2|E4)[_:]|^D3_RESERVE_INJECTION$|^F5_COMMISSION_(?:REVERSE|REISSUE)$/;
 
+export function businessResultUnavailableText(where = "操作记录与审批") {
+  return `后台只记了处理完，没记成没成；先到${where}核对再决定。`;
+}
+
 /**
  * 展开后的说明：只补收起那一行没说的事。「后台拒绝」不等于没执行；「已处理」里看不出的原因。
  * 下一步（重试、核查结案）已经写在收起那一行，按时间换说法，这里不再说。旧后端返回 undefined，和原来一样。
@@ -74,7 +78,7 @@ export function receiptExplain(receipt: ECommandInvestigation | null | undefined
   if (result !== "BUSINESS_RESULT_UNAVAILABLE") return undefined;
   return receipt.businessState === "SUCCEEDED"
     ? `这类操作逐项执行，后台只记了整体做完，看不出每一项成没成；先到${where}核对再决定。`
-    : `后台只记了处理完，没记成没成；先到${where}核对再决定。`;
+    : businessResultUnavailableText(where);
 }
 
 /** 原回包的业务码（后端只给数字，不给原因文字），只放技术信息；0 和没有码时不写。接受查询结果或回执本身。 */

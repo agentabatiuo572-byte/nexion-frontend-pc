@@ -1,12 +1,18 @@
 # M 专属客服中心功能契约
 
+## 2026-11-17 M3 超时策略业务回包（hd-fix-misc5-1）
+
+首次保存按全站 isDeterministicRejection 处理 HTTP 状态与 apiCode，HTTP 200 内明确的业务拒绝不再留作结果未知；幂等未决仍保留。M3_TIMEOUT_POLICY_STALE 沿现有版本冲突流程保留输入、读回当前设置，核对后重新确认；UNCHANGED 等其它拒绝显示错误表已有原因，不一律解释成别人改过。仅改超时策略，消息及其它 M3 写入的判据未动。
+
+legacy 原号查询的 SUCCEEDED 仅证明处理结束，当前后端不返回原业务结果，不能称保存成功。解除所选原记录后独立重读当前设置，反馈复用恢复面板 BUSINESS_RESULT_UNAVAILABLE 的既有句式，供运营对照；重读失败附现有错误说明，不改写为保存成功或再次未知。后端补业务结果字段之前保持这一边界，交付后另接成功/拒绝区分。
+
 ## 2026-11-17 M3 原结果与解除证据（hd-fix-misc5）
 
 结束接待记录随原请求保存后端明确拒绝的 status/backendMessage，刷新后恢复已有拒绝/解除资格；实际再次发送前移除旧拒绝事实，确认解除时重查当前本人存储中同一原记录的拒绝事实。当前接待状态不作原请求结果证明；确认后的接待 GET 只是刷新。已有原键查询（消息/结束接待/超时策略）仅确定 SUCCEEDED/FAILED 收尾，查无、过期、换账号/权限变化均保留原证据；原正文清除后的 locator 继续只查。
 
 消息发送接入独立 queryOnly 逻辑，含有效期内，读权与写权/当前概览分开，不会在查无后发 POST；已过期的既有查询按钮本来只查，原接线保持。未过期独立查询控制及结束接待解除框的现状作证问号交视觉决定，代码不添加位置、不重写句子。结束接待与超时策略已有有效期内独立查询，不是后端缺接口。普通回复/首次联系明确拒绝原本直接收尾，超时策略没有重试解除旗标，不添加新的开关。
 
-**本轮发现、交协调人提后端/前端待办**：legacy 超时策略原号查询虽存在，但 `OpsSupportCommandController.recover` 对该 scope 只返回幂等 status，不返回原业务 code；`ConversationTimeoutPolicyService.update` 可返回 `ApiResult.fail(M3_TIMEOUT_POLICY_STALE)`，幂等执行器会把正常返回的拒绝信封记成 SUCCEEDED。当前页面首次只按 HTTP status 分类，HTTP 200 含业务拒绝会留为未知，随后查询会把该 SUCCEEDED 提示成已保存。应补原业务结果查询并对齐前端有效错误码；本任务不以当前设置猜原结果，也不把它称为“后端无查询接口”。源码链路已核实，未做真实写入复现，未修改该额外路径。
+**后端欠项及前端跟进**：legacy 超时策略原号查询虽存在，但 `OpsSupportCommandController.recover` 对该 scope 只返回幂等 status，不返回原业务 code；`ConversationTimeoutPolicyService.update` 可返回业务拒绝信封，幂等执行器仍记 SUCCEEDED。前端在 hd-fix-misc5-1 已修首次明确业务拒绝和查询误称已保存；旧记录/回包丢失仍只能知道已处理，等后端补原业务结果再区分。后端待办由协调人提出，不以当前设置猜原结果。源码链路已核实，未做真实写入复现。
 
 ## 2026-11-17 M4 结果类型（hd-fix-misc5）
 

@@ -10,6 +10,7 @@ import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversatio
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
@@ -28,7 +29,7 @@ import { ownerLabel } from "./hd-ui";
 import { AssignAdvisorDialog, hasPendingFirstAssignment } from "./m3-assign-advisor";
 import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-alerts";
 import { legacySupportDestination, privateMessageRecovery, supportEnhancements, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
-import { RecoveryPanel } from "../recovery-panel";
+import { businessResultUnavailableText, RecoveryPanel } from "../recovery-panel";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
 
@@ -1577,15 +1578,15 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setTimeoutPolicy(next); setTimeoutInput(undefined); pendingTimeoutPolicies.forget(timeoutSlot); return true;
     } catch (cause) {
       if (stamp !== timeoutIdentityRef.current) return false;
-      const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
+      const status = cause instanceof SupportClientError ? (cause.status >= 200 && cause.status < 300 ? cause.apiCode : cause.status) : undefined;
       if (submitted) {
         setTimeoutPending(null); setTimeoutInput(undefined);
         setActionResult("超时策略已保存，但最新设置读取失败，请重新打开超时策略核对。");
         return true;
-      } else if ([400, 401, 403, 404, 409, 422].includes(status) && !isIndeterminateSupportError(cause)) {
+      } else if (cause instanceof SupportClientError && !cause.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(cause.status, cause.apiCode)) {
         pendingTimeoutPolicies.forget(timeoutSlot);
         if (status === 403) await revokeTimeoutWrite(stamp);
-        else if (status === 409) { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
+        else if (status === 409 && cause.backendMessage === "M3_TIMEOUT_POLICY_STALE") { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
         else setTimeoutError(displayAdminError(cause));
       } else { setTimeoutPending(command); setTimeoutError("保存结果未知，请查询原结果；不会重复提交。"); }
       return false;
@@ -1602,8 +1603,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== timeoutIdentityRef.current) return;
       if (result.status === "SUCCEEDED") {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutInput(undefined); setTimeoutOpen(false);
-        setActionResult("超时策略已保存。");
-        const policy = await fetchMConversationTimeoutPolicy().catch(() => { setActionResult("超时策略已保存，但最新设置读取失败，请重新打开超时策略核对。"); return null; });
+        // This legacy scope exposes processing status, not the original business code.
+        // Keep this as processed until the backend supplies the saved business result.
+        const processed = businessResultUnavailableText("超时策略");
+        setActionResult(processed);
+        const policy = await fetchMConversationTimeoutPolicy().catch(cause => { if (stamp === timeoutIdentityRef.current) setActionResult(`${processed} ${displayAdminError(cause)}`); return null; });
         if (stamp !== timeoutIdentityRef.current) return;
         if (policy) setTimeoutPolicy(policy); setTimeoutError("");
       } else if (result.status === "FAILED") {
