@@ -5,6 +5,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H3_ACTUAL_ASSIGNMENTS_RESPONSE_INVALID: "实际分配的每周时间窗数据不完整，暂时无法核对。请重新读取地区规则。",
   G3_SCHEDULE_EXECUTION_RESPONSE_INVALID: "排程执行记录不完整，暂时无法核对实际结果。请重新读取。",
   G3_SCHEDULE_EXECUTION_READ_FAILED: "排程执行记录暂时读不到，不能确认实际结果。请重新读取。",
+  G3_ENGINE_PAUSED: "价格自动变化已暂停，本次排程没有应用计划帧。",
+  G3_FRAME_PINNED: "当前固定了生效日，本次排程没有应用计划帧。",
   J2_GEO_HIT_COUNTRY_INVALID: "查询国家代码不合法，请重新选择国家后查询。",
   J2_GEO_HIT_PAGE_INVALID: "查询页码超出支持范围，请重新选择页码。",
   A4_USER_NUMBER_INVALID: "事件的用户编号数据不完整，请重新查询后核对。",
