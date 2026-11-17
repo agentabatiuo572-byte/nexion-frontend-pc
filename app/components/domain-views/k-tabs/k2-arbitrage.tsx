@@ -916,8 +916,8 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   const totalPending = summaries.reduce((sum, item) => sum + item.pending, 0);
   const totalAwaiting = summaries.reduce((sum, item) => sum + item.awaiting, 0);
   const awaitingText = totalAwaiting > 0 ? `另有 ${totalAwaiting} 条已提交冻结审批，等另一位管理员批准。` : "";
-  // 先处理哪一类：待处置里等级最高的，一样高时待处置多的。
-  const urgent = summaries.filter((item) => item.pending > 0).sort((a, b) => b.maxPending - a.maxPending || b.pending - a.pending)[0];
+  // 先处理哪一类：待处置最多的；一样多时按类别卡的顺序。各类的等级含义不同，不跨类比。
+  const urgent = summaries.filter((item) => item.pending > 0).sort((a, b) => b.pending - a.pending)[0];
   const currentKey = views.some((view) => view.key === viewKey) ? viewKey! : urgent?.view.key ?? (views.find((view) => view.key === "trial") ?? views[0])?.key;
   const current = summaries.find((item) => item.view.key === currentKey);
   const rows = current ? byUrgency(current.view.rows) : [];
@@ -940,7 +940,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     </>
   );
   const conclusion = totalPending > 0
-    ? <Conclusion state="warn" lead explain={conclusionExplain} hint={`${awaitingText}${urgent ? `先看「${urgent.ui.name}」：表里待处置的排在前面，等级高的在上。` : ""}`}>
+    ? <Conclusion state="warn" lead explain={conclusionExplain} hint={`${awaitingText}${urgent ? `先看待处置最多的「${urgent.ui.name}」：表里待处置的排在前面，等级高的在上。` : ""}`}>
         有 <b>{totalPending}</b> 条命中待处置
       </Conclusion>
     : totalRows > 0
