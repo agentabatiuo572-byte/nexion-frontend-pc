@@ -26,7 +26,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
-import { BODY_SENT, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
+import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -907,7 +907,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Stat tone="role-2" icon={FilePen} label="草稿" value={String(I3_STATS.monthDraft)} unit="条" explain="还没排期，不会发给任何人。" />
         <Stat tone="role-2" icon={Send} label="已发送" value={String(I3_STATS.monthSent)} unit="条" sub={`活动共 ${I3_STATS.monthCampaigns} 条`}
           explain="全部没删除的活动，不分月份。" />
-        <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate} sub={`左滑推算 ${I3_STATS.weeklySwipe}`}
+        <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate ?? "—"} sub={`左滑推算 ${I3_STATS.weeklySwipe ?? "—"}`}
           explain={<>
             <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新（已提后端），不是实时已读率。</p>
             <p>左滑推算：已读数 × 3.1%，不是实际左滑次数，也不分本周。</p>
@@ -1088,7 +1088,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             </div>
             {!shownDetail && <Notice tone="warn">刷新后的列表里没有这条了，可能已被删除。下面是之前读到的内容。</Notice>}
             <Facts>
-              <Fact k={reachLabel(c)} lead unit={quantityText(c.reach) === "—" ? undefined : "人"}>{quantityText(c.reach)}</Fact>
+              <Fact k={reachLabel(c)} lead unit={campaignQuantity(c, "reach") === "—" ? undefined : "人"}>{campaignQuantity(c, "reach")}</Fact>
               <Fact k="状态"><CampaignStatusTag st={liveSt(c)} /></Fact>
               <Fact k="发送">{c.st === "scheduled" ? `${whenText(c)}（${businessZone().label}）` : whenText(c)}</Fact>
               <Fact k="发给谁">{c.audience}</Fact>
@@ -1108,7 +1108,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 missing={detailLang === "en" && enMissing} fallback="英语没填：英语用户收到系统默认的英文；其他语言有译文用译文，没有也用默认英文。" />
             </section>
             <Facts>
-              <Fact k="送达 / 已读">{c.st === "sent" ? `${quantityText(c.sent)} / ${quantityText(c.read)}` : "—"}</Fact>
+              <Fact k="送达 / 已读">{c.st === "sent" ? `${campaignQuantity(c, "sent")} / ${campaignQuantity(c, "read")}` : "—"}</Fact>
               <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>
               <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : "不跳转"}</Fact>
               <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>
