@@ -1,6 +1,7 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
+import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -819,15 +820,14 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
 type K1TicketView = { kind: "param"; key: string; name: string; from: string; to: string; versionFrom: string; versionTo: string }
   | { kind: "release"; entryNo: string; userId: string; asset: string; net: string; source: string; sourceRef: string; bucket: string; coverage: string; redline: string };
 const K1_PARAM_SUMMARY = /^(duplicateAccountPendingFrom|duplicateAccountFreezeFrom) = (\d+)；版本 (\d+)$/;
-const K1_RELEASE_SUMMARY = /^收益 (.+?)；用户 (\d+)；(\S+) 净额 (\d+(?:\.\d+)?)；来源 ([^/；]+)\/(.*?)；(bonus_locked|pending_review) → withdrawable；当前覆盖率 (\d+(?:\.\d+)?)% \/ 红线 (\d+(?:\.\d+)?)%$/;
 function k1TicketView(w: { operationCode?: string | null; before: string; after: string }): K1TicketView | undefined {
   if (w.operationCode === "k1_release_param") {
     const b = K1_PARAM_SUMMARY.exec(w.before.trim()), a = K1_PARAM_SUMMARY.exec(w.after.trim());
     return b && a && b[1] === a[1] ? { kind: "param", key: b[1], name: K1_APPROVAL_PARAM_NAMES[b[1]], from: b[2], to: a[2], versionFrom: b[3], versionTo: a[3] } : undefined;
   }
   if (w.operationCode !== "k1_earnings_release") return undefined;
-  const m = K1_RELEASE_SUMMARY.exec(w.before.trim());
-  return m ? { kind: "release", entryNo: m[1], userId: m[2], asset: m[3], net: m[4], source: m[5], sourceRef: m[6], bucket: m[7], coverage: m[8], redline: m[9] } : undefined;
+  const release = parseK1ReleaseTicketBefore(w.before);
+  return release ? { kind: "release", ...release } : undefined;
 }
 /** 后端写的净额去掉了末尾 0：只补到两位、加千分位，不舍入。 */
 const k1Amount = (text: string) => { const [whole, frac = ""] = text.split("."); return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac.padEnd(2, "0")}`; };

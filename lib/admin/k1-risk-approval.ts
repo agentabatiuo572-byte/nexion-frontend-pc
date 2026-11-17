@@ -8,7 +8,16 @@ export type K1ApprovalState = {
   pendingTicketId?: string;
   /** Readable net amount/source only, never the server's trusted approval snapshot. */
   observedEntry?: { amount: string | number; asset: string; sourceType: string; sourceRef: string; bucket: string };
+  /** The server's ticket summary, retained even if a later status read fails. */
+  ticketBefore?: string;
 };
+
+export function parseK1ReleaseTicketBefore(before: string) {
+  const match = /^收益 (.+?)；用户 (\d+)；(\S+) 净额 (\d+(?:\.\d+)?)；来源 ([^/；]+)\/(.*?)；(bonus_locked|pending_review) → withdrawable；当前覆盖率 (\d+(?:\.\d+)?)% \/ 红线 (\d+(?:\.\d+)?)%$/.exec(before.trim());
+  if (!match) return undefined;
+  const [, entryNo, userId, asset, net, source, sourceRef, bucket, coverage, redline] = match;
+  return { entryNo, userId, asset, net, source, sourceRef, bucket, coverage, redline };
+}
 
 export function k1ReleaseParamProposal(key: string, value: string, expectedVersion: number, reason: string, operator: string, operatorRole: string): K1ApprovalRequest {
   return {
@@ -35,6 +44,7 @@ export function isK1ApprovalState(value: unknown, original: { kind?: string; tar
   const request = state.request;
   if (!request || typeof request !== "object" || Array.isArray(request) || typeof request.operatorRole !== "string"
     || state.acknowledged !== undefined && typeof state.acknowledged !== "boolean"
+    || state.ticketBefore !== undefined && (original.kind !== "entry" || typeof state.ticketBefore !== "string" || state.acknowledged !== true)
     || state.pendingTicketId !== undefined && (typeof state.pendingTicketId !== "string" || !state.pendingTicketId || state.acknowledged !== true)) return false;
   if (original.kind === "entry") {
     const observed = state.observedEntry;
