@@ -17,7 +17,7 @@ import {
   ArrowLeftRight, CalendarDays, CircleHelp, Clock3, Coins, Database, Hourglass, Lock, LockKeyhole, ListOrdered, PieChart, Scale, SlidersHorizontal, Ticket,
 } from "lucide-react";
 import {
-  BlockState, Button, Cell, Change, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, Notice,
+  BlockState, Button, Cell, Change, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, KeepText, Notice,
   PageHeader, Panel, RatioBar, RdPage, SegmentBar, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th,
 } from "@/app/components/rd";
 import { compareEditDecimals, OperationConfirmModal, useToast } from "../design-kit";
@@ -580,7 +580,7 @@ function G7RepurchasePage() {
         : <StatusTag tone="progress" filled>{directRecovery ? "结果未知" : "立即生效"}</StatusTag>,
       facts,
       statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。" : "核对新值和方向；理由写清依据或工单号。" },
-      coverageLead: paysMore(param.key) ? `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超级管理员批准` : `${copy?.loosen ?? "调高"}${label}要另一位超级管理员批准；后端目前不发好友奖励，不会马上多付钱`,
+      coverageLead: <span className="g7x-lead"><KeepText text={paysMore(param.key) ? `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超级管理员批准` : `${copy?.loosen ?? "调高"}${label}要另一位超级管理员批准；系统目前不发好友奖励，不会马上多付钱`} /></span>,
       coverageCheck: "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"
         ? { kind: "text", current: directRecovery ? undefined : paramEditValue(param), initialValue: direct?.input.value, disallowCurrent: true, hint: copy?.hint }

@@ -312,6 +312,8 @@
 /* ============================ G7 锁定计划（改版，RdPage） ============================
    只用 --rd-* 令牌。首屏：一笔 1,000 USDT 到期和提前解锁的对照条，和规则参数并排；下面是订单。 */
 .g7x-param { display: grid; gap: 2px; min-width: 0; }
+/* 确认框「会多付钱」一句：两段等长换行，问号跟着第二段，不单独掉一行。 */
+.rd-notice-title:has(> .g7x-lead) { text-wrap: balance; }
 .g7x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .g7x-value-num { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .g7x-value-num[data-empty] { color: var(--rd-text-3); }
