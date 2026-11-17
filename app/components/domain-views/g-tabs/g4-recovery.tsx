@@ -14,7 +14,7 @@ import type { GParamRecovery, useGParamApproval } from "@/lib/admin/use-g-param-
 /** 九个参数在这页的固定叫法（和参数行、确认框标题一致）。 */
 export const G4_PARAM_NAME: Record<string, string> = {
   supply: "节点总量",
-  price: "单价",
+  price: "系列当前价",
   dividend: "每日收益比例",
   royalty: "转让手续费",
   airdropPct: "空投占比",
