@@ -330,7 +330,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       detail: <><b>{label}</b> · 当前 {current} · App 现在没有页面显示它，不影响价格和兑换。保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。</>,
       effect: <StatusTag tone="neutral" icon={Info} explain="已提给后端接上或退役。">目前不生效</StatusTag>,
       facts: <Facts>
-        <Fact k="现在用不用">App 会收到这个值，但现在没有页面显示盈亏，也不影响价格和兑换。</Fact>
+        <Fact k="现在用不用">App 收到这个值但不显示盈亏，不影响价格和兑换</Fact>
         <Fact k="保存到什么时候">一直保留，直到再次修改</Fact>
         <Fact k="提交时检查">打开后这一项没有被别人改过，否则拒绝</Fact>
       </Facts>,
