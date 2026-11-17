@@ -1,3 +1,4 @@
+import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
 import { h4CommandRequest, markH4Read } from "./h4-mutations";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -564,6 +565,8 @@ export async function fetchH5CheckIn(): Promise<Record<string, any>> {
 }
 
 export async function updateH5CheckInRule(key: string, value: string, expectedValue: string, reason: string) {
+  const refusal = h5RuleWriteRefusal(key);
+  if (refusal) throw new Error(refusal);
   return growthRequest<Record<string, any>>(
     `/check-in/rules/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
