@@ -4159,6 +4159,9 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 #### [K3] 提现风控规则引擎
 
+2026-11-17（2df2dba4，hd-sync41-1）：K3-BE-03按声明统一时区方案完整交付。timeText是命中记录落库的秒级无offset字符串，按Asia/Shanghai固定UTC+8解释；PC表格/详情已有business-time解析再转当前业务时区，逻辑无须改。模拟完成按同次completedAtOffset定位时刻，缺offset旧回包保留未知时区；不强套数据库时区。“触发时间/规则命中的时间”旧说法交视觉核为记录时间，不改文字。
+
+
 2026-11-17（11c6ed0e，hd-sync41）：K3-BE-05已交付概览coverage四字段，risk_k3_read即可读取放宽检查同源比率/红线/reliable/精确redlineBreached；不可靠后三项null，真实0保留。PC优先此结论接入已有编辑/确认/提交条件，reliable=false不当成够，低线按精确flag不比显示值；新字段存在不再另读B1，旧字段缺省保持原授权fallback。没有新增文案/markup，详见《后端第三十批五项接入-20261117》。
 
 
