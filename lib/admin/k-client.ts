@@ -94,6 +94,8 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     // BigDecimal JSON tokens must survive before JSON.parse can round them.
     payload = JSON.parse(path === "/arbitrage/overview"
       ? text.replace(/("amountRaw"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : path.startsWith("/multi-account/releases?")
+        ? text.replace(/("(?:grossAmount|recoveredAmount|netAmount)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
       : text) as ApiResult<T>;
     if (isK1ApprovalWrite && (!payload || typeof payload !== "object" || Array.isArray(payload)
       || payload.code !== undefined && !Number.isInteger(payload.code))) throw new Error("K1_WRITE_RESULT_INVALID");
@@ -247,6 +249,12 @@ export type K1ProtectedEntry = {
   sourceRef: string;
   asset: "USDT" | "UVT";
   amount: number;
+  /** Optional on the previous backend; preserve new BigDecimal tokens without rounding. */
+  grossAmount?: string;
+  recoveredAmount?: string;
+  netAmount?: string;
+  sourceEnvironment?: string;
+  status?: string;
   bucket: "pending_review" | "bonus_locked";
   createdAt: string;
 };
@@ -1907,6 +1915,16 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
       const bucket = requiredK1String(row.bucket, `${path}.bucket`);
       if (asset !== "USDT" && asset !== "UVT") invalidK1Response(`${path}.asset`);
       if (bucket !== "pending_review" && bucket !== "bonus_locked") invalidK1Response(`${path}.bucket`);
+      const snapshot: Pick<K1ProtectedEntry, "grossAmount" | "recoveredAmount" | "netAmount" | "sourceEnvironment" | "status"> = {};
+      for (const field of ["grossAmount", "recoveredAmount", "netAmount"] as const) {
+        if (row[field] === undefined) continue;
+        const amount = requiredK1String(row[field], `${path}.${field}`);
+        if (!/^(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(amount)) invalidK1Response(`${path}.${field}`);
+        snapshot[field] = amount;
+      }
+      for (const field of ["sourceEnvironment", "status"] as const) {
+        if (row[field] !== undefined) snapshot[field] = requiredK1String(row[field], `${path}.${field}`);
+      }
       return {
         entryNo: requiredK1String(row.entryNo, `${path}.entryNo`),
         userId: requiredK1Integer(row.userId, `${path}.userId`, 1),
@@ -1916,6 +1934,7 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
         sourceRef: requiredK1String(row.sourceRef, `${path}.sourceRef`),
         asset,
         amount: requiredK1Number(row.amount, `${path}.amount`, Number.MIN_VALUE),
+        ...snapshot,
         bucket,
         createdAt: requiredK1String(row.createdAt, `${path}.createdAt`),
       } as K1ProtectedEntry;
