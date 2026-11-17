@@ -20,7 +20,7 @@ function times(a: string | number, b: string) {
   return scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits;
 }
 const ESTIMATE_GONE: Record<string, string> = {
-  CURRENT_WEEK_SETTLED: "本周已经结算，不再估算；实发看「最近已结算」。",
+  CURRENT_WEEK_SETTLED: "本周已经结算，不再估算；结算的数看「最近已结算」。",
   SETTLEMENT_CONFIG_UNAVAILABLE: "池的设置不完整，算不出本周估算。",
   NO_ELIGIBLE_VOTERS: "现在没有人有资格分，本周估算里没有人能分到钱。",
   NO_CURRENT_POOL: "本周池里还没有钱，算不出每票值。",
@@ -76,15 +76,15 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
   const settledBlock = (() => {
     if (projection.status !== "ready") return null;
     const value = projection.data.settled;
-    if (!value.available) return voteValue("最近已结算的一周", <StatusTag tone="done">实发</StatusTag>, <p className="f4-vote-note">还没有结算记录。</p>);
-    return voteValue(`最近已结算 · ${weekName(value.weekKey)}`, <StatusTag tone="done">实发</StatusTag>, <>
+    if (!value.available) return voteValue("最近已结算的一周", <StatusTag tone="neutral">结算记录</StatusTag>, <p className="f4-vote-note">没有读到完整的结算记录：可能还没结算过，也可能记录不全。</p>);
+    return voteValue(`最近已结算 · ${weekName(value.weekKey)}`, <StatusTag tone="done">结算记录</StatusTag>, <>
       <KeyValues rows={[
         { key: "pool", label: "奖池", value: `${usdt(value.poolUsd)} USDT` },
         { key: "votes", label: "总票数", value: `${decimalText(value.totalVotes).replace(/\.00$/, "")} 票` },
-        { key: "per", label: "每票", value: value.perVoteUsd === null ? "—" : `${usdt(value.perVoteUsd)} USDT`, explain: value.perVoteUsd === null ? "这一周记下的总票数为 0，算不出每票值。" : "实发 ÷ 总票数，保留 6 位小数、多出的位数舍去；末位差额给了最后一人。" },
-        { key: "users", label: "分到的人", value: `${count(value.settledUsers)} 人` },
+        { key: "per", label: "每票", value: value.perVoteUsd === null ? "—" : `${usdt(value.perVoteUsd)} USDT`, explain: value.perVoteUsd === null ? "记下的总票数是 0 或负数，算不出每票值。" : "奖池 ÷ 总票数，保留 6 位小数、多出的位数舍去；末位差额给了最后一人。" },
+        { key: "users", label: "记下的人数", value: `${count(value.settledUsers)} 人` },
       ]} />
-      <p className="f4-vote-note">结算记录只有全池的数，没有记各等级分了多少。</p>
+      <p className="f4-vote-note">照结算记录列出，没有另行核对；记录里没有各等级分了多少。</p>
     </>);
   })();
   const projectionState = projection.status === "ready" ? null
@@ -168,7 +168,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             what: "团队激励池一个月最多发多少，按自然月累计。",
             when: "批准后影响这个月还没结算的部分，已发的不追回。",
             effect: "本周估算不会超过「上限 − 本月已发」。",
-            note: "格式不对的值也会存下来，存下后池就不能结算，请按「1000」「50K」这类写法填。",
+            note: "填 0 或正数，比如 1000、50K；格式不对提交不了。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.monthlyCap", overview: data, policy: ctx.f4AmbassadorPolicy })) })}
           {paramRow({ name: "自动结算时间", value: settleCronText, sub: cadence ? <span className="f4-cadence" data-tone={cadence.tone}>{cadence.text}</span> : undefined, allowed: canWrite,
             what: "到这个时间自动结算最近一个已结束的周。",
