@@ -563,7 +563,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         if (mode === "retry") await sendF5Anomaly(owner);
         else {
           const result = await queryF5Anomaly(owner, original as FDirectAttempt);
-          if (result.settled) return true;
+          if (result.settled) {
+            setToast(displayAdminError(result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED"
+              : result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED"
+                : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED"));
+            return true;
+          }
           const current = result.current;
           setToast(`当前金额偏离 ${current.configValues.commissionAnomalySigma}、层比例偏离 ${current.configValues.layerRatioAnomalyPct}%；只供核对，原操作结果仍未知。`);
           return false;
