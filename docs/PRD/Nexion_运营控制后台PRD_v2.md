@@ -630,6 +630,8 @@ maxDevicesPerOrder：当前后端及 App 每次只取一个 sourceDeviceId；E3-
 
 #### [E5] 设备管理
 
+> **2026-11-17 E5／E6 设备审批摘要（hd-fixx-z1）**：A2 的设备激活、强制激活、取消激活和解绑摘要按设备页现成状态映射显示 `ACTIVATED / ACTIVE → 已激活`、`DEACTIVATED → 已停用`、`UNBOUND → 已解绑`，列表、详情与审批确认共用原有值显示入口。只翻译服务端确实给出的状态码，不把当前设备状态当作历史修改前状态。指定后端 `ce376f39` 的强制激活和解绑 descriptor 会覆盖前端的中文摘要，把 before 写为“以服务器执行时状态为准”、after 写为英文码；本次前端翻译 after，但原状态快照缺失仍待后端修复，不能标记“已停用 → 已激活”的完整验收通过。E6 手机同样使用这两种 E5 审批指令，适用相同结论；取消激活是直接写入，不新造审批。
+
 2026-11-17 归属门禁接线（hd-sync25，后端4869903c/8539f20e）：E5Device接收可选ownershipStatus，缺失/null/空串保持未知，不默认OWNED；显式非OWNED不允许普通或强制激活，OWNED时按后端raw集合，含旧raw UNBOUND的强制激活。无归属保持现有simState/raw UNBOUND拒绝，其余普通仅INVENTORY、强制INVENTORY/DEACTIVATED/INACTIVE。列表、详情、提交前和状态说明共用canActivateE5Device。退款REFUNDED及促销撤销REVOKED的停用行复用现有「不能再激活」和通用停止原因，不改成解绑/置换事实。**读取交付已补齐：4869903c只改DeviceOpsView和mapper；3f224909将ownershipStatus接入StoreDeviceView及from，E5列表/复用列表的详情现在都能读取归属并使用上述判断，E5-BE-16源码范围已交付。**以下旧的一律不可激活规则按本条归属优先修正。
 
 2026-11-17 状态叫法按归属（hd-vis-e5a4）：列表、详情、确认框「当前状态」和 E6 手机行用同一套话（e5-device-state 的 stoppedNote）。归属仍是原用户、原始状态写着已解绑的早期设备（后端允许强制激活）显示「已停用」，下面一行「可以重新激活」，详情「早期解绑的设备，仍归原用户；可以申请强制激活，另一位管理员批准后生效。」；归属已解绑写「已解绑 / 不能再激活」；已回收、已退役照旧；订单退款（REFUNDED）写「订单已退款，不能再激活」，详情「这台设备的购买订单已退款，不能再激活。」；赠送撤销（REVOKED）写「赠送已撤销，不能再激活」，详情「这台是活动赠送的设备，赠送已撤销，不能再激活。」；其他不是原用户的取值写「不能再激活」，详情「设备已不归原用户，不能再激活。」；读不到归属时保持原说法。退款、赠送撤销写下的停跑原因（ORDER_REFUND、PROMOTION_REFUND）和这行说的是同一件事，不再当暂停原因重复列出。表头状态说明「已停用」改为「设备已停止。仍归原用户的可以申请强制激活；已回收、退役、退款或赠送撤销的不能。」，「这页怎么用」重新激活一条改为「仍归原用户的停用设备可以申请强制激活，批准后恢复，用户也能在 App 里重新激活；已解绑、回收、退役、退款或赠送撤销的不能。」。只改显示：强制激活审批申请里的原状态仍按设备进度写（早期解绑的那类仍是「已解绑」），请求不变。出处 OpsDeviceService.activateE5Device（OWNED 检查与强制激活集合）、DeviceOpsMapper.SIM_STATE_PREFIX、DeviceCatalogMapper.rollbackOrderDevices、PromotionRewardService（REVOKED），origin/test b6bc23a8。
