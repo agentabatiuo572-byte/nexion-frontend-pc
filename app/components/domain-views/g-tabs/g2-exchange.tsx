@@ -639,7 +639,7 @@ function G2ExchangePage() {
     <PageHeader pageId="G2" title="兑换额度与规则"
       summary="管 UVT 和 USDT 兑换的额度、手续费和排队。"
       actions={pauseAction || undefined}
-      meta={overview ? "打开时读取，不自动刷新；改完用返回的结果刷新" : undefined}
+      meta={overview ? "打开时读取，不自动刷新；改完按保存后的结果刷新" : undefined}
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改兑换参数、暂停兑换或处理排队的权限。" : undefined} />
   );
 
@@ -720,7 +720,7 @@ function G2ExchangePage() {
         : `${copy?.loosen ?? "放宽"}${name}会让平台每天可能多付 USDT，要另一位超级管理员批准`,
       coverageCheck: cap.key === "fee" || cap.key === "feeMin"
         ? "提交审批时和批准时各检查一次：原值没被别人改过；把现在排队中、启用中的非测试账户的单按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都会被拒绝。"
-        : "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
+        : "提交审批时和批准时各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: isQueueMode
         ? { kind: "select", current: cap.displayValue, currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
         : { kind: "number", current: capEditValue(cap), currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, min: 0,
@@ -980,12 +980,12 @@ function G2ExchangePage() {
   // 风险披露闸门是另一件事，开着时单独说一句，不当成兑换停了。
   const disclosureOn = overview.disclosureGate.exchange;
   const disclosureHint = disclosureOn ? <>风险披露闸门对兑换开着，在{reach("/content/disclosures") ? <> <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> </> : "「法律条款与风险披露」"}管。</> : null;
-  const disclosureExplain = disclosureOn ? <p>风险披露闸门和兑换开关是两件事：后端执行兑换和处理排队只看兑换开关；闸门对兑换具体拦谁，规则还在定。</p> : null;
+  const disclosureExplain = disclosureOn ? <p>风险披露闸门和兑换开关是两件事：兑换和处理排队能不能进行只看兑换开关；闸门对兑换具体拦谁，规则还在定。</p> : null;
   const conclusion = switchUnread === "absent"
     ? <Conclusion state="warn" icon={CircleHelp}
         hint={<>真实状态到 {killSwitchLink} 看。{disclosureHint}</>}
         explain={<>
-          <p>后端这次没有给出兑换开关的状态。这页不据此判断用户能不能兑换，也不当成暂停。</p>
+          <p>兑换开关的状态暂时读不到。这页不据此判断用户能不能兑换，也不当成暂停。</p>
           {disclosureExplain}
         </>}>这页读不到兑换开关</Conclusion>
     : switchUnread
@@ -1001,7 +1001,7 @@ function G2ExchangePage() {
         hint={<>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}{disclosureHint}</>}
         explain={<>
           <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
-          <p>暂停时后端拒绝用户新发起的兑换，「处理排队」也会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
+          <p>暂停时，用户新发起的兑换和「处理排队」都会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
           {disclosureExplain}
         </>}>兑换已暂停，新发起的兑换会被拒绝</Conclusion>
     : stats.queueDepth > 0
@@ -1093,7 +1093,7 @@ function G2ExchangePage() {
           explain="所有还在排队的单，不限哪天创建。排队的单不会自动成交，要在这页点「处理排队」。" />
         <Stat label="今日拦截" icon={Ban} tone="role-4" value={fmtCount(totalGate)} unit="次"
           sub={`个人 ${fmtCount(stats.gateUser)} · 平台 ${fmtCount(stats.gatePlatform)} · 地区 ${fmtCount(stats.gateGeo)}`}
-          explain="今天创建、现在是三种拦截状态的兑换单数之和；按后端业务日算，不按你电脑的时区。" />
+          explain="今天创建、现在是三种拦截状态的兑换单数之和；按系统业务日算，不按你电脑的时区。" />
         <Stat label="今日兑换成交" icon={Coins} tone="role-1" value={amount(stats.todayUsd)} unit="USDT"
           sub={`占平台日额度 ${percent(stats.poolPct)}`}
           explain="今天创建、已完成的兑换里 USDT 那一边的金额：UVT 换 USDT 是用户到手的金额（扣了手续费），USDT 换 UVT 是用户付出的金额。" />
@@ -1103,7 +1103,7 @@ function G2ExchangePage() {
         <Panel title="今天的额度" icon={Gauge} tone="role-1"
           explain={<>
             <p>看条：平台今天的额度用了多少、还剩多少。快满时，之后的兑换会按「超额度处置策略」排队或被拒。</p>
-            <p>用量是今天已完成兑换的 USDT 金额（UVT 换 USDT 按到手金额），占比由后端算；后端放行每一笔时按自己的已用量判断。</p>
+            <p>用量是今天已完成兑换的 USDT 金额（UVT 换 USDT 按到手金额），占比由系统算；放行每一笔时按系统记的已用量判断。</p>
           </>}>
           <div className="g2x-quota">
             <div className="g2x-quota-head">
@@ -1114,7 +1114,7 @@ function G2ExchangePage() {
               valueText={`已兑换 ${amount(stats.todayUsd)} USDT，日额度 ${platformCap ? amount(platformCap.value) : "—"} USDT`} tone="role-1"
               state={capMicros === BigInt(0) ? "empty" : undefined}
               emptyText="平台日额度是 0：之后的兑换都会被拦下"
-              invalidText="今天已兑换的金额超过现在的日额度，条画不出来；这里按到手金额算，后端放行时按自己的已用量判断" />
+              invalidText="今天已兑换的金额超过现在的日额度，条画不出来；这里按到手金额算，放行时按系统记的已用量判断" />
             <dl className="g2x-quota-nums">
               <div><dt>已兑换</dt><dd>{amount(stats.todayUsd)} USDT</dd></div>
               <div><dt>日额度</dt><dd>{platformCap ? paramValueText("platformDailyCap", platformCap.value) : "—"}</dd></div>
@@ -1153,7 +1153,7 @@ function G2ExchangePage() {
       <Panel title="排队中的兑换" icon={ListOrdered} tone="role-3" className="g2x-queue"
         sub={`${stats.queueDepth > queue.length ? `共 ${fmtCount(stats.queueDepth)} 单 · 列表显示最近 ${fmtCount(queue.length)} 单` : `共 ${fmtCount(stats.queueDepth)} 单`} · 时间为${businessZone().label}`}
         explain={<>
-          <p>超过个人或平台日额度、用户选了「超额时排队」的兑换在这里等。它们不会自动成交：点「处理排队」时，后端从最早排队的开始逐单检查。</p>
+          <p>超过个人或平台日额度、用户选了「超额时排队」的兑换在这里等。它们不会自动成交：点「处理排队」时，系统从最早排队的开始逐单检查。</p>
           <p>新排队的单已经从用户的来源币种里预占了金额，成交时不再扣；取消时退回预占的原币。没有预占记录的历史单成交时才扣、取消时不退。</p>
           <p>列表按排队时间从新到旧，最多显示 50 单，没有翻页。</p>
         </>}
@@ -1241,7 +1241,7 @@ function G2ExchangePage() {
             sub={`今天 ${fmtCount(detail.count)} 次${detail.count > detail.rows.length ? ` · 列出最近 ${fmtCount(detail.rows.length)} 条` : ""}`}
             explain={<>
               <p>{tile.explain}</p>
-              <p>只能查看。要调额度改「额度和手续费」。后端的额度和地区检查不看信任名单，把用户加进信任名单不能让这些兑换通过。</p>
+              <p>只能查看。要调额度改「额度和手续费」。额度和地区检查不看信任名单，把用户加进信任名单不能让这些兑换通过。</p>
             </>}
             footer={<Decision primary={<Button onClick={() => setGateDrawer(null)}>关闭</Button>} />}>
             <Table label={`${tile.label}的拦截记录`} className="g2x-gate-table">
@@ -1270,7 +1270,7 @@ function G2ExchangePage() {
             danger={<Button variant="danger-outline" disabledReason={busyReason ?? (directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? undefined : newWriteBlockedReason)} aria-label="取消这笔兑换" onClick={() => cancelQueue(selectedQueue)}>取消这笔兑换</Button>} /> : undefined}>
           <JudgmentPoints rows={[
             { label: "排队原因", value: selectedQueue.gateReason, state: "warn" },
-            { label: "后端标注", value: selectedQueue.etaLabel === "—" ? "—" : `${selectedQueue.etaLabel} 处理`, reason: "这是后端固定写的文字，不是排好的处理时间；目前要在这页点「处理排队」才会成交。" },
+            { label: "系统标注", value: selectedQueue.etaLabel === "—" ? "—" : `${selectedQueue.etaLabel} 处理`, reason: "这是系统固定写的文字，不是排好的处理时间；目前要在这页点「处理排队」才会成交。" },
             { label: "用户所在地区", value: selectedQueue.countryCode, reason: "处理排队时按这个国家判断地区封锁。" },
           ]} />
           <Facts>
