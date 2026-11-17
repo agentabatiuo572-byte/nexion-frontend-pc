@@ -722,12 +722,12 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       prevRate: redemption.previousRate === null ? null : num(redemption.previousRate),
       prevLabel: str(redemption.previousLabel, "上期"),
     },
-    coverage12w: coverageSeries.map((row) => num(row.coverageRatio)),
-    coverageWeeks: coverageSeries.map((row) => {
+    coverage12w: coverage.series === undefined ? null : coverageSeries.map((row) => num(row.coverageRatio)),
+    coverageWeeks: coverage.series === undefined ? null : coverageSeries.map((row) => {
       const value = str(row.period);
       return value.includes("T") ? value.slice(5, 16).replace("T", " ") : value;
     }),
-    coverageBreaches: rows<Record<string, unknown>>(coverage.breaches).flatMap((row) => {
+    coverageBreaches: coverage.breaches === undefined ? null : rows<Record<string, unknown>>(coverage.breaches).flatMap((row) => {
       const index = coverageSeries.findIndex((point) => str(point.period) === str(row.period));
       return index < 0 ? [] : [{ i: index, type: str(row.type), label: str(row.label) }];
     }),

@@ -195,14 +195,17 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
     valuedNetExposureUsdt = amount;
   }
   if (!text(input.coverage.source, "coverage.source").includes("B1")) fail("coverage.source");
-  const coverageSeries = list(input.coverage.series, "coverage.series");
-  if (coverageSeries.length < 2) fail("coverage.series.length");
-  coverageSeries.forEach((row, index) => {
-    const item = record(row, `coverage.series[${index}]`);
-    text(item.period, `coverage.series[${index}].period`);
-    number(item.coverageRatio, `coverage.series[${index}].coverageRatio`);
-  });
-  list(input.coverage.breaches, "coverage.breaches");
+  // 7c5df3b9 retires these fields; old receipts may still contain their original history.
+  if (input.coverage.series !== undefined) {
+    const coverageSeries = list(input.coverage.series, "coverage.series");
+    if (coverageSeries.length < 2) fail("coverage.series.length");
+    coverageSeries.forEach((row, index) => {
+      const item = record(row, `coverage.series[${index}]`);
+      text(item.period, `coverage.series[${index}].period`);
+      number(item.coverageRatio, `coverage.series[${index}].coverageRatio`);
+    });
+  }
+  if (input.coverage.breaches !== undefined) list(input.coverage.breaches, "coverage.breaches");
 
   if (integer(input.liabilities.hardLiabilityCategoryCount, "liabilities.hardLiabilityCategoryCount") !== 9) {
     fail("liabilities.hardLiabilityCategoryCount");

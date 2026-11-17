@@ -5,7 +5,7 @@ import {
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { isExplicitRejection } from "./explicit-rejection";
 import {
-  fetchG3MarketReadOverview, g3LegacyCommands, submitG3MarketCommand,
+  fetchG3MarketReadOverview, g3LegacyCommands, g3OverrideWriteRefusal, submitG3MarketCommand,
   type G3CurveField, type G3ReadOverview, type G3OverrideKey, type serializeG3Frames,
 } from "./g3-client";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -56,6 +56,7 @@ export function g3MarketObjectReadState(overview: G3ReadOverview, key: string) {
 
 /** New requests only: original-key recovery must still reach the authoritative writer. */
 export function g3MarketReadBlockedCode(overview: G3ReadOverview, change: G3MarketChange, value?: string, _forceApproval = false) {
+  if (change.action === "override" && g3OverrideWriteRefusal(change.key)) return "RETIRED_FEATURE";
   const environment = overview.environmentWriteState?.entries.find(entry => change.action === "curve-cell"
     ? entry.operation === "g3_curve_update" && entry.field === change.field && (value === undefined || Number(value) !== Number(change.current))
     : change.action === "current-price" && entry.operation === "g3_override" && entry.overrideKey === "currentPrice");
@@ -183,6 +184,10 @@ export async function executeG3MarketChange(
   const fingerprint = slot(session.adminId, change);
   let command = previous;
   if (!command) {
+    if (change.action === "override") {
+      const refusal = g3OverrideWriteRefusal(change.key);
+      if (refusal) throw new Error(refusal);
+    }
     value = value.trim();
     reason = reason.trim();
     if (change.action === "schedule") {
