@@ -300,7 +300,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，这页的修改都要先提交审批" : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，修改要先提交审批" : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
