@@ -1,6 +1,6 @@
 "use client";
 import { useState, type ComponentProps, type ReactNode } from "react";
-import { OperationConfirmModal } from "../design-kit";
+import { compareEditDecimals, OperationConfirmModal } from "../design-kit";
 import { Notice } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -19,9 +19,10 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, ...prop
   const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。" : undefined);
   const facts = (value?: string) => {
     const direction = props.edit?.amplifiesWhen;
+    const decimalDirection = compareEditDecimals(value ?? "", props.edit?.current ?? "");
     const amplifies = typeof direction === "function" ? !!value && direction(value)
       : typeof direction === "object" ? props.edit?.current === direction.from && value === direction.to
-      : direction ? !!value && Number.isFinite(Number(value)) && (direction === "decrease" ? Number(value) < Number(props.edit?.current) : Number(value) > Number(props.edit?.current))
+      : direction ? decimalDirection !== undefined && (direction === "decrease" ? decimalDirection < 0 : decimalDirection > 0)
       : !!props.amplifies;
     return <div className="e6-confirm-facts">
       {typeof props.facts === "function" ? props.facts(value) : props.facts}

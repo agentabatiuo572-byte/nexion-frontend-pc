@@ -633,7 +633,7 @@ function initEditValue(spec?: EditSpec | null): string {
 }
 
 // Plain decimal inputs stay exact even beyond the precision of a JavaScript number.
-function normalizeEditDecimal(raw: string): string | null {
+export function normalizeEditDecimal(raw: string): string | null {
   const value = raw.trim();
   if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) return null;
   const [whole, fraction = ""] = value.replace(/^[+-]/, "").split(".");
@@ -642,7 +642,7 @@ function normalizeEditDecimal(raw: string): string | null {
   return `${value.startsWith("-") && (integer !== "0" || decimal) ? "-" : ""}${integer}${decimal ? "." + decimal : ""}`;
 }
 
-function compareEditDecimals(left: string, right: string): number | undefined {
+export function compareEditDecimals(left: string, right: string): number | undefined {
   const a = normalizeEditDecimal(left), b = normalizeEditDecimal(right);
   if (a === null || b === null) return undefined;
   if (a === b) return 0;
