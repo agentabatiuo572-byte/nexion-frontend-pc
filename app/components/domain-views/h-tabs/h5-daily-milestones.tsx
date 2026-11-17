@@ -472,7 +472,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       statedBrief: { impact: "只改保存的值，不改变收益里程碑什么时候发：系统不按这个间隔自动检查，用户在 App 成就页主动领取。", check: "核对秒数；理由写清依据或工单号。" },
       content: (
         <div className="rd-stack">
-          <Notice tone="warn" title="目前不影响收益里程碑">系统不按这个间隔自动检查；收益里程碑由用户在 App 成就页主动领取。</Notice>
+          <Notice tone="warn" title="目前不影响收益里程碑">系统不按这个间隔自动检查，用户在 App 成就页主动领取。</Notice>
           <Facts>
             <Fact k="现在">{text(snapshot.tickInterval?.value, current)}</Fact>
             {snapshot.tickInterval?.seconds === 0 && <Fact k="现在的值" tone="warn">0 秒不在 1–60 秒内，是以前存下的值</Fact>}
