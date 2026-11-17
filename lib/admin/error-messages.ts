@@ -2690,6 +2690,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H7_VOUCHER_EXPECTED_VERSION_REQUIRED: "缺少有效的代金券原版本，请刷新读取后重新操作。",
   H7_VOUCHER_PERCENT_INVALID: "折扣率须为 1–99 的整数。",
   H7_VOUCHER_TYPE_LOCKED_AFTER_ISSUE: "该模板已发券，类型不可修改。请刷新模板后继续编辑。",
+  H7_VOUCHER_EXPIRED: "代金券已过期，不能投放。请先编辑有效期。",
   H7_VOUCHER_STALE: "代金券模板已变化。请刷新核对当前版本后重新提交审批。",
   H7_VOUCHER_DISPOSITION_INVALID: "代金券审批对象有误，请刷新页面后重试。",
   H7_VOUCHER_EXPECTED_VERSION_INVALID: "代金券模板版本有误，请刷新页面后重试。",

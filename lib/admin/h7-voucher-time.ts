@@ -1,6 +1,10 @@
 /** H7 dates are calendar days in Beijing, independently of the operator's zone. */
 export const H7_TIME_ZONE = { zoneId: "Asia/Shanghai", label: "北京时间" } as const;
 
+export function isH7VoucherExpired(endAt: number, now: number): boolean {
+  return endAt > 0 && endAt < now;
+}
+
 export function h7DateInput(ms: number): string {
   return ms ? new Date(ms + 8 * 3_600_000).toISOString().slice(0, 10) : "";
 }
