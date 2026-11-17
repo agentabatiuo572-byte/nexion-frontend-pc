@@ -1064,7 +1064,7 @@ function G3MarketEditor() {
         </ConfigList>
         {/* 已停用的一组和上面分开：沿用「排程执行情况」那条分隔线（.g3-run），不改共用的域样式。 */}
         <section className="g3-run" aria-label="已停用的设置">
-          <div className="g3-subhead">七天波动幅度<span className="g3-subnote">已停用 · 不能再改</span><Explain label="七天波动幅度" content={<><p>七天计划里每天的波动幅度已停用，不影响价格和兑换。表里是还留着的旧值，2 表示 ±2%。</p><p>有没结论的原操作时，格子里可以查询或按原请求重试。</p></>} /></div>
+          <div className="g3-subhead">七天波动幅度<span className="g3-subnote">已停用 · 不能再改</span><Explain label="七天波动幅度" content={<><p>七天计划里每天的波动幅度已停用，不影响价格和兑换。表里是还留着的旧值，2 表示 ±2%。</p><p>有原操作没结论时，格子里可以查询或重试。</p></>} /></div>
           {weekTable("volatilityPct")}
           {retiredRows.length > 0 && <>
           <div className="g3-subhead">其他已停用的设置<span className="g3-subnote">不能再改</span><Explain label="其他已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原请求重试。" /></div>
