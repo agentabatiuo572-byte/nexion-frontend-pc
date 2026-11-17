@@ -1121,8 +1121,8 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
                 这组账户在「多账户风险排查」标记为可疑后，才能在这里提交冻结。
               </Notice>
             )}
-            <Fold inset title="后端原始记录" summary={`${current?.view.label ?? ""} · ${openRow.cells.length} 项`}
-              explain="后端返回的原始列名和值，列名有的不准：试用的「累计套取试用收益」实际是开始试用次数，置换的「设备链」实际是置换次数。">
+            <Fold inset title="原始记录" summary={`${current?.view.label ?? ""} · ${openRow.cells.length} 项`}
+              explain="系统记下的原始列名和值，列名有的不准：试用的「累计套取试用收益」实际是开始试用次数，置换的「设备链」实际是置换次数。">
               <Facts>
                 {openRow.cells.map((value, index) => <Fact key={index} k={current?.view.head[index] ?? `第 ${index + 1} 项`}>{value}{current?.view.key === "gift" && value.includes("已拦") && openRow.structured?.blockedCountAvailable !== true
                   && <small className="k2-raw-note">「已拦」不是统计数：系统没有统计已拦次数</small>}</Fact>)}
