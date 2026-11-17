@@ -769,6 +769,8 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
   if (batch) return `${fBatchPages(batch.items).join("、") || "团队参数"} · ${batch.count} 项`;
   if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
+  const ambassador = /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
+  if (ambassador) return `区域大使申请 #${ambassador[1]}`;
   return w.obj;
 }
 const COURSE_VALUE_TEXT: Record<string, Record<string, string>> = {
@@ -1656,6 +1658,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.obj === "current" && !w.objDisplayName) return "当前设置";
     // 整批申请的对象是配置键清单或摘要，运营看不懂：写涉及的页面和项数，原文进技术信息。
     if (fBatchTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`对象原文 ${w.obj}${fBatchTicket(w)?.digest ? "（清单太长，只存了摘要）" : ""}`} /></>;
+    const ambassador = !w.objDisplayName && /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
+    if (ambassador) return <>区域大使申请 <span data-mono className="a2-code">#{ambassador[1]}</span><Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */
