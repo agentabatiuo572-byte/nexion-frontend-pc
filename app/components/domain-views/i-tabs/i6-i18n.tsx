@@ -1283,8 +1283,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     try {
       let receipt = null;
       try {
-        receipt = await queryI6Receipt(record);
-        setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
+        const next = await queryI6Receipt(record);
+        receipt = next;
+        setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next } }));
       } catch (error) {
         setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
       }
