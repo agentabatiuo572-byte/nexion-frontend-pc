@@ -140,7 +140,17 @@ export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { 
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
   return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";
 }
-export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null };
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null } | {
+  status: "REJECTED";
+  sent: false;
+  customerId: string;
+  operation: "M3_CONVERSATION_INITIATE" | "M3_CONVERSATION_REPLY";
+  idempotencyKey: string;
+  clientMessageId: string;
+  businessCode: number;
+  businessReason: string;
+  result?: never;
+};
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
   kind: "TEXT" | "IMAGE" | "SKU" | "LINK";
@@ -526,6 +536,20 @@ export const supportClient = {
     request("/support-agents/rules", rules, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "rules.expectedVersion") }, idempotencyKey, signal)),
   command: (key: string, signal?: AbortSignal) => request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value): SupportCommandResult => {
     const row = object(value, "command");
+    if (row.status === "REJECTED") {
+      if (row.sent !== false || row.idempotencyKey !== key.trim()
+        || !Number.isInteger(row.businessCode) || Number(row.businessCode) < 400 || Number(row.businessCode) >= 500) malformed("command.rejection");
+      const clientMessageId = nonempty(row.clientMessageId, "command.clientMessageId");
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(clientMessageId)) malformed("command.clientMessageId");
+      return {
+        status: "REJECTED", sent: false,
+        customerId: id(row.customerId, "command.customerId"),
+        operation: enumValue(row.operation, ["M3_CONVERSATION_INITIATE", "M3_CONVERSATION_REPLY"] as const, "command.operation"),
+        idempotencyKey: key.trim(), clientMessageId,
+        businessCode: row.businessCode as number,
+        businessReason: nonempty(row.businessReason, "command.businessReason"),
+      };
+    }
     const result = row.result === undefined ? undefined : object(row.result, "command.result");
     if (typeof row.operationId === "string" && typeof row.previewId === "string" && Array.isArray(row.customers) && ["RUNNING", "COMPLETED"].includes(String(row.status))) return { status: row.status === "COMPLETED" ? "SUCCEEDED" : "PENDING", result: row };
     const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");

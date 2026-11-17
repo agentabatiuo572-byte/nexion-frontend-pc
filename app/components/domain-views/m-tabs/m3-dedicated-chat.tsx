@@ -12,7 +12,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
-import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCommandResult, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -1017,6 +1017,21 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
 
+  const settleRetainedMessageRejection = (result: SupportCommandResult, slot: string, locator: PrivateMessageRecovery | null) => {
+    if (result.status !== "REJECTED") return false;
+    // The GET binds the actor/key; match the saved message and operation before releasing its lock.
+    if (!locator || result.idempotencyKey !== locator.key || result.clientMessageId !== locator.clientMessageId
+      || result.operation !== (locator.conversationId ? "M3_CONVERSATION_REPLY" : "M3_CONVERSATION_INITIATE")
+      || locator.customerId !== undefined && result.customerId !== locator.customerId) {
+      throw new SupportClientError(409, 409, "SUPPORT_COMMAND_RESULT_INVALID");
+    }
+    pendingMessages.forget(slot, locator.key);
+    pendingMessages.forget(recoveryKey(adminId, locator.key), locator.key);
+    setPending(previous => previous?.key === locator.key ? null : previous);
+    setFirstPending(previous => previous?.key === locator.key ? null : previous);
+    readRecoveries();
+    return true;
+  };
   const queryRecovery = async (slot: string, locator: PrivateMessageRecovery) => {
     if (recoveryBusy) return;
     const identity = identityRef.current;
@@ -1024,6 +1039,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     try {
       const result = await supportClient.command(locator.key);
       if (identityRef.current !== identity) return;
+      if (settleRetainedMessageRejection(result, slot, locator)) { setRecoveryError("原消息发送失败。重新发送前请核对当前归属。"); return; }
       if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setRecoveryError("原消息结果仍未知，请稍后再查；不会重新发送。"); return; }
       pendingMessages.forget(slot); readRecoveries();
       setRecoveryError(result.status === "SUCCEEDED" ? "原消息已发送。请刷新会话查看。" : "原消息发送失败。重新发送前请核对当前归属。");
@@ -1086,6 +1102,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       try {
         const result = await supportClient.command(record.key);
         if (identityRef.current !== identity) return;
+        if (settleRetainedMessageRejection(result, slot, privateMessageRecovery(record))) { setSendError(MESSAGE_FAILED); return; }
         if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
         pendingMessages.forget(slot, record.key);
         if (first) setFirstPending(null); else setPending(null);
@@ -1148,6 +1165,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             throw cause;
           });
           if (identityRef.current !== identity) return;
+          if (recovered && settleRetainedMessageRejection(recovered, firstPendingKey(adminId, record.customerId), privateMessageRecovery(record))) { setSendError(MESSAGE_FAILED); return; }
           if (!recovered && sendRetryExpired) { setSendError(RETRY_EXPIRED_TEXT); return; }
           if (!recovered) {
             submitted = true;
@@ -1258,6 +1276,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           throw cause;
         });
         if (identityRef.current !== identity) return;
+        if (recovered && settleRetainedMessageRejection(recovered, pendingKey(adminId), privateMessageRecovery(record))) { setSendError(MESSAGE_FAILED); return; }
         if (recovered && recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
         if (recovered?.status === "FAILED") { pendingMessages.forget(pendingKey(adminId)); setPending(null); setSendError(MESSAGE_FAILED); return; }
         if (!recovered && sendRetryExpired) { setSendError(RETRY_EXPIRED_TEXT); return; }
