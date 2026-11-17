@@ -161,7 +161,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
         coverageLead: "提前解锁后这笔钱可能提前流出",
-        coverageCheck: grouped ? "提交前按页面读到的兑付覆盖率查一次；批准时不再查覆盖率，只核冷却有没有真正到期。" : "提交前按页面读到的兑付覆盖率查一次。批准时系统再查：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。",
+        coverageCheck: grouped ? "提交前按页面读到的兑付覆盖率查一次；批准时不再查覆盖率，但仍会核冷却、暂停、风险和退款，不满足就拒绝。" : "提交前按页面读到的兑付覆盖率查一次。批准时系统再查：这类奖励在暂停中会被拒；覆盖率读不到或低于红线不放钱，审批单留着待审批；等于红线算够。",
         blockedReason: knownRejection(row, "release", data?.activeSuspensions),
         statedBrief: grouped
           ? { impact: "批准时系统核对结算组的冷却是否真正到期，没到期会拒绝", check: "核对剩余冷却天数，理由写清为什么要提前。" }
@@ -197,7 +197,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           {scopeFact(row, "解冻")}
           {friend
             ? <Fact k="到期时间" tone="warn">沿用原来的，不重新计算；用户还有其他冻结条件（暂停、风险）时批准会被拒</Fact>
-            : <Fact k="到期时间" tone="warn">接着冷却冻结时还剩的时间<Explain label="没有到期时间的旧记录" content="以前暂停用户奖励时冻结的旧记录，到期时间已被清空，批准解冻时会被拒，这笔继续冻结。要处理请联系值班人员核对。" /></Fact>}
+            : <>
+              <Fact k="到期时间">接着冷却冻结时还剩的时间</Fact>
+              <Fact k="可能被拒" tone="warn">到期时间已丢失的旧记录会被拒，奖励仍冻结<Explain label="哪些旧记录会被拒" content="以前暂停用户奖励时冻结的旧记录，到期时间被清空了，系统不替它补算，这页也看不出是哪几笔。被拒后要处理，请联系值班人员核对。" /></Fact>
+            </>}
           <Fact k="用户余额">解冻本身不动余额</Fact>
           <Fact k="能不能撤回">能，可以再冻结</Fact>
           <Fact k="谁来批准">{approverText("奖励冻结权限")}</Fact>

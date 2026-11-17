@@ -17,8 +17,15 @@ import { useReach } from "@/lib/nav/use-reach";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { FundClosureModal, FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import type { E4PendingCommand, EViewCtx } from "./types";
-import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderAmountDigits, orderMoney, stateLabel, type E4Query } from "./data";
+import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, stateLabel, type E4Query } from "./data";
 
+/** 显示用金额：去掉后端补的末尾 0、至少两位小数，不舍入（全站金额写法）；请求和校验用原值。 */
+const e4Amount = (value: number | string | null) => {
+  const text = orderAmount(value);
+  const [whole, fraction] = text.split(".");
+  return fraction === undefined ? text : `${whole}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`;
+};
+const e4Money = (value: number | string | null) => `${e4Amount(value)} USDT`;
 const FLOW_STATES = ["placed", "paid", "provisioning"];
 const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
 
@@ -75,20 +82,20 @@ function OrdinaryRefundImpact({ impact, compact = false }: { impact: E4RefundImp
       {compact ? <Table label="普通订单退款任务与收益">
         <thead><tr><Th>任务</Th><Th align="right">项数</Th><Th align="right">USDT</Th><Th align="right">UVT</Th></tr></thead>
         <tbody>
-          <tr><Td>完成待结算</Td><Td align="right">{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Td><Td align="right">{pending ? orderAmount(pending.usdtAmount) : "未知"}</Td><Td align="right">{pending ? orderAmount(pending.uvtAmount) : "未知"}</Td></tr>
+          <tr><Td>完成待结算</Td><Td align="right">{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Td><Td align="right">{pending ? e4Amount(pending.usdtAmount) : "未知"}</Td><Td align="right">{pending ? e4Amount(pending.uvtAmount) : "未知"}</Td></tr>
           <tr><Td>未完成待停止</Td><Td align="right">{impact.runtimeComplete && impact.unfinishedTaskCount !== null ? impact.unfinishedTaskCount.toLocaleString("en-US") : "未知"}</Td><Td align="right">—</Td><Td align="right">—</Td></tr>
           <tr><Td>已停止</Td><Td align="right">{impact.stoppedTaskCount.toLocaleString("en-US")}</Td><Td align="right">—</Td><Td align="right">—</Td></tr>
-          <tr><Td>已到账保留</Td><Td align="right">{impact.creditedRetained.taskCount.toLocaleString("en-US")}</Td><Td align="right">{orderAmount(impact.creditedRetained.usdtAmount)}</Td><Td align="right">{orderAmount(impact.creditedRetained.uvtAmount)}</Td></tr>
+          <tr><Td>已到账保留</Td><Td align="right">{impact.creditedRetained.taskCount.toLocaleString("en-US")}</Td><Td align="right">{e4Amount(impact.creditedRetained.usdtAmount)}</Td><Td align="right">{e4Amount(impact.creditedRetained.uvtAmount)}</Td></tr>
         </tbody>
       </Table> : <Facts>
         <Fact k="完成待结算" unit={pending ? "项" : undefined}>{pending ? pending.taskCount.toLocaleString("en-US") : "未知"}</Fact>
-        <Fact k="待结算 USDT">{pending ? orderAmount(pending.usdtAmount) : "未知"}</Fact>
-        <Fact k="待结算 UVT">{pending ? orderAmount(pending.uvtAmount) : "未知"}</Fact>
+        <Fact k="待结算 USDT">{pending ? e4Amount(pending.usdtAmount) : "未知"}</Fact>
+        <Fact k="待结算 UVT">{pending ? e4Amount(pending.uvtAmount) : "未知"}</Fact>
         <Fact k="未完成任务">{impact.runtimeComplete && impact.unfinishedTaskCount !== null ? `${impact.unfinishedTaskCount.toLocaleString("en-US")} 项，退款后停止` : "未知"}</Fact>
         <Fact k="已停止任务">{impact.stoppedTaskCount.toLocaleString("en-US")} 项</Fact>
         <Fact k="已到账保留" unit="项">{impact.creditedRetained.taskCount.toLocaleString("en-US")}</Fact>
-        <Fact k="保留 USDT">{orderAmount(impact.creditedRetained.usdtAmount)}</Fact>
-        <Fact k="保留 UVT">{orderAmount(impact.creditedRetained.uvtAmount)}</Fact>
+        <Fact k="保留 USDT">{e4Amount(impact.creditedRetained.usdtAmount)}</Fact>
+        <Fact k="保留 UVT">{e4Amount(impact.creditedRetained.uvtAmount)}</Fact>
       </Facts>}
       <p className="rd-note"><KeepText text={`${compact ? "" : "普通购买设备 · "}截至 ${formatBusinessTimeCompact(impact.asOf, "—")}（${businessZone().label}）`} phrases={[businessZone().label]} /><Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是读取时的任务影响，不代表收益已到账，也不改变应退金额。" /></p>
     </>}
@@ -159,14 +166,12 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const countState = ctx.e4CountsFailed ? "数量暂时读不到" : counts ? undefined : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
   const hasConditions = query.group !== "all" || query.state !== "" || ctx.e4KeywordInput !== "";
-  // 同一列按这一页最多的小数位补零，小数点对齐（ST-02）。
-  const amountDigits = Math.max(2, ...orders.map((order) => orderAmountDigits(order.amt)));
   // 小数相加有浮点尾巴（0.1 + 0.2），收回到原始金额的位数再显示。toFixed 最多 100 位。
   const activeMicro = activated.some(order => order.amt === null) ? null : activated.reduce((sum, order) => {
     const [whole, fraction = ""] = order.amt!.split(".");
     return sum + BigInt(whole) * BigInt(1000000) + BigInt(fraction.padEnd(6, "0"));
   }, BigInt(0));
-  const activeAmount = activeMicro === null ? null : `${activeMicro / BigInt(1000000)}.${String(activeMicro % BigInt(1000000)).padStart(6, "0").slice(0, amountDigits)}`;
+  const activeAmount = activeMicro === null ? null : `${activeMicro / BigInt(1000000)}.${String(activeMicro % BigInt(1000000)).padStart(6, "0")}`;
   const tableColumns = ORDER_COLUMNS.filter((column) => columns.isVisible(column.key)).length;
   const countText = (state: string) => `${counts?.[state] ?? "—"} 单`;
 
@@ -201,7 +206,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           canQuery: ctx.canQueryE4, copy: { missingOrigin: expired ? "这条记录早于执行核查，查询原结果只查审批单。超过 24 小时不能再重试。" : "这条记录早于执行核查，查询原结果只查审批单。" },
           status: waiting ? { tone: "warn", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
             : created ? { tone: "warn", label: "进度没读到", line: `${ticket}已建好，审批进度没读到，再查一次，不要重新提交。` }
-              : expiredMissing ? { tone: "neutral", label: "没有建成", line: "超过 24 小时也查不到审批单，申请没有建成，可以解除这条记录。" } : undefined,
+              : expiredMissing ? { tone: "neutral", label: "没有建成", line: "查询确认申请没有建成，也没有审批单，可以解除。" } : undefined,
           actions: <>
             {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
             {!created && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "UNKNOWN" && access.canSubmit && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
@@ -209,7 +214,9 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             {expiredMissing && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           </>,
           detail: <>
-            <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原结果」再读一次审批进度。" : `可能已经提交，有结果前这单不能再操作。${!expired && !canRetry ? "这个账号已没有这项权限，不能重试。" : ""}`}</p>
+            <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原结果」再读一次审批进度。"
+              : expiredMissing ? "已过 24 小时。系统里没有这次申请，或申请失败已整体撤销，也查不到审批单。解除时会再查一次。"
+              : `可能已经提交，有结果前这单不能再操作。${!expired && !canRetry ? "这个账号已没有这项权限，不能重试。" : ""}`}</p>
             {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
           </>,
           tech: `${created ? `原请求编号 ${record.commandKey} ｜ ` : ""}${record.receivedTicketId ? `审批单 ${record.receivedTicketId} ｜ ` : ""}订单 ${record.orderNo} ｜ 理由 ${record.spec.reason}` };
@@ -275,7 +282,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                       <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={order.pendingApproval ? <StatusTag tone="warn">待审批</StatusTag> : STATE_NEXT[state]} /></Td>
                       {columns.isVisible("user") && <Td><Cell mono main={order.user} /></Td>}
                       {columns.isVisible("sku") && <Td className="e4-sku"><Cell main={order.sku} title={order.sku} /></Td>}
-                      {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} sub={order.state === "refunded" && order.refundAmountUsdt !== null && Number(order.refundAmountUsdt) !== Number(order.amt) ? `实退 ${orderAmount(order.refundAmountUsdt)}` : undefined} /></Td>}
+                      {columns.isVisible("amount") && <Td align="right"><Cell num main={e4Amount(order.amt)} sub={order.state === "refunded" && order.refundAmountUsdt !== null && Number(order.refundAmountUsdt) !== Number(order.amt) ? `实退 ${e4Amount(order.refundAmountUsdt)}` : undefined} /></Td>}
                       {columns.isVisible("dc") && <Td><Cell main={order.dc} title={order.dc} /></Td>}
                       {columns.isVisible("age") && <Td align="right"><Cell num main={ORDER_FINAL_STATES.includes(state) ? "—" : order.age} /></Td>}
                     </Tr>
@@ -284,7 +291,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         </tbody>
       </Table>
       {!error && ctx.e4Total > 0 && <Pager label="订单列表" total={ctx.e4Total} page={query.page} pageSize={query.pageSize} sizes={E4_PAGE_SIZES} loading={loading}
-        note={!loading && activated.length > 0 ? `本页已激活 ${activated.length} 笔，合计 ${orderMoney(activeAmount)}，只算这一页` : undefined}
+        note={!loading && activated.length > 0 ? `本页已激活 ${activated.length} 笔，合计 ${e4Money(activeAmount)}，只算这一页` : undefined}
         onPage={(page) => ctx.updateE4Query({ page })} onPageSize={(pageSize) => ctx.updateE4Query({ pageSize })} />}
     </Panel>
 
@@ -313,7 +320,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     <E4OrderDrawer ctx={ctx} />
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => { ctx.releaseE4Pending(releasing); setReleasing(null); }}
-      explain="已超过 24 小时，按原请求查不到这张审批单，说明申请没有建成。确认时会再查一次，查到审批单就不解除。解除后这单可以重新处理，系统按这单现在的状态校验。" />}
+      explain="已超过 24 小时，查询确认这次申请没有建成：系统里没有它，或它失败后已整体撤销，也查不到审批单。确认时会再查一次，结果有变或查到审批单就不解除。解除后这单可以重新处理，系统按这单现在的状态校验。" />}
     {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} facts={<Fact k="订单">{closing.orderNo}</Fact>}
       onClose={() => setClosing(null)} onSubmit={async evidence => { await ctx.checkE4Investigation(closing, evidence); setClosing(null); }} />}
   </>;
@@ -389,7 +396,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const orderFacts = (lead: ReactNode, rows?: ReactNode) => <Facts>
     {lead}
     <Fact k="订单"><span data-mono>{o.id}</span></Fact>
-    <Fact k="金额">{orderMoney(o.amt)}</Fact>
+    <Fact k="金额">{e4Money(o.amt)}</Fact>
     <Fact k="用户">{o.user}</Fact>
     <Fact k="商品">{o.sku}</Fact>
     {rows}
@@ -426,10 +433,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     nextRow,
     ...(finalized && closeRecord && e4Detail ? [{ label: FAILED_STATES.includes(eff) ? "失败原因" : eff === "refunded" ? "退款原因" : "原因", value: operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod) }] : []),
     ...(eff === "refunded" ? [o.refundAmountUsdt === null
-      ? { label: "实退金额", value: "—", reason: `没有记录实退金额；原订单金额 ${orderMoney(o.amt)}` }
-      : { label: "实退金额", value: orderMoney(o.refundAmountUsdt), reason: `原订单金额 ${orderMoney(o.amt)}` }] : []),
+      ? { label: "实退金额", value: "—", reason: `没有记录实退金额；原订单金额 ${e4Money(o.amt)}` }
+      : { label: "实退金额", value: e4Money(o.refundAmountUsdt), reason: `原订单金额 ${e4Money(o.amt)}` }] : []),
     { label: "对象", icon: User, tone: "users", value: o.user, reason: o.sku },
-    { label: "金额", icon: Coins, tone: "money", value: orderMoney(o.amt), reason: e4Detail ? `${e4Detail.quantity} 台 · ${operatorOrderFact("type", e4Detail.orderType)}` : undefined },
+    { label: "金额", icon: Coins, tone: "money", value: e4Money(o.amt), reason: e4Detail ? `${e4Detail.quantity} 台 · ${operatorOrderFact("type", e4Detail.orderType)}` : undefined },
     e4Detail
       ? { label: "付款来源", value: `${operatorOrderFact("payment", e4Detail.paymentMethod)} · ${operatorOrderFact("paymentStatus", e4Detail.paymentStatus)}`, reason: e4Detail.paymentNo ? <span data-mono>{e4Detail.paymentNo}</span> : undefined }
       : { label: "付款来源", ...pendingFact },
@@ -478,7 +485,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               <div className={e4Detail.orderType !== "TRIAL_CONVERT" ? "e4-refund-grid" : undefined}>
                 <div className="rd-stack">
                   <Facts>
-                    <Fact k="原订单金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>
+                    <Fact k="原订单金额" lead tone="role-1" unit="USDT">{e4Amount(o.amt)}</Fact>
                     <Fact k="订单"><span data-mono>{o.id}</span></Fact>
                     <Fact k="用户">{o.user}</Fact>
                     {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
@@ -594,7 +601,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             const ledgerHref = e4FundingLedgerHref(item);
             return {
               id: `${item.source}-${item.bizNo}-${position}`,
-              value: orderAmount(item.amount),
+              value: e4Amount(item.amount),
               unit: "USDT",
               at: item.occurredAt,
               object: <>{operatorOrderFact("source", item.source)} · {operatorOrderFact("direction", item.direction)} <Explain label="资金原始信息" rows={[{ k: "来源", v: item.source }, { k: "收支", v: item.direction }, { k: "状态", v: item.status }]} />{ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></>}</>,

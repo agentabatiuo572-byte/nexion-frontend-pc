@@ -311,7 +311,10 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
       status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" }
-        : expired && basis && !basis.rejected && basis.success === "never" && !resumeCanClose ? { tone: "neutral", label: "记为失败", line: "这条结不了案；请把技术信息里的原请求编号交给技术同事。" } : undefined,
+        : expired && basis && !basis.rejected && basis.success === "never" && !resumeCanClose ? { tone: "neutral", label: "记为失败", line: "这条结不了案；请把技术信息里的原请求编号交给技术同事。" }
+          // 后台核实已整体撤销才收「未执行」，提交前看不出来，所以不说成一定能结。
+          : expired && resumeCanClose && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED" && fundInvestigationAccess(investigationRecord(record)).canSubmit
+            ? { tone: "neutral", label: "记为失败", line: "已过 24 小时，可申请核查结案；后台核实已整体撤销才会收。" } : undefined,
       actions: <>
         {checkButtons(record, label, context.kind, change)}
         {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
@@ -378,6 +381,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
   const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
   const closingBasis = closureKnown(closingOutcome);
+  const closingResumeCanClose = closing?.kind === "resume" && eCommandCanRequestResumeRollback(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null);
   const submitClosure = async (evidence: FundCommandEvidence) => {
     if (!closing) return;
     const { record, label } = closing;
@@ -389,7 +393,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const closureFacts = closing && <>
     {closing.change && <Fact k={closing.kind === "cancel" || closing.kind === "resume" || closing.kind === "rollback" ? "执行" : "内容"}>{closing.change}</Fact>}
     <Fact k="系统记录">{receiptFact(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null, "原操作还锁着")}</Fact>
-    {closingBasis && !closingBasis.rejected && closingBasis.success === "never" && <Fact k="原请求编号"><span data-mono="">{closing.record.commandKey}</span></Fact>}
+    {closingBasis && !closingBasis.rejected && closingBasis.success === "never" && !closingResumeCanClose && <Fact k="原请求编号"><span data-mono="">{closing.record.commandKey}</span></Fact>}
     {closingLast && <Fact k="上次核查">{formatBusinessTimeCompact(closingLast.investigatedAt, "—")}，记为「{closingLast.conclusion === "SUCCEEDED" ? "已执行" : closingLast.conclusion === "NOT_EXECUTED" ? "未执行" : "仍未知"}」</Fact>}
   </>;
   const recovery = <>

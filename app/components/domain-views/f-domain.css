@@ -585,6 +585,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f3-page .f3-pair-match { fill: var(--rd-chart-2); }
 .f3-page .f3-pair-tick { fill: var(--rd-text-3); }
 .f3-page .f3-pair-axis { width: 2px; height: 16px; background: var(--rd-chart-axis); }
+.f3-page .f3-pair-missing { text-align: center; color: var(--rd-text-3); }
+.f3-page .f3-dates-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .f3-page .f3-dates { table-layout: fixed; }
 
 /* 结算设置的值：值一行、方向一行 */

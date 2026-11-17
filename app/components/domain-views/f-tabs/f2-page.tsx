@@ -61,8 +61,28 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
 
   const metric = (id: string) => ctx.f2Metrics.find((row) => row.id === id);
   const usdt = metric("weeklyUsdtRoyalty"), uvt = metric("weeklyNexPayout"), l1 = metric("l1TriggerRate");
-  const amount = (raw: string | undefined) => raw ? num(raw.replace(/^\$/, "").replace(/,/g, "")) : "—";
+  // 金额原文本：整数部分加千分位，去掉末尾 0、至少两位小数，不舍入；读不懂的原样写。
+  const amount = (raw: string | null | undefined) => {
+    const match = raw ? /^(\d+)(?:\.(\d+))?$/.exec(raw.replace(/^\$/, "").replace(/,/g, "").trim()) : null;
+    return !raw ? "—" : match ? `${num(match[1])}.${(match[2] ?? "").replace(/0+$/, "").padEnd(2, "0")}` : raw;
+  };
   const absent = "没有记录时后端不返回这个数，这里写「—」，不是 0。";
+  // 新后端给原始金额和按现在状态分的合计；旧后端没有这组数，金额是舍到两位的。
+  const stats = ctx.f2PayoutStatistics;
+  const payout = (currency: "USDT" | "UVT") => stats?.find(row => row.currency === currency);
+  const statSub = (metricSub: string | undefined, currency: "USDT" | "UVT") => {
+    const paid = payout(currency)?.paidAmountRaw;
+    const records = metricSub?.replace(/ 笔.*$/, " 笔记录");
+    return paid == null ? records : `${records ? `${records} · ` : ""}其中已提现 ${amount(paid)}`;
+  };
+  const statExplain = (currency: "USDT" | "UVT", found: boolean) => {
+    const row = payout(currency);
+    return <>
+      <p>{stats ? "按记入时间统计近 7 天的全部奖励，含冷却中和冻结的，不是到账金额。" : "按记入时间统计近 7 天的全部奖励，含冷却中和冻结的，不是到账金额；后端已舍到两位小数。"}</p>
+      {row?.paidAmountRaw != null && <p>{`「其中已提现」是这些奖励里现在状态为已提现的部分，加上已结清共 ${amount(row.paidOrSettledAmountRaw)} ${currency}；不是这 7 天到账多少。`}</p>}
+      {!found && <p>{absent}</p>}
+    </>;
+  };
 
   return (
     <div className="f2-page">
@@ -75,10 +95,10 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
       <F2RecoveryNotice ctx={ctx} recovering={recovering} setRecovering={setRecovering} />
       <F2SevenLayerActivation ctx={ctx} openConfirm={setConfirm} recovering={recovering} />
       {ratesReady && <StatBand label="近 7 天" fit>
-        <Stat label="近 7 天记入的 USDT 奖励" icon={Coins} tone="role-1" value={amount(usdt?.value)} unit={usdt ? "USDT" : undefined} sub={usdt?.sub?.replace(/ 笔.*$/, " 笔记录")}
-          explain={<><p>按记录的创建时间，统计近 7 天全部 USDT 奖励记录，不区分有没有发出；后端已舍到两位小数。</p>{!usdt && <p>{absent}</p>}</>} />
-        <Stat label="近 7 天记入的 UVT 奖励" icon={Coins} tone="role-1" value={amount(uvt?.value)} unit={uvt ? "UVT" : undefined} sub={uvt?.sub?.replace(/ 笔.*$/, " 笔记录")}
-          explain={<><p>按记录的创建时间，统计近 7 天全部 UVT 奖励记录，不区分有没有发出；后端已舍到两位小数。</p>{!uvt && <p>{absent}</p>}</>} />
+        <Stat label="近 7 天记入的 USDT 奖励" icon={Coins} tone="role-1" value={amount(usdt?.value)} unit={usdt ? "USDT" : undefined} sub={statSub(usdt?.sub, "USDT")}
+          explain={statExplain("USDT", !!usdt)} />
+        <Stat label="近 7 天记入的 UVT 奖励" icon={Coins} tone="role-1" value={amount(uvt?.value)} unit={uvt ? "UVT" : undefined} sub={statSub(uvt?.sub, "UVT")}
+          explain={statExplain("UVT", !!uvt)} />
         <Stat label="L1 成员占比" icon={Users} tone="role-3" value={l1?.value ?? "—"} sub={l1?.sub}
           explain={<><p>团队成员记录里第 1 层成员占全部成员的比例，不是奖励触发率。</p>{!l1 && <p>{absent}</p>}</>} />
       </StatBand>}
