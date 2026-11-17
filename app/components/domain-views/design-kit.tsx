@@ -3814,6 +3814,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const comparisonValueId = useId();
   const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
+  // 提交失败的提示在正文最上方：长表单点完底栏按钮后它可能已滚出视野，出现时滚到看得见（已在视野里不动）。
+  const submitAlertRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (submitError) submitAlertRef.current?.scrollIntoView({ block: "nearest" }); }, [submitError]);
   const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
   // 影响随业务字段变（比如名单有效期选长期还是指定日期），传函数时按现在填的值算。
   const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue) : statedBrief;
@@ -4059,10 +4062,10 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
-        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>
+        <div className="rd-confirm-alert" ref={submitAlertRef}><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>
       ) : blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
-        : submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
+        : submitError && <div className="alertbar warn" role="alert" ref={submitAlertRef} style={{ marginBottom: 16 }}>{submitError}</div>}
       {inlineApproval?.disabledReason && (surface
         ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
         : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
