@@ -250,6 +250,8 @@ function coverageFacts(w: { operationCode?: string | null; obj?: string; after?:
  */
 function approvalRefusedText(operationCode: string | null | undefined, cause: unknown) {
   const code = backendCode(cause);
+  // A6 授权单：后端在改授权之前拒（OpsPlatformRoleService 审计角色只读门），授权、单子和锁都不动。
+  if (code === "AUDIT_ROLE_WRITE_FORBIDDEN") return "审计角色只能有查看权限，这次批准没有执行，角色权限没有变；审批单还是待审批，不会自己结束。请驳回，或请发起人撤回。";
   // F 域配置（放宽方向）和 F5 补发：后端在改之前拒（OpsTeamService.updateUiConfig 等、F5CommissionService.reissueInternal），单子和锁都不动。
   if (code === "COVERAGE_BELOW_REDLINE" && F_CONFIG_CODES.includes(operationCode ?? "")) return "兑付覆盖率低于红线，这次批准没有执行，设置没有改；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
   if (code === "COVERAGE_BELOW_REDLINE" && operationCode === "f5_commission_reissue") return "兑付覆盖率低于红线，这次补发没有执行，一笔都没补；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";

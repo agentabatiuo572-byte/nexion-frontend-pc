@@ -450,7 +450,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       title: "发布模板",
       detail: <>频道 <b>{ch}</b>。发布后，这个频道之后生成的消息用这份内容；频道不会自动启用。中文和越南语必须完整、正文变量一致（英文可选），含已退役品牌词时会被拒。</>,
       effect: LIVE,
-      statedBrief: { impact: "这个频道之后生成的消息用这份内容；频道不会自动启用，已经发出的不变。", check: "提交时会查中文、越南语是否完整、正文变量是否一致、有没有已退役的品牌词，不通过会被拒。" },
+      statedBrief: { impact: "这个频道之后生成的消息用这份内容；频道不会自动启用，已经发出的不变。", check: "提交时会查中文、越南语是否完整、正文变量是否一致、有没有已退役的品牌词；真实动态以外的频道带变量也会被拒。" },
       facts: (
         <Facts>
           <Fact k="模板">{name}</Fact>
@@ -458,6 +458,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <Fact k="模板状态"><Change from="草稿" to="已发布" /></Fact>
           <Fact k="版本">{t?.v ?? "—"}</Fact>
           <Fact k="语言">{t && t.titleEn.trim() && t.bodyEn.trim() ? "中文、越南语、英语" : "中文、越南语（英语没填）"}</Fact>
+          {t && ch !== SOCIAL_CHANNEL && (() => {
+            const used = [...new Set([t.titleZh, t.bodyZh, t.titleVi, t.bodyVi, t.titleEn, t.bodyEn].flatMap(placeholdersOf))];
+            return used.length ? <Fact k="变量" tone="danger">{`有 ${used.join("、")}：这个频道填不了，发布会被拒`}</Fact> : null;
+          })()}
           <Fact k="频道状态" tone={n && !n.on ? "warn" : undefined}>{n ? (n.on ? "已启用" : "已停用，发布后要另外点「启用」") : "—"}</Fact>
         </Facts>
       ),
@@ -1154,7 +1158,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <Fact k="版本">{t.v}</Fact>
               <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(t.cta) ? "warn" : undefined}>{`${ctaLabel(CTA_OPTIONS, t.cta)}${UNREACHABLE_CTA.has(t.cta) ? `（${UNREACHABLE_TEXT}）` : ""}`}</Fact>
             </Facts>
-            {!social && used.length > 0 && <Notice tone="warn">{`这个频道的变量目前不会被替换，用户会看到原样的 ${used.join("、")}。`}</Notice>}
+            {!social && used.length > 0 && <Notice tone="warn">{tplStatus(t.ch) === "published"
+              ? `这个频道不替换变量，用户会看到原样的 ${used.join("、")}。换新模板时要删掉变量，否则保存会被拒。`
+              : `这个频道不替换变量，带着 ${used.join("、")} 保存或发布都会被拒，先编辑删掉。`}</Notice>}
             <div className="i2-langs">
               {([["ZH", "中文", t.titleZh, t.bodyZh, true], ["VI", "越南语", t.titleVi, t.bodyVi, true], ["EN", "英语", t.titleEn, t.bodyEn, false]] as const).map(([lang, label, title, body, req]) => {
                 const filled = langState(title, body);

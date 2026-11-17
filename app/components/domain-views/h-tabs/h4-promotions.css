@@ -262,6 +262,8 @@
 .h4l-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .h4l-legend span { width: 10px; height: 10px; border-radius: 2px; background: var(--slot); }
 /* 护栏卡 */
+.h4-page .h4l-awards { margin-top: 16px; }
+.h4-page .h4l-awards .rd-table-scroll { max-width: 640px; }
 .h4-page .h4l-guards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .h4-page .h4l-guard { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); border: 1px solid var(--rd-line); min-width: 0; }
 .h4-page .h4l-guard header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }

@@ -264,9 +264,9 @@ const VIEW_UI: Record<string, ViewUi> = {
     name: "批量领新人礼", icon: Gift, subject: "账户组", objectSub: { label: "关联账户", index: 1 },
     what: "同一账户组里已结算的新人礼笔数达到检测线。目前只按账户组统计，统计全部已结算记录，没有时间窗。",
     levelRule: "已结算 4 笔及以上 5 级，3 笔 4 级，其余 3 级。",
-    measure: "涉及金额是这组已结算新人礼的合计，USDT 和 UVT 分开写，各保留 2 位小数。",
+    measure: "涉及金额是这组已结算新人礼的合计，USDT 和 UVT 分开写，不舍入。",
     columns: [
-      { label: "涉及金额", main: 3, num: true, kind: "amounts", explain: "这组已结算新人礼的合计，USDT 和 UVT 分开写，各保留 2 位小数。" },
+      { label: "涉及金额", main: 3, num: true, kind: "amounts", explain: "这组已结算新人礼的合计，USDT 和 UVT 分开写，不舍入。" },
       { label: "已结算", main: 4, num: true, kind: "settled", explain: "这组账户已结算的新人礼笔数，统计全部记录，没有时间窗。" },
     ],
   },
@@ -274,9 +274,9 @@ const VIEW_UI: Record<string, ViewUi> = {
     name: "排行榜刷榜", icon: TrendingUp, subject: "账户", objectSub: { label: "账户组", index: 4 },
     what: "账户本周奖励在最近两次统计（每 5 分钟一次）之间的增加额，达到正增长中位数的检测倍数；比较符选「超过」时要严格大于。中位数只取奖励在增长、且没被标记刷榜的账户。",
     levelRule: "增长超过中位数 10 倍为 4 级，否则 3 级。",
-    measure: "本周累计奖励和奖励增长倍数都保留 2 位小数。",
+    measure: "本周累计奖励取最近一次统计的值，不舍入；奖励增长倍数保留 2 位小数。",
     columns: [
-      { label: "本周累计奖励", main: 1, num: true, kind: "amounts", explain: "本周有效奖励的累计，保留 2 位小数。" },
+      { label: "本周累计奖励", main: 1, num: true, kind: "amounts", explain: "本周有效奖励的累计，取最近一次统计（每 5 分钟一次）的值，不舍入。" },
       { label: "奖励增长倍数", main: 2, sub: 3, num: true, kind: "multiple", explain: "最近两次统计之间这个账户的奖励增加额，是正增长中位数的多少倍，保留 2 位小数。" },
     ],
   },
@@ -286,6 +286,8 @@ const viewUi = (view: K2ViewGroup): ViewUi => VIEW_UI[view.key] ?? { name: view.
 const cell = (row: K2Row, index: number) => row.cells[index] ?? "—";
 /** 金额的整数部分加千分位，小数原样保留，不换算、不舍入。 */
 const groupDigits = (text: string) => text.replace(/(^|[\s(])(\d{4,})(?=(\.\d+)?(\s|$))/g, (_, lead: string, digits: string) => lead + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+/** 原值去掉后端补的末尾 0，最少 2 位小数，不舍入；科学记数原样。 */
+const rawAmountText = (raw: string) => /[eE]/.test(raw) ? raw : (([whole, fraction = ""]) => `${whole}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`)(raw.split("."));
 /** 后端原文换成这页的叫法：账户组、倍、已结算笔数。认不出的原样写。 */
 const plainText = (value: string) => value === "未关联 K1 簇" ? "未关联账户组" : value;
 /** 一格的显示：金额分币种成行并加千分位，倍数写「倍」，已结算笔数只留数字部分。 */
@@ -294,7 +296,7 @@ function columnValue(row: K2Row, column: Column): { main: string[]; sub?: string
   const sub = column.sub !== undefined ? plainText(cell(row, column.sub)) : undefined;
   if (column.kind === "amounts") return {
     main: row.structured !== undefined
-      ? row.structured.amounts?.length ? row.structured.amounts.map((amount) => `${amount.amountRaw ?? "—"} ${amount.currency}`) : ["—"]
+      ? row.structured.amounts?.length ? row.structured.amounts.map((amount) => `${amount.amountRaw == null ? "—" : groupDigits(rawAmountText(amount.amountRaw))} ${amount.currency}`) : ["—"]
       : raw.split(/\s+\+\s+/).map(groupDigits), sub,
   };
   if (column.kind === "settled") {
@@ -1104,9 +1106,10 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
               </Notice>
             )}
             <Fold inset title="后端原始记录" summary={`${current?.view.label ?? ""} · ${openRow.cells.length} 项`}
-              explain="后端返回的原始列名和值，列名有的不准：试用的「累计套取试用收益」实际是开始试用次数，置换的「设备链」实际是置换次数；新人礼的「已拦」目前固定写 0，不是真实的拦截笔数。">
+              explain="后端返回的原始列名和值，列名有的不准：试用的「累计套取试用收益」实际是开始试用次数，置换的「设备链」实际是置换次数。">
               <Facts>
-                {openRow.cells.map((value, index) => <Fact key={index} k={current?.view.head[index] ?? `第 ${index + 1} 项`}>{value}</Fact>)}
+                {openRow.cells.map((value, index) => <Fact key={index} k={current?.view.head[index] ?? `第 ${index + 1} 项`}>{value}{current?.view.key === "gift" && value.includes("已拦") && openRow.structured?.blockedCountAvailable !== true
+                  && <small className="k2-raw-note">「已拦」不是统计数：系统没有统计已拦次数</small>}</Fact>)}
                 <Fact k="命中编号">{openRow.rowId}</Fact>
               </Facts>
             </Fold>

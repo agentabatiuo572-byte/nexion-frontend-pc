@@ -11,7 +11,7 @@ import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
+  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -75,6 +75,13 @@ const decimalMinus = (left: string, right: string) => {
   return `${diff < BigInt(0) ? "-" : ""}${places ? `${digits.slice(0, -places)}.${digits.slice(-places)}` : digits}`;
 };
 const USAGE_DAY = "按 UTC 日统计，北京时间每天早上 8 点换日。";
+/** 今天实际发出按奖型分行：USDT 是真钱，UVT 和代金券只给笔数。 */
+const AWARD_ASSET: Record<string, { label: string; noMoney?: string }> = {
+  USDT: { label: "USDT 真钱奖" },
+  UVT: { label: "UVT（含安慰奖）", noMoney: "UVT 不算真钱，只记笔数" },
+  NEX: { label: "UVT · 旧名称", noMoney: "UVT 不算真钱，只记笔数" },
+  COUPON: { label: "代金券", noMoney: "券不是钱，只记张数" },
+};
 
 /** 原操作写成一句「做什么 · 对哪一项」，不露命令号和对象键。 */
 /** 审批申请按操作写动词；后端登记的 action 是一类操作的统称，不够具体。 */
@@ -1002,6 +1009,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const guards = model.wheelGuards ?? [];
   const h4Stats = model.h4Stats ?? {};
   const wheelEvUsdt = model.wheelEvByAsset === undefined ? model.wheelEvUsd : model.wheelEvByAsset?.USDT;
+  const wheelEvOthers = Object.entries(model.wheelEvByAsset ?? {}).filter(([asset, value]) => asset !== "USDT" && value != null);
+  const awards = model.wheelAwardsToday;
+  const awardRows = awards?.available ? Object.entries(awards.byAsset).sort(([a], [b]) => Number(b === "USDT") - Number(a === "USDT")) : [];
+  const awardUsdt = awards?.available ? awards.byAsset.USDT : undefined;
   const probabilitySum = tiers.reduce((sum, tier) => sum + numericValue(tier.prob), 0);
   const probabilityOk = Math.abs(probabilitySum - 100) < 0.001;
   const pointsTiers = tiers.filter(wheelPointsTier);
@@ -1068,9 +1079,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     {recovery}
     {conclusion}
     <StatBand label="既有活动与转盘的关键数">
-      <Stat label="进行中的既有活动" value={h4Stats.ongoing == null ? "—" : numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)}`} explain="按活动存的状态数「进行中」的个数（不看删除状态）。限地区的活动数后端没有提供；紧急处理去「紧急停用开关」。" />
+      <Stat label="进行中的既有活动" value={h4Stats.ongoing == null ? "—" : numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)}`} explain="按活动存的状态数「进行中」的个数（不看删除状态）。限地区的活动数：系统没有这项数据。紧急处理去「紧急停用开关」。" />
       <Stat label="可追踪活动参与" value={h4Stats.trackJoin == null ? "—" : numericValue(h4Stats.trackJoin)} unit="人次" icon={ListChecks} tone="role-3" sub={`达标 ${h4Stats.trackDone == null ? "—" : numericValue(h4Stats.trackDone)} · 已领 ${h4Stats.trackClaim == null ? "—" : numericValue(h4Stats.trackClaim)}`} explain="开了「统计效果」的活动的参与、达标、领取次数合计，不是转化率。" />
-      <Stat label="平均每次抽奖发出" value={wheelEvUsdt == null ? "—" : amountText(wheelEvUsdt)} unit="USDT" icon={Coins} tone="role-1" sub="只算发真钱的奖项" explain="后端按各档「金额 × 概率」逐档算到 6 位再相加、保留 2 位，是按概率的估算，不是实际发出的钱。" />
+      <Stat label="每次抽奖估计发出" value={wheelEvUsdt == null ? "—" : amountText(wheelEvUsdt)} unit="USDT" icon={Coins} tone="role-1"
+        sub={wheelEvOthers.length ? `另有 ${wheelEvOthers.map(([asset, value]) => `${amountText(value)} ${asset === "NEX" ? "UVT" : asset}`).join("、")}` : model.wheelEvByAsset && Object.keys(model.wheelEvByAsset).length === 0 ? "没有发真钱的档" : "按概率估算，不是实发"}
+        explain={<><p>只算发真钱的档：每档「每次发放 × 概率」算到 6 位小数再相加，币种分开算。</p><p>这是按概率的估算，不计库存用完和改发安慰奖；实际发了多少看「今天已发真钱」。</p></>} />
       <Stat label="今天已发真钱" value={usedPayout === null ? "—" : amountText(usedPayout)} unit={usedPayout === null ? undefined : "USDT"} icon={Disc3} tone="role-2"
         sub={wheelDailyUsageError ? "今天的用量没读到" : !wheelDailyUsage ? "正在读取…" : <>抽奖 <span className="h4-num">{wheelDailyUsage.spinCount}</span> 次 · UTC <span className="h4-num">{wheelDailyUsage.serverDate.slice(5)}</span></>}
         explain={<><p>转盘今天发出的 USDT 真钱奖合计，和每日预算比的就是这个数。抽奖次数含每日免费抽奖和签到加抽。</p><p>{USAGE_DAY}</p></>}
@@ -1153,6 +1166,28 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           </Table>}
           <p className="h4l-note">「每 1000 次约中」按概率估算，不计库存用完和改发安慰奖<Explain label="改发安慰奖是什么" content="每次抽奖先按概率落档；这一档今天库存用完，或是真钱奖而开关关着、覆盖率不够、今天预算不够时，改发排在最前、还有库存的那一档不发真钱的 UVT。" /></p>
         </div>
+        {awards !== undefined && <div className="h4l-awards"><Fold inset title="今天实际发出"
+          summary={!awards?.available ? "读不到" : awardRows.length === 0 ? "今天还没有人抽" : <>真钱 <span className="h4-num">{amountText(awardUsdt?.amount ?? "0")}</span> USDT · 发奖 <span className="h4-num">{awardRows.reduce((sum, [, row]) => sum + row.count, 0)}</span> 次</>}
+          explain={<><p>转盘今天真正发给用户的奖励，按奖型分开，不同币种不相加。代金券只记张数，面额不算钱。</p><p>{awards?.spinDate ? `统计日 UTC ${awards.spinDate}，` : ""}{USAGE_DAY}</p></>}>
+          {!awards?.available ? <BlockState compact state="error" title={awards?.reason === "GROWTH_BUSINESS_TABLE_UNAVAILABLE" ? "抽奖记录暂时读不到" : "这次没读到"} detail={awards?.reason === "GROWTH_BUSINESS_TABLE_UNAVAILABLE" ? "不是没发奖。一直读不到请联系值班同事。" : "不是没发奖。点刷新重读。"} />
+            : awardRows.length === 0 ? <p className="h4l-note">UTC {awards.spinDate?.slice(5) ?? "今天"} 还没有抽奖记录。</p>
+            : <>
+              <Table label="今天实际发出">
+                <thead><tr><Th>奖型</Th><Th align="right">发出</Th><Th align="right">真钱金额</Th></tr></thead>
+                <tbody>{awardRows.map(([asset, row]) => {
+                  const kind = AWARD_ASSET[asset.toUpperCase()];
+                  const money = row.realOutflowCount == null ? null : row.realOutflowCount > 0 ? row.amount : undefined;
+                  return <Tr key={asset}>
+                    <Td>{kind?.label ?? `其他奖励（${asset}）`}</Td>
+                    <Td align="right"><span className="h4l-nowrap"><b className="h4-num">{row.count}</b> {asset.toUpperCase() === "COUPON" ? "张" : "笔"}</span></Td>
+                    <Td align="right">{money ? <span className="h4l-nowrap"><b className="h4-num">{amountText(money)}</b> {asset.toUpperCase()}</span>
+                      : <span className="h4-dim">{money === undefined ? kind?.noMoney ?? "不发真钱" : "—"}</span>}</Td>
+                  </Tr>;
+                })}</tbody>
+              </Table>
+              <p className="h4l-note">对照估算：每次抽奖估计发出 <b className="h4-num">{wheelEvUsdt == null ? "—" : amountText(wheelEvUsdt)}</b> USDT{h4Stats.wheelSpinsToday != null && <> · 今天抽奖 <b className="h4-num">{h4Stats.wheelSpinsToday}</b> 次</>}</p>
+            </>}
+        </Fold></div>}
       </Panel>
       <Panel id="h4l-guards" title="资金护栏" icon={Wallet} tone="role-1" sub={`${guards.length} 条`}
         explain="护栏保护平台的钱：真钱奖要同时过开关、覆盖率和每日预算才发出，不过就改发 UVT 安慰奖。调高预算、开启真钱奖要另一位超级管理员批准；调低、关闭立即生效。"
