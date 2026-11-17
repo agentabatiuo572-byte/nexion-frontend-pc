@@ -1005,6 +1005,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2DirectPolicyLoading,
     f2DirectPolicyError,
     f2ActivationPending: f2Pending(F2_ACTIVATION_SLOT) ?? null,
+    f2BootstrapPending: f2Pending(F2_BOOTSTRAP_SLOT) ?? null,
     f2ActivationPendingLoading,
     f2ActivationPendingError,
     f2ActivationAttempt: f2Proposals.find(row => row.fingerprint === F2_ACTIVATION_SLOT && !row.ticket) ?? null,

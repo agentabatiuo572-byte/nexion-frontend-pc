@@ -13,7 +13,9 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { Change, Fact, Facts, LAYERS, layerRate, num, type F2Confirm } from "./f2-shared";
 import { stamp } from "./f2-shared";
-import { F2_ACTIVATION_SLOT, F2_POLICY_SLOT, type F2Recovery } from "@/lib/admin/f2-approval";
+import { F2_ACTIVATION_SLOT, F2_BOOTSTRAP_SLOT, F2_POLICY_SLOT, type F2Recovery } from "@/lib/admin/f2-approval";
+import { f4Decimal } from "@/lib/admin/f4-money";
+import { f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
 import { FReleaseButton } from "./f-release";
@@ -130,6 +132,16 @@ function attemptLabel(attempt: F2Recovery): { name: string; change: string } {
   const plain = known ? `${spec.before} → ${spec.after}` : "原请求不完整，只能查询原结果";
   if (slot === F2_ACTIVATION_SLOT) return { name: a2ActionText(spec.action), change: known ? plain : "原请求不完整，只能查询原结果" };
   if (slot === F2_POLICY_SLOT) return { name: "好友奖励政策", change: known ? "按原申请的政策内容" : plain };
+  if (slot === F2_BOOTSTRAP_SLOT) {
+    // 建单后用审批单上后端写的七层数；还没有审批单时用原请求里运营填的七层。
+    const rows = parseF2BootstrapAfter(spec.after);
+    const layers: unknown = attempt.request?.command?.params?.layers;
+    const sent = Array.isArray(layers) && layers.length === 7
+      ? layers.map((layer) => f4Decimal(String((layer as { usdtPct?: unknown } | null)?.usdtPct ?? "").replace(/[%,]/g, ""))) : [];
+    const valid = sent.filter((value): value is string => value !== null && !value.startsWith("-"));
+    const total = rows ? f2PctSum(rows.map((row) => row.usdtPct)) : valid.length === 7 ? f2PctSum(valid) : null;
+    return { name: "首次配置七层规则", change: total === null ? "原请求不完整，只能查询原结果" : `L1–L7 合计占订单 ${num(total)}%` };
+  }
   const layer = /^f-config:F\.unilevel\.(nex\.)?(L[1-7])$/.exec(slot);
   if (layer) return { name: `${layer[2]} ${layer[1] ? "UVT 系数" : "USDT 比例"}`, change: plain };
   if (slot.startsWith("f-config-batch:")) {
@@ -210,7 +222,8 @@ function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
       <p className="f2-checks-title">启用时后端会检查<Explain label="这三条怎么用" content={<>
         <p>提交申请和另一位管理员批准时，后端都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
         <p>后端把没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以后端检查为准。</p>
-        <p>缺的层目前没有后台入口补齐，要由后端初始化。</p>
+        {rates.length === 0 ? <p>七层都没有规则时，先在「每层分多少」做首次配置。</p>
+          : LAYERS.some((level) => !layerRate(rates, level)) && <p>只缺几层时后台补不了，需要技术同事处理。</p>}
       </>} /></p>
       <ul className="f2-checks-list">
         {rows.map((row) => (
