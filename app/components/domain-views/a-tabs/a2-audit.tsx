@@ -246,34 +246,43 @@ function fBatchPairs(text: string): Array<[string, string]> | undefined {
   }
   return pairs;
 }
+/** 两边逐项的键一一对应（数量也对得上）才拆成各项，否则返回 undefined。 */
+function fBatchItems(beforeText: string, afterText: string, count?: number): FBatchItem[] | undefined {
+  const after = fBatchPairs(afterText);
+  const before = fBatchPairs(beforeText);
+  if (!after || !before || after.length !== before.length || count !== undefined && after.length !== count || after.some(([key], i) => before[i][0] !== key)) return undefined;
+  return after.map(([key, value], i) => {
+    const spec = fConfigSpec(key, value);
+    return { key, spec, before: fConfigValue(spec, before[i][1]), after: fConfigValue(spec, value) };
+  });
+}
 function fBatchTicket(w: { action?: string; obj?: string; before?: string; after?: string }): { count: number; digest: boolean; items?: FBatchItem[] } | undefined {
   const count = Number(F_BATCH_ACTION.exec(w.action ?? "")?.[1]);
   if (!count) return undefined;
-  const after = fBatchPairs(w.after ?? "");
-  const before = fBatchPairs(w.before ?? "");
-  const same = !!after && !!before && after.length === count && before.length === count && after.every(([key], i) => before[i][0] === key);
-  return {
-    count, digest: F_BATCH_DIGEST.test(w.obj ?? ""),
-    items: same ? after!.map(([key, value], i) => {
-      const spec = fConfigSpec(key, value);
-      return { key, spec, before: fConfigValue(spec, before![i][1]), after: fConfigValue(spec, value) };
-    }) : undefined,
-  };
+  return { count, digest: F_BATCH_DIGEST.test(w.obj ?? ""), items: fBatchItems(w.before ?? "", w.after ?? "", count) };
 }
+/**
+ * 操作记录里的整批申请：对象是摘要，或正好是各项键用逗号连起来；前后值是单上的原文，后端写成「前 -> 后」（decisionDetail），页面自己拼的是「前 → 后」。
+ */
+function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | undefined {
+  const sides = log.delta.split(/ -> | → /);
+  if (sides.length !== 2) return undefined;
+  const items = fBatchItems(sides[0], sides[1]);
+  return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
+}
+const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
 /** 涉及的页面名；认不出的项写「团队参数」。 */
 const fBatchPages = (items: readonly FBatchItem[] | undefined) => [...new Set((items ?? []).map((item) => item.spec?.page ?? "团队参数"))];
 const fBatchLabel = (item: FBatchItem, pages: readonly string[]) => item.spec ? (pages.length > 1 ? `${item.spec.page} · ${item.spec.item}` : item.spec.item) : "未识别的配置项";
 
 /** 整批申请的完整变更内容：每项一行「现在 → 改后」；配置键放技术信息（对象原文在「对象」旁）。 */
-function A2BatchReview({ w }: { w: { action: string; obj: string; before: string; after: string } }) {
-  const batch = fBatchTicket(w);
-  if (!batch?.items) return null;
-  const pages = fBatchPages(batch.items);
+function A2BatchReview({ items }: { items: readonly FBatchItem[] }) {
+  const pages = fBatchPages(items);
   return (
     <section className="a2-change-review" aria-label="完整变更内容">
-      <div className="a2-change-title">完整变更内容 · {batch.count} 项
-        <Explain label="技术信息" content={`各项配置键 ${batch.items.map((item) => item.key).join("、")}`} /></div>
-      <DiffList rows={batch.items.map((item) => ({ key: item.key, label: fBatchLabel(item, pages), before: item.before, after: item.after }))}
+      <div className="a2-change-title">完整变更内容 · {items.length} 项
+        <Explain label="技术信息" content={`各项配置键 ${items.map((item) => item.key).join("、")}`} /></div>
+      <DiffList rows={items.map((item) => ({ key: item.key, label: fBatchLabel(item, pages), before: item.before, after: item.after }))}
         restTitle="没有改动的项" emptyNote="这些项没有改动" />
     </section>
   );
@@ -1859,7 +1868,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       content: fund?.lead ? <div className="rd-confirm-facts">{ticketFacts(w, "approve")}</div> : fund?.facts && !fund.review ? fund.extra ?? undefined : (
         <div className="rd-stack">
           {fund?.extra}
-          {fBatchTicket(w)?.items ? <A2BatchReview w={w} />
+          {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
             : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} />}
@@ -2345,8 +2354,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
                       <Td><Cell main={middle(l.actor, 16)} sub={logRoleText(l.role) || undefined} title={l.actor} /></Td>
                       <Td><Cell mono={!translated} main={translated ? logActionText(l.action) : middle(l.action, 18)} title={logActionText(l.action)} /></Td>
-                      <Td><Cell main={objectCell(l.obj).main} sub={objectCell(l.obj).sub} title={l.obj} /></Td>
-                      <Td grow><Cell mono main={l.delta} title={l.delta} /></Td>
+                      <Td>{fBatchLogItems(l) ? <Cell main="整批调整的团队参数" title={l.obj} /> : <Cell main={objectCell(l.obj).main} sub={objectCell(l.obj).sub} title={l.obj} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : <Cell mono main={l.delta} title={l.delta} />}</Td>
                     </Tr>
                   );
                 })}
@@ -2547,7 +2556,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          {fBatchTicket(shown)?.items ? <A2BatchReview w={shown} />
+          {fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />}
@@ -2566,10 +2575,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
-            { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) ? "整批调整的团队参数" : shownLog.obj },
-            { label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> },
+            { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : shownLog.obj },
+            ...(fBatchLogItems(shownLog) ? [] : [{ label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
+          {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
           <Fold inset title="技术信息" summary={`请求编号 ${requestNo}`}>
             <Facts>
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
@@ -2577,7 +2587,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
               {logActionText(shownLog.action) !== shownLog.action && <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
-              {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono>{shownLog.obj}</span><span className="rd-note">清单太长，只存了摘要</span></Fact>}
+              {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
+              {fBatchLogItems(shownLog) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}
