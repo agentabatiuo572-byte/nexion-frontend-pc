@@ -129,15 +129,15 @@ const PARAM_COPY: Record<string, ParamCopy> = {
     unit: "张",
   },
   price: {
-    what: "没有价格档位时用的旧单价",
+    what: "现有持仓每天的分红按这个价算；没有价格档位时一级购买也按它报价",
     loosen: "调高", tighten: "调低",
-    effect: "已持有的合格节点之后每天的分红按新单价算（分红 = 单价 × 每日收益比例）；已下单的订单价格不变",
-    money: "不直接付钱；调高后存量节点每天要发的分红变多",
+    effect: "现有持仓之后每天的分红按新价算，已结算的不回算；已下单的订单价格不变",
+    money: "不直接付钱；调高后现有持仓每天要发的分红变多",
     hint: "0.01–1,000,000",
     unit: "USDT",
   },
   dividend: {
-    what: "每个合格节点每天按「所属系列单价 × 这个比例」发收益",
+    what: "每天的分红 = 系列当前价 × 持仓数量 × 这个比例",
     loosen: "调高", tighten: "调低",
     effect: "所有合格节点的每日分红从下一批起按新比例算；已建好的批次保留原比例和原金额",
     money: "不直接付钱；调高后之后每天要发的分红变多",
@@ -164,7 +164,7 @@ const PARAM_COPY: Record<string, ParamCopy> = {
   emissionCurve: {
     what: "收益发放节奏的说明文字",
     loosen: "改动",
-    effect: "目前只保存这段说明，不按它执行释放；每天的分红仍按「系列单价 × 每日收益比例」",
+    effect: "目前只保存这段说明，不按它执行释放；每天的分红仍按「系列当前价 × 持仓数量 × 每日收益比例」",
     money: "不付钱",
     hint: "160 字以内，不能写已退役的说法",
     descriptive: true,
@@ -181,7 +181,7 @@ const PARAM_COPY: Record<string, ParamCopy> = {
   divBase: {
     what: "收益计算基数的说明文字",
     loosen: "改动",
-    effect: "目前只保存这段说明，不按它计算；每天的分红仍按「系列单价 × 每日收益比例」，历史批次金额不变",
+    effect: "目前只保存这段说明，不按它计算；每天的分红仍按「系列当前价 × 持仓数量 × 每日收益比例」，历史批次金额不变",
     money: "不付钱",
     hint: "160 字以内",
     descriptive: true,
@@ -736,7 +736,7 @@ function G4GenesisPage() {
         ? { impact: "只改这项说明的存值，不执行发放、释放或公式。", check: "核对新值；决策编号写产品或财务决议号，理由写清依据或工单号。" }
         : { impact: "改的是之后的销售和分红规则，已下单的订单和已建的分红批次不变。", check: "核对新值和方向；理由写清依据或工单号。" },
       coverageLead: param.key === "supply" ? "调高节点总量要另一位超级管理员批准"
-        : param.key === "price" ? "调高单价会让存量节点每天多发分红，要另一位超级管理员批准"
+        : param.key === "price" ? "调高系列当前价会让现有持仓每天多发分红，要另一位超级管理员批准"
           : param.key === "dividend" ? "调高每日收益比例会让平台每天多付 USDT，要另一位超级管理员批准"
             : param.key === "royalty" ? "调低转让手续费要另一位超级管理员批准"
               : `改${name}要另一位超级管理员批准`,
@@ -1082,13 +1082,13 @@ function G4GenesisPage() {
   const emissionCurveParam = paramByKey(overview, "emissionCurve");
   const airdropLockDaysParam = paramByKey(overview, "airdropLockDays");
   const showcaseEnabledParam = paramByKey(overview, "showcaseEnabled");
-  const legacyPriceText = priceParam?.value ? g4ParamValueText("price", priceParam.value) : stats.unitPrice > 0 ? `${g4Amount(stats.unitPrice)} USDT` : "旧单价未设置";
+  const legacyPriceText = priceParam?.value ? g4ParamValueText("price", priceParam.value) : stats.unitPrice > 0 ? `${g4Amount(stats.unitPrice)} USDT` : "系列当前价未设置";
   const tierPriceText = overview.tierPrice.status === "active" ? `${fmtInt(overview.tierPrice.tier.priceUSDT)} USDT`
     : overview.tierPrice.status === "legacy" ? legacyPriceText
       : overview.tierPrice.status === "soldout" ? "已售罄" : "暂无价格";
   const tierPriceNote = overview.tierPrice.status === "active"
     ? `当前档 ${overview.tierPrice.tier.id} · 这一档还剩 ${fmtInt(overview.tierPrice.tier.to - stats.sold)} 张`
-    : overview.tierPrice.status === "legacy" ? "没有价格档位 · 使用旧单价"
+    : overview.tierPrice.status === "legacy" ? "没有价格档位 · 按系列当前价"
       : overview.tierPrice.status === "soldout" ? "所有档位都已售罄"
         : "价格档位数据有误，暂时无法显示价格";
 
@@ -1305,8 +1305,8 @@ function G4GenesisPage() {
               {priceParam && overview.tierPrice.status === "legacy" && paramRow(priceParam)}
               {priceParam && overview.tierPrice.status !== "legacy" && (
                 <ConfigRow key="price" name="单价"
-                  what="已设置价格档位：单价按卖到第几张自动决定，这里的旧单价不生效"
-                  effect="改价请改右边的价格档位"
+                  what="一级购买按价格档位报价，改价请改右边的价格档位"
+                  effect={`现有持仓的每日分红仍按系列当前价 ${priceParam.value ? g4ParamValueText("price", priceParam.value) : "—"} 算`}
                   value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{tierPriceText}</span></span><span className="g4x-dir">按价格档位</span></span>} />
               )}
             </ConfigList>
@@ -1329,7 +1329,7 @@ function G4GenesisPage() {
       <div className="rd-split" data-even="">
         <Panel title="每日分红" icon={Coins} tone="role-1"
           explain={<>
-            <p>每个合格节点每天按「所属系列单价 × 每日收益比例」算，逐个节点算到 6 位小数再合计。收益计算基数和发放曲线目前只是说明，不参与计算。</p>
+            <p>现有持仓每天的分红按「系列当前价 × 持仓数量 × 每日收益比例」算，逐个节点算到 6 位小数再合计。收益计算基数和发放曲线目前只是说明，不参与计算。</p>
             <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。系统目前没有每天自动发放（已提给技术同事），要发请点「重新发放今日收益」。</p>
           </>}
           actions={(allowed("finprod_g4_write") || paramApproval.record(dividend.batchNo))
@@ -1383,7 +1383,7 @@ function G4GenesisPage() {
           <div className="g4x-sub">
             <div className="g4x-sub-title">计算口径</div>
             <dl className="g4x-nums">
-              <div><dt>计算基数<Explain label="计算基数怎么算" content="当前系列单价 × 已售节点数，单位 USDT。不是当天的平台交易量。" /></dt><dd>{g4Amount(dividend.dailyVolumeBase)} USDT</dd></div>
+              <div><dt>计算基数<Explain label="计算基数怎么算" content="系列当前价 × 已售节点数，单位 USDT。不是当天的平台交易量。" /></dt><dd>{g4Amount(dividend.dailyVolumeBase)} USDT</dd></div>
               <div><dt>累计已记收益<Explain label="累计已记收益怎么算" content="历史上所有创世节点收益入账（成功和处理中）的合计，不限今天；「开始发放收益」关着时显示 0。不是未来要发的预算。" /></dt><dd>{g4Amount(stats.genesisAccrualUsd)} USDT</dd></div>
             </dl>
           </div>
@@ -1454,7 +1454,7 @@ function G4GenesisPage() {
         sub={`共 ${fmtInt(nodePage.total)} 条`}
         explain={<>
           <p>所有用户名下的创世节点，按节点编号排序。持有人只显示邀请码或用户编号后四位，不含手机号和姓名。</p>
-          <p>累计产出是估算：按当前系列单价和每日比例乘持有天数，不是真实已付的累计；转让记录按来源和状态拼出一条，不是逐笔转让流水。这里只能查看。</p>
+          <p>累计产出是估算：按系列当前价和每日比例乘持有天数，不是真实已付的累计；转让记录按来源和状态拼出一条，不是逐笔转让流水。这里只能查看。</p>
         </>}>
         <Table label="节点持有记录" className="g4x-node-table">
           <thead><tr><Th>节点</Th><Th>持有人</Th><Th>来源</Th><Th align="right">累计产出（估算）</Th><Th>状态</Th></tr></thead>
