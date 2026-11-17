@@ -44,6 +44,11 @@ export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCES
 
 export type ECommandClosureOffer = { conclusions: ECommandEvidence["conclusion"][]; success?: "receipt" | "audit" };
 
+/** The stored suffix is the normalized audit display name, never an administrator ID. */
+function purchasePaymentPolicyScope(scope: string) {
+  return scope.length <= 96 && /^D1:PURCHASE_PAYMENT_POLICY:[A-Z0-9_.:-]+$/.test(scope);
+}
+
 /**
  * Conclusions that may be REQUESTED, not promises of acceptance (origin/test e2297ac9).
  * Mirrors AdminCommandOrigin.localConfiguration and InvestigationService.allowedFact/investigate.
@@ -60,6 +65,8 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
     || /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(scope);
   const a3Param = scope.length <= 96 && /^A3_PLATFORM_PARAM:[A-Za-z0-9_.-]{1,80}$/.test(scope);
   const local = rbac || j2 || h9 || a3Param || scope === "J3_ALERT_CONFIG"
+    || purchasePaymentPolicyScope(scope)
+    || scope.startsWith("D1_TOPUP_CHANNEL_") || scope === "D1_VIETQR_CONFIG_UPDATE"
     || ["I5_JURISDICTION_CREATE", "I5_JURISDICTION_UPDATE", "I5_DISCLOSURE_DRAFT_SAVE", "I5_DISCLOSURE_DRAFT_DELETE",
       "I5_DISCLOSURE_MATRIX_CONFIGURE", "I5_DISCLOSURE_MATRIX_ARCHIVE", "I5_DISCLOSURE_GATE_UPDATE",
       "D5_WITHDRAWAL_LIMITS_UPDATE", "D5_WITHDRAWAL_LIMITS", "D6_FX_QUOTE_UPDATE", "D6_FX_QUOTE",
@@ -70,6 +77,7 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
     || /^I7_COURSE_(?:CREATE|DRAFT_UPDATE|DELETE|VERSION_CREATE|VERSION_UPDATE|VERSION_DELETE)/.test(scope);
   // RBAC, permission registration and resume have no accepted success-audit branch.
   const audit = !rbac && !scope.startsWith("J4_PLAYBOOK_RESUME:") && (scope === "A2_COMMAND" || scope === "L_BI_REPORT_CREATE"
+    || purchasePaymentPolicyScope(scope)
     || scope.startsWith("L_BI_REPORT_ACTION_") || /^(?:E2_POOL_|E5_DEVICE_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|I7_COURSE_|M4_SUPPORT_FAQ_|I4_TRUST_SECTION_)/.test(scope)
     || scope === "J4_PLAYBOOK_CREATE" || /^J4_PLAYBOOK_(?:UPDATE|DRILL|EXECUTE|CANCEL|ROLLBACK):/.test(scope)
     || scope === "E6_PHONE_RISK_SETTINGS" || scope === "J3_ALERT_CONFIG" || j2 || h9 || a3Param
@@ -124,6 +132,8 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
   // Verified callbacks return only success or throw. H3 redrive proves requeue, not delivery.
   // A4 retention is excluded: failing to acquire its lock is also a normal return.
   const successOnly = receipt.scope === "A2_COMMAND" || receipt.scope === "E6_PHONE_RISK_SETTINGS" || receipt.scope === "F5_COMMISSION_ANOMALY_CONFIG"
+    || purchasePaymentPolicyScope(receipt.scope)
+    || receipt.scope === "D1_HDPAY_MANUAL_CREDIT"
     || receipt.scope.startsWith("A4_H3_OUTBOX_REDRIVE:")
     || receipt.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(receipt.scope)
     // TrustDocumentService returns only Document; every refusal throws, including SHA/CAS conflicts.
@@ -183,6 +193,15 @@ function normalizeScope(scope: string) {
 function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvestigation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const row = value as Record<string, unknown>;
+  const d1Topup = locator.originalPath.match(/^\/api\/admin\/finance\/topup\/(?:channels\/([^/]+)\/(enabled|fee|min-amount|max-amount)|reconciliation\/([^/]+)\/writeoff)$/);
+  const d1Channel = d1Topup ? decodeURIComponent(d1Topup[1] ?? d1Topup[3]).trim().toLowerCase().replaceAll("_", "-") : "";
+  // Same channel aliases as OpsFinanceService.normalizeChannelCode; the locator remains exact.
+  const d1CanonicalChannel = ["trc20", "erc20", "bep20"].find(code => d1Channel.includes(code))
+    ?? (d1Channel.includes("vietqr") || d1Channel.includes("bank") ? "vietqr"
+      : ["card", "checkout", "stripe"].some(code => d1Channel.includes(code)) ? "card" : d1Channel);
+  const d1TopupScope = d1Topup && (d1Topup[1]
+    ? `D1_TOPUP_CHANNEL_${({ enabled: "ENABLED", fee: "FEE", "min-amount": "MIN", "max-amount": "MAX" })[d1Topup[2] as "enabled"]}_${d1CanonicalChannel.toUpperCase()}`
+    : `D1_TOPUP_RECONCILIATION_${d1CanonicalChannel.toUpperCase()}`);
   const copyPath = locator.originalPath.match(/^\/api\/admin\/content\/copy-ab\/(.+)$/)?.[1];
   const copyRoutes: [string, RegExp, string][] = [
     ["POST", /^copies$/, "I1_COPY_CREATE"],
@@ -238,7 +257,12 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
       else if (courseParts.length === 4 && ["publish", "rollback"].includes(versionAction) && method === "POST") courseScope = `I7_COURSE_VERSION_${versionAction.toUpperCase()}:${course}:${version}`;
     }
   }
-  const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+  const scopeMatches = locator.originalPath === "/api/admin/finance/purchase-payment-policy"
+    ? locator.originalMethod === "PATCH" && typeof row.scope === "string" && purchasePaymentPolicyScope(row.scope) && row.originalTarget === "1"
+    : d1Topup ? locator.originalMethod === (d1Topup[1] ? "PATCH" : "POST") && row.scope === d1TopupScope
+    : locator.originalPath === "/api/admin/finance/vietqr/config" ? locator.originalMethod === "PATCH" && row.scope === "D1_VIETQR_CONFIG_UPDATE"
+    : /^\/api\/admin\/finance\/vietqr\/orders\/[^/]+\/manual-credit$/.test(locator.originalPath) ? locator.originalMethod === "POST" && row.scope === "D1_HDPAY_MANUAL_CREDIT"
+    : locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
     : /^\/api\/admin\/growth\/rhythm\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:RHYTHM_PARAM_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : /^\/api\/admin\/growth\/phases\/dials\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:PHASE_DIAL_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : /^\/api\/admin\/growth\/phases\/months\/[1-9]\d*\/dials\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:PHASE_MONTH_DIAL_UPDATE:${locator.originalPath.split("/").at(-3)}:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
@@ -405,6 +429,8 @@ export async function investigateECommand(record: PendingMutationRecord, locator
   if (evidence.conclusion === "REJECTED" && original.originalStatus !== "CONFIRMED_REJECTED" && !eCommandCanConcludeRejected(original))
     throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND"
+    || purchasePaymentPolicyScope(original.scope)
+    || original.scope.startsWith("D1_TOPUP_") || ["D1_VIETQR_CONFIG_UPDATE", "D1_HDPAY_MANUAL_CREDIT"].includes(original.scope)
     || /^(?:A4_PARAM:|A4_EVENT_LIFECYCLE:|A4_H3_OUTBOX_REDRIVE:)/.test(original.scope)
     || /^(?:M4_SUPPORT_FAQ_CREATE|M4_SUPPORT_FAQ_(?:UPDATE|STATUS|DELETE):.+)$/.test(original.scope)
     || original.scope === "USER_NICKNAME_RESET" || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(original.scope)

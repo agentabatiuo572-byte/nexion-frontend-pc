@@ -4,9 +4,10 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
 import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { fundCommandOrigin, type FundCommandRecord } from "./fund-command-investigation";
 
 interface ApiResult<T> {
   code: number;
@@ -591,7 +592,7 @@ export interface D5Params {
 
 let requestSeq = 0;
 
-interface PersistedPendingMutation extends PendingMutationRecord {
+interface PersistedPendingMutation extends FundCommandRecord {
   base: "finance" | "treasury" | "bills" | "withdraw";
   path: string;
   method: string;
@@ -664,24 +665,19 @@ export function d1PendingObjectReason(path: string, body?: Record<string, unknow
     && d1CommandObject(value.path, value.body) === object) ? D1_PENDING_OBJECT_TEXT : undefined;
 }
 
-export interface D1PendingTopupCommand {
-  commandKey: string;
+export interface D1PendingTopupCommand extends FundCommandRecord {
   path: string;
-  createdAt: number;
-  expiresAt: number;
 }
 
 export function listD1PendingTopupCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
     .filter((value) => value.base === "finance" && value.path.startsWith("/topup/"))
-    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
 export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
-    .filter(value => value.base === "finance" && value.path.startsWith("/cregis/"))
-    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }));
+    .filter(value => value.base === "finance" && value.path.startsWith("/cregis/"));
 }
 
 export interface D1PendingCommand extends D1PendingTopupCommand {
@@ -694,7 +690,6 @@ export function listD1PendingCommands(): D1PendingCommand[] {
   return pendingMutations.list()
     .filter(value => value.base === "finance" && !D1_CREGIS_SWITCH_PATH.test(value.path)
       && (value.path.startsWith("/topup/") || value.path.startsWith("/cregis/") || value.path === "/vietqr/config"))
-    .map(({ commandKey, path, method, body, createdAt, expiresAt }) => ({ commandKey, path, method, body, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
@@ -729,7 +724,6 @@ function currentD1PendingCregisSwitchCommands() {
 
 export function listD1PendingCregisSwitchCommands(): D1PendingTopupCommand[] {
   return currentD1PendingCregisSwitchCommands()
-    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
@@ -829,11 +823,19 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       || nextId(init.idempotencyPrefix!);
     headers.set("Idempotency-Key", commandKey);
     if (mutationFingerprint) {
+      const previous = pendingMutations.list().find(value => value.commandKey === commandKey);
+      const investigationWrite = base === "finance" && (method === "PATCH" && (
+        /^\/topup\/channels\/[^/]+\/(?:enabled|fee|min-amount|max-amount)$/.test(path) || path === "/vietqr/config")
+        || method === "POST" && (/^\/topup\/reconciliation\/[^/]+\/writeoff$/.test(path)
+          || /^\/vietqr\/orders\/[^/]+\/manual-credit$/.test(path)));
       pendingMutations.remember(mutationFingerprint, commandKey, {
         base,
         path,
         method,
         body: typeof init?.body === "string" ? init.body : "",
+        // A retry keeps the first locator, including its absence on legacy records.
+        commandOrigin: previous ? previous.commandOrigin : investigationWrite
+          ? fundCommandOrigin(method as "PATCH" | "POST", `/api/admin/finance${path}`, "finance_d1_read") : undefined,
         ...(base === "finance" && method === "POST" && D1_CREGIS_SWITCH_PATH.test(path)
           ? { adminId: useAdminAuth.getState().session?.adminId } : {}),
       });
@@ -2155,7 +2157,6 @@ export async function fetchD1BankOrders(params: { paymentRail?: string; status?:
 export function listD1PendingBankOrderCommands(): D1PendingTopupCommand[] {
   return pendingMutations.list()
     .filter(value => value.base === "finance" && /^\/vietqr\/orders\/VQR-[A-Za-z0-9]+\/manual-credit$/.test(value.path))
-    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 

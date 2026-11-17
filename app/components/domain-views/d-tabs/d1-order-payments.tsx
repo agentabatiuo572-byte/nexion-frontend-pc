@@ -145,6 +145,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
     const permitted = allowed(isPolicy ? "finance_d1_fx_manage" : "finance_d1_bank_reconcile");
     return {
       key: row.commandKey,
+      record: row.commandOrigin ? row : undefined,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
       hint: "先读取现在的值核对；按原请求重试不会重复执行。",
