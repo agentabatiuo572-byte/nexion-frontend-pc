@@ -100,7 +100,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             </span>
             <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
             <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={quota.tight ? "warn" : "role-2"}
-              state={quota.cap > 0 ? "ready" : "empty"} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
+              state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText={displayAdminError(new Error("HARDWARE_QUOTA_EXPECTED_VALUE_REQUIRED"))} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
             <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
           </li>)}
         </ul> : <BlockState state="empty" title="还没有设置购机名额" />}
