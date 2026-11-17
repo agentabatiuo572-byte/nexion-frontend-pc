@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
 
 /**
  * J2 地区访问限制（应急控制页）。管哪些国家和地区不能用、哪些只能用一部分功能。
@@ -17,7 +18,7 @@ import { fetchJ2GeoHitDetails, fetchJ2GeoHitSummary, getJ2PendingCommand, isEmer
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine, receiptFact } from "../recovery-panel";
-import { CommandClosureModal, closureKnown } from "../e-tabs/e-command-check";
+import { CommandClosureModal, } from "../e-tabs/e-command-check";
 import { SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
@@ -300,7 +301,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const outcome = outcomes[record.commandKey];
     const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
     const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
-      && (receipt?.originalStatus === "UNKNOWN" || (receipt?.originalStatus === "SUCCEEDED" || receipt?.originalStatus === "FAILED") && isRetryExpired(record));
+      && eCommandClosureRequests(receipt, isRetryExpired(record)).conclusions.length > 0;
     return <>
       <Button size="sm" loading={checking === record.commandKey} disabled={!!checking && checking !== record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={!!checking} onClick={() => setClosing({ record, label, change })}>核查结案</Button>}
@@ -373,7 +374,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
     <FundRecoveryPanel rows={recoveryRows} heading={`${recoveryRows.length} 项修改结果未知`} />
-    {closing && <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} known={closureKnown(outcomes[closing.record.commandKey])}
+    {closing && <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(outcomes[closing.record.commandKey], isRetryExpired(closing.record))}
       facts={<>
         <Fact k="改动">{closing.change}</Fact>
         <Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.record.commandKey]), "原修改还锁着")}</Fact>
