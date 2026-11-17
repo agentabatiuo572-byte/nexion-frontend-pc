@@ -1070,7 +1070,7 @@ function fieldPairs(before: string, after: string): Array<[string, string, strin
 /** 设备审批只翻译后端给出的状态码；占位的原状态不能用设备当前状态补写。 */
 function deviceApprovalValue(value: string, operationCode?: string) {
   if (!["e5_device_activate", "e5_device_force_activate", "e5_device_deactivate", "e5_device_unbind"].includes(operationCode ?? "")) return value;
-  const states: Record<string, string> = { ACTIVATED: "ACTIVE", ACTIVE: "ACTIVE", DEACTIVATED: "DEACTIVATED", UNBOUND: "UNBOUND" };
+  const states: Record<string, string> = { ACTIVATED: "ACTIVE", ACTIVE: "ACTIVE", ONLINE: "ONLINE", BUSY: "BUSY", RUNNING: "RUNNING", OFFLINE: "OFFLINE", INVENTORY: "INVENTORY", RECYCLED: "RECYCLED", DEACTIVATED: "DEACTIVATED", UNBOUND: "UNBOUND" };
   const state = states[value];
   return state ? operatorDeviceStatus(state) : value;
 }
