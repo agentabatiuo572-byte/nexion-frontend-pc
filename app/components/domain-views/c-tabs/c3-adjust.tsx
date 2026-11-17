@@ -75,7 +75,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; explain: string }
   APPROVED: { label: "已批准", tone: "ok", explain: "余额已按这笔变化，并生成了账单。原单调错了可以冲正一次。" },
   REJECTED: { label: "已驳回", tone: "done", explain: "没有入账，余额没变。要调整需要重新提交。" },
   WITHDRAWN: { label: "已撤回", tone: "done", explain: "提交人撤回了，没有入账，余额没变。" },
-  SUSPENDED: { label: "红线挂起", tone: "warn", explain: "旧版本留下的状态：还没批准，余额没变。这页的队列不列这种单，怎么处理待确认。" },
+  SUSPENDED: { label: "红线挂起", tone: "warn", explain: "旧版本留下的状态：还没批准，余额没变。这页的列表不显示这种单，见到时请联系值班人员处理。" },
 };
 const REVERSAL_EXPLAIN = "这笔是为抵消另一笔而生成的反向调整，已经入账，不能再冲正。";
 const REVERSED_EXPLAIN = "这笔已被一笔反向调整抵消，原记录保留，不能再冲正。";

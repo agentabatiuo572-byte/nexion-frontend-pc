@@ -178,7 +178,7 @@ export function NotificationBell() {
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`告警和待确认操作${badge > 0 ? ` · ${badge} 条` : ""}`}
+        aria-label={`告警和待审批的申请${badge > 0 ? ` · ${badge} 条` : ""}`}
         className="rd-top-item rd-bell"
       >
         <Bell size={16} aria-hidden />
@@ -210,9 +210,9 @@ function NotificationDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      title="告警和待确认操作"
-      sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待确认`}
-      aria-label="告警和待确认操作"
+      title="告警和待审批的申请"
+      sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待审批`}
+      aria-label="告警和待审批的申请"
       footer={canOpenAudit ? (
         <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-btn rd-alert-cta" data-variant="primary">
           <span className="rd-btn-face">查看全部操作记录 <ChevronRight size={14} aria-hidden /></span>
@@ -240,17 +240,17 @@ function NotificationDrawer({
       </div>
 
       {/* 待确认的操作 */}
-      <h3 className="rd-alert-heading">待确认的操作</h3>
+      <h3 className="rd-alert-heading">待审批的申请</h3>
       <div className="rd-alert-list">
         {a2Error && (
           <AlertRow href={canOpenAudit ? "/platform/audit" : undefined} tone="danger" onClose={onClose}>
             <span className="min-w-0 flex-1">
-              <span className="rd-alert-text">待确认操作加载失败</span>
+              <span className="rd-alert-text">待审批的申请没有读到</span>
               <span className="rd-alert-note">{a2Error}</span>
             </span>
           </AlertRow>
         )}
-        {!a2Error && pendingOperations.length === 0 && <div className="rd-alert-empty">暂无待确认的操作。</div>}
+        {!a2Error && pendingOperations.length === 0 && <div className="rd-alert-empty">现在没有待审批的申请。</div>}
         {pendingOperations.map((a) => {
           const operationRole = roleForA2Operation(a);
           return (
