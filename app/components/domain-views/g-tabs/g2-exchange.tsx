@@ -272,8 +272,13 @@ function G2ExchangePage() {
   const [rereadPending, setRereadPending] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const readGeneration = useRef(0);
-  const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending });
-  latest.current = { overview, loading, busyKey, readFailed, rereadPending };
+  // Missing/invalid configuration disables execution; an absent fact stays unknown.
+  const switchUnavailableReason = overview?.emergencySwitch?.exchange.unavailableReason;
+  const switchBlockedReason = switchUnavailableReason === "MISSING" ? "兑换开关没有设置，后端按关处理"
+    : switchUnavailableReason === "INVALID" ? "兑换开关设置有误，后端按关处理" : undefined;
+  const exchangeExecutionBlocked = overview?.swap.emergencyPaused === true || switchBlockedReason !== undefined;
+  const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending, exchangeExecutionBlocked });
+  latest.current = { overview, loading, busyKey, readFailed, rereadPending, exchangeExecutionBlocked };
   const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
   const openActionConfirm = useCallback((request: G2ConfirmReq | null) => {
     const view = latest.current;
@@ -628,7 +633,7 @@ function G2ExchangePage() {
   const pendingPause = directCommands.find(record => record.path === "/exchange/swap");
   const pauseAction = overview && (emergencyPaused !== true || pendingPause
     ? (allowed("finprod_g2_swap_toggle") || pendingPause) && <Button variant="danger-outline" size="sm" icon={<PauseCircle size={14} aria-hidden />}
-      disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
+      disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : !pendingPause ? switchBlockedReason : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
     : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link>);
   const header = (
     <PageHeader pageId="G2" title="兑换额度与规则"
@@ -793,7 +798,7 @@ function G2ExchangePage() {
       void readOriginalCommand(original);
       return;
     }
-    if (!original && latest.current.overview?.swap.emergencyPaused === true) return;
+    if (!original && latest.current.exchangeExecutionBlocked) return;
     openActionConfirm({ briefKind: "emergency",
       action: "紧急暂停全部兑换",
       title: "紧急暂停全部兑换",
@@ -828,7 +833,7 @@ function G2ExchangePage() {
           catch (error) { await reload(true); if (!pendingG2ExchangeCommand(batchAdminId, saved.path)) openActionConfirm(null); throw error; }
           return;
         }
-        if (!latest.current.overview || latest.current.overview.swap.emergencyPaused === true || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey) {
+        if (!latest.current.overview || latest.current.exchangeExecutionBlocked || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey) {
           throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
         }
         const countries = (businessValue?.geoBlock ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -954,7 +959,7 @@ function G2ExchangePage() {
     run: async (reason, value) => {
       const saved = pendingG2QueueBatch(batchAdminId);
       if (saved && g2ExchangeCommandExpired(saved)) { await checkOriginalBatch(saved); return; }
-      if (!saved && (!latest.current.overview || latest.current.overview.swap.emergencyPaused === true || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey)) {
+      if (!saved && (!latest.current.overview || latest.current.exchangeExecutionBlocked || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey)) {
         throw new Error("兑换已暂停，这一批没有处理。恢复兑换要到「紧急停用开关」页面。");
       }
       try {
@@ -1058,7 +1063,7 @@ function G2ExchangePage() {
       setRecoveryError(null);
       setRecoveryKey(ownPendingBatch.commandKey);
     }}>核对原处理</Button>
-    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? (swap.emergencyPaused === true ? "兑换已暂停，后端会拒绝这一批" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
+    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? (swap.emergencyPaused === true ? "兑换已暂停，后端会拒绝这一批" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
 
   const batchItems = batchResult ? [
     ...batchResult.completed.map((row) => ({ ...row, kind: "completed" as const })),
