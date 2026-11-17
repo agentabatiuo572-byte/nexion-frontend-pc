@@ -18,8 +18,8 @@ export interface K1ParamHelp {
 }
 
 const NEXT_CHECK = "保存后立即生效，系统约每分钟检查一次，下次检查按新值算";
-const LATER_EARNINGS = "保存后立即生效，之后的新增收益按新值处理，历史记录不改";
-const WITHDRAW_NOW = "保存后立即生效：之后的新增收益，和这组账户现在能不能提现，都按新值判断。已入账的记录不改";
+const LATER_EARNINGS = "收紧保存后立即生效；放宽要审批时，批准后才生效。之后的新增收益按新值处理，历史记录不改";
+const WITHDRAW_NOW = "收紧保存后立即生效；放宽要审批时，批准后才生效。生效后，新增收益和这组账户现在能不能提现都按新值判断，已入账的记录不改";
 /** 上限只影响后续检测；既有组及成员限制由人工处置（MultiAccountClusterBatchService）。 */
 const GROUP_EFFECT = "下次检查起，新成组的账户不能提现、新增收益锁定，不会自动冻结。已有的组不会自动解除，要到「账户组排查」处理。";
 const NOT_IN_USE = "保存后立即生效";

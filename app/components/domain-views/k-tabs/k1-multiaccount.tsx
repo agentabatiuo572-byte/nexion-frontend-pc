@@ -7,7 +7,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Clock3, Coins, Gift, ListChecks, Lock, LockOpen, Network, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, Snowflake, Users, type LucideIcon } from "lucide-react";
 import { KeepText,
   BlockState, Button, Cell, Change, ChartLegend, Conclusion, ConfigList, ConfigRow, Decision, DiffField, Explain, Fact, Facts, Field, Figure, FilterBar, FilterField, Fold, InlineMeter, Input, IrreversibleTag, JudgmentPoints, KeyValues,
   ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
@@ -120,7 +120,18 @@ function PendingClusterApproval({ approval }: { approval: NonNullable<K1Cluster[
 /** 谁批、批准前怎样每次都一样，收进生效标签的提示图标，不占事实行（VS-105）。 */
 const APPROVAL_EFFECT = <StatusTag tone="progress" filled explain="另一位超级管理员批准后才生效。批准前这组的状态和账户都不变。">批准后生效</StatusTag>;
 const IMMEDIATE_EFFECT = <StatusTag tone="progress" filled>立即生效</StatusTag>;
-const RELEASE_APPROVAL_EFFECT = <StatusTag tone="progress" filled explain="另一位超级管理员批准后才生效。">批准后生效</StatusTag>;
+const RELEASE_APPROVAL_EFFECT = <StatusTag tone="progress" filled explain="另一位超级管理员批准后才生效，提交人不能批自己的。">批准后生效</StatusTag>;
+/** 两类资金审批（放宽收益审核规则、人工放行收益）在恢复区和列表里的同一套说法，和 E、H 域的恢复行同句。 */
+const APPROVAL_LINE = {
+  pending: "等另一位超级管理员批准，批准前不生效。",
+  created: "审批单已建，进度没查到；只查询，不会再建。",
+  absent: "现在查不到这张审批单，可以按原请求重试。",
+  missing: "按原请求查不到，说明没建成；核对后可以解除。",
+} as const;
+const PENDING_PARAM_TIP = "另一位超级管理员批准后才生效，批准前仍按现在的值；审批结束前这一项不能再改。";
+const PENDING_ENTRY_TIP = "另一位超级管理员批准后才放行，批准前这笔仍锁着；审批结束前不能再提交。";
+const SOURCE_NAMES: Record<string, string> = { TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" };
+const sourceName = (type: string) => SOURCE_NAMES[type.toUpperCase()] ?? "来源未知";
 const RISK_REASON_PLACEHOLDER = "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索";
 const CONFLICT_TEXT = "这项刚被别人改过。";
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对。";
@@ -780,11 +791,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const entries = await refreshProtectedEntries();
         const latest = entries?.find(entry => entry.entryNo === record.target);
         const observed = approval.observedEntry!;
-        const note = !entries ? "已查到原审批单待审批，但收益列表读取失败，请刷新后核对。"
-          : !latest ? "这笔收益已不在当前保护收益列表，原审批单仍待审批；请到操作记录与审批核对。"
+        const note = !entries ? "收益列表没读到，刷新后核对这笔还在不在。"
+          : !latest ? "这笔不在当前列表里，到操作记录与审批核对。"
             : latest.amount !== observed.amount || latest.asset !== observed.asset || latest.sourceType !== observed.sourceType
               || latest.sourceRef !== observed.sourceRef || latest.bucket !== observed.bucket
-              ? "这笔收益的来源、状态或净额已变化，原审批单仍待审批；请到操作记录与审批结束原单后重新核对。" : "";
+              ? "这笔收益已变化，原单批不了；撤回后重新提交。" : "";
         if (note) setPendingNotes(current => ({ ...current, [record.fingerprint]: note }));
         return ticket;
       }
@@ -792,18 +803,22 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       // version to expose changed rules; do not pretend that it rejected the ticket.
       try {
         const latest = (await ctx.reloadKRisk({ multiAccount: pageQuery }))?.releaseParams.find(param => param.key === record.target);
-        if (!latest) setPendingNotes(current => ({ ...current, [record.fingerprint]: "已查到原审批单待审批，但最新规则读取失败，请刷新后核对。" }));
-        else if (latest.version !== record.version) setPendingNotes(current => ({ ...current, [record.fingerprint]: "收益审核规则已变化，原审批单仍待审批；请到操作记录与审批结束原单后重新核对。" }));
+        if (!latest) setPendingNotes(current => ({ ...current, [record.fingerprint]: "最新规则没读到，刷新后核对。" }));
+        else if (latest.version !== record.version) setPendingNotes(current => ({ ...current, [record.fingerprint]: "这项规则已被别人改过，原单批不了；撤回后重新提交。" }));
       } catch {
-        setPendingNotes(current => ({ ...current, [record.fingerprint]: "已查到原审批单待审批，但最新规则读取失败，请刷新后核对。" }));
+        setPendingNotes(current => ({ ...current, [record.fingerprint]: "最新规则没读到，刷新后核对。" }));
       }
     } else {
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
       if (record.kind === "entry") {
         const entries = await refreshProtectedEntries();
-        ctx.toast(`原审批单${PROPOSAL_STATUS[ticket.status]}，${entries ? "已重读收益列表。" : "但收益列表读取失败，请刷新后核对。"}`, entries ? "success" : "warn");
-      } else await reloadAfter(`原审批单${PROPOSAL_STATUS[ticket.status]}，已读取最新规则。`, `原审批单${PROPOSAL_STATUS[ticket.status]}，但最新规则读取失败，请刷新后核对。`);
+        const outcome = ticket.status === "approved" ? "这笔收益已放行，能否提现还看账户组和其他提现条件。" : "这笔收益没有放行，可以重新提交。";
+        ctx.toast(`原审批单${PROPOSAL_STATUS[ticket.status]}：${outcome}${entries ? "" : "收益列表没读到，请刷新核对。"}`, entries ? "success" : "warn");
+      } else {
+        const outcome = ticket.status === "approved" ? "新值已生效。" : "规则没有改，可以重新提交。";
+        await reloadAfter(`原审批单${PROPOSAL_STATUS[ticket.status]}：${outcome}`, `原审批单${PROPOSAL_STATUS[ticket.status]}：${outcome}最新规则没读到，请刷新核对。`);
+      }
     }
     return ticket;
   };
@@ -1070,10 +1085,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releasePending = async (record: K1PendingCommand) => {
     if (record.approval) {
       // R1 proposal expiry applies only after a fresh authoritative not-found read.
-      if (!isRetryExpired(record) || record.approval.acknowledged || await queryReleaseApproval(record)) throw new Error("原审批单尚未确认查无，原请求继续保留。");
+      if (!isRetryExpired(record) || record.approval.acknowledged || await queryReleaseApproval(record)) throw new Error("查到了这张审批单，没有解除。");
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      ctx.toast("原审批申请没有建成，记录已解除，可以重新发起。", "success");
+      ctx.toast("已解除这条记录，可以重新提交。", "success");
     }
     setReleasing(null);
     if (record.kind === "registration-param") {
@@ -1084,6 +1099,22 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
+  /** 两类资金审批在恢复区和解除框里的名字：写申请了什么，不写内部的参数键。 */
+  const approvalTitle = (record: K1PendingCommand) => !record.approval ? record.label : record.kind === "entry" && record.approval.observedEntry
+    ? `人工放行 ${amountText(record.approval.observedEntry.amount)} ${nexGridBrandText(record.approval.observedEntry.asset)}`
+    : `放宽${record.target === "duplicateAccountFreezeFrom" ? "锁定起点" : "审核起点"}到 ${record.value} 个账户`;
+  /** 列表行上的原操作标记：待审批写申请了什么、谁什么时候提交；其余只给标签，处理在页面上方。 */
+  const pendingMark = (kind: "release-param" | "entry", target: string, change?: string) => {
+    const record = pending.find(item => item.kind === kind && item.target === target);
+    if (!record) return undefined;
+    if (!record.approval?.pendingTicketId) return record.approval?.acknowledged
+      ? <StatusTag tone="neutral" icon={Clock3} explain="审批单已建，进度没查到；到页面上方查询原审批单。">已建单</StatusTag>
+      : <StatusTag tone="warn" explain="这次提交的结果还没确认，先到页面上方查询原结果。">结果未知</StatusTag>;
+    return <>
+      <StatusTag tone="warn" icon={Clock3} explain={kind === "entry" ? PENDING_ENTRY_TIP : PENDING_PARAM_TIP}>待审批</StatusTag>{change && ` ${change}`}
+      <span className="rd-approval-meta">{record.operator} · <time dateTime={new Date(record.createdAt).toISOString()}>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}</time> 提交</span>
+    </>;
+  };
   const retainedEvidence = commandEvidence.list();
   const legacyProposals = cur ? Object.entries(LEGACY_CLUSTER_RECEIPTS).flatMap(([action, [code, title]]) => {
     const prefix = `cluster-${action}:${cur.id}:`;
@@ -1114,7 +1145,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const blockedBy = (group: string, target: string, loading = ctx.contentLoading) =>
     group === "cluster" && clusters.some((cluster) => cluster.id === target && cluster.pendingApproval) ? "这组已有待审批操作，审批结束后才能再次处理"
       : group === "cluster" && retainedEvidence.some((record) => Object.keys(LEGACY_CLUSTER_RECEIPTS).some((action) => record.fingerprint.startsWith(`cluster-${action}:${target}:`))) ? "有结果未知的原操作，先在账户组详情找回提交结果"
-        : pending.some(record => record.approval?.pendingTicketId && `${PENDING_GROUP[record.kind]}:${record.target}` === `${group}:${target}`) ? "这项已有待审批操作，审批结束后才能再次处理"
+        : pending.some(record => record.approval?.pendingTicketId && `${PENDING_GROUP[record.kind]}:${record.target}` === `${group}:${target}`) ? group === "entry" ? "这笔已提交审批，审批结束前不能再提交" : "这项已提交审批，审批结束前不能再改"
           : pendingBlocks.has(`${group}:${target}`) ? "有结果未知的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
 
   /** 已冻结组里账户是冻结状态是应该的，不算异常。 */
@@ -1252,19 +1283,24 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       detail: "",
       amplifies: true,
       confirmTone: "danger",
-      statedBrief: { impact: approvalRequired ? "另一位超级管理员批准后才生效。批准前不执行。" : "立即解除这笔收益的待审或锁定状态，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
-      coverageLead: "这笔钱放行后不再锁住",
+      statedBrief: approvalRequired
+        ? { impact: "刚才没有放行：这笔要另一位超级管理员批准后才放行。", check: "核对用户、净额和来源。提交和批准时都检查兑付覆盖率。" }
+        : { impact: "立即放行这笔收益，记入操作记录。", check: "核对用户、净额和来源。提交时先检查兑付覆盖率。" },
+      coverageLead: approvalRequired ? "批准后这笔钱不再锁住" : "这笔钱放行后不再锁住",
       effect: approvalRequired ? RELEASE_APPROVAL_EFFECT : <>{IMMEDIATE_EFFECT}<IrreversibleTag /></>,
       confirmLabel: approvalRequired ? "提交审批" : "立即放行",
       blockedReason: approvalRequired && !canProposeRelease ? "这个账号没有发起这项审批的权限" : undefined,
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
       facts: <Facts>
-        <Fact k="金额" lead tone="role-1" unit={nexGridBrandText(entry.asset)}>{amountText(entry.amount)}</Fact>
-        <Fact k="收益记录">{entry.entryNo}</Fact>
+        <Fact k="净额" lead tone="role-1" unit={nexGridBrandText(entry.asset)}>{amountText(entry.amount)}</Fact>
         <Fact k="用户">{entry.userNo && reach(`/users/search/${entry.userId}`, "user_c1hub_read")
           ? <Link className="rd-link" href={`/users/search/${entry.userId}`}>{entry.userNo}</Link> : entry.userNo ?? "用户编码未提供"}</Fact>
-        <Fact k="账户组">{entry.clusterId}</Fact>
+        <Fact k="来源">{sourceName(entry.sourceType)} <span data-mono>{entry.sourceRef}</span></Fact>
+        <Fact k="收益记录"><span data-mono>{entry.entryNo}</span></Fact>
+        <Fact k="账户组"><span data-mono>{entry.clusterId}</span></Fact>
         <Fact k="前后状态"><Change from={entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} to="已放行" /></Fact>
+        {approvalRequired && <Fact k="什么时候生效" tone="warn">另一位超级管理员批准后才放行；批准前这笔仍锁着</Fact>}
+        {approvalRequired && <Fact k="谁来批">另一位超级管理员，不能是提交人</Fact>}
         <Fact k="提现">放行不解除账户组限制。账户组待判定、可疑、已冻结或人数达到锁定起点时仍不能提现。</Fact>
       </Facts>,
       reasonMin: 8,
@@ -1612,23 +1648,38 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const expired = record.expiresAt <= Date.now();
           const registration = record.kind === "registration-param";
           const outcome = investigationResults[record.commandKey];
-          return { key: record.fingerprint, title: record.label, record, outcome, createdAt: record.createdAt, expired, canRetry: !blocked,
-            ...(record.approval ? { canQuery: canProposeRelease, ...(record.approval.pendingTicketId
-              ? { status: { tone: "progress" as const, label: "待审批", line: "已提交审批，等另一位超级管理员批准。" } }
-              : record.approval.acknowledged ? { status: { tone: "warn" as const, label: "结果未知", line: "申请已建单，审批状态暂未查到，请查询原审批单。" } } : {}) } : {}),
+          const approval = record.approval;
+          const note = pendingNotes[record.fingerprint];
+          const absent = proposalNotFound.includes(record.commandKey);
+          // 两类资金审批：标题写申请了什么；待审批时，查回来的变化（被别人改过、被追回）直接写在行上，不藏在展开里。
+          const observed = approval?.observedEntry;
+          const title = approvalTitle(record);
+          const status = !approval ? undefined : approval.pendingTicketId ? { tone: "warn" as const, label: "待审批", line: note || APPROVAL_LINE.pending }
+            : approval.acknowledged ? { tone: "neutral" as const, label: "已建单", line: APPROVAL_LINE.created }
+              : absent && !(outcome && "receipt" in outcome && outcome.receipt) ? expired ? { tone: "warn" as const, label: "没有建成", line: APPROVAL_LINE.missing } : { tone: "warn" as const, label: "结果未知", line: APPROVAL_LINE.absent } : undefined;
+          const current = record.kind === "release-param" ? overview?.releaseParams.find(param => param.key === record.target) : undefined;
+          return { key: record.fingerprint, title, record, outcome, createdAt: record.createdAt, expired, canRetry: !blocked,
+            ...(approval ? { canQuery: canProposeRelease, ...(status ? { status } : {}) } : {}),
             actions: <>
               {(record.approval || record.kind === "cluster" && canQueryProposal) && !fundInvestigationAccess(record).canRead
                 ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原结果"}</Button>
                 : <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {!expired && !record.approval?.acknowledged && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-              {(registration && retryRejected.includes(record.commandKey) || record.approval && expired && !record.approval.acknowledged && proposalNotFound.includes(record.commandKey)) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+              {registration && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+              {approval && expired && !approval.acknowledged && absent && <Button size="sm" variant="ghost" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>查无此单时解除</Button>}
             </>,
-            detail: <>
-              <p><KeepText text={record.approval ? record.approval.pendingTicketId ? "已提交审批，等另一位超级管理员批准。" : record.approval.acknowledged ? "申请已建单，请查询原审批单。" : expired ? EXPIRED_TEXT : "可能已经提交审批，请先查询原审批单。" : expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? ""}`} /></p>
+            detail: approval ? <>
+              <p>{record.kind === "entry" && observed
+                ? <>收益记录 <span data-mono>{record.target}</span>，提交时页面读到的净额 {amountText(observed.amount)} {nexGridBrandText(observed.asset)}，来源 {sourceName(observed.sourceType)}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
+                : <>申请把「{record.name ?? record.target}」改为 {record.value} 个账户{current ? `，现在是 ${current.value} 个账户` : ""}，批准后才生效。</>}</p>
+              <p>提交人 {record.operator}；理由：{record.reason}</p>
+              {note && !status?.line.includes(note) && !(expired && note.includes("重试")) && <p><KeepText text={note} /></p>}
+            </> : <>
+              <p><KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? ""}`} /></p>
               {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
             </>,
-            tech: `操作人 ${record.operator} ｜ 理由 ${record.reason}` };
+            tech: approval ? approval.pendingTicketId ? `审批单 ${approval.pendingTicketId}` : undefined : `操作人 ${record.operator} ｜ 理由 ${record.reason}` };
         })} />
 
       <PageTabs ids={tabIds} label="多账户风险排查内容" value={tab} onChange={setTab} items={[
@@ -1706,7 +1757,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {tab === "earnings" && (
         <Panel data-proof="k1-protected-earnings" title="待审核或已锁定的收益" icon={Coins} tone="role-1" flush
           sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""} · 时间均为${businessZone().label}` : undefined}
-          explain="人工放行需要相应权限、操作理由，并留下操作记录。">
+          explain="人工放行要写理由，留操作记录。要审批时，另一位超级管理员批准后才放行。">
           {protectedEntriesError ? (
             <BlockState state="error" title="收益记录读取失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
           ) : (
@@ -1717,7 +1768,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <Th icon={Users} tone="users">用户 / 关联账户组</Th>
                   <Th>来源</Th>
                   <Th>处理状态</Th>
-                  <Th align="right" icon={Coins} tone="money">金额</Th>
+                  <Th align="right" icon={Coins} tone="money">净额</Th>
                   <Th align="right">操作</Th>
                 </tr>
               </thead>
@@ -1728,8 +1779,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Td><Cell mono main={entry.userNo && reach(`/users/search/${entry.userId}`, "user_c1hub_read")
                       ? <Link className="rd-link" href={`/users/search/${entry.userId}`}>{entry.userNo}</Link>
                       : entry.userNo ?? "用户编码未提供"} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
-                    <Td><Cell main={({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源未知"} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
-                    <Td><StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag></Td>
+                    <Td><Cell main={sourceName(entry.sourceType)} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
+                    <Td><Cell main={<StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag>}
+                      sub={pendingMark("entry", entry.entryNo)} /></Td>
                     <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>
                     <Td align="right">{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
                   </Tr>
@@ -1776,7 +1828,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               </Panel>
 
               {/* 收益审核规则与账户组处置分开。 */}
-              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。保存后立即生效，不走审批。">
+              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。收紧保存后立即生效；放宽要审批时，另一位超级管理员批准后才生效。">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">
                     <ConfigList>
@@ -1787,7 +1839,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                         const noRoom = range && range.max <= range.min ? `${range.problem}，现在只能是 ${p.value}。${range.next}` : undefined;
                         return (
                           <ConfigRow key={p.key} name={releaseParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} effect={K1_PARAM_HELP[p.key]?.direction} value={`${releaseParamDisplay(p)}${limits ? ` ${releaseUnit(p)}` : ""}`}
-                            sub={canRelease && noRoom ? "现在只有这一个可填" : undefined}
+                            sub={pendingMark("release-param", p.key, `申请改为 ${pending.find(item => item.kind === "release-param" && item.target === p.key)?.value ?? "—"} ${releaseUnit(p)}`) ?? (canRelease && noRoom ? "现在只有这一个可填" : undefined)}
                             action={!canRelease ? undefined : p.adjustable === false ? "不可调" : paramAction(releaseParamName(p), blockedBy("param", p.key) ?? noRoom, () => adjReleaseParam(p))} />
                         );
                       })}
@@ -1892,6 +1944,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <DraftModal title={`调整${releaseParamName(param)}`} icon={SlidersHorizontal} effect={approvalMode ? RELEASE_APPROVAL_EFFECT : IMMEDIATE_EFFECT} explain={paramHelpRows(help, param.sub).filter((row) => row.k !== "怎么填")} busy={busy} saveLabel={approvalMode ? "提交审批" : "确认修改"} blocked={problem ?? (approvalMode && !canProposeRelease ? "这个账号没有发起这项审批的权限" : undefined)} dirty={value !== param.value}
             reason={reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onReadLatest={() => void readLatestReleaseParam()} onClose={() => setReleaseDraft(null)} onSave={saveReleaseDraft}>
+            {/* 直接保存被判定要审批：框留着、值和理由都在，写清没保存、谁来批，运营再点一次「提交审批」（H-改走审批）。 */}
+            {approvalMode && <Notice tone="warn" title="刚才没有保存：放宽要另一位超级管理员批准" />}
             {/* 现在值、新值输入、方向合成一块；数字用关键数字那一档，选项用 16 那一档（VS-103）。 */}
             <DiffField before={limits ? param.value : valueText(param.value)} unit={limits ? releaseUnit(param) : undefined} size={limits ? "key" : "body"} hint={range && `${range.min}–${range.max} 的整数`}
               state={direction}
@@ -1899,7 +1953,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {help?.whatIf?.(value)}
                 {loosening && !RELEASE_AFFECTS_EARNINGS.has(key) && "保存时仍检查兑付覆盖率，低于红线或无法读取时不能保存。"}
                 {/* 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。不影响收益的几项写在上一句。 */}
-                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}保存时检查兑付覆盖率，低于红线不能保存。</span></span>}
+                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}{approvalMode ? "提交、批准时兑付覆盖率都不能低于红线。" : "保存时检查兑付覆盖率，低于红线不能保存。"}</span></span>}
               </>}
               error={limits ? fieldError(problem, typed, "value") : undefined}>
               {limits && range
@@ -1908,6 +1962,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 : <Select aria-label="新值（从下拉选择）" disabled={busy} value={value} onChange={(next) => update({ value: next })}
                   options={(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => ({ value: option, label: isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option] }))} />}
             </DiffField>
+            {approvalMode && <Facts>
+              <Fact k="什么时候生效" tone="warn">{`批准后才生效；批准前仍按 ${param.value}${limits ? ` ${releaseUnit(param)}` : ""}`}</Fact>
+              <Fact k="谁来批">另一位超级管理员，不能是提交人</Fact>
+            </Facts>}
           </DraftModal>
         );
       })()}
@@ -1994,7 +2052,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         );
       })()}
 
-      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => { void releasePending(releasing).catch(cause => ctx.toast(errorText(cause), "error")); }} explain={releasing.approval ? "原审批申请已超过 24 小时；查询明确没有这张单，确认后只解除本页原申请记录。" : "重试被拒说明不了原操作的结果，先到操作记录确认；解除后这项设置仍可能被系统锁住。"} />}
+      {releasing && <ReleaseModal label={approvalTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => { void releasePending(releasing).catch(cause => ctx.toast(errorText(cause), "error")); }} explain={releasing.approval ? <><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></> : "重试被拒说明不了原操作的结果，先到操作记录确认；解除后这项设置仍可能被系统锁住。"} />}
       {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing))}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>
