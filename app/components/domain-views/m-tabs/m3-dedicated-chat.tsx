@@ -847,7 +847,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     // The customer now has a conversation (e.g. a concurrent first contact won): carry the unsent first-contact draft over,
     // however the conversation was opened. A first contact whose result is still unconfirmed keeps its text where it is.
     const customerId = selected?.customerId;
-    if (!selected || !validCustomerId(customerId ?? null) || firstPending || readPending(firstPendingKey(adminId, customerId!))) return;
+    if (!selected || selected.writeState?.canReply !== true || !validCustomerId(customerId ?? null) || firstPending || readPending(firstPendingKey(adminId, customerId!))) return;
     const firstKey = `first:${customerId}`;
     setDrafts(old => {
       if (!old[firstKey]?.trim() || old[selected.id]?.trim()) return old;
@@ -855,7 +855,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       delete next[firstKey];
       return next;
     });
-  }, [selected?.id, selected?.customerId, firstPending, adminId]);
+  }, [selected?.id, selected?.customerId, selected?.writeState?.canReply, firstPending, adminId]);
   useEffect(() => {
     if (!adminId || draftOwner!==adminId || qualificationUnknown) return;
     try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
@@ -1317,12 +1317,22 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const continueClosed = async () => {
     if (!canWriteM3 || !selected?.detailReady || !selected.customerId || actionChecking) return;
     const stamp = identityRef.current;
+    const sourceKey = selected.id;
     setActionChecking(true); setActionError("");
     try {
-      const next = await resolveMConversationContinuation(selected.id, adminId);
+      const next = await resolveMConversationContinuation(sourceKey, adminId);
       if (stamp !== identityRef.current) return;
       if (next.conversationNo && !visible.some(convo => convo.id === next.conversationNo)) await ctx.refreshConversations();
       if (stamp !== identityRef.current) return;
+      if (!pending && !firstPending && !readPending(pendingKey(adminId)) && !readPending(firstPendingKey(adminId, next.customerId))) {
+        const destinationKey = next.conversationNo ?? `first:${next.customerId}`;
+        setDrafts(current => {
+          if (!current[sourceKey]?.trim() || current[destinationKey]?.trim()) return current;
+          const updated = { ...current, [destinationKey]: current[sourceKey] };
+          delete updated[sourceKey];
+          return updated;
+        });
+      }
       setContinuation(next);
       const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", next.customerId); window.history.replaceState(null, "", url);
       setRequestedCustomerId(next.customerId);
