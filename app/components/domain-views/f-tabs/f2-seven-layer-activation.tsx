@@ -19,6 +19,7 @@ import { f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
 import { FReleaseButton } from "./f-release";
+import { PROPOSAL_END, RECOVERY_LINE } from "../e-tabs/e-command-check";
 import type { FViewCtx } from "./types";
 
 
@@ -161,15 +162,27 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   const [error, setError] = useState<{ query: boolean; text: string } | null>(null);
   // 只让点的那个按钮转圈：查询时别的行和「按原请求重试」只灰着，不显示「正在重试…」。
   const [active, setActive] = useState<string | null>(null);
+  // 查过的那一行原地写查到了什么；查到已结束的审批单时记录清掉，改用轻提示。
+  const [notes, setNotes] = useState<Record<string, { tone: "warn" | "danger"; text: string }>>({});
   const attempts = ctx.f2Proposals;
   if (!attempts.length && !error) return null;
   const canAudit = ctx.can("platform_a2_read");
   async function recover(attempt: F2Recovery, query: boolean) {
     if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
     setRecovering(true); setError(null); setActive(`${attempt.commandKey}:${query ? "query" : "retry"}`);
-    try { if (query) await ctx.queryF2Proposal(attempt.fingerprint); else await ctx.retryF2Proposal(attempt.fingerprint); }
-    catch (cause) { setError({ query, text: cause instanceof Error && cause.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(cause) }); }
-    finally { setRecovering(false); setActive(null); }
+    const note = (value?: { tone: "warn" | "danger"; text: string }) => setNotes(({ [attempt.commandKey]: _, ...rest }) => value ? { ...rest, [attempt.commandKey]: value } : rest);
+    note();
+    try {
+      if (!query) { await ctx.retryF2Proposal(attempt.fingerprint); return; }
+      const ticket = await ctx.queryF2Proposal(attempt.fingerprint);
+      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
+      else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
+      else ctx.toast(`原审批单${PROPOSAL_END[ticket.status].tag}：${PROPOSAL_END[ticket.status].text}`);
+    } catch (cause) {
+      const text = cause instanceof Error && cause.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(cause);
+      if (!query) setError({ query, text });
+      else note(cause instanceof Error && cause.message === "F2_PROPOSAL_STATUS_UNAVAILABLE" ? { tone: "warn", text: RECOVERY_LINE.created } : { tone: "danger", text: `查询没有成功：${text}` });
+    } finally { setRecovering(false); setActive(null); }
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
@@ -192,11 +205,12 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
               {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
               {attempt.canRelease && !attempt.ticket && <FReleaseButton label={name} toast={ctx.toast} onRelease={() => ctx.releaseF2Proposal(attempt.fingerprint)} />}
             </span>
+            {notes[attempt.commandKey] && <span className="f2-recovery-line" role="status" data-tone={notes[attempt.commandKey].tone}>{notes[attempt.commandKey].text}</span>}
           </li>;
         })}
       </ul>
       <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link></>}</p>
-      {error && <Notice tone="danger" title={error.query ? "查询原结果没有成功" : "按原请求重试没有成功"}>{error.text}</Notice>}
+      {error && <Notice tone="danger" title="按原请求重试没有成功">{error.text}</Notice>}
     </Notice>
   );
 }

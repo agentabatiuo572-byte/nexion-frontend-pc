@@ -13,7 +13,6 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4Confirmation } from "./f4-confirmations";
 import { F4AmbassadorMaterials, materialReviewAttempts } from "./f4-ambassador-materials";
 import { applicationStage } from "./f4-quota";
@@ -56,6 +55,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         : confirm?.statedBrief?.impact ?? (spec ? `${spec.before} → ${spec.after}` : "—");
     return {
       key: original.commandKey,
+      line: ctx.f4QueryNotes[original.commandKey],
       name: confirm?.name ?? spec?.action ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
@@ -70,7 +70,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         <Button size="sm" onClick={() => {
           if (confirm && original.f4Snapshot) {
             ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
-          } else void ctx.recoverF4(record, "query").catch(error => ctx.toast(displayAdminError(error)));
+          } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
         }}>查询原结果</Button>
         {record.kind === "proposal" && isRetryExpired(record.original) && record.original.absent && !record.original.ticket && !record.original.received
           && <FReleaseButton label={confirm?.name ?? spec?.action ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
