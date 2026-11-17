@@ -75,7 +75,7 @@ export async function fetchPhoneOperation(input: {
 function verification(raw: unknown): PhoneVerification {
     if (!record(raw) || typeof raw.evidenceRef !== "string" || typeof raw.requestId !== "string" || typeof raw.supportRef !== "string"
         || typeof raw.verifiedBy !== "number" || typeof raw.verifiedAt !== "number")
-        throw new Error("核实结果暂未确认，请查询原核实记录。");
+        throw new Error("核实结果未知，请查询原核实记录。");
     return raw as unknown as PhoneVerification;
 }
 export interface PendingPhoneCommand extends PendingMutationRecord {
@@ -122,7 +122,7 @@ export async function submitPhoneCommand(row: PendingPhoneCommand): Promise<Phon
             result = row.type === "PHONE_VERIFY" ? verification(data) : parsePhoneReceipt(data);
         }
         catch {
-            throw new PhoneApiError("结果暂未确认，请先查询原操作，不要重新提交。", 502, true);
+            throw new PhoneApiError("结果未知，请先查询原结果，不要重新提交。", 502, true);
         }
         matchPhoneResult(row, result);
         if (!("status" in result) || result.status !== "PENDING")

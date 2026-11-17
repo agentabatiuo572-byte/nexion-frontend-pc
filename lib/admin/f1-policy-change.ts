@@ -171,7 +171,7 @@ export async function submitF1Policy(
   const unresolved = listF1PolicyOperations(session.adminId).find(item => !item.ticket && item.original.values.rank === editor.row.v);
   if (mode === "submit" && unresolved) throw new A2OutcomeUncertainError("这一级有结果未知的原操作，请先查询原结果。", unresolved.commandKey);
   if (previous?.ticket && mode === "submit" && f1PolicyNeedsApproval(editor, form)) throw new A2OutcomeUncertainError("这一级已有待审批申请，请先核对原申请。", previous.commandKey);
-  if (previous && !previous.ticket && mode === "submit") throw new A2OutcomeUncertainError("原操作尚未确认，请按原内容核对。", previous.commandKey);
+  if (previous && !previous.ticket && mode === "submit") throw new A2OutcomeUncertainError("原操作结果未知，请按原内容核对。", previous.commandKey);
   if (mode === "submit" && previous?.ticket) previous = undefined;
   let original = previous?.original;
   const key = previous?.commandKey ?? createA2CommandKey("f1-rank-policy");

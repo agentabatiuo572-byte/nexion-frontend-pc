@@ -244,7 +244,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         checking = false;
         const ticket=await createA2OperationProposal(pending.input,pending.commandKey,true);
         if(live.current){proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:ticket.id});syncPending();setMessage("已找回原审批提案，请等待另一位审批人核对。");}
-      } catch(failure){if(live.current){setError(failure instanceof Error?failure.message:"原操作结果仍未确认");if(!checking&&isExplicitRejection(failure))setRetryRejectedKey(pending.commandKey);}}
+      } catch(failure){if(live.current){setError(failure instanceof Error?failure.message:"原操作结果未知，请稍后再查询原结果。");if(!checking&&isExplicitRejection(failure))setRetryRejectedKey(pending.commandKey);}}
       finally{mutation.current=false;if(live.current)setBusy(false);}
     }
     async function releaseMissing() {

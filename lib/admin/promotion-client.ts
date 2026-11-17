@@ -97,14 +97,14 @@ export async function promotionVersions(activityId:string):Promise<VersionPage> 
     cursor=page.nextCursor;seen.add(page.nextCursor);
   }
 }
-function uncertain(): never { throw new PromotionApiError('结果尚未确认，原操作记录和输入已保留，请先核查原结果。'); }
+function uncertain(): never { throw new PromotionApiError('结果未知，原操作记录和输入已保留，请先核查原结果。'); }
 export async function promotionCommand(intent: PromotionCommandIntent, retry = false): Promise<CommandReceipt> {
   const slot = fingerprint(intent);
   const actor = useAdminAuth.getState().session;
   if (!actor) throw new PromotionApiError('登录已失效，请重新登录后查询原结果。');
   const previous = pendingPromotionCommands().find(r => r.fingerprint === slot);
   if (previous && (!retry || previous.recoveryState !== 'NOT_FOUND' || JSON.stringify(previous.body) !== JSON.stringify(intent.body) || previous.path !== intent.path || previous.method !== intent.method)) {
-    throw new PromotionApiError('存在尚未确认的原操作，请先核查结果；不能修改参数后再次提交。');
+    throw new PromotionApiError('有结果未知的原操作，请先核查原结果；不能改了参数再提交。');
   }
   if (previous && isRetryExpired(previous)) throw new PromotionApiError(RETRY_EXPIRED_TEXT);
   const key = previous?.commandKey ?? `promotion-${crypto.randomUUID()}`;

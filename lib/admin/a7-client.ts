@@ -81,7 +81,7 @@ async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPref
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
   const uncertain = () => new Error(
-    "请求结果暂未确认，已填写的内容还在；请直接重试，不会重复执行。");
+    "结果未知，已填写的内容还在；请直接重试，不会重复执行。");
   // 传输层失败(断网 / 超时)必须归结果未知,不能抛裸错误让调用方当成确定失败。
   let response: Response;
   try {

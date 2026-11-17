@@ -263,7 +263,7 @@ export async function executeG3MarketChange(
     }
     const uncertain = new A2OutcomeUncertainError("", key);
     // The shared approval modal appends the number; do not append it twice here.
-    uncertain.message = "提交结果暂未确认，可能已经生效。请查询原操作，或在有效期内按原操作重试；过期后只能核对。";
+    uncertain.message = "提交结果未知，可能已经生效。请查询原结果，或在有效期内按原请求重试；过期后只能查询。";
     throw uncertain;
   }
 }

@@ -2189,13 +2189,13 @@ async function submitD1BankManualCredit(path: string, body: string, commandKey?:
     const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch);
     assertD1BankManualAuthEpoch(authEpoch);
     const order = latest.records.find(value => value.intentNo === intentNo);
-    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账结果暂未确认");
+    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账结果未知");
     pendingMutations.forget(fingerprint);
     return result;
   } catch {
     assertD1BankManualAuthEpoch(authEpoch);
     if (retainedKey) throw new DOutcomeUnknownError(retainedKey);
-    throw new Error("人工入账已提交，但订单状态暂未确认；请先核对订单和账本，不要重新提交");
+    throw new Error("人工入账已提交，结果未知；请先核对订单和账本，不要重新提交");
   }
 }
 

@@ -18,7 +18,7 @@ export async function recoverPlacement(intent: PlacementIntent) {
       ? `已确认：成员 ${intent.memberUserId} 在用户 ${intent.ownerUserId} 的 ${row.leg} 组。`
       : `成员 ${intent.memberUserId} 已在用户 ${intent.ownerUserId} 的 ${row.leg} 组，不能改到 ${intent.leg} 组。` };
     return { resolved: false, message: row
-      ? "该成员目前还没分组，提交结果暂未确认，请稍后再查。"
+      ? "该成员现在还没分组，提交结果未知，请稍后再查。"
       : "暂时无法确认分组结果，请稍后再查。" };
   }
 

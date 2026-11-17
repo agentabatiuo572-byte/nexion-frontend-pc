@@ -71,7 +71,7 @@ const CONTROL_ORDER = ["pin", "schedule", "loop"];
 const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
 // 只剩字符串时（页面上的 error）按开头认结果未知：A2 发起申请丢回包的句子以「结果未知，可能已经提交」开头。
-const UNKNOWN_TEXT = /^(提交结果(暂未确认|未知)|结果未知，可能已经提交)/;
+const UNKNOWN_TEXT = /^(提交结果未知|结果未知，可能已经提交)/;
 
 function messageOf(error: unknown) {
   return displayAdminError(error);

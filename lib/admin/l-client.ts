@@ -178,7 +178,7 @@ export function isLOutcomeUnknownError(error: unknown): error is LOutcomeUnknown
 function networkFailure(isReportCreation: boolean) {
   return isReportCreation
     ? new LOutcomeUnknownError()
-    : new Error("网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
+    : Object.assign(new Error("网络连接已中断，结果未知。请先核对原操作，再决定要不要重试。"), { name: "LNetworkInterruptedError" });
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false, attempt = { hadUncertainAttempt: false }): Promise<T> {

@@ -554,7 +554,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     } catch (error) {
       if (isH3BindingOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("保存结果暂未确认，页面已刷新。请核对后用相同理由重试");
+        toast("保存结果未知，页面已刷新。请核对后用相同理由重试", "warn");
       }
       throw error;
     }
@@ -566,7 +566,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     } catch (error) {
       if (isH3MissionOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("任务保存结果暂未确认，页面已刷新。请核对后重试");
+        toast("任务保存结果未知，页面已刷新。请核对后重试", "warn");
       }
       throw error;
     }
@@ -2143,7 +2143,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       {section === "events" && (
         <>
       {pendingH4EventDeletes().map(record => <div className="l-card" key={record.commandKey} role="status">
-        删除「{record.eventId}」的结果暂未确认；填写的理由：{record.reason}。
+        删除「{record.eventId}」的结果未知；填写的理由：{record.reason}。
         <button className="l-btn sm" disabled={!canModuleWrite} onClick={() => openActionConfirm({ briefKind: "record",
           action: `查看删除结果 · ${record.eventId}`,
           detail: <>查看上次删除是否成功，不会重复删除。</>,

@@ -540,7 +540,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     // 而不是「失败」——冠失败会诱导运营换渠道重做,而应急止血动作(kill-switch / 地域封锁)
     // 重复执行的代价极高。
     throw new EmergencyOutcomeUncertainError(
-      "应急控制服务连接在提交后中断，执行结果暂未确认",
+      "应急控制服务连接在提交后中断，结果未知",
     );
   }
   if (requestFailed) {

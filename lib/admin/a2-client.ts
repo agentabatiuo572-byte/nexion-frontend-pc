@@ -503,7 +503,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
       || result.code >= 500 && !f4PayoutCoverageRefusal || init.strictOutcome === true && result.code !== 0 && result.code < 400)) {
-    throw new A2OutcomeUncertainError("提交结果暂未确认，请到操作记录里核对。", init.commandKey);
+    throw new A2OutcomeUncertainError("提交结果未知，请到操作记录里核对。", init.commandKey);
   }
 
   if (init?.commandKey && !result) {
