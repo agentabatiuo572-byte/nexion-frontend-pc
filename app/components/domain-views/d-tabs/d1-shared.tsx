@@ -12,6 +12,10 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useReach } from "@/lib/nav/use-reach";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundSettled } from "../fund-command-check";
+import { checkFundCommand, fundCommandSettled, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 
 export type D1Section = "payments" | "bank" | "usdt" | "ledger";
 export const D1_SECTIONS: readonly D1Section[] = ["payments", "bank", "usdt", "ledger"];
@@ -104,6 +108,8 @@ export type D1PendingItem = {
   blocked?: string;
   /** 过了 24 小时重试时限：标签写「已过期」，和别的页同一个说法。 */
   expired?: boolean;
+  /** 首次发送时保存的可信来源；旧记录不按当前登录人补造。 */
+  record?: FundCommandRecord;
   auditHref?: string;
   /** 读回这条对象的现状，返回写给人看的一句话。 */
   verify?: () => Promise<ReactNode>;
@@ -127,8 +133,27 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
   const [releasable, setReleasable] = useState<readonly string[]>([]);
   const [notes, setNotes] = useState<Record<string, ReactNode>>({});
   const [releasing, setReleasing] = useState<D1PendingItem | null>(null);
-  if (!items.length && !releasing) return null;
+  const [closing, setClosing] = useState<D1PendingItem | null>(null);
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  if (!items.length && !releasing && !settled.length) return null;
   const note = (key: string, text: ReactNode) => setNotes((current) => ({ ...current, [key]: text }));
+  const check = async (item: D1PendingItem, evidence?: FundCommandEvidence) => {
+    if (!item.record) return;
+    setRunning(item.key);
+    try {
+      const receipt = await checkFundCommand(item.record, evidence);
+      setOutcomes(current => ({ ...current, [item.key]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        item.release();
+        setSettled(current => [...current.filter(row => row.key !== item.key), { key: item.key, label: item.label, status: receipt!.originalStatus }]);
+        item.after();
+      }
+    } catch (error) {
+      setOutcomes(current => ({ ...current, [item.key]: { error: displayAdminError(error) } }));
+      if (evidence) throw error;
+    } finally { setRunning(""); }
+  };
   const retry = async (item: D1PendingItem) => {
     if (!item.retry) return;
     setRunning(item.key);
@@ -138,7 +163,8 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
       note(item.key, "");
     } catch (error) {
       if (isPermissionDenied(error)) announcePermissionDenied();
-      if (isExplicitRejection(error)) {
+      if (item.record) note(item.key, displayAdminError(error));
+      else if (isExplicitRejection(error)) {
         note(item.key, `重试被拒：${displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。`);
         setReleasable((current) => [...current, item.key]);
       } else if (unknownOutcome(error)) note(item.key, "重试结果仍未知，原操作继续保留。");
@@ -161,18 +187,23 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
     .map((href) => <Link key={href} className="rd-link" href={href}>到操作记录与审批核对</Link>);
   return (
     <>
+      <FundRecoveryPanel rows={[]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(row => row.key !== key))} />
       <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理"
         explain="这些操作发出后没收到明确结果，可能已经生效。先读取现在的值核对；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
         foot={auditLinks.length ? auditLinks : undefined}
         items={items.map((item): RecoveryItem => {
           const hint = item.retry ? item.blocked ?? item.hint : item.hint;
           const refused = item.retry && releasable.includes(item.key);
+          const expired = item.expired ?? (!!item.record && isRetryExpired(item.record));
+          const status = item.record ? fundRecoveryStatus({ record: item.record, outcome: outcomes[item.key], expired, canRetry: !!item.retry && !item.blocked }) : undefined;
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
-            tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知"}</StatusTag>,
-            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，先读取现在的值核对。" : item.blocked ? `${item.blocked}。` : "可能已经生效，先读取现在的值核对。" : "可能已经生效，这项只能读取现在的值核对。",
+            tag: <StatusTag tone={status?.tone ?? (refused ? "danger" : "warn")}>{status?.label ?? (refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知")}</StatusTag>,
+            line: status?.line ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，先读取现在的值核对。" : item.blocked ? `${item.blocked}。` : "可能已经生效，先读取现在的值核对。" : "可能已经生效，这项只能读取现在的值核对。"),
             note: notes[item.key],
             actions: <>
+              {item.record && <FundCheckButtons record={item.record} outcome={outcomes[item.key]} expired={expired} busy={disabled || !!running} checking={running === item.key}
+                onCheck={() => void check(item)} onClose={() => setClosing(item)} />}
               {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
@@ -186,6 +217,9 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本页这条原操作记录，原操作的结果和锁定不变。"
           onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
       )}
+      {closing?.record && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
+        offer={eCommandClosureOffer(outcomes[closing.key], isRetryExpired(closing.record))}
+        onClose={() => setClosing(null)} onSubmit={async evidence => { await check(closing, evidence); setClosing(null); }} />}
     </>
   );
 }

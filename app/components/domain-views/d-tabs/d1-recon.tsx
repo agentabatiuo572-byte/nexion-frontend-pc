@@ -513,6 +513,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   };
   const pendingItem = (command: D1PendingCommand, retry: () => Promise<unknown>, permitted: boolean): D1PendingItem => ({
     key: command.commandKey,
+    record: command.commandOrigin ? command : undefined,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
     hint: "先读取现在的值核对；按原请求重试不会重复执行。",
