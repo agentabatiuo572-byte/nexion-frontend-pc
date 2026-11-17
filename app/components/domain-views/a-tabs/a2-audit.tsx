@@ -7,6 +7,7 @@ import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
+import { F2BootstrapReview, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
@@ -160,6 +161,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
   // AuditReplayBusinessPermissionGuard.validateJ1RestoreChecker：超级管理员，且有审批批准权限和业务开关恢复权限。
   if (w.operationCode === "j1_gate_resume") return "另一位有审批批准权限和业务开关恢复权限的超级管理员";
+  // AuditReplayBusinessPermissionGuard.requiredAuthority：首次配置要审批批准权限和团队奖励比例权限，不要求超级管理员。
+  if (w.operationCode === "f_unilevel_bootstrap") return "另一位有审批批准权限和团队奖励比例权限的管理员";
   // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
@@ -311,6 +314,8 @@ function coverageFacts(w: { operationCode?: string | null; obj?: string; after?:
   if (fund?.kind === "fConfig" && fund.spec?.loosen) return { lead: `这次${fund.spec.loosen}，会让平台多付钱`, check: "批准时先查兑付覆盖率：低于红线就不改，审批单留着待审批。" };
   if (fund?.kind === "f5Reissue") return { lead: "补发会给每笔生成一条新的应付奖励", check: "批准时先查兑付覆盖率，读不到或低于红线就不补，审批单留着待审批。" };
   if (w.operationCode === "f_seven_layer_activation" || w.operationCode === "f_direct_referral_policy") return { lead: undefined, check: F2_POLICY_COVERAGE };
+  // OpsTeamService.initializeUnilevelRules：建规则前查兑付覆盖率，低于红线整单不执行。
+  if (w.operationCode === "f_unilevel_bootstrap") return { lead: undefined, check: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。" };
   return undefined;
 }
 
@@ -325,6 +330,11 @@ function approvalRefusedText(operationCode: string | null | undefined, cause: un
   // F 域配置（放宽方向）和 F5 补发：后端在改之前拒（OpsTeamService.updateUiConfig 等、F5CommissionService.reissueInternal），单子和锁都不动。
   if (code === "COVERAGE_BELOW_REDLINE" && F_CONFIG_CODES.includes(operationCode ?? "")) return "兑付覆盖率低于红线，这次批准没有执行，设置没有改；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
   if (code === "COVERAGE_BELOW_REDLINE" && operationCode === "f5_commission_reissue") return "兑付覆盖率低于红线，这次补发没有执行，一笔都没补；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
+  // F2 首次配置：后端在写任何一行之前拒（OpsTeamService.initializeUnilevelRules），单子和锁都不动。
+  if (operationCode === "f_unilevel_bootstrap") {
+    if (code === "COVERAGE_BELOW_REDLINE") return "兑付覆盖率低于红线，这次批准没有执行，七层规则没有建；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
+    if (code === "F2_UNILEVEL_RULES_ALREADY_CONFIGURED") return "团队购买奖励已经配置过，这次批准没有执行，规则没有改；审批单还是待审批。请驳回。";
+  }
   // K1 两类：后端在改之前拒（RiskReleaseParamsService.applyApproved、EarningsReleaseService.manualReleaseOnce），单子和锁都不动。
   if (operationCode === "k1_release_param" || operationCode === "k1_earnings_release") {
     const kept = operationCode === "k1_release_param" ? "规则没有改" : "钱没有动";
@@ -785,6 +795,7 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
   if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.operationCode === "k1_earnings_release") return `收益记录 ${w.obj}`;
   if (w.operationCode === "j1_gate_resume") return j1GateName(w.obj);
+  if (w.operationCode === "f_unilevel_bootstrap") return "团队购买奖励 · L1–L7";
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" && fund.period) return fund.period;
   if (fund?.kind === "f5Status" && fund.eventId) return `奖励记录 ${fund.eventId}`;
@@ -1733,6 +1744,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (fund?.kind === "f5Suspension") return <>用户 <span data-mono className="a2-code">{fund.userId ? userCode(fund.userId) : "—"}</span> · {fund.kinds.length ? kindNames(fund.kinds) : "所选奖励"}</>;
     if (fund?.kind === "f5Reissue" && fund.ids.length) return fund.ids.length <= REISSUE_INLINE
       ? <>奖励记录 <span data-mono className="a2-code">{fund.ids.join("、")}</span></> : `${fund.ids.length} 笔奖励记录（记录号见下方）`;
+    if (w.operationCode === "f_unilevel_bootstrap") return <>{objectText(w)}<Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
     // 整组政策单（七层结算、好友奖励政策、首次配置等）后端写的对象是 current，不是运营要对照的编号。
     if (w.obj === "current" && !w.objDisplayName) return "当前设置";
     // 整批申请的对象是配置键清单或摘要，运营看不懂：写涉及的页面和项数，原文进技术信息。
@@ -1956,7 +1968,20 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageCheck: K1_APPROVAL_CHECK.param,
       facts: <K1TicketFacts v={k1} />,
     });
-    const fund = fundSpec(w) ?? k1Spec;
+    // F2 首次配置：七层逐行列出后端写在单上的数，不显示原文的修改前后。
+    const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
+    const bootSpec: FundSpec | undefined = boot && {
+      irreversible: false,
+      impact: "批准后七层规则一次建好；整体结算不会自动启用。",
+      check: "逐层核对下表和发起理由，理由写清依据或工单号。",
+      detail: "七层都没有规则时才能执行，以前配置过的会被拒。",
+      coverageLead: "启用结算后，平台按这些比例付团队奖励",
+      coverageUnknown: "启用结算后，平台按这些比例付团队奖励；兑付覆盖率暂时读不到",
+      coverageCheck: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。",
+      facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{`${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
+      extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" />,
+    };
+    const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
     const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
     return {
       briefKind,
@@ -2372,7 +2397,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : qPageRows.map((w) => {
                   const batch = fBatchTicket(w);
                   const k1 = k1TicketView(w);
-                  const change = k1 ? k1ChangeCell(k1) : batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
+                  const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
+                  const change = boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
                     : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
@@ -2581,6 +2607,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
   const shownK1 = shown ? k1TicketView(shown) : undefined;
+  const shownBoot = shown?.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(shown.after) : undefined;
   const judgment: JudgmentRow[] = shown ? [
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
@@ -2591,6 +2618,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     ...(shownK1?.kind === "param" ? [{ label: "改动", value: <Change from={`${shownK1.from} 个账户`} to={`${shownK1.to} 个账户`} /> }]
       : shownK1?.kind === "release" ? [{ label: "这笔收益", value: `${k1Amount(shownK1.net)} ${nexGridBrandText(shownK1.asset)} · ${k1Source(shownK1.source)} · 用户 ${userCode(shownK1.userId)}` }] : []),
     ...(shownF5Ids.length === 1 ? [{ label: "这笔奖励", value: <F5CurrentValue id={shownF5Ids[0]} /> }] : []),
+    ...(shownBoot ? [{ label: "批准后", value: "七层规则一次建好；整体结算不会自动启用，要另外申请" }] : []),
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
@@ -2672,6 +2700,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shownK1 ? <section className="a2-change-review" aria-label="完整变更内容">
               <div className="a2-change-title">完整变更内容<Explain label="技术信息" content={k1Tech(shownK1)} /></div>
               <Facts><K1TicketFacts v={shownK1} /></Facts>
+            </section>
+            : shownBoot ? <section className="a2-change-review" aria-label="完整变更内容">
+              <div className="a2-change-title">完整变更内容 · 七层<Explain label="技术信息" content={`修改前原文 ${shown.before || "—"} ｜ 修改后原文 ${shown.after}`} /></div>
+              <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" />
             </section>
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)

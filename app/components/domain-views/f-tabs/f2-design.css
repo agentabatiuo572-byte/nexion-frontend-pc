@@ -116,3 +116,22 @@
   .f2-page .f2-recovery-change { flex: 1 1 12em; }
   .f2-page .f2-recovery .f2-actions { margin-inline-start: auto; }
 }
+
+/* 首次配置：七层一张表填十四个数，下面是合计条；待审批时横排七层。 */
+.f2-page .f2-boot { display: grid; gap: 16px; min-width: 0; }
+.f2-page section.f2-boot { padding-bottom: 16px; border-bottom: 1px solid var(--rd-line); }
+.f2-page .f2-boot .rd-toolbar { justify-content: flex-end; }
+.f2-page .f2-boot-head { display: grid; gap: 2px; }
+.f2-page .f2-boot-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.f2-page .f2-boot-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f2-page .f2-boot-table { table-layout: fixed; }
+.f2-page .f2-boot-table th:nth-child(1) { width: 22%; }
+.f2-page .f2-boot-table th:nth-child(2), .f2-page .f2-boot-table th:nth-child(3) { width: 26%; }
+.f2-page .f2-boot-table td { vertical-align: top; }
+.f2-page .f2-boot-th { display: inline-flex; align-items: center; gap: 4px; }
+.f2-page .f2-boot-cell { display: inline-grid; justify-items: end; gap: 2px; }
+.f2-page .f2-boot-cell .rd-number { --rd-number-chars: 10 !important; }
+.f2-page .f2-boot-fixed { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 32px; font-variant-numeric: tabular-nums; }
+.f2-page .f2-boot-error { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-warn); }
+.f2-page .f2-boot-grid { table-layout: fixed; font-variant-numeric: tabular-nums; }
+.f2-page .f2-boot-grid th:first-child { width: 14%; }

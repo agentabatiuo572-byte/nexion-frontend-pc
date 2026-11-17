@@ -15,6 +15,7 @@ import {
   Change, Fact, Facts, LAYERS, LAYER_WHO, LayerCompare, SAMPLE_ORDER, configuredValue, layerRate, num, rateMeaning, sampleUsdt, totalFacts,
   type F2Confirm, type Layer,
 } from "./f2-shared";
+import { F2Bootstrap, f2BootstrapFormShown, type F2BootstrapDraft } from "./f2-bootstrap";
 import type { FViewCtx } from "./types";
 
 const F2_VISIBLE_PARAM_KEYS = new Set([
@@ -90,6 +91,8 @@ const COVERAGE_CHECK = "批准时后端检查兑付覆盖率，低于红线不�
 export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Open }) {
   const m = useF2Model(ctx);
   const rates = ctx.f2Unilevel;
+  // 首次配置填到一半时点刷新，草稿留着。
+  const [bootDraft, setBootDraft] = useState<F2BootstrapDraft | null>(null);
   if (ctx.f2Loading) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="loading" title="七层比例读取中" /></Panel>;
   if (ctx.f2Error) return <Panel title="每层分多少" icon={Layers} tone="role-4"><BlockState state="error" title="七层比例没读到，这部分没有判断" detail={ctx.f2Error} onRetry={() => void ctx.refreshF2()} /></Panel>;
   const gateLayer = m.gate?.legal ? LAYERS.indexOf(m.gate.normalized as Layer) : -1;
@@ -100,6 +103,11 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   const axisMax = Math.max(30, Math.ceil(Math.max(activeSum, m.cap ?? 0) / 10) * 10);
   const barMax = Math.max(...rates.map((row) => row.usdt ?? 0), 0);
   const promo = m.value("F.promo.weekMultiplier");
+  const missing = LAYERS.filter((level) => !layerRate(rates, level));
+  const partValues = LAYERS.some((level) => { const row = layerRate(rates, level); return !!row && (row.usdt === null || row.usdt > 100 || row.nex === null); });
+  const booting = rates.length === 0 && f2BootstrapFormShown(ctx, bootDraft);
+  // 单层调整和首次配置是两件事：单层只改已有的行。
+  const missingRuleCopy = `批准时只更新已有的规则，没有规则的层会执行失败。${rates.length === 0 ? "七层都没有规则时，请用「首次配置」。" : "缺整层规则后台补不了，需要技术同事处理。"}`;
 
   const openRate = (level: Layer) => {
     const rate = layerRate(rates, level);
@@ -120,10 +128,10 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           {lower && <Fact k="这次">调低，平台每笔订单少付</Fact>}
           <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>
           <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>
-          {rates.length > 0 && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
+          {total.before !== null && <Fact k={anyPaused ? "合计含暂停层" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
         </Facts>;
       },
-      content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
+      content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新比例算；已经算好的订单不重算。", check: COVERAGE_CHECK },
       detail: `${level} USDT 奖励比例 · 现在 ${current ? `${current}%` : "未配置"}。只影响之后的结算。`,
       completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多付钱",
@@ -145,7 +153,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         {next !== undefined && current && Number(next) < Number(current) && <Fact k="这次">调低，平台每笔订单少发 UVT</Fact>}
         <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null || !(next ?? current).trim() ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
       </Facts>,
-      content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
+      content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text={missingRuleCopy} /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
       detail: `${level} 每发 1 USDT 奖励，另发多少 UVT · 现在 ${current || "未配置"}。只影响之后的结算。`,
       completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
@@ -178,7 +186,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
       explain="好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。">
-      {!complete ? <Notice tone="warn" title={rates.length ? "七层规则不完整" : "七层规则还没配置"}>{rates.length ? "缺整层的要后端先建好；已有的层缺比例或系数，在下表点这一层的按钮补上。" : "七层规则要后端先建好。"}配齐前不能启用整体结算。</Notice> : (
+      {rates.length === 0 ? <F2Bootstrap ctx={ctx} openConfirm={openConfirm} draft={bootDraft} setDraft={setBootDraft} cap={m.cap} />
+        : !complete ? <Notice tone="warn" title="七层规则不完整">{missing.length > 0 && `缺 ${missing.join("、")} 的整层规则，后台补不了，需要技术同事处理。`}{partValues && "已有的层缺比例或系数，在下表点这一层的按钮补上。"}配齐前不能启用整体结算。</Notice> : (
         <Figure width={420} stack="wide" graphic={
           <div className="f2-sum-graphic">
             <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"
@@ -194,7 +203,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         </Figure>
       )}
       {complete && m.cap !== null && activeSum > m.cap && <Notice tone="warn" title={`按比例合计 ${num(activeSum)}%，超过总额上限 ${num(m.cap)}%`}>结算时从 L1 往下分，分完 {num(sampleUsdt(m.cap))} USDT（示例）为止，后面的层少发或不发。</Notice>}
-      <Table label="团队购买奖励比例" className="f2-layer-table">
+      {!booting && <Table label="团队购买奖励比例" className="f2-layer-table">
         <thead><tr>
           <Th>哪一层</Th>
           <Th align="right">USDT 比例</Th>
@@ -222,7 +231,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                 <Td align="right">{rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
                 <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
-                  {!rate ? <StatusTag tone="neutral" explain="这一层还没有规则，目前要由后端初始化；没有规则时这一层不发。">没有规则</StatusTag>
+                  {!rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，要后端补上。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
@@ -241,9 +250,9 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
               </tr>
             );
           })}
-          {rates.length === 0 && <TableMessage columns={6}>七层都还没有规则，目前要由后端初始化；不按默认比例补。</TableMessage>}
+          {rates.length === 0 && <TableMessage columns={6}>七层都还没有规则，不按默认比例补。</TableMessage>}
         </tbody>
-      </Table>
+      </Table>}
       <ConfigList label="对七层一起起作用的设置">
         <ConfigRow name="按层暂停" what="把某几层的团队奖励停发，其余层照常" when="批准后，对之后新算的订单生效"
           effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note="七层一张审批单，每层按单独修改的权限核；缺哪层的权限，「设置」上会写明。"

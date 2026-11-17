@@ -141,6 +141,8 @@ export interface FViewCtx {
   f2DirectPolicyError: string | null;
   updateF2DirectPolicy: (policy: DirectReferralUpdate, reason: string) => Promise<void>;
   f2ActivationPending: A2OperationRow | null;
+  /** 首次配置的待审批单（自己的或队列里别人的），F2 首次配置区域显示谁提的、什么时候、七层各是多少。 */
+  f2BootstrapPending: A2OperationRow | null;
   f2ActivationPendingLoading: boolean;
   f2ActivationPendingError: string | null;
   f2ActivationAttempt: F2Recovery | null;
