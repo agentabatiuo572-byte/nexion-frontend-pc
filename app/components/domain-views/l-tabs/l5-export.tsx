@@ -49,7 +49,7 @@ import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
 import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 import { allowedAggregateExportOptions, canAccessBiReportType } from "./l1-l2-live-data";
-import { scopeText as l2ScopeText } from "./l2-funnel";
+import { l2ScopeText } from "./l2-scope-text";
 import {
   AuditTable, L5RecoveryNotice, MASK_LABEL, MaskRuleTable, PendingCard, RouteFacts, TaskStatusTag, pageName, rowsText, taskSource, taskTitle, taskStatus,
   type L5RecoveryItem, type MaskRule,
