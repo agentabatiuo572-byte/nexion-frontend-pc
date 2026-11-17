@@ -46,7 +46,7 @@ const SETTLEMENT_FALLBACK: Record<string, string> = {
   "F.unilevel.depthGateRank": "没配或不是 V0–V8 时，结算会停",
 };
 
-/** B02：只有委托权限的账号这三类会被后端拒（权限映射缺失，已提后端）。 */
+/** B02：只有委托权限的账号这两项会被后端拒（单项权限映射缺失，已提后端）；按层暂停的整批已按单项同权核。 */
 const DELEGATED_GAP = "只有委托权限、没有全权审批写入的账号提交会被后端拒绝：后端还没给这一项配发起权限（已提后端修）。";
 
 const pendingFor = (ctx: FViewCtx, key: string) => ctx.f2PendingFor(key);
@@ -249,7 +249,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       </Table>
       <ConfigList label="对七层一起起作用的设置">
         <ConfigRow name="按层暂停" what="把某几层的团队奖励停发，其余层照常" when="批准后，对之后新算的订单生效"
-          effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note={DELEGATED_GAP}
+          effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note="七层一张审批单，每层按单独修改的权限核；缺哪层的权限，「设置」上会写明。"
           value={LAYERS.every((level) => m.paused(level) === "") ? "未配置" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
           sub={pendingFor(ctx, "f-config-batch:F2") ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : pausedLayers.length ? `其余 ${7 - pausedLayers.length} 层发放` : undefined}
           action={m.canPolicyAmplify ? <Button size="sm" aria-label="按 L1–L7 暂停" disabledReason={pendingFor(ctx, "f-config-batch:F2") ? "等另一位管理员批准" : ctx.f2WriteBlocked("f-config-batch:F2")} onClick={openPause}>设置</Button> : undefined} />

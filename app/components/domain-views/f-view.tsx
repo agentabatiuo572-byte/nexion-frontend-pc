@@ -1,6 +1,6 @@
 "use client";
 
-import { fConfigBatchPermissionIssue } from "@/lib/admin/f-config-batch";
+import { fBatchIssueText } from "./f-tabs/f-batch-names";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
@@ -607,7 +607,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
         && (f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy)) return "好友奖励政策没读到，暂不能改";
     if (slot === "f-config-batch:F2") {
-      const issue = fConfigBatchPermissionIssue(Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`), session?.authorities ?? []);
+      const issue = fBatchIssueText(Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`), session?.authorities ?? []);
       if (issue) return issue;
     }
     const key = slot.startsWith("f-config:") ? slot.slice(9) : slot;
@@ -777,7 +777,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!normalized.length) throw new Error("F_CONFIG_BATCH_EMPTY");
     const current = useAdminAuth.getState().session;
     if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-    const issue = fConfigBatchPermissionIssue(normalized.map(item => item.key), current.authorities);
+    const issue = fBatchIssueText(normalized.map(item => item.key), current.authorities);
     if (issue) throw new Error(issue);
     const def = findHighOp("f_config_batch");
     if (!def) throw new Error("F_OP_NOT_FOUND:f_config_batch");
