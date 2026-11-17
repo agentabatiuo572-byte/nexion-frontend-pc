@@ -546,12 +546,12 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             coverageLead: "关闭后可以换同价或更便宜的设备，应付可能是 0",
             facts: <Facts><Fact k="改的是">只能换更贵的新设备</Fact></Facts> }))} />
         <ConfigRow name="每单最多抵扣台数" value={`${pE("E.tradein.maxDevicesPerOrder")} 台`}
-          sub={<>{pendingTag(["E.tradein.maxDevicesPerOrder"])}{devicesOff && <StatusTag tone="warn" icon={Info} explain="现在每单只能用 1 台旧设备抵扣。这里存的是以前的值，实际按 1 台处理；要改只能改成 1。">只支持 1 台</StatusTag>}</>}
+          sub={<>{pendingTag(["E.tradein.maxDevicesPerOrder"])}{devicesOff && <StatusTag tone="warn" icon={Info} explain="现在每单只能用 1 台旧设备抵扣。这里存的是以前的值，实际按 1 台处理；要改只能改成 1。">只支持 1 台</StatusTag>}{!devicesOff && devicesStored !== "—" && <StatusTag tone="neutral">固定</StatusTag>}</>}
           what="一笔升级置换用几台旧设备抵扣" when={devicesOff ? "只能改成 1，批准后生效" : "固定 1 台，不能再改"} effect="每单只能用 1 台旧设备抵扣。"
           action={devicesOff ? adjust(["E.tradein.maxDevicesPerOrder"], () => single({ label: "单笔最多抵扣台数", key: "E.tradein.maxDevicesPerOrder", unit: "台", title: "把每单抵扣台数改成 1",
             detail: "现在每单只能用 1 台旧设备抵扣，只能改成 1。只影响之后的置换。",
             impact: "把以前存的台数改成 1，和实际一致。", hint: "只能填 1",
-            facts: <Facts><Fact k="改的是">每单最多抵扣台数</Fact><Fact k="现在实际">每单只按 1 台处理</Fact></Facts> })) : undefined} />
+            facts: <Facts><Fact k="改的是">每单最多抵扣台数</Fact><Fact k="现在实际">每单只按 1 台处理</Fact></Facts> }), false, "改成 1 台") : undefined} />
         <ConfigRow name="近 30 天高频置换账户" value={stats ? `${countText(stats.k2ArbitrageHits)} 个` : "—"}
           what="近 30 天完成升级置换 3 次及以上，同期又有佣金或礼品入账的账户数" effect="只是参考计数，不代表这些账户被拦截，也不会自动处理；要核查到「异常套利与刷量排查」。" />
       </ConfigList>
