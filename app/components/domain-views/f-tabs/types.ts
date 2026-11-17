@@ -4,6 +4,7 @@ import type { F4VoteProjectionRead } from "@/lib/admin/f4-vote-projection";
 import type { F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import type { FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import type { FDomainAttempt, F2Recovery } from "@/lib/admin/f2-approval";
+import type { F2UnilevelBootstrapLayer } from "@/lib/admin/f2-unilevel-bootstrap";
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -153,6 +154,7 @@ export interface FViewCtx {
   releaseF2Proposal: (slot: string) => Promise<void>;
   recoverF2SevenLayerActivation: () => Promise<void>;
   changeF2SevenLayerActivation: (action: "ACTIVATE" | "PAUSE" | "RESUME", expectedSevenLayerRevision: number, expectedPolicyVersion: number, reason: string) => Promise<void>;
+  bootstrapF2Unilevel: (layers: F2UnilevelBootstrapLayer[], reason: string) => Promise<void>;
   f2Unilevel: F2UnilevelRate[];
   f2RateTiers: F2RateTier[];
   f2Params: F2PolicyParam[];

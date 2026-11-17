@@ -2079,7 +2079,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DEVICE_RANK_CONFIG_UNAVAILABLE: "设备预估排名配置暂不可用，请重新加载后核对。",
   DEVICE_RANK_RUNTIME_UNSUPPORTED: "当前环境暂不支持设备预估排名，请联系值班人员核对服务状态。",
   DEVICE_RANK_SANDBOX_RUN_ID_REQUIRED: "沙箱请求缺少测试隔离标识，请核对测试环境。",
-  F2_UNILEVEL_RULES_ALREADY_CONFIGURED: "团队购买奖励已经配置过，不能再做首次配置；这次没有提交，请在现有规则上调整。",
+  F2_UNILEVEL_RULES_ALREADY_CONFIGURED: "团队购买奖励已经配置过，不能再首次配置。请刷新后在现有规则上调整。",
   F4_CONFIG_STALE: "这项设置在申请后已改变，本次没有执行，审批单仍待审批。请核对当前值后重新发起申请。",
   QUEST_CONFIG_STALE: "任务设置已被其他操作员修改，本次没有覆盖；请刷新页面后基于最新值重试。",
   QUEST_CONFIG_NO_CHANGE: "新值和当前任务设置相同，本次没有保存。",

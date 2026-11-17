@@ -14,11 +14,12 @@ import type { F5ConfirmationSnapshot } from "./f5-approval";
 export const F2_ACTIVATION_SLOT = "f-seven-layer-activation";
 export const F2_POLICY_SLOT = "f-direct-referral-policy";
 export const F2_BATCH_SLOT = "f-config-batch:F2";
+export const F2_BOOTSTRAP_SLOT = "f-unilevel-bootstrap";
 export const F2_PARAM_KEYS = new Set([
   "F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.influence.clampMin", "F.influence.clampMax",
   "F.promo.weekMultiplier", "F.unilevel.mergeExitMaxPct", "F.partner.tiers", "F.cooldown",
 ]);
-const isF2Slot = (slot: string) => slot === F2_POLICY_SLOT || slot === F2_BATCH_SLOT
+const isF2Slot = (slot: string) => slot === F2_POLICY_SLOT || slot === F2_BATCH_SLOT || slot === F2_BOOTSTRAP_SLOT
   || slot.startsWith("f-config:") && (F2_PARAM_KEYS.has(slot.slice(9)) || /^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(slot.slice(9)));
 
 export interface FDomainAttempt extends SlotAttemptRecord {
@@ -58,7 +59,7 @@ function actor(adminId: number) {
 }
 
 export function f2ProposalAuthority(slot: string) {
-  return slot === F2_POLICY_SLOT || /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(slot)
+  return slot === F2_POLICY_SLOT || slot === F2_BOOTSTRAP_SLOT || /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(slot)
     || slot === "f-config:F.promo.weekMultiplier" ? "network_f2_royalty_rate" : "network_f2_policy_amplify";
 }
 
@@ -87,9 +88,9 @@ export function listF2Proposals(adminId: number): F2Recovery[] {
     .filter(row => row.adminId === undefined || row.adminId === adminId)
     .map(row => ({ ...row,
       // Old slots saved only fingerprints: show evidence, never fabricate a POST.
-      spec: row.spec ?? { action: "团队奖励参数调整", obj: row.fingerprint === F2_POLICY_SLOT ? "current" : row.fingerprint === F2_BATCH_SLOT ? Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`).join(",") : row.fingerprint.replace(/^f-config:/, ""),
+      spec: row.spec ?? { action: "团队奖励参数调整", obj: row.fingerprint === F2_BOOTSTRAP_SLOT ? "unilevel_bootstrap/current" : row.fingerprint === F2_POLICY_SLOT ? "current" : row.fingerprint === F2_BATCH_SLOT ? Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`).join(",") : row.fingerprint.replace(/^f-config:/, ""),
         before: "—", after: "—", reason: "—", sourceDomain: "F2", type: "param", gate: { roles: [] }, gateLabel: "",
-        command: { domain: "F", op: row.fingerprint === F2_POLICY_SLOT ? "f_direct_referral_policy" : row.fingerprint === F2_BATCH_SLOT ? "f_config_batch" : /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(row.fingerprint) ? "f_unilevel_rule" : "f_ui_config", params: {} } },
+        command: { domain: "F", op: row.fingerprint === F2_BOOTSTRAP_SLOT ? "f_unilevel_bootstrap" : row.fingerprint === F2_POLICY_SLOT ? "f_direct_referral_policy" : row.fingerprint === F2_BATCH_SLOT ? "f_config_batch" : /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(row.fingerprint) ? "f_unilevel_rule" : "f_ui_config", params: {} } },
       canQuery: !!session && session.adminId === adminId && session.authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create"),
       canRetry: !isRetryExpired(row) && !!row.request && !row.ticket && !row.received && !!session && session.adminId === adminId
         && (row.spec?.command.op === "f_config_batch" ? !fConfigBatchPermissionIssue(row.spec.obj.split(","), session.authorities) : session.authorities.includes(f2ProposalAuthority(row.fingerprint)))
@@ -193,7 +194,8 @@ export async function releaseF2Proposal(adminId: number, original: F2Recovery) {
 /** Match real A2 lock targets using the queue's obj and operationCode. */
 export function f2PendingFor(rows: A2OperationRow[], key: string) {
   return rows.find(row => row.status === "pending" && (
-    key === F2_ACTIVATION_SLOT ? row.operationCode === "f_seven_layer_activation" && row.obj === "current"
+    key === F2_BOOTSTRAP_SLOT ? row.operationCode === "f_unilevel_bootstrap" && row.obj === "unilevel_bootstrap/current"
+      : key === F2_ACTIVATION_SLOT ? row.operationCode === "f_seven_layer_activation" && row.obj === "current"
       : key === F2_POLICY_SLOT ? row.operationCode === "f_direct_referral_policy" && row.obj === "current"
         : key === F2_BATCH_SLOT ? ["f_config_batch", "f_ui_config"].includes(row.operationCode ?? "") && row.obj.split(",").some(k => /^F\.unilevel\.L[1-7]\.paused$/.test(k.trim()))
           : /^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(key) ? row.operationCode === "f_unilevel_rule" && row.obj.replace(".nex.", ".") === key.replace(".nex.", ".")
