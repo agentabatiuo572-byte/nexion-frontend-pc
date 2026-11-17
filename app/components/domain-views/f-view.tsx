@@ -564,9 +564,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         else {
           const result = await queryF5Anomaly(owner, original as FDirectAttempt);
           if (result.settled) {
-            setToast(displayAdminError(result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED"
-              : result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED"
-                : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED"));
+            setToast(result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? displayAdminError("IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED")
+              : result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" ? displayAdminError("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED")
+                : result.receipt!.originalStatus === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。"
+                  : "原操作已执行，记录已解除，不要再做一次。");
             return true;
           }
           const current = result.current;
