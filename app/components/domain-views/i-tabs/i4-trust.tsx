@@ -853,7 +853,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const drafts = TRUST_SECTION_VERSIONS.filter((version) => version.status.toLowerCase() === "draft");
   const draftSections = new Set(drafts.map((version) => version.sectionKey));
   const publicCount = orderedSections.filter((s) => isPublished(s.status)).length;
-  const blankedCount = orderedSections.filter((s) => blankingOf(s.key, currentVersionOf(s)).all).length;
+  // 只数公开中的版块：没公开的整块收起，谈不上公开时被清掉。
+  const blankedCount = orderedSections.filter((s) => isPublished(s.status) && blankingOf(s.key, currentVersionOf(s)).all).length;
   const hint = [
     pendingTrustSectionKeys.size > 0 && `${pendingTrustSectionKeys.size} 个版块等另一位批准`,
     draftSections.size > 0 && `${draftSections.size} 个版块有待发布的草稿`,
