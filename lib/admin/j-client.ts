@@ -829,7 +829,7 @@ export async function fetchJ2GeoHitSummary(signal?: AbortSignal): Promise<GeoHit
 /** Individual refused requests, distinct from country settings and command receipts. */
 export type GeoHitDetail = {
   id: number; recordedAt: string; countryCode: string; countryName: string;
-  endpointKey: string | null; source: string | null; eventCount: number;
+  endpointKey: string | null; source: string | null; userNo: string | null; eventCount: number;
 };
 export type GeoHitDetailPage = { total: number; pageNum: number; pageSize: number; records: GeoHitDetail[] };
 export type GeoHitDetailQuery = { countryCode?: string; endpointKey?: string; pageNum?: number; pageSize?: number };
@@ -846,7 +846,7 @@ export async function fetchJ2GeoHitDetails(query: GeoHitDetailQuery = {}, signal
   const total = count(data.total, "total"), pageNum = count(data.pageNum, "pageNum", 1), pageSize = count(data.pageSize, "pageSize", 1);
   if (pageSize > 100) throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.pageSize");
   const records = requiredRecordRows(data.records, "geo.hitDetails.records").map((row, index): GeoHitDetail => {
-    const optionalText = (key: "endpointKey" | "source") => {
+    const optionalText = (key: "endpointKey" | "source" | "userNo") => {
       const value = row[key];
       if (value == null) return null;
       if (typeof value !== "string") throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.records.${index}.${key}`);
@@ -856,7 +856,7 @@ export async function fetchJ2GeoHitDetails(query: GeoHitDetailQuery = {}, signal
       recordedAt: requiredText(row.recordedAt, `geo.hitDetails.records.${index}.recordedAt`),
       countryCode: requiredText(row.countryCode, `geo.hitDetails.records.${index}.countryCode`),
       countryName: requiredText(row.countryName, `geo.hitDetails.records.${index}.countryName`),
-      endpointKey: optionalText("endpointKey"), source: optionalText("source"),
+      endpointKey: optionalText("endpointKey"), source: optionalText("source"), userNo: optionalText("userNo"),
       eventCount: count(row.eventCount, `records.${index}.eventCount`) };
   });
   if (records.length > pageSize || records.length > total) throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.records");
