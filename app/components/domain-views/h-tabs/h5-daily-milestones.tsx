@@ -224,7 +224,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         ),
         statedBrief: ruleBrief,
         coverageLead: "调高概率会让用户平均多拿 UVT",
-        coverageCheck: "提交审批时不检查；批准时后端检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
+        coverageCheck: "提交审批时不检查；批准时检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
         confirmLabel: "提交审批",
         businessForm: {
           kind: "multi-field",
@@ -252,7 +252,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         effect: approveRuleTag,
         facts: <Facts><Fact k="现在">{ruleValueText(rule)}</Fact>{ruleApproverFacts}</Facts>,
         statedBrief: ruleBrief,
-        coverageCheck: "提交审批时不检查；批准时后端检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
+        coverageCheck: "提交审批时不检查；批准时检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
         confirmLabel: "提交审批",
         amplifies: true,
         edit: { kind: "number", current: currentNumber || current, disallowCurrent: true, unit: copy?.unit },
@@ -297,7 +297,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       detail: legacy ? <>当前是 <b>{view.main}</b>，名称还是旧写法「{view.legacyName}」。</> : <>当前奖励 <b>{view.main}</b>。</>,
       effect: <StatusTag tone="neutral" icon={ArrowUpDown} explain={<>
         <p>数量变多，或换成 UVT、USDT、转盘票里别的一种：提交审批，{FUND_APPROVER}批准后才生效，提交人不能批自己的。</p>
-        <p>数量变少或不变、改成徽章：确认后立即生效。方向按后端记的真实种类和数量判断，不看名称里的数字。</p>
+        <p>数量变少或不变、改成徽章：确认后立即生效。方向按系统记的真实种类和数量判断，不看名称里的数字。</p>
       </>}>变多要批准 · 变少立即生效</StatusTag>,
       facts: (
         <Facts>
@@ -311,7 +311,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       ),
       statedBrief: { impact: "改的是之后的领取：还没领的人领到新奖励，已经领过的不补不退；不给任何人直接发奖。", check: "核对奖励的种类和数量；理由写清依据或工单号。" },
       coverageLead: "数量变多或换成别的资金、转盘票，平台会多付",
-      coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线；变少、不变、改成徽章不检查。",
+      coverageCheck: "提交审批时和批准时都检查兑付覆盖率不低于红线；变少、不变、改成徽章不检查。",
       amplifies: true,
       edit: { kind: "text", current: milestone.reward, disallowCurrent: true, currentLabel: "现在的名称", hint: "写一种：+5 UVT、+0.5 USDT、转盘票 ×2；数量要大于 0，UVT、USDT 最多 6 位小数，转盘票填整数",
         validate: value => { const issue = h5StreakReward(value).issue; return issue ? displayAdminError(new Error(issue)) : undefined; } },
@@ -359,7 +359,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         ? { impact: `${multiplier ? "提前解锁或调高倍率" : "提前解锁"}会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已有的签到记录不变。`, check: "核对天数和倍率；理由写清依据或工单号。" }
         : { impact: "确认后立即生效：之后达到天数的人按新设置激活；已经激活的权益不收回，已有的签到记录不变。", check: "核对天数和倍率；理由写清依据或工单号。" },
       coverageLead: multiplier ? "提前解锁或调高倍率会让平台多付 UVT" : "提前解锁会让平台多付",
-      coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
+      coverageCheck: "提交审批时和批准时都检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
       amplifies: false,
       businessForm: {
         kind: "multi-field",
@@ -430,7 +430,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         ? { impact: `降门槛或加奖励会让平台多付 UVT：提交审批，${FUND_APPROVER}批准后才生效。已经达成的不重发、不追发。`, check: "核对门槛、奖励和前后两档的顺序；理由写清依据或工单号。" }
         : { impact: "确认后立即生效：还没达成的人按新门槛和奖励算；已经达成的不重发、不追发。", check: "核对门槛、奖励和前后两档的顺序；理由写清依据或工单号。" },
       coverageLead: "降门槛或加奖励会让平台多付 UVT",
-      coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
+      coverageCheck: "提交审批时和批准时都检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
       amplifies: true,
       businessForm: {
         kind: "multi-field",
@@ -469,10 +469,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       title: "调整收益里程碑检查间隔",
       detail: <>当前 <b>{text(snapshot.tickInterval?.value, current)}</b>。目前没有任何地方按这个间隔检查收益里程碑，保存只改这一项的值。</>,
       effect: <StatusTag tone="progress" filled explain="保存后马上能读回新值。">立即保存</StatusTag>,
-      statedBrief: { impact: "只改保存的值，不改变收益里程碑什么时候发：后端没有按这个间隔检查的任务，用户在 App 成就页主动领取。", check: "核对秒数；理由写清依据或工单号。" },
+      statedBrief: { impact: "只改保存的值，不改变收益里程碑什么时候发：系统不按这个间隔自动检查，用户在 App 成就页主动领取。", check: "核对秒数；理由写清依据或工单号。" },
       content: (
         <div className="rd-stack">
-          <Notice tone="warn" title="目前不影响收益里程碑">后端没有按这个间隔检查的任务；收益里程碑由用户在 App 成就页主动领取。</Notice>
+          <Notice tone="warn" title="目前不影响收益里程碑">系统不按这个间隔自动检查；收益里程碑由用户在 App 成就页主动领取。</Notice>
           <Facts>
             <Fact k="现在">{text(snapshot.tickInterval?.value, current)}</Fact>
             {snapshot.tickInterval?.seconds === 0 && <Fact k="现在的值" tone="warn">0 秒不在 1–60 秒内，是以前存下的值</Fact>}
@@ -687,8 +687,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>
           <p>签到人数按业务日期算，同一个人一天只算一次；签到率的分母是有连签记录的人，不是注册总人数。</p>
-          <p>兑付覆盖率低于红线或不可靠时，让平台多付的修改会被后端拒绝：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
-          <p>后端读不到统计时也会返回 0，这页暂时分不出「真的是 0」和「没读到」。</p>
+          <p>兑付覆盖率低于红线或不可靠时，让平台多付的修改会被拒绝：连签、成长、收益三类提交和批准时都查，签到规则只在批准时查。</p>
+          <p>统计读不到时也显示 0，这页暂时分不出「真的是 0」和「没读到」。</p>
         </>}
         action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
         {`${signText}；${coverageText}`}
@@ -758,7 +758,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               reward: <>{view.main}{view.legacyName && <span className="h5-track-legacy">{`名称 ${view.legacyName}`}</span>}</>,
               tags: <>
                 {!view.legacyName && <span className="h5-kind">{rewardKindText(milestone.kind)}</span>}
-                {view.legacyName && <StatusTag tone="warn" icon={AlertTriangle} explain="后端存的名称还是旧写法（NEX、积分这类）。领取按后端记的种类和数量，这两项有效时照常能领；App 按种类和数量显示，不显示这个名称。改奖励时写成 UVT、USDT 或转盘票的新写法。">旧名称</StatusTag>}
+                {view.legacyName && <StatusTag tone="warn" icon={AlertTriangle} explain="系统存的名称还是旧写法（NEX、积分这类）。领取按系统记的种类和数量，这两项有效时照常能领；App 按种类和数量显示，不显示这个名称。改奖励时写成 UVT、USDT 或转盘票的新写法。">旧名称</StatusTag>}
                 {pending && pendingTag(pending.approver, pending.note)}
               </>,
               action: canWrite ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改连签 ${milestone.day}奖励`}
@@ -860,7 +860,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
             <ConfigRow name="收益里程碑检查间隔"
               what="原来设计成系统每隔几秒检查谁达到了收益里程碑"
               when="立即保存，马上能读回"
-              effect="目前不影响收益里程碑：后端没有按这个间隔检查的任务，用户在 App 成就页主动领取。"
+              effect="目前不影响收益里程碑：系统不按这个间隔自动检查，用户在 App 成就页主动领取。"
               note={tickSeconds === 0 ? "现在存的 0 秒不在 1–60 秒内，是以前存下的值。" : undefined}
               value={<span className="h5-value">
                 <span className="h5-value-num">{text(model.tickInterval?.value, "—")}</span>
@@ -894,7 +894,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <StatBand label="签到概况">
         <Stat lead tone="role-3" icon={Users} label="今日签到" value={stats.todaySign == null ? "—" : countText(stats.todaySign)} unit="人"
           sub={`签到率 ${text(stats.signRate, "—")}`}
-          explain="今天（业务日期）签到的人数，同一个人一天只算一次。签到率的分母是有连签记录的人，不是注册总人数；读不到时后端也返回 0。" />
+          explain="今天（业务日期）签到的人数，同一个人一天只算一次。签到率的分母是有连签记录的人，不是注册总人数；读不到时也显示 0。" />
         <Stat tone="role-4" icon={Dices} label="今天抽中加倍" value={text(stats.lucky15Actual, "—")}
           sub={`其中 2 倍 ${text(stats.lucky2Actual, "—")} · 设置 ${text(stats.lucky15Config, "—")} + ${text(stats.lucky2Config, "—")}`}
           explain={<>
@@ -907,7 +907,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <Stat tone={!coverageKnown ? undefined : coverageBad ? "danger" : "ok"} icon={ShieldCheck} label="兑付覆盖率"
           value={coverageKnown ? String(coverageRatio) : "—"} unit={coverageKnown ? "%" : undefined}
           sub={`红线 ${text(coverage.redlinePct, "—")}%${coverage.reliable === false ? " · 数据不可靠" : ""}`}
-          explain="平台能兑付的钱和要付的钱之比。加奖励、调高概率、提前解锁、降门槛这类会让平台多付的修改，后端会检查它不低于红线。" />
+          explain="平台能兑付的钱和要付的钱之比。加奖励、调高概率、提前解锁、降门槛这类会让平台多付的修改，系统会检查它不低于红线。" />
       </StatBand>
 
       <div className="rd-split">
