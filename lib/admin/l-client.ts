@@ -94,6 +94,8 @@ export type LReportCreateInput = {
   phase?: string;
   locale?: string;
   ref?: string;
+  granularity?: L1Granularity;
+  asOf?: string;
 };
 
 export type LRegulatoryReportInput = {
@@ -569,6 +571,8 @@ export async function downloadL6Behavior(input: L6BehaviorQuery & { reason: stri
   };
 }
 
+export type L1Granularity = "registration_week" | "registration_month";
+
 export type L1KpiQuery = {
   window?: "1d" | "7d" | "30d" | "custom";
   from?: string;
@@ -577,6 +581,8 @@ export type L1KpiQuery = {
   phase?: string;
   locale?: string;
   ref?: string;
+  granularity?: L1Granularity;
+  asOf?: string;
 };
 
 function l1Query(input: L1KpiQuery = {}) {
@@ -589,6 +595,8 @@ function l1Query(input: L1KpiQuery = {}) {
   if (input.phase?.trim()) query.set("phase", input.phase.trim());
   if (input.locale?.trim()) query.set("locale", input.locale.trim());
   if (input.ref?.trim()) query.set("ref", input.ref.trim());
+  if (input.granularity) query.set("granularity", input.granularity);
+  if (input.asOf) query.set("asOf", input.asOf);
   return query;
 }
 
@@ -596,8 +604,10 @@ export async function fetchL1Kpi(input: L1KpiQuery = {}): Promise<Record<string,
   return apiRequest<unknown>(`/kpi?${l1Query(input).toString()}`).then(rec);
 }
 
-export async function fetchL1KpiDrilldown(kpiId: number, input: L1KpiQuery = {}): Promise<Record<string, unknown>> {
-  return apiRequest<unknown>(`/kpi/${encodeURIComponent(String(kpiId))}/drilldown?${l1Query(input).toString()}`).then(rec);
+export async function fetchL1KpiDrilldown(kpiId: number, input: L1KpiQuery & { bucketKey?: string } = {}): Promise<Record<string, unknown>> {
+  const query = l1Query(input);
+  if (input.bucketKey) query.set("bucketKey", input.bucketKey);
+  return apiRequest<unknown>(`/kpi/${encodeURIComponent(String(kpiId))}/drilldown?${query.toString()}`).then(rec);
 }
 
 export async function fetchL1KpiTrend(kpiId: number, input: L1KpiQuery = {}): Promise<Record<string, unknown>> {

@@ -1,15 +1,17 @@
-export const L1_LOCAL_VIEW_STORAGE_KEY = "nexion:l1:local-view:v1";
+import type { L1Granularity } from "@/lib/admin/l-client";
+
+export const L1_LOCAL_VIEW_STORAGE_KEY = "nexion:l1:local-view:v2";
+const LEGACY_STORAGE_KEY = "nexion:l1:local-view:v1";
 export const L1_LOCAL_VIEW_MAX_BYTES = 2_048;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type L1Window = "1d" | "7d" | "30d" | "custom";
-type L1Granularity = "week" | "month";
 
 export type L1LocalView = {
   window: L1Window;
   customFrom: string;
   customTo: string;
-  gran: L1Granularity;
+  granularity: L1Granularity;
   phaseOn: boolean;
   ylOffset: number;
   ovlSel: number[];
@@ -46,11 +48,11 @@ export function sanitizeL1LocalView(value: unknown): L1LocalView | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const window = raw.window;
-  const gran = raw.gran;
+  const granularity = raw.granularity ?? (raw.gran === "week" ? "registration_week" : raw.gran === "month" ? "registration_month" : undefined);
   const phaseOn = raw.phaseOn;
   const ylOffset = raw.ylOffset;
   if (window !== "1d" && window !== "7d" && window !== "30d" && window !== "custom") return null;
-  if (gran !== "week" && gran !== "month") return null;
+  if (granularity !== "registration_week" && granularity !== "registration_month") return null;
   if (typeof phaseOn !== "boolean" || typeof ylOffset !== "number" || !Number.isInteger(ylOffset) || ylOffset < 5 || ylOffset > 20) return null;
   const ovlSel = safeOverlaySelection(raw.ovlSel);
   if (!ovlSel) return null;
@@ -65,24 +67,29 @@ export function sanitizeL1LocalView(value: unknown): L1LocalView | null {
   const localeFilter = safeFilter(raw.localeFilter, 32);
   const refFilter = safeFilter(raw.refFilter, 96);
   if (cohortFilter === null || phaseFilter === null || localeFilter === null || refFilter === null) return null;
-  return { window, customFrom, customTo, gran, phaseOn, ylOffset, ovlSel,
+  return { window, customFrom, customTo, granularity, phaseOn, ylOffset, ovlSel,
     cohortFilter, phaseFilter, localeFilter, refFilter };
 }
 
 export function loadL1LocalView(storage: Pick<StorageLike, "getItem" | "removeItem">): L1LocalView | null {
+  let key = L1_LOCAL_VIEW_STORAGE_KEY;
   try {
-    const raw = storage.getItem(L1_LOCAL_VIEW_STORAGE_KEY);
+    let raw = storage.getItem(key);
+    if (!raw) {
+      key = LEGACY_STORAGE_KEY;
+      raw = storage.getItem(key);
+    }
     if (!raw) return null;
     if (utf8ByteLength(raw) > L1_LOCAL_VIEW_MAX_BYTES) {
-      storage.removeItem(L1_LOCAL_VIEW_STORAGE_KEY);
+      storage.removeItem(key);
       return null;
     }
     const saved = sanitizeL1LocalView(JSON.parse(raw));
-    if (!saved) storage.removeItem(L1_LOCAL_VIEW_STORAGE_KEY);
+    if (!saved) storage.removeItem(key);
     return saved;
   } catch {
     try {
-      storage.removeItem(L1_LOCAL_VIEW_STORAGE_KEY);
+      storage.removeItem(key);
     } catch {
       // A blocked browser storage area is non-fatal and leaves no restored view.
     }
