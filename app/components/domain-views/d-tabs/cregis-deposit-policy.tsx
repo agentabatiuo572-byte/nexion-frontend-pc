@@ -79,7 +79,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
         ] },
       run: async (reason, _value, form) => {
         const min = form?.min?.trim() ?? "", fee = form?.fee?.trim() ?? "", confirmations = form?.confirmations?.trim() ?? "";
-        if (!/^[1-9]\d*$/.test(min) || !/^\d+$/.test(confirmations) || !valid(min, fee, Number(confirmations))) throw new Error("规则填得不对，请按字段下的提示改");
+        if (!/^[1-9]\d*$/.test(min) || !/^\d+$/.test(confirmations) || !valid(min, fee, Number(confirmations))) throw new Error("规则填得不对，请按输入框下的提示改");
         if (units(min) === units(current.minDepositUsdt) && units(fee) === units(current.feeUsdt) && Number(confirmations) === current.confirmations) throw new Error("和现在的规则一样，没有改动");
         const auth = useAdminAuth.getState().session;
         if (!owns() || !auth || !(auth.role === "superadmin" || auth.role === "super" || auth.authorities.includes("finance_d1_channel_manage"))) throw new Error("登录身份或权限已变化，请重新打开页面。");

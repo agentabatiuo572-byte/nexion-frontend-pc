@@ -300,7 +300,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
               })}
               {missingMethods.map(method => <tr key={method}>
                 <Td><Cell main={methodText[method]} sub={<StatusTag tone="warn">未配置</StatusTag>} /></Td>
-                <Td colSpan={FEE_FIELDS.length}><Cell full main="后端没返回这个渠道，不能修改" sub="用户付款时看不到；核对部署后刷新" /></Td>
+                <Td colSpan={FEE_FIELDS.length}><Cell full main="读不到这个渠道，不能修改" sub="用户付款时看不到；核对部署后刷新" /></Td>
               </tr>)}</tbody>
             </Table>
             <div className="rd-col-foot">

@@ -142,7 +142,7 @@ const FAILURE_REASON_LABELS: Record<string, string> = {
   K3_ROUTE_UNAVAILABLE: "提现风险规则暂时无法判断，已转人工复核",
   K4_RISK_SCORE_UNAVAILABLE: "风险分暂时算不出来，已转人工复核",
   WITHDRAWAL_PAYOUT_SUBMISSION_UNKNOWN: "打款结果未知，请勿重复放行",
-  WITHDRAWAL_PAYOUT_PROVIDER_FAILED: "打款服务返回失败，等待人工处理",
+  WITHDRAWAL_PAYOUT_PROVIDER_FAILED: "打款服务报告失败，等待人工处理",
 };
 
 const OPERATION_TEXT_LABELS: Record<string, string> = {
@@ -337,7 +337,7 @@ const STATUS_EXPLAIN: Record<string, string> = {
   FROZEN: "资金已冻结。财务主管、风控主管或超级管理员解冻，或到复查时间，都回到待审核，不会直接打款。",
   REVIEW_PASSED: "审核已放行，等系统打款。打款前还能冻结。",
   PROCESSING: "系统正在打款，打款方未接手前还能冻结。",
-  SENT: "已发给银行或链上，等返回结果。银行提现以支付商付款成功为完成。",
+  SENT: "已发给银行或链上，等打款结果。银行提现以支付商付款成功为完成。",
   CONFIRMED: "钱已到账，这笔已结束。",
   REVIEW_REJECTED: "审核已拒绝。确认钱没有打出去后手动退款。",
   ADDRESS_INVALID: "收款地址无效。确认钱没有打出去后手动退款。",
@@ -381,7 +381,7 @@ const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string
   { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
   { from: ["FROZEN"], trigger: "等到复查时间", to: ["REVIEW_PENDING"], note: "到时间系统自动送回待审核，不用操作" },
   { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REFUNDED"], note: "要选拒绝原因分类，申请金额全额退回用户余额" },
-  { from: ["SENT"], trigger: "打款结果返回", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上返回的结果处理，结果不明时继续核对" },
+  { from: ["SENT"], trigger: "收到打款结果", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "按银行或链上的打款结果处理，结果不明时继续核对" },
   { from: ["REVIEW_REJECTED"], trigger: "手动退款", to: ["REFUNDED"], note: "仅历史遗留记录；提交前先确认钱没有打出去" },
   { from: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "ERC20 丢失链上确认时冻结并继续占额度，禁止退款；其他单提交前先确认钱没有打出去" },
 ];
@@ -1769,7 +1769,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <FilterField label="最低风险分"><Input inputMode="numeric" placeholder="0–100" aria-invalid={!riskScoreIsValid(draft.minRiskScore)} value={draft.minRiskScore} onChange={(event) => { setDraft({ ...draft, minRiskScore: event.target.value }); setRiskDropped(""); }} /></FilterField>
         <FilterField label="触发规则（只筛选当前页）"><Input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></FilterField>
         <FilterField label="IP 段"><Input placeholder="例如 192.168.1" value={draft.ipSegment} onChange={(event) => setDraft({ ...draft, ipSegment: event.target.value })} /></FilterField>
-        <FilterField label="排序字段"><Select aria-label="排序字段" value={draft.sortBy} onChange={(sortBy) => setDraft({ ...draft, sortBy })} options={[{ value: "createdAt", label: "提交时间" }, { value: "amount", label: "金额" }, { value: "riskScore", label: "风险分" }, { value: "status", label: "状态" }]} /></FilterField>
+        <FilterField label="排序依据"><Select aria-label="排序依据" value={draft.sortBy} onChange={(sortBy) => setDraft({ ...draft, sortBy })} options={[{ value: "createdAt", label: "提交时间" }, { value: "amount", label: "金额" }, { value: "riskScore", label: "风险分" }, { value: "status", label: "状态" }]} /></FilterField>
         <FilterField label="排序方向"><Select aria-label="排序方向" value={draft.sortDirection} onChange={(sortDirection) => setDraft({ ...draft, sortDirection })} options={[{ value: "desc", label: "降序" }, { value: "asc", label: "升序" }]} /></FilterField>
       </>}
       applied={appliedChips}
@@ -1916,7 +1916,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
               <Fact k="确认时间">{bankEvidenceTime(bankDetail.settlementEvidence.checkedAt)}</Fact>
               {bankDetail.settlementEvidence.status === "refunded" && <Fact k="已退回余额">{`${bankDetail.settlementEvidence.amountUsdt?.toLocaleString("zh-CN", { maximumFractionDigits: 6 })} USDT`}</Fact>}
             </>}
-          </Facts><p className="rd-note">核对提示：{bankDetail.lastError ? operationalText(bankDetail.lastError) : "按 HDPay 返回的结果自动结算；银行接单不代表已到账"}</p></> : <Notice tone="warn">收款账户信息正在加载或暂时无法获取，加载成功前不能放行。</Notice>}
+          </Facts><p className="rd-note">核对提示：{bankDetail.lastError ? operationalText(bankDetail.lastError) : "按 HDPay 的打款结果自动结算；银行接单不代表已到账"}</p></> : <Notice tone="warn">收款账户信息正在加载或暂时无法获取，加载成功前不能放行。</Notice>}
         </Fold>}
         <Fold inset title="费用明细" summary={`手续费 ${money(shown.actualFee)}`} icon={Receipt}>
           {/* 先写到账怎么来的，手续费的构成再点开（DT-02）。 */}

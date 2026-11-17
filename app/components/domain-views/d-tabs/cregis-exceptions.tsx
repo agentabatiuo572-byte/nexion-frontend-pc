@@ -300,7 +300,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
           { label: "净额", icon: Coins, tone: "money", value: openedRow.netAmount == null ? "—" : `${usdt(String(openedRow.netAmount))} USDT`, reason: openedRow.grossAmount != null ? `毛额 ${usdt(String(openedRow.grossAmount))} · 费用 ${openedRow.feeAmount == null ? "—" : usdt(String(openedRow.feeAmount))}` : undefined },
           ...(openedRow.lastError ? [{ label: "待核查", state: "warn" as const, value: ADMIN_ERROR_MESSAGES[String(openedRow.lastError)] ?? "原因待核对", reason: `错误码 ${label(openedRow.lastError)}` }] : []),
         ]} />
-        <Fold inset title="工单内容" summary={openedRow.evidenceHash ? "含证据摘要" : "工单字段"}><KeyValues rows={caseRows(openedRow)} /></Fold>
+        <Fold inset title="工单内容" summary={openedRow.evidenceHash ? "含证据摘要" : "工单各项"}><KeyValues rows={caseRows(openedRow)} /></Fold>
       </>}
     </Drawer>
 
