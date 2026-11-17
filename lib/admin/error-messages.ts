@@ -3244,7 +3244,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PHASE_PARAM_READONLY: "当前阶段参数只读,不能修改。",
   RETIRED_FEATURE: "这项已停用，不能再修改。",
   H7_VOUCHER_SPLITTABLE_RETIRED: "「可拆分」已停用，不能再设为可拆分，这次没有保存。",
-  H7_VOUCHER_AMOUNT_PRECISION_INVALID: "代金券面额、使用门槛和最多减金额最多 6 位有效小数，这次没有保存；请核对原金额。",
+  H7_VOUCHER_AMOUNT_PRECISION_INVALID: "面额、使用门槛和最多减只能填到 6 位小数，这次没有保存。",
   K2_WELCOME_GIFT_SCOPE_RETIRED: "按手机号、设备检测已停用，这次没有保存；改选「同一人或组织」或「账户组」后再保存。",
   LEARNING_COURSE_OPTION_RETIRED: "「完成条件」「何时发奖」已停用，不能再填或改动，这次没有保存。",
   DAILY_STREAK_SAVER_EMPTY: "没有可用的断签补救卡，本次未恢复连签。",
