@@ -3233,7 +3233,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AUTO_RULE_READONLY: "该规则引用其他业务域的设置，本页不能修改。",
   PHASE_PARAM_READONLY: "当前阶段参数只读,不能修改。",
   RETIRED_FEATURE: "这项已停用，不能再修改。",
-  H7_VOUCHER_SPLITTABLE_RETIRED: "代金券拆分已停用，不能设为可拆分。",
+  H7_VOUCHER_SPLITTABLE_RETIRED: "「可拆分」已停用，不能再设为可拆分，这次没有保存。",
   K2_WELCOME_GIFT_SCOPE_RETIRED: "按手机号或设备检测新人礼已停用；请选择实体或账户簇。",
   LEARNING_COURSE_OPTION_RETIRED: "「完成条件」「何时发奖」已停用，不能再填或改动，这次没有保存。",
   DAILY_STREAK_SAVER_EMPTY: "没有可用的断签补救卡，本次未恢复连签。",

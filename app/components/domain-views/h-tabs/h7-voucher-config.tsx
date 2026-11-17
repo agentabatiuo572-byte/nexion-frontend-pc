@@ -11,7 +11,7 @@
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Ban, BellOff, LayoutGrid, List, Pencil, Play, Pause, Plus, ReceiptText, RefreshCw, Send, Ticket, TicketCheck, Trash2 } from "lucide-react";
+import { Ban, BellOff, CircleSlash, LayoutGrid, List, Pencil, Play, Pause, Plus, ReceiptText, RefreshCw, Send, Ticket, TicketCheck, Trash2 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, Fold, IrreversibleTag, Notice,
   PageHeader, Panel, RatioBar, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
@@ -39,7 +39,7 @@ import {
   AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, expiredTag,
   endDetailText, faceValue, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
-import { H7VoucherForm, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
+import { H7VoucherForm, SPLIT_RETIRED_HELP, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
 type OpsVoucher = H7Voucher;
 
@@ -674,9 +674,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <Fact k="单次打开最多弹出">{`${v.popupMaxPerSession} 次`}</Fact>
               </Facts>
             </Fold>
-            <Fold title="叠加与拆分" tone="role-other" inset summary={[v.splittable && "可拆分", v.stackWithTrial && "可与试用收益叠加", v.stackWithOthers && "可与其它优惠叠加"].filter(Boolean).join("、") || "都不允许"}>
+            <Fold title="叠加与拆分" tone="role-other" inset summary={[v.splittable && "可拆分（已停用）", v.stackWithTrial && "可与试用收益叠加", v.stackWithOthers && "可与其它优惠叠加"].filter(Boolean).join("、") || "都不允许"}>
               <Facts>
-                <Fact k="可拆分">{v.splittable ? "是（目前整张核销，不会分次使用）" : "否"}</Fact>
+                <Fact k="可拆分"><span className="h7-retired-value">{v.splittable ? "是" : "否"}<StatusTag tone="neutral" icon={CircleSlash} explain={SPLIT_RETIRED_HELP}>已停用</StatusTag></span></Fact>
                 <Fact k="可与试用收益叠加">{v.stackWithTrial ? "是（试用转购目前用不了代金券，暂不起作用）" : "否"}</Fact>
                 <Fact k="可与其它优惠叠加">{v.stackWithOthers ? "是" : "否"}</Fact>
               </Facts>
