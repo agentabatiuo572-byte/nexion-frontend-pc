@@ -101,7 +101,7 @@ const PARAM: Record<string, {
     future: "之后新开的订单按新倍率记录",
     hint: "1–10，最多两位小数",
     unit: "倍",
-    note: "后端目前只记倍率、不发好友奖励，改了不会马上多发或少发钱。调高仍要批准。",
+    note: "目前只记倍率、不发好友奖励，改了不会马上多发或少发钱。调高仍要批准。",
   },
   lottery: {
     name: "创世节点抽奖券",
@@ -115,7 +115,7 @@ const PARAM: Record<string, {
     name: "锁定金额快捷选项",
     what: "用户加入锁定计划时可以直接点选的金额",
     existing: "不影响已有订单",
-    future: "保存后后端给 App 的快捷金额换成新列表；App 入口目前不开放，用户看不到",
+    future: "保存后 App 的快捷金额换成新列表；App 入口目前不开放，用户看不到",
     hint: "用 / 分隔，1–12 个大于 0 的金额；保存时四舍五入到两位小数，去掉重复，从小到大排",
     unit: "USDT",
   },
@@ -496,7 +496,7 @@ function G7RepurchasePage() {
   const header = (
     <PageHeader pageId="G7" title="锁定计划"
       summary="App 入口目前不开放；这页维护规则、查看历史订单。"
-      meta={overview ? "打开时读取，不自动刷新；改完用返回的结果刷新" : undefined}
+      meta={overview ? "打开时读取，不自动刷新；改完按保存后的结果刷新" : undefined}
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改锁定计划参数的权限。" : undefined} />
   );
 
@@ -571,17 +571,17 @@ function G7RepurchasePage() {
       action: `调整锁定计划参数 · ${label}`,
       title: directRecovery ? `${label} · 按原请求重试` : original ? `${label}的原申请` : `调整${label}`,
       directRecovery,
-      detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时后端核对奖池核对编号至少 3 个字，并检查本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
+      detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时检查奖池核对编号至少 3 个字，且本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
       effect: copy?.loosen
         ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。" : <>
-          <p>{paysMore(param.key) ? `${copy.loosen}会让平台多付钱：` : `${copy.loosen}按规则也要审批（后端目前只记倍率、不发好友奖励）：`}先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
+          <p>{paysMore(param.key) ? `${copy.loosen}会让平台多付钱：` : `${copy.loosen}按规则也要审批（目前只记倍率、不发好友奖励）：`}先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
           <p>{copy.tighten}确认后立即生效。</p>
         </>}>{directRecovery ? "结果未知" : <>{copy.loosen}要批准 · {copy.tighten}立即生效</>}</StatusTag>
         : <StatusTag tone="progress" filled>{directRecovery ? "结果未知" : "立即生效"}</StatusTag>,
       facts,
       statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。" : "核对新值和方向；理由写清依据或工单号。" },
       coverageLead: <span className="g7x-lead"><KeepText text={paysMore(param.key) ? `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超级管理员批准` : `${copy?.loosen ?? "调高"}${label}要另一位超级管理员批准；系统目前不发好友奖励，不会马上多付钱`} /></span>,
-      coverageCheck: "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
+      coverageCheck: "提交审批时和批准时各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"
         ? { kind: "text", current: directRecovery ? undefined : paramEditValue(param), initialValue: direct?.input.value, disallowCurrent: true, hint: copy?.hint }
         : { kind: "number", current: directRecovery ? undefined : paramEditValue(param),
@@ -795,7 +795,7 @@ function G7RepurchasePage() {
           sub={`其中奖励 ${fromMicros(rewardMicros > BigInt(0) ? rewardMicros : BigInt(0))} USDT`}
           explain="同一批未结束订单的本金加下单时算好的预计奖励。资金储备页的应付款按自己的口径算，两处不一定相等。" />
         <Stat label="本月新订单" icon={CalendarDays} tone="role-3" value={fmtCount(stats.ordersMonth)} unit="单"
-          explain="按后端业务日历，本月 1 日起下单的锁定计划订单数，不限状态。上面两个金额不按月算。" />
+          explain="按系统业务日历，本月 1 日起下单的锁定计划订单数，不限状态。上面两个金额不按月算。" />
         <Stat label="本月发出抽奖券" icon={Ticket} tone="role-4" value={fmtCount(stats.ticketsMonth)} unit="张"
           sub={`创世奖池月容量 ${fmtCount(capacity.monthlyCapacity)} 张`}
           explain="本月 1 日起实际发给锁定计划订单的创世节点抽奖券张数；之后作废的券也算在里面。" />
@@ -805,7 +805,7 @@ function G7RepurchasePage() {
         <Panel title="一笔锁定会怎样" icon={Scale} tone="role-1" sub="按 1,000 USDT 举例"
           explain={<>
             <p>看两条：按现在的规则，一笔 1,000 USDT 的锁定到期领取和提前解锁各拿回多少，差多少。</p>
-            <p>照后端的算法：预计奖励 = 金额 × 年奖励率 × 天数 ÷ 365，保留 6 位小数；提前解锁扣金额 × 扣款比例，不发奖励。</p>
+            <p>系统这样算：预计奖励 = 金额 × 年奖励率 × 天数 ÷ 365，保留 6 位小数；提前解锁扣金额 × 扣款比例，不发奖励。</p>
             <p>只是例子，不是哪一笔真实订单。已有订单按下单时的规则算。</p>
           </>}>
           {exampleReady ? (
@@ -843,10 +843,10 @@ function G7RepurchasePage() {
 
         <Panel title="规则参数" icon={SlidersHorizontal} tone="role-4"
           explain={<>
-            <p>每项自己保存，只影响之后新开的订单。调高年奖励率、调低提前解锁扣款会让平台多付钱，调高好友升级奖励倍率按规则也算放大方向（后端目前只记倍率、不发好友奖励）；这三种改动要另一位超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
+            <p>每项自己保存，只影响之后新开的订单。调高年奖励率、调低提前解锁扣款会让平台多付钱，调高好友升级奖励倍率按规则也算放大方向（目前只记倍率、不发好友奖励）；这三种改动要另一位超级管理员批准，批准前不变；反方向确认后立即生效。</p>
             <p>一项有待批的申请时，这一项被审批锁住，调高调低都改不了，直到批准、驳回或撤回；其他参数不受影响。</p>
           </>}>
-          {coreRows.length === 0 && <BlockState state="empty" compact title="后端没有返回锁定计划参数" detail="锁定计划产品不存在时后端返回空参数，不是默认值。请联系后端核对 REPURCHASE_90D 产品。" />}
+          {coreRows.length === 0 && <BlockState state="empty" compact title="锁定计划参数现在没有" detail="锁定计划产品不存在时这里是空的，不按默认值算。请找值班核对锁定计划产品。" />}
           <ConfigList label="锁定计划参数">
             {coreRows.map(paramRow)}
               <ConfigRow name="限时锁定计划倍率"
@@ -863,20 +863,20 @@ function G7RepurchasePage() {
       </div>
 
       <Fold title="抽奖券和快捷金额" icon={Ticket} tone="role-4" alert={moreAlert}
-        summary={moreRows.length ? moreRows.map((param) => `${paramName(param)} ${paramValueText(param.key, param.value)}`).join(" · ") : "后端没有返回这两项"}
+        summary={moreRows.length ? moreRows.map((param) => `${paramName(param)} ${paramValueText(param.key, param.value)}`).join(" · ") : "这两项现在没有"}
         explain="每单送几张创世节点抽奖券、用户加入时可点选的金额。都确认后立即生效，不走审批；有原申请或被锁时这组自动展开。">
         <div className="g7x-capacity">
           <div className="g7x-capacity-head">
             <span className="g7x-capacity-name">创世奖池本月容量<Explain label="创世奖池容量怎么看" content={<>
-              <p>看条：本月已经发出的抽奖券占创世奖池月容量多少。改每单张数时，后端检查「本月已发 + 新的每单张数」不超过月容量。</p>
-              <p>月容量读创世节点的抽奖配置，没配时后端按 100,000 张；配置读不懂时这里显示 0，保存时后端按真实配置核对并拒绝。</p>
+              <p>看条：本月已经发出的抽奖券占创世奖池月容量多少。改每单张数时，会检查「本月已发 + 新的每单张数」不超过月容量。</p>
+              <p>月容量读创世节点的抽奖配置，没配时按 100,000 张；配置读不懂时这里显示 0，保存时按真实配置核对并拒绝。</p>
             </>} /></span>
             <span className="g7x-capacity-num">{fmtCount(capacity.ticketsIssuedThisMonth)} / {fmtCount(capacity.monthlyCapacity)} 张</span>
           </div>
           <RatioBar label="创世奖池本月已发" value={capacity.ticketsIssuedThisMonth} total={capacity.monthlyCapacity} tone="role-4"
             valueText={`已发 ${fmtCount(capacity.ticketsIssuedThisMonth)} 张，月容量 ${fmtCount(capacity.monthlyCapacity)} 张`}
             state={capacity.monthlyCapacity === 0 ? "empty" : undefined}
-            emptyText="月容量读到 0：保存每单张数时后端按真实配置核对"
+            emptyText="月容量读到 0：保存每单张数时按真实配置核对"
             invalidText="本月已发超过月容量，之后改每单张数会被拒绝" />
         </div>
         {moreRows.length > 0 && <ConfigList label="抽奖券和快捷金额">{moreRows.map(paramRow)}</ConfigList>}
@@ -898,7 +898,7 @@ function G7RepurchasePage() {
               tone: DIST_TONE[row.status.toLowerCase()] ?? "role-other",
             }))}
             emptyText="还没有锁定计划订单" />
-          <span className="g7x-relock">再次锁定率<Explain label="再次锁定率怎么算" content={stats.reinvestRateAvailable ? "到期后再次参与锁定计划的比例。" : "后端目前没有计算这个比例，显示「—」，不代表没人再次锁定。"} /><b data-empty={stats.reinvestRateAvailable ? undefined : ""}>{reinvest}</b></span>
+          <span className="g7x-relock">再次锁定率<Explain label="再次锁定率怎么算" content={stats.reinvestRateAvailable ? "到期后再次参与锁定计划的比例。" : "这项数据现在没有，不代表没人再次锁定。"} /><b data-empty={stats.reinvestRateAvailable ? undefined : ""}>{reinvest}</b></span>
         </div>
         <Table label="锁定计划订单" className="g7x-order-table" data-tight="">
           <thead>
@@ -927,7 +927,7 @@ function G7RepurchasePage() {
 
       <Fold title="未结束订单的金额分布" icon={PieChart} tone="role-other"
         summary={distRows === null ? "见展开" : distRows.length ? `${fmtCount(distRows.length)} 个金额` : "暂无"}
-        explain="待锁定、锁仓中、到期未领取的订单按锁定金额分组，每组占这些订单笔数的比例。金额和比例由后端取整到整数，不按月算，也不是快捷选项的档位。">
+        explain="待锁定、锁仓中、到期未领取的订单按锁定金额分组，每组占这些订单笔数的比例。金额和比例取整到整数，不按月算，也不是快捷选项的档位。">
         {distRows === null
           ? <p className="g7x-wrap">{overview.amountDistribution}</p>
           : distRows.length === 0

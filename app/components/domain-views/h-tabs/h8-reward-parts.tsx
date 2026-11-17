@@ -44,7 +44,7 @@ export function countText(value: number | undefined | null) {
 export function Amount({ value, unit, decimals }: { value: string | number | undefined | null; unit: string; decimals?: number }) {
   const text = amountText(value, decimals);
   if (text === "—") return <span className="h8-amount" data-empty="">—</span>;
-  return <span className="h8-amount" title={`后端原值 ${String(value)} ${unit}`}><span>{text}</span><small>{unit}</small></span>;
+  return <span className="h8-amount" title={`系统记录的原值 ${String(value)} ${unit}`}><span>{text}</span><small>{unit}</small></span>;
 }
 
 /**
@@ -174,7 +174,7 @@ export function H8SavedUnreadNotice({ name, value, onReload, reloading, hasData 
   return (
     <Notice tone="warn" title={`${name}已保存，但没读到最新值`}
       action={<button type="button" className="rd-inline-retry" disabled={reloading} onClick={onReload}>重新读取</button>}>
-      保存后返回的是 {value}。{hasData ? "页面上的其他数字还是保存前读到的，重新读取后再核对。" : "页面现在没有读到的数字，重新读取后再核对。"}
+      保存后的结果是 {value}。{hasData ? "页面上的其他数字还是保存前读到的，重新读取后再核对。" : "页面现在没有读到的数字，重新读取后再核对。"}
     </Notice>
   );
 }

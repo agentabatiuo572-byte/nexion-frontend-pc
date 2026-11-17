@@ -65,8 +65,8 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
     action: look.action,
     title: look.title,
     effect: <StatusTag tone="progress" filled explain={`${look.approver}批准后才生效，提交人不能批自己的；批准前${look.holds}不变。`}>批准后生效</StatusTag>,
-    detail: "直接保存被后端拒绝：这次修改要走审批。确认后用同样的值和理由提交审批。",
-    statedBrief: { impact: "刚才没有保存：后端判定这次修改要走审批。", check: "核对改动；值和理由沿用刚才填的，不能再改。" },
+    detail: "直接保存没有通过：这次修改要走审批。确认后用同样的值和理由提交审批。",
+    statedBrief: { impact: "刚才没有保存：这次修改要走审批。", check: "核对改动；值和理由沿用刚才填的，不能再改。" },
     content: <>{look.context}<Facts>
       {look.subject}
       {look.change && <Fact k="改动">{look.change}</Fact>}

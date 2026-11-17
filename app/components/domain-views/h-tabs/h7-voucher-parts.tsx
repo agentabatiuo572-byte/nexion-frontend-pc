@@ -185,7 +185,7 @@ export function pendingFacts(pending: H7PendingApproval) {
 export function pendingTag(pending?: H7PendingApproval | null) {
   const facts = pending ? pendingFacts(pending) : "";
   if (pending && facts === null) {
-    return <StatusTag tone="warn" icon={Clock3} explain="后端显示这张券有一张没结束的审批，没读出是哪张单、谁提交的；到「操作记录与审批」核对。审批结束前不能编辑、暂停、投放、删除或作废。">审批锁定</StatusTag>;
+    return <StatusTag tone="warn" icon={Clock3} explain="系统显示这张券有一张没结束的审批，但读不到是哪张单、谁提交的；到「操作记录与审批」核对。审批结束前不能编辑、暂停、投放、删除或作废。">审批锁定</StatusTag>;
   }
   // 卡片上只写动作：「删除代金券」→ 删除，「作废未使用的代金券」→ 作废；全名在说明里。
   const short = pending?.action?.replace(/未使用的代金券$|代金券$/, "");

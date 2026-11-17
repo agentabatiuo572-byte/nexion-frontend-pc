@@ -156,8 +156,8 @@ export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, rea
   const nodesReason = app?.unavailable.find(item => item.field === "centerNodes[].onlineNodes")?.reason;
   const nodesNote = appDisplay.state === "loading" ? "正在读取 App 显示的在线节点…"
     : appDisplay.state === "error" ? <>App 显示的在线节点没读到<Explain label="失败原因" content={appDisplay.message} /></>
-      : app!.centerNodesSource === undefined ? "服务端还不给各中心的在线节点"
-        : nodesTotal == null ? `App 显示的在线节点读不到：${CENTER_REASON[nodesReason ?? ""] ?? "服务端没给出原因"}`
+      : app!.centerNodesSource === undefined ? "各中心的在线节点现在没有"
+        : nodesTotal == null ? `App 显示的在线节点读不到：${CENTER_REASON[nodesReason ?? ""] ?? "原因不明"}`
           : `App 显示的在线节点 · 取样 ${formatBusinessTimeCompact(app!.capturedAt, "—")}（${businessZone().label}）${app!.sourceEnvironment === "SANDBOX" ? " · 测试环境" : ""}`;
 
   return <section aria-label="全球网络展示">
@@ -169,7 +169,7 @@ export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, rea
       {conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>}>
         你填的内容还在。刷新会读最新值并放弃这一块没保存的改动，再按最新值重新改。
       </Notice>}
-      {!draft ? <Notice tone="warn" title="全球网络还没有配置">后端没返回这一块，刷新后再看；一直没有请找后端同事核对。</Notice> : <>
+      {!draft ? <Notice tone="warn" title="全球网络还没有配置">这一块暂时读不到，刷新后再看；仍没有就找值班处理。</Notice> : <>
         {!sharesSupported && <Notice tone="warn" title="占比暂时只读">旧格式的配置没有占比，下表的比例按各中心节点数换算，只供参考，不能改；其他参数照常保存。</Notice>}
         <div className="h9-globe-fields">{FIELDS.map(field => <Field key={field.key} label={field.label} hint={field.hint} explain={field.what}>
           {(control) => <NumberInput {...control} aria-label={`全球网络${field.label}`} unit={field.unit} min={0} inputMode="decimal" value={draft[field.key]} disabled={locked}

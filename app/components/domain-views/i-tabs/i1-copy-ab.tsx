@@ -830,7 +830,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       </>,
       run: (reason) => {
         if (copy.revision == null) {
-          toast("当前文案修订号缺失，请刷新后重试");
+          toast("读不到这份文案的当前版本，请刷新后重试");
           return false;
         }
         return runBackend(actions.rollbackI1CopyVersion(copy.key, v, copy.version, copy.revision, reason), `${copy.key} 已回滚到 ${v}`);
@@ -853,7 +853,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     </Facts>,
     run: (reason) => {
       if (copy.revision == null) {
-        toast("当前文案修订号缺失，请刷新后重试");
+        toast("读不到这份文案的当前版本，请刷新后重试");
         return false;
       }
       return runBackend(actions.archiveI1Copy(copy.key, version, copy.revision, reason), `${copy.key} ${version} 已下架`);

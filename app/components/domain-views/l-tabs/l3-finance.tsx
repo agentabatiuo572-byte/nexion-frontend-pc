@@ -216,7 +216,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       effect: <StatusTag tone="warn" icon={LockKeyhole}>另一位放行后才能下载</StatusTag>,
       statedBrief: {
         impact: "提交后生成一份待放行的脱敏资金明细，不改余额、账本和提现。要另一位管理员在「数据导出与监管报告」放行，你不能批自己的申请。",
-        check: "核对日期范围和字段；文件在提交这一刻生成，放行时不会重新取数。",
+        check: "核对日期范围和导出的列；文件在提交这一刻生成，放行时不会重新取数。",
       },
       facts: (
         <Facts>
@@ -238,11 +238,11 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       },
       businessForm: {
         kind: "multi-field",
-        hint: "至少选一个字段；最多 100,000 行。",
+        hint: "至少选一列；最多 100,000 行。",
         fields: [
           {
             key: "fields",
-            label: "导出字段",
+            label: "导出的列",
             current: allFields,
             inputKind: "multi-select",
             options: [...FINANCE_DETAIL_FIELDS],
@@ -292,7 +292,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           }
           const fields = String(businessValue?.fields ?? "").split(",").map(item => item.trim()).filter(Boolean);
           if (fields.length === 0 || fields.some(field => !FINANCE_DETAIL_FIELDS.includes(field as typeof FINANCE_DETAIL_FIELDS[number]))) {
-            throw new Error("至少选择一个允许导出的脱敏资金字段");
+            throw new Error("至少选一列可以导出的脱敏资金数据");
           }
           const request: L3DetailRequest = {
             exportType: "财务资金明细",
@@ -427,7 +427,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       </Notice>
     );
     if (!("range" in outcome)) return null;
-    const request = `${outcome.range} · ${outcome.fields} 个字段 · 使用人 ${outcome.recipient} · 工单 ${outcome.ticket}`;
+    const request = `${outcome.range} · ${outcome.fields} 列 · 使用人 ${outcome.recipient} · 工单 ${outcome.ticket}`;
     if (outcome.kind === "detail-done") return (
       <Notice tone="warn" title="已申请资金明细，等另一位放行" action={close} actionBelow>
         <p>{request}</p>

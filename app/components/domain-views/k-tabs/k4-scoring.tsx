@@ -566,7 +566,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         <Conclusion state="unknown" icon={ShieldCheck}>风险评分暂不可用，这页没有判断</Conclusion>
         {pendingBars}
         <Panel title="风险评分">
-          <BlockState state="error" title="没有拿到当前生效的评分规则" detail="后端没有返回生效模型，这页不拿默认值代替。请重新加载，仍然没有就联系值班人员。"
+          <BlockState state="error" title="没有拿到当前生效的评分规则" detail="生效的评分规则暂时读不到，这页不拿默认值代替。请重新加载，仍然没有就联系值班人员。"
             retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
         </Panel>
       </>
@@ -665,7 +665,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   };
 
   // ── 首屏一句话 ──
-  const conclusionExplain = <><p>生效版本和草稿取自后端的评分模型；待重新计算是后端这一刻还没按生效规则算好的人数。</p><p>提现升级告警只数发给你本人的最近 50 条里没读的。</p></>;
+  const conclusionExplain = <><p>生效版本和草稿取自系统里的评分规则；待重新计算是这一刻还没按生效规则算好的人数。</p><p>提现升级告警只数发给你本人的最近 50 条里没读的。</p></>;
   const clauses: string[] = [];
   if (canReadWithdrawalAlerts && unreadAlerts > 0) clauses.push(`有 ${unreadAlerts} 条提现升级告警未读`);
   if (overview.recomputePending > 0) clauses.push(`${fmt(overview.recomputePending)} 人正在按 v${overview.model.version} 排队重算`);

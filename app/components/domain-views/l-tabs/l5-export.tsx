@@ -602,7 +602,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       requireNewExport("summary", String(bv?.exportType ?? ""));
       const range = isL5KpiExport(String(bv?.exportType ?? ""))
         ? l5KpiRange(bv ?? {}) : { timeRange: String(bv?.timeRange ?? "ON_DEMAND") };
-      const summary = `${bv?.exportType} · ${range.timeRange} · 聚合字段[${bv?.fields || "默认汇总项"}] · 用途 ${bv?.recipient}`;
+      const summary = `${bv?.exportType} · ${range.timeRange} · 汇总项[${bv?.fields || "默认汇总项"}] · 用途 ${bv?.recipient}`;
       try {
         await createL5SummaryReport({
           exportType: String(bv?.exportType ?? "后台导出报表"),

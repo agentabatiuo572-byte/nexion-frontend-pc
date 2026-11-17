@@ -91,7 +91,7 @@ const ELIGIBILITY_REASON: Record<string, { tone: StateTone; tag: string; text: s
   NOT_ELIGIBLE: { tone: "warn", tag: "不能结", text: "现在不符合结算条件" },
 };
 function eligibilityView(value: H8SettlementEligibility) {
-  const known = ELIGIBILITY_REASON[value.reason] ?? { tone: "neutral" as const, tag: "没认出", text: "后端给的原因这页认不出" };
+  const known = ELIGIBILITY_REASON[value.reason] ?? { tone: "neutral" as const, tag: "没认出", text: "系统给的原因这页认不出" };
   const text = value.reason === "REGISTERED_BEFORE_EFFECTIVE_AT" && value.registeredAt === null ? "注册时间没有记录" : known.text;
   const outcome = value.reason === "ELIGIBLE" ? value.willFreeze ? "批准后发奖励，新人礼先冻结到首笔实付订单" : "批准后给新人和邀请人发奖励"
     : value.reason === "ALREADY_SETTLED_GIFT_RELEASABLE" ? "不再发新的，批准后可能解冻原礼包"
@@ -413,7 +413,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               state={directionTag(value)}
               note={valid ? <span className="h8-preview">
                 <span>改后实际发放 <b>{reference === null ? "—" : `${amountText(reference, decimals)} ${unit}`}</b> = {amountText(value, decimals)} × {multiplierName} {multiplierText(multiplier)}<Explain label="实际发放怎么算" content={dir === "loosen"
-                  ? "这是提交时按现在的加成算的参考值；批准时后端按那时的当月加成重算，6 位小数四舍五入。"
+                  ? "这是提交时按现在的加成算的参考值；批准时按那时的当月加成重算，6 位小数四舍五入。"
                   : "按现在的当月加成算，6 位小数四舍五入；加成在运营阶段设置改。"} /></span>
                 {dir === "same" && <span>和现在一样也会保存一次，生效时间同样改成保存那一刻。</span>}
               </span> : undefined}>
@@ -493,7 +493,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {targeted && loaded && <Fact k="原结算号"><span data-mono>{loaded.settlementNo}</span></Fact>}
         {targeted && <Fact k="这次会怎样">{checked ? checked.outcome : loaded
           ? "他的礼包还冻结、又已经有首笔实付订单的，只解冻原礼包；否则不发"
-          : "批准执行时后端逐项核对；不符合就不发"}</Fact>}
+          : "批准执行时逐项核对；不符合就不发"}</Fact>}
         {targeted ? null
           : <Fact k="现在待结算">{countText(pendingNow)} 位，从最早注册的开始发；批准时按那一刻的名单</Fact>}
         <Fact k="每位新人">{amountText(rewards?.["newcomer.usdt"], usdtDecimals)} USDT + {amountText(rewards?.["newcomer.nex"], uvtDecimals)} UVT</Fact>
@@ -518,7 +518,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     },
     facts: settleFacts,
     coverageLead: "结算会真的给用户发钱",
-    coverageCheck: "提交审批时不检查兑付覆盖率；批准后、真正入账前后后端各检查一次，低于红线整批不发。",
+    coverageCheck: "提交审批时不检查兑付覆盖率；批准后、真正入账前各检查一次，低于红线整批不发。",
     confirmLabel: "提交结算审批",
     confirmTone: "danger",
     getPendingReason: () => { const o = currentCommand()?.original; return o && o.kind !== "direct" ? o.request.reason : undefined; },
@@ -710,7 +710,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           奖励已停用：新注册的不发新人礼，邀请人也不发奖励</Conclusion>
       : allZero
         ? <Conclusion state="warn" hint={canWrite ? "在「每位发多少」里调整基础额。" : undefined}
-            explain="三项实际发放都是 0 时，后端拒绝结算。">奖励开着，但三项金额都是 0，现在结算会被拒绝</Conclusion>
+            explain="三项实际发放都是 0 时不能结算；至少把一项改成大于 0。">奖励开着，但三项金额都是 0，现在结算会被拒绝</Conclusion>
         : pending > 0
           ? <Conclusion state="warn" icon={ListChecks}
               hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
@@ -789,7 +789,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               what="这个时间起（含这一刻）注册的新人才进入结算"
               effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样也算）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}
               value={gateUnset
-                ? <span className="h8-time" title={`后端原值 ${data.effectiveAt}`}>未设置<small>所有注册都算</small></span>
+                ? <span className="h8-time" title={`系统记录的原值 ${data.effectiveAt}`}>未设置<small>所有注册都算</small></span>
                 : <span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>

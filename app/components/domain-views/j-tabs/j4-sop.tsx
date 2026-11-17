@@ -1022,7 +1022,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const conclusion = !contractReady ? (
     <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
   ) : active.length > 0 ? (
-    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；卡住时可以恢复核对，能不能核对由后端按最后一次更新判断。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
+    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；卡住时可以恢复核对，能不能核对由系统按最后一次更新判断。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
   ) : PLAYBOOKS.length === 0 ? (
     <Conclusion state="warn" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
   ) : ready === 0 ? (
@@ -1155,7 +1155,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const rulesFold = (
     <Fold title="预案能用的动作和规则" icon={ListChecks} tone="role-other"
       summary={`${count((data?.actionOptions ?? []).length)} 种动作 · 只能关停、暂停、冻结、封锁和发布，不能恢复`}
-      explain="新增和编辑预案时只能从这些动作里选；后端保存和执行时还会再检查一次。">
+      explain="新增和编辑预案时只能从这些动作里选；保存和执行时还会再检查一次。">
       {(data?.actionOptions ?? []).length === 0
         ? <BlockState state="empty" compact title="没有可用的动作" detail="请刷新；仍然没有请联系值班人员。" />
         : <Table label="预案能用的动作" className="j4-action-table">
@@ -1219,7 +1219,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         <Stat icon={Siren} tone="role-3" label="应急通道预案" value={count(emerCount)} unit="个"
           explain="标了应急通道的预案数，不管能不能执行；也不是执行次数。应急通道只影响记录，审批和执行速度和常规一样。" />
         <Stat icon={History} tone="role-other" label="近 90 天正式执行" value={liveExecs == null ? "—" : count(liveExecs)} unit={liveExecs == null ? undefined : "次"}
-          sub={liveExecs == null ? "未返回" : `演练记录 ${drillExecRows == null ? "未返回" : `${count(drillExecRows)} 条`} · 演练就绪 ${!contractReady ? "暂无法统计" : drillExecs == null ? "未返回" : `${count(drillExecs)} 个`}`}
+          sub={liveExecs == null ? "未提供" : `演练记录 ${drillExecRows == null ? "未提供" : `${count(drillExecRows)} 条`} · 演练就绪 ${!contractReady ? "暂无法统计" : drillExecs == null ? "未提供" : `${count(drillExecs)} 个`}`}
           explain="正式执行按开始时间算，部分失败、已取消和还在执行的都算；演练记录是近 90 天演练的条数，同一个预案可以有多条；演练就绪是现在能执行的预案数。不受场景筛选影响。" />
       </StatBand>
       {queueNotice}

@@ -528,7 +528,7 @@ export function TraceDrawer({ execution, onClose }: { execution: SopExecution | 
   const sharedTotal = sent != null && actions.filter((action) => String(action.domain ?? "").toUpperCase() === "I3").length > 1;
   return (
     <Drawer open={Boolean(e)} onClose={onClose} title="执行追溯" sub={e ? <span data-mono="">{e.executionId || "执行编号缺失"}</span> : undefined} wide
-      explain="打开时那一行的快照，只读；刷新页面后重新打开才是最新的。">
+      explain="打开时那一行的内容，只读；刷新页面后重新打开才是最新的。">
       {e && <div className="j4-trace">
         <Facts>
           <Fact k="预案">{e.name}<span className="j4-muted"> · <span data-mono="">{e.code}</span></span></Fact>
@@ -583,7 +583,7 @@ export function TraceDrawer({ execution, onClose }: { execution: SopExecution | 
         <Panel plain headingLevel={3} title="通知和审计记录">
           <Facts>
             <Fact k="通知">{NOTIFY_STATUS[String(dispatch.status)] ?? "状态未知"}</Fact>
-            <Fact k="发送数">{sent == null ? "未返回" : `${String(sent)} 条`}</Fact>
+            <Fact k="发送数">{sent == null ? "未提供" : `${String(sent)} 条`}</Fact>
             <Fact k="审计记录">{AUDIT_STATUS[String(dispatch.auditStatus)] ?? "状态未知"}</Fact>
             {failure && <Fact k="失败原因" tone="danger">{failure.text} <span data-mono="">{failure.code}</span></Fact>}
           </Facts>

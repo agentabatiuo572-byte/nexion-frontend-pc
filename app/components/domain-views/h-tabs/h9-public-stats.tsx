@@ -128,9 +128,9 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
 }
 
 
-const APP_PAID_NOTE = "服务端给的是金额本身，没有写币种；App 上显示为 $，这里不另加。";
+const APP_PAID_NOTE = "系统记的是金额本身，没有写币种；App 上显示为 $，这里不另加。";
 const APP_DISPLAY_REASON: Record<string, string> = {
-  HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "服务端这一刻没有可用的展示数据",
+  HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "这一刻还没有可用的展示数据",
   HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页展示数据",
 };
 /** 进行中作业数读不到的原因（GrowthPublicStatsService.appDisplay 的 unavailable，ae9783f7）。 */
@@ -149,7 +149,7 @@ function AppSample({ read, found, fallback }: { read: AppDisplayRead; found: boo
   if (read.state === "loading") return <p className="h9-chart-note">正在读取 App 显示的数…</p>;
   if (read.state === "error") return <p className="h9-chart-note">App 显示的数没读到，上面是{fallback}<Explain label="失败原因" content={read.message} /></p>;
   if (found) return <p className="h9-chart-note">App 显示的数 · 取样 {formatBusinessTimeCompact(read.data.capturedAt, "—")}（{businessZone().label}）{read.data.sourceEnvironment === "SANDBOX" ? " · 测试环境" : ""}</p>;
-  const reason = fallback === "设定值" ? APP_DISPLAY_REASON[read.data.reason ?? ""] ?? "服务端没给出原因" : "服务端算不出这个数";
+  const reason = fallback === "设定值" ? APP_DISPLAY_REASON[read.data.reason ?? ""] ?? "原因不明" : "这个数现在算不出";
   return <p className="h9-chart-note">App 显示的数读不到：{reason}，上面是{fallback}</p>;
 }
 
@@ -398,7 +398,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       {module === "jobs" && jobsBaseSupported && <Notice tone="neutral" title={jobsPreview?.value != null ? `预览：保存后 App 约显示 ${count(jobsPreview.value)} 个` : "预览：估不出保存后 App 显示多少"}>
         {jobsPreview?.value != null
           ? <>按 {formatBusinessTimeCompact(jobsPreview.capturedAt, "—")}（{businessZone().label}）取样的{jobsName} {count(appData!.activeJobsActual)} {nextValues.activeJobsBase == null ? "估算，不加基座" : "加新基座估算"}；作业数一直在变，不是保证。</>
-          : !appData ? "这次没读到 App 显示的作业数。" : !jobsPreview ? "服务端还不给进行中作业数。" : `${JOBS_REASON[jobsPreview.reason ?? ""] ?? "服务端没给出原因"}。`}
+          : !appData ? "这次没读到 App 显示的作业数。" : !jobsPreview ? "进行中作业数现在没有。" : `${JOBS_REASON[jobsPreview.reason ?? ""] ?? "原因不明"}。`}
       </Notice>}
       {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
       {homeCompare && <div className="h9-confirm-chart">
@@ -595,14 +595,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const defaultText = defaultable && !isDefault ? `默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
     return <Field key={key} label={<>{FIELD_COPY[key].name}{isDefault && <StatusTag tone="neutral">默认值</StatusTag>}</>}
       explain={FIELD_COPY[key].what} hint={range}
-      help={[field.clearable ? "留空表示不发布" : pending ? "后端还没返回这一项，暂时不能改" : "", defaultText].filter(Boolean).join("；") || undefined}
+      help={[field.clearable ? "留空表示不发布" : pending ? "这一项目前还不支持，暂时不能改" : "", defaultText].filter(Boolean).join("；") || undefined}
       error={fieldErrors[key] || undefined}>
       {(control) => <NumberInput {...control}
         aria-label={`${field.label}目标值`}
         unit={unit} min={field.min} max={field.max} step={field.step}
         inputMode={field.integer ? "numeric" : "decimal"}
         value={drafts[key]}
-        placeholder={pending ? "后端待支持" : field.clearable ? "不发布" : undefined}
+        placeholder={pending ? "暂不支持" : field.clearable ? "不发布" : undefined}
         disabled={!canWrite || loading || !!error || saving || !!pendingH9Command("main") || pending}
         onChange={(event) => setDraft(key, event.target.value)} />}
     </Field>;
@@ -644,7 +644,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   };
 
   const homeModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "home"} {...ids.panel("home")} aria-label="首页数字增长">
-    <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="App 介绍页、首页和网络脉搏的在线设备都是这个数；累计已发放在介绍页。数字由服务端按秒生成，所有用户看到同一个数。">
+    <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="App 介绍页、首页和网络脉搏的在线设备都是这个数；累计已发放在介绍页。数字由系统按秒生成，所有用户看到同一个数。">
       <AppPreview where="App 介绍页 · 网络脉搏"
         explain={<><p>增长开着时，两个数每秒在区间里随机增加，所有用户看到同一个数；暂停后停在暂停那一刻，再开启从那里接着涨。保存参数不会改开关。</p><p>App 页面开着时一般 60 秒内读到新参数，退到后台或断网时不保证。</p></>}
         status={values.homeDisplayEnabled ? <><StatusTag tone="progress">增长中</StatusTag>每秒在区间里随机增加</> : <><StatusTag tone="neutral">已暂停</StatusTag>App 上的数停住不动</>}>
@@ -669,7 +669,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <div className="h9-pair">{renderField("homeOnlineStepMin")}{renderField("homeOnlineStepMax")}</div>
       </div>
       <div className="h9-group">
-        <h3 className="h9-group-title">累计已发放<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /> <span className="h9-group-rule">App 上显示为 $，金额最多两位小数，多了后端会拒绝</span></h3>
+        <h3 className="h9-group-title">累计已发放<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /> <span className="h9-group-rule">App 上显示为 $，金额最多两位小数，多了不能保存</span></h3>
         {renderField("homePaidCurrent")}
         <div className="h9-pair">{renderField("homePaidStepMin")}{renderField("homePaidStepMax")}</div>
       </div>
@@ -684,7 +684,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <Panel title="App 上的样子" icon={Smartphone} tone="role-3" explain="注册人数是按参数推算的展示数字，不改真实账户，也不参与设备预估排名。">
       <AppPreview where="App 首页 · 网络脉搏"
         explain={savedTick
-          ? <>{appMembers != null && <>App 显示的是服务端算出的数。</>}推算按读取这页的时刻、用后端同一个公式。每跳一次另有 0–{count(spread)} 人的固定随机偏移，所以 App 上会比推算多 0–{count(spread)} 人，所有用户一致。</>
+          ? <>{appMembers != null && <>App 显示的是系统算出的数。</>}推算按读取这页的时刻、用同一个公式。每跳一次另有 0–{count(spread)} 人的固定随机偏移，所以 App 上会比推算多 0–{count(spread)} 人，所有用户一致。</>
           : <>只配了月增长率：网络脉搏卡片显示这个数，网络快照等位置会显示「不可用」。</>}
         status={savedTick ? `App 上比推算多 0–${count(spread)} 人` : <><StatusTag tone="warn">部分位置不显示</StatusTag>网络快照显示「不可用」</>}>
         {appMembers != null
@@ -743,12 +743,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           value={appJobs != null ? count(appJobs) : appJobs === null ? "—" : jobs == null ? jobsName : <>{jobsName} + {count(jobs)}</>}
           unit={appJobs === null || appJobs === undefined && jobs == null ? undefined : "个"} empty={appJobs === null || appJobs === undefined && jobs == null}
           sub={appJobs != null ? `${jobsName} ${count(jobsActual)}${jobs == null ? "，基座未发布" : ` + 基座 ${count(jobs)}`}`
-            : appJobs === null ? JOBS_REASON[jobsReason ?? ""] ?? "服务端没给出原因"
+            : appJobs === null ? JOBS_REASON[jobsReason ?? ""] ?? "原因不明"
               : jobs == null ? "基座未发布" : jobs === 0 ? "基座是 0，App 显示的就是进行中作业数" : undefined} />
       </AppPreview>
       {appDisplay.state === "loading" ? <p className="h9-chart-note">正在读取 App 显示的数…</p>
         : appDisplay.state === "error" ? <p className="h9-chart-note">App 显示的数没读到，上面是算法<Explain label="失败原因" content={appDisplay.message} /></p>
-          : appJobs === undefined ? <p className="h9-chart-note">服务端还不给 App 显示的作业数，上面是算法</p>
+          : appJobs === undefined ? <p className="h9-chart-note">App 显示的作业数现在没有，上面是算法</p>
             : <p className="h9-chart-note">{appJobs === null ? "App 显示的数读不到" : "App 显示的数"} · 取样 {formatBusinessTimeCompact(appDisplay.data.capturedAt, "—")}（{businessZone().label}）</p>}
     </Panel>
     <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}>

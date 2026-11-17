@@ -600,7 +600,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
             </div>
           </Stat>;
         })}</StatBand>
-        <Panel title="规则总表" className="k3-table-frame" flush actions={<ColumnPicker columns={columns} />} explain="按已启用、已停用、草稿、已归档的服务端顺序分页。数值越大的优先级越高；同维度未归档规则不能使用相同优先级。">
+        <Panel title="规则总表" className="k3-table-frame" flush actions={<ColumnPicker columns={columns} />} explain="按已启用、已停用、草稿、已归档的顺序分页。数值越大的优先级越高；同维度未归档规则不能使用相同优先级。">
           <Table label="规则总表" className="k3-rules-table" data-readonly={!showActions ? "" : undefined} data-show-version={columns.isVisible("version") ? "" : undefined} data-extra={columns.isVisible("builtIn") ? "" : undefined}>
             <thead><tr><Th className="k3-rule-col">规则 / 维度</Th><Th className="k3-condition-col">条件</Th><Th className="k3-action-col">命中处置</Th><Th className="k3-state-col">状态</Th><Th className="k3-version-col">优先级 / 版本</Th>{columns.isVisible("builtIn") && <Th className="k3-builtin-col">内置标记</Th>}{showActions && <Th sticky="end" className="k3-actions-col">操作</Th>}</tr></thead>
             <tbody>{rules.length === 0 && <TableMessage columns={5 + Number(showActions) + Number(columns.isVisible("builtIn"))}>暂无提现风控规则{canCreate && <Button variant="ghost" onClick={() => openWrite("create")}>新建规则</Button>}</TableMessage>}
