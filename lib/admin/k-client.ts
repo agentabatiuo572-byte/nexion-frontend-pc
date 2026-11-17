@@ -95,7 +95,7 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     payload = JSON.parse(path === "/arbitrage/overview"
       ? text.replace(/("amountRaw"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
       : path.startsWith("/multi-account/releases?")
-        ? text.replace(/("(?:grossAmount|recoveredAmount|netAmount)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+        ? text.replace(/("(?:amount|grossAmount|recoveredAmount|netAmount)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
       : text) as ApiResult<T>;
     if (isK1ApprovalWrite && (!payload || typeof payload !== "object" || Array.isArray(payload)
       || payload.code !== undefined && !Number.isInteger(payload.code))) throw new Error("K1_WRITE_RESULT_INVALID");
@@ -248,7 +248,7 @@ export type K1ProtectedEntry = {
   sourceType: string;
   sourceRef: string;
   asset: "USDT" | "UVT";
-  amount: number;
+  amount: string;
   /** Optional on the previous backend; preserve new BigDecimal tokens without rounding. */
   grossAmount?: string;
   recoveredAmount?: string;
@@ -1913,8 +1913,10 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
       const row = requiredK1Record(value, path);
       const asset = requiredK1String(row.asset, `${path}.asset`);
       const bucket = requiredK1String(row.bucket, `${path}.bucket`);
+      const amount = requiredK1String(row.amount, `${path}.amount`);
       if (asset !== "USDT" && asset !== "UVT") invalidK1Response(`${path}.asset`);
       if (bucket !== "pending_review" && bucket !== "bonus_locked") invalidK1Response(`${path}.bucket`);
+      if (!/^(?=[\d.]*[1-9])(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(amount)) invalidK1Response(`${path}.amount`);
       const snapshot: Pick<K1ProtectedEntry, "grossAmount" | "recoveredAmount" | "netAmount" | "sourceEnvironment" | "status"> = {};
       for (const field of ["grossAmount", "recoveredAmount", "netAmount"] as const) {
         if (row[field] === undefined) continue;
@@ -1933,7 +1935,7 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
         sourceType: requiredK1String(row.sourceType, `${path}.sourceType`),
         sourceRef: requiredK1String(row.sourceRef, `${path}.sourceRef`),
         asset,
-        amount: requiredK1Number(row.amount, `${path}.amount`, Number.MIN_VALUE),
+        amount,
         ...snapshot,
         bucket,
         createdAt: requiredK1String(row.createdAt, `${path}.createdAt`),

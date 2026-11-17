@@ -217,9 +217,6 @@ const RELEASE_PARAM_NAME: Record<string, string> = {
 };
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_NAME[p.key] ?? p.name;
 
-/** 收益金额按接口给的精度写全，非零不能显示成 0（TX-20）。 */
-const amountText = (amount: number) => amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 20 });
-
 /** 后端给的金额原文（可能写成指数）：写全位数、去掉末尾补的 0、最少 2 位，不舍入。places 给定时补到这么多位，用于同一个框里并排的几个数。 */
 const decimalPlaces = (raw: string) => Math.max(2, (f4Decimal(raw) ?? "").split(".")[1]?.replace(/0+$/, "").length ?? 0);
 const exactAmountText = (raw: string, places = decimalPlaces(raw)) => {
@@ -229,7 +226,7 @@ const exactAmountText = (raw: string, places = decimalPlaces(raw)) => {
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(places, "0")}`;
 };
 /** 这次放多少：新后端给的净额原文优先；旧后端只有 amount。 */
-const netAmountText = (entry: K1ProtectedEntry, places?: number) => entry.netAmount !== undefined ? exactAmountText(entry.netAmount, places) : amountText(entry.amount);
+const netAmountText = (entry: K1ProtectedEntry, places?: number) => exactAmountText(entry.netAmount ?? entry.amount, places);
 /** 追回过才拆开写原金额和已追回；没追回、或后端没给这两项，都不拆。 */
 const recoveredSplit = (entry: K1ProtectedEntry) => entry.grossAmount !== undefined && entry.recoveredAmount !== undefined
   && !/^0(\.0*)?$/.test(f4Decimal(entry.recoveredAmount) ?? "0") ? { gross: entry.grossAmount, recovered: entry.recoveredAmount } : null;
@@ -1115,9 +1112,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
   /** 两类资金审批在恢复区和解除框里的名字：写申请了什么，不写内部的参数键。 */
-  const approvalTitle = (record: K1PendingCommand) => !record.approval ? record.label : record.kind === "entry" && record.approval.observedEntry
-    ? `人工放行 ${amountText(record.approval.observedEntry.amount)} ${nexGridBrandText(record.approval.observedEntry.asset)}`
-    : `放宽${record.target === "duplicateAccountFreezeFrom" ? "锁定起点" : "审核起点"}到 ${record.value} 个账户`;
+  const approvalTitle = (record: K1PendingCommand) => {
+    const approval = record.approval;
+    if (!approval) return record.label;
+    if (record.kind === "entry") {
+      const observed = approval.observedEntry;
+      return typeof observed?.amount === "string" ? `人工放行 ${exactAmountText(observed.amount)} ${nexGridBrandText(observed.asset)}` : record.label;
+    }
+    return `放宽${record.target === "duplicateAccountFreezeFrom" ? "锁定起点" : "审核起点"}到 ${record.value} 个账户`;
+  };
   /** 列表行上的原操作标记：待审批写申请了什么、谁什么时候提交；其余只给标签，处理在页面上方。 */
   const pendingMark = (kind: "release-param" | "entry", target: string, change?: string) => {
     const record = pending.find(item => item.kind === kind && item.target === target);
@@ -1308,7 +1311,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
       facts: (() => {
         const split = recoveredSplit(entry);
-        const places = split ? Math.max(...[split.gross, split.recovered, entry.netAmount ?? ""].map(decimalPlaces)) : undefined;
+        const places = split ? Math.max(...[split.gross, split.recovered, entry.netAmount ?? entry.amount].map(decimalPlaces)) : undefined;
         const unit = nexGridBrandText(entry.asset);
         return <Facts>
         <Fact k="净额" lead tone="role-1" unit={unit}>{netAmountText(entry, places)}</Fact>
@@ -1334,7 +1337,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         if (approvalRequired) {
           const actor = useAdminAuth.getState().session;
           record.approval = { request: k1EarningsReleaseProposal(entry.entryNo, reason, operator, roleLabel(actor?.role ?? "")),
-            observedEntry: { amount: entry.amount, asset: entry.asset, sourceType: entry.sourceType, sourceRef: entry.sourceRef, bucket: entry.bucket } };
+            observedEntry: { amount: entry.netAmount ?? entry.amount, asset: entry.asset, sourceType: entry.sourceType, sourceRef: entry.sourceRef, bucket: entry.bucket } };
         }
         try { await runRecord(record); }
         catch (cause) {
@@ -1695,7 +1698,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </>,
             detail: approval ? <>
               <p>{record.kind === "entry" && observed
-                ? <>收益记录 <span data-mono>{record.target}</span>，提交时页面读到的净额 {amountText(observed.amount)} {nexGridBrandText(observed.asset)}，来源 {sourceName(observed.sourceType)}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
+                ? <>收益记录 <span data-mono>{record.target}</span>{typeof observed.amount === "string" && <>，提交时页面读到的净额 {exactAmountText(observed.amount)} {nexGridBrandText(observed.asset)}</>}，来源 {sourceName(observed.sourceType)}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
                 : <>申请把「{record.name ?? record.target}」改为 {record.value} 个账户{current ? `，现在是 ${current.value} 个账户` : ""}，批准后才生效。</>}</p>
               <p>提交人 {record.operator}；理由：{record.reason}</p>
               {note && !status?.line.includes(note) && !(expired && note.includes("重试")) && <p><KeepText text={note} /></p>}
