@@ -161,7 +161,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
         coverageLead: "提前解锁后这笔钱可能提前流出",
-        coverageCheck: grouped ? "提交前按页面读到的兑付覆盖率查一次；批准时不再查覆盖率，但仍会核冷却、暂停、风险和退款，不满足就拒绝。" : "提交前按页面读到的兑付覆盖率查一次。批准时系统再查：这类奖励在暂停中会被拒；覆盖率读不到或低于红线不放钱，审批单留着待审批；等于红线算够。",
+        coverageCheck: grouped ? "提交前按页面读到的兑付覆盖率查一次。批准时系统再查：覆盖率读不到或低于红线不放钱，审批单留着待审批；等于红线算够。冷却没到期、暂停、风险或退款也会被拒。" : "提交前按页面读到的兑付覆盖率查一次。批准时系统再查：这类奖励在暂停中会被拒；覆盖率读不到或低于红线不放钱，审批单留着待审批；等于红线算够。",
         blockedReason: knownRejection(row, "release", data?.activeSuspensions),
         statedBrief: grouped
           ? { impact: "批准时系统核对结算组的冷却是否真正到期，没到期会拒绝", check: "核对剩余冷却天数，理由写清为什么要提前。" }

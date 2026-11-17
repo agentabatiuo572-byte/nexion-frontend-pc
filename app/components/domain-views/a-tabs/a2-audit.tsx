@@ -228,6 +228,65 @@ function fundTicket(w: { operationCode?: string | null; obj?: string; after?: st
   if (w.operationCode === "f5_commission_reverse") return { kind: "f5Reverse", eventId: /^CM-\d+$/.test(w.obj ?? "") ? w.obj : /^撤销奖励记录 (CM-\d+)$/.exec(action)?.[1] };
   return undefined;
 }
+
+/**
+ * F 域整批申请（f_config_batch）：动作名「网络参数整批原子调整 · N 项」；对象是各项配置键用逗号连起来，太长时只存「F.batch:」加摘要（24fa2815）。
+ * 各项的修改前后按「键=值 / 键=值」存在单子上（delegatedFDescriptor），从这里逐项列出，不从摘要猜。两边的键对不上就不拆，照原文显示。
+ */
+const F_BATCH_ACTION = /^网络参数整批原子调整 · (\d+) 项$/;
+const F_BATCH_DIGEST = /^F\.batch:[0-9a-f]{64}$/;
+type FBatchItem = { key: string; spec?: FConfigSpec; before: string; after: string };
+function fBatchPairs(text: string): Array<[string, string]> | undefined {
+  const pairs: Array<[string, string]> = [];
+  for (const part of text.split(" / ")) {
+    const m = /^(F\d?\.[^=\s]+)=([\s\S]*)$/.exec(part);
+    if (m) pairs.push([m[1], m[2]]);
+    else if (pairs.length) pairs[pairs.length - 1][1] += ` / ${part}`;
+    else return undefined;
+  }
+  return pairs;
+}
+/** 两边逐项的键一一对应（数量也对得上）才拆成各项，否则返回 undefined。 */
+function fBatchItems(beforeText: string, afterText: string, count?: number): FBatchItem[] | undefined {
+  const after = fBatchPairs(afterText);
+  const before = fBatchPairs(beforeText);
+  if (!after || !before || after.length !== before.length || count !== undefined && after.length !== count || after.some(([key], i) => before[i][0] !== key)) return undefined;
+  return after.map(([key, value], i) => {
+    const spec = fConfigSpec(key, value);
+    return { key, spec, before: fConfigValue(spec, before[i][1]), after: fConfigValue(spec, value) };
+  });
+}
+function fBatchTicket(w: { action?: string; obj?: string; before?: string; after?: string }): { count: number; digest: boolean; items?: FBatchItem[] } | undefined {
+  const count = Number(F_BATCH_ACTION.exec(w.action ?? "")?.[1]);
+  if (!count) return undefined;
+  return { count, digest: F_BATCH_DIGEST.test(w.obj ?? ""), items: fBatchItems(w.before ?? "", w.after ?? "", count) };
+}
+/**
+ * 操作记录里的整批申请：对象是摘要，或正好是各项键用逗号连起来；前后值是单上的原文，后端写成「前 -> 后」（decisionDetail），页面自己拼的是「前 → 后」。
+ */
+function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | undefined {
+  const sides = log.delta.split(/ -> | → /);
+  if (sides.length !== 2) return undefined;
+  const items = fBatchItems(sides[0], sides[1]);
+  return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
+}
+const fBatchSummary = (items: readonly FBatchItem[]) => `${fBatchLabel(items[0], fBatchPages(items))} ${items[0].before} → ${items[0].after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`;
+/** 涉及的页面名；认不出的项写「团队参数」。 */
+const fBatchPages = (items: readonly FBatchItem[] | undefined) => [...new Set((items ?? []).map((item) => item.spec?.page ?? "团队参数"))];
+const fBatchLabel = (item: FBatchItem, pages: readonly string[]) => item.spec ? (pages.length > 1 ? `${item.spec.page} · ${item.spec.item}` : item.spec.item) : "未识别的配置项";
+
+/** 整批申请的完整变更内容：每项一行「现在 → 改后」；配置键放技术信息（对象原文在「对象」旁）。 */
+function A2BatchReview({ items }: { items: readonly FBatchItem[] }) {
+  const pages = fBatchPages(items);
+  return (
+    <section className="a2-change-review" aria-label="完整变更内容">
+      <div className="a2-change-title">完整变更内容 · {items.length} 项
+        <Explain label="技术信息" content={`各项配置键 ${items.map((item) => item.key).join("、")}`} /></div>
+      <DiffList rows={items.map((item) => ({ key: item.key, label: fBatchLabel(item, pages), before: item.before, after: item.after }))}
+        restTitle="没有改动的项" emptyNote="这些项没有改动" />
+    </section>
+  );
+}
 const REISSUE_INLINE = 5;
 /** 申请单上能按记录号读的奖励记录：补发按原顺序，冲正和状态变更一笔；暂停、恢复只有用户和类型，不读。 */
 const f5RecordIds = (fund: FundTicket | undefined): string[] => fund?.kind === "f5Reissue" ? fund.ids
@@ -432,6 +491,7 @@ function keepCodes(text: string): ReactNode {
 
 /** 记录的对象是「类型 · 编号」：编号放第一行，长的中间省略留住前后段，类型放第二行（必须改 8）。 */
 function objectCell(obj: string) {
+  if (F_BATCH_DIGEST.test(obj)) return { main: "整批调整的团队参数", sub: undefined };
   const [kind, ...rest] = obj.split(" · ");
   if (!rest.length) return { main: middle(shortCodes(obj), 20), sub: undefined };
   const id = rest.join(" · ");
@@ -455,6 +515,8 @@ function actionName(ticket: string | { action: string; obj?: string; after?: str
   if (fund?.kind === "f5Suspension") return `${fund.suspended ? "暂停" : "恢复"}用户奖励${fund.userId ? ` · ${userCode(fund.userId)}` : ""}`;
   if (fund?.kind === "f5Reissue") return fund.count ? `批量补发 ${fund.count} 笔奖励` : "批量补发奖励";
   if (fund?.kind === "f5Reverse") return `冲正奖励记录${fund.eventId ? ` ${fund.eventId}` : ""}`;
+  const batchCount = F_BATCH_ACTION.exec(typeof ticket === "string" ? ticket : ticket.action)?.[1];
+  if (batchCount) return `整批调整团队参数 · ${batchCount} 项`;
   const action = typeof ticket === "string" ? ticket : ticket.operationCode === "h5_streak_milestone" ? "放宽连签里程碑奖励" : ticket.action;
   const gParam = G_PARAM_ACTION.exec(action);
   if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
@@ -703,6 +765,8 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
   if (fund?.kind === "f5Suspension") return `用户 ${fund.userId ? userCode(fund.userId) : "—"} · ${fund.kinds.length ? kindNames(fund.kinds) : "所选奖励"}`;
   if (fund?.kind === "f5Reissue") return fund.ids.length ? `${fund.ids.length} 笔奖励记录` : w.obj;
   if (fund?.kind === "f5Reverse" && fund.eventId) return `奖励记录 ${fund.eventId}`;
+  const batch = fBatchTicket(w);
+  if (batch) return `${fBatchPages(batch.items).join("、") || "团队参数"} · ${batch.count} 项`;
   if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
   return w.obj;
@@ -1590,6 +1654,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ? <>奖励记录 <span data-mono className="a2-code">{fund.ids.join("、")}</span></> : `${fund.ids.length} 笔奖励记录（记录号见下方）`;
     // 整组政策单（七层结算、好友奖励政策、首次配置等）后端写的对象是 current，不是运营要对照的编号。
     if (w.obj === "current" && !w.objDisplayName) return "当前设置";
+    // 整批申请的对象是配置键清单或摘要，运营看不懂：写涉及的页面和项数，原文进技术信息。
+    if (fBatchTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`对象原文 ${w.obj}${fBatchTicket(w)?.digest ? "（清单太长，只存了摘要）" : ""}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */
@@ -1731,8 +1797,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       detail: "要收回只能冲正，不能改回冷却中。",
       coverageLead: undefined,
       coverageUnknown: undefined,
-      coverageCheck: "普通奖励批准时先查兑付覆盖率：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。结算组的奖励不查覆盖率。",
-      facts: <>{state}<Fact k="批准时核对">普通奖励查有没有暂停、兑付覆盖率够不够<Explain label="结算组的奖励" content="属于结算组的奖励不查覆盖率，只核冷却有没有真正到期；没到期会被拒，钱不会提前流出。" /></Fact></>,
+      coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。",
+      facts: <>{state}<Fact k="批准时核对">有没有暂停、兑付覆盖率够不够<Explain label="结算组的奖励" content="属于结算组的奖励还要核冷却有没有真正到期；没到期会被拒，钱不会提前流出。" /></Fact></>,
       lead: undefined,
     };
     if (fund.state === "cooling") return {
@@ -1791,7 +1857,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return {
       briefKind,
       title: "批准审批单",
-      action: <>确认执行 · {w.id}({a2ActionText(w.action)})</>,
+      action: <>确认执行 · {w.id}({fBatchTicket(w) ? actionName(w) : a2ActionText(w.action)})</>,
       effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}谁能批准：{approvalExecutorLabel(w)}。</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
@@ -1802,7 +1868,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       content: fund?.lead ? <div className="rd-confirm-facts">{ticketFacts(w, "approve")}</div> : fund?.facts && !fund.review ? fund.extra ?? undefined : (
         <div className="rd-stack">
           {fund?.extra}
-          {isRoleGrantsTicket(w)
+          {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
+            : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
             : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} />}
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
@@ -2195,7 +2262,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
+                  const batch = fBatchTicket(w);
+                  const change = batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
+                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -2285,8 +2354,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
                       <Td><Cell main={middle(l.actor, 16)} sub={logRoleText(l.role) || undefined} title={l.actor} /></Td>
                       <Td><Cell mono={!translated} main={translated ? logActionText(l.action) : middle(l.action, 18)} title={logActionText(l.action)} /></Td>
-                      <Td><Cell main={objectCell(l.obj).main} sub={objectCell(l.obj).sub} title={l.obj} /></Td>
-                      <Td grow><Cell mono main={l.delta} title={l.delta} /></Td>
+                      <Td>{fBatchLogItems(l) ? <Cell main="整批调整的团队参数" title={l.obj} /> : <Cell main={objectCell(l.obj).main} sub={objectCell(l.obj).sub} title={l.obj} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : <Cell mono main={l.delta} title={l.delta} />}</Td>
                     </Tr>
                   );
                 })}
@@ -2422,7 +2491,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownFund = shown ? fundTicket(shown) : undefined;
   const shownCover = shown ? coverageFacts(shown) : undefined;
   const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "真实发钱，不能撤销。批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
-    : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率（结算组的奖励只核冷却到没到期），不满足就不放钱，审批单留着待审批。"
+    : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
       : shownFund?.kind === "f5Reissue" ? `真实补发，不能撤销。${shownCover?.check ?? ""}`
         : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
@@ -2487,7 +2556,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          {isRoleGrantsTicket(shown)
+          {fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
+            : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />}
           {reissueList(shown, true)}
@@ -2505,10 +2575,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
-            { label: "对象", value: shownLog.obj },
-            { label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> },
+            { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : shownLog.obj },
+            ...(fBatchLogItems(shownLog) ? [] : [{ label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
+          {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
           <Fold inset title="技术信息" summary={`请求编号 ${requestNo}`}>
             <Facts>
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
@@ -2516,6 +2587,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
               {logActionText(shownLog.action) !== shownLog.action && <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
+              {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
+              {fBatchLogItems(shownLog) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}

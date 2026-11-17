@@ -1560,7 +1560,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   NOTIFICATION_AUDIENCE_LANGUAGE_UNSUPPORTED: "受众语言不在当前支持的目录里，请重新读取并选择。",
   NOTIFICATION_AUDIENCE_REGISTRATION_DAYS_INVALID: "注册天数须为 0–36500 的整数，请核对后重新估算。",
   NOTIFICATION_BUDGET_INVALID: "预算要填 0 或正数，最多两位小数（如 12.50），也可以留空。",
-  NOTIFICATION_DELIVERY_CONFIG_INVALID: "通知类型或跳转配置无效，请重新读取目录并核对类型、目的地和按钮文字。",
+  NOTIFICATION_DELIVERY_CONFIG_INVALID: "通知类型或「点了去哪」不在可选范围里（可能已下线），请重新选择后再保存。",
   NOTIFICATION_CAMPAIGN_NOT_FOUND: "这条活动不存在或已被删除，请重新读取列表核对；已有结果未知的原操作仍须查询原结果。",
   NOTIFICATION_CRITICAL_EXECUTION_FORBIDDEN: "排期、发送和取消紧急通知需要紧急通知发送权限，请联系管理员核对授权。",
   NOTIFICATION_CURRENT_PHASE_UNAVAILABLE: "当前平台阶段暂时不可用，暂不能排期或发送；请联系配置管理员核对阶段，原操作记录继续保留。",
