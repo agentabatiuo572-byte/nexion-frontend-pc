@@ -26,7 +26,7 @@ export type FundCheckCopy = {
   missingOrigin?: string;
 };
 /** proposal：原请求是提交审批申请，查到已执行只说明审批单建成了。 */
-export type FundSettled = { key: string; label: string; status: FundCommandInvestigation["originalStatus"]; proposal?: boolean; batch?: FundCommandBatch };
+export type FundSettled = { key: string; label: string; status: FundCommandInvestigation["originalStatus"]; proposal?: boolean; proposalConclusion?: string; batch?: FundCommandBatch };
 export type FundRecoveryRow = {
   key: string;
   /** 操作和对象，一行写得下。 */
@@ -165,12 +165,12 @@ function batchSettledText(batch: FundCommandBatch) {
 }
 
 /** 查到结果、记录解除后的一句；页面用轻提示（toast）说时也用它。 */
-export function settledText(item: Pick<FundSettled, "status" | "proposal" | "batch">) {
+export function settledText(item: Pick<FundSettled, "status" | "proposal" | "proposalConclusion" | "batch">) {
   if (item.status === "CONFIRMED_REJECTED") return SETTLED_REJECTED;
   if (item.status === "CONFIRMED_NOT_EXECUTED") return "核查确认没有执行，记录已解除，可以重新发起。";
   // 核查确认的整批不看逐笔：受控结论不要求逐笔齐全，残缺的逐笔不当成这批的结果。
   if (item.batch && item.status !== "CONFIRMED_SUCCEEDED") return batchSettledText(item.batch);
-  if (item.proposal) return "审批申请已提交，记录已解除；到操作记录与审批看审批进度，不要再提交一次。";
+  if (item.proposal) return item.proposalConclusion ?? "审批申请已提交，记录已解除；到操作记录与审批看审批进度，不要再提交一次。";
   return item.status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。";
 }
 

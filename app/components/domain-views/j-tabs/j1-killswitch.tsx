@@ -18,7 +18,8 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
-import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { fProposalEndText } from "../f-tabs/f-release";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
@@ -306,6 +307,18 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         else pendingKeys.forget(record.fingerprint, record.commandKey);
         setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "input" in record ? record.input.action : record.label, status: receipt!.originalStatus, proposal: "input" in record }]);
         syncPending();
+        if ("input" in record && fundCommandResult(receipt) === "SUCCEEDED") {
+          // 建单成功已确定；进度是另一次只读查询，读不到也不能撤销记录解除的结论。
+          let ticket: A2OperationRow | null = null;
+          try { ticket = await fetchA2ProposalByKey(record.commandKey, true, "metadata"); }
+          catch { /* 没权限或读取失败时保留现成的审批进度核对指引。 */ }
+          if (ticket?.mine && ticket.operationCode === "j1_gate_resume" && ticket.obj === record.input.obj) {
+            setRestoreApprovals(rows => [...rows.filter(row => row.id !== ticket.id), ...(ticket.status === "pending" ? [ticket] : [])]);
+            const proposalConclusion = `审批单 ${ticket.id}，记录已解除。${ticket.status === "pending"
+              ? "审批单已建，在等批准；批准前不生效。" : fProposalEndText(ticket.status)}`;
+            setSettled(current => current.map(item => item.key === record.commandKey ? { ...item, proposalConclusion } : item));
+          }
+        }
         await actions.reloadJEmergency();
       }
       return receipt;
