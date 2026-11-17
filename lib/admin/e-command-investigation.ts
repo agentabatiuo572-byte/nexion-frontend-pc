@@ -86,7 +86,8 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
   // These I5 codes are candidates only: provenNotExecuted must also match the exact stored message.
   const localNonexecutionReply = scope === "I5_JURISDICTION_CREATE" && receipt.businessCode === 409
     || scope === "I5_JURISDICTION_UPDATE" && (receipt.businessCode === 404 || receipt.businessCode === 409);
-  if (local && (receipt.businessCode == null && receipt.originalStatus !== "SUCCEEDED" || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
+  // An omitted businessCode is a legacy projection, not evidence of rollback-capable receipts.
+  if (local && (receipt.businessCode === null && receipt.originalStatus !== "SUCCEEDED" || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
   if (receipt.originalStatus === "UNKNOWN") conclusions.push("STILL_UNKNOWN");
   return { conclusions, ...(conclusions.includes("SUCCEEDED") ? { success: byReceipt ? "receipt" as const : "audit" as const } : {}) };
 }
