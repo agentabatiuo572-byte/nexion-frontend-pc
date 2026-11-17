@@ -482,7 +482,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_BULK_AMOUNT_INVALID: "群发金额格式无效，请填写完整数值。",
   SUPPORT_BULK_SELECTION_DUPLICATE: "群发客户名单包含重复编号，请重新核对。",
   SUPPORT_BULK_ID_INVALID: "群发客户或批次编号无效，请从原名单重新选择。",
-  SUPPORT_COMMAND_NOT_FOUND: "尚未找到原命令回执；原结果仍需核对，请保留原操作。",
+  SUPPORT_COMMAND_NOT_FOUND: "还没查到原操作的结果，原记录继续保留，请稍后再查询原结果。",
   SUPPORT_COMMAND_AMBIGUOUS: "原操作对应多条记录，暂不能确认结果，请保留原记录核查。",
   SUPPORT_COMMAND_READ_FORBIDDEN: "当前范围读不到原操作的结果；原操作仍保留，请核对权限。",
   SUPPORT_COMMAND_RESULT_INVALID: "原操作的结果内容无法确认，请保留原记录核查。",
@@ -955,7 +955,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CREGIS_PAYOUT_RECOVERY_EVIDENCE_CONFLICT: "供应商原单与提现地址、金额或业务单号不一致，原预留保持，请核实原单。",
   CREGIS_PAYOUT_RECOVERY_QUERY_UNAVAILABLE: "供应商原单暂时无法查询，请保留原 CID 稍后重试，原预留继续保留。",
   H7_VOUCHER_NOT_GRANTABLE: "所选优惠券现在不能发放，可能还没生效、已失效或已停用。请在「团队等级晋升」核对奖励选的券，并在「代金券」核对券状态和有效期，处理后再审核原申请。",
-  SUPPORT_RECOVERY_FACTS_UNAVAILABLE: "当前授权范围内暂时无法加载用于核对的客户资料，原操作结果仍待确认；请保留原命令并查询结果，不要重复提交。",
+  SUPPORT_RECOVERY_FACTS_UNAVAILABLE: "暂时读不到用于核对的客户资料，原操作结果未知；原记录继续保留，请查询原结果，不要重复提交。",
   SUPPORT_RECOVERY_FACTS_CHANGED: "客户绑定或资料已变化，原操作结果还没核对完；请保留原记录，重新加载现在可看的资料后继续查询。",
   READ_IDENTITY_CHANGED: "本次加载已取消，或账号及查看范围已变化，旧资料不能用于确认结果；请返回当前获准范围重新加载，已提交的操作仍须查询原结果。",
   MAINTENANCE_READBACK_MISMATCH: "维护调整后的资料和这次操作对不上，结果未知；请保留原记录并查询原操作，不要重复提交。",
@@ -2463,7 +2463,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_H3_OUTBOX_REDRIVE_HASH_FAILED: "系统没能处理这次请求，没有重新排队；请联系值班人员。",
   // 「刷新页面后重新发起」是错误指引:命令号存 sessionStorage,刷新后仍是同一个,照旧撞同样的拒绝。
   // 正解是把输入恢复成首次提交的内容(即可按同键去重重试),或先核对首次提交是否已经生效。
-  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请把输入恢复为首次提交时的内容再重试，或先到操作记录核对首次提交是否已生效。",
+  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "这次的内容和原请求不一样，没有执行；请按原请求重试，或先到操作记录与审批核对原操作是否已生效。",
   // F 直写通道(佣金冲正/重发/暂停、双轨结算、V-Rank 阈值与奖励)的「结果未知」四类。
   // 这几类都意味着请求可能已被后端执行 —— 文案必须让运营先核对再决定,不能诱导他直接重做一次。
   F1_REQUEST_OUTCOME_UNKNOWN: "提交结果暂不确定，可能已经生效；请先到操作记录核对，再决定是否保留原输入重试。",
@@ -3670,7 +3670,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   INVESTIGATION_ORIGINAL_IDENTITY_INVALID: "原操作的身份信息无效，无法核查。原记录继续保留，请重新查原操作结果。",
   INVESTIGATION_REQUEST_REQUIRED: "核查内容为空，请重新填写后提交。",
   INVESTIGATION_SCOPE_UNSUPPORTED: "这类原操作尚不支持受控核查，不能结案。原记录继续保留，请到操作记录与审批核对。",
-  INVESTIGATION_EVIDENCE_OR_CONCLUSION_INVALID: "请选择核查结论，并写明 512 字以内的核查依据；审计编号须为正整数。",
+  INVESTIGATION_EVIDENCE_OR_CONCLUSION_INVALID: "请选择核查结论，并写明 512 字以内的核查依据；成功记录编号要填正整数。",
   PHONE_RISK_RECEIPT_NOT_FOUND: "没查到这次保存的结果：原请求可能没有送达，查不到不等于没有执行。原记录继续保留，24 小时内可以按原请求重试，不会重复保存。",
   PHONE_RISK_RECEIPT_LEGACY_ORIGIN_UNPROVEN: "这条保存记录查不到发起人，不能据此判断结果。原记录继续保留，请有调查权限的超级管理员核查。",
   PHONE_RISK_RECEIPT_FORBIDDEN: "只有原保存人或有调查权限的超级管理员能查看这次保存的结果。原记录继续保留，请联系原保存人或超级管理员核对。",

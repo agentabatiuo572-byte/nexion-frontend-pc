@@ -107,7 +107,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
       change: denied ? "当前无权查看原内容" : `提醒 ${pending.payload.alertMinutes} 分钟 · 兜底 ${pending.payload.fallbackMinutes} 分钟 · 默认接收组 ${groupName(pending.payload.defaultGroupId)}`,
       actions: <>
         <Button size="sm" variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原结果</Button>
-        <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving || !command.canReplay} disabledReason={!saving && !command.canReplay ? "先查询原结果；查不到回执、还在 24 小时内才能重试" : undefined} onClick={() => void command.run("replay")}>按原请求重试</Button>
+        <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving || !command.canReplay} disabledReason={!saving && !command.canReplay ? "先查询原结果；查不到原结果、还在 24 小时内才能重试" : undefined} onClick={() => void command.run("replay")}>按原请求重试</Button>
       </>,
     }]} />}
     <Panel icon={Timer} tone="role-3" title="没人接的客户" sub={policy ? `第 ${policy.version} 版` : undefined}

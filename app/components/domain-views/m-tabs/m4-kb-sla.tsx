@@ -179,7 +179,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         await readCurrent();
       }
       if (!rejected) setRecovery(mCommands.list().find((record) => record.commandKey === commandKey) ?? null);
-      const failure = `${rejected ? "后台拒绝了这次操作" : "结果未确认"} · ${displayAdminError(error)}`;
+      const failure = `${rejected ? "后台拒绝了这次操作" : "结果未知"} · ${displayAdminError(error)}`;
       if (onFailure && (!rejected || !original)) onFailure(failure); else toast(failure, rejected ? "error" : "warn");
       return false;
     } finally {
@@ -529,7 +529,7 @@ function FaqModal({
   const blocking = Boolean(errors.question || errors.answer || errors.sort || errors.reason);
   const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
   const live = row?.status === "published" || status === "published";
-  const unknown = failure.startsWith("结果未确认");
+  const unknown = failure.startsWith("结果未知");
   // 英语问答改成别的语言保存，后端会清掉附带的翻译（OpsSupportKnowledgeService.updateFaq）。
   const translationCount = row?.language === "en-US" && language !== "en-US" ? Object.keys(row.translations ?? {}).length : 0;
   const dirty = question !== (row?.question ?? "") || answer !== (row?.answer ?? "") || reason !== "" || category !== (row?.category ?? "general")

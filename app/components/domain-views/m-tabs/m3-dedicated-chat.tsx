@@ -1634,7 +1634,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   </>;
 
   return <>
-    {holdEndRelease && <ReleaseModal label="结束会话" explain="先看这位客户是不是还在接待中再解除；重试被拒不等于原来那次没结束。解除不发请求，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
+    {holdEndRelease && <ReleaseModal label="结束会话" explain="先看这位客户是不是还在接待中再解除；重试被拒不等于原来那次没结束。确认后会重新读取这次接待的状态，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
       setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdEndRelease.customerId) ?? null : previous);
       setHoldEndCommands(readSessionEndRecords(adminId, holdEndRelease.customerId));

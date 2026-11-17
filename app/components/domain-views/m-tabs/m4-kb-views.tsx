@@ -166,7 +166,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
   onConfirm: () => void;
 }) {
   const publish = faq.status === "draft";
-  const unknown = failure.startsWith("结果未确认");
+  const unknown = failure.startsWith("结果未知");
   const action = publish ? "发布" : "下架";
   return (
     <Modal title={publish ? "发布这条问答" : "下架这条问答"} icon={publish ? Upload : Archive}
