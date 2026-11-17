@@ -26,6 +26,7 @@ export type ECommandInvestigation = {
   newOperationAllowed: boolean;
   businessCode?: number | null;
   businessState?: ECommandBusinessState;
+  localTransactionRollbackConfirmed?: boolean;
   batch?: ECommandBatch | null;
   investigation: {
     id: number; conclusion: "SUCCEEDED" | "NOT_EXECUTED" | "STILL_UNKNOWN" | "REJECTED";
@@ -44,7 +45,7 @@ export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCES
 export type ECommandClosureOffer = { conclusions: ECommandEvidence["conclusion"][]; success?: "receipt" | "audit" };
 
 /**
- * Conclusions that may be REQUESTED, not promises of acceptance (origin/test db970a77).
+ * Conclusions that may be REQUESTED, not promises of acceptance (origin/test e2297ac9).
  * Mirrors AdminCommandOrigin.localConfiguration and InvestigationService.allowedFact/investigate.
  * Rollback markers, the original response and audit bindings remain server-owned evidence.
  * A missing/failed lookup supplies no identity to investigate; known results keep the existing 24h gate.
@@ -86,8 +87,12 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
   // These I5 codes are candidates only: provenNotExecuted must also match the exact stored message.
   const localNonexecutionReply = scope === "I5_JURISDICTION_CREATE" && receipt.businessCode === 409
     || scope === "I5_JURISDICTION_UPDATE" && (receipt.businessCode === 404 || receipt.businessCode === 409);
-  // An omitted businessCode is a legacy projection, not evidence of rollback-capable receipts.
-  if (local && (receipt.businessCode === null && receipt.originalStatus !== "SUCCEEDED" || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
+  // The new flag proves only response-free local rollback; I5 has separate nonexecution replies.
+  // Without the flag, preserve the previous candidates, including the explicit null-code gate.
+  const rollback = receipt.localTransactionRollbackConfirmed === undefined
+    ? receipt.businessCode === null && receipt.originalStatus !== "SUCCEEDED"
+    : receipt.localTransactionRollbackConfirmed;
+  if (local && (rollback || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
   if (receipt.originalStatus === "UNKNOWN") conclusions.push("STILL_UNKNOWN");
   return { conclusions, ...(conclusions.includes("SUCCEEDED") ? { success: byReceipt ? "receipt" as const : "audit" as const } : {}) };
 }
@@ -325,6 +330,8 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     || row.newOperationAllowed !== (row.originalStatus === "CONFIRMED_NOT_EXECUTED")) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   if (row.businessCode !== undefined && row.businessCode !== null
     && (!Number.isInteger(row.businessCode) || Number(row.businessCode) < -2147483648 || Number(row.businessCode) > 2147483647)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  if (row.localTransactionRollbackConfirmed !== undefined && typeof row.localTransactionRollbackConfirmed !== "boolean")
+    throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   if (row.businessState !== undefined) {
     if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
       || row.businessCode === undefined
