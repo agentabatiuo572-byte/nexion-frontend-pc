@@ -1795,7 +1795,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H1_CURRENT_MONTH_INVALID: "当前运营月份无效或超过总月数，本次未结算；请在运营阶段设置核对。",
   H1_PHASE_MISSING: "当前运营阶段尚未配置，本次未结算；请在运营阶段设置核对。",
   H1_BINARY_DAILY_CAP_MISSING: "当前运营月的团队平衡奖励每日上限尚未配置，本次未结算；请在运营阶段设置核对。",
-  H1_BINARY_DAILY_CAP_INVALID: "当前运营月的团队平衡奖励上限无效，本次未结算；请核对正数金额及最多六位小数。",
+  H1_BINARY_DAILY_CAP_INVALID: "团队平衡奖励每日上限要大于 0、不超过 50,000 USD，最多六位小数；上限无效时这项奖励不结算。",
   H1_GROWTH_RHYTHM_UNAVAILABLE: "运营月份、阶段与上限快照不一致，本次未结算；请联系值班人员核对运营阶段设置。",
   F3_SETTLEMENT_PROPOSAL_INVALID: "手动结算的邀请人编号或日期不符合要求，请核对后重新提交审批。",
   F_CONFIG_BATCH_INVALID: "批量修改内容不符合要求，本次未保存；请核对整批设置后重新提交。",

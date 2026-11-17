@@ -12,6 +12,7 @@ import Link from "next/link";
 import {
   CalendarRange,
   ChartNoAxesCombined,
+  CircleSlash,
   Clock3,
   Flag,
   GitBranch,
@@ -131,7 +132,7 @@ const DIALS = [
     unit: "USD",
     ...H1_DIAL_LIMITS.binaryDailyCap,
     what: "每日团队平衡奖励的封顶额",
-    effect: "调高是放大，要审批；可以设成 0。"
+    effect: "调高是放大，要审批；每天最多发这么多，要大于 0。"
   },
   {
     key: "questBonusMultiplier",
@@ -151,6 +152,10 @@ const DIALS = [
   },
 ] as const;
 type Dial = typeof DIALS[number];
+/** B4-BE-05（48780d3e）：每日上限新保存要大于 0；以前存的 0 照常读出。 */
+const CAP_RANGE = "要大于 0、不超过 50,000 USD，最多六位小数";
+const CAP_ZERO = "这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。";
+const capZero = (row: { dials: Record<string, unknown> }) => row.dials.binaryDailyCap != null && text(row.dials.binaryDailyCap) !== "—" && Number(row.dials.binaryDailyCap) === 0;
 const SECTIONS = [{
   id: "arrangement",
   label: "总体安排"
@@ -667,6 +672,7 @@ export default function H1Phase({ ctx,
       confirmLabel: "确认修改",
       facts: (value) => <Facts>
         <Fact k="月份">第 {row.month} 月{row.month === rhythm?.currentMonth ? "（当前月）" : "（其他月份）"}</Fact>
+        {capZero(row) && dial.key === "binaryDailyCap" && <Fact k="现在存的" tone="warn">{CAP_ZERO}</Fact>}
         {value && !h1DialIssue(dial.key, value) && value !== before && Number(value) !== Number(before) && !amplifies(dial.key, before, value) && <Fact k="修改方向"><StatusTag tone="neutral" icon={LockKeyhole}>收紧 · 确认后直接保存</StatusTag></Fact>}
         <Fact k="生效方式">{value && amplifies(dial.key,
           before,
@@ -704,7 +710,7 @@ export default function H1Phase({ ctx,
         unit: dial.unit,
         options: ["否",
           "是"],
-        min: dial.min,
+        min: dial.key === "binaryDailyCap" ? 0.000001 : dial.min,
         max: dial.max,
         step: dial.key === "withdrawCooldownDays" ? 1 : 0.000001,
         maxDecimals: dial.key === "withdrawCooldownDays" ? 0 : 6,
@@ -712,9 +718,9 @@ export default function H1Phase({ ctx,
         amplifiesWhen: (value) => amplifies(dial.key,
           before,
           value),
-        validate: (value) => h1DialIssue(dial.key,
+        validate: (value) => dial.key === "binaryDailyCap" && h1DialIssue(dial.key, value) ? CAP_RANGE : h1DialIssue(dial.key,
           value),
-        hint: dial.key === "complianceHoldEnabled" ? "选否或是" : `${dial.min}–${dial.max.toLocaleString()} ${dial.unit}${dial.key === "withdrawCooldownDays" ? "，整数" : "，最多六位小数"}`,
+        hint: dial.key === "complianceHoldEnabled" ? "选否或是" : dial.key === "binaryDailyCap" ? CAP_RANGE : `${dial.min}–${dial.max.toLocaleString()} ${dial.unit}${dial.key === "withdrawCooldownDays" ? "，整数" : "，最多六位小数"}`,
         preview: (value) => dial.key === "complianceHoldEnabled" ? value === "是" ? "本次收紧：USDT 三个网络的提现每笔人工审查，本金超过 1,000 USDT 的还要等到账审查窗口。" : "本次放大：不再强制每笔人工审查和等待，也不保证自动通过。" : `${amplifies(dial.key, before, value) ? "本次放大" : "本次收紧"}：${dial.effect.replace(/^(调高是放大，要审批；|调低是放大，要审批。)/, "")}`
       },
       run: async (reason,
@@ -1031,8 +1037,9 @@ export default function H1Phase({ ctx,
                     </span>
                   </Td>{DIALS.map((dial) => {
                     const raw = text(row.dials[dial.key]); const changed = index > 0 && row.dials[dial.key] != null && rows[index - 1].dials[dial.key] != null && raw !== text(rows[index - 1].dials[dial.key]) && (dial.key === "complianceHoldEnabled" || Number(raw) !== Number(rows[index - 1].dials[dial.key]));
+                    const zero = dial.key === "binaryDailyCap" && capZero(row);
                     return <Td key={dial.key} align="right">
-                      <span className="h1-dial-cell">{changed && <span className="h1-dial-change" title="和上个月不同" aria-label="和上个月不同">•</span>}{canWrite ? <Button size="sm" variant="ghost" className="h1-value-button" title={`完整值 ${raw}`} aria-label={`第 ${row.month} 月 ${dial.label}，当前 ${raw}${dial.unit ? ` ${dial.unit}` : ""}，修改`} disabledReason={scopeBlock(`dial:${row.month}:${dial.key}`)} onClick={() => openDial(row,
+                      <span className="h1-dial-cell">{changed && <span className="h1-dial-change" title="和上个月不同" aria-label="和上个月不同">•</span>}{zero && <StatusTag tone="warn" icon={CircleSlash} explain={CAP_ZERO}>以前存的</StatusTag>}{canWrite ? <Button size="sm" variant="ghost" className="h1-value-button" title={`完整值 ${raw}`} aria-label={`第 ${row.month} 月 ${dial.label}，当前 ${raw}${dial.unit ? ` ${dial.unit}` : ""}，修改`} disabledReason={scopeBlock(`dial:${row.month}:${dial.key}`)} onClick={() => openDial(row,
                         dial)}>{dial.key === "complianceHoldEnabled" ? raw : format(row.dials[dial.key],
                           precision[dial.key])}</Button> : <span title={`完整值 ${raw}`}>{dial.key === "complianceHoldEnabled" ? raw : format(row.dials[dial.key],
                             precision[dial.key])}</span>}</span>
