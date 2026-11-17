@@ -1109,7 +1109,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: "稍后再查，执行完之前不要重试。" };
     const closure = canCloseRetention ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
     if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: expired ? `系统记录这次失败了；${closure}`
-      : canRetry ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : "系统记录这次失败了；请有操作权限的人按原请求重试。" };
+      : canRetry ? "系统记录这次失败了；按原请求重试不会重复清理，已做成的直接拿回结果。" : "系统记录这次失败了；请有操作权限的人按原请求重试。" };
     if (receiptRejected(receipt)) return { ...rejectedStatus({ expired, canRetry, canClose: canCloseRetention }), more: receiptExplain(receipt) };
     // 后台只记「已处理」，看不出这次删没删（包括有别的清理在进行、一条没删）：记录保留，靠按原请求重试或核查结案确认。
     if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", label: "已处理", more: receiptExplain(receipt), line: !expired
@@ -1421,16 +1421,16 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   );
 
   /* ── 投递与死信 ── */
-  const redriveBlocked = !canRedriveH3Dead ? "你没有重新排队任务事件的权限（要有事件修改和操作审批的写权限）" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined;
+  const redriveBlocked = !canRedriveH3Dead ? "你只能查询；重新排队要有事件修改和操作审批的写权限" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined;
   const redrivePreviewBlocked = canReadOutbox || canRedriveH3Dead
     ? loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined
-    : redriveBlocked;
+    : "当前账号不能查询或重新排队任务事件";
   const deliveryTab = (
     <>
       <A4OutboxDiagnostics state={outbox} describe={(eventType) => eventDesc(overview, eventType)} canOpenUser={reach("/users/search", "user_c1hub_read")} />
       <A4DeadLetterSummary canRead={canReadOutbox} />
       <Panel title="重新排队一条任务事件" icon={RotateCcw} tone="role-2" sub="每次一条 · 只限 5 种周任务事件"
-        explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到原事件和任务处理都已终止，就能把它重新排队一次。</p><p>各类有多少条死信看上方「周任务死信」，这里按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
+        explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查它卡在哪一步；原事件和任务处理都已终止时，有修改权限的人可以把它重新排队一次。</p><p>各类有多少条死信看上方「周任务死信」，这里按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
         <FilterBar onSubmit={() => void previewH3DeadEvent()} querying={redrivePreviewing}
           notice={redrivePreviewError ? `查询失败：${redrivePreviewError}` : undefined}
           action={<Button variant="primary" disabledReason={redrivePreviewBlocked ?? (redrivePreviewing ? "正在查询" : undefined)} loading={redrivePreviewing} onClick={() => void previewH3DeadEvent()}>查询</Button>}>
@@ -1465,7 +1465,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 </li>
               </ol>
               <div className="rd-toolbar" data-end="">
-                <span className="rd-toolbar-note">只放回发送队列，不改内容</span>
+                <span className="rd-toolbar-note">{canRedriveH3Dead ? "只放回发送队列，不改内容" : "你只能查询，重新排队请有修改权限的同事操作"}</span>
                 <Button variant="primary" icon={<RotateCcw size={14} aria-hidden />}
                   disabledReason={redriveBlocked ?? (redrivePreview.status !== "DEAD" || redrivePreview.deliveryStatus !== "DEAD" ? "原事件和任务处理都已终止才能重新排队" : undefined)}
                   onClick={() => redriveAuditedH3DeadEvent()}>重新排队</Button>
