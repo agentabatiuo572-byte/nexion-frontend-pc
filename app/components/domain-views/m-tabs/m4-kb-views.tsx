@@ -7,7 +7,8 @@
 import { useState, type ReactNode } from "react";
 import { Bot, BookOpenText, CheckCircle2, CircleHelp, EyeOff, FilePen, Headset, Pencil, Smartphone, Trash2, Upload, Archive } from "lucide-react";
 import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav, type StateTone } from "@/app/components/rd";
-import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS } from "../recovery-panel";
+import { OPEN_RESULT_LABELS } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { SupportFaq } from "./data";

@@ -23,7 +23,8 @@ import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictVie
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
+import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";

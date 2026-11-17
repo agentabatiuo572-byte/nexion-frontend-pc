@@ -32,8 +32,8 @@ import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECo
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem, CLOSURE_KEPT_TEXT } from "../recovery-panel";
-import { RECOVERY_LINE } from "../e-tabs/e-command-check";
+import { OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
 type ContentCall =
@@ -468,7 +468,8 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
   const statusOf = (record: I5Pending, expired: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
     const outcome = outcomes[record.commandKey];
-    if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: RECOVERY_LINE.refused };
+    // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
+    if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: "重试被明确拒绝；核对原因后可以解除。" };
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
       line: expired ? "超过 24 小时不能再重试，先查询原结果。" : canQuery ? "可能已经提交，先查询原结果。" : "可能已经提交，这个账号查不了原结果，到操作记录与审批核对。" };
     const shown = fundRecoveryStatus({ outcome, expired, canRetry: !expired, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });

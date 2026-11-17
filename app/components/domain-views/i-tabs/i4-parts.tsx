@@ -10,7 +10,7 @@ import { useState, type ReactNode } from "react";
 import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store, Users, type LucideIcon } from "lucide-react";
 import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { DIRECT_RECOVERY_INTRO } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
 import { APP_FIELD_LIMIT, i4AppFieldIssue, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
 

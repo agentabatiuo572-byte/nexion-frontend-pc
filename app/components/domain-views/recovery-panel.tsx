@@ -80,15 +80,6 @@ export function closureLine(offer: ClosureOffer, receipt: ECommandInvestigation 
   return undefined;
 }
 
-/**
- * 直接生效的操作（不走审批）结果未知时，面板问号里的一段：H9、I3、I4、I5、I6 和课程、M4 共用。
- * 过了 24 小时不能重试，还没结论的由有调查权限的超级管理员核查结案（eCommandClosureRequests 给得出结论时才有按钮）。
- */
-export const DIRECT_RECOVERY_INTRO = "提交时没收到确定结果，可能已经生效。先「查询原结果」；24 小时内可以「按原请求重试」，不会重复执行。过了 24 小时还没结论的，由有调查权限的超级管理员核查结案。";
-
-/** 核查结案提交了、后台没有了结这条（例如记为「仍未知」）时的轻提示：框关上了，记录还在。 */
-export const CLOSURE_KEPT_TEXT = "核查结论已记录，这条还没了结，记录继续保留。";
-
 /** 查到了结果、记录还留着（还要重试或核查结案）的几档：标题里叫「还没结案」，不算结果未知。 */
 export const OPEN_RESULT_LABELS = ["后台拒绝", "已处理", "记为失败"];
 

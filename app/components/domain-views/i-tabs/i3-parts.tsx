@@ -9,7 +9,8 @@ import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, C
 import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
 import { businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
-import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS } from "../recovery-panel";
+import { OPEN_RESULT_LABELS } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
 
 export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
   kind: string;
