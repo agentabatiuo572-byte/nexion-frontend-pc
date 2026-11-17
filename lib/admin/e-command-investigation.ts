@@ -325,7 +325,9 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     || row.commandKey !== locator.commandKey || row.originalMethod !== locator.originalMethod || row.originalPath !== locator.originalPath
     || !Number.isSafeInteger(row.originalAdminId) || Number(row.originalAdminId) < 1
     || String(row.originalAdminId) !== locator.originalAdminId
-    || typeof row.requestHash !== "string" || !(/^[a-fA-F0-9]{64}$/.test(row.requestHash)
+    // Writers store SHA-256 or nameUUIDFromBytes (UUID v3); A3 experience retains its legacy hashCode.
+    // The digest is server-owned metadata, not a replacement for the exact locator/scope checks above.
+    || typeof row.requestHash !== "string" || !(/^(?:[a-fA-F0-9]{64}|[0-9a-f]{8}-[0-9a-f]{4}-3[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(row.requestHash)
       || row.scope === "A3_PLATFORM_EXPERIENCE" && /^[0-9a-f]{1,8}$/.test(row.requestHash))
     || row.originalTarget !== null && typeof row.originalTarget !== "string"
     || row.originalTargets !== null && typeof row.originalTargets !== "string"
