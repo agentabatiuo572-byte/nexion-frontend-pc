@@ -608,6 +608,17 @@ export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvi
 }
 
 async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {
+  // 82fd6cb2 validates the stored delivery at execution; never apply this to original retries.
+  if (snapshot && /\/(schedule|send-now)$/.test(path)) {
+    const kind = snapshot.kind.trim().toLowerCase() || "system";
+    const href = snapshot.ctaHref.trim(), label = snapshot.ctaLabel.trim();
+    if (!["system", "commission", "team", "staking", "market", "genesis"].includes(kind)
+      || label.length > 64 || !["", "/pages/me/wallet-repurchase", "/pages/team/team", "/pages/market/market", "/pages/genesis/marketplace"].includes(href)
+      || href !== "" && label === "") {
+      throw Object.assign(new Error(formatAdminApiError("NOTIFICATION_DELIVERY_CONFIG_INVALID", "CONTENT_API_422")),
+        { status: 422, reasonCode: "NOTIFICATION_DELIVERY_CONFIG_INVALID" });
+    }
+  }
   const owner = useAdminAuth.getState().session?.adminId;
   if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
