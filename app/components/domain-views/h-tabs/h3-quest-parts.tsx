@@ -230,7 +230,7 @@ export function TaskStatusTag({ task }: { task: QuestTask }) {
     ? "已停用：质押类每周任务已下线，不能再启用；改名称、奖励和归档照常。已经发给用户的那一份照旧。"
     : "已停用：之后注册和之后发布的每周任务里没有它；已经发给用户的那一份照旧。新建的任务也是这个状态。"}>已停用</StatusTag>;
   if (status === "archived") return <StatusTag tone="done" icon={Archive} explain="已归档：不能再启用，名称、类别和文字不能改；奖励仍可维护。归档后才能删除。">已归档</StatusTag>;
-  return <StatusTag tone="warn" icon={CircleAlert} explain="后端返回了这页不认识的状态，请联系后端核对。">状态未知</StatusTag>;
+  return <StatusTag tone="warn" icon={CircleAlert} explain="系统给的状态这页不认识，请联系值班人员核对。">状态未知</StatusTag>;
 }
 
 export function unknownTag(kind: "direct" | "approval") {

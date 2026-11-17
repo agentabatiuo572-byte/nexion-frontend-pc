@@ -1069,7 +1069,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <Conclusion state={conclusionState} icon={conclusionState === "warn" ? CircleAlert : undefined}
       explain={<>
         <p>启用中按任务的状态数，只算新手任务和每周任务；历史月度挑战不算。</p>
-        <p>「做不完」是已启用、但后端判定还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
+        <p>「做不完」是已启用、但还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
         {active.length === 0 && <p>没有启用的任务时，已发出的那一份不变；之后注册的用户、之后发布的每周任务都不会有新任务。</p>}
         <p>等批准的修改和新建任务，打开这页的人都看得到，对应项会锁住。</p>
         <p>结果未知只记在提交它的浏览器标签页里。</p>
@@ -1090,7 +1090,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         explain="新手任务和每周任务里状态是已启用的。已启用的才会发给之后注册的用户和之后发布的每周任务。" />
       <Stat tone={stuck.length ? "warn" : "role-other"} icon={CircleAlert} label="用户做不完的任务" value={String(stuck.length)} unit="个"
         sub={`另有 ${all.filter((task) => taskStatusOf(task) === "paused" && taskUnbound(task)).length} 个停用的还没绑定`}
-        explain="已启用、但没有启用的完成条件的任务。停用的任务启用前要先绑定，后端会拦。" />
+        explain="已启用、但没有启用的完成条件的任务。停用的任务启用前要先绑定，没绑定时启用会被拒绝。" />
       <Stat tone="role-4" icon={Sparkles} label="任务加成（运营阶段设置）" value={h1Value ?? "—"} unit={h1Value ? "倍" : undefined}
         sub={currentPhase ? `现在是 ${currentPhase} · 只读` : "当前阶段没读到"} href={canPhase ? "/growth/phase" : undefined} openLabel="去运营阶段设置"
         explain="新手任务和每周任务的奖励都乘它，在「运营阶段设置」改。新手任务在用户注册时、每周任务在发布时定下倍数，之后改不影响已发出的。" />
@@ -1100,8 +1100,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       }} /> : <Stat tone="role-other" icon={History} label="经营统计" value="—"
         sub="领取率 · 本周完成和发放 · 月度人数"
         explain={<>
-          <p>新手任务奖励领取率（全额、宽限）、本周完成（一档、二档）、本周发放 UVT、正在做月度挑战的人数：后端现在只给任务定义的数量，这几项没有数。</p>
-          <p>显示「—」，不是 0，也不代表没有人。已提后端补统计。</p>
+          <p>新手任务奖励领取率（全额、宽限）、本周完成（一档、二档）、本周发放 UVT、正在做月度挑战的人数：这几项数据现在没有。</p>
+          <p>显示「—」，不是 0，也不代表没有人。</p>
         </>} />}
     </StatBand>
   );
@@ -1180,7 +1180,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       statedBrief: { impact: "只改之后发布的每周任务的基础奖励，不即时发钱。", check: "核对新奖励；调高写清预算依据。" },
       confirmLabelForValue: (value) => directionOf(current, value ?? null) === "up" ? "提交审批" : "确认修改",
       coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
-      coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
+      coverageCheck: "提交审批时和批准时各检查一次兑付覆盖率；低于红线会被拒绝。",
       hint: "0–100,000 的整数",
     });
   };
@@ -1251,7 +1251,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 return !tri || (next && (Number(next.full) > Number(tri.full) || Number(next.grace) > Number(tri.grace))) ? "提交审批" : "确认修改";
               },
               coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
-              coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
+              coverageCheck: "提交审批时和批准时各检查一次兑付覆盖率；低于红线会被拒绝。",
               hint: "格式：全额 / 宽限 / 0 UVT，例如 100 / 50 / 0 UVT",
             }, <>全额、宽限、过期三档一起改。</>))}>调整</Button> : undefined} />
           <ConfigRow name="完成期限" value={eligibility ? `注册后 ${eligibility} 小时` : "—"}
@@ -1322,7 +1322,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       statedBrief: { impact: "只改之后发布的每周任务的阶段倍率；和运营阶段设置的任务加成相乘。", check: "填 0.1–5，最多 6 位小数。" },
       confirmLabelForValue: (value) => current == null || directionOf(current, decimalOf(value ?? null)) === "up" ? "提交审批" : "确认修改",
       coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
-      coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
+      coverageCheck: "提交审批时和批准时各检查一次兑付覆盖率；低于红线会被拒绝。",
       hint: "0.1–5，例如 1.2",
     }))}>调整</Button>;
   } : undefined;
@@ -1342,7 +1342,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           </>} />
         </div>
         {multipliers.length === 0
-          ? <p className="h3-empty-line">后端没有返回每周阶段倍率，算不出每周奖励。</p>
+          ? <p className="h3-empty-line">每周阶段倍率现在没有，算不出每周奖励。</p>
           : <PhaseStrip items={multipliers} currentPhase={currentPhase} action={multAction} mark={(phase) => lockTag(`weekly.mult.${phase}`)} />}
         {multipliers.some((item) => backendLock(`weekly.mult.${cleanPhaseKey(item.p)}`)) && <div className="h3-pending-lines">
           {multipliers.map((item) => cleanPhaseKey(item.p)).filter((phase) => backendLock(`weekly.mult.${phase}`))
@@ -1542,17 +1542,17 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <Fold title="数据口径（只读）" icon={Route} tone="role-other" summary={`任务定义 ${monitor.length} 类 · 新手任务 ${dayOne.length} 条`}
       explain="给核对报表的同事看：任务定义的数量，以及新手任务的完成记录口径。这些不是完成人数或发奖数。">
       <div className="h3-contract">
-        <div className="h3-sub-head"><h3>任务定义数量</h3><Explain label="任务定义数量怎么算" content="按任务类型数后台里的任务定义（含已停用、已归档），不是完成或领取人数。读取异常时后端会返回空，空不代表 0 个。" /></div>
+        <div className="h3-sub-head"><h3>任务定义数量</h3><Explain label="任务定义数量怎么算" content="按任务类型数后台里的任务定义（含已停用、已归档），不是完成或领取人数。读取异常时这里是空的，空不代表 0 个。" /></div>
         {monitor.length === 0
-          ? <p className="h3-empty-line">后端没有返回，不能据此判断有 0 个。</p>
+          ? <p className="h3-empty-line">暂时读不到，不能据此判断有 0 个。</p>
           : <dl className="h3-monitor">{monitor.map((item) => <div key={item.label}><dt>{TYPE_LABEL[item.label] ?? operatorCopyText(item.label)}</dt><dd>{operatorCopyText(item.note).replace(/\s*来自\s*nx_\w+/, "")}</dd></div>)}</dl>}
         <div className="h3-sub-head"><h3>新手任务的完成记录口径</h3><Explain label="口径怎么算" content={completedBasis ? <>
           <p>「过去 24 小时完成」：过去 24 小时里做完的任务记录（含待领取、已领取），一条只算一次，不是人数。</p>
           <p>「新建记录的异常占比」：过去 24 小时新建的记录里失败、异常、被拒的占比，和完成的不是同一批；算到 1 位小数，没有记录时是「—」。</p>
-          <p>转化和留存是默认设置，后端没有实际归因的数，不能当成已计入的结果。</p>
+          <p>转化和留存是默认设置，实际归因的数现在没有，不能当成已计入的结果。</p>
         </> : <>
           <p>「过去一天新建的任务记录」是过去 24 小时新建的用户任务记录数，不管做没做完，不是完成数。</p>
-          <p>「异常占比」是同一段时间里失败、异常、被拒的记录占比，后端算到 1 位小数；没有记录时是「—」。</p>
+          <p>「异常占比」是同一段时间里失败、异常、被拒的记录占比，算到 1 位小数；没有记录时是「—」。</p>
           <p>转化和留存是默认设置，不能据此认定发奖和报表数字一致。</p>
         </>} /></div>
         {dayOne.length === 0
@@ -1568,8 +1568,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   <Td><Cell main={<span data-mono="">{text(contract.missionCode ?? contract.serverEvent, "—")}</span>} /></Td>
                   <Td align="right"><Cell num main={sample == null || sample === "" ? "—" : numericValue(sample).toLocaleString("en-US")} /></Td>
                   <Td align="right"><Cell num main={text(contract.anomalyPct, "—")} /></Td>
-                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} main={`默认：${boolValue(contract.b3Default === undefined ? contract.b3 : contract.b3Default) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnlyDefault === undefined ? contract.retentionOnly : contract.retentionOnlyDefault) ? "仅留存" : "不只算留存"}`}
-                    sub={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} /></Td>
+                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表项 ${text(contract.bi, "—")}`} main={`默认：${boolValue(contract.b3Default === undefined ? contract.b3 : contract.b3Default) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnlyDefault === undefined ? contract.retentionOnly : contract.retentionOnlyDefault) ? "仅留存" : "不只算留存"}`}
+                    sub={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表项 ${text(contract.bi, "—")}`} /></Td>
                 </Tr>;
               })}
             </tbody>
