@@ -140,6 +140,11 @@ function targetGap(k: Kpi) {
   return gap === 0 ? "等于目标" : gap > 0 ? `好于目标 ${size}` : `差 ${size}`;
 }
 
+/** 按注册批次看时图上最后一个有数值的批次：表里「最近一批」和「距目标」都用它，和图上最后一个点是同一个数。 */
+const lastPoint = (k: Kpi) => k.points ? [...k.points].reverse().find((point) => point.value !== null) : undefined;
+/** 这一批是哪一批、是否不完整或暂定，写在数值下面。 */
+const pointNote = (point: L1CohortPoint) => [point.bucketKey, point.partial ? "不完整" : "", isPartial(point) ? "暂定" : ""].filter(Boolean).join(" · ");
+
 /** 后端才知道的范围先在这里查（ST-19）：起止差不超过 400 天，不含未来日期。 */
 function customRangeProblem(from: string, to: string) {
   const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
@@ -800,7 +805,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             <Table label="选择要查看的关键指标" rowFocus data-tight={showTrendColumn ? "" : undefined}>
               <thead><tr>
                 <Th>指标</Th>
-                <Th align="right">当前值</Th>
+                <Th align="right">{grouped ? <>汇总<Explain label="汇总怎么算" content="所选范围内注册的全部用户合起来算一个数，不是最近一批。各批次的数在明细的「各批次」里。" /></> : "当前值"}</Th>
                 <Th align="right">目标</Th>
                 {showTrendColumn && <Th>趋势</Th>}
                 <Th>状态</Th>
@@ -851,13 +856,13 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             <div className="rd-stack">
               {k.available && (
                 <ThresholdMeter
-                  label="当前值和目标"
-                  rows={[{ key: "now", label: "当前", value: k.value!, text: `${k.value}${unitText(k)}`, tone: STATE_TONE[kState] }]}
+                  label={grouped ? "汇总和目标" : "当前值和目标"}
+                  rows={[{ key: "now", label: grouped ? "汇总" : "当前", value: k.value!, text: `${k.value}${unitText(k)}`, tone: STATE_TONE[kState] }]}
                   marks={goalMarks}
                 />
               )}
               <Facts>
-                {!k.available && <Fact k="当前值">—</Fact>}
+                {!k.available && <Fact k={grouped ? "汇总" : "当前值"}>—</Fact>}
                 {!k.available && <Fact k="目标值">{tgtShort(k)}</Fact>}
                 {k.available && <Fact k="分子">{ext.num}</Fact>}
                 {k.available && <Fact k="分母">{ext.den}</Fact>}
@@ -882,7 +887,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                       />
                       {partialEdges.length > 0 && <p className="rd-note">{partialEdges.map((point) => point.bucketKey).join("、")} 不完整：只含所选范围内注册的用户。</p>}
                     </Panel>
-                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的当前值。` : points.length === 0 ? "这个范围没有注册批次。" : allZero(k.spark) ? "有数值的批次都是 0，没有走势可画。" : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
+                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的汇总。` : points.length === 0 ? "这个范围没有注册批次。" : allZero(k.spark) ? "有数值的批次都是 0，没有走势可画。" : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
               {points.length > 0 && kState !== "inapp" && (
                 <Fold inset title="各批次" summary={`${points.length} 批 · ${points.filter((point) => point.value !== null).length} 批有数值`}>
                   <div className="rd-stack">
@@ -940,16 +945,22 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 marks={[{ key: "target", text: "100 = 等于目标", value: 100, tone: "ok" }]}
                 event={phaseEvent}
               />}>
-                <Table label="对比指标的最新值">
-                  <thead><tr><Th>指标</Th><Th align="right">最新</Th><Th align="right">距目标</Th></tr></thead>
+                <Table label={grouped ? "对比指标的最近一批" : "对比指标的最新值"}>
+                  <thead><tr><Th>指标</Th><Th align="right">{grouped ? <>最近一批<Explain label="最近一批是哪一批" content="图上最后一个有数值的注册批次，和图上最后一个点是同一个数；距目标也按它算。整个范围的汇总在上面「八项指标」。" /></> : "最新"}</Th><Th align="right">距目标</Th></tr></thead>
                   <tbody>
-                    {drawable.map(({ item, slot }) => (
-                      <Tr key={item.n}>
-                        <Td><span className="rd-chart-swatch" data-slot={slot} />#{item.n} {operatorCopyText(item.name)}</Td>
-                        <Td align="right"><Cell num main={item.value == null ? "—" : `${item.value}${unitText(item)}`} /></Td>
-                        <Td align="right"><Cell num main={targetGap(item)} /></Td>
-                      </Tr>
-                    ))}
+                    {drawable.map(({ item, slot }) => {
+                      const last = lastPoint(item);
+                      const shown = item.points ? last ? { ...item, value: last.value } : null : item;
+                      return (
+                        <Tr key={item.n}>
+                          <Td><span className="rd-chart-swatch" data-slot={slot} />#{item.n} {operatorCopyText(item.name)}</Td>
+                          <Td align="right">{shown
+                            ? <Cell num main={shown.value == null ? "—" : `${shown.value}${unitText(item)}`} sub={last ? pointNote(last) : undefined} />
+                            : <StatusTag tone="done">{stateText(pointStatus(item, item.points![item.points!.length - 1], ylOffset), item)}</StatusTag>}</Td>
+                          <Td align="right"><Cell num main={shown ? targetGap(shown) : "—"} /></Td>
+                        </Tr>
+                      );
+                    })}
                   </tbody>
                 </Table>
               </Figure>
@@ -965,7 +976,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   event={phaseEvent}
                 />}>
                   <Facts>
-                    <Fact k="最新">{item.value == null ? "—" : `${item.value}${unitText(item)}`}</Fact>
+                    {item.points
+                      ? (() => { const last = lastPoint(item); return <Fact k="最近一批">{last ? `${last.value}${unitText(item)}（${pointNote(last)}）` : stateText(pointStatus(item, item.points[item.points.length - 1], ylOffset), item)}</Fact>; })()
+                      : <Fact k="最新">{item.value == null ? "—" : `${item.value}${unitText(item)}`}</Fact>}
                     <Fact k="健康带">{tgtShort(item)}</Fact>
                   </Facts>
                 </Figure>
