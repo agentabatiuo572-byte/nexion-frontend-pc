@@ -81,7 +81,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon: LucideIcon 
 };
 const UNKNOWN_STATUS = { label: "状态未知", tone: "warn" as StateTone, icon: CircleHelp };
 const SEARCH_EXPLAIN = "可以搜用户编码、系统编号、昵称、推荐码、脱敏手机号（138****8010）和手机号哈希。为保护隐私，不能按完整手机号查。停止输入后自动查询。";
-const RETRY_EXPLAIN = "用原编号重新发送。原操作已经生成过文件时，后端按原编号直接给回那个文件，不会再记一条导出。";
+const RETRY_EXPLAIN = "按原请求重发。原操作已经生成过文件时，直接给回那个文件，不会再记一条导出。";
 
 const exportStore = createPendingMutationStore<PendingExport>({
   storageKey: "nexion-admin-pending-c1-export-v1",
@@ -275,13 +275,13 @@ const outcomeUnknown = (error: unknown) => !(error instanceof UsersRequestError)
 
 /** 幂等层的码用这页的话说，通用句里的「稍后刷新」「重新发起」在原操作框里做不到。 */
 const IDEMPOTENCY_CAUSE: Record<string, string> = {
-  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "服务端认为这次重试和原操作对不上，没有执行",
+  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "这次重试和原操作对不上，没有执行",
   IDEMPOTENCY_REQUEST_IN_PROGRESS: "原操作还在处理",
   IDEMPOTENCY_RETRY_CONFLICT: "原操作还在处理",
   IDEMPOTENCY_RECLAIM_CONFLICT: "原操作还在处理",
-  IDEMPOTENCY_RESULT_UNKNOWN: "服务端也查不清原操作的结果",
-  IDEMPOTENCY_SUCCESS_STATE_LOST: "服务端没记下原操作的结果",
-  IDEMPOTENCY_FAILURE_STATE_LOST: "服务端没记下原操作的结果",
+  IDEMPOTENCY_RESULT_UNKNOWN: "系统也查不清原操作的结果",
+  IDEMPOTENCY_SUCCESS_STATE_LOST: "系统没记下原操作的结果",
+  IDEMPOTENCY_FAILURE_STATE_LOST: "系统没记下原操作的结果",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED: "人工核查确认原操作已经生效",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED: "人工核查确认原操作没有执行",
 };
@@ -293,7 +293,7 @@ const IDEMPOTENCY_CAUSE: Record<string, string> = {
 function exportCause(error: unknown) {
   if (!(error instanceof UsersRequestError) || error.status === 0 || error.status === 408) return "网络断了或服务没有响应";
   if (error.status >= 500) return "服务暂时异常";
-  if (error.code?.startsWith("IDEMPOTENCY_")) return IDEMPOTENCY_CAUSE[error.code] ?? "服务端没有处理这次请求";
+  if (error.code?.startsWith("IDEMPOTENCY_")) return IDEMPOTENCY_CAUSE[error.code] ?? "系统没有处理这次请求";
   if (error.status === 429) return "请求太频繁，这次没有处理";
   if (error.status === 401 || error.status === 403) return "这个账号现在没有这项权限，这次没有处理";
   return displayAdminError(error).replace(/[。；]$/, "");
