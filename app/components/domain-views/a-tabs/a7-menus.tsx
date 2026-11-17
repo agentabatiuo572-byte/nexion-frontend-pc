@@ -19,7 +19,7 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import { FundClosureModal } from "../fund-command-check";
 import { eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
-import { receiptFact } from "../recovery-panel";
+import { TechInfo, receiptFact } from "../recovery-panel";
 import { rbacClosureConclusions, rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { CONSOLE_NAV, resolveVisibleDomains, type EffectiveMenuNode, type NavDomain } from "@/lib/nav/console-nav";
@@ -402,7 +402,7 @@ export default function A7Menus() {
                     {closable && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
                     {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
                   </span>
-                  {shown && <span className="a7-recovery-line" role="status">{shown.line}</span>}
+                  {shown && <span className="a7-recovery-line" role="status">{shown.line} <TechInfo commandKey={record.commandKey} receipt={outcome?.receipt} /></span>}
                 </li>
               );
             })}
