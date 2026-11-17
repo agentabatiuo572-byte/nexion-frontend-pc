@@ -221,7 +221,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
           {comparison && howSave && <Button size="sm" variant="ghost" disabled={loading || !!releasing} onClick={() => setReleasing("open")}>解除原操作记录</Button>}</>}>
         {comparison
           ? <p>{`现在的内容和原提交对不上：修订号应为 ${comparison.revision.expected}，实际是 ${comparison.revision.current}，内容${comparison.contentMatches ? "相同" : "不同"}。核对后可以解除。`}</p>
-          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先重新读取核对；你填的内容还在下面。</p>}
+          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先刷新核对；你填的内容还在下面。</p>}
       </Notice>}
       {releasing && comparison && howSave && <Modal title="解除原操作记录" icon={ShieldCheck} busy={releasing === "busy"} onClose={() => setReleasing(null)}
         footer={<><Button disabled={releasing === "busy"} onClick={() => setReleasing(null)}>取消</Button>

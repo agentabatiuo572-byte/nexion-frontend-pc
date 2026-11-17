@@ -240,7 +240,7 @@ function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
     <div className="f2-checks">
       <p className="f2-checks-title">启用时会检查<Explain label="这三条怎么用" content={<>
         <p>提交申请和另一位管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
-        <p>没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以提交时的检查为准。</p>
+        <p>没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以系统的检查为准。</p>
         {rates.length === 0 ? <p>七层都没规则时，先在「每层分多少」首次配置。</p>
           : LAYERS.some((level) => !layerRate(rates, level)) && <p>只缺几层时后台补不了，需要技术同事处理。</p>}
       </>} /></p>
