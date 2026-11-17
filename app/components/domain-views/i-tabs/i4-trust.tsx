@@ -710,7 +710,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         change: upload && file ? <span title={`SHA256 ${file.sha256}`}>{`原文件 ${file.name} · ${docSize(file.size)} · 指纹 ${shortSha(file.sha256)}`}</span>
           : <span title={`SHA256 ${record.document.sha256}`}>{`换下 ${record.document.fileName} · 指纹 ${shortSha(record.document.sha256)}`}</span>,
         submittedAt: timeText(new Date(record.createdAt).toISOString()), tag: unknownTag(),
-        note: upload ? "上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝，结果还是查不清。点「查询原结果」，对照现在用的文件指纹和上传时间。" : undefined,
+        note: upload ? "这页不能重发这次上传。原上传成功的话后台留着结果，点「查询原结果」查到就解除记录；查不到就对照现在用的文件指纹和上传时间。" : undefined,
         actions: <Button size="sm" onClick={() => {
           setDocumentRecovery({ ...record });
           void queryI4DocumentCommand(record).then(result => { setDocumentRecovery({ ...record, observation: result.current }); syncCommands(); }, error => toast(displayAdminError(error)));

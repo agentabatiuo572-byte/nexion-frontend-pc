@@ -12,6 +12,7 @@ import { Lock } from "lucide-react";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { Button, DiffList, Field as RdField, Notice, NumberInput, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
+import { ADMIN_ERROR_MESSAGES } from "@/lib/admin/error-messages";
 import { Icon, Modal } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -166,11 +167,11 @@ export function IdlePolicyModal({
         {(control) => <Textarea {...control} rows={3} value={reason} disabled={!canSave || blocked || confirm} maxLength={200} count={`${visibleReasonLength(reason)}/${rule.max}`}
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }} onBlur={() => setReasonLeft(true)} placeholder="请说明调整的原因" />}
       </RdField>}
-      {error && !conflict && !pending && <Notice tone="danger">{error}</Notice>}
+      {error && !conflict && !pending && <Notice tone={error === ADMIN_ERROR_MESSAGES.M3_TIMEOUT_POLICY_UNCHANGED ? "neutral" : "danger"}>{error}</Notice>}
       {pending && <Notice tone="warn" title={error || undefined} action={canSave && onCheckPending ? <Button size="sm" disabled={saving} onClick={() => void onCheckPending()}>查询原结果</Button> : undefined}>{error ? "输入已锁定，查到结果前不能再改。" : "上次保存结果未知，输入已锁定。"}{latest && <p>现在的策略：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟{latest.sessionEndMinutes !== null && `，无人发言结束接待 ${latest.sessionEndMinutes} 分钟`}；和你填的一样也不能说明上次保存成功。</p>}</Notice>}
       {conflict && <Notice tone="warn" action={latest
         ? <Button size="sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</Button>
-        : <Button size="sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</Button>}>设置刚被别人改过，你填写的内容还在。{latest && <p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言结束接待：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p>}</Notice>}
+        : <Button size="sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</Button>}>没有保存：设置刚被别人改过，你填写的内容还在。{latest && <p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟{endAvailable && latest.sessionEndMinutes !== null && `；无人发言结束接待：原 ${policy.sessionEndMinutes} 分钟 → 最新 ${latest.sessionEndMinutes} 分钟`}。</p>}</Notice>}
     </Modal>
   );
 }

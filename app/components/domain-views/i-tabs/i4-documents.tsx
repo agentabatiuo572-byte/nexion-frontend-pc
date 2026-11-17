@@ -308,7 +308,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「重新读取核对」。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
@@ -317,7 +317,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
             ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : "恢复结果未知"}
               action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
               <p>{editorError}</p>
-              <p>{editor.mode === "upload" ? "上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝。重新读取后，对照文件指纹和上传时间。" : "重新读取，看卡片是不是已经变回默认文件；没变可以按原请求重试。"}</p>
+              <p>{editor.mode === "upload" ? "这页不能重发这次上传。原上传成功的话后台留着结果，重新读取时查到就解除记录；查不到就对照原文件和现在用的文件。" : "重新读取，看卡片是不是已经变回默认文件；没变可以按原请求重试。"}</p>
             </Notice>
             : conflicted
               ? <Notice tone="warn" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}

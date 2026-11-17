@@ -396,6 +396,8 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-form-title { display: flex; align-items: center; gap: var(--rd-space-1); margin: 0; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
 .h7-form-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h7-locked-type { display: inline-flex; }
+/* 已停用的「可拆分」：以前存的值和已停用标签同一行，不给勾选框。 */
+.h7-retired-value { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
 .h7-preview { position: sticky; top: 0; align-self: flex-start; display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .h7-preview-ticket { display: flex; flex-direction: column; gap: var(--rd-space-2); overflow: hidden; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
 .h7-preview-ticket > .h7-face { border-right: 0; border-bottom: 1px dashed var(--rd-line-strong); background: var(--rd-panel); }

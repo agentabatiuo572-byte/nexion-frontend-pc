@@ -34,7 +34,7 @@ import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-t
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
-import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
+import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
 /** 查到原审批单时说结论：还在等批准，或已有结果、执行情况到操作记录看。 */
 const ticketText = (ticket: A2OperationRow) => ({
@@ -1943,11 +1943,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <Facts>
               <Fact k="及格分">{versionCourse.passScore ?? "—"} 分（答对题数 ÷ 总题数 × 100，四舍五入）</Fact>
               <Fact k="最多重试">{versionCourse.retryLimit ?? "—"} 次</Fact>
-              <Fact k="完成条件">{COMPLETION_LABEL[versionCourse.completionCondition ?? ""] ?? "—"}</Fact>
-              <Fact k="何时发奖">{REWARD_EVENT_LABEL[versionCourse.rewardEvent ?? ""] ?? "—"}</Fact>
               <Fact k="每人领几次">同一用户在同一版本只领一次</Fact>
+              {(versionCourse.completionCondition || versionCourse.rewardEvent) && <>
+                <Fact k="完成条件"><RetiredOption text={COMPLETION_LABEL[versionCourse.completionCondition ?? ""] ?? versionCourse.completionCondition} /></Fact>
+                <Fact k="何时发奖"><RetiredOption text={REWARD_EVENT_LABEL[versionCourse.rewardEvent ?? ""] ?? versionCourse.rewardEvent} /></Fact>
+              </>}
             </Facts>
-            <Notice tone="warn">目前只按及格分判定和发奖，「完成条件」「何时发奖」这两项不起作用。</Notice>
+            {(versionCourse.completionCondition || versionCourse.rewardEvent) && <p className="rd-note">{RETIRED_OPTIONS_VIEW_NOTE}</p>}
             {versionCourse.quizQuestions.length === 0 ? <BlockState state="empty" title="还没有测验题" detail="没有题的课不能发布。" />
               : <ol className="i6-quiz-view">
                 {versionCourse.quizQuestions.map((q, index) => <li key={q.questionId || index}>

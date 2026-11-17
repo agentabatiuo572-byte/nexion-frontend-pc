@@ -6,8 +6,8 @@
  * initialBusinessValue、missingBusinessFields），提交时交给 i6-i18n 里原来的 coursePayload 拼请求，请求不变。
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { BookOpen, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
-import { Button, Decision, Drawer, Field, Input, LocaleTabs, Notice, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
+import { BookOpen, CircleSlash, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
+import { Button, Decision, Drawer, Field, Input, LocaleTabs, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { i6Amount } from "@/lib/admin/i6-amount";
 import { i6HasCopyText } from "@/lib/admin/i6-copy-quality";
@@ -30,6 +30,12 @@ export const FORMAT_LABEL: Record<string, string> = { Article: "图文", Video: 
 export const LEVEL_LABEL: Record<string, string> = { Beginner: "入门", Intermediate: "进阶", Advanced: "高级" };
 export const COMPLETION_LABEL: Record<string, string> = { quiz_passed: "达到及格分", all_questions_correct: "全部答对" };
 export const REWARD_EVENT_LABEL: Record<string, string> = { "quiz.passed": "测验通过时", "course.completed": "课程完成时" };
+/** 15ca362f／e0e5c515：这两项已停用，新建不带，编辑和新版本原样带上以前存的值。 */
+export const RETIRED_OPTIONS_NOTE = "这两项只留着以前存的值，保存时不变；学完和发奖只看及格分。";
+export const RETIRED_OPTIONS_VIEW_NOTE = "这两项只留着以前存的值；学完和发奖只看及格分。";
+export function RetiredOption({ text }: { text?: string }) {
+  return <span className="i6-retired-value"><span data-empty={text ? undefined : ""}>{text || "—"}</span><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></span>;
+}
 /** 时长四档照共用表单（F:954）；后端只取数字当分钟。 */
 const DURATIONS = ["5 min", "8 min", "12 min", "15 min"];
 export const durationText = (value: string) => {
@@ -336,16 +342,14 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
                 <Field label="最多重试次数" required hint="0–10 的整数" error={err("retries")}>
                   <NumberInput unit="次" min={0} max={10} value={form.retries ?? ""} onChange={(event) => set("retries", event.target.value)} />
                 </Field>
-                <Field label="完成条件">
-                  <Select aria-label="完成条件" value={form.completionCond ?? ""} onChange={(value) => set("completionCond", value)}
-                    options={["quiz_passed", "all_questions_correct"].map((value) => ({ value, label: COMPLETION_LABEL[value] }))} />
-                </Field>
-                <Field label="何时发奖">
-                  <Select aria-label="何时发奖" value={form.rewardEvent ?? ""} onChange={(value) => set("rewardEvent", value)}
-                    options={["quiz.passed", "course.completed"].map((value) => ({ value, label: REWARD_EVENT_LABEL[value] }))} />
-                </Field>
               </div>
-              <Notice tone="warn">目前只按及格分判定和发奖，「完成条件」「何时发奖」这两项不起作用。</Notice>
+              {spec.mode !== "create" && (form.completionCond || form.rewardEvent) && <>
+                <div className="rd-form-grid" data-cols="2" data-dense="">
+                  <Field label="完成条件"><RetiredOption text={COMPLETION_LABEL[form.completionCond ?? ""] ?? form.completionCond} /></Field>
+                  <Field label="何时发奖"><RetiredOption text={REWARD_EVENT_LABEL[form.rewardEvent ?? ""] ?? form.rewardEvent} /></Field>
+                </div>
+                <p className="rd-note">{RETIRED_OPTIONS_NOTE}</p>
+              </>}
             </>}
             {tab === "settings" && <>
               <div className="rd-form-grid" data-cols="2" data-dense="">

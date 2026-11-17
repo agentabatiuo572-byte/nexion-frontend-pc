@@ -71,7 +71,7 @@ const lostPermission = (cause: unknown) => cause != null && typeof cause === "ob
 const MESSAGE_UNKNOWN = "上条消息发送结果未知，先查询原结果；按原请求重试不会重复发送。";
 const MESSAGE_STILL_UNKNOWN = "原消息结果仍未知，记录继续保留，稍后再查询。";
 const MESSAGE_FAILED = "原消息发送失败，记录已解除；草稿还在，可以修改后重新发送。";
-const PEER_CHANGED_SEND_REFUSAL = "本次发送已被拒绝：这条已不是当前会话。原文已保留；续接时仅带入空的输入框，已有草稿时两份都保留。";
+const PEER_CHANGED_SEND_REFUSAL = "没有发出：这已不是客户的当前会话。客户仍归你时，原文会带进当前会话的空输入框，核对后再发；那边已有草稿时，原文留在原会话。";
 
 const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientError
   && cause.status !== 404
@@ -1407,7 +1407,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== identityRef.current) return;
       if (conversationPeerChanged(cause) || cause instanceof Error && cause.message === "CONVERSATION_PEER_CHANGED") {
         await refreshChangedPeer(stamp);
-        if (stamp === identityRef.current) setActionError("客户归属已变化，请核对客户归属。");
+        if (stamp === identityRef.current) setActionError("这位客户已不归你负责，不能继续这段会话；有疑问找主管核对归属。");
       } else setActionError(displayAdminError(cause));
     } finally { if (stamp === identityRef.current) setActionChecking(false); }
   };

@@ -608,6 +608,10 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i6-editor-form, .i6-editor-pane { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; }
 .i6-editor-lang { display: flex; }
 .i6-editor-note { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+/* 已停用的两个课程选项：以前存的值照实显示，旁边标已停用，不给控件。 */
+.i6-retired-value { display: inline-flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); }
+.i6-editor-form .i6-retired-value { min-height: var(--rd-control-h); }
+.i6-retired-value > [data-empty] { color: var(--rd-text-3); }
 .i6-quiz-q { display: grid; gap: var(--rd-space-3); margin: 0; padding: var(--rd-space-3) var(--rd-space-4) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
 .i6-quiz-q > legend { padding: 0 var(--rd-space-1); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .i6-quiz-q > .rd-btn { justify-self: start; }

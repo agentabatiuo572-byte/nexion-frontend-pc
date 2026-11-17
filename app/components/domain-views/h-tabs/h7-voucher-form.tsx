@@ -6,12 +6,14 @@
  * 点「下一步」后由页面打开确认框写理由，提交内容仍由页面原来的 parseVoucher 生成。
  */
 import { useMemo, useState } from "react";
-import { BellOff, Layers, Lock, Ticket } from "lucide-react";
+import { BellOff, CircleSlash, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
+/** 3c2031d4：「可拆分」已停用，新的勾选会被拒；编辑时只显示以前存的值。券都是整张核销。 */
+export const SPLIT_RETIRED_HELP = "只显示以前存的值；代金券都是整张核销。";
 const SURFACES = ["home", "store", "me", "earn"] as const;
 
 /** 和原 voucher-config 表单 initBusinessForm 同样的初值（新增用默认值，编辑用当前值）。 */
@@ -298,9 +300,11 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               </div>
             </Fold>
 
-            <Fold title="叠加与拆分" icon={Layers} tone="role-other" inset summary={[bool("splittable") && "可拆分", bool("stackWithTrial") && "可与试用收益叠加", bool("stackWithOthers") && "可与其它优惠叠加"].filter(Boolean).join("、") || "都不勾"}
+            <Fold title={voucher ? "叠加与拆分" : "叠加"} icon={Layers} tone="role-other" inset summary={[voucher && bool("splittable") && "可拆分（已停用）", bool("stackWithTrial") && "可与试用收益叠加", bool("stackWithOthers") && "可与其它优惠叠加"].filter(Boolean).join("、") || "都不勾"}
               open={folds.stack} onOpenChange={(open) => setFolds((f) => ({ ...f, stack: open }))}>
-              <Check label="可拆分" help="目前整张核销：用一次就整张用掉，勾了也不会分次使用。" checked={bool("splittable")} onChange={(e) => set("splittable", e.target.checked ? "true" : "false")} />
+              {voucher && <Field label="可拆分" help={SPLIT_RETIRED_HELP}>
+                <span className="h7-retired-value">{bool("splittable") ? "是" : "否"}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></span>
+              </Field>}
               <Check label="可与试用收益叠加" help="试用转购目前用不了代金券，这一项暂时不起作用。" checked={bool("stackWithTrial")} onChange={(e) => set("stackWithTrial", e.target.checked ? "true" : "false")} />
               <Check label="可与其它优惠叠加" help="决定能不能和促销活动一起用；不是一单用两张券。" checked={bool("stackWithOthers")} onChange={(e) => set("stackWithOthers", e.target.checked ? "true" : "false")} />
             </Fold>
