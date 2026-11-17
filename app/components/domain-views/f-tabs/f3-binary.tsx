@@ -494,7 +494,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <Th align="right">邀请人</Th>
               <Th align="right">记账奖励</Th>
               <Th align="right">匹配订单额</Th>
-              <Th align="right">被拦下<Explain label="被拦下怎么算" side="bottom" content="这一天结算记录里状态是被拦下的条数。之后被拦下的结算不写结算记录，另列在下面「被拦下的结算」。" /></Th>
+              <Th align="right">被拦下<Explain label="被拦下怎么算" side="bottom" content="这一天结算记录里状态是被拦下的旧记录条数。现在被拦下的结算不写结算记录，列在下面「被拦下的结算」。" /></Th>
             </tr></thead>
             <tbody>
               {byDate.map((group) => (

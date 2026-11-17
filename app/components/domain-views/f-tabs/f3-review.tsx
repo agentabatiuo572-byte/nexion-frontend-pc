@@ -65,51 +65,55 @@ export function F3SettlementDrawer({ row, state, nav, onClose }: {
     <Drawer open onClose={onClose} title="这一期结算" icon={ReceiptText} tone="role-2" nav={nav}
       sub={<>{row.user} · 结算日 {row.settlementDate || "—"}</>}
       explain="核对这一期怎么结的：结算后两组还剩多少，谁发起、谁批准。名字是当时记下的。">
-      <Facts>
-        <Fact k="状态"><StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag></Fact>
-        <Fact k="记账奖励" lead>{amount(row.todayRaw, row.today)}</Fact>
-        <Fact k="匹配订单额">{amount(row.matchRaw, row.match)}</Fact>
-        <Fact k="A 组订单额">{amount(row.aRaw, row.a)}</Fact>
-        <Fact k="B 组订单额">{amount(row.bRaw, row.b)}</Fact>
-      </Facts>
+      <div className="rd-detail-block">
+        <Facts>
+          <Fact k="状态"><StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag></Fact>
+          <Fact k="记账奖励" lead>{amount(row.todayRaw, row.today)}</Fact>
+          <Fact k="匹配订单额">{amount(row.matchRaw, row.match)}</Fact>
+          <Fact k="A 组订单额">{amount(row.aRaw, row.a)}</Fact>
+          <Fact k="B 组订单额">{amount(row.bRaw, row.b)}</Fact>
+        </Facts>
+      </div>
       {!reviewed
-        ? <BlockState state="empty" compact title="这条结算没有核对记录" detail="残额、结算方式和经手人都没有记下，不是 0。" />
+        ? <div className="rd-detail-block"><BlockState state="empty" compact title="这条结算没有核对记录" detail="残额、结算方式和经手人都没有记下，不是 0。" /></div>
         : <>
           <div className="rd-detail-block">
             <Panel plain headingLevel={3} title="结算后剩下的订单额"
-              explain="两组各扣掉这一期匹配上的部分后剩下的。残额取剩得多的一组，不是两组相加；按当时的残额处理算。">
-              <KeyValues rows={[
-                { key: "a", label: "A 组剩下", value: money(row.residualTrackARaw) ?? NONE },
-                { key: "b", label: "B 组剩下", value: money(row.residualTrackBRaw) ?? NONE },
-                { key: "pool", label: "残额", value: residualKnown ? <strong>{money(row.residualAmountUsdt)}</strong> : NONE },
-                { key: "policy", label: "当时的残额处理", value: row.residualPolicy === null ? NONE : residualLabel(row.residualPolicy) },
-              ]} />
+              explain="两组各扣掉已匹配的部分后剩下的。残额取剩得多的一组，不是两组相加；按当时的残额处理算。">
+              <Facts>
+                <Fact k="A 组剩下">{money(row.residualTrackARaw) ?? NONE}</Fact>
+                <Fact k="B 组剩下">{money(row.residualTrackBRaw) ?? NONE}</Fact>
+                <Fact k="残额">{residualKnown ? <strong>{money(row.residualAmountUsdt)}</strong> : NONE}</Fact>
+                <Fact k="当时的残额处理">{row.residualPolicy === null ? NONE : residualLabel(row.residualPolicy)}</Fact>
+              </Facts>
             </Panel>
           </div>
           <div className="rd-detail-block">
             <Panel plain headingLevel={3} title="谁经手">
-              <KeyValues rows={[
-                { key: "mode", label: "结算方式", value: f3ModeText(row.settlementMode) ?? NONE },
-                { key: "proposer", label: "发起人", value: who.proposer },
-                { key: "approver", label: "批准人", value: who.approver },
-                { key: "ticket", label: "审批单", value: <TicketLink id={row.a2OperationId} mode={row.settlementMode} /> },
-              ]} />
+              <Facts>
+                <Fact k="结算方式">{f3ModeText(row.settlementMode) ?? NONE}</Fact>
+                <Fact k="发起人">{who.proposer}</Fact>
+                <Fact k="批准人">{who.approver}</Fact>
+                <Fact k="审批单"><TicketLink id={row.a2OperationId} mode={row.settlementMode} /></Fact>
+              </Facts>
             </Panel>
           </div>
         </>}
-      <Fold inset title="技术信息" summary="结算号和审批单号">
+      <div className="rd-detail-block"><Fold inset title="技术信息" summary="结算号和审批单号">
         <KeyValues rows={[
           { key: "no", label: "结算号", value: row.settlementNo ?? "—", mono: true },
           { key: "a2", label: "审批单号", value: row.a2OperationId ?? "—", mono: true },
           { key: "mode", label: "结算方式原值", value: row.settlementMode ?? "—", mono: true },
           { key: "policy", label: "残额处理原值", value: row.residualPolicy ?? "—", mono: true },
         ]} />
-      </Fold>
+      </Fold></div>
     </Drawer>
   );
 }
 
 const reasonText = (code: string | null) => code === null ? NONE : ADMIN_ERROR_MESSAGES[code] ?? "原因没有中文说明，见技术信息";
+/** 表格里只放原因的第一句（「两组订单额未达到结算门槛」），整句在抽屉里。 */
+const reasonShort = (code: string | null) => reasonText(code).split(/[，。；]/)[0];
 
 /** 被拦下的结算决定：独立的记录，最多最近 100 次；和「按结算日」里状态是被拦下的结算记录不是一回事。 */
 export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementAttempt[] | null }) {
@@ -127,7 +131,7 @@ export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementA
   };
   let body: ReactNode;
   if (attempts === null) body = <BlockState state="empty" compact title="读不到被拦下的结算" detail="后台还没提供这份记录，不代表没有结算被拦下。" />;
-  else if (attempts.length === 0) body = <BlockState state="empty" compact title="没有被拦下的结算" detail="开始记录以来没有结算被拦下。更早的看「按结算日」里的被拦下条数。" />;
+  else if (attempts.length === 0) body = <BlockState state="empty" compact title="没有被拦下的结算" detail="开始记录以来没有结算被拦下。" />;
   else body = <>
     <Table label="被拦下的结算" className="f3-blocked">
       <thead><tr>
@@ -144,7 +148,7 @@ export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementA
             <Tr key={`${row.settlementNo}:${row.blockedAt}:${pager.startIndex + i}`} selected={row === current} onOpen={() => setCurrent(row)}>
               <Td><Cell num main={formatBusinessTimeCompact(row.blockedAt, "—")} /></Td>
               <Td><Cell main={<span data-mono>{row.ownerUserId ?? "—"}</span>} sub={`结算日 ${row.settlementDate ?? "—"}`} /></Td>
-              <Td grow><Cell main={reasonText(row.reason)} title={reasonText(row.reason)} /></Td>
+              <Td grow><Cell main={reasonShort(row.reason)} title={reasonText(row.reason)} /></Td>
               <Td><Cell main={mode ?? NONE} sub={row.settlementMode === "MANUAL" ? `批准人 ${who.approver}` : undefined} /></Td>
             </Tr>
           );
@@ -162,7 +166,7 @@ export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementA
       <Fold title="被拦下的结算" icon={Ban} tone="role-other" summary={summary}
         explain={<>
           <p>每次结算被拦下记一条：什么时候、为什么、谁经手。被拦下不发钱、不写结算记录，问题处理好后同一天还能再结。</p>
-          <p>最多列最近 100 次，不是历史总数。「按结算日」里的「被拦下」是结算记录里状态为被拦下的条数，两边来源不同，数对不上是正常的。</p>
+          <p>最多列最近 100 次，不是历史总数。「按结算日」里的「被拦下」是结算记录里状态为被拦下的旧记录，两边来源不同，数对不上是正常的。</p>
         </>}>
         {body}
       </Fold>
