@@ -472,7 +472,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       amplifies: false,
       reasonMax: 200,
       run: (reason) => {
-        return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
+        return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason, data?.templates.find(t => t.channel === ch)), `${name} 已发布`);
       },
     });
   };
@@ -547,7 +547,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       run: (reason) => {
         const body = { ...tplForm };
         return runBackend(editTplChannel
-          ? actions.updateI2Template(editTplChannel, body, reason)
+          ? actions.updateI2Template(editTplChannel, body, reason, data?.templates.find(t => t.channel === editTplChannel))
           : actions.createI2Template(body, reason),
         `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
       },

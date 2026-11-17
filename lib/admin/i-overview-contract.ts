@@ -111,7 +111,15 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
       || typeof channel.ctr !== "number" || !Number.isFinite(channel.ctr) || typeof channel.enabled !== "boolean") fail(moduleId);
   }
   for (const event of records(moduleId, value.eventDriven)) if (!["name", "reason", "owner", "tone", "status"].every((key) => typeof event[key] === "string")) fail(moduleId);
-  for (const template of records(moduleId, value.templates)) if (!["channel", "name", "cta", "version", "status", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((key) => typeof template[key] === "string")) fail(moduleId);
+  for (const template of records(moduleId, value.templates)) {
+    if (!["channel", "name", "cta", "version", "status", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((key) => typeof template[key] === "string")) fail(moduleId);
+    if (template.translations !== undefined) {
+      for (const translation of Object.values(record(moduleId, template.translations))) {
+        const text = record(moduleId, translation);
+        if (typeof text.title !== "string" || typeof text.body !== "string") fail(moduleId);
+      }
+    }
+  }
   for (const item of records(moduleId, value.socialDistribution)) if (!["key", "name", "color"].every((key) => typeof item[key] === "string")
     || typeof item.pct !== "number" || !Number.isInteger(item.pct) || item.pct < 0 || item.pct > 100) fail(moduleId);
   for (const event of records(moduleId, value.socialEvents)) validateNovaEvent(event);
