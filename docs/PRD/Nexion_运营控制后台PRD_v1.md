@@ -592,7 +592,7 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 
 分享链接按 App `baseUrl+referralCode` 拼接，不补斜杠；PC 示例邀请码只用于预览。空远端渠道只留下 App 固定复制/海报，PC 推荐九渠道先填本地、保存后才生效。BUG-432 后 Zalo/Messenger 的 enabled scheme 已显示，点击复制文案并引导粘贴；页面旧“不显示”文案和只统计 web 的预览交视觉 worker修正，不据旧句修改合同。system 仅 H5 且支持系统分享时显示。关闭推荐奖励时，App 不采用这里的文案模板。
 
-官网下载来源仅 official/unavailable：官网必须 HTTPS、允许锚点，包地址可空、非空不允许锚点。未编辑的 APK URL、androidPackage/iosScheme 随完整快照保留；选 unavailable 时原请求仍带旧输入，由后端保存时清 URL、版本和说明。zh/en/vi 必保留，另外六语可开关；设备显示回退英文不是强制写远端资料。六种新语言的文档/说明请求在当前 App 仍投影英文；PC 编辑允许 `fil` 及合法地区后缀。
+官网下载来源仅 official/unavailable：官网必须 HTTPS、允许锚点，包地址可空、非空不允许锚点。未编辑的 APK URL、androidPackage/iosScheme 随完整快照保留；选 unavailable 时原请求仍带旧输入，由后端保存时清 URL、版本和说明。zh/en/vi 必保留，另外六语可开关；关闭后正在用它的用户改用账号或手机系统（H5 Lite 为浏览器）的语言，都没开启时用英文，不替用户改账号资料（App `35ccc8b2`、h5-lite `7482bb1c` 核对）。开启的语言会原样存进用户账号，六种新语言的文档/说明请求在当前 App 仍投影英文；PC 编辑允许 `fil` 及合法地区后缀。
 
 开发者文档示例、接口和事件只是发布文案。DRAFT 保留以前公开快照；首次草稿仍保留随包默认公开内容；PUBLISHED 替换之后公共读取的内容，不推送设备立即刷新。业务说明六键保持维护，发布必须六键齐；锁定计划旧 App 入口已经退个人中心，不恢复退役入口。总正文 version 与每页 version 分开：缺属性回退总版本，显式空字符串仍被后端拒绝。
 
