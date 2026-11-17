@@ -1,6 +1,6 @@
 import { formatAdminApiError } from "./error-messages";
 
-// 7bfde504: batch entries use the same ordered authority/target mapping as single writes.
+// 7bfde504/f4712255: batch entries use the same ordered authority/target mapping as single writes.
 const TEAM_RATE_KEYS = new Set(["directRoyaltyPct", "networkRoyaltyPct", "binaryPairRatePct", "maxCombinedOutflowPct", "minPayoutUsdt"]);
 const TEAM_WRITE_KEYS = new Set(["rankWindowDays", "hardwareQuotaPerRank"]);
 
@@ -14,7 +14,7 @@ function authorityFor(key: string): string | null {
   if (["F.prize.name", "F.vrank.titles"].includes(key)) return "network_f1_write";
   if (key === "F.vrank.permanent") return "network_f1_permanent_protection";
   if (/^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(key) || ["F.promo.weekMultiplier", "F.peer.rate"].includes(key)) return "network_f2_royalty_rate";
-  if (["F.influence.clampMin", "F.influence.clampMax", "F.cooldown", "F.partner.tiers", "F.royalty.minPayout", "F.unilevel.depthGate", "F.unilevel.nexCap", "F.unilevel.backfill", "F.unilevel.depth", "F.sunset.exclusions"].includes(key)
+  if (["F.influence.clampMin", "F.influence.clampMax", "F.cooldown", "F.partner.tiers", "F.royalty.minPayout", "F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.unilevel.nexCap", "F.unilevel.backfill", "F.unilevel.depth", "F.unilevel.mergeExitMaxPct", "F.sunset.exclusions"].includes(key)
     || /^F\.unilevel\.L[1-7]\.paused$/.test(key)) return "network_f2_policy_amplify";
   if (key === "F.binary.paused") return "network_f3_engine_pause";
   if (key.startsWith("F.binary.")) return "network_f3_match_rate";
