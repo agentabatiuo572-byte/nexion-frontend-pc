@@ -246,6 +246,20 @@ export function assertG2OverviewContract<T>(value: T): T {
   const disclosure = record(module, root.disclosureGate, "data.disclosureGate");
   requiredKeys(module, disclosure, "data.disclosureGate", ["exchange"]);
   if (typeof disclosure.exchange !== "boolean") fail(module, "data.disclosureGate.exchange");
+  if (root.emergencySwitch !== undefined) {
+    const switches = record(module, root.emergencySwitch, "data.emergencySwitch");
+    const path = "data.emergencySwitch.exchange";
+    const exchange = record(module, switches.exchange, path);
+    if (typeof exchange.available !== "boolean") fail(module, `${path}.available`);
+    if (exchange.available ? typeof exchange.enabled !== "boolean" : exchange.enabled !== null) fail(module, `${path}.enabled`);
+    if (exchange.sourceKey !== null) enumText(module, exchange.sourceKey, `${path}.sourceKey`, new Set(["killswitch.exchange", "emergency.killswitch.exchange"]));
+    if (exchange.available) {
+      if (exchange.sourceKey === null) fail(module, `${path}.sourceKey`);
+      if (exchange.unavailableReason !== null) fail(module, `${path}.unavailableReason`);
+    } else {
+      enumText(module, exchange.unavailableReason, `${path}.unavailableReason`, new Set(["MISSING", "INVALID"]));
+    }
+  }
   array(module, root.geoBlocked, "data.geoBlocked").forEach((item, index) => {
     const path = `data.geoBlocked[${index}]`;
     const geo = record(module, item, path);
