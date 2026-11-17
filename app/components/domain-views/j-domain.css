@@ -834,4 +834,5 @@
 .j2-page .j2-hit-log .j2-note { margin: 0; }
 .j2-page .j2-log-empty { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; }
 .j2-page .j2-log-table th:nth-child(1) { width: 20%; }
-.j2-page .j2-log-table th:nth-child(5) { width: 12%; }
+.j2-page .j2-log-table th:nth-child(5) { width: 14%; }
+.j2-page .j2-log-table th:nth-child(6) { width: 10%; }
