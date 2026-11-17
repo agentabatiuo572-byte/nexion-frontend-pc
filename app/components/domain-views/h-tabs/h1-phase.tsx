@@ -89,7 +89,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
 import { canInvestigateECommand, eCommandResult, eCommandSettled, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { receiptExplain, receiptFact, rejectedStatus, SETTLED_REJECTED } from "../recovery-panel";
+import { receiptExplain, receiptFact, RecoveryPanel, recoveryTitle, rejectedStatus, SETTLED_REJECTED, type RecoveryItem } from "../recovery-panel";
 import { FAILED_EXPIRED_LINE, FundClosureModal, UNKNOWN_LINE } from "../fund-command-check";
 
 const DIALS = [
@@ -902,6 +902,26 @@ export default function H1Phase({ ctx,
     finally { setBusy(false); }
   };
   const confirmPending = confirm ? pending.find((row) => row.scope === confirm.scope && row.state !== "approval" && row.commandKey !== sending) : undefined;
+  const shownPending = pending.filter((row) => row.commandKey !== sending);
+  /** 多条记录收成一块时的标题分组（全站同一套叫法）：等审批、查到结果或被拒但记录还留着的「还没结案」、其余结果未知。 */
+  const recordGroup = (row: H1Pending) => row.state === "approval" ? "waiting"
+    : row.state === "rejected" || ["记为失败", "后台拒绝", "已处理"].includes(rowTitle(row) ?? "") ? "open" : "unknown";
+  /** 每条记录的入口：一条时放在提示下面（带原操作详情）；多条收成一块时原操作详情放进展开的内容里。 */
+  const recordActions = (row: H1Pending, withDetail: boolean) => <>
+    {withDetail && <Button size="sm" onClick={() => setDetail(row)}>原操作详情</Button>}
+    <Button size="sm" disabledReason={!canQueryOriginal(row) ? row.requests.some((request) => request.kind === "proposal") ? "你没有原操作的权限" : "你没有这页的查看权限，查不了原结果" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
+    {closableSteps(row).map((request) => <Button key={request.commandKey} size="sm" variant="danger-outline" onClick={() => setClosing({ row, request })}>{row.requests.length > 1 ? `核查结案 · ${request.label}` : "核查结案"}</Button>)}
+    {row.state !== "approval" && <Button size="sm" disabledReason={!permitted(row) ? "你没有原操作的权限" : isRetryExpired(row) ? RETRY_EXPIRED_TEXT : undefined} loading={busy} onClick={async () => {
+      setBusy(true); try {
+        await afterWrite(row,
+          true);
+      } catch (failure) {
+        ctx.toast(displayAdminError(failure),
+          "warn");
+      } finally { setBusy(false); }
+    }}>按原请求重试</Button>}
+    {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除原操作记录</Button>}
+  </>;
 
   return <>
     <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeCompact(readAt)} 读取（${businessZone().label}）` : undefined}
@@ -912,21 +932,26 @@ export default function H1Phase({ ctx,
       </>} />
     {deepLink && <Notice tone="progress">
       <b>从「运营阶段状态」跳转而来</b> {deepLink.phase} {deepLink.dial === "phaseAttribution" ? "阶段归因" : DIALS.find((dial) => dial.key === deepLink.dial)?.label ?? deepLink.dial}{deepLink.dial && deepLink.dial !== "phaseAttribution" && !DIALS.some((dial) => dial.key === deepLink.dial) && " · 未找到对应参数"}</Notice>}
-    {pending.filter((row) => row.commandKey !== sending).map((row) => <Notice key={row.commandKey} tone={row.state === "approval" ? "progress" : "warn"} actionBelow action={<>
-      <Button size="sm" onClick={() => setDetail(row)}>原操作详情</Button>
-      <Button size="sm" disabledReason={!canQueryOriginal(row) ? row.requests.some((request) => request.kind === "proposal") ? "你没有原操作的权限" : "你没有这页的查看权限，查不了原结果" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
-      {closableSteps(row).map((request) => <Button key={request.commandKey} size="sm" variant="danger-outline" onClick={() => setClosing({ row, request })}>{row.requests.length > 1 ? `核查结案 · ${request.label}` : "核查结案"}</Button>)}
-      {row.state !== "approval" && <Button size="sm" disabledReason={!permitted(row) ? "你没有原操作的权限" : isRetryExpired(row) ? RETRY_EXPIRED_TEXT : undefined} loading={busy} onClick={async () => {
-        setBusy(true); try {
-          await afterWrite(row,
-            true);
-        } catch (failure) {
-          ctx.toast(displayAdminError(failure),
-            "warn");
-        } finally { setBusy(false); }
-      }}>按原请求重试</Button>}
-      {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除原操作记录</Button>}
-    </>}>
+    {shownPending.length > 1 ? <RecoveryPanel title={recoveryTitle(shownPending.filter((row) => recordGroup(row) === "unknown").length, shownPending.filter((row) => recordGroup(row) === "waiting").length, 0,
+      shownPending.filter((row) => recordGroup(row) === "open").length)} explain="每条有结论前，这项参数不能再改。点行首的箭头看每一步的状态和原操作详情。"
+      items={[...shownPending].sort((a, b) => (recordGroup(a) === "waiting" ? 1 : 0) - (recordGroup(b) === "waiting" ? 1 : 0)).map((row): RecoveryItem => {
+        const title = rowTitle(row);
+        const line = rowLine(row);
+        const answer = feedback && checked === row.commandKey && feedback !== line ? feedback : undefined;
+        return { key: row.commandKey, object: `${row.label}${row.ticket ? ` · 审批单 ${row.ticket.id}` : ""}`, createdAt: row.createdAt,
+          tag: <StatusTag tone={row.state === "approval" ? "progress" : "warn"}>{row.state === "approval" ? "待审批" : row.state === "rejected" ? row.retryRejected ? "重试被拒绝" : "提交被拒绝" : "结果未知"}</StatusTag>,
+          line: row.state === "approval" ? "批准前参数不变，可以查询审批进度。" : row.state === "rejected" ? `拒绝原因：${row.rejectionReason ?? "没有记下，请查询原结果核对。"}`
+            : isRetryExpired(row) ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
+          result: title && line ? { tag: <StatusTag tone={title === "记为失败" ? "neutral" : title === "还在执行" ? "progress" : "warn"}>{title}</StatusTag>, line } : undefined,
+          note: answer, actions: recordActions(row, false),
+          detail: <>
+            <p>{formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")}（{businessZone().label}）提交。有结论前这项不能再改。</p>
+            {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !line && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
+            {row.state === "rejected" && title && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
+            <p><Button size="sm" variant="ghost" onClick={() => setDetail(row)}>原操作详情</Button></p>
+          </> };
+      })} />
+    : shownPending.map((row) => <Notice key={row.commandKey} tone={row.state === "approval" ? "progress" : "warn"} actionBelow action={recordActions(row, true)}>
       <b>{rowTitle(row) ?? (row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知")}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
       {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
       {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !rowLine(row) && !(feedback && checked === row.commandKey) && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
