@@ -761,7 +761,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       <Fact k="什么时候生效">两项同一张审批单，批准时一起写入，失败都不改</Fact>
       <Fact k="之后的结算">下一次结算就按新设置，不是排到下一期</Fact>
       <Fact k="已经记账的">不重算</Fact>
-      <Fact k="权限">两项各按单独修改的权限核；缺一项就提交不了，不会拆成两张单</Fact>
+      <Fact k="权限">两项各按单独修改的权限核，缺一项就提交不了</Fact>
     </Facts>,
     detail: "结算周期和没匹配上的订单额怎么处理，同一张审批单。",
     statedBrief: (value) => ({
