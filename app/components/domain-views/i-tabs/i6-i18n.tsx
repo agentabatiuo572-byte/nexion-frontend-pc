@@ -1291,6 +1291,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       }
       if (eCommandSettled(receipt)) { await finishRecovery(record.commandKey); return; }
       const overview = await fetchI6LearningOverview();
+      if (record.scope.startsWith("message:")) await actions.fetchI6MessageVersions(record.target);
+      if (record.scope.startsWith("course:") && overview.courses.some(course => course.id === record.target)) await actions.fetchI7CourseVersions(record.target);
       const message = record.scope.startsWith("message:") ? overview.messages.find((row) => row.messageKey === record.target) : undefined;
       const course = record.scope.startsWith("course:") ? overview.courses.find((row) => row.id === record.target) : undefined;
       const now = record.scope === "featured" ? `首页推荐现在是 ${overview.featuredCourseId || "—"}`
