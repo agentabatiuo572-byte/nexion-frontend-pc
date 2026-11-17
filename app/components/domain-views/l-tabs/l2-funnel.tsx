@@ -176,8 +176,8 @@ function normalizeXdMetric(raw: unknown): XdMetric {
   };
 }
 
-/** 现在看的是哪一批人：已应用的条件，不是输入框里还没提交的。 */
-function scopeText(query: L2FunnelQuery) {
+/** 现在看的是哪一批人：已应用的条件，不是输入框里还没提交的。L5 任务表写导出范围也用它，两页同一个说法。 */
+export function scopeText(query: L2FunnelQuery) {
   const parts = [
     query.cohort ? `注册批次 ${query.cohort}` : null,
     query.phase ? `阶段 ${query.phase}` : null,
