@@ -183,7 +183,15 @@ function networkFailure(isReportCreation: boolean) {
     : Object.assign(new Error("网络连接已中断，结果未知。请先核对原操作，再决定要不要重试。"), { name: "LNetworkInterruptedError" });
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false): Promise<T> {
+/** A report write has a result only when the transport and business response establish one. */
+function reportCreationStatus(response: Response, payload: ApiResult<unknown>): number {
+  if (isIdempotencyOutcomeOpen(payload.message)) throw new LOutcomeUnknownError();
+  if (!response.ok || payload.code === 0) return response.status;
+  if (typeof payload.code === "number" && Number.isInteger(payload.code) && payload.code >= 400 && payload.code < 500) return payload.code;
+  throw new LOutcomeUnknownError();
+}
+
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
@@ -209,18 +217,11 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
     if (!isReportCreation) throw cause;
     if (res.ok) throw new LOutcomeUnknownError();
   }
-  // 创建任务时，回复读不出来、业务码 5xx、幂等层没有结论，都说明不了任务建没建成。
-  // 统一按结果未知，调用方留住原号和原请求（OP-93）。4xx 和 2xx 里的业务 4xx 才算明确拒绝。
-  const rejected = payload.code !== undefined && payload.code >= 400 && payload.code < 500;
-  if (isReportCreation && (isIdempotencyOutcomeOpen(payload.message) || (res.ok && payload.code !== 0 && !rejected))) {
-    throw new LOutcomeUnknownError();
-  }
+  const status = isReportCreation ? reportCreationStatus(res, payload) : res.status;
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
-    // Retained L3/L4 commands need the business rejection even when the
-    // controller returns ApiResult.fail in HTTP 200. Other L callers keep their contract.
-    error.status = businessErrorStatus && res.ok && rejected ? payload.code! : res.status;
+    error.status = status;
     error.reasonCode = payload.message;
     throw error;
   }
@@ -847,7 +848,7 @@ export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey
     method: "POST",
     headers: { "Idempotency-Key": commandKey },
     body: JSON.stringify(request),
-  }, true);
+  });
   try {
     return l3DetailReceipt(data?.created, request);
   } catch {
@@ -867,14 +868,14 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
   const execute = () => guardedFetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
+  const creating = path === "/report" && init?.method === "POST";
   let response: Response;
   try {
     response = await execute();
   } catch {
-    throw networkFailure(path === "/report" && init?.method === "POST");
+    throw networkFailure(creating);
   }
-  if (path === "/report" && init?.method === "POST" && response.status >= 500) throw networkFailure(true);
-  const creating = path === "/report" && init?.method === "POST";
+  if (creating && response.status >= 500) throw networkFailure(true);
   let raw: unknown;
   try {
     raw = await response.json();
@@ -885,11 +886,10 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
     });
   }
   const payload = rec(raw) as ApiResult<T>;
-  if (creating && (isIdempotencyOutcomeOpen(payload.message)
-    || response.ok && (typeof payload.code !== "number" || !Number.isFinite(payload.code)))) throw new LOutcomeUnknownError();
+  const status = creating ? reportCreationStatus(response, payload) : response.status;
   if (!response.ok || (payload?.code !== undefined && payload.code !== 0)) {
-    throw Object.assign(new Error(formatAdminApiError(payload?.message, `REGULATORY_API_${response.status}`)), {
-      status: response.status, reasonCode: payload?.message,
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `REGULATORY_API_${status}`)), {
+      status, reasonCode: payload?.message,
     });
   }
   return payload?.data as T;
@@ -1005,7 +1005,7 @@ export const lBiActions: LBiActions = {
         "Idempotency-Key": stableIdempotencyKey,
         "X-Operation-Reason": encodeURIComponent(reason),
       },
-    }, true).then((value) => {
+    }).then((value) => {
       const result = rec(value);
       // exportNetworkTreeOnce returns these fields, not an A2 proposal envelope.
       if (typeof result.reportId !== "string" || !/^L4TREE-[A-Z0-9]{8}$/.test(result.reportId)
