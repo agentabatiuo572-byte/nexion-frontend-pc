@@ -32,7 +32,7 @@ function stateTag(state: State, direct: boolean) {
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={direct
-    ? "原请求超过 24 小时，不能再重试。查询只读回当前内容，证明不了原操作有没有执行，到「操作记录与审批」核对。"
+    ? "原请求超过 24 小时，不能再重试。查询只读取当前内容，证明不了原操作有没有执行，到「操作记录与审批」核对。"
     : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
   return <StatusTag tone="warn" icon={CircleHelp} explain={direct
     ? "提交时没收到确定结果，可能已经保存。先查询原结果；有结论前不要换个办法重做。"

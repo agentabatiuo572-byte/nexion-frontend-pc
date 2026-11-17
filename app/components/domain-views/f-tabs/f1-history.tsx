@@ -141,7 +141,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
       confirmTone: action === "reverse" ? "danger" : "primary",
       confirmLabel: "提交审批",
       coverageLead: kind === "fund" ? "重发会让平台再付一次这笔钱" : kind === "sku" ? "重发会恢复商品履约，按会让平台多付钱的操作检查" : "按会让平台多付钱的操作检查；这笔实际不会补发",
-      coverageCheck: "提交时先检查兑付覆盖率；资金奖励在批准执行时后端再检查一次。",
+      coverageCheck: "提交时先检查兑付覆盖率；资金奖励在批准执行时再检查一次。",
       effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有${action === "reissue" ? "重发" : "冲正"}奖励权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这笔记录不变。`}>批准后生效</StatusTag>,
       facts: <Facts>
         {kind === "fund" ? <Fact k="奖励" lead tone="role-2" unit={reward.unit}>{reward.main}</Fact> : <Fact k="奖励">{rewardText}</Fact>}

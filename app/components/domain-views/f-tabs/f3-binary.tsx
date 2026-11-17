@@ -94,7 +94,7 @@ const STATE: Record<string, { label: string; tone: StateTone; icon: LucideIcon; 
   processing: { label: "结算中", tone: "progress", icon: Loader2, explain: "结算还在处理。" },
   failed: { label: "结算失败", tone: "danger", icon: AlertTriangle, explain: "这条结算记录失败；不能单凭它认定没发过钱。" },
 };
-const stateOf = (state: string) => STATE[state.toLowerCase()] ?? { label: operatorCopyText(state), tone: "neutral" as StateTone, icon: CircleHelp, explain: "后端给的状态，这页不认识。" };
+const stateOf = (state: string) => STATE[state.toLowerCase()] ?? { label: operatorCopyText(state), tone: "neutral" as StateTone, icon: CircleHelp, explain: "这页不认识这个状态。" };
 
 const SPILLOVER_VALUES = ["true", "1", "on", "已启用", "false", "0", "off", "已关闭"];
 
@@ -354,7 +354,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const recovery = recoveryCount > 0 && (
     <Notice tone="warn" title={<>{recoveryOpen ? `有 ${recoveryCount} 项原申请还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原申请怎么处理" content={<>
       <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
-      <p>查到审批单只说明申请登记了，不等于已经发钱。成员分组是直接保存，查询只读回现在的分组。</p>
+      <p>查到审批单只说明申请登记了，不等于已经发钱。成员分组是直接保存，查询只读取现在的分组。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原申请">
         {settlePending && <li>
@@ -375,7 +375,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-name">成员分组</span>
           <span className="f3-recovery-change">邀请人 {placementOriginal.intent.ownerUserId} · 成员 {placementOriginal.intent.memberUserId} → {placementOriginal.intent.leg} 组</span>
           <span className="f3-recovery-time">{businessStamp(placementOriginal.createdAt)} 提交</span>
-          <span className="f3-recovery-state"><StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经分好组。查询只读回现在的分组，有结论前不要换个组重分。">结果未知</StatusTag></span>
+          <span className="f3-recovery-state"><StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经分好组。查询只读取现在的分组，有结论前不要换个组重分。">结果未知</StatusTag></span>
           <span className="f3-recovery-actions"><Button size="sm" disabled={placementChecking} onClick={() => void checkPlacement()}>查询原结果</Button></span>
         </li>}
       </ul>
@@ -395,16 +395,16 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     ? <Conclusion state="warn" icon={PauseCircle} hint={canPause ? "恢复要提交审批；恢复后不会自动补结暂停期间的周期。" : "恢复要有暂停权限的同事提交审批。"}
         explain="暂停后，之后每一次结算都被拦下、不发钱；已经记账的奖励不受影响。">团队平衡奖励已暂停，之后的结算都会被拦下</Conclusion>
     : issues.length > 0
-      ? <Conclusion state="warn" icon={AlertTriangle} hint="在下面「结算设置」改成后端认得的值；每日上限在运营阶段设置。"
-          explain="后端每次结算前逐项核对门槛、比例、周期、残额处理、归零说明、发放开关、自动分组和运营阶段的每日上限，有一项不认，这次结算就被拦下。">
-          结算设置有 {issues.length} 项后端不认，结算会被拦下：{issues.join("、")}</Conclusion>
+      ? <Conclusion state="warn" icon={AlertTriangle} hint="在下面「结算设置」改成有效的值；每日上限在运营阶段设置。"
+          explain="每次结算前逐项核对门槛、比例、周期、残额处理、归零说明、发放开关、自动分组和运营阶段的每日上限，有一项不认，这次结算就被拦下。">
+          结算设置有 {issues.length} 项无效，结算会被拦下：{issues.join("、")}</Conclusion>
       : latest
         ? <Conclusion state="neutral" icon={Scale}
             explain={<><p>{latest.paid === null
               ? "最近一期是最近 100 条结算记录里最晚的结算日。这一期的金额合计系统没有算，每条记录的金额在下面「按邀请人」看。"
-              : "最近一期是结算记录里最晚的结算日，按最近 100 条记录算；金额是后端取整后的整数，被拦下的不算。"}</p><p>这一期还没结算时，页面算不出会发多少：金额在结算时按当时的订单额、比例和上限算。</p></>}>
+              : "最近一期是结算记录里最晚的结算日，按最近 100 条记录算；金额是取整后的整数，被拦下的不算。"}</p><p>这一期还没结算时，页面算不出会发多少：金额在结算时按当时的订单额、比例和上限算。</p></>}>
             最近一期 {latest.date}：{latest.owners.size} 位邀请人有结算记录{latest.paid === null ? "" : `，记账 ${fmtInt(latest.paid)} USDT`}</Conclusion>
-        : <Conclusion state="neutral" icon={Scale} explain="结算记录在后端结算后才有；这一期会发多少，要到结算时按当时的订单额、比例和上限算。">
+        : <Conclusion state="neutral" icon={Scale} explain="结算记录在结算后才有；这一期会发多少，要到结算时按当时的订单额、比例和上限算。">
             团队平衡奖励在发放，{PERIOD_TEXT[periodEff]?.when ?? "按周期结算"}；还没有结算记录</Conclusion>;
 
   const capAction = <button type="button" className="rd-link f3-nowrap" onClick={() => ctx.nav("H")}>去运营阶段设置</button>;
@@ -419,10 +419,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <StatBand label="团队平衡奖励摘要">
         <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={amountText(ctx.f3Amounts?.monthlyMatchedUsdRaw, ctx.f3MonthlyMatchedUsd)} unit="USDT"
           sub={`今天 ${amountText(ctx.f3Amounts?.dailyMatchUsdRaw, ctx.f3DailyMatchUsd)} USDT`}
-          explain={`本月（按业务日历从 1 日起）各种状态的结算记录里匹配订单额的合计，今天按业务日算${legacyAmounts ? "，后端取整成整数" : ""}。这是两组匹配上的订单额，不是发出的奖励；奖励 = 匹配订单额 × 当时的比例。`} />
+          explain={`本月（按业务日历从 1 日起）各种状态的结算记录里匹配订单额的合计，今天按业务日算${legacyAmounts ? "，已取整成整数" : ""}。这是两组匹配上的订单额，不是发出的奖励；奖励 = 匹配订单额 × 当时的比例。`} />
         <Stat label="没匹配上的订单额" icon={Layers3} tone="role-2" value={residualPool ? residualPool.replace(/ USDT$/, "") : "—"} unit={residualPool ? "USDT" : undefined}
-          sub={residualPool ? residualLabel(residualEff) : legacyAmounts || !RESIDUAL_TEXT[residualEff] ? "残额处理不认，后端没算" : "现在没有可算的订单额"}
-          explain={`每位邀请人取 A、B 两组扣掉已匹配后剩得多的那一组，再加起来；按现在的残额处理算范围，不是两组差额。${legacyAmounts ? "后端先取整再缩写，不是精确值。" : "写「—」时不是 0：残额处理不认，或按现在的残额处理没有可算的订单额。"}`} />
+          sub={residualPool ? residualLabel(residualEff) : legacyAmounts || !RESIDUAL_TEXT[residualEff] ? "残额处理无效，没有算" : "现在没有可算的订单额"}
+          explain={`每位邀请人取 A、B 两组扣掉已匹配后剩得多的那一组，再加起来；按现在的残额处理算范围，不是两组差额。${legacyAmounts ? "先取整再缩写，不是精确值。" : "写「—」时不是 0：残额处理无效，或按现在的残额处理没有可算的订单额。"}`} />
         <Stat label="出过结算的邀请人" icon={Users} tone="role-3" value={fmtInt(ctx.f3ParticipantCount)} unit="人"
           sub={blockedAttemptsText(ctx.f3BlockedAttempts)}
           explain={<>
@@ -442,13 +442,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           {example
             ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {amountText(example.aRaw, example.a)} USDT、B 组 {amountText(example.bRaw, example.b)} USDT，匹配 {amountText(example.matchRaw, example.match)} USDT，记账 {amountText(example.todayRaw, example.today)} USDT（{stateOf(example.state).label}{example.todayRaw === undefined ? "，整数" : ""}）</>
             : "还没有结算记录，第一笔结算后这里写出一条真实的例子。"}
-          <Explain label="这条例子怎么来的" content={`取结算记录里最新的一条，金额是${example?.todayRaw === undefined ? "后端取整后的整数" : "这条记录的原值"}；这条记录用的是当时的门槛、比例和上限，不一定是现在的。`} />
+          <Explain label="这条例子怎么来的" content={`取结算记录里最新的一条，金额是${example?.todayRaw === undefined ? "取整后的整数" : "这条记录的原值"}；这条记录用的是当时的门槛、比例和上限，不一定是现在的。`} />
         </p>
       </Panel>
 
       <Panel title="各团队 A、B 两组" icon={ArrowLeftRight} tone="role-2" sub={`最近 ${fmtInt(rows.length)} 条结算记录 · 新到旧${legacyAmounts ? " · 金额是整数" : ""}`}
         explain={<>
-          <p>一条结算记录是一位邀请人在一个结算日的结算。后端最多给最近 100 条，按结算日从新到旧，不是全部邀请人；同一位邀请人可能有几天的记录。</p>
+          <p>一条结算记录是一位邀请人在一个结算日的结算。最多列最近 100 条，按结算日从新到旧，不是全部邀请人；同一位邀请人可能有几天的记录。</p>
           <p>每一行 A 组往左、B 组往右，按这一行较大的一组定长度，看哪边小、差多少；实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额要扣掉已结算的部分、受每期上限限制，可能比实色少；刻线是现在的门槛（当时的门槛可能不同）。行和行之间看数字比大小。</p>
           <p>点一行看这一期结算后剩下的订单额、结算方式、发起人和批准人，审批单可以直接点过去。</p>
         </>}
@@ -494,7 +494,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             </tbody>
           </Table></div>
           {pager.total > 0 && <Pager label="结算记录" total={pager.total} page={pager.page} pageSize={pager.pageSize} sizes={[10, 20, 50]}
-            onPage={pager.setPage} onPageSize={pager.setPageSize} note={rows.length >= 100 ? "后端只给最近 100 条" : undefined} />}
+            onPage={pager.setPage} onPageSize={pager.setPageSize} note={rows.length >= 100 ? "只列最近 100 条" : undefined} />}
         </> : (<>
           <Table label="按结算日汇总" className="f3-dates">
             <thead><tr>
@@ -537,7 +537,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             what="奖励 = 较小一组的订单额 × 这个比例，再受每期上限限制。按百分比存，1 就是 1%。"
             when={whenText}
             effect="调高：同样的订单额发更多奖励，平台可能多付钱；批准执行和实际结算时查兑付覆盖率。调低：发得更少。"
-            note="App 目前读不了小于 0.00001% 的比例，已登记缺陷；后端允许更小的值。"
+            note="App 目前读不了小于 0.00001% 的比例，已登记缺陷；后台允许保存更小的值。"
             value={<span className="f3-cfg"><span className="f3-cfg-value" data-warn={ratePercent === null ? "" : undefined}>{rateEff}</span><span className="f3-cfg-dir">调高可能多付钱</span></span>}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked("F.binary.matchRate")} onClick={openRate}>调整</Button> : undefined} />
           <ConfigRow name="结算周期和残额处理"
@@ -681,7 +681,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       <F3RuleFlow compact rule={rule} next={value === undefined ? undefined : { threshold: `${fmtDecimal(value)} USDT` }} changed={["threshold"]} />
     </>,
     coverageLead: "调低门槛会让更多团队拿到奖励，平台可能多付钱",
-    coverageCheck: "批准执行时后端查兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
+    coverageCheck: "批准执行时查兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
     detail: `每组订单额门槛 · 现在 ${text(thresholdText)}。`,
     statedBrief: { impact: "批准后，之后的结算按新门槛判断两组过没过；已经记账的奖励不变。", check: "核对新门槛和单位（USDT）；调低可能多付钱，先看兑付覆盖率。" },
     submit: async (reason, _fields, newValue) => {
@@ -702,13 +702,13 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
         {value !== undefined && ratePercent !== null && Number(value) !== Number(ratePercent) && <Fact k="方向" tone={Number(value) > Number(ratePercent) ? "warn" : undefined}>
           {Number(value) > Number(ratePercent) ? "调高：同样的订单额发更多奖励，平台可能多付钱" : "调低：同样的订单额发更少奖励"}
         </Fact>}
-        {value !== undefined && Number(value) > 0 && Number(value) < 0.00001 && <Fact k="App" tone="warn">App 目前读不了这么小的比例（小于 0.00001%），用户的团队页会读取失败；后端允许，已登记缺陷</Fact>}
+        {value !== undefined && Number(value) > 0 && Number(value) < 0.00001 && <Fact k="App" tone="warn">App 目前读不了这么小的比例（小于 0.00001%），用户的团队页会读取失败；后台允许保存，已登记缺陷</Fact>}
         {whenFacts}
       </Facts>
       <F3RuleFlow compact rule={rule} next={value === undefined ? undefined : { rate: `${value}%` }} changed={["rate"]} />
     </>,
     coverageLead: "调高比例会让同样的订单额发更多奖励，平台可能多付钱",
-    coverageCheck: "批准执行时后端查兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
+    coverageCheck: "批准执行时查兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
     detail: `较小一组订单额 × 这个比例 = 奖励 · 现在 ${rateEff}。`,
     statedBrief: { impact: "批准后，之后的结算按新比例算奖励，还要受每期上限限制；已经记账的奖励按当时的比例，不变。", check: "按百分比填，1 就是 1%；调高可能多付钱，先看兑付覆盖率。" },
     submit: async (reason, _fields, newValue) => {

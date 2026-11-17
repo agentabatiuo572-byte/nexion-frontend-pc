@@ -23,7 +23,7 @@ export const emptyF2BootstrapDraft = (): F2BootstrapDraft => ({
 });
 
 const BOOT_APPROVER = "另一位管理员";
-const COVERAGE_CHECK = "批准时后端检查兑付覆盖率，低于红线不会执行。";
+const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
 /** 一格的问题；没问题返回 undefined。百分号和千分位逗号照后端去掉再读。 */
 function cellIssue(kind: "usdt" | "nex", raw: string): string | undefined {
@@ -168,7 +168,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
             return <tr key={level}>
               <Td><span className="f2-layer"><span className="f2-layer-chip" data-direct={level === "L1" ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span></Td>
               <Td align="right">{level === "L1"
-                ? <span className="f2-boot-fixed"><strong>10%</strong><StatusTag tone="neutral" icon={Lock} explain="第 1 层 USDT 比例固定 10%，后端不接受别的值；提交时照样写进审批单。">固定</StatusTag></span>
+                ? <span className="f2-boot-fixed"><strong>10%</strong><StatusTag tone="neutral" icon={Lock} explain="第 1 层 USDT 比例固定 10%，不接受别的值；提交时照样写进审批单。">固定</StatusTag></span>
                 : <BootCell id={`f2-boot-${level}-usdt`} label={`${level} USDT 比例`} unit="%" value={draft.cells[level].usdt} issue={shown(level, "usdt")} onChange={(value) => change(level, "usdt", value)} />}</Td>
               <Td align="right"><BootCell id={`f2-boot-${level}-nex`} label={`${level} UVT 系数`} unit="UVT" value={draft.cells[level].nex} issue={shown(level, "nex")} onChange={(value) => change(level, "nex", value)} /></Td>
               <Td align="right">{sample === null ? <span className="f2-muted">—</span>

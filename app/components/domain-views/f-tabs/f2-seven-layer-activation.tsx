@@ -27,7 +27,7 @@ const ACTION_COPY = {
   ACTIVATE: {
     label: "启用团队购买奖励结算",
     impact: "批准后，新订单按七层比例计算团队奖励；启用前的订单仍按原来的规则，不补发。比例、冷却和好友拆分都不变。",
-    check: "提交和批准时，后端都会检查七层比例和系数是否配齐、第 1 层是否 10%；批准时还检查兑付覆盖率不低于红线。",
+    check: "提交和批准时都会检查七层比例和系数是否配齐、第 1 层是否 10%；批准时还检查兑付覆盖率不低于红线。",
     after: "运行中",
   },
   PAUSE: {
@@ -39,7 +39,7 @@ const ACTION_COPY = {
   RESUME: {
     label: "恢复团队购买奖励结算",
     impact: "批准后，新订单照常计算；因这次暂停没算的订单会重新处理，其他历史订单不补算。比例和冷却不变。",
-    check: "批准时后端检查兑付覆盖率不低于红线，低于红线不会执行。",
+    check: "批准时检查兑付覆盖率，低于红线不会执行。",
     after: "运行中",
   },
 } as const;
@@ -59,7 +59,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   const blockedReason = writeBlocked ?? (busy ? "正在读取结算状态"
     : ctx.f2DirectPolicyError || !policy ? "结算状态没读到，刷新后再试"
       : ctx.f2ActivationPendingError && canAudit ? "审批进度没读到，刷新后再试"
-        : !supported ? "后台版本和后端对不上，暂时只能查看；请刷新后再试"
+        : !supported ? "后台页面和系统版本对不上，暂时只能查看；请刷新后再试"
           : ctx.f2ActivationPending ? "已有申请在等另一位管理员批准"
             : ctx.f2ActivationAttempt ? "上一次申请结果未知，先按原请求重试或去核对"
               : submitted ? "刚提交的申请在等另一位管理员批准"
@@ -76,12 +76,12 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
       effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="整体结算"><Change from={stateName[state]} to={copy.after} /></Fact>
-        <Fact k="启用时间">{policy.cutoverAt ? `不变，仍是 ${stamp(policy.cutoverAt)}` : "批准时由后端记下"}</Fact>
+        <Fact k="启用时间">{policy.cutoverAt ? `不变，仍是 ${stamp(policy.cutoverAt)}` : "批准时自动记下"}</Fact>
       </Facts>,
       statedBrief: { impact: copy.impact, check: copy.check },
       detail: copy.impact,
       completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励规则」权限；批准前结算状态不变。",
-      coverageCheck: "批准时后端检查兑付覆盖率，低于红线不会执行。",
+      coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。",
       coverageLead: action === "ACTIVATE" ? "启用后平台开始按七层比例付团队奖励" : "恢复后平台继续按七层比例付团队奖励",
       submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); },
       done: "已提交审批，等另一位管理员批准",
@@ -120,7 +120,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
         {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError === "审批进度没读到" ? canAudit ? "点页头「刷新」重读；读到之前不能提交整体结算的申请。" : "这个账号没有查看审批的权限。" : <>{ctx.f2ActivationPendingError}{canAudit && "点页头「刷新」重读。"}</>}</Notice></li>}
-        {policy && !supported && <li><Notice tone="warn" title="暂时只能查看">后台版本和后端的结算接口对不上，刷新后再试；仍不行请联系值班人员。</Notice></li>}
+        {policy && !supported && <li><Notice tone="warn" title="暂时只能查看">后台页面和系统版本对不上，刷新后再试；仍不行请联系值班人员。</Notice></li>}
       </ul>}
     </Panel>
   );
@@ -238,9 +238,9 @@ function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
   ];
   return (
     <div className="f2-checks">
-      <p className="f2-checks-title">启用时后端会检查<Explain label="这三条怎么用" content={<>
-        <p>提交申请和另一位管理员批准时，后端都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
-        <p>后端把没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以后端检查为准。</p>
+      <p className="f2-checks-title">启用时会检查<Explain label="这三条怎么用" content={<>
+        <p>提交申请和另一位管理员批准时都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
+        <p>没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以提交时的检查为准。</p>
         {rates.length === 0 ? <p>七层都没有规则时，先在「每层分多少」做首次配置。</p>
           : LAYERS.some((level) => !layerRate(rates, level)) && <p>只缺几层时后台补不了，需要技术同事处理。</p>}
       </>} /></p>

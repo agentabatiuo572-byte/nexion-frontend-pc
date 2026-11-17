@@ -60,10 +60,10 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
         <Fact k="旧 UVT 系数">{reference.legacyNexPerUsd === null ? "未配置" : `${num(reference.legacyNexPerUsd)} UVT / 1 USDT`}</Fact>
       </Facts>,
       content: <DiffList rows={rows(policy, value)} restTitle="没改的项" />,
-      statedBrief: { impact: "批准后两项一起生效，只对之后发生的购买和设备收益算；已经算好的不变。开启拆分后好友购买奖励按比例发 USDT 和 UVT，不再另加旧 UVT；只影响第 1 层。设备奖励由平台另付，不扣成员自己的收益。", check: "提交前重读一次政策，版本变了就不提交；批准时后端再核对版本，调高方向检查兑付覆盖率。" },
+      statedBrief: { impact: "批准后两项一起生效，只对之后发生的购买和设备收益算；已经算好的不变。开启拆分后好友购买奖励按比例发 USDT 和 UVT，不再另加旧 UVT；只影响第 1 层。设备奖励由平台另付，不扣成员自己的收益。", check: "提交前重读一次政策，已被别人改过就不提交；批准时再核对一次，调高方向检查兑付覆盖率。" },
       detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。（政策版本 ${policy.policyVersion}）`,
       completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励比例」权限；批准前按原政策执行。",
-      coverageCheck: "批准时后端检查兑付覆盖率，低于红线不会执行。", coverageLead: "这次修改会让平台多付好友奖励",
+      coverageCheck: "批准时检查兑付覆盖率，低于红线不会执行。", coverageLead: "这次修改会让平台多付好友奖励",
       submit: async (reason) => { await ctx.updateF2DirectPolicy(value, reason); },
       done: "好友奖励政策已提交审批，等另一位管理员批准",
     });
