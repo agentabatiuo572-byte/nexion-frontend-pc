@@ -770,7 +770,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, can
         {(control) => <Textarea {...control} value={pending?.reason ?? reason} maxLength={policy?.max ?? 200} count={`${visibleReasonLength(pending?.reason ?? reason)}/${policy?.max ?? 200}`} placeholder={REASON_PLACEHOLDER} onBlur={() => setTouched((current) => ({ ...current, reason: true }))} onChange={(event) => setReason(event.target.value)} />}
       </Field></fieldset>
       {policyError && <Notice tone="danger">{policyError}</Notice>}
-      <Fold title="填写与执行说明" summary="优先级、条件与理由" inset><p>同一检查维度里未归档的规则，优先级不能重复。规则总表分页显示，不一定看得全；重复时保存会提示，换一个值再提交。</p><p>规则按冻结、转人工、延迟的严重度裁决，同严重度才比较优先级。理由只记录这次操作依据。</p></Fold>
+      <Fold title="填写与执行说明" summary="优先级、条件与理由" inset><p><KeepText text="同一检查维度里未归档的规则，优先级不能重复。规则总表分页显示，可能看不全；重复时保存会提示，换一个值即可。" /></p><p>规则按冻结、转人工、延迟的严重度裁决，同严重度才比较优先级。理由只记录这次操作依据。</p></Fold>
     </div>}
   </Modal>;
 }
