@@ -71,8 +71,8 @@ const MODE_HELP: Record<string, string> = {
   risk_bucket: "命中待复核风险的新人先不发；账户或账户组被标记或冻结的、在「异常套利与刷量排查」被拦截新人礼的也不发。",
   direct: "只跳过待复核风险这一层；账户或账户组被标记或冻结的、在「异常套利与刷量排查」被拦截新人礼的照样不发。",
 };
-/** 菜单名整段换行，不在名字中间断开。 */
-const K2_NAME = ["「异常套利与刷量排查」"];
+/** 带菜单名的这一段整段换行，不在名字中间断开，也不把「的。」甩到下一行。 */
+const K2_NAME = ["在「异常套利与刷量排查」被拦截新人礼的"];
 const modeHelp = (mode: string | undefined) => mode && MODE_HELP[mode] ? <KeepText text={MODE_HELP[mode]} phrases={K2_NAME} /> : undefined;
 
 /** 指定新人的结算条件（e6d5bdca 资格读取）：一句结论 + 批准后会怎样。读到的空值写未知，不推断。 */
