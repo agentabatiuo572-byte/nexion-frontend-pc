@@ -486,7 +486,8 @@
 .k4-chevron[data-open] { transform: rotate(180deg); }
 /* 提现频率展开的一块：贴在这一行下面，底色比表格深一档，看得出属于上一行。 */
 .k4-contrib .k4-withdraw-row > td { padding: var(--rd-space-3) var(--rd-space-4) var(--rd-space-4); background: var(--rd-panel-inner); }
-.k4-withdraw { display: grid; gap: var(--rd-space-3); min-width: 0; }
+.k4-withdraw { --rd-panel: var(--rd-panel-inner); display: grid; gap: var(--rd-space-3); min-width: 0; }  /* 里面的表头和滚动遮盖用面板底色，换成这一块的底色 */
+.k4-evidence-toggle { margin-left: calc(-1 * var(--rd-btn-pad)); }
 .k4-withdraw-head { margin: 0; display: flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .k4-contrib .k4-withdraw-assets { table-layout: auto; }
 .k4-contrib .k4-withdraw-assets th:nth-child(n), .k4-contrib .k4-withdraw-assets td:nth-child(n) { width: auto; }

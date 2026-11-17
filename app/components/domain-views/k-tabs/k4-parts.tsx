@@ -225,20 +225,21 @@ function decimalText(raw: string) {
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(2, "0")}`;
 }
 
-/** 提现频率打分那一刻的原始记录：每个币种一行，金额是申请提现的原额，不换算、不相加。 */
+/** 提现速度打分那一刻的原始记录：每个币种一行，金额是申请提现的原额，不换算、不相加。 */
 function WithdrawEvidence({ data, id }: { data: K4WithdrawalEvidence; id: string }) {
   const time = (value: string | null) => (value ? formatBusinessTimeCompact(value, "—") : "—");
   const amount = (count: number, value: string, currency: string) => <Cell num main={`${count} 笔`} sub={`${decimalText(value)} ${currency}`} />;
   return (
     <div className="k4-withdraw" id={id}>
       <p className="k4-withdraw-head">
-        <span>打分时 {time(data.capturedAt)}（{businessZone().label}）的提现记录 · 申请金额，按各币种原额</span>
+        <span>{data.assets.length === 0 ? `打分时 ${time(data.capturedAt)}（${businessZone().label}），近 7 天和此前 30 天都没有提现。`
+          : `打分时 ${time(data.capturedAt)}（${businessZone().label}）的提现记录 · 申请金额，按各币种原额`}</span>
         <Explain label="这些数怎么统计" content={<>
           <p>近 24 小时、近 7 天都截到打分那一刻；「此前 30 天」是 7 天以前的 30 天（{time(data.windows.baseline.fromInclusive)} 至 {time(data.windows.baseline.toExclusive)}），日均按 {data.baselineDivisorDays} 天平均。</p>
           <p>不分是否成功，全部提现都算。金额是用户申请提现的数，不是到账额，不换算成别的币种。</p>
         </>} />
       </p>
-      {data.assets.length === 0 ? <p className="k4-quiet">打分时近 7 天和此前 30 天都没有提现。</p> : (
+      {data.assets.length > 0 && (
         <Table label="各币种的提现记录" className="k4-withdraw-assets">
           <thead><tr>
             <Th>币种</Th>
@@ -266,7 +267,7 @@ function WithdrawEvidence({ data, id }: { data: K4WithdrawalEvidence; id: string
 
 /**
  * 一个用户五维贡献：子分、权重、贡献和后端证据原文。贡献条是这一维占系统评分的多少。看它能判断：系统评分主要来自哪一维。
- * 提现频率带了打分时的原始记录（structured）时，这一行可以展开看各币种；旧评分记录没有，只显示原文。
+ * 提现速度带了打分时的原始记录（structured）时，这一行可以展开看各币种；旧评分记录没有，只显示原文。
  */
 export function ContributionTable({ rows, total, label }: { rows: K4Contribution[]; total: number; label: string }) {
   const [open, setOpen] = useState(false);
@@ -277,7 +278,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
         <Th>维度 · 命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
-        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="评分时记下的原文，原样显示。提现频率的原文把各币种合在一起，金额前的「$」不代表美元；新的评分点「各币种明细」看原额，旧评分记录只有这句原文，没有单独的币种和精确金额。" /></span></Th>
+        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="评分时记下的原文。提现速度一项把各币种合在一起算，「$」不代表美元；点「各币种明细」看各币种原额，旧评分记录没有明细。" /></span></Th>
       </tr></thead>
       <tbody>
         {rows.map((row) => (
