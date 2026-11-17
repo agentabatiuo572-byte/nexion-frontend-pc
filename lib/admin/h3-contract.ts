@@ -6,6 +6,7 @@ export type H3PendingApproval = {
   submittedBy: string | null;
   submittedAt: string | null;
   configKey: string | null;
+  /** The proposal's expected value. For a verified ticket, null means first setup. */
   currentValue: string | null;
   proposedValue: string | null;
 };
@@ -136,6 +137,7 @@ export function parseH3Model(value: unknown): H3Model {
     const pending = object(value);
     if (["action", "ticketId", "submittedBy", "submittedAt", "configKey", "currentValue", "proposedValue"]
       .some(key => pending[key] !== null && typeof pending[key] !== "string")) throw new Error("H3_RESPONSE_INVALID");
+    if (pending.currentValue === "__MISSING__") pending.currentValue = null;
   };
   if (row.pendingApprovals !== undefined) Object.values(object(row.pendingApprovals)).forEach(pendingApproval);
   if (row.pendingMissionCreations !== undefined) {
