@@ -202,12 +202,13 @@ function financeRow(value: unknown) {
   return { customerId: id(r.customerId), customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), kind: enumeration(r.kind, KINDS), currency: enumeration(r.currency, CURRENCIES), amount: decimal(r.amount), succeededAt: nullableInstant(r.succeededAt), orderNo: nullableText(r.orderNo), historyStatus: enumeration(r.historyStatus, ["READY", "UNKNOWN"]) };
 }
 function detailRow(value: unknown) {
-  const r = object(value, "id customerId customerNo nickname kind currency amount succeededAt agentId groupId");
+  const r = object(value, "id customerId customerNo nickname kind currency amount succeededAt agentId groupId agentDisplayName");
   const amount = decimal(r.amount);
   if (amount === null) malformed("detail.amount");
   return { id: text(r.id), customerId: id(r.customerId), customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname),
     kind: enumeration(r.kind, ["NET_CONTRIBUTION", "DEPOSIT", "DEVICE_PURCHASE"]), currency: enumeration(r.currency, CURRENCIES),
-    amount, succeededAt: instant(r.succeededAt), agentId: nullableId(r.agentId), groupId: nullableId(r.groupId) };
+    amount, succeededAt: instant(r.succeededAt), agentId: nullableId(r.agentId), groupId: nullableId(r.groupId),
+    agentDisplayName: r.agentDisplayName === undefined ? null : nullableText(r.agentDisplayName) };
 }
 function detailSummary(value: unknown) {
   const r = object(value, "currency status observedAmount totalAmount visibleAmount restrictedAmount totalCount visibleCount restrictedCount customerCount visibleCustomerCount restrictedCustomerCount");

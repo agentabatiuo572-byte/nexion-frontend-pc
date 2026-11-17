@@ -33,6 +33,7 @@ import type {
   F3RawAmounts,
   F3Statistics,
   F3Settlement,
+  F3BlockedSettlementAttempt,
   F4LeadershipPoolOverview,
   F4AmbassadorPolicy,
   F4AmbassadorPolicyUpdate,
@@ -179,6 +180,7 @@ export interface FViewCtx {
   f3Statistics?: F3Statistics;
   f3Formula: F3Formula | null;
   f3Settlements: F3Settlement[];
+  f3BlockedAttempts: F3BlockedSettlementAttempt[] | null;
   f3MaxTrackGmv: number;
   f3Config: F3BinaryConfig | null;
   // F3 参数类配置(如双轨暂停开关)· 读后端 configValues map + 写经 updateF3Config。

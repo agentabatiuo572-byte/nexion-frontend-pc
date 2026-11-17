@@ -755,6 +755,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   E5_OVERVIEW_CONTRACT_INVALID: "设备概览数据不完整，暂时无法显示统计，请稍后刷新或联系值班人员。",
   E5_DEVICE_PAGE_CONTRACT_INVALID: "设备列表数据不完整，暂时不能操作，请稍后刷新或联系值班人员。",
   E5_SIM_STATE_INVALID: "设备状态筛选无效，请重新选择状态。",
+  E5_PROPOSAL_OPERATION_INVALID: "设备审批操作无效，请重新打开设备记录后再操作。",
   E5_SOURCE_INVALID: "设备来源筛选无效，请重新选择来源。",
   PAGE_INVALID: "页码或每页条数无效，请重新选择后读取。",
   TASK_CLASS_INVALID: "任务类型无效，请从六种类型中重新选择。",

@@ -124,7 +124,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     const groupName = (groupId: string | null) => groupId == null ? null : origin.scopeSummary.groups.find(row => row.groupId === groupId)?.name ?? "组编号 " + groupId;
     // 原归属是这笔钱成功那一刻算给的客服和小组，不是客户现在的归属；没有有效归属写「没有归属」。
     const owner = (row: (typeof list.records)[number]) => row.agentId == null && row.groupId == null ? "没有归属"
-      : [row.agentId == null ? null : "客服 " + row.agentId, groupName(row.groupId)].filter(Boolean).join(" · ");
+      : [row.agentId == null ? null : row.agentDisplayName ?? "客服 " + row.agentId, groupName(row.groupId)].filter(Boolean).join(" · ");
     const facts = [
       { k: "统计总额", v: <>{money(detail.totalAmount!)} · {detail.totalCount} 条 · {detail.customerCount} 位客户</> },
       { k: "核实情况", v: detail.status === "AVAILABLE" ? "全部已核实"

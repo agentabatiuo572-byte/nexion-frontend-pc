@@ -304,9 +304,22 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
   array(row, "settlements", "F3").forEach((value, index) => {
     const settlement = record(value, "F3", `settlements[${index}]`);
     rawAmounts(settlement, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], `settlements[${index}]`);
+    rawAmounts(settlement, ["residualTrackARaw", "residualTrackBRaw", "residualAmountUsdt"], `settlements[${index}]`);
+    for (const key of ["settlementNo", "residualPolicy", "settlementMode", "proposerName", "approverName", "a2OperationId"]) {
+      if (settlement[key] !== undefined && settlement[key] !== null && typeof settlement[key] !== "string") invalid("F3", `settlements[${index}].${key}`);
+    }
     strings(settlement, ["user", "settlementDate", "cohort", "state", "tone"], `settlements[${index}]`);
     for (const key of ["ownerUserId", "trackA", "trackB", "matchAmount", "todayPaid"]) finite(settlement[key], "F3", `settlements[${index}].${key}`);
   });
+  if (row.blockedAttempts !== undefined) {
+    array(row, "blockedAttempts", "F3").forEach((value, index) => {
+      const attempt = record(value, "F3", `blockedAttempts[${index}]`);
+      for (const key of ["settlementNo", "blockedAt"]) text(attempt[key], "F3", `blockedAttempts[${index}].${key}`);
+      for (const key of ["ownerUserId", "settlementDate", "reason", "settlementMode", "a2OperationId", "proposerName", "approverName"]) {
+        if (attempt[key] !== null && typeof attempt[key] !== "string") invalid("F3", `blockedAttempts[${index}].${key}`);
+      }
+    });
+  }
   const cap = object(row, "dailyCap", "F3");
   strings(cap, ["currentLabel", "windowLabel", "nextTrigger", "nextLabel", "currentPhase"], "dailyCap");
   nonNegativeInteger(cap.currentMonth, "F3", "dailyCap.currentMonth");

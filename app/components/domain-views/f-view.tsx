@@ -1110,6 +1110,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Statistics: f3Overview?.statistics,
     f3Formula: f3Overview?.formula ?? null,
     f3Settlements: f3Overview?.settlements ?? [],
+    f3BlockedAttempts: f3Overview?.blockedAttempts ?? null,
     f3MaxTrackGmv: f3Overview?.maxTrackGmv ?? 1,
     f3Config: f3Overview?.config ?? null,
     f3ConfigValues: f3Overview?.configValues ?? {},
