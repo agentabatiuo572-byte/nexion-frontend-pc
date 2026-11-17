@@ -10,7 +10,7 @@ import {
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import { executeK2Command, K1OutcomeUncertainError, K1RequestError, newK1CommandKey, type K2CommandRequest, type K2Row, type K2ViewGroup, type KRiskParam } from "@/lib/admin/k-client";
+import { executeK2Command, K1OutcomeUncertainError, K1RequestError, newK1CommandKey, validateK2ParamWrite, type K2CommandRequest, type K2Row, type K2ViewGroup, type KRiskParam } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -741,6 +741,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
           ctx.toast(`${p.name} 参数不完整或超出范围`);
           return;
         }
+        validateK2ParamWrite(p.key, nextValue);
         return sendOperation({ kind: "param", target: p.key, param: p, reason, businessValue, newValue: nextValue,
           label: `${p.name} 已更新为 ${boardBaselineText(nextValue)}`,
           request: { method: "PATCH", path: `/arbitrage/params/${encodeURIComponent(p.key)}`,

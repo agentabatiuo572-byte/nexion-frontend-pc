@@ -303,6 +303,7 @@ export type ArbitrageOverview = {
   domain: "K2";
   stats: K2Stat[];
   params: KRiskParam[];
+  welcomeGiftScopeSupported?: Record<string, boolean>;
   otpInitializationRequired: Record<string, boolean>;
   views: K2ViewGroup[];
   sources?: string[];
@@ -999,6 +1000,13 @@ function validateK2ParamValue(key: string, value: string): boolean {
   return false;
 }
 
+/** New writes only; the shared historical parser and original command sender keep all four scopes. */
+export function validateK2ParamWrite(key: string, value: string) {
+  if (key === "welcomeGiftAnomalyThreshold" && /\/\s*(手机号|设备)$/.test(value.trim())) {
+    throw new Error("K2_WELCOME_GIFT_SCOPE_RETIRED");
+  }
+}
+
 function invalidK2Response(path: string): never {
   throw new Error(formatAdminApiError(K2_RESPONSE_INVALID, K2_RESPONSE_INVALID) + ` · ${path}`);
 }
@@ -1177,7 +1185,16 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
     if (typeof initialization[key] !== "boolean") invalidK2Response(`arbitrage.otpInitializationRequired.${key}`);
     otpInitializationRequired[key] = initialization[key] as boolean;
   }
-  return { serverCanonical: true, domain: "K2", stats, params, otpInitializationRequired, views, sources };
+  let welcomeGiftScopeSupported: Record<string, boolean> | undefined;
+  if (data.welcomeGiftScopeSupported !== undefined) {
+    const supported = requiredK2Record(data.welcomeGiftScopeSupported, "arbitrage.welcomeGiftScopeSupported");
+    welcomeGiftScopeSupported = {};
+    for (const scope of ["实体", "账户簇", "手机号", "设备"]) {
+      if (typeof supported[scope] !== "boolean") invalidK2Response(`arbitrage.welcomeGiftScopeSupported.${scope}`);
+      welcomeGiftScopeSupported[scope] = supported[scope] as boolean;
+    }
+  }
+  return { serverCanonical: true, domain: "K2", stats, params, welcomeGiftScopeSupported, otpInitializationRequired, views, sources };
 }
 
 /** A serialized K2 write is retained before sending, including the original operator and reason. */
@@ -1900,7 +1917,10 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
   updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   upsertK1Whitelist: (cidr, note, reason, expireText, commandKey) => apiRequest("/multi-account/whitelist", { method: "POST", commandKey, body: JSON.stringify(withReason({ cidr, note, expireText }, reason)) }).then(() => undefined),
   disableK1Whitelist: (cidr, reason, commandKey) => apiRequest("/multi-account/whitelist", { method: "PATCH", commandKey, body: JSON.stringify(withReason({ cidr }, reason)) }).then(() => undefined),
-  updateK2Param: (key, value, expectedVersion, reason, commandKey) => apiRequest(`/arbitrage/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) }).then(() => undefined),
+  updateK2Param: async (key, value, expectedVersion, reason, commandKey) => {
+    if (!commandKey) validateK2ParamWrite(key, value);
+    await apiRequest(`/arbitrage/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) });
+  },
   executeK2Action: (rowId, action, expectedVersion, clusterExpectedVersion, reason, commandKey) => {
     const mapped = k2ActionMap[action] || action;
     return apiRequest(`/arbitrage/rows/${encodeURIComponent(rowId)}/${encodeURIComponent(mapped)}`, {
