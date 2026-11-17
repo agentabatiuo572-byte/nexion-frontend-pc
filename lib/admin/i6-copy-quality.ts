@@ -1,7 +1,13 @@
+/** Java whitespace plus Unicode separators and BOM; NEL remains copy text. */
+export function i6HasCopyText(value: string): boolean {
+  return /[^\s\u001c-\u001f]/u.test(value);
+}
+
 /** Mirrors the backend I6 publish gate for immediate form feedback. */
 export function i6CopyQualityIssues(zh: string, en: string, vi: string): string[] {
   const issues: string[] = [];
   for (const [locale, value] of [["中文", zh], ["英文", en], ["越南语", vi]] as const) {
+    // Placeholder compression uses ASCII whitespace + separators + BOM, unlike required text.
     const bare = value.replace(/\s+/gu, "");
     const compact = bare.replace(/[\x21-\x2F\x3A-\x40\x5B-\x60\x7B-\x7E]+/g, "").toLowerCase();
     if (/^(.)\1{4,}$/u.test(bare) || /^(?:test|todo|tbd|placeholder|dummy|样例|测试|占位)+$/u.test(compact)) {

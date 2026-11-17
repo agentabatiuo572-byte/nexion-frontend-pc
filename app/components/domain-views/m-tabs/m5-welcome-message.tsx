@@ -80,7 +80,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       if (controller.signal.aborted) return;
       const pending = welcomeCommands.list().find((row) => row.actorId === adminId);
       setCurrent(value); setDraft(old => pending ? pending.payload.texts : preserveDraft.current && old ? old : value.texts); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
-      setReason(pending?.payload.reason ?? "");
+      setReason(old => pending?.payload.reason ?? (preserveDraft.current ? old : ""));
     }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();

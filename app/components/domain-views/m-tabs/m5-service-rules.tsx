@@ -112,7 +112,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       if (controller.signal.aborted) return;
       const pending = ruleCommands.list().find(row => row.actorId === adminId);
       setCurrent(value); setDraft(old => pending ? toDraft({ ...value, ...pending.payload }) : preserveDraft.current && old ? old : toDraft(value)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
-      setReason(pending?.payload.reason ?? "");
+      setReason(old => pending?.payload.reason ?? (preserveDraft.current ? old : ""));
     }).catch((cause: unknown) => { if (!controller.signal.aborted) { setReadUnavailable(true); setError(displayAdminReadError(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
