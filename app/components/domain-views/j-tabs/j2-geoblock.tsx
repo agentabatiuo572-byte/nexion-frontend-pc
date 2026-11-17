@@ -855,7 +855,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const verdict = (entry: GeoEndpoint) => {
     if (lookupStatus === "blocked") return <StatusTag tone="danger" icon={Ban} explain="在封锁名单里：用户的 App 请求都被拒。">不能用</StatusTag>;
     if (entry.source === "explicit" && entry.configurable && entry.countries.includes(lookup)) return <StatusTag tone="danger" icon={Ban} explain="这个入口单独封锁了它，浏览也不行。">这个入口不能用</StatusTag>;
-    if (lookupStatus === "limited") return <StatusTag tone="warn" icon={ShieldMinus} explain="在受限名单里：能浏览，资金和奖励类操作被拒。这个入口是不是资金类，以后端登记的路由为准。">资金和奖励类被拒</StatusTag>;
+    if (lookupStatus === "limited") return <StatusTag tone="warn" icon={ShieldMinus} explain="在受限名单里：能浏览，资金和奖励类操作被拒。这个入口算不算资金类，以系统登记为准。">资金和奖励类被拒</StatusTag>;
     return <StatusTag tone="ok" explain="不受地区限制；紧急停用开关等其他限制照旧。">不受地区限制</StatusTag>;
   };
   const endpointPanel = (
@@ -865,7 +865,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         { k: "两层怎么合起来", v: "一个请求先看封锁名单，再看这个入口有没有单独封锁，最后看受限名单；先命中哪条就按哪条处理。" },
         { k: "继承全局", v: "这个入口只按封锁名单和受限名单处理。" },
         { k: "单独设定", v: "在全局名单之外再封锁选中的国家，这个入口对它们整个不能用；不能给封锁名单里的国家开口子。" },
-        { k: "还没接入", v: "后端还没把这个入口接上，单独规则设不了也不会生效；全局名单照常管。" },
+        { k: "还没接入", v: "这个入口还没接入，单独规则设不了也不会生效；全局名单照常管。" },
         { k: "不在这里的", v: "地区规则只管经过地区过滤的 App 请求；后台、代看、支付回调等不受影响。" },
       ])}
       actions={unknownOn.size > 0 && [...unknownOn].some((key) => key.startsWith("endpoint:")) ? unknownTag("direct") : undefined}>
@@ -902,7 +902,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
               <Tr key={entry.key}>
                 <Td><Cell main={<>{entry.label}{unknownOn.has(`endpoint:${entry.key}`) && <> {unknownTag("direct")}</>}</>} sub={entry.biz || undefined} /></Td>
                 <Td>{!entry.configurable
-                  ? <StatusTag tone="neutral" icon={Unplug} explain="后端还没把这个入口接上，单独规则设不了也不会生效；封锁名单和受限名单照常管它。">还没接入</StatusTag>
+                  ? <StatusTag tone="neutral" icon={Unplug} explain="这个入口还没接入，单独规则设不了也不会生效；封锁名单和受限名单照常管它。">还没接入</StatusTag>
                   : <span className="j2-mode" data-mode={entry.source}>{entry.sourceLabel || MODE_TEXT[entry.source === "explicit" ? "explicit" : "derived"]}</span>}</Td>
                 <Td>{entry.countries.length === 0
                   ? <span className="j2-muted">{entry.source === "derived" ? "没有，跟随全局" : "—"}</span>
