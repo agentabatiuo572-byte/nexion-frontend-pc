@@ -178,6 +178,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const assembled = previewChannel && link ? assemble(previewChannel.textTemplate, previewChannel.urlTemplate, link) : null;
   const visibleInApp = config.channels.filter((channel) => channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme"));
   const systemInApp = config.channels.some((channel) => channel.enabled && channel.intentType === "system");
+  // App 分享海报只取前 4 个打开链接、打开应用类渠道（share-poster-sheet linkChannels），排在后面的启用了也不显示。
+  const hiddenInApp = visibleInApp.slice(4);
   const languages = config.interfaceLanguages;
   const onLanguages = INTERFACE_LANGUAGES.filter((language) => language.base || !languages || languages.includes(language.code));
   const h3 = reach("/growth/quest", "growth_h3_read");
@@ -219,7 +221,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
             <thead><tr><Th>渠道</Th><Th>启用</Th><Th>在 App 里</Th><Th>文案模板</Th><Th>链接模板</Th></tr></thead>
             <tbody>
               {config.channels.map((channel, index) => {
-                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 的分享海报里。" } : IN_APP[channel.intentType];
+                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 的分享海报里。" }
+                  : hiddenInApp.includes(channel) ? { text: "不显示", tone: "warn" as const, icon: CircleOff, explain: "分享海报里打开链接和打开应用两类合计只显示前 4 个，这个排在后面。要显示，先关掉前面的一个。" } : IN_APP[channel.intentType];
                 const name = CHANNEL_NAME[channel.key] ?? channel.key;
                 return <Tr key={channel.key} selected={previewChannel?.key === channel.key}>
                   <Td><Cell main={name} sub={INTENT_NAME[channel.intentType] ?? "未知方式"} /></Td>
@@ -237,7 +240,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {preview("分享", <>
           <dl className="a3-preview-rows">
             <div><dt>分享出去的链接</dt><dd>{link ? <span className="a3-preview-link">{config.baseUrl}<mark>{SAMPLE_CODE}</mark></span> : <span className="a3-preview-empty">没有链接，App 里分享按钮不可用</span>}</dd></div>
-            <div><dt>分享海报里的外部渠道</dt><dd>{visibleInApp.length ? visibleInApp.slice(0, 4).map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、") : "没有"}{systemInApp && "，最后是「更多」"}<span className="a3-preview-sub">{visibleInApp.length > 4 ? `只显示前 4 个，另外 ${visibleInApp.length - 4} 个不显示；` : ""}另外固定有保存图片、复制链接</span></dd></div>
+            <div><dt>分享海报里的外部渠道</dt><dd>{visibleInApp.length || systemInApp ? [...visibleInApp.slice(0, 4).map((channel) => CHANNEL_NAME[channel.key] ?? channel.key), ...(systemInApp ? ["更多"] : [])].join("、") : "没有"}<span className="a3-preview-sub">{hiddenInApp.length > 0 && <span className="rd-keep">{hiddenInApp.map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、")} 排在第 4 个之后，不显示；</span>}<span className="rd-keep">固定有保存图片、复制链接</span></span></dd></div>
           </dl>
           {webChannels.length > 0 && <>
             <Segments label="看哪个渠道" value={previewChannel?.key ?? ""} onChange={(value) => setPreviewKey(String(value))} items={webChannels.map((channel) => ({ value: channel.key, label: CHANNEL_NAME[channel.key] ?? channel.key }))} />
