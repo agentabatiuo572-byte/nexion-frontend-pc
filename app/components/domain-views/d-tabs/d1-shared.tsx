@@ -130,10 +130,11 @@ const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
 function recoveryExplain(items: readonly D1PendingItem[]) {
   const queryable = items.some(item => item.record);
   const legacy = items.some(item => !item.record);
-  return ["这些操作发出后没收到明确结果，可能已经生效。",
-    queryable ? "先查询原结果；按原请求重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。" : "",
-    legacy ? `${queryable ? "查不了原结果的记录，" : ""}现在的值只能参考，不能据此认定原操作成没成；按原请求重试，或到操作记录与审批核对。` : "",
-    "有结果前，相关对象不能再操作。"].join("");
+  return <>
+    <p>这些操作发出后没收到明确结果，可能已经生效。有结果前，相关对象不能再操作。</p>
+    {queryable && <p>先查询原结果；按原请求重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
+    {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原请求重试，或到操作记录与审批核对。</p>}
+  </>;
 }
 
 /**
