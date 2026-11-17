@@ -297,8 +297,8 @@ export async function updateH1RhythmParam(
 }
 
 export async function updateH1MonthDial(month: number, key: string, value: string | number, reason: string, commandKey?: string, operator = currentAdminOperator()) {
-  validateH1DialValue(key, value);
   if (commandKey) return sendH1StoredPatch(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, commandBody(key, value, reason, operator), commandKey);
+  validateH1DialValue(key, value);
   return fetchH1PhaseMutation(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, key, value, reason, "h1-month-dial");
 }
 
