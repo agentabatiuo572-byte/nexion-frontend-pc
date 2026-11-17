@@ -1521,13 +1521,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             <tbody>
               {dayOne.map((task, index) => {
                 const contract = contractForTask(task, model.taskContracts);
-                const sample = contract.sample24h;
+                const sample = contract.completed24h === undefined ? contract.sample24h : contract.completed24h;
                 return <Tr key={`${text(task.id, String(index))}-${text(contract.taskKey, String(index))}`}>
                   <Td><Cell main={nameOf(task)} title={`${nameOf(task)} · ${text(contract.taskKey, "—")}`} sub={<span data-mono="">{text(contract.taskKey, "—")}</span>} /></Td>
-                  <Td><Cell main={<span data-mono="">{text(contract.serverEvent, "—")}</span>} /></Td>
+                  <Td><Cell main={<span data-mono="">{text(contract.missionCode ?? contract.serverEvent, "—")}</span>} /></Td>
                   <Td align="right"><Cell num main={sample == null || sample === "" ? "—" : numericValue(sample).toLocaleString("en-US")} /></Td>
                   <Td align="right"><Cell num main={text(contract.anomalyPct, "—")} /></Td>
-                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} main={`${boolValue(contract.b3) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnly) ? "仅留存" : "不只算留存"}`}
+                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} main={`${boolValue(contract.b3Default === undefined ? contract.b3 : contract.b3Default) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnlyDefault === undefined ? contract.retentionOnly : contract.retentionOnlyDefault) ? "仅留存" : "不只算留存"}`}
                     sub={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} /></Td>
                 </Tr>;
               })}

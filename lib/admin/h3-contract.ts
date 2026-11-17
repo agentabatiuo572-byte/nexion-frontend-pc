@@ -2,6 +2,16 @@ import type { H3QuestEventBinding } from "./h-client";
 
 export type H3Task = Record<string, any>;
 
+export interface H3TaskContract extends Record<string, any> {
+  missionCode?: string;
+  completed24h?: number | null;
+  b3Default?: boolean | number | string;
+  retentionOnlyDefault?: boolean | number | string;
+  attributionAvailable?: boolean;
+  fieldSemantics?: { serverEvent: string; b3: string; retentionOnly: string; sample24h: string; anomalyPct: string };
+  completionBasis?: { source: string; timestamp: string; states: string[]; window: string; deduplication: string };
+}
+
 /** Only the tasks GET supplies these aggregates; absent fields retain the legacy unknown state. */
 export type H3Stats = {
   dayOneTaskCount?: number;
@@ -70,7 +80,7 @@ export type H3Model = {
   weeklyMultipliers: Array<{ p: string; mult: string | null }>;
   monthlyMissions: H3Task[];
   taskMonitor: Array<{ label: string; note: string }>;
-  taskContracts: Array<Record<string, any>>;
+  taskContracts: H3TaskContract[];
   promoBanner: Record<string, any>;
   contentLocales: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly: Record<string, any>;
@@ -126,6 +136,17 @@ export function parseH3Model(value: unknown): H3Model {
   for (const key of ["dayOneTasks", "weeklyTier1", "weeklyTier2", "monthlyMissions", "dayOneStates", "weeklyMultipliers", "taskMonitor", "taskContracts", "eventBindings"]) {
     if (!Array.isArray(row[key])) throw new Error("H3_RESPONSE_INVALID");
     row[key].forEach(object);
+  }
+  for (const contract of row.taskContracts) {
+    if (contract.completed24h === undefined) continue;
+    strings(contract, ["missionCode"]);
+    if (contract.completed24h !== null && (!Number.isSafeInteger(contract.completed24h) || contract.completed24h < 0)
+      || typeof contract.attributionAvailable !== "boolean"
+      || [contract.b3Default, contract.retentionOnlyDefault].some(value => ![true, false, 0, 1, "0", "1", "true", "false"].includes(value))) throw new Error("H3_RESPONSE_INVALID");
+    strings(object(contract.fieldSemantics), ["serverEvent", "b3", "retentionOnly", "sample24h", "anomalyPct"]);
+    const basis = object(contract.completionBasis);
+    strings(basis, ["source", "timestamp", "window", "deduplication"]);
+    if (!Array.isArray(basis.states) || basis.states.some(state => typeof state !== "string")) throw new Error("H3_RESPONSE_INVALID");
   }
   for (const task of [...row.dayOneTasks, ...row.weeklyTier1, ...row.weeklyTier2, ...row.monthlyMissions]) {
     strings(task, ["taskCode", "taskKind", "status", "reward"]);
