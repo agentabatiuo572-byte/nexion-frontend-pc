@@ -1,6 +1,6 @@
 import type { H3QuestEventBinding } from "./h-client";
 
-export type H3Task = Record<string, any>;
+export type H3Task = Record<string, any> & { contentState?: "UNKNOWN" | "DRAFT" | "OPENED" };
 
 export interface H3TaskContract extends Record<string, any> {
   missionCode?: string;
@@ -166,6 +166,7 @@ export function parseH3Model(value: unknown): H3Model {
   for (const task of [...row.dayOneTasks, ...row.weeklyTier1, ...row.weeklyTier2, ...row.monthlyMissions]) {
     strings(task, ["taskCode", "taskKind", "status", "reward"]);
     if (!task.taskCode || !["MISSION", "MONTHLY"].includes(task.taskKind) || !["active", "paused", "archived"].includes(task.status)) throw new Error("H3_RESPONSE_INVALID");
+    if (task.contentState !== undefined && !["UNKNOWN", "DRAFT", "OPENED"].includes(task.contentState)) throw new Error("H3_RESPONSE_INVALID");
   }
   for (const item of row.weeklyMultipliers) {
     strings(item, ["p"]);
