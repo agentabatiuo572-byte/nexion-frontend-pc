@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -20,7 +21,7 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E5_STATES, e5StateNote } from "./e5-device-state";
-import { ClosureContact, CommandClosureModal, closureKnown, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import { SETTLED_REJECTED, businessCodeOf } from "../recovery-panel";
 import type { EViewCtx } from "./types";
 
@@ -214,7 +215,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
     <RecoveryPanel title={recoveryTitle(items.filter(item => !item.key.startsWith("waiting:")).length, items.filter(item => item.key.startsWith("waiting:")).length)} tone="warn"
       explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
     {error && !records.length && <Notice tone="warn" title={error} />}
-    {closing && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt} known={closureKnown(outcomes[closing.commandKey])}
+    {closing && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={<>{closing.intent === "pause" || closing.intent === "resume" ? <Fact label="用户" value={closing.device.user} /> : <><Fact label="设备" value={closing.device.deviceName} /><Fact label="实例号" value={closing.device.serial} mono /></>}<Fact label="原理由" value={closing.reason} /></>}
       onClose={() => setClosing(null)} onSubmit={async evidence => {
         const receipt = await check(closing, evidence);

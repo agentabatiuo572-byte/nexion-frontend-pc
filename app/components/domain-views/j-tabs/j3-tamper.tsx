@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
 
 /**
  * J3 · 篡改防御监控（看板页）。安全和风控同事在这页看系统拦下了多少次篡改请求、集中在哪些接口、
@@ -23,7 +24,7 @@ import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmerg
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
-import { CommandClosureModal, closureKnown } from "../e-tabs/e-command-check";
+import { CommandClosureModal, } from "../e-tabs/e-command-check";
 import { PROCESSED_IN_DIALOG, REJECTED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
@@ -308,7 +309,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
   const canSubmit = !!record && fundInvestigationAccess(record).canSubmit;
   const processed = receipt?.originalStatus === "SUCCEEDED";
-  const canClose = canSubmit && (receipt?.originalStatus === "UNKNOWN" || (processed || receipt?.originalStatus === "FAILED") && expired);
+  const canClose = canSubmit && eCommandClosureRequests(receipt, expired).conclusions.length > 0;
   const recoveryRows: FundRecoveryRow[] = saved ? [{
     key: command?.commandKey ?? "j3-legacy",
     title: savedTitle(saved),
@@ -337,7 +338,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
     <FundRecoveryPanel rows={recoveryRows} heading="修改告警设置 · 结果未知" />
-    {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt} known={closureKnown(outcome)}
+    {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt} offer={eCommandClosureOffer(outcome, isRetryExpired(command))}
       facts={<>
         <Fact k="改动">{savedChange(saved!)}</Fact>
         <Fact k="系统记录">{receiptFact(receipt, "原修改还锁着")}</Fact>

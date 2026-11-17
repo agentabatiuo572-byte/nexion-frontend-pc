@@ -18,8 +18,10 @@ import { buildRoleMetadataPayload, PlatformMutationReadbackError } from "@/lib/a
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { a6GrantsProblem, rbacAuthority, rbacProposal, useRbacCommands, type A6Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { eCommandSettled } from "@/lib/admin/e-command-investigation";
-import { rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
+import { canInvestigateECommand, eCommandClosureRequests, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { rbacClosureConclusions, rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
+import { FundClosureModal } from "../fund-command-check";
+import { receiptFact } from "../recovery-panel";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import {
@@ -150,6 +152,7 @@ export default function A6Roles() {
   const [grantsOpen, setGrantsOpen] = useState(false);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
   const [recheckOriginal, setRecheckOriginal] = useState<A6Original | null>(null);
+  const [closing, setClosing] = useState<RbacCommand | null>(null);
   const [releasing, setReleasing] = useState<RbacCommand | null>(null);
   /** 查询原结果后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
   const [outcomes, setOutcomes] = useState<Record<string, RbacOutcome>>({});
@@ -601,7 +604,7 @@ export default function A6Roles() {
     // Status can also have succeeded as a direct no-op; release requires its current target state.
     const original = record.original;
     const outcome = outcomes[record.commandKey];
-    const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: authorities.includes(rbacAuthority(original)), canClose: false });
+    const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: authorities.includes(rbacAuthority(original)), canClose: canInvestigateECommand("platform_a6_read") });
     const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && !outcome?.receipt && (original.kind === "a6-delete" || original.kind === "a6-grants"
       || original.kind === "a6-status" && overview?.roles.some(role => role.id === original.role.id && role.status === original.status));
     return {
@@ -612,6 +615,7 @@ export default function A6Roles() {
         : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原请求重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
+        {canInvestigateECommand("platform_a6_read") && rbacClosureConclusions(outcome, expired).length > 0 && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
         {!expired && <Button variant="ghost" onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
         {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
@@ -789,6 +793,24 @@ export default function A6Roles() {
               .catch(error => setToast(displayAdminError(error)));
           }} />
       )}
+
+      {closing && <FundClosureModal label={closing.name} createdAt={closing.createdAt}
+        offer={eCommandClosureRequests(outcomes[closing.commandKey]?.receipt, isRetryExpired(closing))}
+        facts={<><Fact k="角色">{closing.change}</Fact><Fact k="系统记录">{receiptFact(outcomes[closing.commandKey]?.receipt ?? null, "记录保留")}</Fact></>}
+        onClose={() => setClosing(null)} onSubmit={async evidence => {
+          const record = closing;
+          const next = await commands.queryInvestigation(record, evidence);
+          requireActor();
+          setClosing(null);
+          if (!next || !eCommandSettled(next)) {
+            setOutcomes(all => ({ ...all, [record.commandKey]: { state: next?.businessState === "PROCESSING" ? "PROCESSING" : next?.businessState === "REJECTED" ? "REJECTED" : "UNKNOWN", receipt: next } }));
+            return;
+          }
+          setConfirmReq(null); setReleasing(null);
+          commands.forget(record);
+          setToast(rbacSettledText(next));
+          await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+        }} />}
 
       {confirmReq && (
         <OperationConfirmModal briefKind={confirmReq.briefKind}

@@ -1,4 +1,6 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -25,7 +27,7 @@ import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
@@ -338,7 +340,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
           任务生成后才能下载。{exportPage(`到「${pageName}」下载`)}
         </Notice>
       )}
-      {closing && pending && <FundClosureModal label={pending.label} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
+      {closing && pending && <FundClosureModal label={pending.label} createdAt={pending.createdAt} offer={eCommandClosureOffer(investigationResults[pending.commandKey], isRetryExpired(pending))}
         onClose={() => setClosing(false)} onSubmit={async evidence => { await checkInvestigation(pending, evidence); setClosing(false); }} />}
     </>,
   };

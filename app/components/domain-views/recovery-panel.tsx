@@ -127,7 +127,7 @@ export const CLOSURE_ACK = "我已核对依据，知道提交后不能撤销或�
  * success：「已执行」凭什么——receipt 原回包（不填编号）、audit 成功记录编号。
  * 「未执行」在这类范围只在后台核实整次修改已回滚时才收；回执看不出有没有回滚，收不收提交了才知道。
  */
-export type ClosureOffer = { conclusions: ECommandEvidence["conclusion"][]; success?: "receipt" | "audit" };
+export type ClosureOffer = import("@/lib/admin/e-command-investigation").ECommandClosureOffer;
 const ROLLBACK_REFUSED = "后台没有核实到这次修改已整个回滚，记录继续保留。";
 export const ROLLBACK_HELP = "收了记录解除，可以重新发起；不收时记录保留。";
 /** 按调用方给的结论写结案框顶上那句；有「未执行」时不说成一定能结。 */

@@ -7,6 +7,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
 export { closureKnown, closureConflict } from "./recovery-panel";
 
 /**
@@ -215,7 +216,7 @@ export function FundCheckButtons({ record, outcome, expired, busy, checking, onC
   return <>
     {(!access.unavailableReason || access.unavailableReason === "MISSING_ORIGIN" && lookupWithoutOrigin) && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={checking} disabled={busy}
       disabledReason={access.unavailableReason ? undefined : fundReadBlock(record)} onClick={onCheck}>查询原结果</Button>}
-    {access.canSubmit && (receipt?.originalStatus === "UNKNOWN" || expired && (receipt?.originalStatus === "SUCCEEDED" || receipt?.originalStatus === "FAILED")) && <Button size="sm" variant="danger-outline" disabled={busy} onClick={onClose}>核查结案</Button>}
+    {access.canSubmit && eCommandClosureRequests(receipt, !!expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={busy} onClick={onClose}>核查结案</Button>}
   </>;
 }
 

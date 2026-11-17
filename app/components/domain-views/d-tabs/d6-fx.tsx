@@ -1,4 +1,6 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * D6 汇率设置（配置页，PG-46）：先看用户现在按什么价下单（买入价），再改基准价、买入点差、报价有效期，调整历史收起，相关页面在页底。
@@ -17,7 +19,7 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
@@ -493,14 +495,14 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const releaseModal = <>
     {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
     {pending && closing && !pending.proposal && <CommandClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} commandKey={pending.commandKey} createdAt={pending.createdAt}
-      known={closureKnown(investigationResults[pending.commandKey])} facts={<Fact k="改动"><Change from={valueText(pending.param, pending.before)} to={valueText(pending.param, pending.after)} /></Fact>}
+      offer={eCommandClosureOffer(investigationResults[pending.commandKey], isRetryExpired(pending))} facts={<Fact k="改动"><Change from={valueText(pending.param, pending.before)} to={valueText(pending.param, pending.after)} /></Fact>}
       onClose={() => setClosing(false)} onSubmit={async evidence => {
         const { receipt, settled: done } = await queryD6DirectCommand(pending, evidence);
         setInvestigationResults(current => ({ ...current, [pending.commandKey]: { receipt } }));
         setClosing(false);
         if (done) await settleDirect(pending, receipt?.originalStatus ?? "SUCCEEDED");
       }} />}
-    {pending && closing && pending.proposal && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt} known={closureKnown(investigationResults[pending.commandKey])}
+    {pending && closing && pending.proposal && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt} offer={eCommandClosureOffer(investigationResults[pending.commandKey], isRetryExpired(pending))}
       facts={<Fact k="改动"><Change from={valueText(pending.param, pending.before)} to={valueText(pending.param, pending.after)} /></Fact>}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(pending, evidence); setClosing(false); }} />}
   </>;
