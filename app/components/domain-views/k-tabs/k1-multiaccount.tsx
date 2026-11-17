@@ -4,6 +4,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { f4Decimal } from "@/lib/admin/f4-money";
+import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -131,8 +132,7 @@ const APPROVAL_LINE = {
 } as const;
 const PENDING_PARAM_TIP = "另一位超级管理员批准后才生效，批准前仍按现在的值；审批结束前这一项不能再改。";
 const PENDING_ENTRY_TIP = "另一位超级管理员批准后才放行，批准前这笔仍锁着；审批结束前不能再提交。";
-const SOURCE_NAMES: Record<string, string> = { TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" };
-const sourceName = (type: string) => SOURCE_NAMES[type.toUpperCase()] ?? "来源未知";
+const sourceName = k1EarningSourceName;
 const RISK_REASON_PLACEHOLDER = "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索";
 const CONFLICT_TEXT = "这项刚被别人改过。";
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对。";
