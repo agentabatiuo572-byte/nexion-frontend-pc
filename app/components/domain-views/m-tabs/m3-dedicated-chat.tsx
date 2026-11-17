@@ -157,7 +157,8 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
   // B15 「客服已切换」: a centred divider naming the new handler and their role.
   if(message.kind==="AGENT_SWITCH")return <div className="m3s-divider" role="note"><span>{agentSwitchText(message.agentName,message.senderRole)} · <time>{messageTime(message.ts)}</time></span></div>;
   // System notices are not anyone's speech: a centred strip without bubble, avatar or receipt (M-11).
-  if(message.sourceSenderType==="SYSTEM")return <div className="m3s-system" role="note"><span>{(message).text}</span><time>{messageTime(message.ts)}</time></div>;
+  // 系统消息是会话记录里的内容（后端写入），和聊天气泡一样是数据，不是页面的说明。
+  if(message.sourceSenderType==="SYSTEM")return <div className="m3s-system" role="note" data-user-content=""><span>{(message).text}</span><time>{messageTime(message.ts)}</time></div>;
   if(message.sourceSenderType==="INTERNAL")return <div className="m3s-internal" role="note"><span className="m3s-internal-label">内部备注 · {message.agentName&&message.agentName!=="系统"?message.agentName:"客服"} · {messageTime(message.ts)}</span><span className="rd-pre">{(message).text}</span></div>;
   const mine=message.sender==="agent";
   return <div className="m3s-msg" data-side={mine?"agent":"customer"} data-new={newlyArrived?"":undefined}>
