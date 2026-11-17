@@ -146,7 +146,7 @@ export type LExportAuditRow = {
 };
 
 export type LBiActions = {
-  createReport: (input: LReportCreateInput, reason: string, idempotencyKey?: string) => Promise<void>;
+  createReport: (input: LReportCreateInput, reason: string, idempotencyKey?: string, operator?: string) => Promise<void>;
   createRegulatoryReport: (input: LRegulatoryReportInput, reason: string, idempotencyKey?: string) => Promise<void>;
   createNetworkTreeExport: (
     query: { period: "day" | "week" | "month"; depth: number },
@@ -842,7 +842,7 @@ function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailRece
   return { reportId: report.reportId, status: report.status };
 }
 
-/** L3 alone retains the complete request, including its original operator and reason. */
+/** L3 detail submits the retained request, including its original operator and reason. */
 export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey: string): Promise<L3DetailReceipt> {
   const data = await apiRequest<Record<string, unknown>>("/reports", {
     method: "POST",
@@ -954,16 +954,16 @@ export async function fetchL4NetworkReport(reportId: string, request: { period: 
   return { reportId, status: "READY", rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
 }
 
-function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, reason, operator: currentAdminOperator() };
+function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = currentAdminOperator()) {
+  return { ...body, reason, operator };
 }
 
 export const lBiActions: LBiActions = {
-  createReport: async (input, reason, stableIdempotencyKey) => {
+  createReport: async (input, reason, stableIdempotencyKey, operator) => {
     const data = await apiRequest<{ created?: unknown }>("/reports", {
       method: "POST",
       headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
-      body: JSON.stringify(withReason(input, reason)),
+      body: JSON.stringify(withReason(input, reason, operator)),
     });
     const created = rec(data?.created);
     if (typeof created.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(created.reportId)

@@ -1,8 +1,21 @@
 import type { L1KpiQuery, LReportCreateInput } from "@/lib/admin/l-client";
+import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
+import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard } from "./l1-kpi-contract.ts";
 import { readL1LiveTotals } from "./l1-l2-live-data.ts";
 
 export type L1ExportMode = "series" | "snapshot" | "totals";
+
+export type L1PendingExport = PendingMutationRecord & {
+  label: string;
+  mode: L1ExportMode;
+  input: LReportCreateInput;
+  reason: string;
+  operator?: string;
+  commandOrigin?: FundCommandOrigin;
+};
+
+export const L1_EXPORT_ORIGINAL_INCOMPLETE = "保存的原请求不完整，不能重发。请查询原结果，到「操作记录与审批」核对。";
 
 export type L1ExportSource = {
   parentData: unknown;
