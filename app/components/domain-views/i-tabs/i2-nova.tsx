@@ -404,6 +404,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <Fact k="模板">{tplFact(n.key)}</Fact>
         <Fact k="扫描">{tickSentence(n.tick)}</Fact>
         <Fact k="个人间隔">{cooldownSentence(n.cd)}</Fact>
+        {!n.on && <Fact k="紧急停用时">不发；关停期间也能启用，解除后照常发</Fact>}
       </Facts>
     ),
     confirmLabel: n.on ? "确认停用" : "确认启用",
@@ -412,10 +413,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     reasonMax: 200,
     run: (reason) => {
       if (!n.on && tplStatus(n.key) !== "published") {
-        toast("请先为该通道创建并发布完整的中越文模板，再恢复通道");
+        toast("先给它发布模板才能启用");
         throw new Error("NOVA_PUBLISHED_TEMPLATE_REQUIRED");
       }
-      return runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${n.name} 通道${n.on ? "已停推" : "已恢复"}`);
+      return runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${channelName(n.key, n.name)} ${n.on ? "已停用" : "已启用"}`);
     },
   });
 
@@ -889,6 +890,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       hint={noPublished.length > 0 ? "到「消息模板」给它们写好模板并发布。" : socialDry ? "到「真实动态素材」点「同步事件」取新素材。" : undefined}
       explain={<>
         <p>在推＝频道已启用。启用只说明开关开着；真正发出还要有已发布模板、有素材、到了扫描时间、过了个人间隔，用户也要允许系统通知。</p>
+        <p>紧急停用开关把五项业务全部关停时，所有频道都不发；读不到开关状态时也不发。只关停其中几项不影响推送。</p>
         <p>素材按最近读到的 20 条真实事件看，只对「真实动态」频道有意义；发送时每类查最近 100 条，读到的 20 条之外可能还有能用的。</p>
       </>}>
       {`${onlineCount} 个频道在推，共 ${novas.length} 个`}
