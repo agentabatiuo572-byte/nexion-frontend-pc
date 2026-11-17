@@ -64,7 +64,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   const restricted = probability || change.action === "current-price";
 
   const effect = probability
-    ? <StatusTag tone="neutral" icon={Info} explain="后端把它写进当天配置，公布价直接用目标价。">目前不生效</StatusTag>
+    ? <StatusTag tone="neutral" icon={Info} explain="会写进当天配置，但公布价直接用目标价。">目前不生效</StatusTag>
     : change.action === "curve-cell"
     ? <StatusTag tone="progress" filled explain={`改的是计划。推进到 ${day}，或把生效日固定到 ${day} 时，才按它发布现价。`}>推进到 {day} 时生效</StatusTag>
     : change.action === "current-price"
@@ -82,13 +82,13 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
         <Fact k="提交时检查">{raising
           ? `按改后整周最高目标价（现在 ${price(Math.max(...frames.map((frame) => frame.targetPrice)))}）复核覆盖率，低于红线拒绝${probability ? "；概率不折成应付款" : ""}`
           : decided ? "七天计划在你打开后被改过就拒绝" : "提高复核兑付覆盖率；降低核对计划未变"}</Fact>
-        {probability && <Fact k="环境限制" tone="warn">非开发环境后端一律拒绝改上涨概率（含审批）</Fact>}
+        {probability && <Fact k="环境限制" tone="warn">开发环境以外一律不能改上涨概率（含审批）</Fact>}
       </Facts>;
     }
     if (change.action === "current-price") {
       return <Facts>
         <Fact k="提交时检查">{raising ? "按新价重估兑付覆盖率，低于红线拒绝" : decided ? "现价在你打开后变过就拒绝" : "提高按新价重估覆盖率；降低核对现价未变"}</Fact>
-        <Fact k="环境限制" tone="warn">非开发环境后端一律拒绝直接改现价（含审批）</Fact>
+        <Fact k="环境限制" tone="warn">开发环境以外一律不能直接改现价（含审批）</Fact>
       </Facts>;
     }
     return <Facts>
@@ -182,7 +182,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
       expired: !!pending && g3MarketCommandExpired(pending),
       disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
-        ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项没有按原请求查询结果的接口，请到「操作记录与审批」核对。"
+        ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项不能按原请求查询结果，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {
         if (!(pending ? pending.request.kind === "approval" : forceApproval || g3MarketRequiresApproval(change, value))) return undefined;

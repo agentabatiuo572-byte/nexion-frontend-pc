@@ -68,7 +68,7 @@ type G3ConfirmReq = {
 
 /** Object states use the authoritative GET when present, plus saved unknown commands. */
 export type G3ObjectState = { kind: "unknown" | "approval" | "locked"; detail: ReactNode; verification: "current" | "last-observation"; observedAt: number };
-const TUNING_RULE = "开发环境以外，后端拒绝人工改上涨概率和直接改现价：直接保存、提交审批和批准都会被拒。";
+const TUNING_RULE = "开发环境以外不能人工改上涨概率和直接改现价：直接保存、提交审批和批准都会被拒。";
 const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pumpProbability: "上涨概率", volatilityPct: "波动幅度" };
 /** 已停用的三个单独设置（后端 cb7fe037）。七天计划里每天的波动幅度不在内。 */
 const RETIRED_OVERRIDE_NAME = { volatilityPct: "当前波动幅度", oracle: "价格来源", deviationPct: "偏离告警阈值" } as const;
@@ -221,7 +221,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       facts: <Facts>
         <Fact k="原操作改的是">D{dayIndex + 1} 的计划波动幅度（2 表示 ±2%）</Fact>
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
-        <Fact k="按原请求重试">执行过就返回原结果，没执行过会被拒绝</Fact>
+        <Fact k="按原请求重试">执行过就给出原结果，没执行过会被拒绝</Fact>
       </Facts>,
       statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       amplifies: false,
@@ -242,7 +242,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
         {target !== undefined ? <>
           <Fact k="选了之后"><Change from={priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`} to={`${price(target)} USDT（${value} 目标价）`} /></Fact>
           <Fact k="什么时候变">确认后马上按 {value} 发布现价，之后不再自动切换</Fact>
-          {!priceMissing && target > overview!.currentPrice && <Fact k="提交时检查" tone="warn">比现价高：后端按 {value} 目标价重估兑付覆盖率，低于红线就拒绝；现行规则不需要审批</Fact>}
+          {!priceMissing && target > overview!.currentPrice && <Fact k="提交时检查" tone="warn">比现价高：按 {value} 目标价重估兑付覆盖率，低于红线就拒绝；不需要审批</Fact>}
         </> : value === "未钉住" && overview ? <>
           <Fact k="选了之后">现价不变；之后在排程已配置、没有暂停时，从 D{curDay === 7 ? loopStop ? 7 : 1 : curDay! + 1} 继续推进{curDay === 7 && loopStop ? "（D7 之后选的是停在末值）" : ""}</Fact>
         </> : <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>}
@@ -278,7 +278,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       effect: <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>,
       facts: <Facts>
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
-        <Fact k="按原请求重试">执行过就返回原结果，没执行过会被拒绝</Fact>
+        <Fact k="按原请求重试">执行过就给出原结果，没执行过会被拒绝</Fact>
       </Facts>,
       statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       confirmLabel: "按原请求重试",
@@ -300,7 +300,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       : <>暂停后每日推进和 5 分钟采样都停下；应急改现价和固定生效日仍会发布价格。</>,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     coverageLead: paused ? "恢复后价格重新按七天计划推进，计划价更高时平台的 UVT 应付款跟着变" : undefined,
-    coverageCheck: "恢复时后端用当前兑付覆盖率检查，低于红线或算不准时拒绝；不需要审批。",
+    coverageCheck: "恢复时按当前兑付覆盖率检查，低于红线或算不准时拒绝；不需要审批。",
     facts: paused
       ? <Facts>
         <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>
@@ -328,7 +328,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       action: `手动设置 · ${label}`,
       title: `修改${label}`,
       detail: <><b>{label}</b> · 当前 {current} · App 现在没有页面显示它，不影响价格和兑换。保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。</>,
-      effect: <StatusTag tone="neutral" icon={Info} explain="已提给后端接上或退役。">目前不生效</StatusTag>,
+      effect: <StatusTag tone="neutral" icon={Info} explain="这项还没有用处，改了不影响价格和兑换。">目前不生效</StatusTag>,
       facts: <Facts>
         <Fact k="现在用不用">App 收到这个值但不显示盈亏，不影响价格和兑换</Fact>
         <Fact k="保存到什么时候">一直保留，直到再次修改</Fact>
@@ -764,7 +764,7 @@ function G3MarketEditor() {
   // 现价和今天计划价对不上时，在现价旁写差多少、为什么。原因只写配置能说明的；说明不了的如实写「后端没给原因」。
   const gap = offPlan ? overview.currentPrice - todayTarget : 0;
   const gapText = offPlan ? `比 D${curDay} 计划价 ${price(todayTarget)} ${gap < 0 ? "低" : "高"} ${Math.abs(gap / todayTarget * 100).toFixed(2)}%` : "";
-  const gapReason = offPlan ? "差多少后端没有给出原因" : "";
+  const gapReason = offPlan ? "原因这页查不到" : "";
 
   const openCurveCellMc = (dayIndex: number, field: G3CurveField) => {
     const frame = overview.frames[dayIndex];
@@ -810,10 +810,10 @@ function G3MarketEditor() {
       : coverageUnknown
         ? <Conclusion state="warn" explain={coverageExplain}>兑付覆盖率现在读不准，提高价格和恢复自动变化会被拒绝</Conclusion>
       : overview.coverage.redlineBreached
-        ? <Conclusion state="warn" explain="后端在提高价格、固定到更高的一天、恢复自动变化时检查兑付覆盖率，低于红线一律拒绝。">兑付覆盖率 {cov}% 低于红线 {redline}，提高价格会被拒绝</Conclusion>
+        ? <Conclusion state="warn" explain="提高价格、固定到更高的一天、恢复自动变化时都会检查兑付覆盖率，低于红线一律拒绝。">兑付覆盖率 {cov}% 低于红线 {redline}，提高价格会被拒绝</Conclusion>
         : scheduleMissing && !pinned
           ? <Conclusion state="warn" hint={allowed("finprod_g3_write") ? "在「运行方式」里首次配置自动按日推进，批准后启用。" : "请有修改权限的同事在「运行方式」首次配置自动按日推进。"}
-            explain={`没有排程时价格不会自动切换。「今天 D${curDay}」是后端算出的当前生效日：固定的那天 > 上次推进记下的那天 > 都没有时按 UTC 星期几，所以没推进过时它每天会变，但现价不跟着变。`}>
+            explain={`没有排程时价格不会自动切换。「今天 D${curDay}」是系统算出的当前生效日：固定的那天 > 上次推进记下的那天 > 都没有时按 UTC 星期几，所以没推进过时它每天会变，但现价不跟着变。`}>
             自动推进还没配置，现价 {price(overview.currentPrice)} USDT 不会自动切换</Conclusion>
           : lastFailed
             ? <Conclusion state="warn" hint="原因在「运行方式」的排程执行情况里。">最近一次排程执行失败，现价 {price(overview.currentPrice)} USDT</Conclusion>
@@ -941,7 +941,7 @@ function G3MarketEditor() {
           explain={<>
             <p>1 UVT 折合多少 USDT，是用户兑换时用的价格，取最近一次发布的价格记录。</p>
             <p>今天的计划价要等推进或固定到这一天才发布；应急改价也会让现价和计划价不同，下次推进时恢复计划价。</p>
-            <p>「今天」是后端算出的当前生效日：固定的那天 &gt; 上次推进记下的那天 &gt; 都没有时按 UTC 星期几。从没推进过时，它每天跟着星期变，现价不跟着变。</p>
+            <p>「今天」是系统算出的当前生效日：固定的那天 &gt; 上次推进记下的那天 &gt; 都没有时按 UTC 星期几。从没推进过时，它每天跟着星期变，现价不跟着变。</p>
             <p>和计划价差多少：（现价 − 今天计划价）÷ 今天计划价。现价 {priceMissing ? "—" : `${price(overview.currentPrice)} USDT`}，今天 D{curDay} 计划价 {price(todayTarget)} USDT。</p>
           </>} />
         <Stat tone={paused || runtimeStatus.tone === "warn" ? "warn" : "role-3"} icon={paused ? PauseCircle : pinned ? PinIcon : Activity} label="运行方式" value={runtimeStatus.label}
@@ -949,15 +949,15 @@ function G3MarketEditor() {
           explain="暂停优先，其次固定，再次按排程推进。排程实际执行了没有，看「运行方式」里的排程执行情况。" />
         <Stat tone="role-4" icon={Star} label="本周最高目标价" value={price(peak)} unit="USDT"
           sub={peakDay >= 0 ? `D${peakDay + 1}` : undefined}
-          explain="七天计划里最高的目标价，不是历史最高成交价。提高目标价时，后端按改后的这个值复核兑付覆盖率。" />
+          explain="七天计划里最高的目标价，不是历史最高成交价。提高目标价时，按改后的这个值复核兑付覆盖率。" />
         {coverageUnknown
           ? <Stat tone="warn" icon={ShieldCheck} label="兑付覆盖率" value="读不准" sub="不按低于红线算" explain={coverageExplain} />
           : <Stat tone={overview.coverage.redlineBreached ? "danger" : "role-2"} icon={ShieldCheck} label="兑付覆盖率" value={cov} unit="%"
           sub={`红线 ${redline}`}
           explain={<>
             <p>现在的储备能付多少应付款，来自「资金储备与应付款」的当前数据，不是这次修改后的值。</p>
-            <p>提高价格、固定到更高的一天时，后端按拟发布的价格重估；恢复自动变化时按现在的覆盖率检查。低于红线就拒绝。</p>
-            <p>读不到可靠数据时后端也可能返回 0，这时以「资金储备与应付款」为准。</p>
+            <p>提高价格、固定到更高的一天时，按拟发布的价格重估；恢复自动变化时按现在的覆盖率检查。低于红线就拒绝。</p>
+            <p>读不到可靠数据时这里也可能显示 0，这时以「资金储备与应付款」为准。</p>
           </>} />}
       </StatBand>
 
@@ -978,7 +978,7 @@ function G3MarketEditor() {
           sub={chartPrices.length >= 2 ? `${changeText} · 最近 ${sampleText(historyLatest ?? "")}（${businessZone().label}）` : undefined}
           explain={<>
             <p>看图：价格这一天实际怎么走的，有没有到今天的计划价。</p>
-            <p>后端每 5 分钟记一次已发布的价格；暂停或没有价格时不记。时间为{businessZone().label}。{chartPrices.length >= 2 ? `这 24 小时共 ${historyPoints.length} 个采样点；涨跌按第一个和最后一个采样价算。` : ""}</p>
+            <p>系统每 5 分钟记一次已发布的价格；暂停或没有价格时不记。时间为{businessZone().label}。{chartPrices.length >= 2 ? `这 24 小时共 ${historyPoints.length} 个采样点；涨跌按第一个和最后一个采样价算。` : ""}</p>
           </>}>
           {chartPrices.length >= 2 ? (
             <div className="g3-history" data-tick-crowd={ticksCrowded(historyTicks.length) ? "" : undefined}><TrendLines label={`最近 24 小时 UVT 价格，${changeText}`} height={168}
@@ -1001,7 +1001,7 @@ function G3MarketEditor() {
             <ConfigRow name="价格自动变化"
               what="每日推进和 5 分钟采样是否在跑"
               when="确认后立即生效，不需要审批"
-              effect="暂停后不再自动推进；恢复后等下一次排程再推进，恢复时后端检查兑付覆盖率"
+              effect="暂停后不再自动推进；恢复后等下一次排程再推进，恢复时检查兑付覆盖率"
               note="暂停挡不住应急改现价和固定生效日，这两项照常发布价格。暂停只要暂停权限；恢复还要超级管理员。"
               value={<span className="g3-value">{paused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag> : <StatusTag tone="ok">自动变化中</StatusTag>}<ObjectTag state={OBJECT_STATES.paused} /></span>}
               action={allowed("finprod_g3_engine_pause_toggle") || hasRecovery("paused") ? (describedBy) => (
