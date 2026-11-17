@@ -56,7 +56,7 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
-import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
@@ -516,6 +516,15 @@ type ReleaseTarget = { label: string; slot: string; commandKey: string; loosen: 
 const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果。";
 const TIGHTEN_LOCK = "这页有修改的结果未知，先到上方查询原结果";
 const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
+/** 过期、还没查询时展开后的出路：行内已经说了不能重试、先查询，这里只说查到以后谁来核查结案。 */
+const EXPIRED_CLOSE_HERE = "查到原结果后，可以在这一行核查结案。";
+const EXPIRED_CLOSE_OTHER = "查到原结果后，请有调查权限的超级管理员核查结案。";
+const EXPIRED_NO_QUERY = "这个账号查不了原审批单，请有调查权限的超级管理员查询并核查结案。";
+/** 过期、还没查询的行展开后说一次出路；查不了原结果的旧记录不说。 */
+function expiredNext(record: FundCommandRecord) {
+  const access = fundInvestigationAccess(record);
+  return access.unavailableReason ? "" : access.canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER;
+}
 const NETWORK_RULE = "用户能不能用和 App 提现是同一个判断：「紧急停用开关」的提现开关和这页的开关都开着，出款服务接通；接打款服务时还要全局出款总闸开着、打款服务开通了这个网络、最近完成过完整对账、没有没处理的资金风险。";
 const COVERAGE_RULE = "放宽在提交和批准时各查一次兑付覆盖率，低于红线或读不到可靠结果都会被拒。收紧不查。";
 const APPROVAL_NOTE = "另一位超级管理员批准后才生效，批准前当前值不变。发起人不能批自己提交的单。";
@@ -921,6 +930,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const expired = loosenRecord.expiresAt <= Date.now();
       const needQuery = canLookupOwn && !queryMissing.includes(key);
       const canRetry = !!loosenRecord.values && commandAuthorities(loosenRecord.values).every(can) && !proposeBlock;
+      const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
       return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && canRetry,
         canQuery: canLookupOwn, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
         status: !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
@@ -933,6 +943,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         </>,
         detail: <>
           <p>{`改动：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。审批单可能已经提交，批准前现在的值不变。有结果前不能再提交放宽，收紧照常。`}</p>
+          {expiredNote && <p>{expiredNote}</p>}
           {notes[key] && <p>{notes[key]}</p>}
         </>,
         tech: loosenRecord.reason ? `理由 ${loosenRecord.reason}` : undefined };
@@ -953,7 +964,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
-          <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}</p>
+          <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>
           {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
         </>,
         tech: `版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };

@@ -29,12 +29,12 @@ import {
   PAYOUT_VND_FIELDS, derivePayoutVndRates, isPayoutVndInverted, vndText,
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
-import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
 import { useReach } from "@/lib/nav/use-reach";
@@ -56,10 +56,10 @@ const CONFLICT = "越南盾提现参数已被其他人员更新，当前输入�
 /** 抽屉没有改动时，底部问号只写规则，不说哪条路（「写的必须是真的」）。 */
 const RULE = "有一项放宽，整组要另一位超级管理员批准，批准前参数不变；没有放宽的修改提交后立即生效。只影响之后的报价。";
 const COVERAGE_CHECK = "提交和批准时都会检查兑付覆盖率，低于红线或读不到时不能提交，也不能批准。";
-/** 过期后继续锁住（OP-153），不引导关标签页绕过；有调查权限的人在行内核查结案。到不了操作记录的账号写这页上能走的路，再交财务负责人（同汇率设置）。 */
-const EXPIRED_DIRECT_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「查询原结果」，查不出结论再交财务负责人处理。";
-const EXPIRED_APPROVAL_NO_AUDIT = "已超过 24 小时，不能再重试。这个账号看不到操作记录，请点「查询原结果」核对有没有生成审批单，核对后交财务负责人处理。";
-const EXPIRED_NO_QUERY = "已超过 24 小时，不能再重试。这个账号看不到操作记录，也查不了原审批单，请交财务负责人处理。";
+/** 过期后继续锁住（OP-153），不引导关标签页绕过。展开后的出路：行内已经说了不能重试、先查询，这里只说查到以后谁来核查结案。 */
+const EXPIRED_CLOSE_HERE = "查到原结果后，可以在这一行核查结案。";
+const EXPIRED_CLOSE_OTHER = "查到原结果后，请有调查权限的超级管理员核查结案。";
+const EXPIRED_NO_QUERY = "这个账号查不了原审批单，请有调查权限的超级管理员查询并核查结案。";
 const NO_WRITE = "这个账号现在没有这项修改权限，不能重试，请到操作记录核对";
 const READY_EXPLAIN = "只表示 HDPay 付款配置已齐全，不代表打款一定到账。和充值收款用同一个商户。提现总开关关着时，用户也不能提现。";
 const APPROVAL_COPY = "另一位超级管理员批准前参数不变。";
@@ -681,8 +681,10 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   const auditLink = canReachAudit && <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批核对</Link>;
   const sentAt = (record: PendingMutationRecord) => `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出`;
-  const expiredDirect = canReachAudit ? `${RETRY_EXPIRED_TEXT}。` : EXPIRED_DIRECT_NO_AUDIT;
-  const expiredApproval = canReachAudit ? `${RETRY_EXPIRED_TEXT}。` : canQueryOriginal ? EXPIRED_APPROVAL_NO_AUDIT : EXPIRED_NO_QUERY;
+  const expiredNext = (record: FundCommandRecord) => {
+    const access = fundInvestigationAccess(record);
+    return access.unavailableReason ? "" : access.canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER;
+  };
 
   const directRows = direct.map((record): FundRecoveryRow => {
     const expired = isRetryExpired(record);
@@ -700,7 +702,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
       </>,
       detail: <>
-        <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? expiredDirect : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
+        <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? outcome ? "" : expiredNext(target) : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
         {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
       </>,
       tech: `原请求编号 ${record.commandKey} ｜ 发出时版本 v${record.expectedVersion} ｜ 理由 ${record.reason} ｜ 拟改值：${valuesSummary(record.values)}${record.forceInverted ? " ｜ 强制保存倒挂价" : ""}` };
@@ -726,7 +728,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} disabledReason={canManage ? undefined : NO_WRITE} onClick={() => void retryApproval()}>按原请求重试</Button>}
       </>,
       detail: <>
-        <p>可能已生成审批单，这组参数有结果前不能再改。{expired ? expiredApproval : missing ? "" : canQueryOriginal ? "查不到审批单再按原请求重试。" : ""}</p>
+        <p>可能已生成审批单，这组参数有结果前不能再改。{expired ? investigationResults[approval.commandKey] ? "" : canQueryOriginal ? expiredNext(approval) : EXPIRED_NO_QUERY : missing ? "" : canQueryOriginal ? "查不到审批单再按原请求重试。" : ""}</p>
         {notes[approval.commandKey] && <p>{notes[approval.commandKey]}</p>}
       </>,
       tech: original };
