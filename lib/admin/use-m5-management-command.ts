@@ -72,34 +72,36 @@ export function useM5ManagementCommand<T, B, R>(options: {
     const current = () => actorId === useAdminAuth.getState().session?.adminId && epoch === useAdminAuth.getState().authEpoch;
     running.current = true; setBusy(true); setMessage(""); setReceiptMissing(false);
     if (action !== "query") setPending(record);
+    let querying = action === "query";
     try {
-      if (action === "query") {
-        const receipt = await options.query(record.commandKey, record.payload);
-        if (!current()) return;
-        if (receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") {
-          setMessage("原请求还在处理，请稍后再查询原结果，或按原请求重试。");
-          return;
+      if (!querying) {
+        try {
+          await options.write(record.payload, record.commandKey);
+        } catch (error) {
+          if (action !== "replay" || !isExplicitRejection(error)) throw error;
+          // A rejected replay says nothing about the original write's outcome.
+          querying = true;
         }
-        store.forget(record.fingerprint, record.commandKey); setPending(undefined);
-        if (receipt.status === "FAILED") {
-          options.onRefusal(new Error("原请求没有成功，你填的内容还在；请检查后重新提交。"), true, record.payload);
-          setMessage("原请求没有成功，你填的内容还在；请检查后重新提交。");
-        } else options.onSuccess();
-      } else {
-        await options.write(record.payload, record.commandKey);
         if (!current()) return;
-        store.forget(record.fingerprint, record.commandKey); setPending(undefined);
-        // A replay is an old receipt. The caller closes its dialog and rereads current facts.
-        options.onSuccess();
       }
+      const receipt = querying ? await options.query(record.commandKey, record.payload) : undefined;
+      if (!current()) return;
+      if (receipt && receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") {
+        setMessage("原操作结果未知，请稍后再查询原结果。");
+        return;
+      }
+      store.forget(record.fingerprint, record.commandKey); setPending(undefined);
+      if (receipt?.status === "FAILED") {
+        options.onRefusal(new Error("原请求没有成功，你填的内容还在；请检查后重新提交。"), true, record.payload);
+        setMessage("原请求没有成功，你填的内容还在；请检查后重新提交。");
+      } else options.onSuccess();
     } catch (error) {
       if (!current()) return;
-      const rejected = action === "replay" ? isExplicitRejection(error)
-        : action === "submit" && error instanceof SupportClientError
+      const rejected = action === "submit" && error instanceof SupportClientError
           && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
       if (rejected) {
         store.forget(record.fingerprint, record.commandKey); setPending(undefined);
-        options.onRefusal(error, action === "replay", record.payload);
+        options.onRefusal(error, false, record.payload);
         setMessage(displayAdminError(error));
       } else {
         if (options.requireMissingReceipt && error instanceof SupportClientError && [401, 403].includes(error.status)) {
@@ -108,8 +110,8 @@ export function useM5ManagementCommand<T, B, R>(options: {
           record = { ...record, denied: true };
         }
         setPending(record);
-        if (action === "query" && error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") setReceiptMissing(!record.denied);
-        setMessage(action === "query" ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
+        if (querying && error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") setReceiptMissing(!record.denied);
+        setMessage(querying ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
           : `结果未知：请查询原结果，或按原请求重试。${displayAdminError(error)}`);
       }
     } finally {
