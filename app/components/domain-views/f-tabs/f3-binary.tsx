@@ -40,6 +40,10 @@ import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from 
 
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
 const fmtInt = (value: number | null) => value === null ? "—" : Math.round(value).toLocaleString("en-US");
+/** 统计条上「被拦下」的说法：和「被拦下的结算」同一份最近记录（后端最多给 100 次）；结算表里的旧状态条数只在问号里说。 */
+const blockedAttemptsText = (attempts: readonly unknown[] | null) => attempts === null ? "被拦下的结算读不到"
+  : attempts.length === 0 ? "最近没有被拦下的结算"
+    : attempts.length >= 100 ? "最近被拦下至少 100 次" : `最近被拦下 ${fmtInt(attempts.length)} 次`;
 /** 后端原样的小数文字加千分位，不舍入、不补零。 */
 const fmtDecimal = (raw: string) => {
   const match = /^(\d+)(\.\d+)?$/.exec(raw.trim());
@@ -420,8 +424,12 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           sub={residualPool ? residualLabel(residualEff) : legacyAmounts || !RESIDUAL_TEXT[residualEff] ? "残额处理不认，后端没算" : "现在没有可算的订单额"}
           explain={`每位邀请人取 A、B 两组扣掉已匹配后剩得多的那一组，再加起来；按现在的残额处理算范围，不是两组差额。${legacyAmounts ? "后端先取整再缩写，不是精确值。" : "写「—」时不是 0：残额处理不认，或按现在的残额处理没有可算的订单额。"}`} />
         <Stat label="出过结算的邀请人" icon={Users} tone="role-3" value={fmtInt(ctx.f3ParticipantCount)} unit="人"
-          sub={`被拦下的记录 ${fmtInt(ctx.f3BlockedCount)} 条`}
-          explain="所有结算记录里出现过的邀请人人数，不限今天，也不是现在过门槛的人数。被拦下是结算记录里被拦下、被拒、失败或冻结的条数，不是人数；和下面「被拦下的结算」来源不同。" />
+          sub={blockedAttemptsText(ctx.f3BlockedAttempts)}
+          explain={<>
+            <p>所有结算记录里出现过的邀请人人数，不限今天，也不是现在过门槛的人数。</p>
+            <p>被拦下的次数和下面「被拦下的结算」是同一份，最多算最近 100 次。</p>
+            {ctx.f3BlockedCount > 0 && <p>{`另有 ${fmtInt(ctx.f3BlockedCount)} 条旧结算记录是被拦下、被拒、失败或冻结，按结算日列在下面。`}</p>}
+          </>} />
         <Stat label="近 7 天自动分组" icon={Shuffle} tone="role-3" value={fmtInt(ctx.f3AutoPlacement7dCount)} unit="人"
           sub={spillOn ? "自动分组已启用" : "自动分组已关闭"}
           explain="最近 7 天结算时自动补进 A 组或 B 组的成员数，按分组时间算；不含手动分组。" />

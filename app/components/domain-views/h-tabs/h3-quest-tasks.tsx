@@ -48,6 +48,20 @@ type ListKey = "dayOne" | "t1" | "t2";
 type Locale = "en" | "zh" | "vi";
 
 const LOCALE_LABEL: Record<Locale, string> = { en: "英文", zh: "中文", vi: "越南语" };
+/** 已填的三语名称能不能清空：后端只放开从没启用过的草稿（内容状态是草稿且停用中）；启用过的、看不出来的、没给这一项的都不能清空。 */
+type NameClear = "draft" | "opened" | "unknown";
+const nameClearOf = (task: QuestTask): NameClear =>
+  task.contentState === "DRAFT" && taskStatusOf(task) === "paused" ? "draft" : task.contentState === "OPENED" ? "opened" : "unknown";
+const NAME_CLEAR_NOTE: Record<NameClear, string> = {
+  draft: "任务还没启用过，已填的名称可以清空。",
+  opened: "任务启用过，已填的名称不能清空。",
+  unknown: "看不出启用过没有，已填的名称不能清空。",
+};
+const NAME_EDIT_HINT: Record<NameClear, string> = {
+  draft: "最多 512 字；要留空，用「清空」",
+  opened: "最多 512 字；任务启用过，不能留空",
+  unknown: "最多 512 字；看不出任务启用过没有，不能留空",
+};
 const FUND_APPROVER = "另一位超级管理员";
 const TYPE_LABEL: Record<string, string> = { DAY_ONE: "新手任务", WEEKLY_T1: "每周一档", WEEKLY_T2: "每周二档", DAILY: "每日任务（签到页管理）", MONTHLY: "月度挑战" };
 
@@ -354,7 +368,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   const localizedValue = (code: string, locale: Locale) => text(model?.contentLocales?.mission?.[code]?.[locale]?.name, "");
 
-  const openLocalizedContent = (code: string, locale: Locale, source: string) => {
+  const openLocalizedContent = (code: string, locale: Locale, source: string, clear: NameClear) => {
     const current = localizedValue(code, locale);
     openActionConfirm({ target: `content.mission.${code}.name.${locale}`, briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
@@ -367,12 +381,36 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="已经发给用户的">不变，按拿到时定下的那一份</Fact>
         <Fact k="之后的用户">之后注册的用户、之后发布的每周任务用新名称</Fact>
       </Facts>,
-      statedBrief: { impact: "只改这个任务这一种语言的名称，其他语言不动；已填的不能清空。", check: "核对语言和拼写；理由写清依据。" },
+      statedBrief: { impact: "只改这个任务这一种语言的名称，其他语言不动。", check: "核对语言和拼写；理由写清依据。" },
       confirmLabel: "确认修改",
-      edit: { kind: "text", current, disallowCurrent: true, hint: "最多 512 字" },
+      edit: { kind: "text", current, disallowCurrent: true, hint: current ? NAME_EDIT_HINT[clear] : "最多 512 字" },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(`content.mission.${code}.name.${locale}`, value, casExpected(current), reason, `${source} ${locale.toUpperCase()} 文案`);
+      },
+    } as H3ActionConfirmReq);
+  };
+
+  /** 清空一种语言的名称：只给从没启用过的草稿任务（nameClearOf），发的是同一个写入，值为空。 */
+  const openLocalizedClear = (code: string, locale: Locale, source: string) => {
+    const current = localizedValue(code, locale);
+    openActionConfirm({ target: `content.mission.${code}.name.${locale}`, briefKind: "config",
+      action: `清空 ${locale.toUpperCase()} 内容 · ${source}`,
+      title: `清空${LOCALE_LABEL[locale]}名称`,
+      detail: <>清空后 App {locale === "en" ? "显示原名" : "先显示英文，再显示原名"}。</>,
+      effect: immediate,
+      confirmTone: "danger",
+      facts: <Facts>
+        <Fact k="任务">{taskTitleText(source)}</Fact>
+        <Fact k="语言">{LOCALE_LABEL[locale]}</Fact>
+        <Fact k="现在的名称">{current}</Fact>
+        <Fact k="清空后">{locale === "en" ? "App 显示原名" : "App 先显示英文，再显示原名"}</Fact>
+        <Fact k="为什么能清空">任务还没启用过，用户没看到过</Fact>
+      </Facts>,
+      statedBrief: { impact: "只清空这个任务这一种语言的名称，其他语言不动。", check: "核对任务和语言；理由写清为什么撤回。" },
+      confirmLabel: "确认清空",
+      run: async (reason) => {
+        await updateConfigWithExpected(`content.mission.${code}.name.${locale}`, "", casExpected(current), reason, `${source} ${locale.toUpperCase()} 文案`);
       },
     } as H3ActionConfirmReq);
   };
@@ -811,7 +849,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     setMc(request);
   };
   // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
-  const shownValue = (value: string) => value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
+  const shownValue = (value: string) => value === "" ? "—" : value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
     ?? TASK_CATEGORY_LABELS[part] ?? TASK_ACTION_ROUTE_LABELS[part] ?? part).join(" · ");
   const releasable = (original: H3PendingCommand) => original.request.kind !== "direct" && isRetryExpired(original) && !original.acknowledged && !original.ticket;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
@@ -1516,7 +1554,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             { label: "奖励", value: detailReward?.reward, reason: detailReward?.note },
           ]} />
           <section className="h3-detail-block" aria-label="三语名称">
-            <div className="h3-sub-head"><h3>三语名称</h3><Explain label="三语名称怎么显示" content="App 按用户的语言显示；没填的先显示英文，再显示原名，不会自动翻译。已填的不能清空。改了只影响之后注册的用户和之后发布的每周任务。" /></div>
+            <div className="h3-sub-head"><h3>三语名称</h3><Explain label="三语名称怎么显示" content={<>
+              <p>App 按用户的语言显示；没填的先显示英文，再显示原名，不会自动翻译。</p>
+              <p>{NAME_CLEAR_NOTE[nameClearOf(detailTask)]}</p>
+              <p>只影响之后注册的用户和新发布的每周任务。</p>
+            </>} /></div>
             <dl className="h3-locales">
               <div><dt>原名</dt><dd>{detailName}</dd><span>{!detailArchived && canModuleWrite && <Button size="sm" variant="ghost" onClick={conflictDraft.register(JSON.stringify(["openMissionEdit:3", detailTask?.taskCode ?? detailTask?.id]), () => openMissionEdit(detailTask, detailName))}>改</Button>}</span></div>
               {(["en", "zh", "vi"] as const).map((locale) => {
@@ -1526,7 +1568,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   <dd data-empty={value ? undefined : ""}>{value || (detailArchived ? "未填写" : "没填，App 回退显示")}</dd>
                   <span>{!detailArchived && canModuleWrite && <Button size="sm" variant="ghost" disabled={!codeOf(detailTask)}
                     aria-label={`${value ? "编辑" : "填写"} ${codeOf(detailTask)} ${LOCALE_LABEL[locale]}`}
-                    onClick={conflictDraft.register(JSON.stringify(["openLocalizedContent:1", detailTask?.taskCode ?? detailTask?.id, locale]), () => openLocalizedContent(codeOf(detailTask), locale, detailName))}>{value ? "改" : "填写"}</Button>}</span>
+                    onClick={conflictDraft.register(JSON.stringify(["openLocalizedContent:1", detailTask?.taskCode ?? detailTask?.id, locale]), () => openLocalizedContent(codeOf(detailTask), locale, detailName, nameClearOf(detailTask)))}>{value ? "改" : "填写"}</Button>}
+                    {!detailArchived && canModuleWrite && value && nameClearOf(detailTask) === "draft" && <Button size="sm" variant="ghost" disabled={!codeOf(detailTask)}
+                      aria-label={`清空 ${codeOf(detailTask)} ${LOCALE_LABEL[locale]}`}
+                      onClick={conflictDraft.register(JSON.stringify(["openLocalizedClear:1", detailTask?.taskCode ?? detailTask?.id, locale]), () => openLocalizedClear(codeOf(detailTask), locale, detailName))}>清空</Button>}</span>
                 </div>;
               })}
             </dl>

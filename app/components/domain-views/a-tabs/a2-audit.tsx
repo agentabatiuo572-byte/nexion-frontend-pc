@@ -1,5 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -819,7 +820,6 @@ type K1TicketView = { kind: "param"; key: string; name: string; from: string; to
   | { kind: "release"; entryNo: string; userId: string; asset: string; net: string; source: string; sourceRef: string; bucket: string; coverage: string; redline: string };
 const K1_PARAM_SUMMARY = /^(duplicateAccountPendingFrom|duplicateAccountFreezeFrom) = (\d+)；版本 (\d+)$/;
 const K1_RELEASE_SUMMARY = /^收益 (.+?)；用户 (\d+)；(\S+) 净额 (\d+(?:\.\d+)?)；来源 ([^/；]+)\/(.*?)；(bonus_locked|pending_review) → withdrawable；当前覆盖率 (\d+(?:\.\d+)?)% \/ 红线 (\d+(?:\.\d+)?)%$/;
-const K1_SOURCE_NAMES: Record<string, string> = { TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" };
 function k1TicketView(w: { operationCode?: string | null; before: string; after: string }): K1TicketView | undefined {
   if (w.operationCode === "k1_release_param") {
     const b = K1_PARAM_SUMMARY.exec(w.before.trim()), a = K1_PARAM_SUMMARY.exec(w.after.trim());
@@ -831,7 +831,7 @@ function k1TicketView(w: { operationCode?: string | null; before: string; after:
 }
 /** 后端写的净额去掉了末尾 0：只补到两位、加千分位，不舍入。 */
 const k1Amount = (text: string) => { const [whole, frac = ""] = text.split("."); return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac.padEnd(2, "0")}`; };
-const k1Source = (code: string) => K1_SOURCE_NAMES[code.toUpperCase()] ?? `来源 ${code}`;
+const k1Source = k1EarningSourceName;
 const k1Bucket = (bucket: string) => bucket === "bonus_locked" ? "锁定奖励" : "审核中";
 /** 列表「变更」一格。 */
 function k1ChangeCell(v: K1TicketView) {
@@ -852,7 +852,7 @@ function K1TicketFacts({ v }: { v: K1TicketView }) {
     <Fact k="批准后">只放行这一笔，不另发奖、不生成提现单；能否提现还看账户组和其他提现条件</Fact>
   </>;
 }
-const k1Tech = (v: K1TicketView) => v.kind === "param" ? `参数键 ${v.key} ｜ 版本 ${v.versionFrom} → ${v.versionTo}` : `用户内部号 ${v.userId} ｜ 原状态 ${v.bucket}`;
+const k1Tech = (v: K1TicketView) => v.kind === "param" ? `参数键 ${v.key} ｜ 版本 ${v.versionFrom} → ${v.versionTo}` : `用户内部号 ${v.userId} ｜ 原状态 ${v.bucket} ｜ 来源原值 ${v.source}`;
 const K1_APPROVAL_CHECK = { param: "批准时先核对这项规则没被别人改过、兑付覆盖率够；不满足就不改，审批单留着待审批。",
   release: "批准时先核对这笔收益没变、兑付覆盖率够；不满足就不放行，审批单留着待审批。" } as const;
 const COURSE_VALUE_TEXT: Record<string, Record<string, string>> = {
@@ -1756,6 +1756,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const ambassador = !w.objDisplayName && /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
     if (ambassador) return <>区域大使申请 <span data-mono className="a2-code">#{ambassador[1]}</span><Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
     if (w.operationCode === "j1_gate_resume") return <>{j1GateName(w.obj)}<Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
+    // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
+    if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */

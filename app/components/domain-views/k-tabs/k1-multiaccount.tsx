@@ -3,6 +3,8 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { f4Decimal } from "@/lib/admin/f4-money";
+import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -130,8 +132,7 @@ const APPROVAL_LINE = {
 } as const;
 const PENDING_PARAM_TIP = "另一位超级管理员批准后才生效，批准前仍按现在的值；审批结束前这一项不能再改。";
 const PENDING_ENTRY_TIP = "另一位超级管理员批准后才放行，批准前这笔仍锁着；审批结束前不能再提交。";
-const SOURCE_NAMES: Record<string, string> = { TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" };
-const sourceName = (type: string) => SOURCE_NAMES[type.toUpperCase()] ?? "来源未知";
+const sourceName = k1EarningSourceName;
 const RISK_REASON_PLACEHOLDER = "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索";
 const CONFLICT_TEXT = "这项刚被别人改过。";
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对。";
@@ -218,6 +219,20 @@ const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_NAME[p.key] ?? p.name;
 
 /** 收益金额按接口给的精度写全，非零不能显示成 0（TX-20）。 */
 const amountText = (amount: number) => amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 20 });
+
+/** 后端给的金额原文（可能写成指数）：写全位数、去掉末尾补的 0、最少 2 位，不舍入。places 给定时补到这么多位，用于同一个框里并排的几个数。 */
+const decimalPlaces = (raw: string) => Math.max(2, (f4Decimal(raw) ?? "").split(".")[1]?.replace(/0+$/, "").length ?? 0);
+const exactAmountText = (raw: string, places = decimalPlaces(raw)) => {
+  const plain = f4Decimal(raw);
+  if (plain === null) return raw;
+  const [whole, fraction = ""] = plain.split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(places, "0")}`;
+};
+/** 这次放多少：新后端给的净额原文优先；旧后端只有 amount。 */
+const netAmountText = (entry: K1ProtectedEntry, places?: number) => entry.netAmount !== undefined ? exactAmountText(entry.netAmount, places) : amountText(entry.amount);
+/** 追回过才拆开写原金额和已追回；没追回、或后端没给这两项，都不拆。 */
+const recoveredSplit = (entry: K1ProtectedEntry) => entry.grossAmount !== undefined && entry.recoveredAmount !== undefined
+  && !/^0(\.0*)?$/.test(f4Decimal(entry.recoveredAmount) ?? "0") ? { gross: entry.grossAmount, recovered: entry.recoveredAmount } : null;
 
 /** 时刻按业务时区写，和页头一致。 */
 
@@ -1284,25 +1299,34 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       amplifies: true,
       confirmTone: "danger",
       statedBrief: approvalRequired
-        ? { impact: "刚才没有放行：这笔要另一位超级管理员批准后才放行。", check: "核对用户、净额和来源。提交和批准时都检查兑付覆盖率。" }
-        : { impact: "立即放行这笔收益，记入操作记录。", check: "核对用户、净额和来源。提交时先检查兑付覆盖率。" },
-      coverageLead: approvalRequired ? "批准后这笔钱不再锁住" : "这笔钱放行后不再锁住",
-      effect: approvalRequired ? RELEASE_APPROVAL_EFFECT : <>{IMMEDIATE_EFFECT}<IrreversibleTag /></>,
-      confirmLabel: approvalRequired ? "提交审批" : "立即放行",
+        ? { impact: "这笔还没放行：提交审批，另一位超级管理员批准后才放行。", check: "核对用户、金额和来源。提交和批准时都检查兑付覆盖率。" }
+        : { impact: "要另一位超级管理员批准后才放行；点「下一步」再提交审批。", check: "核对用户、金额和来源。提交和批准时都检查兑付覆盖率。" },
+      coverageLead: "批准后这笔钱不再锁住",
+      effect: <>{RELEASE_APPROVAL_EFFECT}<IrreversibleTag /></>,
+      confirmLabel: approvalRequired ? "提交审批" : "下一步",
       blockedReason: approvalRequired && !canProposeRelease ? "这个账号没有发起这项审批的权限" : undefined,
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
-      facts: <Facts>
-        <Fact k="净额" lead tone="role-1" unit={nexGridBrandText(entry.asset)}>{amountText(entry.amount)}</Fact>
+      facts: (() => {
+        const split = recoveredSplit(entry);
+        const places = split ? Math.max(...[split.gross, split.recovered, entry.netAmount ?? ""].map(decimalPlaces)) : undefined;
+        const unit = nexGridBrandText(entry.asset);
+        return <Facts>
+        <Fact k="净额" lead tone="role-1" unit={unit}>{netAmountText(entry, places)}</Fact>
+        {split ? <>
+          <Fact k="原金额" unit={unit}>{exactAmountText(split.gross, places)}</Fact>
+          <Fact k="已追回" unit={unit}>{exactAmountText(split.recovered, places)}</Fact>
+        </> : (entry.grossAmount === undefined || entry.recoveredAmount === undefined) && <Fact k="原金额和已追回">读不到，只有净额</Fact>}
         <Fact k="用户">{entry.userNo && reach(`/users/search/${entry.userId}`, "user_c1hub_read")
           ? <Link className="rd-link" href={`/users/search/${entry.userId}`}>{entry.userNo}</Link> : entry.userNo ?? "用户编码未提供"}</Fact>
         <Fact k="来源">{sourceName(entry.sourceType)} <span data-mono>{entry.sourceRef}</span></Fact>
         <Fact k="收益记录"><span data-mono>{entry.entryNo}</span></Fact>
         <Fact k="账户组"><span data-mono>{entry.clusterId}</span></Fact>
         <Fact k="前后状态"><Change from={entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"} to="已放行" /></Fact>
-        {approvalRequired && <Fact k="什么时候生效" tone="warn">另一位超级管理员批准后才放行；批准前这笔仍锁着</Fact>}
-        {approvalRequired && <Fact k="谁来批">另一位超级管理员，不能是提交人</Fact>}
+        <Fact k="什么时候生效" tone="warn">另一位超级管理员批准后才放行；批准前这笔仍锁着</Fact>
+        <Fact k="谁来批">另一位超级管理员，不能是提交人</Fact>
         <Fact k="提现">放行不解除账户组限制。账户组待判定、可疑、已冻结或人数达到锁定起点时仍不能提现。</Fact>
-      </Facts>,
+      </Facts>;
+      })(),
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason) => {
@@ -1757,7 +1781,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {tab === "earnings" && (
         <Panel data-proof="k1-protected-earnings" title="待审核或已锁定的收益" icon={Coins} tone="role-1" flush
           sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""} · 时间均为${businessZone().label}` : undefined}
-          explain="人工放行要写理由，留操作记录。要审批时，另一位超级管理员批准后才放行。">
+          explain="人工放行要写理由，另一位超级管理员批准后才放行。追回过的，金额下面写原金额和已追回。">
           {protectedEntriesError ? (
             <BlockState state="error" title="收益记录读取失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
           ) : (
@@ -1782,7 +1806,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <Td><Cell main={sourceName(entry.sourceType)} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td><Cell main={<StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag>}
                       sub={pendingMark("entry", entry.entryNo)} /></Td>
-                    <Td align="right"><Cell num full main={`${amountText(entry.amount)} ${nexGridBrandText(entry.asset)}`} /></Td>
+                    <Td align="right">{(() => {
+                      const split = recoveredSplit(entry);
+                      return <Cell num full main={`${netAmountText(entry)} ${nexGridBrandText(entry.asset)}`}
+                        sub={split ? `原 ${exactAmountText(split.gross)} · 已追回 ${exactAmountText(split.recovered)}` : undefined} />;
+                    })()}</Td>
                     <Td align="right">{canRelease && <Button size="sm" disabledReason={blockedBy("entry", entry.entryNo, protectedEntriesLoading) ?? (overviewFailed ? "风险数据读取失败，恢复后才能放行" : undefined)} onClick={() => releaseProtectedEntry(entry)}>人工放行</Button>}</Td>
                   </Tr>
                 ))}
@@ -1803,7 +1831,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </div>
             <div className="rd-config-groups">
               <Panel id={nav.anchor("risk")} title="风险判断标准" icon={ShieldAlert} tone="role-4"
-                explain="决定哪些账户算同一组；成组后这组不能提现、新增收益锁定。这里的修改保存后立即生效，不走审批；只有账户组的四种处置要另一位超级管理员批准。">
+                explain="决定哪些账户算同一组；成组后这组不能提现、新增收益锁定。这里的修改保存后立即生效，不走审批。">
                 <ConfigList>
                   {params.map((p) => (
                     <ConfigRow key={p.key} name={riskParamName(p)} what={K1_PARAM_HELP[p.key]?.what ?? p.sub} when={K1_PARAM_HELP[p.key]?.when} effect={K1_PARAM_HELP[p.key]?.direction} value={riskValueText(p.key, p.value, p.unit)}
@@ -1828,7 +1856,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               </Panel>
 
               {/* 收益审核规则与账户组处置分开。 */}
-              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。收紧保存后立即生效；放宽要审批时，另一位超级管理员批准后才生效。">
+              <Panel id={nav.anchor("earnings")} title="关联账户的收益审核规则" icon={Coins} tone="role-1" explain="决定新增收益怎么处理；人数达到锁定起点的组也不能提现。收紧保存后立即生效；放宽要另一位超级管理员批准后才生效。">
                 {overviewReady.releaseParams.length > 0 ? (
                   <div className="rd-stack" data-proof="k1-risk-release-params">
                     <ConfigList>
@@ -1941,7 +1969,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const approvalMode = releaseDraft.approvalRequired && loosening;
         const direction = problem || isMode ? undefined : loosening ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="neutral" icon={Lock}>收紧</StatusTag>;
         return (
-          <DraftModal title={`调整${releaseParamName(param)}`} icon={SlidersHorizontal} effect={approvalMode ? RELEASE_APPROVAL_EFFECT : IMMEDIATE_EFFECT} explain={paramHelpRows(help, param.sub).filter((row) => row.k !== "怎么填")} busy={busy} saveLabel={approvalMode ? "提交审批" : "确认修改"} blocked={problem ?? (approvalMode && !canProposeRelease ? "这个账号没有发起这项审批的权限" : undefined)} dirty={value !== param.value}
+          <DraftModal title={`调整${releaseParamName(param)}`} icon={SlidersHorizontal} effect={loosening ? RELEASE_APPROVAL_EFFECT : IMMEDIATE_EFFECT} explain={paramHelpRows(help, param.sub).filter((row) => row.k !== "怎么填")} busy={busy} saveLabel={approvalMode ? "提交审批" : loosening ? "下一步" : "确认修改"} blocked={problem ?? (approvalMode && !canProposeRelease ? "这个账号没有发起这项审批的权限" : undefined)} dirty={value !== param.value}
             reason={reason} placeholder="写清调整原因和依据" {...draftAttempt} policy={reasonPolicy} policyFailed={reasonPolicyFailed} error={draftError}
             onReason={(next) => update({ reason: next })} onReadLatest={() => void readLatestReleaseParam()} onClose={() => setReleaseDraft(null)} onSave={saveReleaseDraft}>
             {/* 直接保存被判定要审批：框留着、值和理由都在，写清没保存、谁来批，运营再点一次「提交审批」（H-改走审批）。 */}
@@ -1951,9 +1979,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               state={direction}
               note={!problem && <>
                 {help?.whatIf?.(value)}
-                {loosening && !RELEASE_AFFECTS_EARNINGS.has(key) && "保存时仍检查兑付覆盖率，低于红线或无法读取时不能保存。"}
+                {loosening && !RELEASE_AFFECTS_EARNINGS.has(key) && "提交和批准时都检查兑付覆盖率，低于红线或读不到时不能通过。"}
                 {/* 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。不影响收益的几项写在上一句。 */}
-                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}{approvalMode ? "提交、批准时兑付覆盖率都不能低于红线。" : "保存时检查兑付覆盖率，低于红线不能保存。"}</span></span>}
+                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}提交、批准时兑付覆盖率都不能低于红线。</span></span>}
               </>}
               error={limits ? fieldError(problem, typed, "value") : undefined}>
               {limits && range
@@ -1962,7 +1990,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 : <Select aria-label="新值（从下拉选择）" disabled={busy} value={value} onChange={(next) => update({ value: next })}
                   options={(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => ({ value: option, label: isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option] }))} />}
             </DiffField>
-            {approvalMode && <Facts>
+            {loosening && <Facts>
               <Fact k="什么时候生效" tone="warn">{`批准后才生效；批准前仍按 ${param.value}${limits ? ` ${releaseUnit(param)}` : ""}`}</Fact>
               <Fact k="谁来批">另一位超级管理员，不能是提交人</Fact>
             </Facts>}

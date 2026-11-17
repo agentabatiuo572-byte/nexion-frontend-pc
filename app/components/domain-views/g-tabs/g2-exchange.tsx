@@ -200,7 +200,7 @@ const PARAM: Record<string, {
     name: "超额度处置策略", short: "改成排队",
     loosen: "从拒绝改成排队",
     tighten: "从排队改成拒绝",
-    what: "一笔兑换超过个人或平台日额度时，排进队列还是直接拒绝",
+    what: "超过个人或平台日额度的兑换，排队还是直接拒绝",
     queue: "已经在排队的单不受影响，不会被转成拒绝或取消",
     future: "之后超额的兑换按新策略处理；改成排队后，用户发起时选了「超额时排队」才会排",
   },
@@ -802,10 +802,11 @@ function G2ExchangePage() {
       confirmTone: "danger",
       confirmLabel: "确认暂停",
       facts: <Facts>
-        <Fact k="暂停的是">全平台 UVT 和 USDT 互换：用户新发起的兑换和「处理排队」都会被拒绝</Fact>
-        <Fact k="排队中的兑换">{fmtCount(original?.context?.queueDepth ?? overview!.stats.queueDepth)} 单留在队列，不取消、不退款；暂停期间仍可单笔取消</Fact>
+        <Fact k="暂停的是">全平台 UVT 和 USDT 互换</Fact>
+        <Fact k="暂停后">新兑换和「处理排队」都会被拒绝</Fact>
+        <Fact k="排队中的兑换">{fmtCount(original?.context?.queueDepth ?? overview!.stats.queueDepth)} 单留着，不退款；暂停期间仍可单笔取消</Fact>
         <Fact k="已完成的兑换">不受影响，不回退</Fact>
-        <Fact k="怎么恢复">只能在「紧急停用开关」页面恢复，这页没有恢复入口</Fact>
+        <Fact k="怎么恢复">到「紧急停用开关」恢复，这页没有入口</Fact>
       </Facts>,
       statedBrief: { impact: "之后用户新发起的兑换会被拒绝，直到在「紧急停用开关」恢复。", check: "选暂停原因，理由写清事件和工单号；涉及国家只记进这次的操作记录，不会封锁这些地区。" },
       amplifies: false,
@@ -967,27 +968,51 @@ function G2ExchangePage() {
 
   // 一句话结论：先说开着还是暂停，再说有没有要人处理的排队。
   const killSwitchLink = reach("/emergency/kill-switch") ? <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>紧急停用开关</Link> : "「紧急停用开关」";
-  const conclusion = swap.emergencyPaused === null
-    ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={<>披露闸门在{reach("/content/disclosures") ? <> <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> </> : "「法律条款与风险披露」"}管；兑换开关的真实状态到 {killSwitchLink} 看。</>}
+  // 兑换开关读不出时分三种：没有这一项、存的值不是开或关（后端这两种都按关处理），后端没给这一项。
+  const switchUnread = swap.emergencyPaused !== null ? null
+    : overview.emergencySwitch?.exchange.unavailableReason === "MISSING" ? "missing"
+    : overview.emergencySwitch?.exchange.unavailableReason === "INVALID" ? "invalid" : "absent";
+  // 风险披露闸门是另一件事，开着时单独说一句，不当成兑换停了。
+  const disclosureOn = overview.disclosureGate.exchange;
+  const disclosureHint = disclosureOn ? <>风险披露闸门对兑换开着，在{reach("/content/disclosures") ? <> <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> </> : "「法律条款与风险披露」"}管。</> : null;
+  const disclosureExplain = disclosureOn ? <p>风险披露闸门和兑换开关是两件事：后端执行兑换和处理排队只看兑换开关；闸门对兑换具体拦谁，规则还在定。</p> : null;
+  const conclusion = switchUnread === "absent"
+    ? <Conclusion state="warn" icon={CircleHelp}
+        hint={<>真实状态到 {killSwitchLink} 看。{disclosureHint}</>}
         explain={<>
-          <p>风险披露闸门对兑换开着时，后端在这页把兑换开关显示成关，分不出「紧急停用开关」里的兑换开关是开是关（已提后端分开给出）。</p>
-          <p>所以这页不据此判断用户现在能不能兑换，也不当成暂停：「紧急暂停兑换」照常可用，「处理排队」由后端按真实开关判断。</p>
-        </>}>兑换的风险披露闸门开着，兑换开关的状态这页读不到</Conclusion>
+          <p>后端这次没有给出兑换开关的状态。这页不据此判断用户能不能兑换，也不当成暂停。</p>
+          {disclosureExplain}
+        </>}>这页读不到兑换开关</Conclusion>
+    : switchUnread
+    ? <Conclusion state="warn" icon={ShieldAlert}
+        hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开。{disclosureHint}</>}
+        explain={<>
+          <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况后端一律按关处理。</p>
+          <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
+          {disclosureExplain}
+        </>}>{switchUnread === "missing" ? "兑换开关没有设置，后端按关处理" : "兑换开关设置有误，后端按关处理"}</Conclusion>
     : swap.emergencyPaused
     ? <Conclusion state="warn" icon={PauseCircle}
-        hint={<>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>}
+        hint={<>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}{disclosureHint}</>}
         explain={<>
           <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
           <p>暂停时后端拒绝用户新发起的兑换，「处理排队」也会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
+          {disclosureExplain}
         </>}>兑换已暂停，新发起的兑换会被拒绝</Conclusion>
     : stats.queueDepth > 0
       ? <Conclusion state="warn" icon={ListOrdered}
-          hint={canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}
-          explain="排队数是所有还在排队的单，不限哪天创建。系统不会定时处理队列，单子上的「明天 00:00」是固定文字，不是排好的处理时间。">
+          hint={<>{canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}{disclosureHint}</>}
+          explain={<>
+            <p>排队数是所有还在排队的单，不限哪天创建。系统不会定时处理队列，单子上的「明天 00:00」是固定文字，不是排好的处理时间。</p>
+            {disclosureExplain}
+          </>}>
           兑换开着，有 {fmtCount(stats.queueDepth)} 单在排队等处理</Conclusion>
       : <Conclusion state="neutral" icon={ArrowLeftRight}
-          explain="只说开关和队列：兑换开着、没有排队的单。今天的额度用量和拦截在下面。">
+          hint={disclosureHint ?? undefined}
+          explain={<>
+            <p>只说开关和队列：兑换开着、没有排队的单。今天的额度用量和拦截在下面。</p>
+            {disclosureExplain}
+          </>}>
           兑换开着，队列是空的{totalGate > 0 ? `，今天拦下 ${fmtCount(totalGate)} 次` : ""}</Conclusion>;
 
   const capRows = PARAM_ORDER.map((key) => caps.find((cap) => cap.key === key)).filter((cap): cap is G2Cap => !!cap)
@@ -1050,9 +1075,13 @@ function G2ExchangePage() {
       {recoveryNotice()}
 
       <StatBand label="兑换摘要">
-        <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle} tone={swap.emergencyPaused === null ? "neutral" : !swap.emergencyPaused ? "ok" : "warn"}
-          value={swap.emergencyPaused === null ? "—" : !swap.emergencyPaused ? "开着" : "已暂停"} sub={swap.emergencyPaused === null ? "披露闸门开着，读不到" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
-          explain={swap.emergencyPaused === null ? "风险披露闸门对兑换开着时，后端把这里显示成关，分不出真实的开关状态；到「紧急停用开关」看。" : "和「紧急停用开关」里的兑换开关是同一个。"} />
+        <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle}
+          tone={switchUnread === "absent" ? "neutral" : switchUnread || swap.emergencyPaused ? "warn" : "ok"}
+          value={switchUnread === "absent" ? "—" : switchUnread === "missing" ? "没有设置" : switchUnread === "invalid" ? "设置有误" : !swap.emergencyPaused ? "开着" : "已暂停"}
+          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "后端按关处理" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
+          explain={switchUnread === "absent" ? "后端这次没给兑换开关的状态，到「紧急停用开关」看。"
+            : switchUnread ? "「紧急停用开关」里的兑换开关读不出开或关，后端按关处理。"
+            : "和「紧急停用开关」里的兑换开关是同一个。"} />
         <Stat label="排队中" icon={ListOrdered} tone={stats.queueDepth > 0 ? "warn" : "role-3"}
           value={fmtCount(stats.queueDepth)} unit="单"
           sub={stats.queueDepth > queue.length ? `列表显示最近 ${fmtCount(queue.length)} 单` : stats.queueDepth > 0 ? `合计 ${fromMicros(queueTotalMicros)} USDT` : undefined}
