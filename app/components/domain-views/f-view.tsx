@@ -17,8 +17,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
-import { PROPOSAL_END } from "./e-tabs/e-command-check";
-import { settledText } from "./fund-command-check";
+import { fDirectSettledText, fProposalEndText } from "./f-tabs/f-release";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
@@ -497,7 +496,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         else {
           const result = await queryF4Policy(owner, original as FDirectAttempt);
           resolved = result.settled;
-          if (resolved) setToast(settledText({ status: result.receipt!.originalStatus }));
+          if (resolved) setToast(fDirectSettledText(result.receipt!.originalStatus));
           else note({ tone: "warn", text: isRetryExpired(original) ? "这次没查到结论，结果仍未知；已过 24 小时，到操作记录与审批核对。" : "这次没查到结论，结果仍未知；可以稍后再查。" });
         }
       } else {
@@ -507,8 +506,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         if (mode === "query") {
           if (!ticket) note({ tone: "warn", text: isRetryExpired(original) ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单，可以稍后再查。" });
           else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
-          else setToast(`原审批单${PROPOSAL_END[ticket.status].tag}：${PROPOSAL_END[ticket.status].text}`);
-        } else if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : `原审批单${PROPOSAL_END[ticket.status].tag}：${PROPOSAL_END[ticket.status].text}`);
+          else setToast(fProposalEndText(ticket.status));
+        } else if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : fProposalEndText(ticket.status));
       }
       return record.kind === "policy" && mode === "query" || resolved;
     } catch (error) {

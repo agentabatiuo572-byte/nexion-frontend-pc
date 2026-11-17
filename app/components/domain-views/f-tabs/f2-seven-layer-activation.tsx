@@ -18,8 +18,7 @@ import { f4Decimal } from "@/lib/admin/f4-money";
 import { f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
-import { FReleaseButton } from "./f-release";
-import { PROPOSAL_END, RECOVERY_LINE } from "../e-tabs/e-command-check";
+import { FReleaseButton, F_PROPOSAL_CREATED_LINE, fProposalEndText } from "./f-release";
 import type { FViewCtx } from "./types";
 
 
@@ -177,11 +176,11 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
       const ticket = await ctx.queryF2Proposal(attempt.fingerprint);
       if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
       else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
-      else ctx.toast(`原审批单${PROPOSAL_END[ticket.status].tag}：${PROPOSAL_END[ticket.status].text}`);
+      else ctx.toast(fProposalEndText(ticket.status));
     } catch (cause) {
       const text = cause instanceof Error && cause.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(cause);
       if (!query) setError({ query, text });
-      else note(cause instanceof Error && cause.message === "F2_PROPOSAL_STATUS_UNAVAILABLE" ? { tone: "warn", text: RECOVERY_LINE.created } : { tone: "danger", text: `查询没有成功：${text}` });
+      else note(cause instanceof Error && cause.message === "F2_PROPOSAL_STATUS_UNAVAILABLE" ? { tone: "warn", text: F_PROPOSAL_CREATED_LINE } : { tone: "danger", text: `查询没有成功：${text}` });
     } finally { setRecovering(false); setActive(null); }
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
