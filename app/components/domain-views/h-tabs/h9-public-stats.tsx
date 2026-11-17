@@ -45,14 +45,14 @@ import type { HCtx } from "./types";
 import { H9DeviceRank } from "./h9-device-rank";
 import { H9GlobeDisplay } from "./h9-globe-display";
 import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
-import { AppNumber, AppPreview, AuditFoot, type AppDisplayRead, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
+import { AppNumber, AppPreview, AuditFoot, type AppDisplayRead, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, h9Status, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
 import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, settledText } from "../fund-command-check";
+import { DIRECT_RECOVERY_INTRO, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { useSearchParams } from "next/navigation";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
@@ -90,8 +90,8 @@ const FIELD_COPY: Record<ScalarKey, { name: string; what: string }> = {
 };
 
 const RECOVERY_EXPLAIN = <>
-  <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。</p>
-  <p>点「查询原结果」读现在的值；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的值和理由，不会重复保存。有结论前这一块不能发起新的保存。</p>
+  <p>{DIRECT_RECOVERY_INTRO}</p>
+  <p>有结论前这一块不能发起新的保存。</p>
 </>;
 
 type SaveIssue = { kind: SaveIssueKind; message: string; module: H9Module; change: string; at: number };
@@ -205,6 +205,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       try {
         const receipt = await queryH9Command("main", original);
         setOutcomes(all => ({ ...all, [original.commandKey]: { receipt } }));
+        if (eCommandSettled(receipt)) ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
       } catch (cause) {
         setOutcomes(all => ({ ...all, [original.commandKey]: { error: displayAdminError(cause) } }));
       }
@@ -516,6 +517,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const recoveryRows = pending ? [{
     key: pending.commandKey, name: pending.original ? moduleLabel(pending.original.display.module) : "首页与网络展示设置",
     change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
+    status: h9Status(pending, outcomes[pending.commandKey], canWrite),
+    tech: <TechInfo commandKey={pending.commandKey} receipt={receiptOf(outcomes[pending.commandKey])} />,
     actions: <>
       <Button size="sm" disabled={loading} onClick={() => { if (pending.original) setModule(pending.original.display.module); void load(pending.original?.display.module); }}>查询原结果</Button>
       {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
@@ -534,6 +537,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         setClosing(null);
         syncPending();
         if (eCommandSettled(receipt)) {
+          ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
           ctx.openActionConfirm(null);
           await load(record.original?.display.module);
         }

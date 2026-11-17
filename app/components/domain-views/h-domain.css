@@ -148,6 +148,7 @@
 .h9-recovery-time, .h9-recovery-zone { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .h9-recovery-zone { margin: var(--rd-space-2) 0 0; }
 .h9-recovery-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; }
+.h9-recovery-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 @container h9 (max-width: 900px) {
   .h9-recovery li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
   .h9-recovery-time { grid-column: 1 / 3; grid-row: 2; }
