@@ -443,6 +443,7 @@ export function parseI3Json(text: string): unknown {
 }
 
 function i3CampaignBody(body: Record<string, unknown>, reason: string): string {
+  if (["/pages/staking/staking", "/staking"].includes(String(body.ctaHref ?? "").trim())) throw new Error(formatAdminApiError("NOTIFICATION_DELIVERY_CONFIG_INVALID", "CONTENT_API_422"));
   const budget = body.budget;
   let decimal: string | undefined;
   if (typeof budget === "string") {
@@ -580,7 +581,10 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
 
 /** Read-only reconciliation does not claim that a current row is the original command's receipt. */
 export async function fetchI3CampaignOverview(): Promise<NotificationCampaignOverview> {
-  return parseIOverview("I3", await apiRequest<unknown>("/campaigns/overview")) as NotificationCampaignOverview;
+  const overview = parseIOverview("I3", await apiRequest<unknown>("/campaigns/overview")) as NotificationCampaignOverview;
+  return { ...overview, deliveryCatalog: { ...overview.deliveryCatalog,
+    ctaRoutes: overview.deliveryCatalog.ctaRoutes.filter(option => !["/pages/staking/staking", "/staking"].includes(option.value.trim())),
+  } };
 }
 
 export async function retryI3Command(saved: I3Command): Promise<void> {
