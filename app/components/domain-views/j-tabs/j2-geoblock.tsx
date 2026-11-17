@@ -1036,7 +1036,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const logPageData = hitLog.page;
   const hitLogSection = (
     <section className="j2-hit-log" aria-label="逐条记录">
-      <h3 className="j2-sub-title">逐条记录 · 全部时间<Explain label="逐条记录是什么" content={<><p>每次被拦下的请求一行，从有记录起全部列出，新的在前。不限 24 小时，条数不算进上面的近 24 小时合计。</p><p>拦截发生在登录之前，看不到是哪位用户。入口、识别源没有记下的写「未知」。</p></>} /></h3>
+      <h3 className="j2-sub-title">逐条记录 · 全部时间<Explain label="逐条记录是什么" content={<><p>每次被拦下的请求一行，从有记录起全部列出，新的在前。不限 24 小时，条数不算进上面的近 24 小时合计。</p><p>用户登录着被拦时，记下脱敏的用户编号；未登录、登录已失效的访问，和开始记用户之前的记录，没有编号。入口、识别源没有记下的写「未知」。</p></>} /></h3>
       <FilterBar onClear={() => { setLogCountryText(""); setLogFilter("", ""); }} canClear={logFiltered || Boolean(logCountryText)} clearLabel="清除">
         <FilterField grow>
           <SearchSelect id="j2-log-country" aria-label="按国家或地区筛逐条记录" placeholder="全部国家和地区，输入代码或名称筛" value={logCountryText}
@@ -1053,12 +1053,12 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         ? <BlockState state="error" title="逐条记录没读到" detail={hitLog.error} onRetry={() => setLogTick((tick) => tick + 1)} retrying={hitLog.loading} />
         : <>
           <Table label="逐条拦截记录" className="j2-log-table">
-            <thead><tr><Th>时间</Th><Th>国家或地区</Th><Th>功能入口</Th><Th>识别源</Th><Th align="right">次数</Th></tr></thead>
+            <thead><tr><Th>时间</Th><Th>国家或地区</Th><Th>功能入口</Th><Th>识别源</Th><Th>用户</Th><Th align="right">次数</Th></tr></thead>
             <tbody>
               {!logPageData
-                ? <TableLoading columns={5} rows={4} />
+                ? <TableLoading columns={6} rows={4} />
                 : logPageData.records.length === 0
-                  ? <TableMessage columns={5}>{logPageData.total > 0
+                  ? <TableMessage columns={6}>{logPageData.total > 0
                     ? <span className="j2-log-empty">第 {count(logPageData.pageNum)} 页没有记录，共 {count(logPageData.total)} 条<Button size="sm" onClick={() => setLogPage(1)}>回到第 1 页</Button></span>
                     : logFiltered ? "这些条件下没有拦截记录" : "没有拦截记录"}</TableMessage>
                   : logPageData.records.map((row) => (
@@ -1067,6 +1067,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
                       <Td><CountryLabel cc={row.countryCode} names={{ ...countryNames, [row.countryCode]: countryNames[row.countryCode] ?? row.countryName }} /></Td>
                       <Td>{row.endpointKey === null || row.endpointKey === "" ? unknownText : <Cell main={endpointLabels[row.endpointKey] ?? "未登记的入口"} title={endpointLabels[row.endpointKey] ? undefined : row.endpointKey} />}</Td>
                       <Td>{row.source === null || row.source === "" ? unknownText : <Cell main={edgeSourceLabels[row.source] ?? "未登记的识别源"} title={edgeSourceLabels[row.source] ? undefined : row.source} />}</Td>
+                      <Td>{row.userNo === null || row.userNo === "" ? <span className="j2-muted">没有编号</span> : <Cell mono main={row.userNo} />}</Td>
                       <Td align="right"><span className="j2-num">{count(row.eventCount)}</span></Td>
                     </Tr>
                   ))}
