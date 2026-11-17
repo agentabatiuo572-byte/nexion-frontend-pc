@@ -73,13 +73,13 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
   const statSub = (metricSub: string | undefined, currency: "USDT" | "UVT") => {
     const paid = payout(currency)?.paidAmountRaw;
     const records = metricSub?.replace(/ 笔.*$/, " 笔记录");
-    return paid == null ? records : `${records ? `${records} · ` : ""}其中已付 ${amount(paid)}`;
+    return paid == null ? records : `${records ? `${records} · ` : ""}其中已提现 ${amount(paid)}`;
   };
   const statExplain = (currency: "USDT" | "UVT", found: boolean) => {
     const row = payout(currency);
     return <>
       <p>{stats ? "按记入时间统计近 7 天的全部奖励，含冷却中和冻结的，不是到账金额。" : "按记入时间统计近 7 天的全部奖励，含冷却中和冻结的，不是到账金额；后端已舍到两位小数。"}</p>
-      {row?.paidAmountRaw != null && <p>{`「其中已付」是这些奖励里现在状态为已付的部分，加上已结算共 ${amount(row.paidOrSettledAmountRaw)} ${currency}；不是这 7 天到账多少。`}</p>}
+      {row?.paidAmountRaw != null && <p>{`「其中已提现」是这些奖励里现在状态为已提现的部分，加上已结清共 ${amount(row.paidOrSettledAmountRaw)} ${currency}；不是这 7 天到账多少。`}</p>}
       {!found && <p>{absent}</p>}
     </>;
   };
