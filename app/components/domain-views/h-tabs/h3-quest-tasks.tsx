@@ -892,14 +892,21 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const shownValue = (value: string) => value === "" ? "—" : value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
     ?? TASK_CATEGORY_LABELS[part] ?? TASK_ACTION_ROUTE_LABELS[part] ?? part).join(" · ");
   // 月度奖励优先用原记录的展示币种，旧记录从对应任务核对。
+  const monthlyUnit = (target: string, rewardCurrency?: string) => {
+    const mission = rewardCurrency ? undefined : model?.monthlyMissions?.find((row) => `monthly.${codeOf(row)}.reward` === target);
+    return rewardCurrency ?? (mission ? monthlyRow(mission).unit : undefined);
+  };
   const changeValue = (target: string, value: string, rewardCurrency?: string) => {
     if (value === "" || value === "—" || !/^(?:mission\.[^.]+\.reward|monthly\.[^.]+\.reward|weekly\.mult\.[^.]+|dayOne\.triReward)$/.test(target)) return shownValue(value);
     if (!target.startsWith("monthly.")) return pendingFormat(target)(value);
-    const mission = rewardCurrency ? undefined : model?.monthlyMissions?.find((row) => `monthly.${codeOf(row)}.reward` === target);
-    const unit = rewardCurrency ?? (mission ? monthlyRow(mission).unit : undefined);
-    return `${monthlyAmount(value)} ${unit ?? "· 币种未核实"}`;
+    const unit = monthlyUnit(target, rewardCurrency);
+    return unit ? `${monthlyAmount(value)} ${unit}` : monthlyAmount(value);
   };
-  const changeOf = (c: H3PendingCommand["change"]) => <Change from={changeValue(c.target, c.before, c.rewardCurrency)} to={changeValue(c.target, c.after, c.rewardCurrency)} />;
+  // 旧记录没存币种、任务列表里又找不到这项时，数字照写，币种在后面说一次，不跟在每个数后面。
+  const changeOf = (c: H3PendingCommand["change"]) => <>
+    <Change from={changeValue(c.target, c.before, c.rewardCurrency)} to={changeValue(c.target, c.after, c.rewardCurrency)} />
+    {/^monthly\.[^.]+\.reward$/.test(c.target) && !monthlyUnit(c.target, c.rewardCurrency) && <span className="rd-weak"> · 币种没读到</span>}
+  </>;
   const releasable = (original: H3PendingCommand) => original.request.kind !== "direct" && isRetryExpired(original) && !original.acknowledged && !original.ticket;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";
