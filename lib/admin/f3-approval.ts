@@ -1,3 +1,4 @@
+import { fConfigBatchPermissionIssue } from "./f-config-batch";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
@@ -55,7 +56,7 @@ export function canRetryF3Proposal(original: FDomainAttempt) {
   const session = useAdminAuth.getState().session;
   return !!original.request && !original.ticket && !original.received && !isRetryExpired(original) && !!session
     && (original.adminId === undefined || session.adminId === original.adminId)
-    && session.authorities.includes(f3ProposalAuthority(original))
+    && (original.spec?.command.op === "f_config_batch" ? !fConfigBatchPermissionIssue(original.spec.obj.split(","), session.authorities) : session.authorities.includes(f3ProposalAuthority(original)))
     && (original.spec?.command.op === "f3_binary_settle"
       || session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"));
 }
@@ -113,7 +114,9 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
   if (spec && original) throw new A2OutcomeUncertainError("请先查询保存的原操作。", original.commandKey);
   const intent = spec ?? original?.spec;
   if (!intent) throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (!current.authorities.includes(f3ProposalAuthority(intent))
+  const batchIssue = intent.command.op === "f_config_batch" ? fConfigBatchPermissionIssue(intent.obj.split(","), current.authorities) : undefined;
+  if (batchIssue) throw new Error(batchIssue);
+  if (intent.command.op !== "f_config_batch" && !current.authorities.includes(f3ProposalAuthority(intent))
       || intent.command.op !== "f3_binary_settle"
         && !current.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {

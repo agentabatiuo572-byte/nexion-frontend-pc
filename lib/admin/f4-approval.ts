@@ -1,3 +1,4 @@
+import { fConfigBatchPermissionIssue } from "./f-config-batch";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
@@ -79,7 +80,7 @@ export function canRetryF4Proposal(original: FDomainAttempt) {
   const session = useAdminAuth.getState().session;
   return !!session && original.adminId === session.adminId && !!original.request && !!original.spec
     && !original.received && !original.ticket && !isRetryExpired(original)
-    && session.authorities.includes(f4ProposalAuthority(original.spec))
+    && (original.spec?.command.op === "f_config_batch" ? !fConfigBatchPermissionIssue(original.spec.obj.split(","), session.authorities) : session.authorities.includes(f4ProposalAuthority(original.spec)))
     && (original.spec.command.op === "f4_ambassador_policy_change" || session.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create"))
     && (!String(original.spec.command.params.key ?? "").startsWith("F.pool.votes.") || session.authorities.includes("network_f4_pool_fund"));
 }
@@ -123,7 +124,9 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   if (spec && original) throw new A2OutcomeUncertainError("请先查询保存的原操作。", original.commandKey);
   const intent = spec ?? original?.spec;
   if (!intent) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (!current.authorities.includes(f4ProposalAuthority(intent))
+  const batchIssue = intent.command.op === "f_config_batch" ? fConfigBatchPermissionIssue(intent.obj.split(","), current.authorities) : undefined;
+  if (batchIssue) throw new Error(batchIssue);
+  if (intent.command.op !== "f_config_batch" && !current.authorities.includes(f4ProposalAuthority(intent))
     || intent.command.op !== "f4_ambassador_policy_change" && !current.authorities.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create")
     || String(intent.command.params.key ?? "").startsWith("F.pool.votes.") && !current.authorities.includes("network_f4_pool_fund")) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {
