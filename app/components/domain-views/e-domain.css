@@ -1021,8 +1021,8 @@
 .e3p { display: grid; gap: var(--rd-section-gap); min-width: 0; }
 .e3p .e3p-curve { display: grid; gap: var(--rd-space-4); min-width: 0; }
 .e3p .e3p-curve .rd-chart { max-width: none; }
-/* 下限的字写在参考线左头：曲线在左边是 100%，末端常常落在下限上。 */
-.e3p .e3p-curve .rd-chart-ref span { right: auto; left: 0; padding-left: 0; }
+/* 下限的字写在参考线左头的下方：曲线从 100% 起、不会低于下限，下限是 100% 时字也不压住曲线起点。 */
+.e3p .e3p-curve .rd-chart-ref span { right: auto; left: 0; padding-left: 0; bottom: auto; top: 3px; }
 /* 图是主、右栏是辅（data-detail）。右栏两块叠起来拉到和图一样高：分段条按内容高，最近 24 小时占满剩下的。 */
 .e3p .rd-split[data-detail] > * { align-self: stretch; }
 .e3p .e3p-side { display: grid; grid-template-rows: auto 1fr; gap: var(--rd-section-gap); min-width: 0; }
