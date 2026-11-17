@@ -14,7 +14,7 @@ import { OperationConfirmModal } from "../design-kit";
 import {
   fetchH5CheckIn,
 } from "@/lib/admin/h-client";
-import { h5Amount, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
+import { h5Amount, h5RuleWriteRefusal, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
 import { useH5Mutations, type H5Change, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -70,12 +70,14 @@ const RULE_COPY: Record<string, { unit?: string; what: string; effect: string; f
   p2: { unit: "%", what: "签到时基础奖励抽中 2 倍的机会", effect: "批准后之后的签到按新概率抽；已经签到的不变。调高会让用户平均多拿 UVT。" },
   luckyMultiplierMax: { fixed: "2×", what: "抽倍率最高一档是 2 倍", effect: "固定值，后台不能改。" },
   revive: { fixed: "1 张", what: "断签后恢复连签，每次用 1 张补救卡", effect: "固定值，后台不能改；App 也按一次用 1 张处理。" },
-  broken: { unit: "小时", what: "多久没签到算断签", effect: "目前不影响签到：实际按日期判断，昨天没签今天就从第 1 天算。" },
-  brokenHours: { unit: "小时", what: "多久没签到算断签", effect: "目前不影响签到：实际按日期判断，昨天没签今天就从第 1 天算。" },
-  saver: { what: "补签卡的设置", effect: "目前不影响签到：用户恢复连签不读这一项。" },
-  reviveCards: { what: "补签卡的设置", effect: "目前不影响签到：用户恢复连签不读这一项。" },
+  interval: { what: "原来设计的签到检查间隔", effect: "不影响签到：每天按日期签一次。" },
+  broken: { unit: "小时", what: "原来设计的断签判定时长", effect: "不影响签到：按日期判断，昨天没签今天从第 1 天算。" },
+  brokenHours: { unit: "小时", what: "原来设计的断签判定时长", effect: "不影响签到：按日期判断，昨天没签今天从第 1 天算。" },
+  saver: { what: "原来设计的补签卡设置", effect: "不影响签到：恢复连签按用户手里的补救卡算。" },
+  reviveCards: { what: "原来设计的补签卡设置", effect: "不影响签到：恢复连签按用户手里的补救卡算。" },
 };
-const IDLE_RULE_KEYS = new Set(["broken", "brokenHours", "saver", "reviveCards"]);
+/** 后端标了不可配置，或这个键的新修改会被拒：已停用，只显示以前存的值。 */
+const retiredRule = (rule: CheckInRule) => rule.configurable === false || h5RuleWriteRefusal(rule.key) !== undefined;
 const STRIP_RULE_KEYS = new Set(["baseline", "bonus7"]);
 
 function ruleValueText(rule: CheckInRule) {
@@ -258,7 +260,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       });
       return;
     }
-    const idle = IDLE_RULE_KEYS.has(rule.key);
+    const idle = retiredRule(rule);
     const strip = STRIP_RULE_KEYS.has(rule.key);
     openActionConfirm({ target, original, briefKind: "config",
       action: `签到规则 · ${operatorCopyText(rule.name)}`,
@@ -268,7 +270,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       statedBrief: ruleBrief,
       content: (
         <div className="rd-stack">
-          {idle && <Notice tone="warn" title="目前不影响签到">保存只改这一项的值，签到和发奖不变。</Notice>}
+          {idle && <Notice tone="warn" title="这一项已停用">不影响签到，新的修改会被拒绝。</Notice>}
           <Facts>
             {strip && !positiveInteger(current) && <Fact k="现在的值" tone="warn">不是正整数，App 发不出，用户签到会失败</Fact>}
             {ruleApproverFacts}
@@ -722,8 +724,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     );
   };
 
-  const signRules = rules.filter((rule) => !IDLE_RULE_KEYS.has(rule.key));
-  const idleRules = rules.filter((rule) => IDLE_RULE_KEYS.has(rule.key));
+  const signRules = rules.filter((rule) => !retiredRule(rule));
+  const retiredRules = rules.filter(retiredRule);
   const tickSeconds = model.tickInterval?.seconds;
 
   const panes: Record<Tab, ReactNode> = {
@@ -829,40 +831,47 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </Panel>
     ),
     idle: (
-      <Panel title="目前不生效的参数" icon={CircleSlash} tone="role-other"
-        sub={`${idleRules.length + 1} 项 · 能保存，后端没有地方用`}
-        explain="这几项能保存、能读回，但后端没有地方按它们判断，改了不改变签到和发奖。已提给后端接上或退役；在那之前保留入口，方便核对现在存的值。">
-        <ConfigList label="目前不生效的参数">
-          {idleRules.map((rule) => {
-            const copy = RULE_COPY[rule.key];
-            const name = operatorCopyText(rule.name);
-            return (
-              <ConfigRow key={rule.key} name={name}
-                what={copy?.what ?? (rule.sub ? operatorCopyText(rule.sub) : undefined)}
-                when={`提交审批，${RULE_APPROVER}批准后保存`}
-                effect={copy?.effect}
-                value={<span className="h5-value">
-                  <span className="h5-value-num">{ruleValueText(rule)}</span>
-                  <StatusTag tone="neutral" icon={CircleSlash}>目前不影响签到</StatusTag>
-                  {pendingOf(`rule:${rule.key}`) && pendingTag(RULE_APPROVER, RULE_PENDING_NOTE)}
-                </span>}
-                action={canRuleWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={conflictDraft.register(JSON.stringify(["openRule:2", rule.key]), () => openRule(rule))}>调整</Button> : undefined} />
-            );
-          })}
-          <ConfigRow name="收益里程碑检查间隔"
-            what="原来设计成系统每隔几秒检查谁达到了收益里程碑"
-            when="立即保存，马上能读回"
-            effect="目前不影响收益里程碑：后端没有按这个间隔检查的任务，用户在 App 成就页主动领取。"
-            note={tickSeconds === 0 ? "现在存的 0 秒不在 1–60 秒内，是以前存下的值。" : undefined}
-            value={<span className="h5-value">
-              <span className="h5-value-num">{text(model.tickInterval?.value, "—")}</span>
-              {tickSeconds === 0 && <StatusTag tone="warn" icon={AlertTriangle} explain="现在存的 0 秒不在 1–60 秒内，是以前存下的值。">不在范围内</StatusTag>}
-              <StatusTag tone="neutral" icon={CircleSlash}>目前不影响收益里程碑</StatusTag>
-            </span>}
-            action={canWrite || canRuleWrite || canWriteTick ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label="调整 收益里程碑检查间隔"
-              disabledReason={canWriteTick ? blocked("tick:interval") : "仅超级管理员可调整检查间隔，还要有检查间隔修改权限"} onClick={conflictDraft.register(JSON.stringify(["openTick:1"]), () => openTick())}>调整</Button> : undefined} />
-        </ConfigList>
-      </Panel>
+      <>
+        {retiredRules.length > 0 && <Panel title="已停用的设置" icon={CircleSlash} tone="role-other"
+          sub={`${retiredRules.length} 项 · 不能再改`}
+          explain="这几项已经停用，不影响签到和发奖，也不能再改。这里保留以前存的值，方便核对。">
+          <ConfigList label="已停用的设置">
+            {retiredRules.map((rule) => {
+              const copy = RULE_COPY[rule.key];
+              const name = operatorCopyText(rule.name);
+              return (
+                <ConfigRow key={rule.key} name={name}
+                  what={copy?.what ?? (rule.sub ? operatorCopyText(rule.sub) : undefined)}
+                  when="已停用，只显示以前存的值"
+                  effect={copy?.effect ?? "不影响签到和发奖。"}
+                  value={<span className="h5-value">
+                    <span className="h5-value-num">{ruleValueText(rule)}</span>
+                    <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>
+                    {pendingOf(`rule:${rule.key}`) && pendingTag(RULE_APPROVER, RULE_PENDING_NOTE)}
+                  </span>} />
+              );
+            })}
+          </ConfigList>
+        </Panel>}
+        <Panel title="目前不生效的参数" icon={CircleSlash} tone="role-other"
+          sub="1 项 · 能保存，但不起作用"
+          explain="能保存、能读回，但没有任务按它检查，改了不影响收益里程碑。">
+          <ConfigList label="目前不生效的参数">
+            <ConfigRow name="收益里程碑检查间隔"
+              what="原来设计成系统每隔几秒检查谁达到了收益里程碑"
+              when="立即保存，马上能读回"
+              effect="目前不影响收益里程碑：后端没有按这个间隔检查的任务，用户在 App 成就页主动领取。"
+              note={tickSeconds === 0 ? "现在存的 0 秒不在 1–60 秒内，是以前存下的值。" : undefined}
+              value={<span className="h5-value">
+                <span className="h5-value-num">{text(model.tickInterval?.value, "—")}</span>
+                {tickSeconds === 0 && <StatusTag tone="warn" icon={AlertTriangle} explain="现在存的 0 秒不在 1–60 秒内，是以前存下的值。">不在范围内</StatusTag>}
+                <StatusTag tone="neutral" icon={CircleSlash}>目前不影响收益里程碑</StatusTag>
+              </span>}
+              action={canWrite || canRuleWrite || canWriteTick ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label="调整 收益里程碑检查间隔"
+                disabledReason={canWriteTick ? blocked("tick:interval") : "仅超级管理员可调整检查间隔，还要有检查间隔修改权限"} onClick={conflictDraft.register(JSON.stringify(["openTick:1"]), () => openTick())}>调整</Button> : undefined} />
+          </ConfigList>
+        </Panel>
+      </>
     ),
   };
 
