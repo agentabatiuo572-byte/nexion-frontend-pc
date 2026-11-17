@@ -3270,6 +3270,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EXPECTED_NICKNAME_REQUIRED: "缺少原昵称，本次未重置。请重新加载用户资料。",
   NICKNAME_VERSION_CONFLICT: "昵称已被其他操作修改，本次未重置。请重新加载后核对最新昵称。",
   NICKNAME_RESET_CONFLICT: "昵称重置时资料已变化，本次未重置。请重新加载用户资料核对。",
+  USER_NICKNAME_TAKEN: "生成的昵称已被占用，本次未修改昵称；请重新提交生成新昵称。",
   PAYMENT_METHOD_TRIAL_GUARDED: "这张卡正在用于试用扣款，本次未解绑。请先引导用户换绑新卡。",
   PAYMENT_METHOD_NOT_BOUND: "这张卡已不是绑定状态，本次未解绑。请刷新支付方式核对。",
   PAYMENT_METHOD_VERSION_CONFLICT: "这张卡的状态已变化，本次未执行。请刷新支付方式后重新核对。",
