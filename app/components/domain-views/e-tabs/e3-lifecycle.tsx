@@ -1,13 +1,13 @@
 "use client";
 /**
- * E3 设备使用与升级置换（改版）。配置页：结论、四个数、产能曲线和最近 24 小时，再往下是两套规则和「目前不生效」。
+ * E3 设备使用与升级置换（改版）。配置页：结论、四个数、产能曲线和最近 24 小时，再往下是两套规则和「已停用的设置」（后端还返回旧值时才显示）。
  * 两套规则就是旧页的「任务产能节奏」（产能随月龄下降、参与任务递减的商品）和「升级置换阶梯」（分档界线、各档抵扣比例）。
  * 读数、写入口和请求都走壳（e-view.tsx）原来的 ctx：openActionConfirm 的 name、op、paramKey(s)、edit、businessForm、amplify 与旧页一致，
  * 只加了显示用的 title、effect、facts、statedBrief、hint、preview、explain、warning。
  */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, BookOpen, Clock3, Gauge, Hourglass, Info, PackageOpen, RefreshCw, SearchCheck, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowLeftRight, BookOpen, CircleSlash, Clock3, Gauge, Hourglass, Info, RefreshCw, SearchCheck, ShieldCheck, Wallet } from "lucide-react";
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -43,9 +43,6 @@ export const REQUIRED_E3_KEYS = [
   "E.device.capacity.applyTo.stellarbox-pro-v2",
   "E.device.capacity.applyTo.stellarrack-p1",
   "E.device.capacity.applyTo.stellarrack-p2",
-  "E.device.taskLock.s1",
-  "E.device.taskLock.pro",
-  "E.device.taskLock.rack",
   "E.tradein.enabled",
   "E.tradein.ladder.cut1",
   "E.tradein.ladder.cut2",
@@ -60,6 +57,9 @@ export const REQUIRED_E3_KEYS = [
   "E.tradein.maxDevicesPerOrder",
   "E.tradein.eligibility",
 ];
+
+/** 提示升级的月损失金额：已停用（89c76193）。新后端不再返回；旧后端还返回时只读显示。 */
+const TASK_LOCK_KEYS = ["E.device.taskLock.s1", "E.device.taskLock.pro", "E.device.taskLock.rack"];
 
 /** FEAT-DEV01 参与任务递减（每个商品一个开关）：值是「参与递减」或「免递减」。与 App 的 CAPACITY_EXEMPT_KINDS 对账（canon 哨兵）。 */
 export const APPLY_TO_SKUS: { kind: string; label: string }[] = [
@@ -557,27 +557,15 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       </ConfigList>
     </Panel>
 
-    <Fold title="目前不生效的参数" icon={PackageOpen} tone="role-other" summary="1 组 · 提示升级的月损失金额，App 目前不读"
-      explain="能保存，但 App 目前不读这几个值，改了不会有任何提示（已提后端）。">
-      <ConfigList label="目前不生效的参数">
+    {TASK_LOCK_KEYS.some((key) => pE(key) !== "—") && <Fold title="已停用的设置" icon={CircleSlash} tone="role-other" summary="1 组 · 不能再改"
+      explain="这组已经停用，不再提示用户升级，也不能再改。这里只显示以前存的值。">
+      <ConfigList label="已停用的设置">
         <ConfigRow name="提示升级的月损失金额" value={`入门 ${pE("E.device.taskLock.s1")} · Pro ${pE("E.device.taskLock.pro")} · 机柜 ${pE("E.device.taskLock.rack")} USDT`}
-          sub={<>{pendingTag(["E.device.taskLock.s1", "E.device.taskLock.pro", "E.device.taskLock.rack"])}<StatusTag tone="neutral" icon={Info}>目前不生效</StatusTag></>}
-          what="设备每月少赚超过这个金额时提示用户升级（入门 / Pro / 机柜三类）" where="App 目前没有读这三个值" when="三个一起提交，批准后保存"
-          effect="目前只保存，不会触发升级提示，也不改派单和任务。"
-          action={adjust(["E.device.taskLock.s1", "E.device.taskLock.pro", "E.device.taskLock.rack"], () => multi({
-            name: "提示升级的月损失金额", title: "调整提示升级的月损失金额",
-            hint: "目前只保存：App 不读这三个金额，改了不会触发升级提示。",
-            detail: "三个一起批准。App 目前不读这三个金额，改了不会有升级提示（已提后端）。",
-            impact: "只保存三个金额，目前不触发任何提示，不改派单和收益。",
-            facts: <Facts><Fact k="入门设备">{pE("E.device.taskLock.s1")} USDT</Fact><Fact k="UVELBox Pro">{pE("E.device.taskLock.pro")} USDT</Fact><Fact k="UVELRack">{pE("E.device.taskLock.rack")} USDT</Fact><Fact k="生效情况">目前不生效</Fact></Facts>,
-            fields: [
-              { key: "s1", paramKey: "E.device.taskLock.s1", label: "入门设备（USDT）", inputKind: "number", placeholder: "40" },
-              { key: "pro", paramKey: "E.device.taskLock.pro", label: "UVELBox Pro（USDT）", inputKind: "number", placeholder: "140" },
-              { key: "rack", paramKey: "E.device.taskLock.rack", label: "UVELRack（USDT）", inputKind: "number", placeholder: "450" },
-            ],
-          }), true)} />
+          sub={<>{pendingTag(TASK_LOCK_KEYS)}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></>}
+          what="原来设计成设备每月少赚超过这个金额时提示用户升级" when="已停用，不能再改"
+          note="不影响派单、任务和收益。" />
       </ConfigList>
-    </Fold>
+    </Fold>}
     {manual}
   </div>;
 }

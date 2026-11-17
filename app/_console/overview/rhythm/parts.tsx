@@ -6,7 +6,7 @@
  * 原来的 data-testid（b4-distribution-row、b4-dial-row）照旧挂在每一行上。
  */
 import type { ReactNode } from "react";
-import { Ban, CalendarRange, SlidersHorizontal, Users } from "lucide-react";
+import { Ban, CalendarRange, CircleSlash, SlidersHorizontal, Users } from "lucide-react";
 import {
   Change, Explain, Panel, RatioBar, ScaleBar, StageLine, StatusTag, Table, Td, Th, Tr,
 } from "@/app/components/rd";
@@ -162,11 +162,11 @@ const DIALS: Record<string, { name: string; what: string; detail: string; retire
   newUserBonusMultiplier: { name: "新用户加成", what: "新用户奖励的倍率", detail: "这个月新用户相关奖励按这个倍率算；改了不追溯已结算的奖励。" },
   inviteRewardMultiplier: { name: "邀请加成", what: "邀请奖励的倍率", detail: "这个月邀请奖励按这个倍率算；改了不重算已有的邀请结算。" },
   reinvestMultiplier: { name: "锁定计划加成", what: "锁定计划的阶段倍率", detail: "参与锁定计划时用的阶段倍率。" },
-  withdrawPenaltyFeeRate: { name: "提现惩罚费率", what: "已退役，现在不收", retired: true,
-    detail: "这项已经退役：新提现的惩罚费现在是 0，运营阶段设置里也没有这一项。这里只显示配置里还留着的数，不会向用户收。" },
+  withdrawPenaltyFeeRate: { name: "提现惩罚费率", what: "已停用，现在不收", retired: true,
+    detail: "这项已经停用：新提现的惩罚费现在是 0，运营阶段设置里也没有这一项。这里只显示配置里还留着的数，不会向用户收。" },
   withdrawCooldownDays: { name: "到账审查窗口", what: "大额提现要等的天数",
     detail: "加强合规审查开启时，USDT 提现每笔人工审查，本金大于 1,000 USDT 的还要等这些天；0 天也要人工审查。不是所有提现都要等。" },
-  binaryDailyCap: { name: "团队平衡奖励每日上限", what: "团队平衡奖励每天封顶", detail: "每天团队平衡奖励最多发这么多。设成 0 时这项奖励停止结算，App 里也读不到。" },
+  binaryDailyCap: { name: "团队平衡奖励每日上限", what: "团队平衡奖励每天封顶", detail: "每天团队平衡奖励最多发这么多，要大于 0。以前存成 0 的月份不结算这项奖励，App 里也读不到。" },
   questBonusMultiplier: { name: "任务加成", what: "任务奖励的倍率", detail: "任务奖励按这个倍率算，有当周设置时按当周的；改了不重算已结算的任务。" },
   complianceHoldEnabled: { name: "加强合规审查", what: "USDT 提现人工审查开关",
     detail: "开启时 USDT 三个网络的提现每笔人工审查。开着不等于每一笔都会被挂起等待。" },
@@ -249,10 +249,10 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
                     <b>{meta.name}</b>
                     {meta.detail && <Explain label={`${meta.name}管什么`} content={meta.detail} />}
                   </span>
-                  {meta.retired && <span className="b4-retired-inline"><StatusTag tone="neutral" icon={Ban}>已退役，现在不收</StatusTag></span>}
+                  {meta.retired && <span className="b4-retired-inline"><StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag></span>}
                 </Td>
-                <Td className="b4-col-what">{meta.retired ? <StatusTag tone="neutral" icon={Ban}>已退役，现在不收</StatusTag> : <span className="b4-muted">{meta.what}</span>}</Td>
-                <Td align="right"><span className="b4-value" data-retired={meta.retired ? "" : undefined}>{dialText(dial.currentValue, dial.unit)}</span></Td>
+                <Td className="b4-col-what">{meta.retired ? <StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag> : <span className="b4-muted">{meta.what}</span>}</Td>
+                <Td align="right"><span className="b4-value" data-retired={meta.retired ? "" : undefined}>{dial.key === "binaryDailyCap" && dial.currentValue != null && String(dial.currentValue).trim() !== "" && Number(dial.currentValue) === 0 && <StatusTag tone="warn" icon={CircleSlash} explain="这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。">以前存的</StatusTag>}{dialText(dial.currentValue, dial.unit)}</span></Td>
                 {!last && (
                   <Td align="right">
                     {meta.retired ? <span className="b4-muted">{change ? `${change.from} → ${change.to}` : "不变"}</span>
@@ -262,7 +262,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
                 {canJump && (
                   <Td align="right" data-fit="">
                     {meta.retired ? (
-                      <span className="b4-muted" aria-label={`${meta.name}已退役，没有调整入口`}>—</span>
+                      <span className="b4-muted" aria-label={`${meta.name}已停用，没有调整入口`}>—</span>
                     ) : (
                       <a href={dial.adjustHref} className="rd-link b4-nowrap" aria-disabled={busy !== ""} aria-label={`去运营阶段设置调整${meta.name}`}
                         onClick={(event) => {

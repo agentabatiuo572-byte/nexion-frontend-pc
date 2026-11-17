@@ -3,7 +3,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock3, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash, Clock3, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
   Notice, PageHeader, Panel, RatioBar, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds,
@@ -83,7 +83,7 @@ const K2_PARAM_HELP: Record<string, { label: string; what: string; effect: strin
     label: "批量领新人礼检测线",
     what: "同一账户组里已结算的新人礼达到多少笔算异常。统计全部已结算记录，没有时间窗。",
     effect: "调低会多出命中；调高后不再达到的未处置命中会消失。",
-    note: "目前只按账户组检测：选同一人或组织、手机号、设备也按账户组算，后端还没有接上这三种。",
+    note: "两种范围都按账户组统计。",
   },
   leaderboardVelocityMultiplier: {
     label: "刷榜奖励增长倍数",
@@ -93,6 +93,12 @@ const K2_PARAM_HELP: Record<string, { label: string; what: string; effect: strin
 };
 
 const GIFT_SCOPE_LABELS: Record<string, string> = { "实体": "同一人或组织", "账户簇": "账户组", "手机号": "手机号", "设备": "设备" };
+/** 新人礼检测范围：只有这两种还能保存（4da6fffc）；手机号、设备是以前存的值，已停用。 */
+const GIFT_SCOPES = ["实体", "账户簇"];
+const retiredGiftScope = (p: KRiskParam) => {
+  const parts = p.key === "welcomeGiftAnomalyThreshold" ? parseK2Threshold(p.key, p.value) : null;
+  return parts?.kind === "gift" && !GIFT_SCOPES.includes(parts.scope) ? GIFT_SCOPE_LABELS[parts.scope] : null;
+};
 
 const K2_DISPOSITION_LABELS: Record<string, string> = {
   account_flagged: "已标记套利",
@@ -178,9 +184,11 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
       fields: [
         { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">=", ">"], optionLabels: OPERATOR_LABELS },
         { key: "count", label: "已结算笔数", current: current.count, inputKind: "number", min: 1, max: 5, step: 1, help: "1–5 的整数" },
-        { key: "scope", label: "检测范围", current: current.scope, inputKind: "select", options: ["实体", "账户簇", "手机号", "设备"], optionLabels: GIFT_SCOPE_LABELS,
-          help: "目前不论选哪项，都按账户组检测",
-          explain: "后端能保存这四种范围，但检测时只按账户组统计；按同一人或组织、手机号、设备检测还没有接上。" },
+        GIFT_SCOPES.includes(current.scope)
+          ? { key: "scope", label: "检测范围", current: current.scope, inputKind: "select", options: GIFT_SCOPES, optionLabels: GIFT_SCOPE_LABELS, help: "两种都按账户组统计" }
+          : { key: "scope", label: "检测范围", current: current.scope, inputKind: "select", options: GIFT_SCOPES, optionLabels: GIFT_SCOPE_LABELS, mustChoose: true,
+            help: `「${GIFT_SCOPE_LABELS[current.scope]}」已停用，要保存先改选一种`,
+            explain: "以前存的范围已停用，这条要保存必须换成仍支持的范围。两种都按账户组统计。" },
       ],
     };
   }
@@ -724,6 +732,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       facts: (
         <Facts>
           <Fact k={retained ? "提交时" : "现在"}>{thresholdText(p.key, p.value)}</Fact>
+          {retiredGiftScope(p) && <Fact k="检测范围" tone="warn">{retiredGiftScope(p)}（已停用）</Fact>}
         </Facts>
       ),
       statedBrief: {
@@ -1046,7 +1055,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
                 <ConfigRow key={p.key} name={help.label} explainLabel={help.label}
                   what={help.what} when="保存后下一次检测起" effect={help.effect} note={help.note}
                   value={thresholdText(p.key, p.value)}
-                  sub={p.key === "welcomeGiftAnomalyThreshold" ? <StatusTag tone="warn" icon={AlertTriangle}>目前只按账户组检测</StatusTag> : undefined}
+                  sub={retiredGiftScope(p) ? <StatusTag tone="warn" icon={CircleSlash} explain={`以前存的检测范围「${retiredGiftScope(p)}」已停用，检测仍按账户组统计。要保存这条，先改选「同一人或组织」或「账户组」。`}>范围「{retiredGiftScope(p)}」已停用</StatusTag> : undefined}
                   action={canWrite ? <Button size="sm" aria-label={`调整${help.label}`} disabledReason={pendingFor(p.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason} onClick={() => adjParam(p)}>调整</Button> : undefined} />
               );
             })}

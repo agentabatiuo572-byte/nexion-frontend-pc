@@ -62,6 +62,7 @@
 .rhythmpage .b4-th { display: inline-flex; align-items: center; gap: 2px; }
 .rhythmpage .b4-value { font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
 .rhythmpage .b4-value[data-retired] { color: var(--rd-text-3); }
+.rhythmpage .b4-value .rd-tag { margin-right: 6px; }
 .rhythmpage .b4-dials .rd-fact-change { justify-content: flex-end; white-space: nowrap; }
 .rhythmpage .b4-retired-inline { display: none; }
 
