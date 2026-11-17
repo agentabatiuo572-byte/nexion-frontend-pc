@@ -21,7 +21,7 @@ export function useSupportManagementCommand<T, R>(options: {
   write: (payload: T, key: string) => Promise<R>;
   query: (key: string, payload: T) => Promise<Receipt<R>>;
   onSuccess: (result: R, payload: T) => void;
-  onFailure: (payload: T) => void;
+  onFailure: (payload: T, failure: unknown) => void;
 }) {
   const { store, slot, canQuery, canWrite } = options;
   const [pending, setPending] = useState(() => store.list().find(row => row.fingerprint === slot));
@@ -74,7 +74,7 @@ export function useSupportManagementCommand<T, R>(options: {
         if (!current()) return;
         if (receipt.status === "FAILED") {
           store.forget(slot, commandKey); setPending(undefined);
-          options.onFailure(payload); setMessage("原操作已确认失败，请核对后重新提交。");
+          options.onFailure(payload, receipt); setMessage("原操作已确认失败，请核对后重新提交。");
           return;
         }
         if (receipt.status !== "SUCCEEDED") {
@@ -99,7 +99,7 @@ export function useSupportManagementCommand<T, R>(options: {
         setMessage(restricted ? "还没查到原结果，授权结果未知，请稍后再查。" : "还没查到原结果。");
       } else if (action === "submit" && [400, 404, 409, 422].includes(status ?? 0) && code && !code.startsWith("IDEMPOTENCY_")) {
         store.forget(slot, commandKey); setPending(undefined);
-        options.onFailure(payload); const reason = displayAdminError(error); setMessage(reason.startsWith("操作未完成") ? reason : `本次操作未完成。${reason}`);
+        options.onFailure(payload, error); const reason = displayAdminError(error); setMessage(reason.startsWith("操作未完成") ? reason : `本次操作未完成。${reason}`);
       } else if (forbidden) {
         store.remember(slot, commandKey, { payload, denied: true });
         setDenied(true); setMessage(deniedNotice);

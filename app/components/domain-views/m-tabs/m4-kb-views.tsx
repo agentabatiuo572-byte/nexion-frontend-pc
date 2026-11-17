@@ -7,6 +7,7 @@
 import type { ReactNode } from "react";
 import { Bot, BookOpenText, CheckCircle2, CircleHelp, EyeOff, FilePen, Headset, Pencil, Smartphone, Trash2, Upload, Archive } from "lucide-react";
 import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav } from "@/app/components/rd";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { SupportFaq } from "./data";
 import { catCN } from "./hd-ui";
@@ -158,7 +159,7 @@ export function M4FaqDrawer({ faq, author, nav, busy, canWrite, onClose, onEdit,
 export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel, onConfirm }: {
   faq: M4Faq;
   busy: boolean;
-  failure: string;
+  failure: Error | null;
   disabled?: boolean;
   /** 从结果未知恢复：确认就是按原请求重试。expired 时只能读回核对。 */
   retry?: { expired: boolean };
@@ -166,7 +167,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
   onConfirm: () => void;
 }) {
   const publish = faq.status === "draft";
-  const unknown = failure.startsWith("结果未知");
+  const unknown = isOutcomeUnknownError(failure);
   const action = publish ? "发布" : "下架";
   return (
     <Modal title={publish ? "发布这条问答" : "下架这条问答"} icon={publish ? Upload : Archive}
@@ -187,7 +188,7 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
       {publish && !reachesUsers(faq) && <Notice tone="warn">发布后状态会变成已发布，但 App 用户现在还看不到这条。</Notice>}
       {!publish && <p className="m4-confirm-note">问答留在列表里，随时可以重新发布。已经发给客户的回答不会撤回；App 里已打开的帮助页可能过几分钟才更新。</p>}
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
-      {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure}</p></Notice>}
+      {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure?.message}</p></Notice>}
       {(unknown || retry) && <Notice tone="warn" title="结果未知">
         <p>{retry?.expired ? `原请求超过 24 小时，不能再重试，只能查询原结果。` : `可能已经${action}。按原请求重试不会重复执行。`}</p>
       </Notice>}

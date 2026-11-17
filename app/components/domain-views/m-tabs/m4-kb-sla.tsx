@@ -9,7 +9,7 @@ import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { queryM4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -88,7 +88,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const [openId, setOpenId] = useState<string | null>(null);
   const [statusTarget, setStatusTarget] = useState<SupportFaq | null>(null);
   const deleteConfirmation = useRef<{ faq: SupportFaq; request: Parameters<MCtx["openActionConfirm"]>[0] } | null>(null);
-  const [statusFailure, setStatusFailure] = useState("");
+  const [statusFailure, setStatusFailure] = useState<Error | null>(null);
   const [writePending, setWritePending] = useState(false);
   const writeInFlight = useRef(false);
   const createFaqTempId = useRef<string | null>(null);
@@ -130,12 +130,12 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       return false;
     }
   };
-  const commitM4Write = async (command: M4FaqCommand, successMessage: string, onFailure?: (message: string) => void, original?: MCommandRecord): Promise<boolean> => {
+  const commitM4Write = async (command: M4FaqCommand, successMessage: string, onFailure?: (error: Error) => void, original?: MCommandRecord): Promise<boolean> => {
     const currentSession = useAdminAuth.getState().session;
     if (writeInFlight.current || !currentSession || command.actorId !== currentSession.adminId
       || !(currentSession.role === "super" || currentSession.role === "superadmin" || currentSession.authorities.includes("service_m4_write"))) return false;
     if (!original && (!canEdit || blocked(command.before?.id))) return false;
-    if (original && isRetryExpired(original)) { onFailure?.(RETRY_EXPIRED_TEXT); toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
+    if (original && isRetryExpired(original)) { onFailure?.(new Error(RETRY_EXPIRED_TEXT)); toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
     const commandKey = original?.commandKey ?? `m4-${crypto.randomUUID()}`;
     const fingerprint = original?.fingerprint ?? `m4|${command.kind === "create" ? "create" : command.row.id}`;
     mCommands.remember(fingerprint, commandKey, { faq: command });
@@ -147,7 +147,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         mCommands.forget(fingerprint, commandKey);
         syncPending();
       }
-      onFailure?.(failure); toast(failure, "warn"); return false;
+      onFailure?.(new Error(failure)); toast(failure, "warn"); return false;
     }
     writeInFlight.current = true;
     setWritePending(true);
@@ -180,20 +180,20 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       }
       if (!rejected) setRecovery(mCommands.list().find((record) => record.commandKey === commandKey) ?? null);
       const failure = `${rejected ? "后台拒绝了这次操作" : "结果未知"} · ${displayAdminError(error)}`;
-      if (onFailure && (!rejected || !original)) onFailure(failure); else toast(failure, rejected ? "error" : "warn");
+      if (onFailure && (!rejected || !original)) onFailure(rejected ? new Error(failure, { cause: error }) : new OutcomeUnknownError(failure, { cause: error })); else toast(failure, rejected ? "error" : "warn");
       return false;
     } finally {
       writeInFlight.current = false;
       setWritePending(false);
     }
   };
-  const retryOriginal = (record: MCommandRecord, onFailure?: (message: string) => void) => {
+  const retryOriginal = (record: MCommandRecord, onFailure?: (error: Error) => void) => {
     if (!record.faq) return Promise.resolve(false);
     const labels = { create: "已保存", edit: "已保存", publish: "已发布", unpublish: "已下架为草稿", delete: "已删除" };
     return commitM4Write(record.faq, `${record.faq.row.id} ${labels[record.faq.kind]}`, onFailure, record);
   };
 
-  const saveFaq = async (form: FaqForm, onFailure: (message: string) => void) => {
+  const saveFaq = async (form: FaqForm, onFailure: (error: Error) => void) => {
     if (recovery) return retryOriginal(recovery, onFailure);
     const sortOrder = Number(form.sortOrder);
     if (!form.question.trim() || !form.answer.trim() || form.question.trim().length > 160 || form.answer.trim().length > 4000 || !minReason(form.reason)) {
@@ -234,7 +234,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     return succeeded;
   };
 
-  const changeFaqStatus = async (id: string, status: SupportFaq["status"], onFailure: (message: string) => void) => {
+  const changeFaqStatus = async (id: string, status: SupportFaq["status"], onFailure: (error: Error) => void) => {
     if (recovery) return retryOriginal(recovery, onFailure);
     const before = faqs.find((faq) => faq.id === id);
     if (!before || !actorId || !statusTarget || before.version !== statusTarget.version || before.status !== statusTarget.status) return false;
@@ -298,7 +298,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
 
   const openCreate = () => { setRecovery(null); createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
   const openEdit = (faq: SupportFaq) => { setRecovery(null); createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
-  const openStatus = (faq: SupportFaq) => { setRecovery(null); setStatusFailure(""); setStatusTarget(faq); };
+  const openStatus = (faq: SupportFaq) => { setRecovery(null); setStatusFailure(null); setStatusTarget(faq); };
 
   const restore = (record: MCommandRecord) => {
     if (!record.faq) return;
@@ -306,7 +306,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     setRecovery(record);
     if (record.faq.kind === "delete") requestDeleteFaq(record.faq.row, record);
     else if (record.faq.kind === "publish" || record.faq.kind === "unpublish") {
-      setStatusFailure(""); setStatusTarget(record.faq.before);
+      setStatusFailure(null); setStatusTarget(record.faq.before);
     } else {
       createFaqTempId.current = record.faq.row.id;
       setEditFaq(record.faq.before); setShowAddFaq(record.faq.kind === "create");
@@ -469,7 +469,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure} retry={recovery ? { expired: isRetryExpired(recovery) } : undefined}
         onCancel={() => { setRecovery(null); setStatusTarget(null); }}
         onConfirm={async () => {
-          setStatusFailure("");
+          setStatusFailure(null);
           if (await changeFaqStatus(statusTarget.id, statusTarget.status === "draft" ? "published" : "draft", setStatusFailure)) setStatusTarget(null);
         }} />}
 
@@ -493,7 +493,7 @@ function FaqModal({
   recovery: MCommandRecord | null;
   disabled: boolean;
   onClose: () => void;
-  onSave: (form: FaqForm, onFailure: (message: string) => void) => Promise<boolean>;
+  onSave: (form: FaqForm, onFailure: (error: Error) => void) => Promise<boolean>;
 }) {
   const initial = recovery?.faq?.row ?? row;
   const [category, setCategory] = useState<SupportFaq["category"]>(initial?.category ?? "general");
@@ -505,7 +505,7 @@ function FaqModal({
   const [status, setStatus] = useState<SupportFaq["status"]>(initial?.status ?? "published");
   const [reason, setReason] = useState(recovery?.faq ? JSON.parse(recovery.faq.request.body).reason as string : "");
   const [tried, setTried] = useState(false);
-  const [failure, setFailure] = useState("");
+  const [failure, setFailure] = useState<Error | null>(null);
   // 只管界面：记住打开时的版本，重读后版本变了就把别人改的项列出来，和框里你填的对照。
   const [opened] = useState(row);
   const latest = !recovery && row && opened && row.version !== opened.version ? row : null;
@@ -529,14 +529,14 @@ function FaqModal({
   const blocking = Boolean(errors.question || errors.answer || errors.sort || errors.reason);
   const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
   const live = row?.status === "published" || status === "published";
-  const unknown = failure.startsWith("结果未知");
+  const unknown = isOutcomeUnknownError(failure);
   // 英语问答改成别的语言保存，后端会清掉附带的翻译（OpsSupportKnowledgeService.updateFaq）。
   const translationCount = row?.language === "en-US" && language !== "en-US" ? Object.keys(row.translations ?? {}).length : 0;
   const dirty = question !== (row?.question ?? "") || answer !== (row?.answer ?? "") || reason !== "" || category !== (row?.category ?? "general")
     || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? "zh-CN") || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
   const save = () => {
     setTried(true);
-    setFailure("");
+    setFailure(null);
     if (blocking) return;
     void onSave({ category, surface, language, sortOrder, question, answer, status, reason }, setFailure);
   };
@@ -561,7 +561,7 @@ function FaqModal({
       }
     >
       {row?.status === "published" && !recovery && <Notice tone="warn">这条在线上，保存后几分钟内用户就会看到新内容。</Notice>}
-      {failure && !unknown && !latest && <Notice tone="danger" title="没有保存成功"><p>{failure}</p></Notice>}
+      {failure && !unknown && !latest && <Notice tone="danger" title="没有保存成功"><p>{failure?.message}</p></Notice>}
       {latest && opened && <Notice tone="warn" title={failure ? "没有保存：这条问答刚被别人改过" : "这条问答刚被别人改过"}>
         <p>现在是第 {latest.version} 版{authorOf(latest.id) && <>（{authorOf(latest.id)} 改的）</>}，你改的是第 {opened.version} 版。你填的内容还在，核对后再保存。</p>
         {latestChanges.length > 0 && <ul className="m5-plain-list">{latestChanges.map((line) => <li key={line}>{line}</li>)}</ul>}

@@ -1,5 +1,9 @@
 # M 专属客服中心功能契约
 
+## 2026-11-17 M4 结果类型（hd-fix-misc5）
+
+FAQ 保存/发布/下架失败回调保留 Error；现有拒绝判据认定的未知结果用 OutcomeUnknownError，编辑与状态框均按错误类型判断，展示 message 原文。修改文案前缀不再改变恢复状态。共用 useSupportManagementCommand 的失败回调附原错误或 FAILED 回执，唯一使用方首次分配继续忽略该参数；不改变其请求或恢复。
+
 ## 2026-11-16 M3/M4 只读增量（hd-sync10）
 
 - M3 后端 `b22edbe3` 管理详情的可空 `writeState`：`threadOwnerAgentId/Name`、`currentAssignmentAgentId/Name`、`writableConversationNo` 均为字符串或 null，`canReply` 为布尔。只表示当前分配下最新 advisor/support 线程是否等于本条，不授予账号发送权限。PC 在详情入口校验一次并传入 `SessionConvo.writeState`；显式 false 加入现有 writable 禁用条件，原有资格、写权、归属、接待状态、消息上下文保护保持。旧响应缺字段/为 null 保持原行为，不影响创建新线程和原结果核查。
