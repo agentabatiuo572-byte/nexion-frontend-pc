@@ -443,6 +443,27 @@ export type K4ModelDraftInput = {
 };
 export type K4Distribution = { band: string; rangeText: string; count: number; percentage: number; color: string; tone: string };
 export type K4Override = { userNo: string; modelScore: number; overrideScore: number; reason: string; operator: string; timeText: string; active: boolean };
+export type K4WithdrawalEvidence = {
+  source: string;
+  amountBasis: string;
+  capturedAt: string;
+  timeZone: string;
+  statusFilter: string;
+  baselineDivisorDays: number;
+  windows: Record<"24h" | "7d" | "baseline", { fromInclusive: string; toExclusive: string | null }>;
+  assets: Array<{
+    currency: string;
+    count24h: number;
+    amount24h: string;
+    count7d: number;
+    amount7d: string;
+    baselineCount: number;
+    baselineAmount: string;
+    baselineDailyCount: string;
+    baselineDailyAmount: string;
+    max24h: string | null;
+  }>;
+};
 export type K4Contribution = {
   dimKey: K4DimensionKey;
   name: string;
@@ -451,6 +472,8 @@ export type K4Contribution = {
   subScore: number;
   weightPct: number;
   points: number;
+  /** Captured withdrawal inputs; absent/null on old score history. Never rebuilt from evidence. */
+  structured?: K4WithdrawalEvidence | null;
 };
 export type K4ScoreHistory = {
   modelVersion: number;
@@ -1515,6 +1538,47 @@ export function normalizeK4(raw: unknown): ScoringOverview {
   };
 }
 
+function normalizeK4WithdrawalEvidence(value: unknown, path: string): K4WithdrawalEvidence | null {
+  if (value == null) return null;
+  const row = requiredK4Record(value, path);
+  const windows = requiredK4Record(row.windows, `${path}.windows`);
+  const decimal = (value: unknown, field: string) => {
+    if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) invalidK4Response(field);
+    return value;
+  };
+  return {
+    source: requiredK4String(row.source, `${path}.source`),
+    amountBasis: requiredK4String(row.amountBasis, `${path}.amountBasis`),
+    capturedAt: requiredK4String(row.capturedAt, `${path}.capturedAt`),
+    timeZone: requiredK4String(row.timeZone, `${path}.timeZone`),
+    statusFilter: requiredK4String(row.statusFilter, `${path}.statusFilter`),
+    baselineDivisorDays: requiredK4Integer(row.baselineDivisorDays, `${path}.baselineDivisorDays`, 1),
+    windows: Object.fromEntries((["24h", "7d", "baseline"] as const).map(key => {
+      const window = requiredK4Record(windows[key], `${path}.windows.${key}`);
+      return [key, {
+        fromInclusive: requiredK4String(window.fromInclusive, `${path}.windows.${key}.fromInclusive`),
+        toExclusive: window.toExclusive === null ? null : requiredK4String(window.toExclusive, `${path}.windows.${key}.toExclusive`),
+      }];
+    })) as K4WithdrawalEvidence["windows"],
+    assets: requiredK4Array(row.assets, `${path}.assets`).map((value, index) => {
+      const field = `${path}.assets[${index}]`;
+      const asset = requiredK4Record(value, field);
+      return {
+        currency: requiredK4String(asset.currency, `${field}.currency`),
+        count24h: requiredK4Integer(asset.count24h, `${field}.count24h`, 0),
+        amount24h: decimal(asset.amount24h, `${field}.amount24h`),
+        count7d: requiredK4Integer(asset.count7d, `${field}.count7d`, 0),
+        amount7d: decimal(asset.amount7d, `${field}.amount7d`),
+        baselineCount: requiredK4Integer(asset.baselineCount, `${field}.baselineCount`, 0),
+        baselineAmount: decimal(asset.baselineAmount, `${field}.baselineAmount`),
+        baselineDailyCount: decimal(asset.baselineDailyCount, `${field}.baselineDailyCount`),
+        baselineDailyAmount: decimal(asset.baselineDailyAmount, `${field}.baselineDailyAmount`),
+        max24h: asset.max24h === null ? null : decimal(asset.max24h, `${field}.max24h`),
+      };
+    }),
+  };
+}
+
 function normalizeK4Contributions(value: unknown, path: string, modelScore: number): K4Contribution[] {
   const contributionKeys = new Set<K4DimensionKey>();
   const contributions = requiredK4Array(value, path).map((item, index) => {
@@ -1530,6 +1594,7 @@ function normalizeK4Contributions(value: unknown, path: string, modelScore: numb
       subScore: requiredK4Integer(row.subScore, `${path}[${index}].subScore`, 0, 100),
       weightPct: requiredK4Integer(row.weightPct, `${path}[${index}].weightPct`, 0, 100),
       points: requiredK4Integer(row.points, `${path}[${index}].points`, 0, 100),
+      structured: normalizeK4WithdrawalEvidence(row.structured, `${path}[${index}].structured`),
     };
   });
   if (contributions.length !== K4_DIMENSION_KEYS.length
