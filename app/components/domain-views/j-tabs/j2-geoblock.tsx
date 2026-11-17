@@ -313,12 +313,6 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     if (!outcome || !("receipt" in outcome) || outcome.receipt?.originalStatus !== "SUCCEEDED") return undefined;
     return processedStatus({ expired, canRetry: retry, canClose: fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit, legacy, receipt: outcome.receipt });
   };
-  /** 过期的「记为失败」有结案入口；后台要核实证据才收，所以不说成一定能结。没有调查权限的沿用共用句。 */
-  const failedExpired = (record: SlotAttemptRecord, expired: boolean) => {
-    const outcome = outcomes[record.commandKey];
-    return expired && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED" && fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
-      ? { tone: "neutral" as const, label: "记为失败", line: "已过 24 小时，可申请核查结案；证据对得上才会收。" } : undefined;
-  };
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const input = JSON.parse(record.geo.body) as J2CommandBody;
     const names = Object.fromEntries(record.geo.context.overview.countryOptions.map((option) => [option.value, option.label]));
@@ -341,7 +335,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       key: record.commandKey, title: <span title={typeof change === "string" ? `${slotLabel} · ${change}` : undefined}>{slotLabel} · {change}</span>,
       record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record), canQuery: true,
-      status: processedOf(record, expired, canRetry(record)) ?? failedExpired(record, expired),
+      status: processedOf(record, expired, canRetry(record)),
       actions: <>
         {queryButtons(record, slotLabel, change)}
         {!expired && canRetry(record) && <Button size="sm" disabled={!!checking} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
@@ -356,7 +350,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return {
       key: record.commandKey, title: `${label} · 改版前的旧记录`, record: investigationRecord(record, adminId), outcome,
       createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
-      status: outcome ? processedOf(record, expired, false, true) ?? failedExpired(record, expired) : expired
+      status: outcome ? processedOf(record, expired, false, true) : expired
         ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
         : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原修改的内容，不能重试，先查询原结果。" },
       actions: <>

@@ -322,9 +322,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     status: saved.legacy ? expired
       ? { tone: "neutral", label: "已过期", line: "改版前的旧记录查不了原结果；到操作记录与审批核对后，可以确认解除。" }
       : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" }
-      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt })
-        // 过期的「记为失败」有结案入口；后台要核实证据才收，不说成一定能结。
-        : receipt?.originalStatus === "FAILED" && expired && canSubmit ? { tone: "neutral", label: "记为失败", line: "已过 24 小时，可申请核查结案；证据对得上才会收。" } : undefined,
+      : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt }) : undefined,
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}

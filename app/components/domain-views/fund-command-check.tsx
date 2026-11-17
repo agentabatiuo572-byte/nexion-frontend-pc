@@ -5,10 +5,10 @@ import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, Irrevers
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
-export { closureKnown, closureConflict } from "./recovery-panel";
+import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
+export { FAILED_EXPIRED_LINE, closureKnown, closureConflict } from "./recovery-panel";
 
 /**
  * 资金类「结果未知」记录的恢复面板：D2、D3、D5、D6、D7、J1、K1、L1、E4 共用一个样子。
@@ -54,7 +54,6 @@ type Shown = { tone: StateTone; label: string; line: string; more?: string };
 /** 24 小时内重试原请求：后台对还在执行的返回「处理中」、对结果未知的返回「结果未知」，都不会再执行一次，也拿不到新结果。 */
 export const PROCESSING_LINE = "过一会儿再查询；现在重试不会重复执行，也拿不到新结果。";
 export const UNKNOWN_LINE = "系统也没有结果，重试也拿不到新结果；请按证据核查结案。";
-export const FAILED_EXPIRED_LINE = "有这次的成功记录才能结案；没有就把原请求编号交给技术同事。";
 const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
 /** 原请求是提交到「操作记录与审批」的申请：批准前什么都不生效，结果未知时只能说「可能已经提交」。 */
@@ -103,11 +102,12 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   const more = receiptExplain(receipt, where);
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", label: "已结案", line: "核查确认是后台拒绝，记录已解除。" };
   if (receiptRejected(receipt)) return { ...rejectedStatus({ expired: row.expired, canRetry: row.canRetry, canClose: !!access?.canSubmit }), more };
-  // 记为失败的结案框只收「已执行」加成功记录编号（closureKnown 的 audit），不让人以为点进去就能了结。
-  if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? access?.canSubmit ? FAILED_EXPIRED_LINE : "有这次的成功记录时，请有调查权限的超级管理员核查结案。"
+  // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine；记为失败过期时总有一句），说不了的沿用原句。
+  const step = closureLine(eCommandClosureOffer(outcome, row.expired), receipt, !!access?.canSubmit);
+  if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? step!
     : row.canRetry ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
-  if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: !access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
-    : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE };
+  if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (!access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
+    : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE) };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
     : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };

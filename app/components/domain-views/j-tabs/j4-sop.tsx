@@ -304,18 +304,11 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
     const expired = isRetryExpired(record);
     const retry = !expired && canRetry(context);
-    const basis = closureKnown(outcomes[record.commandKey]);
-    const outcome = outcomes[record.commandKey];
-    // A failed resume whose rollback the server can verify closes as not executed; only the rest has no conclusion.
-    const resumeCanClose = context.kind === "resume" && eCommandCanRequestResumeRollback(outcome && "receipt" in outcome ? outcome.receipt : null);
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
-      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" }
-        : expired && basis && !basis.rejected && basis.success === "never" && !resumeCanClose ? { tone: "neutral", label: "记为失败", line: "这条结不了案；请把技术信息里的原请求编号交给技术同事。" }
-          // 后台核实已整体撤销才收「未执行」，提交前看不出来，所以不说成一定能结。
-          : expired && resumeCanClose && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED" && fundInvestigationAccess(investigationRecord(record)).canSubmit
-            ? { tone: "neutral", label: "记为失败", line: "已过 24 小时，可申请核查结案；后台核实已整体撤销才会收。" } : undefined,
+      // 记为失败、仍未知的那句由共用面板按结案框能选的结论说（含恢复核对结不了案、可按「未执行」结案）。
+      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : undefined,
       actions: <>
         {checkButtons(record, label, context.kind, change)}
         {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}

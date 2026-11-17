@@ -56,8 +56,28 @@ export function receiptRejected(receipt: ECommandInvestigation | null | undefine
 /** 后台拒绝、记录还保留时这一行怎么说：后台当时拒绝了，但不保证没有改动；原因要按原请求重试拿回，过期后核查结案。 */
 export function rejectedStatus({ expired, canRetry, canClose, legacy }: { expired: boolean; canRetry: boolean; canClose: boolean; legacy?: boolean }): { tone: StateTone; label: string; line: string } {
   return { tone: "warn", label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${!expired && canRetry ? "按原请求重试可看原因，不会重复执行。"
-    : expired ? canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。"
+    : expired ? canClose ? "已过 24 小时，可按「后台拒绝」结案。" : "请有调查权限的超级管理员核查结案。"
       : legacy ? "旧记录过 24 小时后可核查结案。" : "请有操作权限的人按原请求重试看原因。"}` };
+}
+
+/** 过期的「记为失败」能结案的唯一一种：要这次的成功记录。资金面板、设备面板、用户详情、H1 共用。 */
+export const FAILED_EXPIRED_LINE = "有这次的成功记录才能结案；没有就把原请求编号交给技术同事。";
+
+/**
+ * 记为失败（过期）、仍未知这一行的下一步：按数据层给的可选结论（eCommandClosureRequests）选一句，和结案框的选项对得上。
+ * 「未执行」：后台已确认撤销（localTransactionRollbackConfirmed）才说确定；旧后端没有这项、只能申请的，说「核实已撤销才收」。
+ * none：一个结论都不能选时的那句（行上没有技术信息的页面换成看得到的东西）。返回 undefined 时沿用调用处原来的句子（仍未知还能按成功记录结案）。
+ */
+export function closureLine(offer: ClosureOffer, receipt: ECommandInvestigation | null | undefined, canClose: boolean, none = "这条结不了案；请把技术信息里的原请求编号交给技术同事。") {
+  const has = (value: ECommandEvidence["conclusion"]) => offer.conclusions.includes(value);
+  if (has("NOT_EXECUTED")) return receipt?.localTransactionRollbackConfirmed
+    ? canClose ? "这次操作已确认没有生效，可按「未执行」结案后重新做。" : "这次操作已确认没有生效，请有调查权限的超级管理员按「未执行」结案。"
+    : !canClose ? has("SUCCEEDED") ? "请有调查权限的超级管理员核查结案。" : "请有调查权限的超级管理员申请按「未执行」结案。"
+      : has("SUCCEEDED") ? "可按成功记录结案，或申请「未执行」；后台核实已撤销才收。" : "可申请按「未执行」结案；后台核实已撤销才会收。";
+  if (!offer.conclusions.length) return none;
+  if (offer.conclusions.length === 1 && has("STILL_UNKNOWN")) return canClose ? "系统也没有结果，现在只能记为「仍未知」，记录继续保留。" : "系统也没有结果，记录继续保留；到操作记录与审批核对。";
+  if (offer.conclusions.length === 1 && has("SUCCEEDED") && offer.success === "audit") return canClose ? FAILED_EXPIRED_LINE : "有这次的成功记录时，请有调查权限的超级管理员核查结案。";
+  return undefined;
 }
 
 /** 资金动账的操作：被拒时单独提醒钱可能已经动过。 */

@@ -1415,10 +1415,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const expired = record.expiresAt <= Date.now();
           const registration = record.kind === "registration-param";
           const outcome = investigationResults[record.commandKey];
-          // 过期的「记为失败」只能按成功记录结案（结案框只给「已执行」），不说成一定能结。
-          const failedExpired = expired && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED" && fundInvestigationAccess(record).canSubmit;
           return { key: record.fingerprint, title: record.label, record, outcome, createdAt: record.createdAt, expired, canRetry: !blocked,
-            status: failedExpired ? { tone: "neutral", label: "记为失败", line: "已过 24 小时，可申请核查结案；要有这次的成功记录才会收。" } : undefined,
             actions: <>
               {record.kind === "cluster" && canQueryProposal && !fundInvestigationAccess(record).canRead
                 ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>

@@ -471,7 +471,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
   const hitColumns = useTableColumns("k3-hits", [
     { key: "withdrawal", label: "提现 / 账户", locked: "提现与账户必须保留" }, { key: "amount", label: "金额", locked: "金额必须保留" },
     { key: "rule", label: "规则 / 维度", locked: "规则必须保留" }, { key: "action", label: "命中处置", locked: "命中处置必须保留" },
-    { key: "reason", label: "触发原因", extra: true }, { key: "time", label: "时间", extra: true },
+    { key: "reason", label: "触发原因", extra: true }, { key: "time", label: "记录时间", extra: true },
   ]);
   const execute = async (record: SavedCommand, retry = false) => {
     if (inFlight.current) throw new Error("原操作正在提交，请等待结果");
@@ -629,7 +629,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         <Panel title="历史命中处置分布" plain explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
         <div className="k3-hit-filters"><Segments label="命中处置筛选" value={hitAction} items={[{ value: "all", label: "全部" }, { value: "delay", label: "延迟" }, { value: "freeze", label: "冻结" }, { value: "manual", label: "转人工" }]} onChange={(value) => setQuery({ hitPage: 1, hitAction: value })} />
           <Button variant="ghost" disabledReason={hitAction === "all" ? "当前没有动作筛选" : undefined} onClick={() => setQuery({ hitAction: "all", hitPage: 1 })}>清除筛选</Button><ColumnPicker columns={hitColumns} /></div>
-        <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="金额和币种取自对应的提现单；查不到提现单的旧记录按原金额显示，不推定币种。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>时间<Explain label="触发时间" content={`规则命中的时间，按${businessZone().label}显示。`} /></Th>}</tr></thead>
+        <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="金额和币种取自对应的提现单；查不到提现单的旧记录按原金额显示，不推定币种。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>记录时间<Explain label="记录时间" content={`系统记下这条命中的时间，不一定是提现提交的时刻；按${businessZone().label}显示。`} /></Th>}</tr></thead>
           <tbody>{hits.length === 0 && <TableMessage columns={4 + Number(hitColumns.isVisible("reason")) + Number(hitColumns.isVisible("time"))}>{hitAction === "all" ? "暂无触发记录" : "当前处置没有匹配的触发记录"}</TableMessage>}
             {hits.map((hit, index) => <Tr key={`${hit.withdrawalNo}-${hit.ruleId}-${index}`} selected={hitDetail === hit} onOpen={() => setHitDetail(hit)}>
               <Td><Cell mono main={<span className="k3-id"><span>{hit.withdrawalNo.slice(0, -8)}</span><span>{hit.withdrawalNo.slice(-8)}</span></span>} sub={hit.userNo} title={`${hit.withdrawalNo} / ${hit.userNo}`} /></Td>
@@ -655,7 +655,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amountValue ?? hitDetail.amount)} ${hitDetail.currency ?? "· 币种未记录"}` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
         { key: "dim", label: "维度", value: dimensionLabel(hitDetail.dimension) }, { key: "action", label: "命中处置", value: <ActionTag action={hitDetail.action} /> },
         { key: "reason", label: "触发原因", value: hitSummary(hitDetail) },
-        ...(hitDetailRule ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(hitDetailRule)} /> }] : []), { key: "time", label: "触发时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
+        ...(hitDetailRule ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(hitDetailRule)} /> }] : []), { key: "time", label: "记录时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
       ]} /><div className="rd-toolbar"><Button size="sm" onClick={() => void navigator.clipboard.writeText(`${hitDetail.withdrawalNo}\n${hitDetail.userNo}`).then(() => ctx.toast("提现单号和账户已复制", "success")).catch(() => ctx.toast("复制失败，请手动选择复制", "error"))}>复制单号与账户</Button></div>
         <Fold title="技术信息" inset summary="原始原因、金额与统计口径"><KeyValues rows={[{ key: "reason", label: "原因原文", value: hitDetail.reason || "—" }, { key: "amount", label: "金额原文", value: hitDetail.amount }, { key: "scope", label: "统计口径", value: "每条是一次规则命中，不是提现的最终结果。" }, { key: "reasonScope", label: "原因说明", value: "可能按现在的规则条件写，不一定是触发时的原话。" }]} /></Fold></>}
     </Drawer>
