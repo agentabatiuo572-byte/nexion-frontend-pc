@@ -20,7 +20,7 @@ import {
   BlockState, Button, Cell, Change, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, Notice,
   PageHeader, Panel, RatioBar, RdPage, SegmentBar, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th,
 } from "@/app/components/rd";
-import { OperationConfirmModal, useToast } from "../design-kit";
+import { compareEditDecimals, OperationConfirmModal, useToast } from "../design-kit";
 import {
   fetchG7RepurchaseOverview,
   fetchG7RepurchaseOrders,
@@ -587,11 +587,11 @@ function G7RepurchasePage() {
         : { kind: "number", current: directRecovery ? undefined : paramEditValue(param),
             initialValue: direct?.input.value ?? original?.request.command.params.value as string | undefined,
             unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
-            min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
-            max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
+            min: param.key === "apy" ? undefined : param.key === "penalty" || param.key === "lottery" ? 0 : 1,
+            max: param.key === "apy" ? undefined : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
             step: param.key === "apy" ? undefined : param.key === "lockDays" || param.key === "lottery" ? 1 : 0.01,
             inputStep: param.key === "apy" ? 0.01 : undefined,
-            validate: param.key === "apy" ? (value) => /^[-+]?0*(?:\.0*)?$/.test(value.trim()) ? messageOf("G7_APY_OUT_OF_RANGE") : undefined : undefined,
+            validate: param.key === "apy" ? (value) => compareEditDecimals(value, "0") !== 1 || compareEditDecimals(value, "300") === 1 ? messageOf("G7_APY_OUT_OF_RANGE") : undefined : undefined,
             hint: copy?.hint,
             disallowCurrent: true,
             submitEditValue: param.key === "lottery",
