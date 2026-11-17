@@ -177,8 +177,9 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
 function lockDetail(state: G3ObjectReadState): ReactNode {
   const ticket = state.pendingOperationId;
   return <>
-    <p>{state.pendingApproval ? "有一张申请在等另一位超级管理员批准，批准前不生效。" : "被一张审批锁住，单号没读到。"}</p>
-    {ticket && <p>审批单 <span data-mono="">{ticket}</span> · {state.pendingOperator ?? "发起人没读到"} · {state.pendingCreatedAt ? `${formatBusinessTimeCompact(state.pendingCreatedAt, "—")}（${businessZone().label}）提交` : "提交时间没读到"}</p>}
+    <p>{state.pendingApproval ? "有一张申请在等另一位超级管理员批准。" : "被一张审批锁住，单号没读到。"}</p>
+    {ticket && <p>审批单 <span data-mono="">{ticket}</span></p>}
+    {ticket && <p>{state.pendingOperator ?? "发起人没读到"} · {state.pendingCreatedAt ? `${formatBusinessTimeCompact(state.pendingCreatedAt, "—")}（${businessZone().label}）提交` : "提交时间没读到"}</p>}
     <p>这张单批准、驳回或撤回之前，这一项不能再改。</p>
     {ticket && <p>到「操作记录与审批」按单号找这张单。</p>}
   </>;
@@ -612,7 +613,7 @@ function G3MarketEditor() {
     const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
     const ticket = (code === "OBJECT_ALREADY_PENDING" || code === "OBJECT_LOCKED_BY_A2") && overview
       ? g3MarketObjectReadState(overview, g3MarketObjectKey(change))?.pendingOperationId : undefined;
-    if (ticket) return `审批单 ${ticket} 还在等批准，批准、驳回或撤回后才能改。`;
+    if (ticket) return `审批单 ${ticket} 在等批准，有结论前不能改。`;
     return code === G3_ENVIRONMENT_FORBIDDEN ? G3_TUNING_FORBIDDEN : code ? messageOf(new Error(code)) : undefined;
   };
   const confirmationPanels = <>
@@ -728,7 +729,7 @@ function G3MarketEditor() {
   const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason
     ?? (!key.startsWith("weekly:") && key !== "currentPrice" && g3MarketObjectReadState(overview, key)?.locked
       ? g3MarketObjectReadState(overview, key)?.pendingOperationId
-        ? `审批单 ${g3MarketObjectReadState(overview, key)?.pendingOperationId} 还在等批准，批准、驳回或撤回后才能改。`
+        ? `审批单 ${g3MarketObjectReadState(overview, key)?.pendingOperationId} 在等批准，有结论前不能改。`
         : messageOf(new Error("OBJECT_LOCKED_BY_A2")) : undefined));
   const paused = overview.overrides.paused;
   const pendingPause = commandRows.find(row => !row.ticketId && g3MarketObjectKey(row.change) === "paused");
