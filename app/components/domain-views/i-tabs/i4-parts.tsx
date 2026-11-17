@@ -399,7 +399,7 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
       <p>结果未知：{DIRECT_RECOVERY_INTRO}</p>
       <p>提交发布、回滚、下架走审批：24 小时内重试不会建第二张审批单。</p>
       <p>申请过期后，按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
-      <p>PDF 上传不能重发，只能查询核对。</p>
+      <p>PDF 上传这页不能重发，点「查询原结果」核对。</p>
     </>} /></>}>
       <ul className="i4-recovery" aria-label="结果未知的操作">
         {(all ? rows : rows.slice(0, 3)).map((row) => (
