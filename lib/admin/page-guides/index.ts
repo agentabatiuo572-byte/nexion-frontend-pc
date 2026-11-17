@@ -81,7 +81,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "收紧", text: "反方向的修改，确认后立即生效；和现在一样时没有改动，不保存。" },
       { name: "排队", text: "超过日额度、用户又选了超额时排队的兑换；已预占来源币种，等人点「处理排队」。" },
       { name: "原申请", text: "提交过、还没有结论的参数修改，只能查询或按原内容重试。" },
-      { name: "兑换开关", text: "「紧急停用开关」里的兑换一项，管用户能不能发起兑换、能不能处理排队。没有设置或设置有误时，后端按关处理。" },
+      { name: "兑换开关", text: "「紧急停用开关」里的兑换一项，管用户能不能发起兑换、能不能处理排队。没有设置或设置有误时，兑换按关闭处理，用户不能发起。" },
       { name: "风险披露闸门", text: "在「法律条款与风险披露」管，和兑换开关是两件事。它对兑换具体拦谁，规则还在定。" },
     ],
     more: "G2 /finance-products/exchange。读接口 GET /api/admin/market/exchange，打开时读一次，不自动刷新，写入后用返回的结果刷新。收紧方向 PATCH /exchange/params/{key}；放宽方向 POST /api/admin/platform/audit/operations 提交审批。暂停 PATCH /exchange/swap，只能暂停，恢复在紧急停用开关。取消排队 POST /exchange/queue/{单号}/cancel，处理排队 POST /exchange/queue/process，核对原批次 GET 同一地址并带原批次编号。",
