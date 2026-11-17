@@ -13,7 +13,7 @@ import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  Activity, CalendarRange, CircleHelp, Info, Clock3, Coins, Lock, PauseCircle, Pencil, PinIcon, RefreshCw, ShieldCheck, SlidersHorizontal, Star, TrendingDown, TrendingUp, TriangleAlert, Zap,
+  Activity, CalendarRange, CircleHelp, CircleSlash, Info, Clock3, Coins, Lock, PauseCircle, Pencil, PinIcon, RefreshCw, ShieldCheck, SlidersHorizontal, Star, TrendingDown, TrendingUp, TriangleAlert, Zap,
 } from "lucide-react";
 import {
   BlockState, Button, Change, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Figure, Fold, IconButton, Notice, PageHeader, Panel,
@@ -275,10 +275,10 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       action: `原操作 · ${retiredName}`,
       title: `${retiredName}的原操作`,
       detail: <>这项已停用，不能再改。这里只查原操作的结果。</>,
-      effect: <StatusTag tone="neutral" icon={Info}>已停用</StatusTag>,
+      effect: <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>,
       facts: <Facts>
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
-        <Fact k="按原请求重试">原请求已执行过就返回原结果；没执行过会被拒绝，值不变</Fact>
+        <Fact k="按原请求重试">执行过就返回原结果，没执行过会被拒绝</Fact>
       </Facts>,
       statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       confirmLabel: "按原请求重试",
@@ -577,6 +577,7 @@ function G3MarketEditor() {
       if (change.action === "curve-cell") return fieldText(change.field, Number(value));
       if (change.action === "current-price" || change.action === "override" && change.key === "costBasis") return `${price(Number(value))} USDT`;
       if (change.action === "override" && change.key === "paused") return value === "true" ? "暂停" : "自动变化";
+      if (change.action === "override" && change.key === "oracle") return value === "内部做市" ? "内部定价" : value === "外部喂价" ? "外部价格来源" : value;
       if (change.action === "control" && change.key === "pin") return value === "未钉住" ? "不固定" : value;
       return value;
     };
@@ -1061,16 +1062,17 @@ function G3MarketEditor() {
             value={<span className="g3-value">{overview.overrides.costBasis == null ? "未配置" : `${price(overview.overrides.costBasis)} USDT`}<ObjectTag state={OBJECT_STATES.costBasis} /></span>}
             action={allowed("finprod_g3_write") || hasRecovery("costBasis") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("costBasis")} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "App 现在没有页面显示它，不影响价格和兑换")}>调整</Button> : undefined} />
         </ConfigList>
-        {retiredRows.length > 0 && <>
+        {/* 已停用的一组和上面分开：沿用「排程执行情况」那条分隔线（.g3-run），不改共用的域样式。 */}
+        {retiredRows.length > 0 && <section className="g3-run" aria-label="已停用的设置">
           <div className="g3-subhead">已停用的设置<span className="g3-subnote">不能再改</span><Explain label="已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原请求重试。" /></div>
           <ConfigList label="已停用的设置">
             {retiredRows.map((row) => (
               <ConfigRow key={row.key} name={RETIRED_OVERRIDE_NAME[row.key]} what={row.what} effect="已停用，不影响价格和兑换"
-                value={<span className="g3-value">{row.value ?? "—"}<StatusTag tone="neutral">已停用</StatusTag><ObjectTag state={OBJECT_STATES[row.key]} /></span>}
+                value={<span className="g3-value">{row.value ?? "—"}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag><ObjectTag state={OBJECT_STATES[row.key]} /></span>}
                 action={hasRecovery(row.key) ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason(row.key)} onClick={row.open}>查询或重试</Button> : undefined} />
             ))}
           </ConfigList>
-        </>}
+        </section>}
       </Fold>
 
       <RelatedLinks reach={reach} />
