@@ -1045,7 +1045,7 @@ function G2ExchangePage() {
     <>
       {header}
       {confirmModal}
-      {error && !coveredErrors.current.has(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !mc && !coveredErrors.current.has(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {recoveryNotice()}
 

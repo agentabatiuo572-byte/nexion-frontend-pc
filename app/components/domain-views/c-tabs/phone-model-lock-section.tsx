@@ -38,7 +38,7 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
       setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.();
       if (succeeded) { setMessage("原解除已成功，用户仍需在 App 重新校准。"); if (!await load()) setMessage("查到原结果：解除已成功，但现在的安装状态没读到，请刷新页面核对。"); }
       else setMessage(row.rejection ? "按原请求重试被拒绝，记录继续保留；核对原结果后可以解除原操作记录。" : "原解除结果未知，记录继续保留，请稍后再查。");
-    } catch (failure) { if (live.current) { setError(failure instanceof Error ? failure.message : "原解除结果尚未确认，原记录继续保留。"); if (failure instanceof PhoneApiError && [401, 403].includes(failure.status)) { setDenied(true); setTarget(null); setDetail(null); setRelease(null); announcePermissionDenied(); } } }
+    } catch (failure) { if (live.current) { setError(failure instanceof Error ? failure.message : "原解除结果未知，记录继续保留，请稍后再查。"); if (failure instanceof PhoneApiError && [401, 403].includes(failure.status)) { setDenied(true); setTarget(null); setDetail(null); setRelease(null); announcePermissionDenied(); } } }
     finally { mutation.current = false; onBusyChange?.(false); if (live.current) { setBusy(false); setPending(pendingModelLockCommands(owner, userId)); onPendingChange?.(); } }
   };
   return <Panel aria-label="手机机型锁" title="手机机型锁" icon={LockKeyhole} explain="每台手机首次校准后锁定机型。仅核实用户确实换机后解除；随后由用户在 App 重新校准锁定新机型。" actions={<IconButton aria-label="刷新手机机型锁" disabled={busy || loading || !!target} onClick={() => void load()}><RefreshCw size={16} /></IconButton>} flush>

@@ -37,7 +37,7 @@ export function forgetPlacement(adminId: number) {
   if (original) attempts.forget(original.fingerprint, original.commandKey);
 }
 const invalid = () => new Error("分组信息加载不完整，请重新查询。");
-const uncertain = () => new PlacementError("分组结果暂未确认，请稍后查看分组结果。", "unknown");
+const uncertain = () => new PlacementError("分组结果未知，请稍后查看分组结果。", "unknown");
 
 async function request(query: string, intent?: PlacementIntent): Promise<unknown> {
   let response: Response;

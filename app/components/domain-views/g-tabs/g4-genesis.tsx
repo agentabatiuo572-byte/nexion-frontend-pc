@@ -1143,7 +1143,7 @@ function G4GenesisPage() {
 
   // 今天的分红：先看有没有补发原申请，再看发了没有、收益门开没开。后端没有每天自动发放的任务（已提后端），不写成会自动发。
   const dividendState: { text: string; tone: "ok" | "warn" | "neutral" | "done"; sub: string; icon: typeof Coins } = batchRecord
-    ? { text: batchRecord.status === "pending" ? "补发待审批" : batchRecord.status === "unknown" ? "补发结果未知" : "补发待确认", tone: "warn", sub: `批次 ${dividend.batchNo}`, icon: Clock3 }
+    ? { text: batchRecord.status === "pending" ? "补发待审批" : batchRecord.status === "unknown" ? "补发结果未知" : { approved: "补发已批准", rejected: "补发已驳回", withdrawn: "补发已撤回", expired: "补发已过期" }[batchRecord.status], tone: "warn", sub: `批次 ${dividend.batchNo}`, icon: Clock3 }
     : dividend.paidCount > 0
       ? { text: "已发", tone: "ok", sub: `${fmtNumber(dividend.paidCount, 0)} 个节点 · ${g4Amount(dividend.paidAmountUsdt)} USDT`, icon: Coins }
       : !overview.emissionGate.open
@@ -1270,9 +1270,9 @@ function G4GenesisPage() {
         <Stat label="今日分红" icon={dividendState.icon} tone={dividendState.tone === "ok" ? "ok" : dividendState.tone === "warn" ? "warn" : "role-other"}
           value={dividendState.text} sub={dividendState.sub}
           explain="今天这一批（按业务日）真实发出去的节点数和金额。系统目前没有每天自动发放（已提给技术同事），要发请在「每日分红」里手动发放。" />
-        <Stat label="待确认的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
+        <Stat label="没处理完的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
           sub={pendingCount > 0 ? "见上面的提醒" : "没有压着的申请"}
-          explain="你在这台电脑上提交过、还没处理完的申请：参数修改、每日收益比例、补发收益、价格档位。别人发起的审批在「操作记录与审批」里看。" />
+          explain="你在这台电脑上提交、还没处理完的申请。待审批是在等另一位超级管理员批准；结果未知是可能已经生效，先查询原结果。别人发起的在「操作记录与审批」看。" />
       </StatBand>
 
       <Panel title="销售进度与价格档位" icon={Layers} tone="role-2"

@@ -150,7 +150,7 @@ export function parsePhoneReceipt(value: unknown): PhoneReceipt {
         || !["PENDING", "SUCCEEDED", "FAILED"].includes(String(value.status)) || !safeInteger(value.submittedAt)
         || !(value.completedAt === null || safeInteger(value.completedAt))
         || !(value.originalResult === null || record(value.originalResult)) || !(value.currentResource === null || record(value.currentResource)))
-        throw new Error("操作结果暂未确认，请继续查询原操作。");
+        throw new Error("操作结果未知，请继续查询原结果。");
     return value as unknown as PhoneReceipt;
 }
 export function parsePhoneOverview(value: unknown): PhoneOverview {

@@ -1359,7 +1359,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRIAL_KILL_SWITCH_DISABLED: "免费试用应急操作当前未开启，请先核对应急开关。",
   J1_TRIAL_KILLSWITCH_DISABLED: "免费试用总开关（在「紧急停用开关」里）已关闭，新领取已被阻断；请先核对应急策略。",
   TRIAL_WALLET_INSUFFICIENT_FUNDS: "用户钱包余额不足，无法完成试用转购买；未执行扣款或发货。",
-  TRIAL_WALLET_DEBIT_CONFLICT: "试用转购买扣款发生并发冲突，结果尚未确认；请刷新钱包、订单和试用状态后核对。",
+  TRIAL_WALLET_DEBIT_CONFLICT: "试用转购买扣款时同时有别的改动，结果未知；请刷新钱包、订单和试用状态后核对。",
   TRIAL_LEDGER_WRITE_FAILED: "试用转购买资金流水写入失败，这次没有生效；请刷新核对后再决定是否重试。",
   TRIAL_CHARGE_FAILED: "试用结算未完成，请刷新试用、订单和钱包状态后核对原因。",
   K1_RESPONSE_INVALID: "多账户风险服务返回的数据不完整或不一致，为避免误操作，已隐藏数据和操作按钮；请重新加载或联系风控值班人员。",
@@ -1572,7 +1572,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A2_OPERATION_NOT_FOUND: "该审批单不存在或已被处理，请刷新「操作记录与审批」列表后重试。",
   A2_OPERATION_ALREADY_TERMINAL: "该审批单已经处理完成，不能再次执行或取消；请刷新查看最新状态。",
   A2_REASON_POLICY_INVALID: "操作理由规则配置无效，当前无法提交；请联系值班人员核对理由长度和格式策略。",
-  A2_RETENTION_RUN_INVALID: "留存清理任务返回的数据不完整或格式异常，结果尚未确认；请刷新「操作记录与审批」记录核对执行状态，持续出现时联系值班人员。",
+  A2_RETENTION_RUN_INVALID: "留存清理任务返回的数据不完整或格式异常，结果未知；请刷新「操作记录与审批」核对执行状态，持续出现时联系值班人员。",
   A2_RETENTION_RUN_UNREADABLE: "上次清理结果读取失败",
   RETENTION_PARAMETERS_STALE: "保留月数已被改过，这次没有清理；请重新打开清理，按新的月数确认。",
   RETENTION_EXPECTED_MONTHS_REQUIRED: "这条清理记录来自旧版页面，不能再执行，这次没有清理；请重新打开清理并确认。",
@@ -2872,7 +2872,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   QUEST_CONFIG_KEY_INVALID: "这项用户任务配置不受支持，本次未修改；请重新打开对应配置。",
   QUEST_DAY_ONE_ELIGIBILITY_HOURS_INVALID: "新手任务完成期限须为 24–720 的整数小时；请核对后提交。",
   QUEST_DAY_ONE_TRI_REWARD_INVALID: "新手任务奖励须填写“全额 / 宽限 / 0 UVT”，全额大于0、宽限不超过全额，最多6位有效小数。",
-  H3_DAY_ONE_REWARD_POLICY_UNAVAILABLE: "新手任务奖励设置暂不可用，本次结果尚未确认；请查询原结果并联系值班同事核查奖励设置。",
+  H3_DAY_ONE_REWARD_POLICY_UNAVAILABLE: "新手任务奖励设置暂不可用，结果未知；请查询原结果并联系值班同事核查奖励设置。",
   H3_VALUE_PRECISION_INVALID: "奖励或倍率的小数位数超出允许范围，本次未保存；请按该字段的精度重新填写。",
   PROMO_BANNER_STATUS_INVALID: "备用卡状态只能是启用或暂停，本次未修改；请重新读取备用卡配置。",
   PROMO_BANNER_FIELD_INVALID: "这个备用卡字段不支持修改，本次未保存；请重新打开对应配置。",
@@ -2897,7 +2897,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DAY_ONE_SNAPSHOT_USER_REQUIRED: "缺少用户身份，不能给他定下新手任务；请重新登录并核对用户。",
   DAY_ONE_SNAPSHOT_USER_NOT_ACTIVE: "用户当前不可用，不能给他定下新手任务；请核查用户状态。",
   DAY_ONE_SNAPSHOT_BINDING_REQUIRED: "新手任务缺少有效的完成条件，不能发给新用户；请先核查任务和完成条件。",
-  DAY_ONE_SNAPSHOT_WRITE_UNAVAILABLE: "新手任务暂时没能定下，结果尚未确认；请查询原结果并联系值班同事。",
+  DAY_ONE_SNAPSHOT_WRITE_UNAVAILABLE: "新手任务暂时没能定下，结果未知；请查询原结果并联系值班同事。",
   H1_RHYTHM_UNAVAILABLE: "运营阶段或任务加成尚未可靠配置，不能发布这期任务；请核查运营阶段设置。",
   DAY_ONE_SNAPSHOT_ITEM_WRITE_FAILED: "新手任务没能完整定下，不能用现在的任务代替；请查询原结果并联系值班同事。",
   DAY_ONE_SNAPSHOT_BINDING_WRITE_FAILED: "新手任务的完成条件没能完整定下，不能用现在的设置代替；请查询原结果并联系值班同事。",
@@ -3755,7 +3755,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   G3_PRICE_UNAVAILABLE: "当前 UVT 价格暂时读不到，这次没有执行；请稍后重试。",
   PHONE_CALIBRATION_EFFECTIVE_TIME_INVALID: "生效时间无效：只能选现在到一年内的时间，请重新选择。",
   PHONE_CALIBRATION_CONFIG_UNAVAILABLE: "手机校准规则暂时读不到，这次没有发布；请稍后重试。",
-  PHONE_CALIBRATION_READBACK_FAILED: "手机校准规则保存后读回不一致，结果尚未确认；请刷新核对后再处理。",
+  PHONE_CALIBRATION_READBACK_FAILED: "手机校准规则保存后读到的和提交的不一致，结果未知；请刷新核对后再处理。",
   // 机制参数校验的英文原句（作为 VALIDATION_FAILED 的说明返回）。页面先校验，正常走不到。
   "reason min chars must be 8-200": "理由最短长度必须是 8–200 的整数。",
   "reason min chars is required": "理由最短长度必须是 8–200 的整数。",
@@ -3841,14 +3841,14 @@ const HAS_CJK_RE = /[一-鿿]/;
 // response.json() 撞网关 HTML 错误页抛的英文 SyntaxError、AbortSignal 的英文 DOMException。
 // 逐族补正则是打地鼠;改判「没有中文就落中性兜底」后,没被想到的新形态也拦得住。
 // 兜底取中性文案(不说「检查输入」):到这里的多是环境/协议类失败,不该归因运营输入。
-/** 读取失败用这个：不说「结果尚未确认」「不要重复提交」，这些话只给写操作（TX-14）。 */
+/** 读取失败用这个：不说「结果未知」「不要重复提交」，这些话只给写操作（TX-14）。 */
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
   if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return "服务暂时不可用，请稍后重试；持续失败请联系值班人员。";
   // 通用兜底「操作失败」对读取不贴切（ISSUES 773）：读取只说没读到。
   if (shown === NEUTRAL_DISPLAY_FALLBACK) return "没有读到数据，请稍后重试；一直读不到请联系值班人员。";
-  // 读接口断网只是没读到，不是「操作结果未确认」（visual-1 第 15 条）。
-  if (shown.startsWith("网络连接已中断，本次操作结果尚未确认")) return "网络连接失败，没有读到数据，请检查网络后重试。";
+  // 读接口断网只是没读到，不是「结果未知」（visual-1 第 15 条）：按 l-client 给的错误类型认，不看句子。
+  if (error instanceof Error && error.name === "LNetworkInterruptedError") return "网络连接失败，没有读到数据，请检查网络后重试。";
   return shown === NETWORK_FAILED_WRITE ? "网络连接失败，请检查网络后重试。" : shown;
 }
 

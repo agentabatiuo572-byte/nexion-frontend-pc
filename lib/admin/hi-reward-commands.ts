@@ -211,7 +211,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
       && verdict.apiCode && verdict.apiCode >= 400 && verdict.apiCode < 500 && !verdict.bodyUnreadable)
       Object.assign(error as object, { status: verdict.apiCode });
     if (isExplicitRejection(error)) { commands.forget(record.fingerprint, key); throw error; }
-    throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "提交结果暂未确认，请保留原操作核对。", key);
+    throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "提交结果未知，请保留原操作核对。", key);
   }
 }
 

@@ -4235,7 +4235,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
 }
 
 /* 页面没传提示类型时按这几种明确的说法判断，别的还是信息。页面都传 kind 后删掉。 */
-const TOAST_KIND_BY_WORDS: readonly (readonly [RegExp, ToastKind])[] = [[/^已(?!.*但)/, "success"], [/失败|错误/, "error"], [/未确认|待确认|未完成|不能|无法|没有提交/, "warn"]];
+const TOAST_KIND_BY_WORDS: readonly (readonly [RegExp, ToastKind])[] = [[/结果未知/, "warn"], [/^已(?!.*但)/, "success"], [/失败|错误/, "error"], [/未确认|待确认|未完成|不能|无法|没有提交/, "warn"]];
 
 /* 保留旧调用契约，反馈交给根布局，页面/抽屉卸载后仍可见。第二个参数写提示类型（CP-70）：成功 success、失败 error、要人注意或结果未知 warn，其余 info。 */
 export function useToast(): [ReactNode, (s: string, kind?: ToastKind) => void] {

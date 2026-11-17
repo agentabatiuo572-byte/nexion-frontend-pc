@@ -71,7 +71,7 @@ const CONTROL_ORDER = ["pin", "schedule", "loop"];
 const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
 // 只剩字符串时（页面上的 error）按开头认结果未知：A2 发起申请丢回包的句子以「结果未知，可能已经提交」开头。
-const UNKNOWN_TEXT = /^(提交结果(暂未确认|未知)|结果未知，可能已经提交)/;
+const UNKNOWN_TEXT = /^(提交结果未知|结果未知，可能已经提交)/;
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -871,7 +871,7 @@ function G3MarketEditor() {
       {header}
       {confirmationPanels}
 
-      {error && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
+      {error && !confirm && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
       {conclusion}
       {rereadPending && <Notice tone="progress" title={REREAD_TEXT} action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新读取</Button>}>读到最新价格之前，表里的修改先不可用；还有原记录的那一项照样能打开。</Notice>}
 
