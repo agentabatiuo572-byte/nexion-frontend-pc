@@ -402,7 +402,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
           {opening && <ApprovalFact amplify="没有玩法规则又有正奖励的活动" object="活动" />}
         </Facts>
-        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，后端会拒绝开放`}>{missing.join("、")}。先在卡片底部的「三语内容」里补齐。</Notice>}
+        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，开放会被拒绝`}>{missing.join("、")}。先在卡片底部的「三语内容」里补齐。</Notice>}
       </>,
       reason: true,
       okLabel: opening ? "开放活动" : "结束活动",
@@ -426,7 +426,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       content: <Facts>
         <Fact k="活动">{eventName(event.id)}</Fact>
         <Fact k="主推"><Change from={event.featured ? "是" : "否"} to={next ? "是" : "否"} /></Fact>
-        <Fact k="影响">只改 App 活动页的主推位，不发奖、不改奖励{!next ? "" : "；已经有别的主推活动时后端会拒绝，先取消那一个"}</Fact>
+        <Fact k="影响">只改 App 活动页的主推位，不发奖、不改奖励{!next ? "" : "；已经有别的主推活动时会被拒绝，先取消那一个"}</Fact>
       </Facts>,
       reason: true,
       okLabel: next ? "设为主推" : "取消主推",
@@ -505,14 +505,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           { key: "reward", label: "奖励", current: "", placeholder: "如 100 UVT", required: false, explain: "没有玩法规则的活动只认正数的 UVT 或 USDT。" },
           { key: "condition", label: "完成条件", current: "", placeholder: "如 order.paid", required: false },
           { key: "__more", label: "其余设置", current: "hide", inputKind: "select", options: ["hide", "show"], optionLabels: { hide: "收起，没填的用默认值", show: "展开逐项填写" }, wide: true, explain: "只控制状态、目标值、地区、App 跳转、时间、主推、统计效果这几项显示不显示，这一项本身不提交。已填的值收起后照样提交；没填的按默认值：进行中、目标值 1、不限地区、不跳转、不设时间、不主推、不统计。" },
-          { key: "state", label: "状态", current: "ongoing", inputKind: "select", options: ["ongoing", "upcoming", "ended"], optionLabels: { ongoing: "进行中", upcoming: "预告", ended: "已结束" }, explain: "这一项照原样提交，但后端建成后一律是「预告」，不会因为选了「进行中」就开放。", visibleWhen: { key: "__more", equals: "show" } },
+          { key: "state", label: "状态", current: "ongoing", inputKind: "select", options: ["ongoing", "upcoming", "ended"], optionLabels: { ongoing: "进行中", upcoming: "预告", ended: "已结束" }, explain: "这一项照原样提交，但建成后一律是「预告」，不会因为选了「进行中」就开放。", visibleWhen: { key: "__more", equals: "show" } },
           { key: "targetValue", label: "目标值", current: "", placeholder: "留空按 1", inputKind: "number", min: 1, max: 1_000_000_000, step: 1, required: false, visibleWhen: { key: "__more", equals: "show" } },
           { key: "geo", label: "地区", current: "", placeholder: "如 VN / GLOBAL", required: false, visibleWhen: { key: "__more", equals: "show" } },
           { key: "href", label: "App 跳转", current: "", placeholder: "如 /pages/store/store", required: false, help: "只能填 /pages/ 开头的页面", visibleWhen: { key: "__more", equals: "show" } },
           { key: "trackable", label: "统计效果", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "不统计", true: "统计参与、达标、领取" }, visibleWhen: { key: "__more", equals: "show" } },
           { key: "startsAt", label: "开始时间（UTC）", current: "", inputKind: "datetime-local", required: false, visibleWhen: { key: "__more", equals: "show" } },
           { key: "endsAt", label: "结束时间（UTC）", current: "", inputKind: "datetime-local", required: false, help: "要晚于开始时间", visibleWhen: { key: "__more", equals: "show" } },
-          { key: "featured", label: "设为主推", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "否", true: "是" }, explain: "这一项照原样提交，但后端建成后一律不主推；开放以后再在卡片上设主推。", visibleWhen: { key: "__more", equals: "show" } },
+          { key: "featured", label: "设为主推", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "否", true: "是" }, explain: "这一项照原样提交，但建成后一律不主推；开放以后再在卡片上设主推。", visibleWhen: { key: "__more", equals: "show" } },
         ],
       },
       run: async (reason, _v, bv) => {
@@ -567,7 +567,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           { key: "rewardName", label: "奖品名称", current: "", placeholder: "如 100 UVT", required: true, help: "App 抽中时显示这串文字，不影响发放" },
           { key: "rewardKind", label: "奖励类型", current: "uvt", inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" } },
           { key: "realOutflow", label: "是否发真钱", current: "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" },
-            warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则后端会拒绝" : undefined },
+            warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则保存会被拒绝" : undefined },
           { key: "rewardAmount", label: "每次发放数量", current: "", placeholder: "如 100", inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, help: "代金券每次发 1 张，填任意正数" },
           { key: "probabilityPct", label: "中奖概率（%）", current: "", placeholder: "0–100", inputKind: "number", min: 0, max: 100, step: 0.0001, required: true, help: "加上原有各档不能超过 100%；保存前要合计正好 100% 才能抽" },
           { key: "dailyStock", label: "每日库存", current: "", placeholder: "0 为不限", inputKind: "number", min: 0, max: 1000000, step: 1, required: true, help: "这一档每天最多发出几次，0 为不限" },
@@ -787,7 +787,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           // 451dd37e normalizes the App projection only; retain the admin's stored kind.
           { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true,
-            warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则后端会拒绝" : undefined },
+            warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则保存会被拒绝" : undefined },
           { key: "rewardAmount", label: "每次发放数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
           { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", required: true, visibleWhen: { key: "rewardKind", equals: "coupon" }, showDiff: true },
           { key: "dailyStock", label: "每日库存（0 = 不限）", current: String(numericValue(tier.dailyStock)), inputKind: "number", min: 0, max: 1000000, step: 1, required: true, showDiff: true },
@@ -881,7 +881,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       facts: <>
         <Facts>
           <Fact k="退役哪一档">{tierName}（{legacyName(tier.reward).text}，概率 {percentText(tier.prob)}%）</Fact>
-          <Fact k="为什么">后端已不支持积分奖型。奖池里只要还有这一档，App 抽奖会整池校验失败，用户抽不了</Fact>
+          <Fact k="为什么">积分奖型已停用。奖池里只要还有这一档，App 抽奖会整池校验失败，用户抽不了</Fact>
           <Fact k="退役之后" tone="warn">奖池概率合计少 {percentText(probability)}%，要在「调整概率」里用 UVT、USDT 或代金券补足到 100%，App 才能抽奖；调高概率要提交审批单</Fact>
         </Facts>
         {otherInvalid.length > 0 && <Notice tone="warn" title="还有旧奖型">{otherInvalid.map((row) => text(row.tier)).join("、")} 不受这一步影响。</Notice>}
@@ -934,7 +934,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `核对原操作 · ${subject}`, title: "按原请求重试",
       detail: approval
         ? expired ? <>原申请已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。</>
-        : <>按原请求原样重发，后端认得出同一次提交，不会重复执行。理由沿用原操作。</>,
+        : <>按原请求原样重发，不会重复执行。理由沿用原操作。</>,
       facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
       confirmLabel: "按原请求重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
@@ -1128,7 +1128,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <ul className="h4l-explain-list"><li>2–12 档</li><li>奖型只有 UVT、USDT、代金券</li><li>概率合计正好 100%</li><li>至少一档不发真钱的 UVT 安慰奖</li></ul></>}
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(HI_WHEEL_SCOPE)} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="抽不了的原因">
-          {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
+          {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，已停用：点「退役」后补足概率。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
         </Notice>}
         {wheelDailyUsageError && <Notice tone="warn" title="今天的用量没读到" action={<Button size="sm" onClick={() => void reloadWheelUsage()}>重试</Button>}>已用次数和今天已发先显示「—」，不是 0；奖池其他内容照常。</Notice>}
@@ -1143,7 +1143,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               const name = legacyName(tier.reward);
               const kindKey = text(tier.kind, "").toLowerCase();
               const unit = wheelUnit(tier);
-              const kindNode = wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
+              const kindNode = wheelPointsTier(tier) ? <StatusTag tone="danger" explain="积分奖型已停用，要退役">积分奖型</StatusTag>
                   : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="后台存的是旧奖型，App 按 UVT 发奖。这一档不能编辑，可以调概率，调高要提交审批。">UVT · 旧奖型</StatusTag>
                   : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>;
               /** 1024 宽时类型列收起，奖品格第二行只留要人注意的标签（奖品名已带币种）。 */
@@ -1216,7 +1216,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             explain="关掉后不再发真钱奖，抽中 USDT 改发 UVT 安慰奖。从关到开要另一位超级管理员批准。"
             action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(`H/h4_wheel_guard/${kill.key}`)} onClick={conflictDraft.register(JSON.stringify(["openWheelKill:1"]), () => openWheelKill(kill))}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
-            explain={<><p>每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。调高预算，平台每天最多多付；调低，更多真钱奖改发 UVT。后端按美元记，真钱奖只有 USDT。</p><p>今天已发{USAGE_DAY}</p></>}
+            explain={<><p>每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。调高预算，平台每天最多多付；调低，更多真钱奖改发 UVT。预算按美元记，真钱奖只有 USDT。</p><p>今天已发{USAGE_DAY}</p></>}
             action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : h4ApprovalLockedReason(`H/h4_wheel_guard/${budget.key}`)} onClick={conflictDraft.register(JSON.stringify(["openWheelBudget:1"]), () => openWheelBudget(budget))}>调整</Button>}>
             <div className="h4l-usage">
               {Number(budgetText) > 0 && <RatioBar label="今天已发占每日预算" quiet tone={budgetSpent ? "warn" : "role-1"} state={usedPayout === null ? wheelDailyUsageError ? "empty" : "loading" : "ready"}
@@ -1227,7 +1227,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           {cap && <GuardCard title={GUARD_NAME.cap} icon={<Ticket size={14} aria-hidden />} value={<small>按各档的每日库存</small>}
             sub={`${tiers.filter((tier) => numericValue(tier.dailyStock) > 0).length} 档限量，其余不限`}
             explain="每天每档最多发几次由奖项表的「每日库存」决定，这一条只是历史记录，不能改。" action={<StatusTag tone="neutral">历史只读</StatusTag>} />}
-          {guards.filter((guard) => !["budget", "kill", "cap"].includes(guard.key)).map((guard) => <GuardCard key={guard.key} title={text(guard.label)} icon={<Gift size={14} aria-hidden />} value={text(guard.value)} explain="后端返回了这页不认识的护栏，只显示，不提供修改。" />)}
+          {guards.filter((guard) => !["budget", "kill", "cap"].includes(guard.key)).map((guard) => <GuardCard key={guard.key} title={text(guard.label)} icon={<Gift size={14} aria-hidden />} value={text(guard.value)} explain="这页不认识这项护栏，只显示，不提供修改。" />)}
         </div>}
       </Panel>
     </div>

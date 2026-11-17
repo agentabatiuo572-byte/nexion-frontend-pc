@@ -46,7 +46,7 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
 export function LegacyNameTag({ where }: { where: string }) {
-  return <StatusTag tone="warn" icon={CircleAlert} explain={`后端存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是后端存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
+  return <StatusTag tone="warn" icon={CircleAlert} explain={`系统存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
 }
 
 // ===== 统一叫法 =====
@@ -84,7 +84,7 @@ export function lifecycleOf(event: LegacyEvent) {
   if (lifecycle === "upcoming") return { key: "upcoming", label: "预告", tone: "neutral" as const, explain: "已登记、还没开放：App 上用户还参加不了。" };
   if (lifecycle === "ongoing") return { key: "ongoing", label: "进行中", tone: "ok" as const, explain: "已对用户开放。结束后不能再开。" };
   if (lifecycle === "ended") return { key: "ended", label: "已结束", tone: "done" as const, explain: "已结束：不能再开放，这页也不再提供改奖励；已有的参与、奖励和操作记录保留。" };
-  return { key: "unknown", label: "状态未知", tone: "warn" as const, explain: "后端返回了这页不认识的状态，请联系后端核对。" };
+  return { key: "unknown", label: "状态未知", tone: "warn" as const, explain: "系统给的状态这页不认识，请找值班核对。" };
 }
 
 export function unknownTag(kind: "approval" | "direct") {
