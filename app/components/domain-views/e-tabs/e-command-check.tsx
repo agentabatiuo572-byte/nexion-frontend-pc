@@ -5,7 +5,7 @@ import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Mod
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, SETTLED_REJECTED, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, offerNotice, type ClosureOffer, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
@@ -93,18 +93,20 @@ export function SettledCommandNotices({ items, onDismiss }: { items: SettledComm
 }
 
 /** Evidence form for a super administrator with investigation rights; the backend decides what the evidence proves. */
-export function CommandClosureModal({ label, commandKey, createdAt, facts, known, onClose, onSubmit }: {
+export function CommandClosureModal({ label, commandKey, createdAt, facts, known, offer, onClose, onSubmit }: {
   label: string;
   commandKey: string;
   createdAt: number;
   facts?: ReactNode;
   /** The lookup found SUCCEEDED or FAILED (closureKnown): the backend refuses STILL_UNKNOWN; the found result decides the rest. */
   known?: boolean | ClosureBasis;
+  /** The caller's own list of conclusions (ClosureOffer); known is ignored then. Same wording as the fund dialog. */
+  offer?: ClosureOffer;
   onClose: () => void;
   onSubmit: (evidence: ECommandEvidence) => Promise<void>;
 }) {
-  const basis: ClosureBasis | undefined = known === true ? { rejected: false, success: "audit" } : known || undefined;
-  const choices: Conclusion[] = basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : []), "NOT_EXECUTED"]
+  const basis: ClosureBasis | undefined = offer ? undefined : known === true ? { rejected: false, success: "audit" } : known || undefined;
+  const choices: Conclusion[] = offer ? offer.conclusions : basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : []), "NOT_EXECUTED"]
     : ["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"];
   const [conclusion, setConclusion] = useState<Conclusion | "">("");
   const [reference, setReference] = useState("");
@@ -114,6 +116,9 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const referenceLength = reference.trim().length;
+  // 「已执行」凭原回包时不显示编号栏。
+  const byReceipt = offer ? offer.success !== "audit" : basis?.success === "receipt";
+  const withAudit = conclusion === "SUCCEEDED" && !byReceipt;
   const auditValid = !auditId.trim() || /^[1-9]\d{0,17}$/.test(auditId.trim());
   const block = !conclusion ? "请选择核查结论" : !referenceLength ? "请写明核查依据" : referenceLength > 512 ? "核查依据最多 512 字"
     : !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
@@ -123,11 +128,11 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
       if (block || !conclusion) return;
       setBusy(true); setError("");
       try {
-        await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(conclusion === "SUCCEEDED" && basis?.success !== "receipt" && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
+        await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(withAudit && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
       } catch (failure) {
         const shown = displayAdminError(failure);
         setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT
-          ? closureConflict(conclusion, { audit: conclusion === "SUCCEEDED" && basis?.success !== "receipt" && !!auditId.trim(), canAudit: conclusion === "SUCCEEDED" && basis?.success !== "receipt" }) : shown);
+          ? closureConflict(conclusion, { audit: withAudit && !!auditId.trim(), canAudit: withAudit, rollback: !!offer?.conclusions.includes("NOT_EXECUTED"), stillUnknown: !!offer?.conclusions.includes("STILL_UNKNOWN") }) : shown);
       }
       finally { setBusy(false); }
     }}>提交核查结论</Button></>}>
@@ -137,16 +142,16 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
         {facts}
         <Fact k="首次提交">{closureTime(createdAt)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span></>} /></Fact>
       </Facts>
-      <Notice tone="warn">{basis?.rejected ? "后台当时拒绝了这次操作，可以按「后台拒绝」结案；其他结论要证据对得上，对不上会退回，记录保留。"
+      <Notice tone="warn">{offer ? offerNotice(offer) : basis?.rejected ? "后台当时拒绝了这次操作，可以按「后台拒绝」结案；其他结论要证据对得上，对不上会退回，记录保留。"
         : basis ? "这次请求后台有处理记录：证据对得上才确认并解除锁定，对不上会退回，记录保留。" : "按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。"}</Notice>
-      <Field label="核查结论" required help={conclusion === "SUCCEEDED" && basis?.success === "receipt" ? SUCCEEDED_BY_RECEIPT : conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
+      <Field label="核查结论" required help={conclusion === "SUCCEEDED" && byReceipt ? SUCCEEDED_BY_RECEIPT : conclusion === "NOT_EXECUTED" && offer ? ROLLBACK_HELP : conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
           options={choices.map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
       </Field>
       <Field label="核查依据" required hint="最多 512 字" error={touched && (!referenceLength || referenceLength > 512) ? referenceLength ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
         <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder={conclusion ? CLOSURE_PLACEHOLDER_BY[conclusion] ?? CLOSURE_PLACEHOLDER : CLOSURE_PLACEHOLDER} value={reference} onChange={event => setReference(event.target.value)} />
       </Field>
-      {conclusion === "SUCCEEDED" && basis?.success !== "receipt" && <Field label="成功记录编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "成功记录编号须为正整数" : undefined}>
+      {withAudit && <Field label="成功记录编号" help="原操作没有完成记录时填写：操作记录里这次操作的成功记录编号。" error={touched && !auditValid ? "成功记录编号须为正整数" : undefined}>
         <Input aria-label="成功记录编号" className="e-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
       <Check label={CLOSURE_ACK} checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />
