@@ -505,6 +505,30 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— K 域风控(批 3) ——
   {
+    op: "k1_release_param",
+    domain: "K",
+    action: "放宽收益审核规则",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "release_param",
+    buildCommand: (ctx) => ({ domain: "K", op: "k1_release_param", params: { values: {
+      key: String(ctx.key), value: String(ctx.value), expectedVersion: Number(ctx.expectedVersion),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "K", type: "release_param", id: String(ctx.key) }),
+  },
+  {
+    op: "k1_earnings_release",
+    domain: "K",
+    action: "人工放行收益",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "earnings_release",
+    buildCommand: (ctx) => ({ domain: "K", op: "k1_earnings_release", params: { values: { entryNo: String(ctx.entryNo) } } }),
+    buildTarget: (ctx) => ({ domain: "K", type: "earnings_release", id: String(ctx.entryNo) }),
+  },
+  {
     op: "k1_cluster_freeze",
     domain: "K",
     action: "批量冻结关联账户",

@@ -1,6 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES } from "@/lib/admin/audit-action-names";
+import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
@@ -504,6 +504,7 @@ function middle(text: string, max: number) {
 }
 
 function actionName(ticket: string | { action: string; obj?: string; after?: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
+  if (typeof ticket !== "string" && (ticket.operationCode === "k1_release_param" || ticket.operationCode === "k1_earnings_release")) return A2_ACTION_NAMES[ticket.operationCode];
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
@@ -758,6 +759,8 @@ const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (who
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
 function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null }) {
   if (w.objDisplayName) return a2ObjectText(w);
+  if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
+  if (w.operationCode === "k1_earnings_release") return `收益记录 ${w.obj}`;
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" && fund.period) return fund.period;
   if (fund?.kind === "f5Status" && fund.eventId) return `奖励记录 ${fund.eventId}`;
@@ -829,8 +832,8 @@ function parseReview(value: string): Review | null {
 
 /** H4 stores a pool snapshot before and command values after, not two replacement configs. */
 function reviewPair(before: string, after: string, operationCode?: string) {
-  const b = parseReview(operationCode === "g_param" ? gParamText(before) : before);
-  const a = parseReview(operationCode === "g_param" ? gParamText(after) : after);
+  const b = parseReview(operationCode === "g_param" ? gParamText(before) : k1ApprovalSummaryText(before, operationCode));
+  const a = parseReview(operationCode === "g_param" ? gParamText(after) : k1ApprovalSummaryText(after, operationCode));
   const labels = hiReviewLabels(operationCode);
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
