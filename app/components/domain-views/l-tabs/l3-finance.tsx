@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowDownToLine, ArrowUpFromLine, CalendarClock, FileSpreadsheet, Gauge, LockKeyhole, ReceiptText, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, CalendarClock, CircleHelp, FileSpreadsheet, Gauge, LockKeyhole, ReceiptText, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import {
   BlockState, Button, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Input, KeyValues, Notice, PageHeader, Panel,
   Segments, Stat, StatBand, StatusTag, ThresholdMeter, TrendLines, type ChartSlot,
@@ -532,6 +532,8 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const scheduleRaw = rec(data.maturitySchedule);
   const revenueStreamsRaw = rows<Record<string, unknown>>(rec(data.revenue).streams);
   const liabilitiesRaw = rows<{ id: number; category: string; name: string; amount: number | null }>(data.liabilities);
+  // 新后端不再给覆盖率历史和越线记录（7c5df3b9，字段缺失时为 null）：整块写「系统不提供」，不画空图、不写「近 0 个时段」。
+  const coverageHistoryGone = data.coverage12w === null;
   const coverageSeries = rows<number>(data.coverage12w);
   const coverageTicks = strings(data.coverageWeeks);
   const breaches = rows<{ i: number; type: string; label: string }>(data.coverageBreaches)
@@ -718,7 +720,10 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           { key: "net", label: "差额（储备 − 应付款）", value: netExposure === null ? coverageGone : <span className="l3-delta" data-dir={netExposure > 0 ? "up" : netExposure < 0 ? "down" : undefined}>{`${netExposure > 0 ? "+" : netExposure < 0 ? "−" : ""}${netAmount} USDT`}</span>,
             explain: coverageUnavailable ? coverageNote : "负数表示储备不够付全部应付款，不等于某一笔提现会马上失败。" },
         ]} />
-        <div className="l3-trend">
+        {coverageHistoryGone ? <div className="l3-trend">
+          <h3 className="l3-sub">覆盖率走势<StatusTag tone="neutral" icon={CircleHelp}>系统不提供</StatusTag></h3>
+          <p className="rd-note">没有可靠的历史来源，过去有没有越过红线看不出来。</p>
+        </div> : <div className="l3-trend">
           <h3 className="l3-sub">近 {coverageSeries.length} 个时段（{seriesRange}）<Explain label="覆盖率走势怎么算" content="系统按资金账本倒推每个时段当时的储备，应付款一律用现在的值（应付款没有历史记录），所以这条线不是当时真实的覆盖率，起伏只来自储备进出。时间按服务器时间。" /></h3>
           <p className="l3-caliber">历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化{trendWord ? ` · ${trendWord}` : ""}</p>
           {coverageUnavailable
@@ -726,8 +731,8 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             : <TrendLines label="近几个时段的覆盖率" ticks={coverageTicks.map((tick) => tick.slice(-5))} format={pctText} axisFormat={(value) => `${Number(value.toFixed(1))}%`} height={120}
               series={[{ key: "coverage", label: "覆盖率", slot: 4, values: coverageSeries }]}
               marks={[{ key: "red", text: `红线 ${pctText(redLine)}`, value: redLine, tone: "danger" }, { key: "healthy", text: `健康线 ${pctText(healthyLine)}`, value: healthyLine, tone: "ok" }]} />}
-          <p className="rd-note">{breaches.length ? `越线记录：${breaches.map((item) => `${coverageTicks[item.i]} ${item.label}`).join("；")}` : "越线记录：系统还没提供这项数据，是否越线看上面的走势和红线"}</p>
-        </div>
+          <p className="rd-note">{breaches.length ? `越线记录：${breaches.map((item) => `${coverageTicks[item.i]} ${item.label}`).join("；")}` : "越线记录：系统不提供，不能凭这条线判断过去是否越线"}</p>
+        </div>}
       </div>
     </Panel>
   );

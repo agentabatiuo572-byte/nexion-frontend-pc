@@ -1712,9 +1712,6 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">首日任务</span>
             <span className="sub">· 新用户转化最关键的一环 · 用户开始做任务时就锁定任务和奖励，之后的修改只影响还没开始的用户</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>
-                调整
-              </button>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>
                 调整奖励
               </button>
@@ -1724,11 +1721,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row">
               <span className="k">
-                任务时长
-                <small>已开始的用户按各自开始时间计算，修改不影响他们。</small>
+                任务时长说明文字
+                <small>已停用，不能再改；只是展示文字，不改变倒计时。</small>
               </span>
               <span className="v">{text(model.dayOneWindow)}</span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>调整</button>
             </div>
             <div className="p-row">
               <span className="k">
