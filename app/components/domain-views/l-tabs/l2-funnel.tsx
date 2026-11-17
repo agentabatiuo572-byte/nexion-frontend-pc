@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CalendarCheck, CalendarRange, Download, Filter, Gift, Hourglass, Languages, Route, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
 import { BlockState, Button, Check, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Notice, PageHeader, PageTabs, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, Tr, Cell, TrendLines, useTabIds } from "@/app/components/rd";
-import { displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   fetchL2Cross,
   fetchL2FunnelDrilldown,
@@ -19,6 +19,7 @@ import {
   fetchL2RetentionMatrix,
   isLOutcomeUnknownError,
   type L2FunnelQuery,
+  type L2TrialFunnel,
 } from "@/lib/admin/l-client";
 import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 import { lowestConversionIndex } from "@/lib/admin/funnel-conversion";
@@ -51,14 +52,14 @@ import {
   type CohortRow,
   type FunnelExt,
   type FunnelRow,
-  type TrialStep,
   type XdMetric,
 } from "./l2-funnel-views";
 
 /** 后端待办 L2-BE01：留存要用的 App 日活事件（app.dau）还没有产生方，成熟的组会被算成 0%。后端接上后改成 true。 */
 const RETENTION_SOURCE_READY = false;
-/** 后端待办 L2-BE02：试用第一步「看到领取弹窗」只找到读的地方，试用三步都进不了统计。后端确认来源后改成 true。 */
-const TRIAL_SOURCE_READY = false;
+/** 试用这条线（L2-BE-02，后端 5cb76001）：开始试用 → 试用后购买两步。旧后端不给 trialFunnel，照旧写「来源未接上」。 */
+const TRIAL_OLD_NOTE = "试用人数还没接上，先不显示，不是 0 人。";
+const trialReason = (reason: string | null | undefined) => formatAdminApiError(reason ?? "TRIAL_EVENT_LINKAGE_INCOMPLETE", "试用人数暂不可用。");
 
 const L2_STAGE_EVENTS = L2_STAGE_QUERY_EVENTS;
 const L2_WINDOWS = ["Day1", "Day7", "Day14", "Day30", "Day60"] as const;
@@ -400,7 +401,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const strictDetailed = isStrictL2Dashboard(data);
   const FUNNEL = rows<FunnelRow>(data?.funnel);
   const FUNNEL_EXT = rows<FunnelExt>(data?.funnelExt);
-  const TRIAL_STEPS = rows<TrialStep>(data?.trialSteps);
+  // trialFunnel 在读取边界已按新口径校验过（l-client normalizeL2Trial），这里只是把 Record 里的类型取回来。
+  const TRIAL = data?.trialFunnel as L2TrialFunnel | undefined;
+  const [TRIAL_START, TRIAL_BUY] = TRIAL?.steps ?? [];
   const WEEKLY_COHORTS = rows<CohortRow>(data?.cohorts);
   const MONTHLY_COHORTS = rows<CohortRow>(data?.monthlyCohorts);
   const cohortKind = gran === 1 && MONTHLY_COHORTS.length ? "月" : "周";
@@ -583,9 +586,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const registrations = FUNNEL[0].users;
   const withdrawals = FUNNEL[FUNNEL.length - 1].users;
   const fullCvr = registrations && withdrawals != null ? ((withdrawals / registrations) * 100).toFixed(1) : null;
-  const trialStarted = TRIAL_STEPS[1]?.n;
-  const trialPurchased = TRIAL_STEPS[2]?.n;
-  const trialBuy = trialStarted && trialPurchased != null ? ((trialPurchased / trialStarted) * 100).toFixed(1) : null;
+  const trialSmall = !!(TRIAL_START?.suppressed || TRIAL_BUY?.suppressed);
   const s = FUNNEL[safeStage];
   const ext = FUNNEL_EXT[safeStage] ?? { plain: s.stage, inflow: "—", lost: "—", dwell: [], note: "" };
   const xd = normalizeXdMetric(XD[metric]);
@@ -697,7 +698,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       </Conclusion>;
 
   const day7Value = !RETENTION_SOURCE_READY ? "来源未接上" : day7.suppressed === true ? SMALL_SAMPLE_LABEL : typeof day7.value === "number" ? pct(day7.value) : "—";
-  const trialValue = !TRIAL_SOURCE_READY ? "来源未接上" : TRIAL_STEPS[1]?.suppressed || TRIAL_STEPS[2]?.suppressed ? SMALL_SAMPLE_LABEL : trialBuy == null ? "—" : `${trialBuy}%`;
+  const trialValue = !TRIAL ? "来源未接上" : !TRIAL.available ? "不可用" : trialSmall ? SMALL_SAMPLE_LABEL : TRIAL_BUY?.arr ?? "—";
   const stats = (
     <StatBand label="这批用户的关键数字">
       <Stat label={`最近一个注册${cohortKind}`} value={latestCohort.suppressed ? SMALL_SAMPLE_LABEL : latestCohort.size == null ? "—" : people(latestCohort.size)} unit={latestCohort.suppressed || latestCohort.size == null ? undefined : "人"}
@@ -709,9 +710,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       <Stat label="第 7 天仍活跃" value={day7Value} tone={RETENTION_SOURCE_READY ? "role-3" : "role-other"} icon={CalendarCheck}
         sub={!RETENTION_SOURCE_READY ? `日活事件还没接上 · 目标 ${String(day7.target ?? 60)}%` : day7.value == null && day7.suppressed !== true ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
         explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天有日活记录的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{!RETENTION_SOURCE_READY && <p>日活事件还没接上，现在算出来会是 0%，所以先不显示；接上后再显示。</p>}</>} />
-      <Stat label="试用后购买比例" value={trialValue} tone={TRIAL_SOURCE_READY ? "role-3" : "role-other"} icon={Gift}
-        sub={!TRIAL_SOURCE_READY ? "试用第一步的事件还没接上" : TRIAL_STEPS[1]?.suppressed || TRIAL_STEPS[2]?.suppressed ? "少于 5 人，不显示" : trialStarted && trialPurchased != null ? `${people(trialPurchased)} ÷ ${people(trialStarted)} 人` : "开始试用 0 人，算不出"}
-        explain={<><p>开始试用的人里，确认购买的比例。试用是另一条线，不算进首购转化率。</p>{!TRIAL_SOURCE_READY && <p>试用这条线从「看到领取弹窗」算起，系统还没有记录这一步，三步都进不了统计，所以先不显示（不是 0 人）。</p>}</>} />
+      <Stat label="试用后购买比例" value={trialValue} tone={TRIAL?.available && !trialSmall && TRIAL_BUY?.arr ? "role-3" : TRIAL && !TRIAL.available ? "warn" : "role-other"} icon={Gift}
+        sub={!TRIAL ? "试用人数还没接上" : !TRIAL.available ? "试用记录不全" : trialSmall ? "少于 5 人，不显示" : TRIAL_START?.n != null && TRIAL_BUY?.n != null ? `${people(TRIAL_BUY.n)} ÷ ${people(TRIAL_START.n)} 人` : "—"}
+        explain={<><p>开始试用的人里，用同一笔试用确认购买的比例。试用是另一条线，不算进首购转化率。</p>{!TRIAL ? <p>{TRIAL_OLD_NOTE}</p> : !TRIAL.available && <p>{trialReason(TRIAL.reason)}</p>}</>} />
     </StatBand>
   );
 
@@ -747,10 +748,12 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         : <DwellChart stage={s.stage} dwell={ext.dwell} />;
   const trialBlock = ext.trial && (
     <Panel plain headingLevel={3} title="首购之前的试用（另一条线）" explainSide="top"
-      explain={<><p>试用单独统计三步：看到领取弹窗 → 开始试用 → 试用后购买，每一步要晚于上一步。不算进上面的首购转化率；同一笔试用购买两边都可能算到。</p><p>试用到期没有购买的会取消，不发奖励；只有用户确认购买才结算。试用规则在「免费试用设置」改。</p></>}>
-      {TRIAL_SOURCE_READY
-        ? <TrialLine steps={TRIAL_STEPS} />
-        : <Notice tone="neutral" title="数据来源还没接上">系统还没有记录第一步「看到领取弹窗」，三步都进不了统计，先不显示人数（不是 0 人）。接上后显示。</Notice>}
+      explain={<><p>试用单独统计两步：开始试用 → 试用后购买，购买要晚于同一笔试用的开始。看到领取弹窗这一步没有记录，不统计。不算进上面的首购转化率；同一笔试用购买两边都可能算到。</p><p>试用到期没有购买的会取消，不发奖励；只有用户确认购买才结算。试用规则在「免费试用设置」改。</p></>}>
+      {!TRIAL
+        ? <Notice tone="neutral" title="数据来源还没接上">{TRIAL_OLD_NOTE}</Notice>
+        : !TRIAL.available
+          ? <Notice tone="warn" title="试用人数暂不可用">{trialReason(TRIAL.reason)}</Notice>
+          : <TrialLine steps={TRIAL.steps} />}
     </Panel>
   );
   const stepPanel = (
@@ -834,7 +837,10 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   );
 
   /* ---- 页签二：渠道 × 语言的三项指标。 ---- */
-  const metricBlocked = (metric === "ret" && !RETENTION_SOURCE_READY) || (metric === "trial" && !TRIAL_SOURCE_READY);
+  // 交叉分析的试用格另有自己的可不可用（后端 crossAnalysis.trial.available），和漏斗那两步分开看。
+  const crossTrial = rec(XD.trial);
+  const crossTrialUnavailable = metric === "trial" && !!TRIAL && crossTrial.available === false;
+  const metricBlocked = (metric === "ret" && !RETENTION_SOURCE_READY) || (metric === "trial" && (!TRIAL || crossTrialUnavailable));
   const crossPane = (
     <div className="rd-stack">
       <div className="rd-toolbar l2-toolbar">
@@ -845,12 +851,14 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       </div>
       <Panel title={`各渠道、语言的${METRIC_NAME[metric]}`} icon={Languages} tone="role-3" sub={`按注册时的渠道、阶段和语言 · ${scope}`}
         explain={<>
-          <p>{metric === "cvr" ? "注册后完成首购的人 ÷ 注册人数。" : metric === "ret" ? "注册后第 7 天当天有日活记录的人 ÷ 注册人数；还有人不满 7 天的组合不算。" : "开始试用的人里确认购买的比例，试用是另一条线。"}</p>
+          <p>{metric === "cvr" ? "注册后完成首购的人 ÷ 注册人数。" : metric === "ret" ? "注册后第 7 天当天有日活记录的人 ÷ 注册人数；还有人不满 7 天的组合不算。" : "开始试用的人里用同一笔试用确认购买的比例，试用是另一条线。"}</p>
           <p>行是注册时带的渠道和当时的运营阶段，列是注册时的语言。颜色越深越高，最高、最低的格子标了字，方便找最好和最差的组合。行列固定，不能排序和分页。</p>
           <p>{PROTECT_NOTE}</p>
         </>}>
         {metricBlocked
-          ? <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "日活事件还没接上，算出来会是 0%，先不显示。" : "系统还没有记录试用第一步「看到领取弹窗」，算不出来，先不显示（不是 0）。"} />
+          ? crossTrialUnavailable
+            ? <BlockState state="empty" title="试用人数暂不可用" detail={trialReason(typeof crossTrial.reason === "string" ? crossTrial.reason : null)} />
+            : <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "日活事件还没接上，算出来会是 0%，先不显示。" : TRIAL_OLD_NOTE} />
           : xd.rows.length && xd.columns.length
             ? <CrossTable metric={xd} name={METRIC_NAME[metric]} />
             : <BlockState state="empty" title="当前条件下没有可比较的渠道和语言" />}

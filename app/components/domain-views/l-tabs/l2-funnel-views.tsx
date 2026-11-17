@@ -26,7 +26,7 @@ export type FunnelExt = {
   lostSuppressed?: true;
   dwellSuppressed?: true;
 };
-export type TrialStep = { e: string; n: number | null; arr?: string; arrLb?: string; suppressed?: true };
+export type TrialStep = { e: string; n: number | null; arr?: string | null; arrLb?: string | null; suppressed?: true };
 export type CohortRow = { w: string; size: number | null; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null; suppressed?: true };
 export type XdMetric = { columns: string[]; rows: (string | number | null)[][]; alert: number[]; unit: string; suppressedCells: Set<string>; msg: { pre: string; bold: string; post: string } };
 
@@ -213,10 +213,10 @@ const TRIAL_NAME: Record<string, string> = {
   "trial.redeemed": "试用后购买",
 };
 
-/** 试用三步：和主漏斗分开的另一条线。 */
+/** 试用两步（开始试用 → 试用后购买）：和主漏斗分开的另一条线。 */
 export function TrialLine({ steps }: { steps: readonly TrialStep[] }) {
   return (
-    <ol className="l2-trial" aria-label="试用三步">
+    <ol className="l2-trial" aria-label="试用两步">
       {steps.map((step, index) => (
         <li key={step.e}>
           {index > 0 && (
