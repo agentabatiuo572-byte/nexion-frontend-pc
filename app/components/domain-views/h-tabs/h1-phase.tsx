@@ -67,6 +67,7 @@ import {
   h1Pending,
   h1Request,
   lookupH1,
+  lookupH1Direct,
   type H1Pending,
   type H1Request
 } from "@/lib/admin/h1-mutations";
@@ -85,6 +86,8 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
+import { eCommandResult } from "@/lib/admin/e-command-investigation";
+import { receiptExplain, receiptFact, SETTLED_REJECTED } from "../recovery-panel";
 
 const DIALS = [
   {
@@ -380,7 +383,8 @@ export default function H1Phase({ ctx,
         "").length ?? 0))])),
     [rows]);
   const permitted = (row: H1Pending) => !(row.requests.some((request) => request.kind === "proposal") && !canPropose) && (row.scope === "rhythm" || row.scope.startsWith("dial:") ? canWrite : row.scope.startsWith("control:") ? canControl && canPropose : canRevoke && canPropose);
-  const canQueryOriginal = (row: H1Pending) => !row.scope.startsWith("override:") || canRevoke && canPropose;
+  const canQueryOriginal = (row: H1Pending) => row.requests.some(request => request.kind === "proposal")
+    ? !row.scope.startsWith("override:") || canRevoke && canPropose : canRead;
 
   const afterWrite = async (row: H1Pending,
     retry = false) => {
@@ -802,6 +806,21 @@ export default function H1Phase({ ctx,
     if (!canQueryOriginal(row)) return;
     setBusy(true);
     try {
+      if (row.requests.every(request => request.kind === "patch")) {
+        try {
+          const result = await lookupH1Direct(row);
+          syncPending();
+          const unresolved = result.outcomes.find(outcome => eCommandResult(outcome.receipt) !== "SUCCEEDED");
+          setChecked(row.commandKey);
+          setFeedback(result.settled ? unresolved ? SETTLED_REJECTED : `${row.label}已保存`
+            : !unresolved?.receipt ? displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"))
+              : eCommandResult(unresolved.receipt) === "PROCESSING" ? displayAdminError(new Error("IDEMPOTENCY_REQUEST_IN_PROGRESS"))
+                : eCommandResult(unresolved.receipt) === "FAILED" ? displayAdminError(new Error("IDEMPOTENCY_PREVIOUS_REQUEST_FAILED"))
+                  : receiptExplain(unresolved.receipt) ?? receiptFact(unresolved.receipt, "原记录继续保留"));
+          if (result.settled) setConfirm(current => current?.scope === row.scope ? null : current);
+        } finally { syncPending(); await reload(); }
+        return;
+      }
       const ticket = await lookupH1(row); syncPending();
       if (await reload()) {
         setChecked(row.commandKey); setFeedback(ticket ? `原审批单 ${ticket.id}：${({
