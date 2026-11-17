@@ -1,7 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { SearchCheck, ShieldCheck } from "lucide-react";
-import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
+import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, KeepText, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { eCommandClosureOffer, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
@@ -152,7 +152,7 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
       </Facts>
       <Notice tone="warn">{offer ? offerNotice(offer) : basis?.rejected ? "后台当时拒绝了这次操作，可以按「后台拒绝」结案；其他结论要证据对得上，对不上会退回，记录保留。"
         : basis ? "这次请求后台有处理记录：证据对得上才确认并解除锁定，对不上会退回，记录保留。" : "按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。"}</Notice>
-      {fixed ? <p className="rd-note">{help}</p> : <Field label="核查结论" required help={help} error={touched && !conclusion ? "请选择核查结论" : undefined}>
+      {fixed ? <p className="rd-note">{help && <KeepText text={help} phrases={help.includes("；") ? help.split(/(?<=；)/) : undefined} />}</p> : <Field label="核查结论" required help={help} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
           options={choices.map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
       </Field>}
