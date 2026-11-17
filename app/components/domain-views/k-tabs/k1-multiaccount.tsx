@@ -1323,8 +1323,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setProtectedEntries(current => current.flatMap(row => row.entryNo !== selected.entryNo ? [row] : latest ? [latest] : []));
     if (revision !== releaseConfirmRevision.current) return;
     if (!latest) {
-      if (approvalRequired) throw new Error("这笔已不在待审核或锁定中，放行不了；列表已更新，可以关掉这个框。");
-      ctx.toast("这笔已不在待审核或锁定中，放行不了；列表已更新。", "warn");
+      const gone = "这笔已不在待审核或锁定中，放行不了；列表已更新。";
+      if (approvalRequired) throw new Error(gone);
+      ctx.toast(gone, "warn");
       return;
     }
     const entry = latest;
