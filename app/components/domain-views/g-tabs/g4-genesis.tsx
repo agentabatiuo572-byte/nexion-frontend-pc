@@ -1083,7 +1083,7 @@ function G4GenesisPage() {
   const airdropLockDaysParam = paramByKey(overview, "airdropLockDays");
   const showcaseEnabledParam = paramByKey(overview, "showcaseEnabled");
   const legacyPriceText = priceParam?.value ? g4ParamValueText("price", priceParam.value) : stats.unitPrice > 0 ? `${g4Amount(stats.unitPrice)} USDT` : "系列当前价未设置";
-  const tierPriceText = overview.tierPrice.status === "active" ? `${fmtInt(overview.tierPrice.tier.priceUSDT)} USDT`
+  const tierPriceText = overview.tierPrice.status === "active" ? `${g4Amount(overview.tierPrice.tier.priceUSDT)} USDT`
     : overview.tierPrice.status === "legacy" ? legacyPriceText
       : overview.tierPrice.status === "soldout" ? "已售罄" : "暂无价格";
   const tierPriceNote = overview.tierPrice.status === "active"
@@ -1305,9 +1305,15 @@ function G4GenesisPage() {
               {priceParam && overview.tierPrice.status === "legacy" && paramRow(priceParam)}
               {priceParam && overview.tierPrice.status !== "legacy" && (
                 <ConfigRow key="price" name="单价"
-                  what="一级购买按价格档位报价，改价请改右边的价格档位"
-                  effect={`现有持仓的每日分红仍按系列当前价 ${priceParam.value ? g4ParamValueText("price", priceParam.value) : "—"} 算`}
+                  what="一级购买按价格档位报价"
+                  effect="改价请改右边的价格档位"
                   value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{tierPriceText}</span></span><span className="g4x-dir">按价格档位</span></span>} />
+              )}
+              {priceParam && overview.tierPrice.status !== "legacy" && (
+                <ConfigRow key="series-price" name="系列当前价"
+                  what="现有持仓每天的分红按这个价算"
+                  when="有价格档位时这里不能改"
+                  value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{priceParam.value ? g4ParamValueText("price", priceParam.value) : "—"}</span></span><span className="g4x-dir">分红按它算</span></span>} />
               )}
             </ConfigList>
           </div>
