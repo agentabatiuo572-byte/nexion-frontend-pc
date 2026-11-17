@@ -252,15 +252,18 @@ export async function fetchE3Snapshot(): Promise<E3Snapshot> {
   };
 }
 
-/** 05304806: validate only the submitted field, preserving historical reads. */
-export function validateE3TradeinDeviceLimit(key: string, value: string) {
+/** New config writes only; missing retired fields and original-request recovery remain readable. */
+export function validateE3ConfigWrite(key: string, value: string) {
+  if (["taskLockS1", "taskLockPro", "taskLockRack", "taskLock.s1", "taskLock.pro", "taskLock.rack"].includes(toBackendKey(key))) {
+    throw new Error("E3_CONFIG_KEY_RETIRED");
+  }
   if (!["E.tradein.maxDevicesPerOrder", "tradeinMaxDevicesPerOrder", "maxDevicesPerOrder"].includes(key)) return;
   const decimal = f4Decimal(value.trim().replace(/[%,]/g, ""));
   if (decimal === null || !/^1(?:\.0*)?$/.test(decimal)) throw new Error("E3_TRADEIN_SINGLE_DEVICE_ONLY");
 }
 
 export async function updateE3Param(key: string, value: string, reason: string, operator: string) {
-  validateE3TradeinDeviceLimit(key, value);
+  validateE3ConfigWrite(key, value);
   const overview = await e3Request<BackendE3Overview>("/e3/config", {
     method: "PATCH",
     body: JSON.stringify({ key: toBackendKey(key), value: toBackendValue(key, value), reason, operator }),
@@ -270,7 +273,7 @@ export async function updateE3Param(key: string, value: string, reason: string, 
 }
 
 export async function updateE3Params(values: Record<string, string>, reason: string, operator: string) {
-  for (const [key, value] of Object.entries(values)) validateE3TradeinDeviceLimit(key, value);
+  for (const [key, value] of Object.entries(values)) validateE3ConfigWrite(key, value);
   let latest: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) {
     latest = await updateE3Param(key, value, reason, operator);

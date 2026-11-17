@@ -36,7 +36,7 @@ import {
   type E1InvalidSku,
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2Tasks, type E2PhoneTier, type E2YieldComparison } from "@/lib/admin/e2-client";
-import { validateE3TradeinDeviceLimit, fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
+import { validateE3ConfigWrite, fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
 import { E4_CLOSE_REASONS, E4_REFUND_REASONS, fetchE4OrderDetail, fetchE4OrderGroupPage, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundCommandInvestigation, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
@@ -867,7 +867,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   // 取订单当前 live 态(基于 orderById),用于 propose 的 before 描述。
   const effOrderState = (orderId: string): string => orderState({ id: orderId, state: selOrder?.state } as EOrder);
   const canonicalE3Value = (paramKey: string, value: string) => {
-    validateE3TradeinDeviceLimit(paramKey, value);
+    validateE3ConfigWrite(paramKey, value);
     if (paramKey.includes("capacity.applyTo.")) {
       if (value === "参与递减") return "true";
       if (value === "免递减") return "false";
