@@ -42,7 +42,7 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
   const step = closureLine(eCommandClosureOffer(outcome, expired), receipt, true);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "记为失败", text: expired
     ? step!
-    : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
+    : "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
     ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。"

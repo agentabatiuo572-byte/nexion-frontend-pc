@@ -105,7 +105,7 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine；记为失败过期时总有一句），说不了的沿用原句。
   const step = closureLine(eCommandClosureOffer(outcome, row.expired), receipt, !!access?.canSubmit);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? step!
-    : row.canRetry ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
+    : row.canRetry ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
   if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (!access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE) };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
@@ -178,17 +178,20 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settl
   onDismissSettled?: (key: string) => void;
   /** 已解除的提示行末尾的按钮，例如「查看逐笔结果」。 */
   settledAction?: (item: FundSettled) => ReactNode;
-  /** 默认按每行查到的结果数：「N 项操作结果未知」「N 项操作还没结案」或两者都有；有待审批等别的状态时页面自己写。 */
+  /** 默认按每行的标签数：「N 项操作结果未知」「N 项操作还没结案」「N 项在等审批」「N 项已有结论」，只写有的几种。 */
   heading?: string;
 }) {
   const [all, setAll] = useState(false);
   const { ordered, box } = useFreshFirst(rows);
   const visible = all ? ordered : ordered.slice(0, 3);
-  const open = rows.filter(row => OPEN_LABELS.includes(shown(row).label)).length;
+  const labels = rows.map(row => shown(row).label);
+  const open = labels.filter(label => OPEN_LABELS.includes(label)).length;
+  const waiting = labels.filter(label => label === "待审批").length;
+  const ended = labels.filter(label => label === "没有建成").length;
   return <>
     {settled?.map(item => <SettledLine key={item.key} label={item.label} text={settledText(item)} action={settledAction?.(item)}
       onDismiss={onDismissSettled && (() => onDismissSettled(item.key))} />)}
-    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? recoveryTitle(rows.length - open, 0, 0, open)}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
+    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? recoveryTitle(rows.length - open - waiting - ended, waiting, ended, open)}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
       <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} />)}</ul>
       {(rows.length > 3 || link) && <div className="fund-rows-foot">
         {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll(value => !value)}>{all ? "只看前 3 条" : `展开全部 ${rows.length} 条`}</Button>}

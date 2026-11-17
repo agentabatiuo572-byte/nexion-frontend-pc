@@ -91,6 +91,10 @@ const READING = "正在读取最新数据，读完再操作";
 const LOCKED = "先处理上方结果未知的修改，再调整";
 const NO_WRITE = "这个账号现在没有调整权限，不能重试，请在调整历史里核对";
 const RETRY_AGAIN = "原操作已被拒绝，再重试结果一样";
+/** 过期、还没查询时展开后的出路：行内已经说了不能重试、先查询，这里只说查到以后谁来核查结案。 */
+const EXPIRED_CLOSE_HERE = "查到原结果后，可以在这一行核查结案。";
+const EXPIRED_CLOSE_OTHER = "查到原结果后，请有调查权限的超级管理员核查结案。";
+const EXPIRED_NO_QUERY = "这个账号查不了原审批单，请有调查权限的超级管理员查询并核查结案。";
 
 function vnd(value: number) {
   return value.toLocaleString("en-US");
@@ -483,7 +487,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       </>,
       detail: <>
         <p>{failed ? "" : "这次修改可能已经提交，"}已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
-        {expired && pending.proposal && <p>{canAudit ? "请财务负责人到操作记录与审批和下面的调整历史核对这次修改有没有生效。" : "这个账号看不到操作记录，请在下面的调整历史里核对，再交财务负责人处理。"}</p>}
+        {expired && !outcome && (pending.proposal && !canQueryOriginal ? <p>{EXPIRED_NO_QUERY}</p> : !fundInvestigationAccess(target).unavailableReason && <p>{fundInvestigationAccess(target).canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER}</p>)}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
         {retryRejected && !expired && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}

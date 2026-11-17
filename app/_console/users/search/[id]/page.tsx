@@ -1272,7 +1272,7 @@ export default function UserDetailPage() {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
         none: { tone: "warn" as const, label: "没有查到", line: "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
         PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE },
-        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。"
+        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。"
           : expired && canClose ? FAILED_EXPIRED_LINE : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
         UNKNOWN: { tone: "warn" as const, label: "仍未知", line: !canClose ? "系统也没有结果，到操作记录与审批核对。"
           : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE },

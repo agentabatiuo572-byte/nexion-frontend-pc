@@ -35,6 +35,9 @@ const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const READING = "正在读取最新状态，读完再操作";
 const FROZEN = "结果未知期间原请求已锁定，不能改";
+/** 断网、连接中断时提交结果未知：全站同一句；页面也刷新不了时说清先等网络。 */
+const UNKNOWN_TEXT = "结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。";
+const UNKNOWN_NO_REFRESH = "结果未知，可能已经生效，页面也刷新不了。不要重复操作，网络恢复后刷新页面，再查询原结果。";
 /** 名单卡上直接摆出的国家数，其余到「名单国家明细」里看。 */
 const WALL = 18;
 const MODE_TEXT: Record<"derived" | "explicit", string> = { derived: "继承全局", explicit: "单独设定" };
@@ -367,7 +370,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const recovery = <>
     {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
-    <FundRecoveryPanel rows={recoveryRows} heading={`${recoveryRows.length} 项修改结果未知`} />
+    <FundRecoveryPanel rows={recoveryRows} />
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(outcomes[closing.record.commandKey], isRetryExpired(closing.record))}
       facts={<>
         <Fact k="改动">{closing.change}</Fact>
@@ -466,11 +469,14 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         toast(displayAdminError(error), "error");
         await actions.reloadJEmergency().catch(() => undefined);
       } else if (isEmergencyOutcomeUncertain(error)) {
+        // 同一件事只说一次：确认框还开着时这句写在框里（框显示这个错误），框已被页面关掉时才弹轻提示。
         try {
           await actions.reloadJEmergency();
-          toast("结果未知，可能已经生效；先在上方查询原结果，不要重复提交。", "warn");
+          if (error instanceof Error) error.message = UNKNOWN_TEXT;
+          if (!activeConfirmation.current) toast(UNKNOWN_TEXT, "warn");
         } catch {
-          toast("结果未知，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对最近修改。", "warn");
+          if (error instanceof Error) error.message = UNKNOWN_NO_REFRESH;
+          if (!activeConfirmation.current) toast(UNKNOWN_NO_REFRESH, "warn");
         }
       }
       throw error;
