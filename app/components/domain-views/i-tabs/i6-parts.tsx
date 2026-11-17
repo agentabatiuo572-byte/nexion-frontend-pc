@@ -82,8 +82,8 @@ export function courseFormState(spec: CourseSpec): CourseForm {
     quizCount: String(questions.length),
     passScore: String(current?.passScore ?? 60),
     retries: String(current?.retryLimit ?? 3),
-    completionCond: current?.completionCondition ?? "quiz_passed",
-    rewardEvent: current?.rewardEvent ?? "quiz.passed",
+    completionCond: current?.completionCondition ?? "",
+    rewardEvent: current?.rewardEvent ?? "",
   };
   questions.forEach((question, questionIndex) => {
     state[`quiz.${questionIndex}.id`] = question.questionId || `q${questionIndex + 1}`;
@@ -140,8 +140,6 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
   const retries = Number(state.retries);
   if (!Number.isInteger(passScore) || passScore < 1 || passScore > 100) missing.push({ key: "passScore", text: "及格分 1–100 的整数" });
   if (!Number.isInteger(retries) || retries < 0 || retries > 10) missing.push({ key: "retries", text: "重试次数 0–10 的整数" });
-  needs("completionCond", "完成条件");
-  needs("rewardEvent", "何时发奖");
   return missing;
 }
 

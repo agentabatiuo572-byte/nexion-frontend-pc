@@ -6,7 +6,7 @@ import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExp
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
-import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview } from "./i6-learning-contract";
+import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
@@ -244,6 +244,14 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
   const permission = i6RetryPermission(command);
   if (permission) throw new Error(permission);
+  if (command.operation === "course-create" || command.operation === "course-draft" && command.snapshot?.course) {
+    validateI6CourseOptions(command.input, command.operation === "course-create" ? undefined : command.snapshot?.course);
+  }
+  if (command.operation === "version-create" && command.snapshot?.course) {
+    validateI6CourseOptions(command.input, command.snapshot.course);
+  } else if (command.operation === "version-draft" && command.snapshot?.courseVersion) {
+    validateI6CourseOptions(command.input, command.snapshot.courseVersion.payload);
+  }
   if (pendingI6Commands().some(row => row.scope === "unknown" || row.scope === command.scope)) throw new Error("此对象有结果未知的原操作，请先查询原结果。");
   uncertainCommandKeys.remember(fingerprint, commandKey, { i6 });
   if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {

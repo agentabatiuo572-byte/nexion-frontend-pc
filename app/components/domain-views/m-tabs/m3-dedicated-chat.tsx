@@ -1634,8 +1634,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         if (stamp !== timeoutIdentityRef.current) return;
         if (policy) setTimeoutPolicy(policy); setTimeoutError("");
       } else if (result.status === "SUCCEEDED" && result.businessCode != null && result.businessCode !== 0) {
-        // The receipt has no original reason; the conflict slot claims someone else changed it.
-        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(false); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
+        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy);
+        setTimeoutConflict(result.businessReason === "M3_TIMEOUT_POLICY_STALE");
+        setTimeoutError(result.businessReason ? displayAdminError(new Error(result.businessReason)) : "上次修改没有成功，你填写的内容还在；请看最新设置后再确认。");
+        await refreshTimeoutLatest();
       } else if (result.status === "FAILED") {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
       } else setTimeoutError("结果仍未知，请稍后再查；原记录和输入已保留。");
