@@ -1,6 +1,8 @@
 import { parseI6Overview } from "./i6-learning-contract";
 import { parseI4SectionVersion } from "./i4-trust-contract";
 
+export const I2_RETIRED_TEMPLATE_CTAS = new Set(["/devices", "/support", "/me/weekly"]);
+
 type IModuleId = "I1" | "I2" | "I3" | "I4" | "I5" | "I6";
 
 const ARRAY_KEYS: Record<IModuleId, readonly string[]> = {
@@ -109,7 +111,15 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
       || typeof channel.ctr !== "number" || !Number.isFinite(channel.ctr) || typeof channel.enabled !== "boolean") fail(moduleId);
   }
   for (const event of records(moduleId, value.eventDriven)) if (!["name", "reason", "owner", "tone", "status"].every((key) => typeof event[key] === "string")) fail(moduleId);
-  for (const template of records(moduleId, value.templates)) if (!["channel", "name", "cta", "version", "status", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((key) => typeof template[key] === "string")) fail(moduleId);
+  for (const template of records(moduleId, value.templates)) {
+    if (!["channel", "name", "cta", "version", "status", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((key) => typeof template[key] === "string")) fail(moduleId);
+    if (template.translations !== undefined) {
+      for (const translation of Object.values(record(moduleId, template.translations))) {
+        const text = record(moduleId, translation);
+        if (typeof text.title !== "string" || typeof text.body !== "string") fail(moduleId);
+      }
+    }
+  }
   for (const item of records(moduleId, value.socialDistribution)) if (!["key", "name", "color"].every((key) => typeof item[key] === "string")
     || typeof item.pct !== "number" || !Number.isInteger(item.pct) || item.pct < 0 || item.pct > 100) fail(moduleId);
   for (const event of records(moduleId, value.socialEvents)) validateNovaEvent(event);
@@ -271,7 +281,12 @@ export function parseIOverview(moduleId: string, input: unknown): unknown {
   for (const key of ARRAY_KEYS[scopedModule]) array(scopedModule, value[key]);
 
   if (scopedModule === "I1") validateI1(scopedModule, value);
-  if (scopedModule === "I2") validateI2(scopedModule, value);
+  if (scopedModule === "I2") {
+    validateI2(scopedModule, value);
+    // Filter only the writable catalog. Historical template values stay readable.
+    return { ...value, templateCtaOptions: (value.templateCtaOptions as { value: string; label: string }[])
+      .filter(option => !I2_RETIRED_TEMPLATE_CTAS.has(option.value.trim())) };
+  }
   if (scopedModule === "I3") validateI3(scopedModule, value);
   if (scopedModule === "I4" || scopedModule === "I5") validateTrustDisclosure(scopedModule, value);
   return input;

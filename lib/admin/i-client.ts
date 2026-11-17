@@ -1,7 +1,7 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
+import { I2_RETIRED_TEMPLATE_CTAS, parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -428,6 +428,25 @@ export async function fetchI1CopyOverview(): Promise<CopyAbOverview> {
   return parseIOverview("I1", await apiRequest("/copy-ab/overview")) as CopyAbOverview;
 }
 
+function validateI2TemplatePlaceholders(body: Record<string, unknown>, translations?: NovaTemplateView["translations"]) {
+  const texts = ["titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].map(key => body[key]);
+  texts.push(...Object.values(translations ?? {}).flatMap(value => [value.title, value.body]));
+  if (texts.some(text => typeof text === "string" && text.includes("{sourceNote}"))) {
+    throw Object.assign(new Error(formatAdminApiError("NOVA_TEMPLATE_PLACEHOLDER_UNSUPPORTED", "CONTENT_API_422")),
+      { status: 422, reasonCode: "NOVA_TEMPLATE_PLACEHOLDER_UNSUPPORTED" });
+  }
+}
+
+function i2TemplateWriteBody(body: Record<string, unknown>, reason: string, snapshot?: NovaTemplateView): string {
+  if (I2_RETIRED_TEMPLATE_CTAS.has(String(body.cta ?? "").trim())) {
+    throw Object.assign(new Error(formatAdminApiError("NOVA_TEMPLATE_CTA_UNSUPPORTED", "CONTENT_API_422")),
+      { status: 422, reasonCode: "NOVA_TEMPLATE_CTA_UNSUPPORTED" });
+  }
+  // PC sends the six base-language fields and omits translations; the backend preserves them.
+  validateI2TemplatePlaceholders(body, snapshot?.translations);
+  return JSON.stringify(withReason(body, reason));
+}
+
 export async function fetchI2NovaOverview(): Promise<NovaOverview> {
   return parseIOverview("I2", await apiRequest("/nova/overview")) as NovaOverview;
 }
@@ -608,6 +627,17 @@ export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvi
 }
 
 async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {
+  // 82fd6cb2 validates the stored delivery at execution; never apply this to original retries.
+  if (snapshot && /\/(schedule|send-now)$/.test(path)) {
+    const kind = snapshot.kind.trim().toLowerCase() || "system";
+    const href = snapshot.ctaHref.trim(), label = snapshot.ctaLabel.trim();
+    if (!["system", "commission", "team", "staking", "market", "genesis"].includes(kind)
+      || label.length > 64 || !["", "/pages/me/wallet-repurchase", "/pages/team/team", "/pages/market/market", "/pages/genesis/marketplace"].includes(href)
+      || href !== "" && label === "") {
+      throw Object.assign(new Error(formatAdminApiError("NOTIFICATION_DELIVERY_CONFIG_INVALID", "CONTENT_API_422")),
+        { status: 422, reasonCode: "NOTIFICATION_DELIVERY_CONFIG_INVALID" });
+    }
+  }
   const owner = useAdminAuth.getState().session?.adminId;
   if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
   const fingerprint = `${init.method}:${path}:${init.body}`;
@@ -1168,6 +1198,7 @@ export type NovaTemplateView = {
   titleEn: string;
   bodyEn: string;
   status: string;
+  translations?: Record<string, { title: string; body: string }>;
 };
 
 export type LearningCourseVersionView = {
@@ -1625,9 +1656,9 @@ export type IContentActions = {
   updateI2NovaChannelStatus: (key: string, enabled: boolean, reason: string) => Promise<void>;
   deleteI2NovaChannel: (key: string, reason: string) => Promise<void>;
   createI2Template: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI2Template: (channel: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI2Template: (channel: string, body: Record<string, unknown>, reason: string, snapshot?: NovaTemplateView) => Promise<void>;
   deleteI2Template: (channel: string, reason: string) => Promise<void>;
-  updateI2TemplateStatus: (channel: string, status: string, reason: string) => Promise<void>;
+  updateI2TemplateStatus: (channel: string, status: string, reason: string, snapshot?: NovaTemplateView) => Promise<void>;
   updateI2Distribution: (items: { key: string; pct: number }[], expectedItems: { key: string; pct: number }[], reason: string) => Promise<void>;
   syncI2SocialEvents: (reason: string) => Promise<NovaSocialSyncResult>;
   listI2SocialEvents: (eventType: string, status: string, page: number, pageSize: number) => Promise<NovaSocialEventPage>;
@@ -1751,10 +1782,13 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2NovaChannel: (key, body, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI2NovaChannelStatus: (key, enabled, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ enabled }, reason)) }).then(() => undefined),
   deleteI2NovaChannel: (key, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI2Template: (channel, body, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: i2TemplateWriteBody(body, reason) }).then(() => undefined),
+  updateI2Template: (channel, body, reason, snapshot) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: i2TemplateWriteBody(body, reason, snapshot) }).then(() => undefined),
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
+  updateI2TemplateStatus: (channel, status, reason, snapshot) => {
+    if (status === "PUBLISHED" && snapshot) validateI2TemplatePlaceholders({ ...snapshot }, snapshot.translations);
+    return apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined);
+  },
   updateI2Distribution: (items, expectedItems, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items, expectedItems }, reason)) }).then(() => undefined),
   syncI2SocialEvents: (reason) => apiRequest<NovaSocialSyncResult>("/nova/social-events/sync", { method: "POST", body: JSON.stringify(withReason({}, reason)) }),
   listI2SocialEvents: (eventType, status, page, pageSize) => {

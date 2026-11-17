@@ -114,7 +114,8 @@ export function useE3Proposals() {
     } catch (error) {
       const response = error as { httpStatus?: number; apiCode?: number; backendMessage?: string };
       if (retry && response.backendMessage === "E3_CONFIG_KEY_RETIRED" && canQuery) {
-        // A retired-key refusal cannot settle the original. Read its ticket instead.
+        // 763729e6 changes direct single-key replay, not this A2 proposal path.
+        // Keep old-backend/retired-command recovery tied to the original ticket.
         try { if (await lookup(record)) return; }
         catch (queryError) { setQueryErrors([displayAdminReadError(queryError)]); }
       }
