@@ -1,6 +1,6 @@
 import type { StateTone } from "@/app/components/rd";
 import type { DirectCommandReceiptState } from "@/lib/admin/direct-command-receipt";
-import { eCommandCanConcludeRejected, eCommandCanRequestRbacRollback, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { eCommandCanConcludeRejected, eCommandClosureRequests, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { SETTLED_REJECTED, receiptExplain, rejectedStatus } from "../recovery-panel";
 
 /**
@@ -11,13 +11,7 @@ export type RbacOutcome = { state: DirectCommandReceiptState | "ERROR"; receipt?
 
 /** Available requests, not a guarantee of closure: only the server can verify the rollback marker. */
 export function rbacClosureConclusions(outcome: RbacOutcome | undefined, expired: boolean): ECommandEvidence["conclusion"][] {
-  const receipt = outcome?.receipt;
-  if (!receipt || !expired && receipt.originalStatus !== "UNKNOWN") return [];
-  if (receipt.originalStatus === "UNKNOWN") return eCommandCanRequestRbacRollback(receipt) ? ["NOT_EXECUTED", "STILL_UNKNOWN"] : ["STILL_UNKNOWN"];
-  if (eCommandCanRequestRbacRollback(receipt)) return ["NOT_EXECUTED"];
-  if (eCommandCanConcludeRejected(receipt)) return ["REJECTED"];
-  if (receipt.originalStatus === "SUCCEEDED" && receipt.businessCode === 0) return ["SUCCEEDED"];
-  return [];
+  return eCommandClosureRequests(outcome?.receipt, expired).conclusions;
 }
 
 /** 这一行的标签和一句话。句子沿用共用恢复面板定稿的说法（rejectedStatus、A4 同类行）。 */

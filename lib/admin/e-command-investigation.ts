@@ -41,16 +41,63 @@ export type ECommandEvidence = {
 
 export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCESSING" | "FAILED" | "BATCH_RESULT" | "BUSINESS_RESULT_UNAVAILABLE" | "UNRESOLVED";
 
-/** Resume is local reconciliation. The server alone verifies rollback_confirmed; this only permits asking for that proof. */
-export function eCommandCanRequestResumeRollback(receipt: ECommandInvestigation | null | undefined) {
-  return !!receipt?.scope.startsWith("J4_PLAYBOOK_RESUME:") && (receipt.originalStatus === "UNKNOWN"
-    || receipt.originalStatus === "FAILED" && receipt.businessCode === null);
+export type ECommandClosureOffer = { conclusions: ECommandEvidence["conclusion"][]; success?: "receipt" | "audit" };
+
+/**
+ * Conclusions that may be REQUESTED, not promises of acceptance (origin/test db970a77).
+ * Mirrors AdminCommandOrigin.localConfiguration and InvestigationService.allowedFact/investigate.
+ * Rollback markers, the original response and audit bindings remain server-owned evidence.
+ * A missing/failed lookup supplies no identity to investigate; known results keep the existing 24h gate.
+ */
+export function eCommandClosureRequests(receipt: ECommandInvestigation | null | undefined, expired: boolean): ECommandClosureOffer {
+  if (!receipt || receipt.originalStatus === "PROCESSING" || receipt.originalStatus.startsWith("CONFIRMED_")
+    || !expired && receipt.originalStatus !== "UNKNOWN") return { conclusions: [] };
+  const scope = receipt.scope;
+  const rbac = /^(?:A6_ROLE_(?:CREATE:[A-Za-z0-9_-]{1,64}|UPDATE:[1-9]\d{0,18})|A7_MENU_(?:CREATE:[A-Za-z0-9_-]{1,64}|(?:UPDATE|DELETE):[1-9]\d{0,18}))$/.test(scope);
+  const j2 = /^(?:J2_COUNTRY|J2_ENDPOINT)/.test(scope) || scope === "J2_EDGE_SOURCE" || scope === "J2_EMERGENCY_BLOCK";
+  const h9 = scope === "GROWTH:H9:PUBLIC_STATS_UPDATE:PUBLIC_STATS"
+    || /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(scope);
+  const a3Param = scope.length <= 96 && /^A3_PLATFORM_PARAM:[A-Za-z0-9_.-]{1,80}$/.test(scope);
+  const local = rbac || j2 || h9 || a3Param || scope === "J3_ALERT_CONFIG"
+    || ["I5_JURISDICTION_CREATE", "I5_JURISDICTION_UPDATE", "I5_DISCLOSURE_DRAFT_SAVE", "I5_DISCLOSURE_DRAFT_DELETE",
+      "I5_DISCLOSURE_MATRIX_CONFIGURE", "I5_DISCLOSURE_MATRIX_ARCHIVE", "I5_DISCLOSURE_GATE_UPDATE",
+      "D5_WITHDRAWAL_LIMITS_UPDATE", "D5_WITHDRAWAL_LIMITS", "D6_FX_QUOTE_UPDATE", "D6_FX_QUOTE",
+      "FINANCE:D7:CONFIG_UPDATE", "D7_PAYOUT_VND_CONFIG", "J4_PLAYBOOK_CREATE",
+      "F1_VRANK_THRESHOLD_UPDATE", "F1_VRANK_REWARD_ADD", "F1_VRANK_REWARD_UPDATE", "F1_VRANK_REWARD_REMOVE",
+      "F4_AMBASSADOR_POLICY_UPDATE", "F5_COMMISSION_ANOMALY_CONFIG", "M4_SUPPORT_FAQ_CREATE"].includes(scope)
+    || /^(?:E2_POOL_|E5_DEVICE_|E6_PHONE_|J4_PLAYBOOK_(?:UPDATE|DRILL|CANCEL|RESUME):|I4_TRUST_SECTION_DRAFT_|M4_SUPPORT_FAQ_UPDATE:)/.test(scope)
+    || /^I7_COURSE_(?:CREATE|DRAFT_UPDATE|DELETE|VERSION_CREATE|VERSION_UPDATE|VERSION_DELETE)/.test(scope);
+  // RBAC, permission registration and resume have no accepted success-audit branch.
+  const audit = !rbac && !scope.startsWith("J4_PLAYBOOK_RESUME:") && (scope === "A2_COMMAND" || scope === "L_BI_REPORT_CREATE"
+    || scope.startsWith("L_BI_REPORT_ACTION_") || /^(?:E2_POOL_|E5_DEVICE_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|I7_COURSE_|M4_SUPPORT_FAQ_|I4_TRUST_SECTION_)/.test(scope)
+    || scope === "E6_PHONE_RISK_SETTINGS" || scope === "J3_ALERT_CONFIG" || j2 || h9 || a3Param
+    || /^GROWTH:H[14]:/.test(scope) || /^A4_(?:PARAM:|EVENT_LIFECYCLE:|H3_OUTBOX_REDRIVE:|EVENT_RETENTION_RUN$)/.test(scope)
+    || scope === "I4_TRUST_DOCUMENT" || /^(?:D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(scope)
+    || /^(?:F1_VRANK_|F4_MATERIAL_REVIEW:)/.test(scope)
+    || ["F4_AMBASSADOR_POLICY_UPDATE", "F_TEAM_CONFIG_UPDATE", "F5_COMMISSION_REVERSE", "F5_COMMISSION_REISSUE", "F5_COMMISSION_SUSPENSION", "F5_COMMISSION_ANOMALY_CONFIG",
+      "A3_PLATFORM_EXPERIENCE", "USER_NICKNAME_RESET", "E3_TRADEIN_RECYCLE", "E3_TRADEIN_REPLACE"].includes(scope)
+    || scope.startsWith("A3_FEATURE_FLAG:") || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(scope)
+    || /^(?:D2|D3|E4|H2|K1|J1|I5|C2)(?:[_:])/.test(scope) || scope.startsWith("GROWTH:H2:"));
+  const conclusions: ECommandEvidence["conclusion"][] = [];
+  const byReceipt = receipt.originalStatus === "SUCCEEDED" && (receipt.businessCode == null || receipt.businessCode === 0);
+  if (eCommandCanConcludeRejected(receipt)) conclusions.push("REJECTED");
+  if (byReceipt || audit) conclusions.push("SUCCEEDED");
+  // These I5 codes are candidates only: provenNotExecuted must also match the exact stored message.
+  const localNonexecutionReply = scope === "I5_JURISDICTION_CREATE" && receipt.businessCode === 409
+    || scope === "I5_JURISDICTION_UPDATE" && (receipt.businessCode === 404 || receipt.businessCode === 409);
+  if (local && (receipt.businessCode == null && receipt.originalStatus !== "SUCCEEDED" || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
+  if (receipt.originalStatus === "UNKNOWN") conclusions.push("STILL_UNKNOWN");
+  return { conclusions, ...(conclusions.includes("SUCCEEDED") ? { success: byReceipt ? "receipt" as const : "audit" as const } : {}) };
 }
 
-/** A6/A7 local transactions may ask for rollback proof; the receipt does not expose rollback_confirmed. */
+/** Compatibility helpers: these only permit requesting server-owned rollback proof. */
+export function eCommandCanRequestResumeRollback(receipt: ECommandInvestigation | null | undefined) {
+  return !!receipt?.scope.startsWith("J4_PLAYBOOK_RESUME:") && eCommandClosureRequests(receipt, true).conclusions.includes("NOT_EXECUTED");
+}
+
 export function eCommandCanRequestRbacRollback(receipt: ECommandInvestigation | null | undefined) {
-  return !!receipt && /^(?:A6_ROLE_(?:CREATE:[A-Z0-9_-]{1,64}|UPDATE:[1-9]\d{0,18})|A7_MENU_(?:CREATE:[A-Z0-9_-]{1,64}|(?:UPDATE|DELETE):[1-9]\d{0,18}))$/.test(receipt.scope)
-    && receipt.businessCode === null && (receipt.originalStatus === "UNKNOWN" || receipt.originalStatus === "FAILED");
+  return !!receipt && /^(?:A6_ROLE_|A7_MENU_)/.test(receipt.scope)
+    && eCommandClosureRequests(receipt, true).conclusions.includes("NOT_EXECUTED");
 }
 
 /** Governed conclusions take precedence; unconfirmed replies use business results and one verified legacy list. */
