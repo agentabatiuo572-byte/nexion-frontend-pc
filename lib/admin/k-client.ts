@@ -64,7 +64,7 @@ export class K1OutcomeUncertainError extends Error {
   }
 }
 
-/** 后端明确拒绝。status 是 409 时表示对象被别人改过（OP-97）。 */
+/** 后端明确拒绝。409 的具体原因由 reasonCode 区分（审批、对象锁或版本冲突）。 */
 export class K1RequestError extends Error {
   constructor(message: string, readonly status: number, readonly reasonCode?: string) {
     super(message);
@@ -76,6 +76,8 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const isWrite = !!init?.method && init.method !== "GET";
+  const isK1ApprovalWrite = isWrite && (path.startsWith("/multi-account/params/") || path.startsWith("/multi-account/release-params/")
+    || /^\/multi-account\/releases\/[^/]+\/manual$/.test(path));
   const commandKey = init?.commandKey ?? newK1CommandKey();
   if (isWrite && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", commandKey);
   let res: Response;
@@ -93,6 +95,8 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     payload = JSON.parse(path === "/arbitrage/overview"
       ? text.replace(/("amountRaw"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
       : text) as ApiResult<T>;
+    if (isK1ApprovalWrite && (!payload || typeof payload !== "object" || Array.isArray(payload)
+      || payload.code !== undefined && !Number.isInteger(payload.code))) throw new Error("K1_WRITE_RESULT_INVALID");
   } catch (error) {
     if (isWrite) {
       throw new K1OutcomeUncertainError(
@@ -106,7 +110,7 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     throw new K1OutcomeUncertainError(formatAdminApiError(payload.message, "RISK_REQUEST_OUTCOME_UNKNOWN"), commandKey);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const status = (path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
+    const status = (isK1ApprovalWrite || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
     const failure = new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
     // General 5xx remain unknown; the shared verdict recognises only K3's exact
     // write-before-mutation 503. Upstream unknown signals have already taken precedence.
@@ -116,14 +120,15 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     }
     throw failure;
   }
+  if (isK1ApprovalWrite && payload.code !== 0) throw new K1OutcomeUncertainError("K1_WRITE_RESULT_INVALID", commandKey);
   if (isWrite && (path.startsWith("/withdraw-rules") || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && payload.code !== 0) {
     throw new K1OutcomeUncertainError(path.startsWith("/scoring/") ? "K4_WRITE_RESULT_INVALID" : path.startsWith("/arbitrage/") ? "K2_WRITE_RESULT_INVALID" : "K3_WRITE_RESULT_INVALID", commandKey);
   }
   return payload.data as T;
 }
 
-function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, operator: currentAdminOperator(), reason };
+function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = currentAdminOperator()) {
+  return { ...body, operator, reason };
 }
 
 function rec(value: unknown): Record<string, unknown> {
@@ -557,10 +562,10 @@ export type KRiskData = {
 
 export type KRiskActions = {
   reloadKRisk: (query?: KRiskOverviewQuery) => Promise<MultiAccountOverview | void>;
-  updateK1Param: (key: string, value: string, reason: string, commandKey?: string) => Promise<void>;
-  updateK1ReleaseParam: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
+  updateK1Param: (key: string, value: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
+  updateK1ReleaseParam: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   fetchK1ProtectedEntries: () => Promise<K1ProtectedEntry[]>;
-  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string) => Promise<void>;
+  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   updateK1ClusterStatus: (clusterId: string, status: ClusterStatus, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string) => Promise<void>;
@@ -1862,8 +1867,8 @@ const k2ActionMap: Record<string, string> = {
 };
 
 export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
-  updateK1Param: (key, value, reason, commandKey) => apiRequest(`/multi-account/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
-  updateK1ReleaseParam: (key, value, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) }).then(() => undefined),
+  updateK1Param: (key, value, reason, commandKey, operator) => apiRequest(`/multi-account/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason, operator)) }).then(() => undefined),
+  updateK1ReleaseParam: (key, value, expectedVersion, reason, commandKey, operator) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason, operator)) }).then(() => undefined),
   fetchK1ProtectedEntries: async () => {
     const data = requiredK1Record(await apiRequest("/multi-account/releases?limit=200"), "multiAccount.releases");
     if (data.serverCanonical !== true) invalidK1Response("multiAccount.releases.serverCanonical");
@@ -1888,8 +1893,8 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
       } as K1ProtectedEntry;
     });
   },
-  manualReleaseK1Entry: (entryNo, reason, commandKey) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
-    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason)),
+  manualReleaseK1Entry: (entryNo, reason, commandKey, operator) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
+    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason, operator)),
   }).then(() => undefined),
   updateK1ClusterStatus: (clusterId, status, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ status, expectedVersion }, reason)) }).then(() => undefined),
   updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
