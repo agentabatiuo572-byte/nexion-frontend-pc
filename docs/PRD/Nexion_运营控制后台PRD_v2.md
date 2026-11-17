@@ -438,6 +438,8 @@ R1：每次发出前保存完整原提案 body（含 operator、原理由、comm
 
 #### [E3b] 升级置换规则与统计
 
+2026-11-17 hd-sync46 / 05304806：E3-BE-02单台限制分支已交付；新每单最多抵扣台数仅数值1，现成输入min=max=1、直写/单项和批量审批前精确校验。历史3等原值保留，不因修改其它字段拒绝；历史值呈现交视觉。详见《后台九项后端同步-20261117》。
+
 2026-11-16 后端 9137b6cb / 3f59be7e：置换回收的旧设备仍是 RECYCLED，E3 在用设备月龄统计排除它，页面没有单设备恢复/强制激活入口。既有 POST /devices/{id}/restore 仅按原始 RECYCLED 且内部 simState 非 UNBOUND 的条件恢复到 OFFLINE；已解绑（含回收后仍 UNBOUND 的归属）、DEACTIVATED、INACTIVE、RETIRED 和 pending 状态拒绝 409 INVALID_STATE_TRANSITION。接口仍要求 device_e5_write、理由和命令号，没有新增命令级去重，不为它增加页面入口。
 
 本节单项/组合提案同E3a的2026-11-15首次拒绝及已建单禁止无单解除规则，现有配置和审批查询入口保持。
