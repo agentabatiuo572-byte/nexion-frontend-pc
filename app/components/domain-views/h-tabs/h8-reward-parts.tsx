@@ -71,7 +71,7 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
         <div className="h8-flow-body">
           <span className="h8-flow-title">风控筛选
             <Explain label="风控筛选拦什么" content={<>
-              <p><KeepText text="两种发放方式都拦：账户被标记的，账户组被标记或冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={["在「异常套利与刷量排查」被拦截新人礼的"]} /></p>
+              <p><KeepText text="两种发放方式都拦：账户被标记的，账户组被标记或冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={["账户组被标记或冻结的，", "在「异常套利与刷量排查」被拦截新人礼的。"]} /></p>
               <p>现在是「{mode}」。{mode === "先过风险检查再发" ? "命中待复核风险的也先不发。" : "只跳过待复核这一层，上面这些照样拦。"}</p>
             </>} />
           </span>
