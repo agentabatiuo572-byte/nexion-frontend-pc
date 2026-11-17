@@ -200,7 +200,7 @@ const PARAM: Record<string, {
     name: "超额度处置策略", short: "改成排队",
     loosen: "从拒绝改成排队",
     tighten: "从排队改成拒绝",
-    what: "一笔兑换超过个人或平台日额度时，排进队列还是直接拒绝",
+    what: "超过个人或平台日额度的兑换，排队还是直接拒绝",
     queue: "已经在排队的单不受影响，不会被转成拒绝或取消",
     future: "之后超额的兑换按新策略处理；改成排队后，用户发起时选了「超额时排队」才会排",
   },
@@ -802,10 +802,11 @@ function G2ExchangePage() {
       confirmTone: "danger",
       confirmLabel: "确认暂停",
       facts: <Facts>
-        <Fact k="暂停的是">全平台 UVT 和 USDT 互换：用户新发起的兑换和「处理排队」都会被拒绝</Fact>
-        <Fact k="排队中的兑换">{fmtCount(original?.context?.queueDepth ?? overview!.stats.queueDepth)} 单留在队列，不取消、不退款；暂停期间仍可单笔取消</Fact>
+        <Fact k="暂停的是">全平台 UVT 和 USDT 互换</Fact>
+        <Fact k="暂停后">新兑换和「处理排队」都会被拒绝</Fact>
+        <Fact k="排队中的兑换">{fmtCount(original?.context?.queueDepth ?? overview!.stats.queueDepth)} 单留着，不退款；暂停期间仍可单笔取消</Fact>
         <Fact k="已完成的兑换">不受影响，不回退</Fact>
-        <Fact k="怎么恢复">只能在「紧急停用开关」页面恢复，这页没有恢复入口</Fact>
+        <Fact k="怎么恢复">到「紧急停用开关」恢复，这页没有入口</Fact>
       </Facts>,
       statedBrief: { impact: "之后用户新发起的兑换会被拒绝，直到在「紧急停用开关」恢复。", check: "选暂停原因，理由写清事件和工单号；涉及国家只记进这次的操作记录，不会封锁这些地区。" },
       amplifies: false,
@@ -984,7 +985,7 @@ function G2ExchangePage() {
         </>}>这页读不到兑换开关</Conclusion>
     : switchUnread
     ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={<>新发起的兑换和处理排队都会被拒绝；要恢复，到 {killSwitchLink} 打开。{disclosureHint}</>}
+        hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开。{disclosureHint}</>}
         explain={<>
           <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况后端一律按关处理。</p>
           <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
