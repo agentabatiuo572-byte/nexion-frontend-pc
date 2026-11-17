@@ -40,7 +40,7 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
     : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "记为失败", text: expired
     ? "这次操作记为失败；有这次的成功记录才能结案。"
-    : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
+    : "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
     ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。"

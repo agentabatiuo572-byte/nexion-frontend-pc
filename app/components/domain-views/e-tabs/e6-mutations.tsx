@@ -234,7 +234,7 @@ function TicketVerdict({ record }: { record: E6Pending }) {
 const RISK_STATUS: Partial<Record<PhoneRiskReceipt["status"], { tone: "progress" | "warn" | "neutral"; title: string; text: string }>> = {
   PROCESSING: { tone: "progress", title: "原保存仍在处理", text: "还在保存，稍后再查；不要重复保存。" },
   UNKNOWN: { tone: "warn", title: "结果仍未知", text: "原保存中途中断，再按原请求重试也是同样结果，需要按证据核查结案。" },
-  FAILED: { tone: "neutral", title: "原保存以失败结束", text: "原保存没有成功。24 小时内可以按原请求重试，会按原内容再执行一次。" },
+  FAILED: { tone: "neutral", title: "原保存以失败结束", text: "系统记录这次失败了；24 小时内按原请求重试不会做两遍，已做成的直接拿回结果。" },
 };
 const GENERIC_NOTES = ["原请求已保留，结果仍待核实。", "按原请求重试被明确拒绝，核对后可以解除这条记录。", "已提交，等待审批后执行。"];
 export function E6PendingNotice({ section, onRead, toast }: { section: E6Section; onRead?: (result?: E6WriteReceipt) => void; toast: (message: string, kind?: ToastKind) => void }) {
