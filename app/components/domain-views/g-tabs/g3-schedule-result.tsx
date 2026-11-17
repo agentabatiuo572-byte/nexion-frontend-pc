@@ -19,13 +19,13 @@ const OUTCOME: Record<G3ScheduleAttempt["outcome"], { label: string; tone: State
   FAILED: { label: "失败", tone: "danger" },
 };
 
-/** 没变化、跳过、失败的原因：页面上已有的叫法，一句话。没有对应的写「原因没记下」，原码在技术信息。 */
+/** 没变化、跳过、失败的原因：和 lib/admin/error-messages.ts 同一套叫法（句首相同），一句话。没有对应的写「原因没记下」，原码在技术信息。 */
 const REASON: Record<string, string> = {
   G3_ENGINE_PAUSED: "价格自动变化已暂停",
-  G3_FRAME_PINNED: "固定了生效日",
+  G3_FRAME_PINNED: "已固定生效日",
   G3_FRAME_VALUES_UNCHANGED: "推进后生效日和价格都和之前一样",
   G3_WEEKLY_CURVE_NOT_CONFIGURED: "七天价格计划还没配置",
-  RUN_DATE_ALREADY_CLAIMED: "这一天已经推进过，不再重复",
+  RUN_DATE_ALREADY_CLAIMED: "这一天的排程已经执行过，不再重复",
   PRICE_COMPARISON_UNAVAILABLE: "前后价格有一个读不到，看不出变没变",
   G3_WEEKLY_CURVE_INVALID: "七天价格计划不完整或格式不对",
   B1_COVERAGE_UNRELIABLE: "兑付覆盖率读不准",
@@ -34,7 +34,7 @@ const REASON: Record<string, string> = {
   AUDIT_REQUIRED_INVALID: "操作记录内容不完整",
   PERSISTENCE_FAILURE: "保存数据时出错",
   TRANSACTION_FAILURE: "保存数据时出错",
-  G3_SCHEDULE_EXECUTION_FAILED: "系统出错",
+  G3_SCHEDULE_EXECUTION_FAILED: "系统内部出错",
 };
 
 const reasonText = (code: string | null) => code ? REASON[code] ?? "原因没记下" : "原因没记下";

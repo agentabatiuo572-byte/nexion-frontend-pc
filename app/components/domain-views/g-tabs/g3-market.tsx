@@ -70,6 +70,8 @@ type G3ConfirmReq = {
 export type G3ObjectState = { kind: "unknown" | "approval" | "locked"; detail: ReactNode; verification: "current" | "last-observation"; observedAt: number };
 const TUNING_RULE = "开发环境以外，后端拒绝人工改上涨概率和直接改现价：直接保存、提交审批和批准都会被拒。";
 const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pumpProbability: "上涨概率", volatilityPct: "波动幅度" };
+/** 已停用的三个单独设置（后端 cb7fe037）。七天计划里每天的波动幅度不在内。 */
+const RETIRED_OVERRIDE_NAME = { volatilityPct: "当前波动幅度", oracle: "价格来源", deviationPct: "偏离告警阈值" } as const;
 const CONTROL_ORDER = ["pin", "schedule", "loop"];
 /** 按原请求重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
 const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
@@ -266,23 +268,26 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       success: `${name}已立即生效`,
     };
   }
-  if (change.key === "oracle") {
-    const oracle = current;
+  // 价格来源、当前波动幅度、偏离告警阈值已停用（后端 cb7fe037）：新修改在发请求前被拒，这里只剩原操作的查询和按原请求重试。
+  if (change.key === "oracle" || change.key === "volatilityPct" || change.key === "deviationPct") {
+    const retiredName = RETIRED_OVERRIDE_NAME[change.key];
     return { briefKind: "config",
-    action: "切换价格来源",
-    title: "切换价格来源",
-    detail: <>在内部定价和外部价格来源之间切换。只有超级管理员可以操作。</>,
-    effect: <StatusTag tone="neutral" icon={Info} explain="已提给后端接上或退役。">目前不生效</StatusTag>,
-    facts: <Facts>
-      <Fact k="现在用不用">后端只保存这个选项，没有接外部价格：选「外部价格来源」后价格仍按七天计划发布</Fact>
-      <Fact k="提交时检查">只有超级管理员能改；打开后来源没有被别人改过</Fact>
-    </Facts>,
-    statedBrief: { impact: "只改保存的来源选项，价格和用户兑换不变。", check: "核对选项，理由写清依据或工单号。" },
-    confirmLabel: "确认切换",
-    edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"], optionLabels: { "内部做市": "内部定价", "外部喂价": "外部价格来源" }, disallowCurrent: true },
-    change,
-    success: "价格来源已立即切换",
-  };
+      action: `原操作 · ${retiredName}`,
+      title: `${retiredName}的原操作`,
+      detail: <>这项已停用，不能再改。这里只查原操作的结果。</>,
+      effect: <StatusTag tone="neutral" icon={Info}>已停用</StatusTag>,
+      facts: <Facts>
+        <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
+        <Fact k="按原请求重试">原请求已执行过就返回原结果；没执行过会被拒绝，值不变</Fact>
+      </Facts>,
+      statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
+      confirmLabel: "按原请求重试",
+      edit: change.key === "oracle"
+        ? { kind: "select", current, options: ["内部做市", "外部喂价"], optionLabels: { "内部做市": "内部定价", "外部喂价": "外部价格来源" }, disallowCurrent: true }
+        : { kind: "number", current, min: 0, max: change.key === "volatilityPct" ? 20 : 50, step: 0.01, disallowCurrent: true, unit: "%" },
+      change,
+      success: `${retiredName}的原操作已有结果`,
+    };
   }
   if (change.key === "paused") {
     // The saved target determines the original action even if the live read already changed.
@@ -317,34 +322,23 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     success: paused ? "价格已恢复自动变化" : "价格已暂停变化",
   };
   }
-  const overrideKey = change.key;
-  const label = overrideKey === "volatilityPct" ? "当前波动幅度" : overrideKey === "deviationPct" ? "偏离告警阈值" : "初始成本价";
-  const note = overrideKey === "volatilityPct" ? "可设 0–20%" : overrideKey === "deviationPct" ? "可设 0–50%" : "App 现在没有页面显示它，不影响价格和兑换";
+  const label = "初始成本价";
   const amp = false;
-    const unused = {
-      volatilityPct: "后端把它记进当天配置，下次推进时被计划值替换；发布价格直接用目标价，没有按它随机涨跌。",
-      deviationPct: "后端只保存这个值，没有任何地方拿现价和外部价格比较，也不会告警。",
-      costBasis: "App 会收到这个值，但现在没有页面显示盈亏，也不影响价格和兑换。",
-    } as const;
     return { briefKind: "config",
       action: `手动设置 · ${label}`,
       title: `修改${label}`,
-      detail: <><b>{label}</b> · 当前 {current} · {note}。{overrideKey === "deviationPct" || overrideKey === "costBasis" ? "保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。" : "手动设置只是临时的，下次自动切换时会被计划里的值替换。"}</>,
+      detail: <><b>{label}</b> · 当前 {current} · App 现在没有页面显示它，不影响价格和兑换。保存后立即生效，之后的价格计划切换不会覆盖此设置，直到再次修改。</>,
       effect: <StatusTag tone="neutral" icon={Info} explain="已提给后端接上或退役。">目前不生效</StatusTag>,
       facts: <Facts>
-        <Fact k="现在用不用">{overrideKey === "volatilityPct" || overrideKey === "deviationPct" || overrideKey === "costBasis" ? unused[overrideKey] : "—"}</Fact>
-        <Fact k="保存到什么时候">{overrideKey === "volatilityPct" ? "下次推进时被计划里的值替换" : "一直保留，直到再次修改"}</Fact>
+        <Fact k="现在用不用">App 会收到这个值，但现在没有页面显示盈亏，也不影响价格和兑换。</Fact>
+        <Fact k="保存到什么时候">一直保留，直到再次修改</Fact>
         <Fact k="提交时检查">打开后这一项没有被别人改过，否则拒绝</Fact>
       </Facts>,
       statedBrief: { impact: "只改这一项的保存值，现价和用户兑换不变。", check: "核对新值，理由写清依据或工单号。" },
       amplifies: !!amp,
       coverage: amp ? coverageSnapshot : undefined,
       confirmLabel: "确认修改",
-      edit: overrideKey === "volatilityPct"
-        ? { kind: "number", current, min: 0, max: 20, step: 0.01, disallowCurrent: true, unit: "%", hint: "0–20，最多两位小数" }
-        : overrideKey === "deviationPct"
-          ? { kind: "number", current, min: 0, max: 50, step: 0.01, disallowCurrent: true, unit: "%", hint: "0–50，最多两位小数" }
-          : { kind: "number", current, min: 0.00000001, max: 1000000, step: 0.00000001, disallowCurrent: true, amplifiesWhen: amp ? "increase" : undefined, unit: "USDT", hint: "大于 0，最多八位小数" },
+      edit: { kind: "number", current, min: 0.00000001, max: 1000000, step: 0.00000001, disallowCurrent: true, amplifiesWhen: amp ? "increase" : undefined, unit: "USDT", hint: "大于 0，最多八位小数" },
       change,
       success: `${label}已立即生效`,
     };
@@ -576,7 +570,7 @@ function G3MarketEditor() {
     const name = change.action === "curve-cell" ? `D${change.dayIndex + 1} ${FIELD_NAME[change.field]}`
       : change.action === "current-price" ? "现价（应急改价）" : change.action === "schedule" ? "自动按日推进"
       : change.action === "control" ? change.key === "pin" ? "固定生效日" : "D7 之后"
-      : change.action === "override" ? { paused: "价格自动变化", oracle: "价格来源", volatilityPct: "当前波动幅度", deviationPct: "偏离告警阈值", costBasis: "初始成本价" }[change.key]
+      : change.action === "override" ? { paused: "价格自动变化", oracle: "价格来源（已停用）", volatilityPct: "当前波动幅度（已停用）", deviationPct: "偏离告警阈值（已停用）", costBasis: "初始成本价" }[change.key]
       : "原操作";
     const show = (value: string) => {
       if (value === "") return "未配置";
@@ -792,7 +786,17 @@ function G3MarketEditor() {
       setMarketConfirm({ action: "current-price", current: g3NumberText(overview.currentPrice), expectedRevision: overview.priceRevision ?? "" });
     } else openDirect({ action: "override", key: overrideKey, current });
   };
-  const switchOracle = () => openDirect({ action: "override", key: "oracle", current: oracle });
+  // 已停用的三项：后端还返回旧值时只读显示；不返回、也没有原操作的不留空行。按钮只给原操作的查询和重试。
+  const volatilityOverride = overview.overrides.volatilityPct;
+  const deviationOverride = overview.overrides.deviationPct;
+  const retiredRows = ([
+    { key: "volatilityPct", what: "当天配置里的波动幅度", value: volatilityOverride === null ? null : `±${pctText(volatilityOverride)}`,
+      open: () => adj("volatilityPct", "波动幅度", rawValue(volatilityOverride), "") },
+    { key: "oracle", what: "内部定价或外部价格来源", value: oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : oracle === "—" ? null : "价格来源未知",
+      open: () => openDirect({ action: "override", key: "oracle", current: oracle }) },
+    { key: "deviationPct", what: "现价和外部价格相差多少算偏离", value: deviationOverride === null ? null : pctText(deviationOverride),
+      open: () => adj("deviationPct", "偏离告警阈值", rawValue(deviationOverride), "") },
+  ] as const).filter((row) => row.value !== null || hasRecovery(row.key));
   const pauseEngine = () => openDirect({ action: "override", key: "paused", current: String(paused) }, String(!paused));
 
   // 一句话结论：只说配置，不说排程「运行正常」（G3-BE-04）；缺价不写成 0（G3-BE-01）。
@@ -1045,27 +1049,28 @@ function G3MarketEditor() {
       </Fold>
 
       <Fold title="目前不生效的参数" icon={CircleHelp} tone="role-other"
-        summary="6 项 · 目前不生效，不影响公布价和兑换"
-        explain="这些值能保存，但后端发布价格和兑换时都不读它们。入口先保留，已提给后端接上或退役。">
+        summary={`3 项目前不生效${retiredRows.length ? ` · ${retiredRows.length} 项已停用` : ""}，不影响公布价和兑换`}
+        explain="能保存，但发布价格和兑换都不读它们，已提给后端接上或退役。">
         <div className="g3-subhead">七天上涨概率<span className="g3-subnote">目前不生效</span><Explain label="七天上涨概率" content={<><p>0.35 表示 35%。推进到这一天时写进当天配置；公布价直接用目标价，上涨概率目前不影响公布价。</p><p>提高要另一位超级管理员批准，降低直接保存。</p><p>{TUNING_RULE}</p></>} />
           {MANUAL_TUNING === "forbidden" && <StatusTag tone="neutral" icon={Lock} explain={G3_TUNING_FORBIDDEN}>当前环境不能改</StatusTag>}</div>
         {weekTable("pumpProbability")}
         <div className="g3-subhead">七天波动幅度<span className="g3-subnote">目前不生效</span><Explain label="七天波动幅度" content="七天计划里每一天的波动幅度（2 表示 ±2%），推进到这一天时抄进当天配置。发布价格直接用目标价，不按它随机涨跌。" /></div>
         {weekTable("volatilityPct")}
         <ConfigList label="其他不生效的参数">
-          <ConfigRow name="当前波动幅度" what="当天配置里的波动幅度" effect="下次推进时被计划值替换；发布价格不按它随机涨跌"
-            value={<span className="g3-value">±{pctText(overview.overrides.volatilityPct)}<ObjectTag state={OBJECT_STATES.volatilityPct} /></span>}
-            action={allowed("finprod_g3_write") || hasRecovery("volatilityPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("volatilityPct")} onClick={() => adj("volatilityPct", "波动幅度", rawValue(overview.overrides.volatilityPct), "可设 0–20%")}>调整</Button> : undefined} />
-          <ConfigRow name="价格来源" what="内部定价或外部价格来源" effect="后端没有接外部价格，选哪个价格都按七天计划发布" note="只有超级管理员能切换。"
-            value={<span className="g3-value">{oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : "价格来源未知"}<ObjectTag state={OBJECT_STATES.oracle} /></span>}
-            action={isSuper || hasRecovery("oracle") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("oracle")} onClick={switchOracle}>切换</Button> : undefined} />
-          <ConfigRow name="偏离告警阈值" what="现价和外部价格相差多少算偏离" effect="后端没有拿现价和外部价格比较，也不会告警"
-            value={<span className="g3-value">{overview.overrides.deviationPct == null ? "未配置" : pctText(overview.overrides.deviationPct)}<ObjectTag state={OBJECT_STATES.deviationPct} /></span>}
-            action={allowed("finprod_g3_write") || hasRecovery("deviationPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("deviationPct")} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "可设 0–50%")}>调整</Button> : undefined} />
           <ConfigRow name="初始成本价" what="UVT 的初始成本价" effect="App 会收到这个值，但现在没有页面显示盈亏；不影响价格和兑换"
             value={<span className="g3-value">{overview.overrides.costBasis == null ? "未配置" : `${price(overview.overrides.costBasis)} USDT`}<ObjectTag state={OBJECT_STATES.costBasis} /></span>}
             action={allowed("finprod_g3_write") || hasRecovery("costBasis") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("costBasis")} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "App 现在没有页面显示它，不影响价格和兑换")}>调整</Button> : undefined} />
         </ConfigList>
+        {retiredRows.length > 0 && <>
+          <div className="g3-subhead">已停用的设置<span className="g3-subnote">不能再改</span><Explain label="已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原请求重试。" /></div>
+          <ConfigList label="已停用的设置">
+            {retiredRows.map((row) => (
+              <ConfigRow key={row.key} name={RETIRED_OVERRIDE_NAME[row.key]} what={row.what} effect="已停用，不影响价格和兑换"
+                value={<span className="g3-value">{row.value ?? "—"}<StatusTag tone="neutral">已停用</StatusTag><ObjectTag state={OBJECT_STATES[row.key]} /></span>}
+                action={hasRecovery(row.key) ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason(row.key)} onClick={row.open}>查询或重试</Button> : undefined} />
+            ))}
+          </ConfigList>
+        </>}
       </Fold>
 
       <RelatedLinks reach={reach} />
