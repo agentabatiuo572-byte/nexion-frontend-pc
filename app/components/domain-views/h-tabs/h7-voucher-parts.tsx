@@ -96,7 +96,7 @@ export function VoucherTags({ v, now, showPending = true }: { v: H7Voucher; now:
     <span className="h7-tags">
       {showPending && v.pendingApproval && pendingTag(v.pendingApproval)}
       {phase === "expired"
-        ? <StatusTag tone="done" icon={Hourglass} explain={`有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「${v.status === "active" ? "投放中" : "已暂停"}」。`}>已过期</StatusTag>
+        ? <StatusTag tone="done" icon={Hourglass} explain={v.status === "active" ? "有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「投放中」。" : "有效期已过，用户不能再领，已领到的也不能再用。模板已暂停，不能再投放；要继续发，先编辑有效期。"}>已过期</StatusTag>
         : v.status === "active"
           ? <StatusTag tone="ok" icon={CheckCircle2} explain="用户可以领；还要符合有效期、发给谁、发行上限和领取入口。">投放中</StatusTag>
           : <StatusTag tone="done" icon={PauseCircle} explain="用户不能再领；已领到的不收回，有效期内仍能用。">已暂停</StatusTag>}
