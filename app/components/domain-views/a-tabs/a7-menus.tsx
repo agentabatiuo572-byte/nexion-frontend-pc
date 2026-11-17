@@ -387,7 +387,7 @@ export default function A7Menus() {
               const outcome = outcomes[record.commandKey];
               const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: canWrite, canClose: canClose });
               const conclusions = rbacClosureConclusions(outcome, expired);
-              // The existing fund form cannot submit NOT_EXECUTED; its shared owner must add that option first.
+              // The existing form consumes the exact requestable conclusions, including rollback candidates.
               const closable = canClose && conclusions.length > 0;
               return (
                 <li key={record.commandKey}>
