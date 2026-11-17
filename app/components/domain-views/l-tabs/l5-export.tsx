@@ -54,8 +54,47 @@ import {
 } from "./l5-export-views";
 
 const SCOPE_PERIOD: Record<string, string> = { day: "近 24 小时", week: "近 7 天", month: "近 30 天", custom: "自定义日期" };
+const SCOPE_WINDOW: Record<string, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
+const COHORT_GROUP: Record<string, string> = { registration_week: "按注册周", registration_month: "按注册月" };
+const COHORT_SLICE: Record<string, string> = { cohort: "注册周", phase: "运营阶段", locale: "语言", ref: "渠道" };
+
+type ScopeParts = { main: string; sub?: string; raw?: string };
+
+/** 关键指标按注册批次导出时，后端存「L1 granularity=… asOf=… window=… cohort=… phase=… locale=… ref=」。 */
+function cohortScope(value: string): ScopeParts {
+  const fields = Object.fromEntries(value.slice(3).split(" ").map((part) => [part.slice(0, part.indexOf("=")), part.slice(part.indexOf("=") + 1)]));
+  const dates = /^(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/.exec(fields.window ?? "");
+  const range = dates ? `${dates[1]} 至 ${dates[2]}` : SCOPE_WINDOW[fields.window ?? ""];
+  const asOf = /T.*Z$/.test(fields.asOf ?? "") ? formatBusinessTimeCompact(fields.asOf, "") : "";
+  const group = COHORT_GROUP[fields.granularity ?? ""];
+  if (!range || !asOf || !group) return { main: "范围读不出", raw: value };
+  const slices = Object.keys(COHORT_SLICE).filter((key) => fields[key]).map((key) => `${COHORT_SLICE[key]} ${fields[key]}`);
+  return { main: `${range}${dates ? " " : ""}注册 · ${group}`, sub: [`数据截至 ${asOf}`, ...slices].join(" · ") };
+}
+
+function reportScopeParts(value: string): ScopeParts {
+  if (value.startsWith("L1 granularity=")) return cohortScope(value);
+  // 资金明细的范围是「开始日期/结束日期」。
+  const dates = /^(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/.exec(value);
+  if (dates) return { main: `${dates[1]} 至 ${dates[2]}` };
+  const main = legacyScopeText(value);
+  // 认不出的「键=值」写法不摆给运营看，原文放技术信息。
+  return /[A-Za-z]=/.test(main) ? { main: "范围读不出", raw: value } : { main };
+}
+
+/** 任务表的范围格：读不出的写「范围读不出」，原文收进问号里的技术信息。 */
+function ScopeCell({ scope }: { scope: string }) {
+  const parts = reportScopeParts(scope);
+  if (parts.raw) return <span className="l5-scope-unread">范围读不出<Explain label="技术信息" content={<><p>技术信息：排查时把下面这段发给技术同事。</p><p data-mono="">{parts.raw}</p></>} /></span>;
+  return <Cell main={parts.main} sub={parts.sub} title={reportScopeText(scope)} />;
+}
 
 function reportScopeText(value: string): string {
+  const parts = reportScopeParts(value);
+  return parts.sub ? `${parts.main} · ${parts.sub}` : parts.main;
+}
+
+function legacyScopeText(value: string): string {
   // 运营汇总和团队树明细存的是「period=week;depth=3」这种写法，翻成人话。
   if (/^[a-z]+=[^;]*(?:;[a-z]+=[^;]*)*$/i.test(value)) {
     return value.split(";").map((part) => {
@@ -76,7 +115,7 @@ function reportScopeText(value: string): string {
     if (split < 0) return part.trim();
     const key = part.slice(0,split).trim(), raw = part.slice(split+1).trim();
     if (!raw) return "";
-    const label = key === "window" ? ({"7d":"近 7 天","30d":"近 30 天",custom:"自定义日期"} as Record<string,string>)[raw] ?? raw : raw;
+    const label = key === "window" ? ({...SCOPE_WINDOW,custom:"自定义日期"} as Record<string,string>)[raw] ?? raw : raw;
     return `${labels[key] ?? key}：${label}`;
   }).filter(Boolean);
   // L1–L4 是内部页码，不显示；其他写法的前半段是真实说明，照留。
@@ -104,6 +143,9 @@ function downloadBlob(blob: Blob, fileName: string) {
   link.remove();
   URL.revokeObjectURL(href);
 }
+
+/** 导出记录里后端写的类型名，换成任务表的叫法。 */
+const AUDIT_LABEL: Record<string, string> = { "KPI 聚合": "关键指标汇总", "漏斗聚合": "转化与留存汇总", "财务聚合": "财务汇总", "运营聚合": "运营汇总" };
 
 function exportTypeText(value: string) { return value.replace(/^KPI/, "关键指标").replaceAll("聚合", "汇总"); }
 
@@ -429,8 +471,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const EXPORT_TASKS = taskPage?.records ?? [];
   const MASK_RULES = rows<MaskRule>(data.maskRules);
   const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
-  // 只换显示：「名称 / 范围」里的范围按任务表同一种写法翻成人话。
-  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows.map((row) => ({ ...row, what: row.what.replace(/ \/ ([^/]+)$/, (_, scope: string) => ` / ${reportScopeText(scope)}`) }));
+  // 只换显示：「名称 / 范围」的名称用任务表的叫法，范围按任务表同一种写法翻成人话。
+  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows.map((row) => ({ ...row, what: row.what.replace(/^(.+?) \/ (.+)$/, (_, label: string, scope: string) => `${label === "财务聚合" && row.pii ? "脱敏资金明细" : AUDIT_LABEL[label] ?? label} / ${reportScopeText(scope)}`) }));
   const CROSS_MODULE_BLOCKERS = rows<{ code: string; label: string; status: string; reason: string }>(data.crossModuleBlockers);
   const effSt = (t: LExportTask): string => t.st.toUpperCase();
   const effActs = (t: LExportTask): LExportTask["acts"] => t.acts;
@@ -728,7 +770,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const taskPanel = (
     <div ref={listRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">导出任务</span>} explainLabel="导出任务" icon={ListChecks}
-        sub={taskPage ? `共 ${taskTotal} 份 · 每页 8 份` : undefined}
+        sub={taskPage ? `共 ${taskTotal} 份 · 每页 8 份${otherTasks.some((t) => reportScopeParts(t.scope).sub) ? ` · 时间为${businessZone().label}` : ""}` : undefined}
         explain={<>
           <p>各报表页和这页创建的导出都在这里，按状态排：待放行在最前，其次生成中、可下载、已过期、失败。</p>
           <p>汇总和当前披露快照创建后直接可下载；脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载；团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」导出，只能在这里下载，不能重新发起。</p>
@@ -761,7 +803,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
                 {listState === "ready" && otherTasks.map((t) => (
                   <Tr key={t.id}>
                     <Td><Cell main={taskTitle(t, exportTypeText)} sub={<span data-mono="">{t.id}</span>} title={`${taskTitle(t, exportTypeText)} · ${t.id} · ${taskSource(t)}`} /></Td>
-                    <Td><Cell main={reportScopeText(t.scope)} title={reportScopeText(t.scope)} /></Td>
+                    <Td className="l5-scope"><ScopeCell scope={t.scope} /></Td>
                     <Td grow><Cell main={operatorCopyText(t.fields)} sub={`${t.pii ? "含隐私 · " : ""}${t.mask === "—" ? "不含隐私" : MASK_LABEL[t.mask]}`} title={operatorCopyText(t.fields)} /></Td>
                     <Td align="right"><Cell num main={rowsText(t.rows)} /></Td>
                     <Td><TaskStatusTag task={t} unknown={recoveryIds.has(t.id)} /></Td>
