@@ -37,7 +37,7 @@ const reviewAttempts = createPendingMutationStore<PendingReview>({
 });
 
 function money(value: number | string | null | undefined) {
-  return value == null ? "尚未认可" : `${String(value)} USDT`;
+  return value == null ? "尚未认可" : `${decimalText(value)} USDT`;
 }
 
 function ReviewRecord({ review, title }: { review: F4AmbassadorReview; title: string }) {
