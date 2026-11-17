@@ -1117,13 +1117,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
     return approval?.observedEntry;
   };
+  const entryAmountText = (amount: { amount: string | number; asset: string } | undefined) =>
+    typeof amount?.amount === "string" ? `${exactAmountText(amount.amount)} ${nexGridBrandText(amount.asset)}` : undefined;
+  /** 已建单、审批单上的净额和运营确认时的不一样时，返回确认时的数，两个并排写，不判断能不能批。 */
+  const confirmedDiffers = (record: K1PendingCommand) => {
+    const ticket = record.approval?.acknowledged ? entryAmountText(entryApprovalDisplay(record)) : undefined;
+    const confirmed = entryAmountText(record.approval?.observedEntry);
+    return ticket && confirmed && ticket !== confirmed ? confirmed : undefined;
+  };
   /** 两类资金审批在恢复区和解除框里的名字：写申请了什么，不写内部的参数键。 */
   const approvalTitle = (record: K1PendingCommand) => {
     const approval = record.approval;
     if (!approval) return record.label;
     if (record.kind === "entry") {
-      const observed = entryApprovalDisplay(record);
-      return typeof observed?.amount === "string" ? `人工放行 ${exactAmountText(observed.amount)} ${nexGridBrandText(observed.asset)}` : record.label;
+      const amount = entryAmountText(entryApprovalDisplay(record));
+      return amount ? `人工放行 ${amount}` : record.label;
     }
     return `放宽${record.target === "duplicateAccountFreezeFrom" ? "锁定起点" : "审核起点"}到 ${record.value} 个账户`;
   };
@@ -1300,19 +1308,28 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const releaseProtectedEntry = async (selected: K1ProtectedEntry, approvalRequired = false, initialReason?: string) => {
     const revision = ++releaseConfirmRevision.current;
-    let entry: K1ProtectedEntry;
+    let entries: K1ProtectedEntry[];
     try {
-      const entries = await ctx.actions.fetchK1ProtectedEntries(selected.userId);
-      const latest = entries.find(row => row.entryNo === selected.entryNo && row.userId === selected.userId);
-      if (!latest) throw new Error("这笔不在当前列表里，到操作记录与审批核对。");
-      entry = latest;
+      entries = await ctx.actions.fetchK1ProtectedEntries(selected.userId);
     } catch (cause) {
       if (revision !== releaseConfirmRevision.current) return;
-      if (approvalRequired) throw cause;
-      ctx.toast(displayAdminError(cause), "warn");
+      // 没权限的照原样交给框和提示；其余读不到的，说清这次什么都没提交。
+      if (approvalRequired) throw isPermissionDenied(cause) ? cause : new Error("没读到这笔的最新金额，还没提交审批。理由已保留，稍后再试。");
+      ctx.toast(isPermissionDenied(cause) ? displayAdminError(cause) : "没读到这笔的最新金额，没有打开放行，稍后再试。", "warn");
       return;
     }
+    const latest = entries.find(row => row.entryNo === selected.entryNo && row.userId === selected.userId);
+    // 列表跟着这次读到的改：这笔换成最新的，不在了就去掉，关框后列表和框里是同一个数。
+    setProtectedEntries(current => current.flatMap(row => row.entryNo !== selected.entryNo ? [row] : latest ? [latest] : []));
     if (revision !== releaseConfirmRevision.current) return;
+    if (!latest) {
+      if (approvalRequired) throw new Error("这笔已不在待审核或锁定中，放行不了；列表已更新，可以关掉这个框。");
+      ctx.toast("这笔已不在待审核或锁定中，放行不了；列表已更新。", "warn");
+      return;
+    }
+    const entry = latest;
+    const before = netAmountText(selected), after = netAmountText(entry);
+    const changed = before !== after || selected.asset !== entry.asset ? `${before} ${nexGridBrandText(selected.asset)}` : undefined;
     ctx.openActionConfirm({ briefKind: "funds",
       formKey: revision,
       initialReason,
@@ -1335,6 +1352,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const unit = nexGridBrandText(entry.asset);
         return <Facts>
         <Fact k="净额" lead tone="role-1" unit={unit}>{netAmountText(entry, places)}</Fact>
+        {changed && <Fact k="刚才变过" tone="warn">之前显示 {changed}</Fact>}
         {split ? <>
           <Fact k="原金额" unit={unit}>{exactAmountText(split.gross, places)}</Fact>
           <Fact k="已追回" unit={unit}>{exactAmountText(split.recovered, places)}</Fact>
@@ -1701,7 +1719,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           // 已建单的放行金额用审批单快照，收益列表只用于告知当前读取状态。
           const observed = record.kind === "entry" ? entryApprovalDisplay(record) : undefined;
           const title = approvalTitle(record);
-          const status = !approval ? undefined : approval.pendingTicketId ? { tone: "warn" as const, label: "待审批", line: note || APPROVAL_LINE.pending }
+          // 审批单上的净额和确认时不同：行内一句写确认时的数（标题已是审批单上的），不判断能不能批。
+          const confirmed = record.kind === "entry" ? confirmedDiffers(record) : undefined;
+          const status = !approval ? undefined : approval.pendingTicketId ? { tone: "warn" as const, label: "待审批", line: note || (confirmed ? `你确认时是 ${confirmed}，和审批单上的不同。` : APPROVAL_LINE.pending) }
             : approval.acknowledged ? { tone: "neutral" as const, label: "已建单", line: APPROVAL_LINE.created }
               : absent && !(outcome && "receipt" in outcome && outcome.receipt) ? expired ? { tone: "warn" as const, label: "没有建成", line: APPROVAL_LINE.missing } : { tone: "warn" as const, label: "结果未知", line: APPROVAL_LINE.absent } : undefined;
           const current = record.kind === "release-param" ? overview?.releaseParams.find(param => param.key === record.target) : undefined;
@@ -1718,7 +1738,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </>,
             detail: approval ? <>
               <p>{record.kind === "entry"
-                ? <>收益记录 <span data-mono>{record.target}</span>{typeof observed?.amount === "string" && <>，{approval.acknowledged ? "审批单上的净额" : "提交时页面读到的净额"} {exactAmountText(observed.amount)} {nexGridBrandText(observed.asset)}</>}{observed && <>，来源 {sourceName(observed.sourceType)}</>}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
+                ? <>收益记录 <span data-mono>{record.target}</span>{(() => {
+                  const amount = entryAmountText(observed);
+                  if (amount) return <>，{approval.acknowledged ? "审批单上的净额" : "提交时页面读到的净额"} {amount}{confirmed && <>，你确认时是 {confirmed}</>}</>;
+                  // 升级前的记录查询后就有审批单上的数；审批单的字读不出时，给去看审批单的入口。
+                  if (!(approval.acknowledged && approval.ticketBefore !== undefined)) return <>，金额以审批单为准，查询后显示</>;
+                  return <>，金额以审批单为准，这里读不出{reach("/platform/audit", "platform_a2_read")
+                    && <>（<Link className="rd-link" href={`/platform/audit?domain=K&object=${encodeURIComponent(record.target)}`}>看审批单</Link>）</>}</>;
+                })()}{observed && <>，来源 {sourceName(observed.sourceType)}</>}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
                 : <>申请把「{record.name ?? record.target}」改为 {record.value} 个账户{current ? `，现在是 ${current.value} 个账户` : ""}，批准后才生效。</>}</p>
               <p>提交人 {record.operator}；理由：{record.reason}</p>
               {note && !status?.line.includes(note) && !(expired && note.includes("重试")) && <p><KeepText text={note} /></p>}
@@ -1828,7 +1855,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       : entry.userNo ?? "用户编码未提供"} sub={<span data-mono>{entry.clusterId}</span>} /></Td>
                     <Td><Cell main={sourceName(entry.sourceType)} sub={<span data-mono>{entry.sourceRef}</span>} /></Td>
                     <Td><Cell main={<StatusTag tone={entry.bucket === "bonus_locked" ? "danger" : "warn"} explain={entry.bucket === "bonus_locked" ? "这笔收益被锁定，不能提现。账户组解除后不会自动放行，要人工放行。" : "这笔收益等人工审核，不会到期自动放行。"}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</StatusTag>}
-                      sub={pendingMark("entry", entry.entryNo)} /></Td>
+                      sub={(() => {
+                        // 审批单上的净额和这一行现在的不一样时，跟在「待审批」后面写出来，不判断能不能批。
+                        const record = pending.find(item => item.kind === "entry" && item.target === entry.entryNo);
+                        const ticket = record?.approval?.acknowledged ? entryAmountText(entryApprovalDisplay(record)) : undefined;
+                        return pendingMark("entry", entry.entryNo, ticket && ticket !== `${netAmountText(entry)} ${nexGridBrandText(entry.asset)}` ? `审批单上 ${ticket}` : undefined);
+                      })()} /></Td>
                     <Td align="right">{(() => {
                       const split = recoveredSplit(entry);
                       return <Cell num full main={`${netAmountText(entry)} ${nexGridBrandText(entry.asset)}`}
