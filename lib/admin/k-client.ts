@@ -304,6 +304,7 @@ export type ArbitrageOverview = {
   stats: K2Stat[];
   params: KRiskParam[];
   welcomeGiftScopeSupported?: Record<string, boolean>;
+  paramScopeStatus?: Record<string, { retired: true; requiresScopeChange: true; reason: "K2_WELCOME_GIFT_SCOPE_RETIRED" }>;
   otpInitializationRequired: Record<string, boolean>;
   views: K2ViewGroup[];
   sources?: string[];
@@ -1194,7 +1195,17 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
       welcomeGiftScopeSupported[scope] = supported[scope] as boolean;
     }
   }
-  return { serverCanonical: true, domain: "K2", stats, params, welcomeGiftScopeSupported, otpInitializationRequired, views, sources };
+  let paramScopeStatus: ArbitrageOverview["paramScopeStatus"];
+  if (data.paramScopeStatus !== undefined) {
+    paramScopeStatus = {};
+    for (const [key, value] of Object.entries(requiredK2Record(data.paramScopeStatus, "arbitrage.paramScopeStatus"))) {
+      const status = requiredK2Record(value, `arbitrage.paramScopeStatus.${key}`);
+      if (key !== "welcomeGiftAnomalyThreshold" || status.retired !== true || status.requiresScopeChange !== true
+        || status.reason !== "K2_WELCOME_GIFT_SCOPE_RETIRED") invalidK2Response(`arbitrage.paramScopeStatus.${key}`);
+      paramScopeStatus[key] = { retired: true, requiresScopeChange: true, reason: "K2_WELCOME_GIFT_SCOPE_RETIRED" };
+    }
+  }
+  return { serverCanonical: true, domain: "K2", stats, params, welcomeGiftScopeSupported, paramScopeStatus, otpInitializationRequired, views, sources };
 }
 
 /** A serialized K2 write is retained before sending, including the original operator and reason. */
