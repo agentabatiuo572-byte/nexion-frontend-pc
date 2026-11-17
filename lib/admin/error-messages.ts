@@ -3695,7 +3695,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   WEEKLY_REGION_POLICY_UNAVAILABLE: "每周地区规则服务暂时不可用，请保留原单并稍后核对。",
   COMPUTE_PARAM_KEY_INVALID: "算力配置参数名称无效，请重新读取配置后核对。",
   IDEMPOTENCY_ORIGINAL_OPERATION_REQUIRES_INVESTIGATION: "这个对象还有结果未知的原操作，要由有调查权限的超级管理员核查。请保留原记录，不要重新发起；在本页解除记录不等于核查结案。",
-  IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED: "原操作已核查确认成功，不会再执行一次。请查看原审批单和现在的业务结果。",
+  IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED: "原操作已完成，请核对最新内容",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED: "原操作已核查确认未执行，原请求不能再重试。需要时按现在的条件重新发起。",
   IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED: "原操作已核查确认是后台拒绝，原请求不能再重试。要重做，请按现在的状态重新发起。",
   // E2/E5/E6 original-command lookup and closure (66ecdb47 AdminCommandInvestigationService, PhoneModelRiskReceiptService).

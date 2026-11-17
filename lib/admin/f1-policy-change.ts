@@ -250,8 +250,9 @@ export async function submitF1Policy(
         if (mode === "lookup") {
           const result = await queryF1PolicyCommand(session.adminId, previous!).catch(() => null);
           return { active: await fetchF1VRankOverview().catch(() => null), resolved: result?.settled === true, receipt: result?.receipt,
-            acknowledgement: result?.settled ? result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。" : formatAdminApiError(result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED"
-              ? "IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED" : "IDEMPOTENCY_INVESTIGATION_CONFIRMED_SUCCEEDED", "INVESTIGATION_RECEIPT_UNREADABLE")
+            acknowledgement: result?.settled ? result.receipt!.originalStatus === "CONFIRMED_REJECTED" ? "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。"
+              : result.receipt!.originalStatus === "CONFIRMED_NOT_EXECUTED" ? formatAdminApiError("IDEMPOTENCY_INVESTIGATION_CONFIRMED_NOT_EXECUTED", "INVESTIGATION_RECEIPT_UNREADABLE")
+                : result.receipt!.originalStatus === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"
               : "已读取现在的配置；它证明不了原请求的结果，请保留原操作继续核对。" };
         }
         if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
