@@ -656,7 +656,8 @@ function G7RepurchasePage() {
           if (paramApproval.record(param.key) || directRecord(param.key)) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
-          if (!paramApproval.record(param.key) && !directRecord(param.key)) toast(`操作失败 · ${messageOf(err)}`);
+          // 框开着时错误只写在框里；按原请求重试被拒、框随后关掉并重读（下面 finally）时，才用轻提示说一次。
+          if (savedDirect && !paramApproval.record(param.key) && !directRecord(param.key)) toast(`操作失败 · ${messageOf(err)}`);
           throw err;
         } finally {
           if (savedDirect && !directRecord(param.key)) {
@@ -782,7 +783,7 @@ function G7RepurchasePage() {
     <>
       {header}
       {confirmModal}
-      {error && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^(提交结果未知|结果未知，可能已经提交)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !mc && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^(提交结果未知|结果未知，可能已经提交)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {recoveryNotice()}
 
