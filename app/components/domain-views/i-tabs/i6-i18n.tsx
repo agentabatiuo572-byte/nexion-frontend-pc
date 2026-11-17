@@ -970,8 +970,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     bodyZh: String(payload?.bodyZh ?? c.bodyZh), bodyEn: String(payload?.bodyEn ?? c.bodyEn), bodyVi: String(payload?.bodyVi ?? c.bodyVi),
     quizQuestions: (Array.isArray(payload?.quizQuestions) ? payload.quizQuestions : c.quizQuestions) as Course["quizQuestions"],
     passScore: Number(payload?.passScore ?? c.passScore ?? 60), retryLimit: Number(payload?.retryLimit ?? c.retryLimit ?? 3),
-    completionCondition: String(payload?.completionCondition ?? c.completionCondition ?? "quiz_passed"),
-    rewardEvent: String(payload?.rewardEvent ?? c.rewardEvent ?? "quiz.passed"),
+    completionCondition: String((payload ? payload.completionCondition : c.completionCondition) ?? ""),
+    rewardEvent: String((payload ? payload.rewardEvent : c.rewardEvent) ?? ""),
   });
 
   const newCourseVersion = async (c: Course) => {
