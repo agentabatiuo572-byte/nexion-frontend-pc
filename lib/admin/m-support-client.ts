@@ -140,7 +140,7 @@ export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { 
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
   return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";
 }
-export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; businessCode?: number | null };
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
   kind: "TEXT" | "IMAGE" | "SKU" | "LINK";
@@ -533,7 +533,9 @@ export const supportClient = {
     if (result && typeof result.batchId === "string" && result.counts) return { status, result };
     if (typeof row.operationId === "string" && Array.isArray(row.customers)) return { status, result: row };
     if (result) malformed("command.result.code");
-    return { status };
+    const businessCode = row.businessCode;
+    if (businessCode != null && (!Number.isInteger(businessCode) || Number(businessCode) < -2147483648 || Number(businessCode) > 2147483647)) malformed("command.businessCode");
+    return { status, businessCode: businessCode as number | null | undefined };
   }, { signal }),
   attachmentPolicy: (signal?: AbortSignal) => request("/conversations/attachments/policy", (value): SupportAttachmentPolicy => {
     const row = object(value, "attachment.policy");
