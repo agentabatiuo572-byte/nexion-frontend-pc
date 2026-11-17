@@ -81,7 +81,7 @@ export const amountText = (value: number | string, digits = 2) => {
 /** 逐笔金额：每格写自己的位数（最少 2 位、不舍入），数字等宽右对齐，币种单独占固定宽度；悬停看后端原值。 */
 export function Money({ value, currency }: { value: number | string; currency: string }) {
   return (
-    <span className="f5-money" title={`原始值 ${value} ${currency}`}>
+    <span className="f5-money" title={`系统记录的原值 ${value} ${currency}`}>
       <span className="f5-money-num">{amountText(value)}</span>
       <span className="f5-money-cur">{currency}</span>
     </span>

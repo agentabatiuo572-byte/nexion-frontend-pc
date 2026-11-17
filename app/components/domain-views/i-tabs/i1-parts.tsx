@@ -32,7 +32,7 @@ export function copyStatus(status: string): { tone: StateTone; text: string; exp
   if (value === "published") return { tone: "ok", text: "已发布" };
   if (value === "archived") return { tone: "done", text: "已下架" };
   if (value === "draft-saved" || value === "draft") return { tone: "done", text: "已下架", explain: "现在的版本已下架，草稿还没发布；发布草稿才上线。" };
-  return { tone: "neutral", text: "状态待核实", explain: `系统给的状态这页不认识（${status}），请找值班核对。` };
+  return { tone: "neutral", text: "状态待核实", explain: `系统给的状态这页不认识（${status}），请联系值班人员核对。` };
 }
 
 export function versionStatus(status: string): { tone: StateTone; text: string } {

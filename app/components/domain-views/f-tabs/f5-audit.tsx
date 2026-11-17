@@ -545,7 +545,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     // USDT 层比例没法比较、或没读到比较结果时，「没有异常样本」不能单独当作正常（UVT 本来就不比，不在首屏提）。
     const layerUnchecked = data.layerRatioComparisons === undefined || data.layerRatioComparisons.some((item) => item.currency === "USDT" && !item.available);
     const hint = [
-      pendingCount ? `${pendingCount} 组好友奖励在等价格；价格长期不恢复时找值班处理。` : "",
+      pendingCount ? `${pendingCount} 组好友奖励在等价格；价格长期不恢复时请联系值班人员。` : "",
       layerUnchecked && !anomalies ? "层比例这次没比较，不能当作正常，看「异常样本」。" : "",
     ].filter(Boolean).join(" ") || undefined;
     const explain = <>

@@ -27,7 +27,7 @@ export function BudgetBar({ budget, catalog, compact = false }: { budget: Budget
     const name = budgetName(budget, catalog);
     return <div className="h4-budget" data-compact={compact ? '' : undefined}>
         <div className="h4-budget-head"><span className="h4-budget-name">{name}</span><span className="h4-budget-left">剩余 <Amount value={budget.available} unit={unit === '台' ? '台' : undefined}/> <span className="h4-dim">/ 总额 <Amount value={budget.total} unit={unit}/></span></span></div>
-        {total === 0 ? <span className="h4-dim">总额为 0，不能再预留</span> : invalid ? <span className="rd-gfx-note" data-kind="problem">预算各项对不上总额，没有画图，请找值班核对</span> : <SegmentBar label={`${name}预算`} legend={compact ? false : undefined} segments={[
+        {total === 0 ? <span className="h4-dim">总额为 0，不能再预留</span> : invalid ? <span className="rd-gfx-note" data-kind="problem">预算各项对不上总额，没有画图，请联系值班人员核对</span> : <SegmentBar label={`${name}预算`} legend={compact ? false : undefined} segments={[
             { key: 'spent', label: '已发出', value: spent * 100 / total, slot: 2, text: `已发出 ${amountText(budget.issued, budget.asset === 'DEVICE')}（已冲正 ${amountText(budget.reversed, budget.asset === 'DEVICE')} 退回预算）` },
             { key: 'held', label: '已预留', value: held * 100 / total, slot: 3, text: `已预留 ${amountText(budget.reserved, budget.asset === 'DEVICE')}，已付款待发 ${amountText(budget.committed, budget.asset === 'DEVICE')}` },
             { key: 'left', label: '剩余', value: left * 100 / total, slot: 'other', text: `剩余 ${amountText(budget.available, budget.asset === 'DEVICE')} ${unit}` },

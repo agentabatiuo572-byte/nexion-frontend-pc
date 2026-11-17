@@ -169,7 +169,7 @@ export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, rea
       {conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>}>
         你填的内容还在。刷新会读最新值并放弃这一块没保存的改动，再按最新值重新改。
       </Notice>}
-      {!draft ? <Notice tone="warn" title="全球网络还没有配置">这一块暂时读不到，刷新后再看；仍没有就找值班处理。</Notice> : <>
+      {!draft ? <Notice tone="warn" title="全球网络还没有配置">这一块暂时读不到，刷新后再看；仍没有就联系值班人员。</Notice> : <>
         {!sharesSupported && <Notice tone="warn" title="占比暂时只读">旧格式的配置没有占比，下表的比例按各中心节点数换算，只供参考，不能改；其他参数照常保存。</Notice>}
         <div className="h9-globe-fields">{FIELDS.map(field => <Field key={field.key} label={field.label} hint={field.hint} explain={field.what}>
           {(control) => <NumberInput {...control} aria-label={`全球网络${field.label}`} unit={field.unit} min={0} inputMode="decimal" value={draft[field.key]} disabled={locked}

@@ -972,7 +972,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           <Stat tone="role-3" icon={Users} label="已读率" value={I3_STATS.avgReadRate ?? "—"}
             sub={I3_STATS.avgReadRate == null ? statsBasis.deliveryFactsComplete ? "还没有送达记录" : "送达记录不全，算不出" : statsBasis.weeklyReadAvailable && statsBasis.weeklyReadCount != null ? `本周已读 ${statsBasis.weeklyReadCount.toLocaleString("en-US")} 条` : "本周已读算不出"}
             explain={<>
-              <p>所有已发送活动：用户实际读了的通知 ÷ 实际送达的通知，用户读了就更新。只算还留在用户通知里的。</p>
+              <p>所有已发送活动：用户读了的通知 ÷ 送达的通知。用户在 App 里读了就算进来，刷新这页看最新。只算还留在用户通知里的。</p>
               <p>{`本周从 ${weekStart} 起（${zoneLabel}）。`}</p>
               {!statsBasis.deliveryFactsComplete && <p>{`有活动的送达记录不全，已读率先不算。能核对到的：送达 ${statsBasis.knownSentCount.toLocaleString("en-US")} 条，已读 ${statsBasis.knownReadCount.toLocaleString("en-US")} 条。`}</p>}
               {statsBasis.deliveryFactsComplete && !statsBasis.weeklyReadAvailable && <p>{`有 ${statsBasis.undatedReadCount.toLocaleString("en-US")} 条已读没记下读的时间，本周已读算不出。`}</p>}
@@ -985,7 +985,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             explain="全部没删除的活动，不分月份。" />
           <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate ?? "—"} sub={`左滑推算 ${I3_STATS.weeklySwipe ?? "—"}`}
             explain={<>
-              <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新，不是实时已读率。</p>
+              <p>已读率：已发送活动的已读数 ÷ 送达数。</p>
               <p>左滑推算：已读数 × 3.1%，不是实际左滑次数，也不分本周。</p>
             </>} />
         </>}
