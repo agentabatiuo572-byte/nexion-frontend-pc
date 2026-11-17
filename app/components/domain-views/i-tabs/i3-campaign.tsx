@@ -22,8 +22,8 @@ import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
+import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -773,6 +773,12 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     else if (record.action === "cancel") cancelScheduled(originalRow, record);
     else if (record.action === "delete") deleteDraft(originalRow, record);
   };
+  /** 查过原结果的直接操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
+  const i3Status = (record: I3Command, outcome: FundInvestigationOutcome | undefined) => {
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i3_read"),
+      canRetry: !!record.original && (record.action === "create" || !!record.snapshot) && !i3RetryPermission(record) });
+    return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
+  };
   const query = async (record: I3Command | I3CapCommand) => {
     if (recoveryInFlight.current) return;
     recoveryInFlight.current = true; setRecovering(record.commandKey);
@@ -787,18 +793,22 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           toast("没有查到原审批单，原操作记录继续保留。");
         }
       } else {
-        let settled = false;
+        let outcome: FundInvestigationOutcome;
         try {
           const receipt = await queryI3Command(record);
-          setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
-          settled = fundCommandSettled(receipt);
+          outcome = { receipt };
         } catch (error) {
-          setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+          outcome = { error: displayAdminError(error) };
         }
-        if (settled) { await refreshAfterMutation(record); return; }
+        setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
+        if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+          toast(settledText({ status: outcome.receipt!.originalStatus }));
+          await refreshAfterMutation(record); return;
+        }
         await fetchI3CampaignOverview();
         await actions.reloadIContent();
-        toast("已重新读取活动列表；当前状态不能证明原操作结果，原记录继续保留。");
+        const shown = i3Status(record, outcome);
+        toast(`${shown.label}：${shown.line}`);
       }
       syncPending();
     } catch (error) { toast(displayAdminError(error)); }
@@ -807,7 +817,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const recoveryRows: I3RecoveryRow[] = [
     // 新建和编辑草稿记下的变更是优先级代码和受众原文，不给运营看；这两类只写动作和通知名。
     ...pending.map((row) => ({ key: row.commandKey, name: row.action === "delete" && row.snapshot?.status === "cancelled" ? "删除已取消的通知" : I3_ACTION[row.action], object: row.name, change: row.action === "create" || row.action === "draft" ? undefined : row.change,
-      submittedAt: row.createdAt, expired: isRetryExpired(row), actions: <>
+      submittedAt: row.createdAt, expired: isRetryExpired(row),
+      status: i3Status(row, outcomes[row.commandKey]), note: <>{i3Status(row, outcomes[row.commandKey]).line} <TechInfo commandKey={row.commandKey} receipt={receiptOf(outcomes[row.commandKey])} /></>,
+      actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
         {!isRetryExpired(row) && <Button size="sm" disabledReason={!row.original || row.action !== "create" && !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}
@@ -912,7 +924,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           const receipt = await queryI3Command(record, evidence);
           setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
           setClosing(null); syncPending();
-          if (fundCommandSettled(receipt)) await refreshAfterMutation(record);
+          if (fundCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await refreshAfterMutation(record); }
         }} />}
       {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
