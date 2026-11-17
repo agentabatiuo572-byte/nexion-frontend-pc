@@ -146,7 +146,7 @@ export type LExportAuditRow = {
 };
 
 export type LBiActions = {
-  createReport: (input: LReportCreateInput, reason: string, idempotencyKey?: string) => Promise<void>;
+  createReport: (input: LReportCreateInput, reason: string, idempotencyKey?: string, operator?: string) => Promise<void>;
   createRegulatoryReport: (input: LRegulatoryReportInput, reason: string, idempotencyKey?: string) => Promise<void>;
   createNetworkTreeExport: (
     query: { period: "day" | "week" | "month"; depth: number },
@@ -183,7 +183,15 @@ function networkFailure(isReportCreation: boolean) {
     : Object.assign(new Error("网络连接已中断，结果未知。请先核对原操作，再决定要不要重试。"), { name: "LNetworkInterruptedError" });
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false): Promise<T> {
+/** A report write has a result only when the transport and business response establish one. */
+function reportCreationStatus(response: Response, payload: ApiResult<unknown>): number {
+  if (isIdempotencyOutcomeOpen(payload.message)) throw new LOutcomeUnknownError();
+  if (!response.ok || payload.code === 0) return response.status;
+  if (typeof payload.code === "number" && Number.isInteger(payload.code) && payload.code >= 400 && payload.code < 500) return payload.code;
+  throw new LOutcomeUnknownError();
+}
+
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
@@ -209,18 +217,11 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
     if (!isReportCreation) throw cause;
     if (res.ok) throw new LOutcomeUnknownError();
   }
-  // 创建任务时，回复读不出来、业务码 5xx、幂等层没有结论，都说明不了任务建没建成。
-  // 统一按结果未知，调用方留住原号和原请求（OP-93）。4xx 和 2xx 里的业务 4xx 才算明确拒绝。
-  const rejected = payload.code !== undefined && payload.code >= 400 && payload.code < 500;
-  if (isReportCreation && (isIdempotencyOutcomeOpen(payload.message) || (res.ok && payload.code !== 0 && !rejected))) {
-    throw new LOutcomeUnknownError();
-  }
+  const status = isReportCreation ? reportCreationStatus(res, payload) : res.status;
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
-    // Retained L3/L4 commands need the business rejection even when the
-    // controller returns ApiResult.fail in HTTP 200. Other L callers keep their contract.
-    error.status = businessErrorStatus && res.ok && rejected ? payload.code! : res.status;
+    error.status = status;
     error.reasonCode = payload.message;
     throw error;
   }
@@ -841,13 +842,13 @@ function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailRece
   return { reportId: report.reportId, status: report.status };
 }
 
-/** L3 alone retains the complete request, including its original operator and reason. */
+/** L3 detail submits the retained request, including its original operator and reason. */
 export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey: string): Promise<L3DetailReceipt> {
   const data = await apiRequest<Record<string, unknown>>("/reports", {
     method: "POST",
     headers: { "Idempotency-Key": commandKey },
     body: JSON.stringify(request),
-  }, true);
+  });
   try {
     return l3DetailReceipt(data?.created, request);
   } catch {
@@ -867,14 +868,14 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
   const execute = () => guardedFetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
+  const creating = path === "/report" && init?.method === "POST";
   let response: Response;
   try {
     response = await execute();
   } catch {
-    throw networkFailure(path === "/report" && init?.method === "POST");
+    throw networkFailure(creating);
   }
-  if (path === "/report" && init?.method === "POST" && response.status >= 500) throw networkFailure(true);
-  const creating = path === "/report" && init?.method === "POST";
+  if (creating && response.status >= 500) throw networkFailure(true);
   let raw: unknown;
   try {
     raw = await response.json();
@@ -885,11 +886,10 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
     });
   }
   const payload = rec(raw) as ApiResult<T>;
-  if (creating && (isIdempotencyOutcomeOpen(payload.message)
-    || response.ok && (typeof payload.code !== "number" || !Number.isFinite(payload.code)))) throw new LOutcomeUnknownError();
+  const status = creating ? reportCreationStatus(response, payload) : response.status;
   if (!response.ok || (payload?.code !== undefined && payload.code !== 0)) {
-    throw Object.assign(new Error(formatAdminApiError(payload?.message, `REGULATORY_API_${response.status}`)), {
-      status: response.status, reasonCode: payload?.message,
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `REGULATORY_API_${status}`)), {
+      status, reasonCode: payload?.message,
     });
   }
   return payload?.data as T;
@@ -954,16 +954,23 @@ export async function fetchL4NetworkReport(reportId: string, request: { period: 
   return { reportId, status: "READY", rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
 }
 
-function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, reason, operator: currentAdminOperator() };
+function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = currentAdminOperator()) {
+  return { ...body, reason, operator };
 }
 
 export const lBiActions: LBiActions = {
-  createReport: (input, reason, stableIdempotencyKey) => apiRequest("/reports", {
-    method: "POST",
-    headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
-    body: JSON.stringify(withReason(input, reason)),
-  }).then(() => undefined),
+  createReport: async (input, reason, stableIdempotencyKey, operator) => {
+    const data = await apiRequest<{ created?: unknown }>("/reports", {
+      method: "POST",
+      headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
+      body: JSON.stringify(withReason(input, reason, operator)),
+    });
+    const created = rec(data?.created);
+    if (typeof created.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(created.reportId)
+      || typeof created.type !== "string" || !["KPI_SERIES", "FUNNEL_COHORT", "FINANCE_AGG", "OPERATIONS_AGG"].includes(created.type)) {
+      throw new LOutcomeUnknownError();
+    }
+  },
   createRegulatoryReport: async (input, reason, stableIdempotencyKey) => {
     const data = await regulatoryRequest<Record<string, unknown>>("/report", {
       method: "POST",
@@ -998,7 +1005,7 @@ export const lBiActions: LBiActions = {
         "Idempotency-Key": stableIdempotencyKey,
         "X-Operation-Reason": encodeURIComponent(reason),
       },
-    }, true).then((value) => {
+    }).then((value) => {
       const result = rec(value);
       // exportNetworkTreeOnce returns these fields, not an A2 proposal envelope.
       if (typeof result.reportId !== "string" || !/^L4TREE-[A-Z0-9]{8}$/.test(result.reportId)

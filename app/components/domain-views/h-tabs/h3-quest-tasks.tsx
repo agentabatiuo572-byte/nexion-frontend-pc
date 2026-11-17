@@ -197,7 +197,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
   useEffect(() => { void refresh().catch(cause => toast(displayAdminError(cause))); }, []);
 
-  const runWrite = async (write: Omit<H3Write, "change"> & { target: string; before: string; after: string; success: string }, reason: string) => {
+  const runWrite = async (write: Omit<H3Write, "change"> & Pick<H3Write["change"], "target" | "before" | "after" | "success" | "rewardCurrency">, reason: string) => {
     const attempt = confirmation.current;
     if (!attempt) throw new Error("请重新打开原操作。");
     const recovering = !!attempt.commandKey;
@@ -211,7 +211,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
     try {
       await mutations.run({ ...write, change: { target: write.target, action: attempt.action, title: attempt.title,
-        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue } }, reason, false, commandKey => { attempt.commandKey = commandKey; });
+        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue, rewardCurrency: write.rewardCurrency } }, reason, false, commandKey => { attempt.commandKey = commandKey; });
       setStale(null);
     } catch (error) {
       if (isHGrowthReadConflict(error)) {
@@ -251,10 +251,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     [bindingMissionOptions],
   );
 
-  const updateConfigWithExpected = async (key: string, value: string, expectedValue: string, reason: string, label: string) => {
+  const updateConfigWithExpected = async (key: string, value: string, expectedValue: string, reason: string, label: string, rewardCurrency?: string) => {
     await runWrite({ store: "config", path: `/quest-events/config/${encodeURIComponent(key)}`, method: "PATCH",
       body: { key, value, expectedValue }, target: key, configKey: key,
-      before: expectedValue === "__MISSING__" ? "—" : expectedValue, after: value, success: `${label} 已更新` }, reason);
+      before: expectedValue === "__MISSING__" ? "—" : expectedValue, after: value, success: `${label} 已更新`, rewardCurrency }, reason);
   };
 
   /** Keep the established confirmation fields; transport owns the approval route. */
@@ -295,7 +295,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       },
       run: async (reason, value) => {
         if (!value) return;
-        await updateConfigWithExpected(key, value, decimalOf(current) ?? "__MISSING__", reason, `奖励 ${label}`);
+        await updateConfigWithExpected(key, value, decimalOf(current) ?? "__MISSING__", reason, `奖励 ${label}`, key.startsWith("monthly.") ? unit : undefined);
       },
     } as H3ActionConfirmReq);
   };
@@ -891,14 +891,15 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
   const shownValue = (value: string) => value === "" ? "—" : value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
     ?? TASK_CATEGORY_LABELS[part] ?? TASK_ACTION_ROUTE_LABELS[part] ?? part).join(" · ");
-  // 奖励和倍率的原请求只存数字：按这一项的单位写，月度奖励带那一行的币种。
-  const changeValue = (target: string, value: string) => {
+  // 月度奖励优先用原记录的展示币种，旧记录从对应任务核对。
+  const changeValue = (target: string, value: string, rewardCurrency?: string) => {
     if (value === "" || value === "—" || !/^(?:mission\.[^.]+\.reward|monthly\.[^.]+\.reward|weekly\.mult\.[^.]+|dayOne\.triReward)$/.test(target)) return shownValue(value);
     if (!target.startsWith("monthly.")) return pendingFormat(target)(value);
-    const mission = model?.monthlyMissions?.find((row) => `monthly.${codeOf(row)}.reward` === target);
-    return mission ? monthlyRow(mission).format(value) : monthlyAmount(value);
+    const mission = rewardCurrency ? undefined : model?.monthlyMissions?.find((row) => `monthly.${codeOf(row)}.reward` === target);
+    const unit = rewardCurrency ?? (mission ? monthlyRow(mission).unit : undefined);
+    return `${monthlyAmount(value)} ${unit ?? "· 币种未核实"}`;
   };
-  const changeOf = (c: H3PendingCommand["change"]) => <Change from={changeValue(c.target, c.before)} to={changeValue(c.target, c.after)} />;
+  const changeOf = (c: H3PendingCommand["change"]) => <Change from={changeValue(c.target, c.before, c.rewardCurrency)} to={changeValue(c.target, c.after, c.rewardCurrency)} />;
   const releasable = (original: H3PendingCommand) => original.request.kind !== "direct" && isRetryExpired(original) && !original.acknowledged && !original.ticket;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";

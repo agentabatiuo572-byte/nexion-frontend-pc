@@ -35,7 +35,7 @@ import { useM3MessagePages } from "./use-m3-message-pages";
 
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
-type Pending = { conversationId: string; key: string; body: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
+type Pending = { conversationId: string; customerId?: string; key: string; body: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
 type TimeoutInput = { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string };
 type TimeoutCommand = { key: string; input: TimeoutInput; policy: ConversationTimeoutPolicy; operator: string };
 
@@ -1019,10 +1019,14 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
 
   const settleRetainedMessageRejection = (result: SupportCommandResult, slot: string, locator: PrivateMessageRecovery | null) => {
     if (result.status !== "REJECTED") return false;
-    // The GET binds the actor/key; match the saved message and operation before releasing its lock.
+    // The GET binds the actor/key. A legacy reply can also use its exact conversation's
+    // customer in the available scoped snapshot. The currently selected customer is not evidence.
+    const originalConversation = locator?.customerId === undefined && locator?.conversationId && conversationsAvailable
+      ? visible.find(row => row.id === locator.conversationId) : undefined;
+    const customerId = locator?.customerId ?? originalConversation?.customerId;
     if (!locator || result.idempotencyKey !== locator.key || result.clientMessageId !== locator.clientMessageId
       || result.operation !== (locator.conversationId ? "M3_CONVERSATION_REPLY" : "M3_CONVERSATION_INITIATE")
-      || locator.customerId !== undefined && result.customerId !== locator.customerId) {
+      || result.customerId !== customerId) {
       throw new SupportClientError(409, 409, "SUPPORT_COMMAND_RESULT_INVALID");
     }
     pendingMessages.forget(slot, locator.key);
@@ -1261,7 +1265,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         ...closedReplyTargets,
       ];
       const message: SessionMsg = { ts: Date.now(), sender: "agent", agentName: session?.operator || session?.username || selected.owner, text: body, kind, attachmentId, skuId:kind==="SKU"&&contentChoice?.kind==="SKU"?contentChoice.skuId:undefined, linkTarget:kind==="LINK"&&contentChoice?.kind==="LINK"?contentChoice.linkTarget:undefined, intent, clientMessageId: crypto.randomUUID(), replyTargets: replyTargets.length ? replyTargets : undefined };
-      return { conversationId: selected.id, key: newKey(), body, intent, kind, attachmentId, message, expectedAssignmentId: currentProfileDetail!.assignmentId!, expectedStatus: currentStatus, expectedVersion: currentVersion };
+      return { conversationId: selected.id, customerId: customerIdOf(selected), key: newKey(), body, intent, kind, attachmentId, message, expectedAssignmentId: currentProfileDetail!.assignmentId!, expectedStatus: currentStatus, expectedVersion: currentVersion };
     })();
     const stored = rememberPending(pendingKey(adminId), record.key, record);
     setPending(record);

@@ -17,6 +17,7 @@ import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { KeepText, BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessClock, businessDay, businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -28,10 +29,10 @@ import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
-import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1CohortPoint, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
-import { L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource } from "./l1-export-contract";
+import { L1_EXPORT_ORIGINAL_INCOMPLETE, L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource, type L1PendingExport } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
@@ -188,8 +189,6 @@ function queryScope(query: L1KpiQuery) {
   return [time, ...SLICES.filter((key) => query[key]).map((key) => `${SLICE_NAME[key]} ${query[key]}`)].join("，");
 }
 
-type L1PendingExport = PendingMutationRecord & { label: string; mode: L1ExportMode; input: LReportCreateInput; reason: string; commandOrigin?: FundCommandOrigin };
-
 const EXPORT_SCOPE = "l1-export";
 const EXPORT_PAGE = "/analytics/export";
 /** 结果未知时原内容、理由和命令号都留着，刷新后还能原样重试，不铸新号（OP-93、OP-94）。 */
@@ -198,7 +197,8 @@ const pendingExports = createPendingMutationStore<L1PendingExport>({
   retainExpiredRecords: true, // 过期不能重试，但记录和导出锁都留着（OP-96）
   isValidRecord: (record) => typeof record.label === "string" && typeof record.reason === "string" && record.reason.length > 0
     && (record.mode === "series" || record.mode === "snapshot" || record.mode === "totals")
-    && !!record.input && typeof record.input === "object",
+    && !!record.input && typeof record.input === "object"
+    && (record.operator === undefined || typeof record.operator === "string"),
 });
 
 /** 导出的全部状态：按钮、确认框、待确认条、成功条。写法同提现审核的 sendCommand、retryPending、releasePending。 */
@@ -226,19 +226,23 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
     ? <Link className="rd-link" href={EXPORT_PAGE}>{text}</Link>
     : `你没有「${pageName}」的权限，请找有权限的同事处理。`);
 
-  const send = async (mode: L1ExportMode, input: LReportCreateInput, reason: string, label: string) => {
+  const send = async (mode: L1ExportMode, input: LReportCreateInput, reason: string, label: string, retryKey?: string) => {
     const createReport = ctx.biActions?.createReport;
     if (!createReport) throw new Error("关键指标暂时不能导出，请刷新后再试");
     const retained = pendingExports.get(EXPORT_SCOPE);
+    if (retained !== retryKey) throw new Error(L1_EXPORT_ORIGINAL_INCOMPLETE);
     const key = retained ?? `l1-export-${crypto.randomUUID()}`;
     const original = pendingExports.list().find(record => record.commandKey === key);
-    pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason, commandOrigin: retained ? original?.commandOrigin : fundCommandOrigin("POST", "/api/admin/bi/reports", "bi_l1_read") });
+    const operator = retained ? original?.operator : currentAdminOperator();
+    if (!operator) throw new Error(L1_EXPORT_ORIGINAL_INCOMPLETE);
+    if (!retained) pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason, operator, commandOrigin: fundCommandOrigin("POST", "/api/admin/bi/reports", "bi_l1_read") });
     if (!pendingExports.isDurablyStored(EXPORT_SCOPE, key)) {
+      if (retained) throw new Error(L1_EXPORT_ORIGINAL_INCOMPLETE);
       pendingExports.forget(EXPORT_SCOPE, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     try {
-      await createReport(input, reason, key);
+      await createReport(original?.input ?? input, original?.reason ?? reason, key, operator);
     } catch (cause) {
       const failure = cause as { status?: number; reasonCode?: string; hadUncertainAttempt?: boolean };
       const rejected = retained || failure.hadUncertainAttempt ? isExplicitRejection(cause)
@@ -306,11 +310,15 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
       setRetryNote("浏览器里读不到这条记录，这次没有重发。请到操作记录与审批核对。");
       return;
     }
+    if (!record.operator) {
+      setRetryNote(L1_EXPORT_ORIGINAL_INCOMPLETE);
+      return;
+    }
     setRetrying(true);
     setRetryRejected(false);
     setRetryNote("");
     try {
-      await send(record.mode, record.input, record.reason, record.label);
+      await send(record.mode, record.input, record.reason, record.label, record.commandKey);
     } catch (cause) {
       if (isExplicitRejection(cause)) { ctx.toast(`原操作被拒绝，记录已解除：${displayAdminError(cause)}`, "warn"); return; }
       setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
@@ -359,7 +367,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
     notices: <>
       <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
         link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=L">到操作记录与审批核对</Link> : undefined}
-        rows={pending ? [{ key: pending.commandKey, title: pending.label, record: pending, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !expired && !!ctx.canExport,
+        rows={pending ? [{ key: pending.commandKey, title: pending.label, record: pending, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !expired && !!ctx.canExport && !!pending.operator,
           copy: { where: `「${pageName}」` },
           actions: <>
             <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />

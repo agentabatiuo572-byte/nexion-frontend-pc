@@ -21,7 +21,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
-import { checkK1ApprovalTicket, isK1ApprovalState, k1EarningsReleaseProposal, k1ReleaseParamProposal, type K1ApprovalState } from "@/lib/admin/k1-risk-approval";
+import { checkK1ApprovalTicket, isK1ApprovalState, k1EarningsReleaseProposal, k1ReleaseParamProposal, parseK1ReleaseTicketBefore, type K1ApprovalState } from "@/lib/admin/k1-risk-approval";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-multiaccount";
@@ -217,9 +217,6 @@ const RELEASE_PARAM_NAME: Record<string, string> = {
 };
 const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_NAME[p.key] ?? p.name;
 
-/** 收益金额按接口给的精度写全，非零不能显示成 0（TX-20）。 */
-const amountText = (amount: number) => amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 20 });
-
 /** 后端给的金额原文（可能写成指数）：写全位数、去掉末尾补的 0、最少 2 位，不舍入。places 给定时补到这么多位，用于同一个框里并排的几个数。 */
 const decimalPlaces = (raw: string) => Math.max(2, (f4Decimal(raw) ?? "").split(".")[1]?.replace(/0+$/, "").length ?? 0);
 const exactAmountText = (raw: string, places = decimalPlaces(raw)) => {
@@ -229,7 +226,7 @@ const exactAmountText = (raw: string, places = decimalPlaces(raw)) => {
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(places, "0")}`;
 };
 /** 这次放多少：新后端给的净额原文优先；旧后端只有 amount。 */
-const netAmountText = (entry: K1ProtectedEntry, places?: number) => entry.netAmount !== undefined ? exactAmountText(entry.netAmount, places) : amountText(entry.amount);
+const netAmountText = (entry: K1ProtectedEntry, places?: number) => exactAmountText(entry.netAmount ?? entry.amount, places);
 /** 追回过才拆开写原金额和已追回；没追回、或后端没给这两项，都不拆。 */
 const recoveredSplit = (entry: K1ProtectedEntry) => entry.grossAmount !== undefined && entry.recoveredAmount !== undefined
   && !/^0(\.0*)?$/.test(f4Decimal(entry.recoveredAmount) ?? "0") ? { gross: entry.grossAmount, recovered: entry.recoveredAmount } : null;
@@ -800,17 +797,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
     checkK1ApprovalTicket(approval.request, ticket, record.commandKey);
     if (ticket.status === "pending") {
-      retainApproval({ ...record, approval: { ...approval, acknowledged: true, pendingTicketId: ticket.id } });
+      retainApproval({ ...record, approval: { ...approval, acknowledged: true, pendingTicketId: ticket.id,
+        ...(record.kind === "entry" ? { ticketBefore: ticket.before } : {}) } });
       ctx.toast("已提交审批，等另一位超级管理员批准。", "success");
       if (record.kind === "entry") {
         const entries = await refreshProtectedEntries();
         const latest = entries?.find(entry => entry.entryNo === record.target);
-        const observed = approval.observedEntry!;
         const note = !entries ? "收益列表没读到，刷新后核对这笔还在不在。"
-          : !latest ? "这笔不在当前列表里，到操作记录与审批核对。"
-            : latest.amount !== observed.amount || latest.asset !== observed.asset || latest.sourceType !== observed.sourceType
-              || latest.sourceRef !== observed.sourceRef || latest.bucket !== observed.bucket
-              ? "这笔收益已变化，原单批不了；撤回后重新提交。" : "";
+          : !latest ? "这笔不在当前列表里，到操作记录与审批核对。" : "";
         if (note) setPendingNotes(current => ({ ...current, [record.fingerprint]: note }));
         return ticket;
       }
@@ -862,7 +856,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       const ticket = await createA2OperationProposal(original.approval!.request, original.commandKey, true, true);
       checkK1ApprovalTicket(original.approval!.request, ticket, original.commandKey);
-      acknowledged = { ...original, approval: { ...original.approval!, acknowledged: true, pendingTicketId: undefined } };
+      acknowledged = { ...original, approval: { ...original.approval!, acknowledged: true, pendingTicketId: undefined,
+        ...(original.kind === "entry" ? { ticketBefore: ticket.before } : {}) } };
       retainApproval(acknowledged);
     } catch (cause) {
       const error = cause as { status?: number; apiCode?: number; backendMessage?: string };
@@ -1114,10 +1109,24 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
+  const entryApprovalDisplay = (record: K1PendingCommand) => {
+    const approval = record.approval;
+    if (approval?.acknowledged) {
+      const snapshot = approval.ticketBefore && parseK1ReleaseTicketBefore(approval.ticketBefore);
+      return snapshot && snapshot.entryNo === record.target ? { amount: snapshot.net, asset: snapshot.asset, sourceType: snapshot.source } : undefined;
+    }
+    return approval?.observedEntry;
+  };
   /** 两类资金审批在恢复区和解除框里的名字：写申请了什么，不写内部的参数键。 */
-  const approvalTitle = (record: K1PendingCommand) => !record.approval ? record.label : record.kind === "entry" && record.approval.observedEntry
-    ? `人工放行 ${amountText(record.approval.observedEntry.amount)} ${nexGridBrandText(record.approval.observedEntry.asset)}`
-    : `放宽${record.target === "duplicateAccountFreezeFrom" ? "锁定起点" : "审核起点"}到 ${record.value} 个账户`;
+  const approvalTitle = (record: K1PendingCommand) => {
+    const approval = record.approval;
+    if (!approval) return record.label;
+    if (record.kind === "entry") {
+      const observed = entryApprovalDisplay(record);
+      return typeof observed?.amount === "string" ? `人工放行 ${exactAmountText(observed.amount)} ${nexGridBrandText(observed.asset)}` : record.label;
+    }
+    return `放宽${record.target === "duplicateAccountFreezeFrom" ? "锁定起点" : "审核起点"}到 ${record.value} 个账户`;
+  };
   /** 列表行上的原操作标记：待审批写申请了什么、谁什么时候提交；其余只给标签，处理在页面上方。 */
   const pendingMark = (kind: "release-param" | "entry", target: string, change?: string) => {
     const record = pending.find(item => item.kind === kind && item.target === target);
@@ -1289,9 +1298,23 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setReleaseDraft({ param: p, value: K1_RELEASE_PARAM_LIMITS[p.key] ? "" : p.value, reason: "" });
   };
 
-  const releaseProtectedEntry = (entry: K1ProtectedEntry, approvalRequired = false, initialReason?: string) => {
+  const releaseProtectedEntry = async (selected: K1ProtectedEntry, approvalRequired = false, initialReason?: string) => {
+    const revision = ++releaseConfirmRevision.current;
+    let entry: K1ProtectedEntry;
+    try {
+      const entries = await ctx.actions.fetchK1ProtectedEntries(selected.userId);
+      const latest = entries.find(row => row.entryNo === selected.entryNo && row.userId === selected.userId);
+      if (!latest) throw new Error("这笔不在当前列表里，到操作记录与审批核对。");
+      entry = latest;
+    } catch (cause) {
+      if (revision !== releaseConfirmRevision.current) return;
+      if (approvalRequired) throw cause;
+      ctx.toast(displayAdminError(cause), "warn");
+      return;
+    }
+    if (revision !== releaseConfirmRevision.current) return;
     ctx.openActionConfirm({ briefKind: "funds",
-      formKey: ++releaseConfirmRevision.current,
+      formKey: revision,
       initialReason,
       action: `人工放行收益 · ${entry.entryNo}`,
       title: "人工放行收益",
@@ -1308,7 +1331,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
       facts: (() => {
         const split = recoveredSplit(entry);
-        const places = split ? Math.max(...[split.gross, split.recovered, entry.netAmount ?? ""].map(decimalPlaces)) : undefined;
+        const places = split ? Math.max(...[split.gross, split.recovered, entry.netAmount ?? entry.amount].map(decimalPlaces)) : undefined;
         const unit = nexGridBrandText(entry.asset);
         return <Facts>
         <Fact k="净额" lead tone="role-1" unit={unit}>{netAmountText(entry, places)}</Fact>
@@ -1334,13 +1357,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         if (approvalRequired) {
           const actor = useAdminAuth.getState().session;
           record.approval = { request: k1EarningsReleaseProposal(entry.entryNo, reason, operator, roleLabel(actor?.role ?? "")),
-            observedEntry: { amount: entry.amount, asset: entry.asset, sourceType: entry.sourceType, sourceRef: entry.sourceRef, bucket: entry.bucket } };
+            observedEntry: { amount: entry.netAmount ?? entry.amount, asset: entry.asset, sourceType: entry.sourceType, sourceRef: entry.sourceRef, bucket: entry.bucket } };
         }
         try { await runRecord(record); }
         catch (cause) {
           if (!approvalRequired && cause instanceof K1RequestError && cause.reasonCode === "K1_EARNINGS_RELEASE_APPROVAL_REQUIRED" && isExplicitRejection(cause)) {
             // Unknown direct results never reach this branch or create a proposal.
-            releaseProtectedEntry(entry, true, reason);
+            await releaseProtectedEntry(entry, true, reason);
             return;
           }
           throw cause;
@@ -1675,8 +1698,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const approval = record.approval;
           const note = pendingNotes[record.fingerprint];
           const absent = proposalNotFound.includes(record.commandKey);
-          // 两类资金审批：标题写申请了什么；待审批时，查回来的变化（被别人改过、被追回）直接写在行上，不藏在展开里。
-          const observed = approval?.observedEntry;
+          // 已建单的放行金额用审批单快照，收益列表只用于告知当前读取状态。
+          const observed = record.kind === "entry" ? entryApprovalDisplay(record) : undefined;
           const title = approvalTitle(record);
           const status = !approval ? undefined : approval.pendingTicketId ? { tone: "warn" as const, label: "待审批", line: note || APPROVAL_LINE.pending }
             : approval.acknowledged ? { tone: "neutral" as const, label: "已建单", line: APPROVAL_LINE.created }
@@ -1694,8 +1717,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               {approval && expired && !approval.acknowledged && absent && <Button size="sm" variant="ghost" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>查无此单时解除</Button>}
             </>,
             detail: approval ? <>
-              <p>{record.kind === "entry" && observed
-                ? <>收益记录 <span data-mono>{record.target}</span>，提交时页面读到的净额 {amountText(observed.amount)} {nexGridBrandText(observed.asset)}，来源 {sourceName(observed.sourceType)}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
+              <p>{record.kind === "entry"
+                ? <>收益记录 <span data-mono>{record.target}</span>{typeof observed?.amount === "string" && <>，{approval.acknowledged ? "审批单上的净额" : "提交时页面读到的净额"} {exactAmountText(observed.amount)} {nexGridBrandText(observed.asset)}</>}{observed && <>，来源 {sourceName(observed.sourceType)}</>}。批准后这笔放行，能否提现还看账户组和其他提现条件。</>
                 : <>申请把「{record.name ?? record.target}」改为 {record.value} 个账户{current ? `，现在是 ${current.value} 个账户` : ""}，批准后才生效。</>}</p>
               <p>提交人 {record.operator}；理由：{record.reason}</p>
               {note && !status?.line.includes(note) && !(expired && note.includes("重试")) && <p><KeepText text={note} /></p>}
