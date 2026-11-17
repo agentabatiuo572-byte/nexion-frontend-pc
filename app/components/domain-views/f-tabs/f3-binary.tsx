@@ -33,6 +33,7 @@ import { fBatchIssueText } from "./f-batch-names";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FViewCtx } from "./types";
 import { F3Placements, recoverPlacement } from "./f3-placements";
+import { F3_MODE_EXPLAIN, F3BlockedAttempts, F3SettlementDrawer, f3ModeText } from "./f3-review";
 import { F3PairBar, F3RuleFlow, PERIOD_TEXT, RESIDUAL_TEXT, residualLabel, type F3Rule } from "./f3-rule";
 import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
@@ -107,6 +108,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const [cohortFilter, setCohortFilter] = useState("");
   const [view, setView] = useState<View>("teams");
   const [confirm, setConfirm] = useState<F3Confirm | null>(null);
+  const [openRow, setOpenRow] = useState<F3Settlement | null>(null);
   const [placementChecking, setPlacementChecking] = useState(false);
   const [growthZoneLabel, setGrowthZoneLabel] = useState<string | null>(null);
   useEffect(() => {
@@ -419,7 +421,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           explain={`每位邀请人取 A、B 两组扣掉已匹配后剩得多的那一组，再加起来；按现在的残额处理算范围，不是两组差额。${legacyAmounts ? "后端先取整再缩写，不是精确值。" : "写「—」时不是 0：残额处理不认，或按现在的残额处理没有可算的订单额。"}`} />
         <Stat label="出过结算的邀请人" icon={Users} tone="role-3" value={fmtInt(ctx.f3ParticipantCount)} unit="人"
           sub={`被拦下的记录 ${fmtInt(ctx.f3BlockedCount)} 条`}
-          explain="所有结算记录里出现过的邀请人人数，不限今天，也不是现在过门槛的人数。被拦下是全部历史里被拦下、被拒、失败或冻结的记录条数，不是人数。" />
+          explain="所有结算记录里出现过的邀请人人数，不限今天，也不是现在过门槛的人数。被拦下是结算记录里被拦下、被拒、失败或冻结的条数，不是人数；和下面「被拦下的结算」来源不同。" />
         <Stat label="近 7 天自动分组" icon={Shuffle} tone="role-3" value={fmtInt(ctx.f3AutoPlacement7dCount)} unit="人"
           sub={spillOn ? "自动分组已启用" : "自动分组已关闭"}
           explain="最近 7 天结算时自动补进 A 组或 B 组的成员数，按分组时间算；不含手动分组。" />
@@ -440,7 +442,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         explain={<>
           <p>一条结算记录是一位邀请人在一个结算日的结算。后端最多给最近 100 条，按结算日从新到旧，不是全部邀请人；同一位邀请人可能有几天的记录。</p>
           <p>每一行 A 组往左、B 组往右，按这一行较大的一组定长度，看哪边小、差多少；实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额要扣掉已结算的部分、受每期上限限制，可能比实色少；刻线是现在的门槛（当时的门槛可能不同）。行和行之间看数字比大小。</p>
-          <p>接口不返回每一期的残额和批准人；手动结算谁批的到「操作记录与审批」看。</p>
+          <p>点一行看这一期结算后剩下的订单额、结算方式、发起人和批准人，审批单可以直接点过去。</p>
         </>}
         actions={<>
           <Link className="rd-link" href="/network/commissions" prefetch={false}>去补发 / 冲正</Link>
@@ -476,10 +478,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <Th className="f3-col-date">结算日</Th>
               <Th><span className="f3-pair-head"><span>A 组</span><span>B 组<Explain label="两组对比怎么看" side="bottom" content="每一行按这一行较大的一组定长度。实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额还要扣掉已结算的部分、受每期上限限制，可能更少；刻线和「过没过门槛」按现在的门槛判断，当时的门槛可能不同。" /></span></span></Th>
               <Th align="right">奖励 / 匹配</Th>
-              <Th>状态</Th>
+              <Th>状态{F3_MODE_EXPLAIN}</Th>
             </tr></thead>
             <tbody>
-              {pager.pageRows.map((row, index) => <RecordRow key={`${row.user}:${row.settlementDate}:${pager.startIndex + index}`} row={row} threshold={thresholdNumber} />)}
+              {pager.pageRows.map((row, index) => <RecordRow key={`${row.user}:${row.settlementDate}:${pager.startIndex + index}`} row={row} threshold={thresholdNumber} selected={row === openRow} onOpen={() => setOpenRow(row)} />)}
               {pager.pageRows.length === 0 && <TableMessage columns={5}>{rows.length === 0 ? "还没有结算记录" : "没有符合筛选的记录"}</TableMessage>}
             </tbody>
           </Table></div>
@@ -492,7 +494,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <Th align="right">邀请人</Th>
               <Th align="right">记账奖励</Th>
               <Th align="right">匹配订单额</Th>
-              <Th align="right">被拦下</Th>
+              <Th align="right">被拦下<Explain label="被拦下怎么算" side="bottom" content="这一天结算记录里状态是被拦下的条数。之后被拦下的结算不写结算记录，另列在下面「被拦下的结算」。" /></Th>
             </tr></thead>
             <tbody>
               {byDate.map((group) => (
@@ -511,6 +513,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         </>
         )}
       </Panel>
+
+      <F3BlockedAttempts attempts={ctx.f3BlockedAttempts} />
 
       <Panel title="结算设置" icon={Settings2} tone="role-4"
         explain={`这里的修改都要提交审批，${CONFIG_APPROVER}批准后写入；批准后立即用于之后的结算，不是排到下一期。已经记账的奖励不重算。`}>
@@ -582,13 +586,19 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         ]} />
       </Fold>
 
+      <F3SettlementDrawer row={openRow} state={openRow ? stateOf(openRow.state) : null} onClose={() => setOpenRow(null)} nav={{
+        hasPrev: pager.pageRows.indexOf(openRow!) > 0,
+        hasNext: openRow !== null && pager.pageRows.indexOf(openRow) >= 0 && pager.pageRows.indexOf(openRow) < pager.pageRows.length - 1,
+        onPrev: () => { const i = pager.pageRows.indexOf(openRow!); if (i > 0) setOpenRow(pager.pageRows[i - 1]); },
+        onNext: () => { const i = pager.pageRows.indexOf(openRow!); if (i >= 0 && i < pager.pageRows.length - 1) setOpenRow(pager.pageRows[i + 1]); },
+      }} />
       {confirm && <F3ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
     </div>
   );
 }
 
 /** 一条结算记录：两组对比条、差多少、匹配和奖励、状态。 */
-function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | null }) {
+function RecordRow({ row, threshold, selected, onOpen }: { row: F3Settlement; threshold: number | null; selected: boolean; onOpen: () => void }) {
   const state = stateOf(row.state);
   const aText = row.aRaw === undefined ? String(row.a) : row.aRaw;
   const bText = row.bRaw === undefined ? String(row.b) : row.bRaw;
@@ -606,7 +616,7 @@ function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | 
   const passA = threshold !== null && a !== null && a >= threshold, passB = threshold !== null && b !== null && b >= threshold;
   const pass = a === null || b === null ? "—" : threshold === null ? "门槛没读到" : passA && passB ? "都过门槛" : !passA && !passB ? "都没过门槛" : `${passA ? "B" : "A"} 组没过门槛`;
   return (
-    <Tr>
+    <Tr selected={selected} onOpen={onOpen}>
       <Td><Cell main={<span data-mono>{row.user}</span>} sub={<>
         <span className="f3-sub-wide">{row.cohort ? `${row.cohort} 注册` : "注册月 —"}</span>
         <span className="f3-sub-narrow">{row.settlementDate || "—"}</span>
@@ -623,7 +633,7 @@ function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | 
         </span>
       </Td>
       <Td align="right"><Cell num main={`${amountText(row.todayRaw, row.today)} USDT`} sub={`匹配 ${amountText(row.matchRaw, row.match)} USDT`} /></Td>
-      <Td><StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag></Td>
+      <Td><Cell main={<StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag>} sub={f3ModeText(row.settlementMode) ?? undefined} /></Td>
     </Tr>
   );
 }

@@ -519,7 +519,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-detail { container: f1-detail / inline-size; }
 /* ===== F3 团队平衡奖励（改版）：只用 --rd-* 令牌，深浅两套跟着令牌走 ===== */
 .f3-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
-.f3-page .f3-weak, .rd-modal .f3-weak { color: var(--rd-text-3); }
+.f3-page .f3-weak, .rd-modal .f3-weak, .rd-drawer .f3-weak { color: var(--rd-text-3); }
 
 /* 规则流程图：五步横排，窄时竖排；改的那一步加描边（确认框里） */
 .f3-page .f3-flow, .rd-modal .f3-flow { container: f3-flow / inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -588,6 +588,10 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f3-page .f3-pair-missing { text-align: center; color: var(--rd-text-3); }
 .f3-page .f3-dates-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .f3-page .f3-dates { table-layout: fixed; }
+.f3-page .f3-blocked { table-layout: fixed; }
+.f3-page .f3-blocked th:nth-child(1) { width: 18%; }
+.f3-page .f3-blocked th:nth-child(2) { width: 18%; }
+.f3-page .f3-blocked th:nth-child(4) { width: 22%; }
 
 /* 结算设置的值：值一行、方向一行 */
 .f3-page .f3-cfg { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
