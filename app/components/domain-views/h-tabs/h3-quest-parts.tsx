@@ -251,11 +251,11 @@ export function submittedText(submittedBy: string | null, submittedAt: string | 
   return `${[submittedBy, at].filter(Boolean).join(" · ")} 提交${at && zone ? `（${businessZone().label}）` : ""}`;
 }
 
-/** 标签说明的第一句：提交时的原值和申请值；原值是后端的「没设置」标记时是第一次设置。 */
+/** 已核实的申请摘要中，提交时的原值为空表示第一次设置。 */
 export function pendingChangeText(approval: H3PendingApproval, format: (value: string) => string) {
   const after = approval.proposedValue == null ? "—" : format(approval.proposedValue);
-  if (approval.currentValue === "__MISSING__") return `第一次设置，申请改成 ${after}。`;
-  return `提交时是 ${approval.currentValue == null ? "—" : format(approval.currentValue)}，申请改成 ${after}。`;
+  if (approval.currentValue === null) return `第一次设置，申请改成 ${after}。`;
+  return `提交时是 ${format(approval.currentValue)}，申请改成 ${after}。`;
 }
 
 /** 待审批标签：说明里写申请内容、谁什么时候提交、单号；单号只在这里。 */

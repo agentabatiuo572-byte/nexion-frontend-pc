@@ -834,8 +834,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   /** 后端读回的这一项：null 是没有锁；单号读不出的是审批锁定，不叫待审批。 */
   const backendLock = (key: string) => model?.pendingApprovals?.[key] ?? null;
   const auditHref = (object: string | null) => canAudit ? `/platform/audit?domain=H${object ? `&object=${encodeURIComponent(object)}` : ""}` : undefined;
-  // 第一次设置时申请里的原值是后端的「没设置」标记（OpsGrowthService 的 __MISSING__）。
-  const pendingFormat = (key: string) => (value: string) => value === "__MISSING__" ? "还没设置" : key === "dayOne.triReward" ? operatorCopyText(value)
+  const pendingFormat = (key: string) => (value: string) => key === "dayOne.triReward" ? operatorCopyText(value)
     : key.startsWith("weekly.mult.") ? `${value.replace(/[×x]\s*$/, "")}×` : `${amountText(value) ?? value} UVT`;
   const lockReason = (key: string) => {
     const lock = backendLock(key);
@@ -1439,6 +1438,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             </thead>
             <tbody>
               {monthly.map((mission) => {
+                const rewardKey = `monthly.${codeOf(mission)}.reward`;
                 const reward = legacyAssetText(text(mission.reward));
                 // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT），确认框里新金额带上同一个币种。
                 const unit = /[A-Za-z]+$/.exec(reward.text.trim())?.[0];
@@ -1452,7 +1452,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   <Td align="right"><Cell num main={rewardShown} sub={reward.legacy ? "旧名称 NEX" : undefined} /></Td>
                   <Td><TaskStatusTag task={mission} /></Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
-                    <Button size="sm" disabledReason={lockReason(`monthly.${text(mission.id)}.reward`)} onClick={conflictDraft.register(JSON.stringify(["openTaskReward:1", mission.id]), () => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward), {
+                    <Button size="sm" disabledReason={lockReason(rewardKey)} onClick={conflictDraft.register(JSON.stringify(["openTaskReward:1", mission.id]), () => openTaskReward(rewardKey, text(mission.theme), text(mission.reward), {
                       title: "改月度挑战奖励",
                       displayCurrent: rewardShown.replace(/\s*[A-Za-z]+$/, ""), unit,
                       detail: <>当前奖励 <b>{rewardShown}</b>{reward.legacy ? "（旧名称 NEX）" : ""}。</>,
