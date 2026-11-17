@@ -381,6 +381,17 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
 const NOVA_FX = "nova.push_clicked ÷ nova.push_sent";
 const NOVA_PLAIN = "消息推送点击人数 ÷ 发送人数";
 const NOVA_NOTE = "统计的是消息推送的发送和点击，不代表手机系统推送送达率。";
+/** 后端各项的说明句写的是统计口径的内部说法，这页换成运营的话；后端改了原句就照原句显示。 */
+const NOTE_TEXT: Record<string, string> = {
+  "衡量注册后能否快速感知收益": "看新用户注册后能不能很快收到第一笔收益。",
+  "未满 7 天的 cohort 不进入分母": "注册不满 7 天的用户还不算进来。",
+  "客户端浏览事件按锁定 KPI 口径统计": "以用户端记下的商城浏览为准，同一人只算一次。",
+  "健康带为 5%–10%": "健康带是 5%–10%，两端都算。",
+  "推广率不是提现或收入指标": "只看有没有发出邀请，和提现、收入无关。",
+  "点击为锁定的客户端 KPI 事件": NOVA_NOTE,
+  "只计算能与邀请关系匹配的奖励事件": "只算能对上邀请关系的奖励。",
+  "未售罄时显示不可计算并保留进度": "还没售罄时算不出天数。",
+};
 
 function renderFx(fx: string, bold: string[]) {
   const firstYield = /^device\.first_yield_received\.latency_sec ≤ ([0-9.]+) ÷ auth\.register_completed$/.exec(fx);
@@ -695,7 +706,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       ...baseExt,
       num: k.numerator == null ? null : String(k.numerator),
       den: k.denominator == null ? null : String(k.denominator),
-      note: blankNote(kState, k) ?? (baseExt.fx === NOVA_FX ? NOVA_NOTE : baseExt.note),
+      note: blankNote(kState, k) ?? (baseExt.fx === NOVA_FX ? NOVA_NOTE : NOTE_TEXT[baseExt.note] ?? baseExt.note),
     };
     const phase = rec(data?.currentPhase);
     const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
