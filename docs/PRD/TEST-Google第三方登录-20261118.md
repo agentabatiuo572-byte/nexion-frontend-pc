@@ -1,6 +1,6 @@
 # TEST Google 登录
 
-适用范围为连接 `https://api-test.uvel.ai` 的 UVEL App 和 H5。测试环境先接入真实 Google 授权。登录页与注册页显示 Google 按钮，已有账号可在账号安全页验证当前密码后绑定 Google。首次授权可创建测试账号并保留同一测试环境的有效邀请关系。重复授权登录同一个测试账号。
+适用范围为连接 `https://api-test.uvel.ai` 的 UVEL App 和 H5。测试环境先接入真实 Google 授权。登录页与注册页显示 Google 按钮，已有账号可在账号安全页验证当前密码后绑定 Google。首次授权可创建测试账号并保留同一测试环境的有效邀请关系。重复授权登录同一个测试账号。App 和 H5 的登录页、注册页每次发起 Google 登录时，先显示 Google 账号选择页。选择已有授权的 Google 账号后直接回到 UVEL，首次使用该账号仍由 Google 确认授权。账号安全页按独立的绑定流程处理。
 
 TEST 自己使用 OAuth Web 客户端，回调地址为 `https://api-test.uvel.ai/auth/users/oauth/provider/callback/GOOGLE`，H5 来源为 `https://app-test.uvel.ai`。使用指定的 Google 测试账号验收。部署配置只提供 Google 凭据，并启用 `OAUTH_TEST_PROVIDER_ENABLED=true`。开关默认关闭，可独立于正式环境及旧的本地模拟登录开关设置。客户端 ID 和密钥由测试后端安全配置提供。
 
