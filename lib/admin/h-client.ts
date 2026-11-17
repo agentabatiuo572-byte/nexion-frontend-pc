@@ -1,3 +1,4 @@
+import { h3QuestConfigWriteRefusal } from "./h3-contract";
 import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
 import { h4CommandRequest, markH4Read } from "./h4-mutations";
@@ -516,6 +517,8 @@ export async function withH3WeeklyRegionProposalKey(
 }
 
 export async function updateH3QuestConfig(key: string, value: string, reason: string, expectedValue: string) {
+  const refusal = h3QuestConfigWriteRefusal(key);
+  if (refusal) throw new Error(refusal);
   return growthRequest<Record<string, any>>(
     `/quest-events/config/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },

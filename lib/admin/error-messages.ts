@@ -2864,6 +2864,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H3_MISSION_NO_CHANGE: "任务内容与原值相同，本次没有修改；请核对要改的内容。",
   H3_MISSION_VERIFIED_COMPLETION_UNAVAILABLE: "这条任务还没有可信的完成验证，不能启用；请先核实真实业务事件。",
   H3_MISSION_RETIRED: "质押类每周任务已下线，不能再启用；改名称、奖励和归档照常。",
+  H3_DAY_ONE_WINDOW_RETIRED: "首日任务时长说明已退役，不能再修改；实际全额奖励时限仍为 24 小时。",
   H3_DAY_ONE_STAKING_MISSION_REFUSED: "这个编号是质押类任务，新手任务不能建；请换一个不是质押的任务。",
   H3_MISSION_ACTIVE_BINDING_REQUIRED: "任务还没有启用的完成条件，不能启用；请先绑定完成条件。",
   H3_STOREFRONT_EVENT_BINDING_REQUIRED: "浏览商品的每周任务缺少对应的商城完成事件，不能启用；请核对完成条件。",

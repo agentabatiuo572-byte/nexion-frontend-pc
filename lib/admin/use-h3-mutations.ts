@@ -1,5 +1,6 @@
 "use client";
 
+import { h3QuestConfigWriteRefusal } from "./h3-contract";
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
@@ -182,6 +183,8 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   };
   const run = async (write: H3Write, reason: string, approvalConfirmed = false, onCommand?: (commandKey: string) => void) => {
     const actor = requireActor(true, write.store === "region");
+    const refusal = write.configKey === undefined ? undefined : h3QuestConfigWriteRefusal(write.configKey);
+    if (refusal) throw new Error(refusal);
     if (!isFresh()) throw new Error("请先成功刷新用户任务数据，再发起新的修改。");
     if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
     const change = { ...write.change, reason };
