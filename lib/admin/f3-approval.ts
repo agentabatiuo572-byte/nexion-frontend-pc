@@ -1,4 +1,4 @@
-import { fConfigBatchPermissionIssue } from "./f-config-batch";
+import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
@@ -74,10 +74,10 @@ function durable(original: FDomainAttempt) {
   return (isFund(original) ? configApprovalAttempts : fCommands).isDurablyStored(original.fingerprint, original.commandKey);
 }
 
-function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
+async function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   // 111e00cd OpsAuditCenterService.ticketMetadata includes command.op for F.
   // The descriptor rewrites the visible action/before/after, so compare identity.
-  if (!ticket.mine || !original.spec || ticket.obj !== original.spec.obj || ticket.operationCode !== original.spec.command.op) {
+  if (!ticket.mine || !original.spec || ticket.operationCode !== original.spec.command.op || !await fConfigObjectMatches(original.spec.command.op, original.spec.obj, ticket.obj)) {
     throw new A2OutcomeUncertainError("原审批单与保存的操作对不上，请到操作记录核对。", original.commandKey);
   }
 }
@@ -92,7 +92,7 @@ export async function queryF3Proposal(adminId: number, original: FDomainAttempt)
     remember({ ...original, ticket: undefined, absent: true });
     return null;
   }
-  checkTicket(original, ticket);
+  await checkTicket(original, ticket);
   if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false });
   else forget(original);
   return ticket;
@@ -149,7 +149,7 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
     throw error;
   }
   remember({ ...original, received: true, ticket: undefined, absent: false });
-  checkTicket(original, ticket);
+  await checkTicket(original, ticket);
   if (recovering) {
     return queryReceivedF3Proposal(adminId, { ...original, received: true });
   }

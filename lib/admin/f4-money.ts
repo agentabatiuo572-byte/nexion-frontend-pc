@@ -31,6 +31,32 @@ export function f4MonthlyCap(raw: string): string | null {
   return decimal === null || decimal.startsWith("-") ? null : f4Decimal(`${decimal}e${multiplier}`);
 }
 
+/** 65ee53da: compare settlement capacity, including the weekly override's zero fallback. */
+export function f4MoneyAmplifies(key: "F.pool.monthlyCap" | "F.leaderboard.poolUsd", config: Record<string, string>, value: string): boolean {
+  const proposed = f4MonthlyCap(value);
+  if (proposed === null) return false; // The existing write validator rejects this input.
+  const stored = f4MonthlyCap(config[key] ?? "");
+  let before = stored ?? "0", after = proposed;
+  if (key === "F.leaderboard.poolUsd" && (stored === null || !/[1-9]/.test(stored) || !/[1-9]/.test(proposed))) {
+    let fallback = "0";
+    const raw = config["F.pool.periodPrize"] ?? "";
+    try {
+      const shape = JSON.parse(raw);
+      if (typeof shape?.week === "number") {
+        const exact = JSON.parse(raw.replace(/("week"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
+        fallback = f4Decimal(exact.week) ?? "0";
+      }
+    } catch { /* Settlement also uses zero when the stored period JSON cannot be read. */ }
+    before = stored !== null && /[1-9]/.test(stored) ? stored : fallback;
+    after = /[1-9]/.test(proposed) ? proposed : fallback;
+  }
+  const [beforeWhole, beforeFraction = ""] = before.split(".");
+  const [afterWhole, afterFraction = ""] = after.split(".");
+  const scale = Math.max(beforeFraction.length, afterFraction.length);
+  return BigInt(afterWhole + afterFraction.padEnd(scale, "0"))
+    > BigInt(beforeWhole + beforeFraction.padEnd(scale, "0"));
+}
+
 export function f4PeriodPrizes(raw: string): Record<string, string> | null {
   if (!raw.trim()) return null;
   let parsed: unknown;

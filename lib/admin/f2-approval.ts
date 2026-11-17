@@ -1,4 +1,4 @@
-import { fConfigBatchPermissionIssue } from "./f-config-batch";
+import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { f2ActivationAttempts, type F2ActivationAttempt } from "./f2-activation-attempt";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -102,11 +102,11 @@ export function f2ProposalRecord(adminId: number, slot: string) {
   return listF2Proposals(adminId).find(row => row.fingerprint === slot);
 }
 
-function checkTicket(original: F2Proposal, ticket: A2OperationRow) {
+async function checkTicket(original: F2Proposal, ticket: A2OperationRow) {
   const op = original.spec?.command.op;
   // 111e00cd ticketMetadata returns command.op for all F command tickets.
   // Descriptors rewrite action/before/type; those are not identity checks.
-  if (!ticket.mine || !op || ticket.operationCode !== op || ticket.obj !== original.spec?.obj) {
+  if (!ticket.mine || !op || ticket.operationCode !== op || !original.spec || !await fConfigObjectMatches(op, original.spec.obj, ticket.obj)) {
     throw new Error("F2_PROPOSAL_RESPONSE_MISMATCH");
   }
 }
@@ -121,7 +121,7 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
     remember({ ...original, ticket: undefined, absent: true });
     return null;
   }
-  checkTicket(original, ticket);
+  await checkTicket(original, ticket);
   if (ticket.status === "pending") remember({ ...original, ticket, received: true, absent: false });
   else forgetF2Proposal(original);
   return ticket;
@@ -171,7 +171,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
   }
   // Replayed POST receipts are historical. Only GET can establish current status.
   remember({ ...original, received: true, ticket: undefined, absent: false });
-  checkTicket(original, ticket);
+  await checkTicket(original, ticket);
   if (recovering) {
     const latest = await queryF2Proposal(adminId, { ...original, received: true });
     if (!latest) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
