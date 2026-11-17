@@ -1,7 +1,7 @@
 /** K3 field explanations follow the fdc9f469 evaluator (K3WithdrawalRuleEvaluator) in operator words. Request condition strings stay canonical. */
 export const K3_FIELD_HELP: Record<string, string> = {
   dimension: "检查金额、速度、新账户还是地址信誉。保存后是草稿，启用后才参与检查；建好后不能换类型。用户看不到规则内容。",
-  action: "命中后延迟、转人工或冻结。一笔命中多条时按最重的处理：冻结最重，其次转人工、延迟；一样重再看优先级。这里没拦下也不等于马上打款，提现审核还会再查。",
+  action: "一笔命中多条时按最重的处理：冻结最重，其次转人工、延迟；一样重再看优先级。这里没拦下也不等于马上打款，提现审核还会再查。",
   priority: "1–100 的整数，默认 50，数字大的优先。同一类里没归档的规则（含草稿、已停用）不能用相同的优先级。",
   amountOp: "选「≥」时金额等于门槛也命中，选「>」时要超过门槛才命中。",
   amount: "默认 1,000 USD，调低会拦下更多提现。按提现金额直接比较，不按实时汇率换算；用户看不到门槛。",
