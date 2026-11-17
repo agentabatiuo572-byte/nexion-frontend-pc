@@ -18,7 +18,7 @@ import {
   type H3MissionKind,
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
-import { compareH3Decimal, h3Decimal, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
+import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -72,6 +72,11 @@ function directionOf(current: string | null, next: string | null): "up" | "down"
   if (a === null || b === null) return null;
   const direction = compareH3Decimal(b, a);
   return direction > 0 ? "up" : direction < 0 ? "down" : "same";
+}
+
+function dayOneRewardText(value: string) {
+  const reward = legacyAssetText(value);
+  return reward.legacy ? `${reward.text}（旧名称 NEX）` : value;
 }
 
 /** 调高要审批、调低立即生效的参数：生效标签、事实行和按钮字照 G2、G7。 */
@@ -261,16 +266,17 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   type Look = Pick<H3ActionConfirmReq, "title" | "effect" | "facts" | "statedBrief" | "confirmLabel" | "confirmLabelForValue" | "coverageLead" | "coverageCheck"> & { hint?: ReactNode; preview?: (value: string) => ReactNode; detail?: ReactNode; displayCurrent?: string; unit?: string };
 
   const openSimpleConfig = (key: string, label: string, current: string, amplifies = false, look: Look = {}, detail?: ReactNode) => {
-    const { hint, preview, ...shown } = look;
+    const { hint, preview, displayCurrent, ...shown } = look;
     openActionConfirm({ target: key, briefKind: "config",
       action: label,
       detail: detail ?? <>当前值 <b>{current}</b>。</>,
       ...shown,
       amplifies,
-      edit: { kind: "text", current, disallowCurrent: true, hint, preview },
+      edit: { kind: "text", current, displayCurrent, disallowCurrent: true, hint, preview },
       run: async (reason, value) => {
         if (!value) return;
-        await updateConfigWithExpected(key, value, casExpected(current), reason, label);
+        const expectedValue = key === "dayOne.triReward" ? (current || "__MISSING__") : casExpected(current);
+        await updateConfigWithExpected(key, value, expectedValue, reason, label);
       },
     } as H3ActionConfirmReq);
   };
@@ -834,7 +840,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   /** 后端读回的这一项：null 是没有锁；单号读不出的是审批锁定，不叫待审批。 */
   const backendLock = (key: string) => model?.pendingApprovals?.[key] ?? null;
   const auditHref = (object: string | null) => canAudit ? `/platform/audit?domain=H${object ? `&object=${encodeURIComponent(object)}` : ""}` : undefined;
-  const pendingFormat = (key: string) => (value: string) => key === "dayOne.triReward" ? operatorCopyText(value)
+  const pendingFormat = (key: string) => (value: string) => key === "dayOne.triReward" ? dayOneRewardText(value)
     : key.startsWith("weekly.mult.") ? `${value.replace(/[×x]\s*$/, "")}×` : `${amountText(value) ?? value} UVT`;
   const codeOf = (task: QuestTask) => text(task.taskCode ?? task.missionCode ?? task.id, "");
   // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT）：现在的奖励、申请改成的金额都带这一行的币种。
@@ -897,7 +903,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     return rewardCurrency ?? (mission ? monthlyRow(mission).unit : undefined);
   };
   const changeValue = (target: string, value: string, rewardCurrency?: string) => {
-    if (value === "" || value === "—" || !/^(?:mission\.[^.]+\.reward|monthly\.[^.]+\.reward|weekly\.mult\.[^.]+|dayOne\.triReward)$/.test(target)) return shownValue(value);
+    if (value === "—" || !/^(?:mission\.[^.]+\.reward|monthly\.[^.]+\.reward|weekly\.mult\.[^.]+|dayOne\.triReward)$/.test(target)) return shownValue(value);
+    if (!h3HasConfigValue(value)) return "—";
     if (!target.startsWith("monthly.")) return pendingFormat(target)(value);
     const unit = monthlyUnit(target, rewardCurrency);
     return unit ? `${monthlyAmount(value)} ${unit}` : monthlyAmount(value);
@@ -1042,7 +1049,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const multipliers = model.weeklyMultipliers ?? [];
   const weeklyCurrent = multipliers.find((item) => cleanPhaseKey(item.p) === currentPhase);
   const weeklyValue = weeklyCurrent ? decimalOf(weeklyCurrent.mult) : null;
-  const tri = parseTriReward(model.dayOneTriReward);
+  const triRaw = model.dayOneTriReward;
+  const triFirst = !h3HasConfigValue(triRaw);
+  const triLegacy = legacyAssetText(triRaw);
+  const tri = parseTriReward(triLegacy.text);
   const eligibility = text(model.dayOneEligibilityHours, "");
   const promo = model.promoBanner ?? {};
   const promoStatus = text(promo.status, "");
@@ -1225,7 +1235,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const t2Active = t2.filter((task) => taskStatusOf(task) === "active");
 
   // ----- 首日 -----
-  const triRaw = text(model.dayOneTriReward, "");
+  const triCurrent = triFirst ? "还没设置" : dayOneRewardText(triRaw);
+  const triDirection = (value?: string) => {
+    const next = parseTriReward(value);
+    if (!tri || !next) return null;
+    const full = compareH3Decimal(next.full, tri.full);
+    const grace = compareH3Decimal(next.grace, tri.grace);
+    return full > 0 || grace > 0 ? "up" : full === 0 && grace === 0 ? "same" : "down";
+  };
   const windowRaw = text(model.dayOneWindow, "");
   const dayOneTab = (
     <div {...tabIds.panel("dayOne")} className="h3-tabpanel">
@@ -1233,31 +1250,27 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         explain="新用户注册后拿到一组新手任务，做完全部才领一次奖励。三档奖励和完成期限按注册那一刻的设置，之后改只影响之后注册的用户。">
         <DayOneTimeline triReward={triRaw} eligibilityHours={eligibility} />
         <ConfigList label="新手任务设置">
-          <ConfigRow name="新手任务奖励" value={tri ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triRaw ? operatorCopyText(triRaw) : "还没设置"}
+          <ConfigRow name="新手任务奖励" value={tri && !triLegacy.legacy ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triCurrent}
             sub={pendingLine("dayOne.triReward") || (lockTag("dayOne.triReward") ?? "调高或第一次设置要批准")}
             what="做完全部新手任务后领一次。按领取时离注册多久分三档：注册后 24 小时内领是全额，之后到完成期限前领是宽限，过了完成期限是 0。"
             when={`调高或第一次设置：提交审批，${FUND_APPROVER}批准后生效；调低确认后立即生效。`}
             effect="只影响之后注册的用户；已经注册的按注册时定下的三档。"
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:1"]), () => openSimpleConfig("dayOne.triReward", "新手任务奖励", text(model.dayOneTriReward), true, {
+            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:1"]), () => openSimpleConfig("dayOne.triReward", "新手任务奖励", triFirst ? "" : triRaw, true, {
               title: "改新手任务奖励",
+              displayCurrent: triFirst ? undefined : triCurrent,
               effect: directionEffect("注册用户"),
               facts: (value) => {
-                const next = parseTriReward(value);
-                const first = !tri;
-                const direction = first ? null : next ? (Number(next.full) > Number(tri.full) || Number(next.grace) > Number(tri.grace) ? "up" : next.full === tri.full && next.grace === tri.grace ? "same" : "down") : null;
+                const direction = triDirection(value);
                 return <Facts>
-                  <Fact k="三档奖励">{value ? <Change from={triRaw ? operatorCopyText(triRaw) : "还没设置"} to={value} /> : triRaw ? operatorCopyText(triRaw) : "还没设置"}</Fact>
-                  {whenFact(direction, first && !!value)}
+                  <Fact k="三档奖励">{value ? <Change from={triCurrent} to={value} /> : triCurrent}</Fact>
+                  {whenFact(direction, triFirst && !!value)}
                   <Fact k="已经注册的用户">不变：按注册时定下的三档</Fact>
                   <Fact k="之后注册的用户">按新三档</Fact>
-                  {approverFacts(first || direction === "up")}
+                  {approverFacts(!tri || direction === "up")}
                 </Facts>;
               },
               statedBrief: { impact: "只改之后注册用户的新手任务奖励，不立即发钱。", check: "全额大于 0，宽限不超过全额，最后一档是 0。" },
-              confirmLabelForValue: (value) => {
-                const next = parseTriReward(value);
-                return !tri || (next && (Number(next.full) > Number(tri.full) || Number(next.grace) > Number(tri.grace))) ? "提交审批" : "确认修改";
-              },
+              confirmLabelForValue: (value) => !tri || triDirection(value) === "up" ? "提交审批" : "确认修改",
               coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
               coverageCheck: "提交审批时和批准时各检查一次兑付覆盖率；低于红线会被拒绝。",
               hint: "格式：全额 / 宽限 / 0 UVT，例如 100 / 50 / 0 UVT",
@@ -1312,16 +1325,18 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     { key: "all", label: "一档加全部二档", base: bothBase, baseNote: t2Active.length ? `另加二档 ${t2Active.length} 个` : "没有启用的二档任务",
       result: mulDecimal(bothBase, h1Value, weeklyValue), missing: bothBase == null ? t1Base == null ? "没有启用的一档任务" : "没有启用的二档任务" : undefined },
   ];
-  const multAction = canModuleWrite ? (phase: string, mult: string) => {
+  const multAction = canModuleWrite ? (phase: string, mult: string | null) => {
+    const first = !h3HasConfigValue(mult);
     const current = decimalOf(mult);
-    return <Button size="sm" variant="ghost" aria-label={`调整 ${phase} 每周阶段倍率`} disabledReason={lockReason(`weekly.mult.${phase}`)} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:4", phase]), () => openSimpleConfig(`weekly.mult.${phase}`, `阶段倍率 ${phase}`, mult, true, {
+    const shown = first ? "-" : mult;
+    return <Button size="sm" variant="ghost" aria-label={`调整 ${phase} 每周阶段倍率`} disabledReason={lockReason(`weekly.mult.${phase}`)} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:4", phase]), () => openSimpleConfig(`weekly.mult.${phase}`, `阶段倍率 ${phase}`, shown, true, {
       title: `改 ${phase} 每周阶段倍率`,
       effect: directionEffect("每周任务"),
       facts: (value) => {
         const direction = current == null ? null : directionOf(current, decimalOf(value));
         return <Facts>
-          <Fact k={`${phase} 倍率`}>{value ? <Change from={mult} to={value} /> : mult}</Fact>
-          {whenFact(direction, current == null && !!value)}
+          <Fact k={`${phase} 倍率`}>{value ? <Change from={shown} to={value} /> : shown}</Fact>
+          {whenFact(direction, first && !!value)}
           <Fact k="已发布的每周任务">不变：按发布时冻结的倍率</Fact>
           <Fact k="之后发布的">平台在 {phase} 时发布的每周任务乘新倍率</Fact>
           {approverFacts(current == null || direction === "up")}

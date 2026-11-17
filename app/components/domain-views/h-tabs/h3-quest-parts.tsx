@@ -12,7 +12,7 @@ import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
-import { h3Decimal, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
+import { h3Decimal, h3HasConfigValue, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
@@ -254,7 +254,7 @@ export function submittedText(submittedBy: string | null, submittedAt: string | 
 /** 已核实的申请摘要中，提交时的原值为空表示第一次设置。 */
 export function pendingChangeText(approval: H3PendingApproval, format: (value: string) => string) {
   const after = approval.proposedValue == null ? "—" : format(approval.proposedValue);
-  if (approval.currentValue === null) return `第一次设置，申请改成 ${after}。`;
+  if (!h3HasConfigValue(approval.currentValue)) return `第一次设置，申请改成 ${after}。`;
   return `提交时是 ${format(approval.currentValue)}，申请改成 ${after}。`;
 }
 
@@ -411,13 +411,13 @@ export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps,
 
 // ===== 首日时间线 =====
 export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: string; eligibilityHours: string }) {
-  const tri = parseTriReward(triReward);
+  const tri = parseTriReward(legacyAssetText(triReward).text);
   const hours = /^\d+$/.test(eligibilityHours.trim()) ? Number(eligibilityHours.trim()) : null;
   const grace = hours != null && hours > 24;
   const amount = (value: string | undefined, fallback: string) => value != null
     ? <><b>{amountText(value)}</b><span>UVT</span></>
     : <b data-empty="">{fallback}</b>;
-  const unset = triReward.trim() ? "读不懂" : "还没设置";
+  const unset = h3HasConfigValue(triReward) ? "读不懂" : "还没设置";
   return (
     <figure className="h3-timeline" aria-label={`新手任务奖励时间线，按领取时刻：注册后 24 小时内全额${tri ? ` ${tri.full} UVT` : ""}，${grace ? `到注册后 ${hours} 小时宽限${tri ? ` ${tri.grace} UVT` : ""}，` : ""}之后过期`}>
       <div className="h3-timeline-track" data-grace={grace ? String(Math.min(Math.max(Math.round((hours! - 24) / 24), 1), 6)) : "0"}>
@@ -501,7 +501,7 @@ export function WeeklyFormula({ rows, h1, h1Phase, weekly, weeklyPhase, h1Link }
 export function PhaseStrip({ items, currentPhase, action, mark }: {
   items: Array<{ p: string; mult: string | null }>;
   currentPhase: string;
-  action?: (phase: string, mult: string) => ReactNode;
+  action?: (phase: string, mult: string | null) => ReactNode;
   /** 这一阶段有待审批或审批锁定时的标签；详情在倍率格下面那一行。 */
   mark?: (phase: string) => ReactNode;
 }) {
@@ -509,14 +509,15 @@ export function PhaseStrip({ items, currentPhase, action, mark }: {
     <ol className="h3-phases" aria-label="每周阶段倍率">
       {items.map((item) => {
         const phase = cleanPhaseKey(item.p);
-        const value = decimalOf(item.mult);
+        const mult = h3HasConfigValue(item.mult) ? item.mult : null;
+        const value = decimalOf(mult);
         const current = phase === currentPhase;
         const flag = mark?.(phase);
         return (
           <li key={item.p} className="h3-phase" data-current={current ? "" : undefined} data-locked={flag ? "" : undefined}>
             <span className="h3-phase-key">{phase}{current && <span className="h3-phase-mark">现在</span>}{flag}</span>
-            <span className="h3-phase-value" data-empty={value == null ? "" : undefined}>{value == null ? "—" : <>{value}<span>×</span></>}</span>
-            {action?.(phase, text(item.mult))}
+            <span className="h3-phase-value" data-empty={mult == null ? "" : undefined}>{value == null ? mult ?? "—" : <>{value}<span>×</span></>}</span>
+            {action?.(phase, item.mult)}
           </li>
         );
       })}

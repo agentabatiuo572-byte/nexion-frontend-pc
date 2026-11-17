@@ -252,11 +252,15 @@ export function compareH3Decimal(a: string, b: string): number {
   return delta > 0 ? 1 : delta < 0 ? -1 : 0;
 }
 
+export function h3HasConfigValue(value: string | null): value is string {
+  return value !== null && value.trim() !== "" && value !== "__MISSING__";
+}
+
 /** 111e00cd: DayOneTriRewardPolicy.increases / amplifiesQuestValue / promoAmplifiesOutflow. */
 export function h3ConfigNeedsApproval(key: string, before: string, after: string): boolean {
   if (key === "dayOne.triReward") {
     const parse = (v: string) => /^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*\/\s*0(?:\.0+)?\s+UVT\s*$/i.exec(v);
-    const next = parse(after), previous = parse(before);
+    const next = parse(after), previous = parse(before.replace(/(\s+)NEX(\s*)$/i, "$1UVT$2"));
     return !!next && (!previous || compareH3Decimal(next[1], previous[1]) > 0 || compareH3Decimal(next[2], previous[2]) > 0);
   }
   if (key === "promoBanner.status") return before.toLowerCase() !== "active" && after.trim().toLowerCase() === "active";
