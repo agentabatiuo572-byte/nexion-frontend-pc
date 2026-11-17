@@ -443,6 +443,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Fact k="发给谁">{c.audience}</Fact>
         <Fact k="优先级" tone={c.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[c.tier]?.[0] ?? "未知"}${c.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
         <Fact k="原定时间">{`${whenText(c)}（${businessZone().label}）`}</Fact>
+        {retiredCta(c.ctaHref) && <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}：${RETIRED_CTA_NOTE}`}</Fact>}
       </Facts>
     ),
     statedBrief: {
@@ -1126,6 +1127,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Fact k="预计" lead unit="人">{quantityText(scheduleRow.reach)}</Fact>
             <Fact k="通知">{scheduleRow.name}</Fact>
             <Fact k="发给谁">{scheduleRow.audience}</Fact>
+            {retiredCta(scheduleRow.ctaHref) && <Fact k="点了去哪" tone="warn">{`${retiredCta(scheduleRow.ctaHref)}：${RETIRED_CTA_NOTE}`}</Fact>}
             <Fact k="优先级" tone={scheduleRow.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[scheduleRow.tier][0]}${scheduleRow.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
             <Fact k="能不能撤">发出前可以取消，取消后不能再排期；发出后撤不回</Fact>
           </Facts>
