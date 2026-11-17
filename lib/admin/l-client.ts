@@ -379,6 +379,60 @@ export type L2FunnelQuery = {
   ref?: string;
 };
 
+export type L2TrialStep = {
+  e: "trial.started" | "trial.redeemed";
+  n: number | null;
+  available: boolean;
+  includedInFunnel: true;
+  arr: string | null;
+  arrLb: string | null;
+  suppressed?: true;
+  reason?: string;
+};
+export type L2TrialFunnel = {
+  available: boolean;
+  reason: string | null;
+  stages: ["trial.started", "trial.redeemed"];
+  association: "USER_ID_AND_TRIAL_AGGREGATE_ID";
+  deduplication: "DISTINCT_ACTOR_PER_STAGE";
+  conversion: "REDEEMED_STRICTLY_AFTER_SAME_TRIAL_START";
+  window: "LEGACY_DAY_START_MINUS_400_DAYS";
+  cohort: "SELECTED_REGISTRATION_ACTORS";
+  exposureAvailable: false;
+  legacyExposureRowIncludedInFunnel: false;
+  steps: L2TrialStep[];
+};
+
+/** Only the new authoritative basis enables trial facts; old exposure chains stay unsupported. */
+function normalizeL2Trial(raw: unknown): Record<string, unknown> & { trialFunnel?: L2TrialFunnel } {
+  const data = rec(raw);
+  const basisValue = rec(data.quality).trialBasis;
+  if (basisValue === undefined) return data;
+  const invalid = () => { throw new Error(formatAdminApiError("L2_TRIAL_RESPONSE_INVALID", "L2_TRIAL_RESPONSE_INVALID")); };
+  const basis = rec(basisValue);
+  if (typeof basis.available !== "boolean" || basis.reason !== null && typeof basis.reason !== "string"
+    || !Array.isArray(basis.stages) || basis.stages.length !== 2 || basis.stages[0] !== "trial.started" || basis.stages[1] !== "trial.redeemed"
+    || basis.association !== "USER_ID_AND_TRIAL_AGGREGATE_ID" || basis.deduplication !== "DISTINCT_ACTOR_PER_STAGE"
+    || basis.conversion !== "REDEEMED_STRICTLY_AFTER_SAME_TRIAL_START" || basis.window !== "LEGACY_DAY_START_MINUS_400_DAYS"
+    || basis.cohort !== "SELECTED_REGISTRATION_ACTORS" || basis.exposureAvailable !== false
+    || basis.legacyExposureRowIncludedInFunnel !== false || !Array.isArray(data.trialSteps) || data.trialSteps.length !== 3) return invalid();
+  const exposure = rec(data.trialSteps[0]);
+  if (exposure.e !== "trial.claim_sheet_shown" || exposure.n !== null || exposure.available !== false
+    || exposure.includedInFunnel !== false || exposure.reason !== "EVENT_NOT_PRODUCED") return invalid();
+  const stages = basis.stages;
+  const steps = data.trialSteps.slice(1).map((value, index) => {
+    const step = rec(value);
+    if (step.e !== stages[index] || step.available !== basis.available || step.includedInFunnel !== true
+      || step.suppressed !== undefined && step.suppressed !== true
+      || step.reason !== undefined && typeof step.reason !== "string"
+      || step.n !== null && !(typeof step.n === "number" && Number.isSafeInteger(step.n) && step.n >= 0)
+      || [step.arr, step.arrLb].some(cell => cell !== null && typeof cell !== "string")
+      || (!basis.available || step.suppressed) && [step.n, step.arr, step.arrLb].some(cell => cell !== null)) return invalid();
+    return step as unknown as L2TrialStep;
+  });
+  return { ...data, trialFunnel: { ...basis, steps } as L2TrialFunnel };
+}
+
 function l2FunnelQuery(input: L2FunnelQuery = {}) {
   const query = new URLSearchParams();
   if (input.stage) query.set("stage", input.stage);
@@ -391,7 +445,7 @@ function l2FunnelQuery(input: L2FunnelQuery = {}) {
 
 export async function fetchL2FunnelDrilldown(input: L2FunnelQuery = {}): Promise<Record<string, unknown>> {
   const query = l2FunnelQuery(input);
-  return apiRequest<Record<string, unknown>>(`/funnel/drilldown?${query.toString()}`);
+  return normalizeL2Trial(await apiRequest<unknown>(`/funnel/drilldown?${query.toString()}`));
 }
 
 export async function fetchL2RetentionMatrix(
@@ -564,6 +618,7 @@ export async function fetchLBiOverview(
   const key = moduleCode.toLowerCase() as Lowercase<LModuleCode>;
   if (moduleCode === "L1") return { l1: rec(raw), currentPhase: rec(rec(raw).currentPhase) };
   if (moduleCode === "L5") return { [key]: normalizeL5(raw) } as LBiData;
+  if (moduleCode === "L2") return { l2: normalizeL2Trial(raw) };
   return { [key]: rec(raw) } as LBiData;
 }
 
