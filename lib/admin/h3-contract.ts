@@ -1,9 +1,20 @@
 import type { H3QuestEventBinding } from "./h-client";
 
-export type H3Task = Record<string, any> & { contentState?: "UNKNOWN" | "DRAFT" | "OPENED" };
+export type H3PendingApproval = {
+  action: string | null;
+  ticketId: string | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+  configKey: string | null;
+  currentValue: string | null;
+  proposedValue: string | null;
+};
+
+export type H3Task = Record<string, any> & { contentState?: "UNKNOWN" | "DRAFT" | "OPENED"; pendingApproval?: H3PendingApproval | null };
 
 export interface H3TaskContract extends Record<string, any> {
   missionCode?: string;
+  pendingApproval?: H3PendingApproval | null;
   completed24h?: number | null;
   b3Default?: boolean | number | string;
   retentionOnlyDefault?: boolean | number | string;
@@ -73,6 +84,7 @@ export type H3Model = {
   dayOneWindowConfig?: { key: "dayOne.windowMs"; readOnly: true; retired: true; valueKind: "DISPLAY_TEXT_ONLY" };
   dayOneEligibilityHours: string;
   dayOneTriReward: string;
+  pendingApprovals?: Record<string, H3PendingApproval | null>;
   dayOneTasks: H3Task[];
   dayOneStates: Array<{ st: string; label: string; tone: string }>;
   weeklyTier1: H3Task[];
@@ -105,6 +117,13 @@ export function parseH3Model(value: unknown): H3Model {
   const strings = (r: Record<string, any>, keys: string[]) => {
     if (keys.some(key => typeof r[key] !== "string")) throw new Error("H3_RESPONSE_INVALID");
   };
+  const pendingApproval = (value: unknown) => {
+    if (value === null) return;
+    const pending = object(value);
+    if (["action", "ticketId", "submittedBy", "submittedAt", "configKey", "currentValue", "proposedValue"]
+      .some(key => pending[key] !== null && typeof pending[key] !== "string")) throw new Error("H3_RESPONSE_INVALID");
+  };
+  if (row.pendingApprovals !== undefined) Object.values(object(row.pendingApprovals)).forEach(pendingApproval);
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "promoBanner", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
   const banner = row.promoBanner;
@@ -153,6 +172,7 @@ export function parseH3Model(value: unknown): H3Model {
     row[key].forEach(object);
   }
   for (const contract of row.taskContracts) {
+    if (contract.pendingApproval !== undefined) pendingApproval(contract.pendingApproval);
     if (contract.completed24h === undefined) continue;
     strings(contract, ["missionCode"]);
     if (contract.completed24h !== null && (!Number.isSafeInteger(contract.completed24h) || contract.completed24h < 0)
@@ -164,6 +184,7 @@ export function parseH3Model(value: unknown): H3Model {
     if (!Array.isArray(basis.states) || basis.states.some(state => typeof state !== "string")) throw new Error("H3_RESPONSE_INVALID");
   }
   for (const task of [...row.dayOneTasks, ...row.weeklyTier1, ...row.weeklyTier2, ...row.monthlyMissions]) {
+    if (task.pendingApproval !== undefined) pendingApproval(task.pendingApproval);
     strings(task, ["taskCode", "taskKind", "status", "reward"]);
     if (!task.taskCode || !["MISSION", "MONTHLY"].includes(task.taskKind) || !["active", "paused", "archived"].includes(task.status)) throw new Error("H3_RESPONSE_INVALID");
     if (task.contentState !== undefined && !["UNKNOWN", "DRAFT", "OPENED"].includes(task.contentState)) throw new Error("H3_RESPONSE_INVALID");
