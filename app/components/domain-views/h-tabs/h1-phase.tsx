@@ -408,6 +408,19 @@ export default function H1Phase({ ctx,
     return !receipt ? "查不到记录" : result === "PROCESSING" ? "还在执行" : receipt.originalStatus === "FAILED" ? "记为失败"
       : result === "REJECTED" ? "后台拒绝" : result === "BUSINESS_RESULT_UNAVAILABLE" ? "已处理，看不出成没成" : "结果未知";
   };
+  /** 查过的行一直留着自己的结论：第一条没确认、查过的那一步。 */
+  const rowLine = (row: H1Pending) => {
+    const request = row.requests.find((item) => !item.acknowledged);
+    if (!request || request.kind !== "patch" || !(request.commandKey in receipts)) return undefined;
+    return `${row.requests.length > 1 ? `${request.label}：` : ""}${stepLine(row, receipts[request.commandKey])}`;
+  };
+  /** 查到原结果后，标题换成查到的结果（全站同一套标签）；没查过的照旧。 */
+  const rowTitle = (row: H1Pending) => {
+    const index = row.requests.findIndex((item) => !item.acknowledged);
+    if (index < 0 || row.requests[index].kind !== "patch" || !(row.requests[index].commandKey in receipts)) return undefined;
+    const state = stepState(row, index);
+    return state === "已处理，看不出成没成" ? "已处理" : state === "查不到记录" ? "没有查到" : state;
+  };
   const stepsText = (row: H1Pending) => row.requests.map((request, index) => `${request.label}${stepState(row, index)}`).join("，");
   /** 查询后没确认的那一步怎么说、下一步做什么。 */
   const stepLine = (row: H1Pending, receipt: ECommandInvestigation | null) => {
@@ -856,7 +869,9 @@ export default function H1Phase({ ctx,
             // 整条了结：后台拒绝和没有执行分开说；两步的，另一步已保存要一起说。
             const saved = steps ? row.requests.filter((request) => !result.outcomes.some((outcome) => outcome.request.commandKey === request.commandKey && eCommandResult(outcome.receipt) !== "SUCCEEDED")).map((request) => `${request.label}已保存`).join("，") : "";
             const ended = !unresolved ? "" : eCommandResult(unresolved.receipt) === "REJECTED" ? SETTLED_REJECTED : "核查确认没有执行，记录已解除，可以重新修改。";
-            const text = ended ? `${lead}${saved ? `${saved}；${unresolved!.request.label}：` : ""}${ended}` : `${lead}${row.label}已保存`;
+            const confirmed = result.outcomes.some((outcome) => outcome.receipt?.originalStatus === "CONFIRMED_SUCCEEDED");
+            const text = ended ? `${lead}${saved ? `${saved}；${unresolved!.request.label}：` : ""}${ended}`
+              : confirmed ? `${row.label}：核查确认已执行，记录已解除，不要再做一次。` : `${lead}${row.label}已保存`;
             if (ended) setFeedback(text); else { setFeedback(undefined); ctx.toast(text, "success"); }
             setConfirm(current => current?.scope === row.scope ? null : current);
           } else {
@@ -912,11 +927,11 @@ export default function H1Phase({ ctx,
       }}>按原请求重试</Button>}
       {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除原操作记录</Button>}
     </>}>
-      <b>{row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知"}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
+      <b>{rowTitle(row) ?? (row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知")}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
       {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
-      {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
-      {row.state !== "approval" && isRetryExpired(row) && !(feedback && checked === row.commandKey) && <p>{RETRY_EXPIRED_TEXT}；原记录继续保留，这项暂时不能再改。</p>}
-      {feedback && checked === row.commandKey && <p>{feedback}</p>}
+      {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !rowLine(row) && !(feedback && checked === row.commandKey) && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
+      {row.state !== "approval" && isRetryExpired(row) && !(feedback && checked === row.commandKey) && !rowLine(row) && <p>{RETRY_EXPIRED_TEXT}；原记录继续保留，这项暂时不能再改。</p>}
+      {feedback && checked === row.commandKey ? <p>{feedback}</p> : rowLine(row) && <p>{rowLine(row)}</p>}
     </Notice>)}
     {feedback && !pending.some((row) => row.commandKey === checked && row.commandKey !== sending) && <Notice tone="warn">{feedback}</Notice>}
     {!canRead ? <BlockState state="denied" title="没有运营阶段读取权限" /> : loading && !model ? <BlockState state="loading" title="正在加载运营阶段…" /> : error && !model ? <BlockState state="error" title="运营阶段数据加载失败" detail={error} onRetry={() => void reload()} /> : model && rhythm && <>
