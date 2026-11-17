@@ -35,6 +35,7 @@ import {
   TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, legacyAssetText, mulDecimal,
   acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
+  H3CreationList, H3PendingLine, backendPendingTag, lockedTag, pendingChangeText,
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
 import { H3RegionPanel, REGION_APPROVER, useH3RegionPolicy } from "./h3-region-policy";
@@ -332,6 +333,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const reward = /^\d+$/.test(bv.rewardPoints?.trim() ?? "") ? bv.rewardPoints.trim() : null;
     const approval = Number(bv.rewardPoints) > 0;
     const editor = creating;
+    // 同编号已有新建申请：后端给的事实写清楚；拦截本身仍在提交处（mutations.blocked）。
+    const code = String(bv.missionCode ?? "").trim();
+    const creation = model?.pendingMissionCreations?.find((item) => item.missionCode === code);
+    const blockedReason = creation
+      ? creation.ticketId == null ? "这个编号被审批锁定，读不出申请内容。到「操作记录与审批」核对后再建。"
+        : "这个编号已有一张新建申请在等批准，审批结束前不能再建。"
+      : pendingOf(code) ? "这个编号已有一张新建申请在等批准，审批结束前不能再建。"
+        : mutations.blocked(code) ? "这个编号有结果未知的原操作，先在页面上方查询原结果。" : undefined;
     openActionConfirm({ briefKind: "config",
       action: `新建任务 · ${subject}`,
       title: `新建${subject}`,
@@ -350,6 +359,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只在目录里加一条已停用的任务；不自动绑定、不启用、不发钱。", check: "核对编号（建好后不能改）、名称和奖励；理由写清依据。" },
       confirmLabel: approval ? "提交审批" : "确认新建",
+      blockedReason,
       coverageLead: "新建带奖励的任务是放大方向，要另一位超级管理员批准",
       amplifies: true,
       run: async (reason) => {
@@ -821,8 +831,28 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   // ===== 权威待审批读取和保存的原请求 =====
   const pendingApprovals = mutations.pendingTargets;
   const pendingOf = (key: string) => pendingApprovals.includes(key);
-  const lockReason = (key: string) => pendingOf(key) ? "这一项有一张等批准的申请，审批结束前不能再改" : mutations.blocked(key) ? "这一项结果未知，请先查询原结果" : undefined;
-  const lockTag = (key: string) => pendingOf(key) ? pendingTag() : null;
+  /** 后端读回的这一项：null 是没有锁；单号读不出的是审批锁定，不叫待审批。 */
+  const backendLock = (key: string) => model?.pendingApprovals?.[key] ?? null;
+  const auditHref = (object: string | null) => canAudit ? `/platform/audit?domain=H${object ? `&object=${encodeURIComponent(object)}` : ""}` : undefined;
+  // 第一次设置时申请里的原值是后端的「没设置」标记（OpsGrowthService 的 __MISSING__）。
+  const pendingFormat = (key: string) => (value: string) => value === "__MISSING__" ? "还没设置" : key === "dayOne.triReward" ? operatorCopyText(value)
+    : key.startsWith("weekly.mult.") ? `${value.replace(/[×x]\s*$/, "")}×` : `${amountText(value) ?? value} UVT`;
+  const lockReason = (key: string) => {
+    const lock = backendLock(key);
+    if (lock && lock.ticketId == null) return "审批锁定：读不出申请内容，到「操作记录与审批」核对";
+    return pendingOf(key) ? "已有一张申请在等批准，审批结束前不能再改" : mutations.blocked(key) ? "这一项结果未知，请先查询原结果" : undefined;
+  };
+  const lockTag = (key: string) => {
+    const lock = backendLock(key);
+    if (!lock) return pendingOf(key) ? pendingTag() : null;
+    if (lock.ticketId == null) return lockedTag();
+    const format = pendingFormat(key);
+    return backendPendingTag(lock, pendingChangeText(lock, format), auditHref(key));
+  };
+  const pendingLine = (key: string, label?: string) => {
+    const lock = backendLock(key);
+    return lock && <H3PendingLine approval={lock} format={pendingFormat(key)} auditHref={auditHref(key)} label={label} />;
+  };
 
   // ===== 渲染 =====
   const zone = businessZone().label;
@@ -992,14 +1022,30 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const promo = model.promoBanner ?? {};
   const promoStatus = text(promo.status, "");
   const regionPending = region.pending;
+  // 后端读回的新建申请：读得出的按类型放进对应页签；读不出的（审批锁定）只在要处理的事里提一句。
+  const creations = model.pendingMissionCreations ?? [];
+  const creationsOf = (types: string[]) => creations.filter((item) => item.ticketId != null && types.includes(String(item.missionType).toUpperCase()));
+  const lockedCreations = creations.filter((item) => item.ticketId == null);
+  const lockedConfigs = Object.entries(model.pendingApprovals ?? {}).filter(([, lock]) => lock != null && lock.ticketId == null).map(([key]) => key);
+  // 等批准的对象：配置项的键带「.」，新建申请是任务编号（不带「.」）。
+  const configPending = pendingApprovals.filter((key) => key.includes("."));
+  const creationPending = pendingApprovals.filter((key) => !key.includes("."));
+  const tabOfKey = (key: string): Tab => key.startsWith("weekly.") ? "weekly" : key.startsWith("monthly.") ? "monthly"
+    : key.startsWith("mission.") && !dayOne.some((task) => `mission.${codeOf(task)}.reward` === key) ? "weekly" : "dayOne";
+  const tabOfCode = (code: string): Tab => String(creations.find((item) => item.missionCode === code)?.missionType).toUpperCase() === "DAY_ONE" ? "dayOne" : "weekly";
+  const typeLabel = (type: string | null) => TYPE_LABEL[String(type).toUpperCase()] ?? "类型读不出";
 
   const stuckIn = (list: QuestTask[]) => list.filter(activeUnbound).length;
-  const attention: Array<{ key: string; tone: "warn" | "neutral"; title: string; go: Tab }> = [
+  const attention: Array<{ key: string; tone: "warn" | "neutral"; title: string; go?: Tab; href?: string }> = [
     ...(stuck.length ? [{ key: "stuck", tone: "warn" as const, title: `${stuck.length} 个已启用的任务没绑定完成事件，用户做不完`, go: (stuckIn(dayOne) ? "dayOne" : "weekly") as Tab }] : []),
     ...(orphans.length ? [{ key: "orphan", tone: "warn" as const, title: `${orphans.length} 条启用的完成条件对应的任务不在这页，要核查`, go: "bindings" as Tab }] : []),
     ...(regionPending ? [{ key: "region", tone: "neutral" as const, title: "每周区号规则的修改在等批准", go: "weekly" as Tab }] : []),
     ...(region.reviewError ? [{ key: "region-read", tone: "warn" as const, title: "区号规则的审批进度读取失败，暂不能再次提交", go: "weekly" as Tab }] : []),
-    ...(pendingApprovals.length ? [{ key: "fund", tone: "neutral" as const, title: `${pendingApprovals.length} 个奖励或倍率的修改在等批准`, go: "dayOne" as Tab }] : []),
+    ...(configPending.length + creationPending.length ? [{ key: "fund", tone: "neutral" as const,
+      title: `${[configPending.length && `${configPending.length} 项奖励或倍率的修改`, creationPending.length && `${creationPending.length} 个新建任务`].filter(Boolean).join("、")}在等批准`,
+      go: configPending.length ? tabOfKey(configPending[0]) : tabOfCode(creationPending[0]) }] : []),
+    ...(lockedConfigs.length + lockedCreations.length ? [{ key: "locked", tone: "warn" as const, title: `${lockedConfigs.length + lockedCreations.length} 项被审批锁定，读不出申请内容`,
+      go: lockedConfigs.length ? tabOfKey(lockedConfigs[0]) : undefined, href: auditHref(lockedCreations.length === 1 ? lockedCreations[0].missionCode : null) }] : []),
   ];
   const conclusionState = stuck.length || orphans.length || unknownCount ? "warn" : active.length === 0 ? "neutral" : "ok";
   const conclusion = (
@@ -1008,7 +1054,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <p>启用中按任务的状态数，只算新手任务和每周任务；历史月度挑战不算。</p>
         <p>「做不完」是已启用、但后端判定还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
         {active.length === 0 && <p>没有启用的任务时，已发出的那一份不变；之后注册的用户、之后发布的每周任务都不会有新任务。</p>}
-        <p>等批准的奖励和倍率修改：有查看审批权限时这页会读出来并锁住对应项；没有这个权限时只显示你在这个标签页提交过的。</p>
+        <p>等批准的修改和新建任务，打开这页的人都看得到，对应项会锁住。历史月度挑战的奖励除外：要能进「操作记录与审批」才看得到。</p>
+        <p>结果未知只记在提交它的浏览器标签页里。</p>
       </>}
       action={canAudit ? <Link className="rd-link" href="/platform/audit?domain=H" prefetch={false}>看待批准的申请</Link> : undefined}>
       {active.length === 0
@@ -1049,7 +1096,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <li key={item.key} data-tone={item.tone}>
           {item.tone === "warn" ? <CircleAlert size={16} aria-hidden /> : <CalendarClock size={16} aria-hidden />}
           <span>{item.title}</span>
-          <Button size="sm" variant="ghost" onClick={() => setTab(item.go)}>去看</Button>
+          {item.go ? <Button size="sm" variant="ghost" onClick={() => item.go && setTab(item.go)}>去看</Button>
+            : item.href && <Link className="rd-link" href={item.href} prefetch={false}>去核对</Link>}
         </li>
       ))}
     </ul>
@@ -1130,8 +1178,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {tasks.map((task) => {
         const reward = rewardOf(task, list);
         const rewardKey = `mission.${codeOf(task)}.reward`;
+        const lock = backendLock(rewardKey);
+        const proposed = list !== "dayOne" && lock?.proposedValue != null ? `申请改成 ${pendingFormat(rewardKey)(lock.proposedValue)}` : undefined;
         return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} bindings={bindingsOf(task)}
-          reward={reward.reward} rewardNote={reward.note} localeGaps={localeGaps(task)} pending={lockTag(rewardKey)}
+          reward={reward.reward} rewardNote={proposed ? <>{reward.note && `${reward.note} · `}<span className="h3-card-proposed">{proposed}</span></> : reward.note} localeGaps={localeGaps(task)} pending={lockTag(rewardKey)}
           selected={detail?.code === codeOf(task)} onOpen={() => setDetail({ list, code: codeOf(task) })}
           primary={canModuleWrite ? taskPrimary(task) : undefined} menu={canModuleWrite ? taskMenu(task, list) : undefined} />;
       })}
@@ -1159,7 +1209,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <DayOneTimeline triReward={triRaw} eligibilityHours={eligibility} />
         <ConfigList label="新手任务设置">
           <ConfigRow name="新手任务奖励" value={tri ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triRaw ? operatorCopyText(triRaw) : "还没设置"}
-            sub={lockTag("dayOne.triReward") ?? "调高或第一次设置要批准"}
+            sub={pendingLine("dayOne.triReward") || (lockTag("dayOne.triReward") ?? "调高或第一次设置要批准")}
             what="做完全部新手任务后领一次。按领取时离注册多久分三档：注册后 24 小时内领是全额，之后到完成期限前领是宽限，过了完成期限是 0。"
             when={`调高或第一次设置：提交审批，${FUND_APPROVER}批准后生效；调低确认后立即生效。`}
             effect="只影响之后注册的用户；已经注册的按注册时定下的三档。"
@@ -1213,6 +1263,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
           explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的新手任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
           actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "DAY_ONE" })}>新建新手任务</Button> : undefined}>
+          <H3CreationList rows={creationsOf(["DAY_ONE"])} typeLabel={typeLabel} auditHref={auditHref} />
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
@@ -1275,7 +1326,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         </div>
         {multipliers.length === 0
           ? <p className="h3-empty-line">后端没有返回每周阶段倍率，算不出每周奖励。</p>
-          : <PhaseStrip items={multipliers} currentPhase={currentPhase} action={multAction} />}
+          : <PhaseStrip items={multipliers} currentPhase={currentPhase} action={multAction} mark={(phase) => lockTag(`weekly.mult.${phase}`)} />}
+        {multipliers.some((item) => backendLock(`weekly.mult.${cleanPhaseKey(item.p)}`)) && <div className="h3-pending-lines">
+          {multipliers.map((item) => cleanPhaseKey(item.p)).filter((phase) => backendLock(`weekly.mult.${phase}`))
+            .map((phase) => <Fragment key={phase}>{pendingLine(`weekly.mult.${phase}`, phase)}</Fragment>)}
+        </div>}
         <ConfigList label="周冠军">
           <ConfigRow name="周冠军说明文字" value={champion ? operatorCopyText(champion) : "还没填"}
             sub={<StatusTag tone="neutral" icon={Trophy}>只是展示文字，不发奖</StatusTag>}
@@ -1296,6 +1351,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
           actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "WEEKLY_T1" })}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "WEEKLY_T2" })}>新建二档</Button></> : undefined}>
+          <H3CreationList rows={creationsOf(["WEEKLY_T1", "WEEKLY_T2"])} typeLabel={typeLabel} auditHref={auditHref} />
           <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">
             <h3>{`一档 · ${t1.length} 个`}</h3>
@@ -1551,7 +1607,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 : activeUnbound(detailTask) ? "没绑定完成事件，用户做不完" : "还没有启用的完成条件",
               reason: detailBindings.length ? `完成条件：${detailBindings.map((binding) => `${binding.bindingCode}（${Number(binding.status) === 1 ? "启用" : "停用"}）`).join("、")}` : "到「完成条件」页签绑定" },
             { label: "点了跳到", value: TASK_ACTION_ROUTE_LABELS[text(detailTask.href, "")] ?? text(detailTask.href, "—"), reason: <span data-mono="">{text(detailTask.href, "—")}</span> },
-            { label: "奖励", value: detailReward?.reward, reason: detailReward?.note },
+            { label: "奖励", value: detailReward?.reward, reason: backendLock(`mission.${codeOf(detailTask)}.reward`)
+              ? <>{detailReward?.note && <span className="h3-detail-note">{detailReward.note}</span>}{pendingLine(`mission.${codeOf(detailTask)}.reward`)}</> : detailReward?.note },
           ]} />
           <section className="h3-detail-block" aria-label="三语名称">
             <div className="h3-sub-head"><h3>三语名称</h3><Explain label="三语名称怎么显示" content={<>

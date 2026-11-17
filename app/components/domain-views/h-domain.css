@@ -602,6 +602,34 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
   .h3-rec-time { grid-column: 1; grid-row: 2; }
   .h3-rec-actions { grid-column: 2 / -1; grid-row: 2; }
 }
+/* 后端读回的待审批、审批锁定：一行写完，只在有的那一项出现（多数时候没有） */
+.h3-pending { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-3); min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-2); }
+.h3-pending-label { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.h3-pending-change { color: var(--rd-text); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+.h3-pending-who { color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.h3-pending-ticket { color: var(--rd-text-3); }
+.h3-pending-lines { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-3) 0; padding: var(--rd-space-2) var(--rd-space-3); border-left: 2px solid var(--rd-warn); border-radius: 0 var(--rd-radius-control) var(--rd-radius-control) 0; background: var(--rd-warn-bg); }
+.h3-phase[data-locked] { border-color: var(--rd-warn); }
+.h3-phase-key .rd-tag { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }  /* 标签跟编号同一行同字号，倍率格不被撑高 */
+.h3-card-proposed { color: var(--rd-warn); font-weight: var(--rd-weight-medium); }
+.h3-detail-note { margin-right: var(--rd-space-3); }
+/* 申请新建、等批准：不是正式任务，排成一行一条，不做任务卡 */
+.h3-creating { display: flex; flex-direction: column; gap: var(--rd-space-2); margin-bottom: var(--rd-space-4); }
+.h3-creating .h3-sub-head { margin-top: 0; }
+.h3-creating-zone { margin-left: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h3-creating-list { display: grid; grid-template-columns: max-content minmax(0, 1.4fr) minmax(0, 1fr) max-content max-content; gap: var(--rd-space-2) var(--rd-space-4); margin: 0; padding: 0; list-style: none; }
+.h3-creating-list li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; padding: var(--rd-space-2) var(--rd-space-3); border-left: 2px solid var(--rd-warn); border-radius: 0 var(--rd-radius-control) var(--rd-radius-control) 0; background: var(--rd-warn-bg); }
+.h3-creating-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--rd-space-2); min-width: 0; overflow-wrap: anywhere; }
+.h3-creating-name b { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.h3-creating-name span { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.h3-creating-facts { min-width: 0; color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.h3-creating-list .h3-pending-who { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }
+.h3-creating-more { align-self: flex-start; padding: 0; border: 0; background: none; font: inherit; font-size: var(--rd-text-aux); cursor: pointer; }
+@container hdom (max-width: 900px) {
+  .h3-creating-list { grid-template-columns: max-content minmax(0, 1fr) max-content; }
+  .h3-creating-facts { grid-column: 2; grid-row: 2; }
+  .h3-creating-list .h3-pending-who { grid-column: 2; grid-row: 3; }
+}
 /* 地区规则 */
 .h3-region-first { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .h3-region-zone { margin-left: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
