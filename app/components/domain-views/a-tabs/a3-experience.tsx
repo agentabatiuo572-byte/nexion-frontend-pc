@@ -180,6 +180,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const systemInApp = config.channels.some((channel) => channel.enabled && channel.intentType === "system");
   // App 分享海报只取前 4 个打开链接、打开应用类渠道（share-poster-sheet linkChannels），排在后面的启用了也不显示。
   const hiddenInApp = visibleInApp.slice(4);
+  // 预览里按 App 的顺序列名字，最后两个连在一起换行，不让「更多」单独掉一行。
+  const posterChannels = [...visibleInApp.slice(0, 4).map((channel) => CHANNEL_NAME[channel.key] ?? channel.key), ...(systemInApp ? ["更多"] : [])];
   const languages = config.interfaceLanguages;
   const onLanguages = INTERFACE_LANGUAGES.filter((language) => language.base || !languages || languages.includes(language.code));
   const h3 = reach("/growth/quest", "growth_h3_read");
@@ -240,7 +242,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {preview("分享", <>
           <dl className="a3-preview-rows">
             <div><dt>分享出去的链接</dt><dd>{link ? <span className="a3-preview-link">{config.baseUrl}<mark>{SAMPLE_CODE}</mark></span> : <span className="a3-preview-empty">没有链接，App 里分享按钮不可用</span>}</dd></div>
-            <div><dt>分享海报里的外部渠道</dt><dd>{visibleInApp.length || systemInApp ? [...visibleInApp.slice(0, 4).map((channel) => CHANNEL_NAME[channel.key] ?? channel.key), ...(systemInApp ? ["更多"] : [])].join("、") : "没有"}<span className="a3-preview-sub">{hiddenInApp.length > 0 && <span className="rd-keep">{hiddenInApp.map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、")} 排在第 4 个之后，不显示；</span>}<span className="rd-keep">固定有保存图片、复制链接</span></span></dd></div>
+            <div><dt>分享海报里的外部渠道</dt><dd>{posterChannels.length ? <>{posterChannels.slice(0, -2).map((name) => `${name}、`).join("")}<span className="rd-keep">{posterChannels.slice(-2).join("、")}</span></> : "没有"}<span className="a3-preview-sub">{hiddenInApp.length > 0 && <span className="rd-keep">{hiddenInApp.map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、")} 排在第 4 个之后，不显示；</span>}<span className="rd-keep">固定有保存图片、复制链接</span></span></dd></div>
           </dl>
           {webChannels.length > 0 && <>
             <Segments label="看哪个渠道" value={previewChannel?.key ?? ""} onChange={(value) => setPreviewKey(String(value))} items={webChannels.map((channel) => ({ value: channel.key, label: CHANNEL_NAME[channel.key] ?? channel.key }))} />
