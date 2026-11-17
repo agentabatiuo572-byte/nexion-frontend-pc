@@ -3,6 +3,7 @@ import { isExplicitRejection } from "./explicit-rejection";
 import { displayAdminError } from "./error-messages";
 import { sendH1StoredPatch, type H1Phases } from "./h-client";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { discoverECommand, eCommandCanConcludeRejected, eCommandResult, eCommandSettled, investigateECommand, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator } from "./e-command-investigation";
 
 export type H1Request = {
   kind: "patch" | "proposal";
@@ -110,4 +111,49 @@ export async function lookupH1(row: H1Pending) {
   if (ticket.status === "pending") rememberH1({ ...row, state: "approval", ticket: { id: ticket.id, status: ticket.status } });
   else h1Pending.forget(row.fingerprint, row.commandKey);
   return ticket;
+}
+
+/** The proxy encodes each decoded route segment; local UI scopes are not backend command scopes. */
+export function h1CommandLocator(row: H1Pending, request: H1Request): ECommandLocator {
+  if (request.kind !== "patch" || request.method !== "PATCH") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  const path = request.path.split("/").map(part => encodeURIComponent(decodeURIComponent(part))).join("/");
+  return { commandKey: request.commandKey, originalMethod: "PATCH", originalPath: `/api/admin/growth${path}`, originalAdminId: String(row.actorId) };
+}
+
+/** H1 has success audit evidence, but no localConfiguration nonexecution proof. */
+export function h1ClosureConclusions(receipt: ECommandInvestigation | null | undefined, expired: boolean): ECommandEvidence["conclusion"][] {
+  if (!receipt || !/^GROWTH:H1:(?:RHYTHM_PARAM_UPDATE|PHASE_DIAL_UPDATE|PHASE_MONTH_DIAL_UPDATE|PHASE_CONTROL_UPDATE|PHASE_OVERRIDE_UPDATE):.+$/.test(receipt.scope)
+    || !expired && receipt.originalStatus !== "UNKNOWN") return [];
+  if (receipt.originalStatus === "UNKNOWN") return ["SUCCEEDED", "STILL_UNKNOWN"];
+  if (eCommandCanConcludeRejected(receipt)) return ["REJECTED"];
+  if (receipt.originalStatus === "FAILED" || receipt.originalStatus === "SUCCEEDED" && (receipt.businessCode === 0 || receipt.businessCode === null || receipt.businessState === undefined)) return ["SUCCEEDED"];
+  return [];
+}
+
+export async function investigateH1Request(row: H1Pending, request: H1Request, evidence: ECommandEvidence) {
+  const locator = h1CommandLocator(row, request);
+  const receipt = await discoverECommand(locator);
+  if (!h1ClosureConclusions(receipt, isRetryExpired(row)).includes(evidence.conclusion)) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
+  return investigateECommand(row, locator, evidence, "growth_h1_read");
+}
+
+/** Query each original step; success never authorizes sending the next unconfirmed step. */
+export async function lookupH1Direct(row: H1Pending) {
+  let current = row;
+  const outcomes: Array<{ request: H1Request; receipt: ECommandInvestigation | null }> = [];
+  for (let index = 0; index < current.requests.length; index += 1) {
+    const request = current.requests[index];
+    if (request.acknowledged) continue;
+    const receipt = await discoverECommand(h1CommandLocator(current, request));
+    outcomes.push({ request, receipt });
+    if (eCommandResult(receipt) === "SUCCEEDED") {
+      current = { ...current, requests: current.requests.map((item, at) => at === index ? { ...item, acknowledged: true } : item) };
+      rememberH1(current);
+    }
+  }
+  // A governed refusal is settled, not an acknowledged successful step. Do not mislabel it.
+  const settled = current.requests.every(request => request.acknowledged
+    || outcomes.some(outcome => outcome.request.commandKey === request.commandKey && eCommandSettled(outcome.receipt)));
+  if (settled) h1Pending.forget(current.fingerprint, current.commandKey);
+  return { settled, outcomes };
 }

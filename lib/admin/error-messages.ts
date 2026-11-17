@@ -167,6 +167,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   B1_WRITE_FAILED: "资金操作没收到有效结果，请保留原操作并查询原结果。",
   B1_EXPORT_FAILED: "对账导出没有成功，请重新导出；持续失败请联系值班同事。",
   B1_THRESHOLDS_PROPOSAL_INVALID: "覆盖率阈值审批的内容不完整或版本无效，请保留原申请并重新核对阈值。",
+  B1_THRESHOLD_REQUEST_INVALID: "覆盖率阈值请求含有不支持的字段，本次没有保存；请重新打开阈值框后核对提交。",
   B1_LEDGER_ACCOUNTS_EMPTY: "没有读到应付款明细，请重新读取；仍为空请联系值班同事核对账本。",
   B3_COHORT_INVALID: "注册批次格式不对，请核对分享链接或重新选择注册周。",
   B3_PHASE_INVALID: "运营阶段无效，请重新选择阶段或清除阶段筛选。",

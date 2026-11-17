@@ -304,7 +304,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? displayAdminError(new Error("FORBIDDEN")) : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
@@ -409,7 +409,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       </div>
     </div>
 
-    {proposalOnly && ctx.canWriteE3 && <Notice tone="warn" title="成组修改暂时不能提交">{BATCH_BLOCKED}</Notice>}
+    {proposalOnly && ctx.canWriteE3 && !e3Proposals.allowed(true) && <Notice tone="warn" title="成组修改暂时不能提交">{BATCH_BLOCKED}</Notice>}
 
     {/* 任务产能节奏：产能随月龄下降（参与任务递减的商品） */}
     <Panel title="产能规则" icon={Gauge} tone="role-4" sub="7 项" data-proof="e3-capacity-rules"

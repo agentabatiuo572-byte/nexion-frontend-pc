@@ -385,7 +385,12 @@ export default function DualLedgerPage() {
             await submitThresholdApproval(reason, form);
             return;
           }
-          body = JSON.stringify({ redlinePct: String(redline), healthyPct: String(healthy), expectedVersion: current.baseline.thresholdVersion ?? undefined, reason, operator });
+          const changed = {
+            ...(redline !== current.baseline.redlinePct ? { redlinePct: String(redline) } : {}),
+            ...(healthy !== current.baseline.healthyPct ? { healthyPct: String(healthy) } : {}),
+          };
+          if (!Object.keys(changed).length) throw new Error("THRESHOLD_REQUIRED");
+          body = JSON.stringify({ ...changed, expectedVersion: current.baseline.thresholdVersion ?? undefined, reason, operator });
         } else if (current.kind === "injection") {
           const amount = Number(form.amount);
           if (!Number.isFinite(amount) || amount <= 0) throw new Error("请输入有效的注入金额");
@@ -754,13 +759,13 @@ export default function DualLedgerPage() {
           note={redChanged ? (lowering
             ? `红线从 ${fmtConfigPct(thresholdBaseline.redlinePct)} 降到 ${fmtConfigPct(round2(red))}：覆盖率要跌到 ${fmtConfigPct(round2(red))} 以下才停止放行提现，比现在更晚触发。${valuationReliable && coverageRatio < round2(red) ? `现在覆盖率 ${pctText(coverageRatio)} 低于拟调整的红线，系统会拒绝这次提交。` : ""}`
             : `红线从 ${fmtConfigPct(thresholdBaseline.redlinePct)} 提到 ${fmtConfigPct(round2(red))}：覆盖率低于 ${fmtConfigPct(round2(red))} 就停止放行提现，比现在更早触发。`) : undefined}>
-          {(control) => <NumberInput {...control} aria-label="红线 (%)" unit="%" min={80} max={150} step={0.1} disabled={locked} value={value.redlinePct ?? ""} onChange={(event) => onChange({ ...value, redlinePct: event.target.value })} />}
+          {(control) => <NumberInput {...control} aria-label="红线 (%)" unit="%" min={80} max={150} step={0.1} disabled={locked || !canConfigureThresholds} value={value.redlinePct ?? ""} onChange={(event) => onChange({ ...value, redlinePct: event.target.value })} />}
         </DiffField>
         <DiffField size="body" before={pointsText(thresholdBaseline.healthyPct)} beforeLabel={factWhen} unit="%" label="健康线" hint="100–200，步长 0.1，要高于红线" error={healthyBad ?? order}
           explain="覆盖率低于健康线算警戒。已确认的告警要等系统读到覆盖率回到健康线以上才会清掉。"
           state={healthyChanged ? <StatusTag tone="progress">{approval ? "批准后生效" : "立即生效"}</StatusTag> : undefined}
           note={healthyChanged ? `健康线从 ${fmtConfigPct(thresholdBaseline.healthyPct)} 改到 ${fmtConfigPct(round2(healthy))}：覆盖率低于 ${fmtConfigPct(round2(healthy))} 就提示警戒，回到它以上才算恢复。` : undefined}>
-          {(control) => <NumberInput {...control} aria-label="健康线 (%)" unit="%" min={100} max={200} step={0.1} disabled={locked} value={value.healthyPct ?? ""} onChange={(event) => onChange({ ...value, healthyPct: event.target.value })} />}
+          {(control) => <NumberInput {...control} aria-label="健康线 (%)" unit="%" min={100} max={200} step={0.1} disabled={locked || !canConfigureThresholds} value={value.healthyPct ?? ""} onChange={(event) => onChange({ ...value, healthyPct: event.target.value })} />}
         </DiffField>
       </div>
     );
@@ -844,7 +849,7 @@ export default function DualLedgerPage() {
       } : thresholdBaseline ? {
         pending: !!pendingApproval,
         expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
-        disabledReason: pendingApproval && !canConfigureThresholds ? "当前账号缺少设置兑付覆盖率阈值的权限。" : undefined,
+        disabledReason: !canConfigureThresholds ? "当前账号缺少设置兑付覆盖率阈值的权限。" : undefined,
         resolve: (value) => pendingApproval || value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
           coverageCheckCopy: "提交和批准时都按拟调整的红线校验覆盖率。",
           completionCopy: pendingApproval ? `提交时红线是 ${fmtConfigPct(thresholdBaseline.redlinePct)}；批没批以查询原审批单为准。` : `另一位超级管理员批准前，红线仍是 ${fmtConfigPct(thresholdBaseline.redlinePct)}。`,

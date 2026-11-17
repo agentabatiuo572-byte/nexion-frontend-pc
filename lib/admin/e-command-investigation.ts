@@ -180,6 +180,11 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     }
   }
   const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : /^\/api\/admin\/growth\/rhythm\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:RHYTHM_PARAM_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
+    : /^\/api\/admin\/growth\/phases\/dials\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:PHASE_DIAL_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
+    : /^\/api\/admin\/growth\/phases\/months\/[1-9]\d*\/dials\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:PHASE_MONTH_DIAL_UPDATE:${locator.originalPath.split("/").at(-3)}:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
+    : /^\/api\/admin\/growth\/phases\/controls\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:PHASE_CONTROL_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
+    : /^\/api\/admin\/growth\/phases\/overrides\/[^/]+$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === normalizeScope(`GROWTH:H1:PHASE_OVERRIDE_UPDATE:${decodeURIComponent(locator.originalPath.split("/").at(-1)!)}`)
     : locator.originalPath === "/api/admin/platform/accounts/permissions" ? locator.originalMethod === "POST" && row.scope === "A1_PERMISSION_REGISTER"
     : locator.originalPath === "/api/admin/platform/roles" ? locator.originalMethod === "POST" && /^A6_ROLE_CREATE:[A-Z0-9_-]{1,64}$/.test(String(row.scope))
     : /^\/api\/admin\/platform\/roles\/[1-9]\d*$/.test(locator.originalPath) ? locator.originalMethod === "PATCH" && row.scope === `A6_ROLE_UPDATE:${locator.originalPath.split("/").at(-1)}`

@@ -63,9 +63,9 @@ export function useE3Proposals() {
   const [missing, setMissing] = useState<string[]>([]);
   const sending = useRef(false);
   const canQuery = rights.some(r => ["platform_a2_read", "platform_a2_proposal_create"].includes(r));
-  const allowed = (batch: boolean) => rights.includes("device_e3_write")
-    && rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r))
-    && (!batch || rights.includes("platform_a2_write"));
+  // Every allowed E3 batch key has the same business authority as a single-key proposal.
+  const allowed = (_batch: boolean) => rights.includes("device_e3_write")
+    && rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
   const sync = useCallback(() => {
     setRecords(commands.list().filter(r => r.owner === owner));
     setLegacy(eDomainLegacyCommands.list().filter(r => /^e3_config(?:_batch)?\|/.test(r.fingerprint)));

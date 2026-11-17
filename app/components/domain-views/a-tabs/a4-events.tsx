@@ -804,7 +804,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   };
 
   const previewH3DeadEvent = async () => {
-    if (!canRedriveH3Dead) {
+    if (!canReadOutbox && !canRedriveH3Dead) {
       toast("你没有重新发送任务事件的权限");
       return;
     }
@@ -1422,6 +1422,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   /* ── 投递与死信 ── */
   const redriveBlocked = !canRedriveH3Dead ? "你没有重新排队任务事件的权限（要有事件修改和操作审批的写权限）" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined;
+  const redrivePreviewBlocked = canReadOutbox || canRedriveH3Dead
+    ? loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined
+    : redriveBlocked;
   const deliveryTab = (
     <>
       <A4OutboxDiagnostics state={outbox} describe={(eventType) => eventDesc(overview, eventType)} canOpenUser={reach("/users/search", "user_c1hub_read")} />
@@ -1430,14 +1433,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到原事件和任务处理都已终止，就能把它重新排队一次。</p><p>各类有多少条死信看上方「周任务死信」，这里按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
         <FilterBar onSubmit={() => void previewH3DeadEvent()} querying={redrivePreviewing}
           notice={redrivePreviewError ? `查询失败：${redrivePreviewError}` : undefined}
-          action={<Button variant="primary" disabledReason={redriveBlocked ?? (redrivePreviewing ? "正在查询" : undefined)} loading={redrivePreviewing} onClick={() => void previewH3DeadEvent()}>查询</Button>}>
+          action={<Button variant="primary" disabledReason={redrivePreviewBlocked ?? (redrivePreviewing ? "正在查询" : undefined)} loading={redrivePreviewing} onClick={() => void previewH3DeadEvent()}>查询</Button>}>
           <FilterField label="任务事件编号" grow>
             <Input value={redriveEventId} onChange={(event) => resetRedriveTarget(event.target.value)} placeholder="输入一个任务事件编号，8–64 位"
-              aria-label="任务事件编号" aria-invalid={redrivePreviewError ? true : undefined} disabled={!canRedriveH3Dead || !!mutating} data-search="" />
+              aria-label="任务事件编号" aria-invalid={redrivePreviewError ? true : undefined} disabled={!canReadOutbox && !canRedriveH3Dead || !!mutating} data-search="" />
           </FilterField>
         </FilterBar>
         <div data-proof="a4-h3-dead-redrive" className="a4-redrive">
-          {!canRedriveH3Dead && !redrivePreview && !redriveResult && !redrivePreviewError && !redrivePreviewing && (
+          {!canReadOutbox && !canRedriveH3Dead && !redrivePreview && !redriveResult && !redrivePreviewError && !redrivePreviewing && (
             <p className="a4-note">{canRedriveH3Dead ? "" : "当前账号不能查询或重新排队任务事件。"}</p>
           )}
           {redrivePreview && (

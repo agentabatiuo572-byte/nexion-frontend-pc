@@ -430,6 +430,9 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     });
   }, [overview, ctx.contentLoading, ctx.contentError]);
   const rules = overview?.rules.records ?? [];
+  const hitDetailRule = hitDetail && (hitDetail.conditionText == null
+    ? rules.find(rule => rule.ruleId === hitDetail.ruleId)
+    : { dimension: hitDetail.dimension, conditionText: hitDetail.conditionText });
   const dimensions = overview?.dimensions ?? [];
   const hits = overview?.hits.records ?? [];
   const needsInvestigation = (dimension: typeof dimensions[number]) => !DECLARED_DIMENSIONS.includes(dimensionLabel(dimension.name) as K3RuleDimensionName) || dimension.action === "pass" || !!parseK3Condition(k3KindFromDimension(dimension.name, dimension.ruleKey), dimension.conditionText).conditionParseError;
@@ -650,7 +653,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amountValue ?? hitDetail.amount)} ${hitDetail.currency ?? "· 币种未记录"}` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
         { key: "dim", label: "维度", value: dimensionLabel(hitDetail.dimension) }, { key: "action", label: "命中处置", value: <ActionTag action={hitDetail.action} /> },
         { key: "reason", label: "触发原因", value: hitSummary(hitDetail) },
-        ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "触发时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
+        ...(hitDetailRule ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(hitDetailRule)} /> }] : []), { key: "time", label: "触发时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
       ]} /><div className="rd-toolbar"><Button size="sm" onClick={() => void navigator.clipboard.writeText(`${hitDetail.withdrawalNo}\n${hitDetail.userNo}`).then(() => ctx.toast("提现单号和账户已复制", "success")).catch(() => ctx.toast("复制失败，请手动选择复制", "error"))}>复制单号与账户</Button></div>
         <Fold title="技术信息" inset summary="原始原因、金额与统计口径"><KeyValues rows={[{ key: "reason", label: "原因原文", value: hitDetail.reason || "—" }, { key: "amount", label: "金额原文", value: hitDetail.amount }, { key: "scope", label: "统计口径", value: "每条是一次规则命中，不是提现的最终结果。" }, { key: "reasonScope", label: "原因说明", value: "可能按现在的规则条件写，不一定是触发时的原话。" }]} /></Fold></>}
     </Drawer>

@@ -31,7 +31,8 @@ export const b1Commands = createPendingMutationStore<B1PendingWrite>({
     try {
       const body = JSON.parse(record.body);
       return body && typeof body.reason === "string" && typeof body.operator === "string"
-        && (record.kind === "threshold" ? typeof body.redlinePct === "string" && typeof body.healthyPct === "string"
+        && (record.kind === "threshold" ? ["redlinePct", "healthyPct"].some(key => typeof body[key] === "string")
+          && [body.redlinePct, body.healthyPct].every(value => value === undefined || typeof value === "string")
           && (body.expectedVersion === undefined || Number.isSafeInteger(body.expectedVersion))
           : record.kind === "injection" ? typeof body.amount === "string" && typeof body.voucherNo === "string" : true);
     } catch { return false; } // Unreadable persisted evidence cannot become a request.
@@ -71,8 +72,7 @@ export async function executeB1Command(record: B1PendingWrite, retry = true) {
     if (record.kind === "threshold"
       ? !data?.snapshot || !finite(data.snapshot.redlinePct) || !finite(data.snapshot.healthyPct)
         || !Number.isSafeInteger(data.snapshot.thresholdVersion) || data.snapshot.thresholdVersion < 0 || !data.thresholdUpdate
-        || data.thresholdUpdate.redlinePct !== data.snapshot.redlinePct
-        || data.thresholdUpdate.healthyPct !== data.snapshot.healthyPct
+        || ["redlinePct", "healthyPct"].some(key => input[key] !== undefined && data.thresholdUpdate[key] !== data.snapshot[key])
       : record.kind === "injection"
         ? data?.injection?.voucherNo !== input.voucherNo || data.injection.amount !== Number(input.amount)
           || !finite(data.injection.oldReserveUsd) || !finite(data.injection.newReserveUsd)
