@@ -463,6 +463,7 @@ interface BackendF5CommissionAuditOverview {
   nextCursor?: string | number | null;
   total?: number | string | null;
   anomalies?: Record<string, unknown>[] | null;
+  layerRatioComparisons?: F5LayerRatioComparison[];
   coolingPolicy?: Record<string, unknown>[] | null;
   operationHistory?: Record<string, unknown>[] | null;
   activeSuspensions?: Record<string, unknown>[] | null;
@@ -1107,6 +1108,20 @@ export interface F5Anomaly {
   status: string;
 }
 
+export type F5LayerRatioComparison = {
+  currency: string;
+  available: true;
+  reason: null;
+  layers: Array<{ layer: number; actualPct: string; theoreticalPct: string; deviation: string }>;
+} | {
+  currency: string;
+  available: false;
+  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE";
+  layers: null;
+  theoreticalPct: null;
+  deviation: null;
+};
+
 export interface F5CoolingPolicy {
   kind: string;
   days: number;
@@ -1160,6 +1175,7 @@ export interface F5CommissionAuditOverview {
   nextCursor: string;
   total: number;
   anomalies: F5Anomaly[];
+  layerRatioComparisons?: F5LayerRatioComparison[];
   coolingPolicy: F5CoolingPolicy[];
   operationHistory: F5OperationHistory[];
   activeSuspensions: Array<{ userId: string; kind: string; reason: string; operator: string; updatedAt: string }>;
@@ -1812,6 +1828,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       relatedKCluster: asText(item.relatedKCluster, ""),
       status: asText(item.status, "open"),
     })),
+    layerRatioComparisons: data.layerRatioComparisons,
     coolingPolicy: (data?.coolingPolicy ?? []).map((item) => ({
       kind: asText(item.kind, ""),
       days: toNumber(item.days),
@@ -1922,7 +1939,7 @@ async function f1Request<T>(
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.
-      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {

@@ -553,6 +553,28 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     const anomaly = record(value, "F5", `anomalies[${index}]`);
     if (anomaly.currency !== undefined && !["USDT", "UVT"].includes(text(anomaly.currency, "F5", `anomalies[${index}].currency`))) invalid("F5", `anomalies[${index}].currency`);
   });
+  if (row.layerRatioComparisons !== undefined) {
+    array(row, "layerRatioComparisons", "F5").forEach((value, index) => {
+      const path = `layerRatioComparisons[${index}]`;
+      const comparison = record(value, "F5", path);
+      const currency = text(comparison.currency, "F5", `${path}.currency`);
+      if (!["USDT", "UVT"].includes(currency)) invalid("F5", `${path}.currency`);
+      if (comparison.available === false) {
+        if (!["F5_LAYER_RATIO_THEORY_UNAVAILABLE", "F5_LAYER_RATIO_LAYER_UNAVAILABLE", "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE"].includes(text(comparison.reason, "F5", `${path}.reason`))
+          || comparison.layers !== null || comparison.theoreticalPct !== null || comparison.deviation !== null) invalid("F5", path);
+      } else if (comparison.available === true) {
+        if (currency !== "USDT" || comparison.reason !== null) invalid("F5", path);
+        array(comparison, "layers", "F5").forEach((value, layerIndex) => {
+          const layerPath = `${path}.layers[${layerIndex}]`;
+          const layer = record(value, "F5", layerPath);
+          positiveInteger(layer.layer, "F5", `${layerPath}.layer`);
+          for (const key of ["actualPct", "theoreticalPct", "deviation"]) {
+            if (typeof layer[key] !== "string" || f4Decimal(layer[key]) === null) invalid("F5", `${layerPath}.${key}`);
+          }
+        });
+      } else invalid("F5", `${path}.available`);
+    });
+  }
   array(row, "coolingPolicy", "F5");
   array(row, "operationHistory", "F5");
   array(row, "activeSuspensions", "F5").forEach((value, index) => {
