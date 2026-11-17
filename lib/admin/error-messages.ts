@@ -1482,7 +1482,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K1_EARNINGS_RELEASE_APPROVAL_REQUIRED: "人工放行这笔收益需要另一位超级管理员批准后才生效。",
   K1_EARNINGS_RELEASE_ENTRY_REQUIRED: "缺少这笔受保护收益的记录号，请刷新收益列表后重新核对。",
   K1_EARNINGS_RELEASE_STALE: "这笔收益的来源、状态或净额已变化，本次没有放行；请刷新收益记录后重新核对。",
-  K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED: "这笔收益已不满足受保护收益的放行条件，不能放行；请刷新收益记录核对。",
+  K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED: "这笔收益已全部追回或状态已变，不能放行；请刷新收益记录核对。",
   EARNINGS_RELEASE_ENTRY_NOT_PROTECTED: "这笔收益已不在待审核或锁定状态，不能再次放行；请刷新收益记录核对。",
   EARNINGS_RELEASE_CONFLICT: "这笔收益状态已变化，本次未放行；请刷新收益记录核对。",
   USER_REGISTRATION_K1_IP_LIMIT: "这个 IP 在 24 小时内的注册数已达到上限；请到「多账户风险排查」核对注册上限和关联账户。",
