@@ -549,7 +549,10 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const requestCursor = cursor(pagination.requestCursor, "pagination.requestCursor");
   const topCursor = cursor(row.nextCursor, "nextCursor");
   const nestedCursor = cursor(pagination.nextCursor, "pagination.nextCursor");
-  array(row, "anomalies", "F5");
+  array(row, "anomalies", "F5").forEach((value, index) => {
+    const anomaly = record(value, "F5", `anomalies[${index}]`);
+    if (anomaly.currency !== undefined && !["USDT", "UVT"].includes(text(anomaly.currency, "F5", `anomalies[${index}].currency`))) invalid("F5", `anomalies[${index}].currency`);
+  });
   array(row, "coolingPolicy", "F5");
   array(row, "operationHistory", "F5");
   array(row, "activeSuspensions", "F5").forEach((value, index) => {

@@ -1099,6 +1099,7 @@ export interface F5CommissionQuery {
 export interface F5Anomaly {
   id: string;
   type: string;
+  currency?: string;
   commissionId: string;
   userId: string;
   evidence: string;
@@ -1804,6 +1805,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     anomalies: (data?.anomalies ?? []).map((item) => ({
       id: asText(item.id, "AN-UNKNOWN"),
       type: asText(item.type, "unknown"),
+      currency: item.currency as string | undefined,
       commissionId: asText(item.commissionId, ""),
       userId: item.userId == null ? "" : String(item.userId),
       evidence: asText(item.evidence, ""),
