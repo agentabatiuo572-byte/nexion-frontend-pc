@@ -3,7 +3,7 @@ import { isExplicitRejection } from "./explicit-rejection";
 import { displayAdminError } from "./error-messages";
 import { sendH1StoredPatch, type H1Phases } from "./h-client";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
-import { discoverECommand, eCommandCanConcludeRejected, eCommandResult, eCommandSettled, investigateECommand, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator } from "./e-command-investigation";
+import { discoverECommand, eCommandCanConcludeRejected, eCommandResult, eCommandSettled, investigateECommand, type ECommandEvidence, type ECommandInvestigation, type ECommandLocator, type ECommandResult } from "./e-command-investigation";
 
 export type H1Request = {
   kind: "patch" | "proposal";
@@ -13,7 +13,11 @@ export type H1Request = {
   commandKey: string;
   label: string;
   acknowledged: boolean;
+  /** Persisted before dispatch; absence in an old record does not prove nonexecution. */
+  sent?: boolean;
 };
+
+export type H1StepOutcome = { request: H1Request; receipt: ECommandInvestigation | null; state: ECommandResult | "NOT_SENT" };
 
 export type H1Pending = PendingMutationRecord & {
   actorId: number;
@@ -39,7 +43,8 @@ export const h1Pending = createPendingMutationStore<H1Pending>({
     && (row.rejectionReason === undefined || typeof row.rejectionReason === "string")
     && Array.isArray(row.requests) && row.requests.length > 0 && row.requests.every((request) =>
       ["patch", "proposal"].includes(request.kind) && typeof request.path === "string"
-      && typeof request.body === "string" && typeof request.commandKey === "string" && typeof request.acknowledged === "boolean"),
+      && typeof request.body === "string" && typeof request.commandKey === "string" && typeof request.acknowledged === "boolean"
+      && (request.sent === undefined || typeof request.sent === "boolean")),
 });
 
 export function rememberH1(row: H1Pending) {
@@ -59,7 +64,7 @@ export function beginH1(input: Omit<H1Pending, keyof PendingMutationRecord | "st
 
 export function h1Request(kind: H1Request["kind"], path: string, body: object, label: string): H1Request {
   return { kind, path, method: kind === "patch" ? "PATCH" : "POST", body: JSON.stringify(body),
-    commandKey: createA2CommandKey("h1-phase"), label, acknowledged: false };
+    commandKey: createA2CommandKey("h1-phase"), label, acknowledged: false, sent: false };
 }
 
 /** Each acknowledged calibration step is persisted before the next request. Recovery skips it. */
@@ -69,6 +74,7 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
   for (let index = 0; index < current.requests.length; index += 1) {
     const request = current.requests[index];
     if (request.acknowledged) continue;
+    current = { ...current, requests: current.requests.map((item, at) => at === index ? { ...item, sent: true } : item) };
     rememberH1(current);
     try {
       if (request.kind === "proposal") {
@@ -139,11 +145,25 @@ export async function investigateH1Request(row: H1Pending, request: H1Request, e
 
 /** Query each original step; success never authorizes sending the next unconfirmed step. */
 export async function lookupH1Direct(row: H1Pending) {
-  let current = row;
+  let current = h1Pending.list().find(item => item.fingerprint === row.fingerprint && item.commandKey === row.commandKey) ?? row;
+  const beforeQuery = current.requests;
+  // executeH1 persists each success before it can dispatch the next step. In legacy
+  // records a later step behind an unacknowledged predecessor was therefore never sent.
+  // Save that proof before this lookup acknowledges the predecessor and erases the clue.
+  const requests = beforeQuery.map((request, index) => request.sent === undefined && !request.acknowledged
+    && beforeQuery.slice(0, index).some(item => !item.acknowledged) ? { ...request, sent: false } : request);
+  if (requests.some((request, index) => request !== beforeQuery[index])) {
+    current = { ...current, requests };
+    rememberH1(current);
+  }
   const outcomes: Array<{ request: H1Request; receipt: ECommandInvestigation | null }> = [];
   for (let index = 0; index < current.requests.length; index += 1) {
     const request = current.requests[index];
     if (request.acknowledged) continue;
+    if (index > 0 && request.sent === false) {
+      outcomes.push({ request, receipt: null });
+      continue;
+    }
     const receipt = await discoverECommand(h1CommandLocator(current, request));
     outcomes.push({ request, receipt });
     if (eCommandResult(receipt) === "SUCCEEDED") {
@@ -151,9 +171,24 @@ export async function lookupH1Direct(row: H1Pending) {
       rememberH1(current);
     }
   }
-  // A governed refusal is settled, not an acknowledged successful step. Do not mislabel it.
-  const settled = current.requests.every(request => request.acknowledged
-    || outcomes.some(outcome => outcome.request.commandKey === request.commandKey && eCommandSettled(outcome.receipt)));
+  const steps: H1StepOutcome[] = current.requests.map((request, index) => {
+    const receipt = outcomes.find(outcome => outcome.request.commandKey === request.commandKey)?.receipt ?? null;
+    return { request, receipt, state: request.acknowledged ? "SUCCEEDED"
+      : index > 0 && request.sent === false ? "NOT_SENT" : eCommandResult(receipt) };
+  });
+  const expired = isRetryExpired(current);
+  let settled = true;
+  let stopped = false;
+  for (const step of steps) {
+    if (step.state === "NOT_SENT") {
+      // This is proof that no request was dispatched, not a missing backend receipt.
+      // All preceding steps must be settled; a successful prefix can continue only
+      // within the original retry window. A governed refusal ends that sequence.
+      if (!settled || !expired && !stopped) settled = false;
+    } else if (step.request.acknowledged || eCommandSettled(step.receipt)) {
+      if (step.state !== "SUCCEEDED") stopped = true;
+    } else settled = false;
+  }
   if (settled) h1Pending.forget(current.fingerprint, current.commandKey);
-  return { settled, outcomes };
+  return { settled, outcomes, steps };
 }
