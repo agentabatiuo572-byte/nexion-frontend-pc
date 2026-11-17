@@ -14,6 +14,25 @@ import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
 
+/** 奖池金额（每月上限、周榜奖池）：页面先按后端同一规则查，格式不对提交不了。 */
+const POOL_MONEY_HINT = "0 或正数，可带 $、逗号，末尾可带 K 或 M，比如 50K";
+const POOL_MONEY_INVALID = "要填 0 或正数，可带 $、逗号，末尾可带 K 或 M";
+const POOL_MONEY_CHECK = "格式不对提交不了；批准时系统也会再查一次。";
+
+/** 结算时间不是每周一次时，指出错在哪一段（判断仍以 f4WeeklyCronIssue 为准，这里只挑说法）。 */
+function weeklyCronProblem(value: string, issue: string) {
+  const fields = value.trim().split(/\s+/);
+  if (fields.length === 5) fields.unshift("0");
+  if (fields.length !== 6) return "要写 5 段或 6 段，比如 0 0 2 * * MON";
+  if (issue !== "F4_SETTLE_CRON_WEEKLY_REQUIRED") return "秒、分不能超过 59，时不能超过 23";
+  const [second, minute, hour, day, month, week] = fields;
+  if (![second, minute, hour].every(item => /^\d+$/.test(item))) return "秒、分、时要写固定的数字，比如 0 0 2";
+  if (!["*", "?"].includes(day)) return "「日」这一段要写 * 或 ?，不能指定几号";
+  if (month !== "*") return "「月」这一段要写 *，不能指定月份";
+  if (!/^(?:[0-7]|MON|TUE|WED|THU|FRI|SAT|SUN)$/i.test(week)) return "「星期」这一段只写一天，比如 MON";
+  return displayAdminError(new Error(issue));
+}
+
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
 const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 
@@ -128,6 +147,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。改成 0 后这一级不再分池，仍留在这页，之后可以改回。",
         check: "调高票数时先看兑付覆盖率；填 0 到 1,000,000，带小数时只取整数部分。",
       },
+      coverageLead: "调高票数：池的总额不变，这一级多分、其他等级少分",
+      coverageCheck: "批准时系统查兑付覆盖率，低于红线不执行。",
       completionCopy: approvalCopy("F4 写权限"),
       detail: `${vote.v} 当前 ${vote.votes} 票。票数越多，这个等级每人分到的团队激励池越多；池的总额不会因此变大。`,
     };
@@ -145,9 +166,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.pool.monthlyCap": {
       spec = { briefKind: "config", name: "调整团队激励池每月上限", op: "param", paramKey: "F.pool.monthlyCap",
               edit: { kind: "text", current: data.configValues["F.pool.monthlyCap"] ?? data.monthlyCapLabel,
-                validate: value => f4MonthlyCap(value) === null ? displayAdminError(new Error("F4_POOL_MONEY_INVALID")) : undefined },
+                validate: value => f4MonthlyCap(value) === null ? POOL_MONEY_INVALID : undefined, hint: POOL_MONEY_HINT },
               title: "调整团队激励池每月上限", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: "保存时不检查格式，写错会让池不能结算。请写数字，可带 K、M。" },
+              statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: POOL_MONEY_CHECK },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池每月最多发多少 · 当前 ${capEff}。` };
       break;
@@ -155,12 +176,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.pool.settleCron": {
       spec = { briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式",
-                validate: value => { const issue = f4WeeklyCronIssue(value); return issue ? displayAdminError(new Error(issue)) : undefined; },
-                hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
+                validate: value => { const issue = f4WeeklyCronIssue(value); return issue ? weeklyCronProblem(value, issue) : undefined; },
+                hint: `每周一次，比如 0 0 2 * * MON 是${describeSettleCron("0 0 2 * * MON", data.settlementZone) ?? "每周一 02:00"}`,
                 preview: (value) => `这样写是：${describeSettleCron(value, data.settlementZone) ?? "自定义时间，页面读不出，系统按原文执行"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? (value.trim() ? "每周自动结算一次，结算刚结束的那一周。" : "")}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
               facts: <Facts><Fact k="现在是">{settleCronText}</Fact>{cadence && <Fact k="会结算哪些周" tone={cadence.tone === "warn" ? "warn" : undefined}>{cadence.text}</Fact>}<Fact k="按哪个时区">{data.settlementZone ? `${data.settlementZone.label}（${data.settlementZone.offset}）` : "—"}</Fact></Facts>,
-              statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "只能写 5 段或 6 段，其余提交会被拒绝。" },
+              statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "只能设成每周一次，写错提交不了；现在不是每周一次的旧设置照常执行，不会自动改。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池自动结算时间 · 当前 ${settleCronText}。` };
       break;
@@ -307,9 +328,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.leaderboard.poolUsd": {
       spec = { briefKind: "config", name: "调整本周榜单奖池", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd",
               edit: { kind: "text", current: data.configValues["F.leaderboard.poolUsd"] ?? "",
-                validate: value => f4MonthlyCap(value) === null ? displayAdminError(new Error("F4_POOL_MONEY_INVALID")) : undefined },
+                validate: value => f4MonthlyCap(value) === null ? POOL_MONEY_INVALID : undefined, hint: POOL_MONEY_HINT },
               title: "调整周榜奖池覆盖额", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: "保存时不检查金额格式，请填数字。" },
+              statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: POOL_MONEY_CHECK },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `本周榜单奖池总额 · 当前 ${lbPool}。` };
       break;

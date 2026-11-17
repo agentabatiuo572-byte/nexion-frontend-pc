@@ -200,8 +200,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           sub={data.ambassadorPendingCount > 0 ? [waitBusiness && `业务核验 ${waitBusiness}`, waitFinance && `财务核验 ${waitFinance}`, waitApproval && `核验已通过 ${waitApproval}`].filter(Boolean).join(" · ") || undefined : undefined}>
           {quotaTotal > 0
             ? <span className="f4-card-meter">
-              <RatioBar label="本月购机名额已用" value={Math.min(quotaUsed, quotaTotal)} total={quotaTotal} valueText={`已用 ${count(quotaUsed)} 台，共 ${count(quotaTotal)} 台`} tone="role-2" quiet />
-              <span className="f4-card-line">名额剩余 {count(data.quotaMonthlyStockRemaining)} 台 · 共 {count(quotaTotal)} 台</span>
+              <RatioBar label="本月购机名额已用" value={Math.min(quotaUsed, quotaTotal)} total={quotaTotal} valueText={`已用 ${count(quotaUsed)} 台，总量 ${count(quotaTotal)} 台`} tone="role-2" quiet />
+              <span className="f4-card-line">名额剩余 {count(data.quotaMonthlyStockRemaining)} 台 · 总量 {count(quotaTotal)} 台</span>
             </span>
             : <span className="f4-card-line">本月购机名额总数为 0</span>}
         </Stat>

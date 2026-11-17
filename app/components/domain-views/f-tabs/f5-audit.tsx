@@ -542,7 +542,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       recovery ? <><b>{recovery}</b> 笔待追回</> : null,
       frozen ? <><b>{frozen}</b> 笔已冻结</> : null,
     ].filter(Boolean);
-    const hint = pendingCount ? `${pendingCount} 组好友奖励在等价格；价格长期不恢复时找值班处理。` : undefined;
+    // USDT 层比例没法比较、或没读到比较结果时，「没有异常样本」不能单独当作正常（UVT 本来就不比，不在首屏提）。
+    const layerUnchecked = data.layerRatioComparisons === undefined || data.layerRatioComparisons.some((item) => item.currency === "USDT" && !item.available);
+    const hint = [
+      pendingCount ? `${pendingCount} 组好友奖励在等价格；价格长期不恢复时找值班处理。` : "",
+      layerUnchecked && !anomalies ? "层比例这次没比较，不能当作正常，看「异常样本」。" : "",
+    ].filter(Boolean).join(" ") || undefined;
     const explain = <>
       <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和注册月份筛选变，选了状态时不显示。</p>
       <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待批申请。</p>
@@ -665,7 +670,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "records" && recordsPanel}
             {tab === "pending" && data && <F5PendingList rows={data.pendingCalculations} count={data.pendingCalculationCount} statusFiltered={statusFiltered} />}
-            {tab === "anomalies" && data && <F5AnomalyList rows={data.anomalies} sigma={data.configValues.commissionAnomalySigma} ratio={data.configValues.layerRatioAnomalyPct} canWrite={canWrite} onAdjust={() => editThreshold()} />}
+            {tab === "anomalies" && data && <F5AnomalyList rows={data.anomalies} comparisons={data.layerRatioComparisons} sigma={data.configValues.commissionAnomalySigma} ratio={data.configValues.layerRatioAnomalyPct} canWrite={canWrite} onAdjust={() => editThreshold()} />}
             {tab === "suspensions" && data && <F5SuspensionList rows={data.activeSuspensions} canSuspend={canSuspend} onResume={item => resume(item)} />}
             {tab === "history" && data && <F5HistoryList rows={data.operationHistory} />}
           </div>

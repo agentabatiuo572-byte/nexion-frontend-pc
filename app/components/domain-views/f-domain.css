@@ -879,6 +879,14 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-batch-nav > span { margin-right: auto; }
 .f5-page .f5-links { flex-wrap: wrap; }
 
+/* 异常样本：层比例核对，一行结论，点开看各层 */
+.f5-page .f5-layer-check { padding: 0 var(--rd-panel-pad-x); }
+.f5-page .f5-layer-check .rd-fold-body { display: flex; flex-direction: column; gap: 8px; }
+.f5-page .f5-layer-check .rd-fold[open] { border-bottom: 1px solid var(--rd-line); }
+.f5-page .f5-layer-row { display: flex; align-items: center; gap: 8px; margin: 0; }
+.f5-page .f5-layer-note { margin: 0; }
+.f5-page .f5-layer-table { max-width: 720px; }
+
 /* 原操作提醒：一条一行 */
 .f5-page .f5-recovery { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
 .f5-page .f5-recovery li { display: grid; grid-template-columns: minmax(0, 10em) minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px 16px; }
