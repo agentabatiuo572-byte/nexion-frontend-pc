@@ -602,7 +602,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       title: `下架${sectionName(s.key)}`,
       detail: (
         <>
-          当前 <b>{s.v}</b> 生效中。批准后 App 上{unpublishedEffect(s.key)}；版本正文保留，可以再恢复上线。
+          当前 <b>{s.v}</b> 生效中，批准后下架；版本正文保留，可以再恢复上线。
         </>
       ),
       amplifies: false,
@@ -615,7 +615,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           <Fact k="状态"><Change from={`公开中 ${s.v}`} to="已下架" /></Fact>
           {approverFacts(s)}
         </Facts>
-        <Notice tone={SECTION_INFO[s.key]?.where.startsWith("App 页面不读") ? "neutral" : "warn"} title="用户会少看到">{unpublishedEffect(s.key)}。App 下次读取时才变，已经打开的页面不会马上变。</Notice>
+        <Notice tone={SECTION_INFO[s.key]?.where.startsWith("App 页面不读") ? "neutral" : "warn"} title="用户会少看到">{unpublishedEffect(s.key)}。</Notice>
       </div>,
       run: async (reason) => {
         const def = findHighOp("i4_trust_section_manage")!;
