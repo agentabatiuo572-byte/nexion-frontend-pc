@@ -608,7 +608,10 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const upstreamOutcomeUnknown =
     response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
     || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true
-    || isIdempotencyOutcomeOpen(result?.message);
+    || isIdempotencyOutcomeOpen(result?.message)
+    // ba3befba: current maker authority can hide an already-created K1 ticket.
+    // This refusal to expose the old receipt is not a verdict on its execution.
+    || result?.message === "OPERATION_RESULT_UNKNOWN";
   if (init?.commandKey && upstreamOutcomeUnknown) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);
