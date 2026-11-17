@@ -6,14 +6,15 @@
  */
 import { useEffect, useState, type RefObject } from "react";
 import { Globe2, RefreshCw } from "lucide-react";
-import { Button, Change, Fact, Field, Notice, NumberInput, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { Button, Change, Explain, Fact, Field, Notice, NumberInput, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
 import { prepareH9PublicStats, updateH9PublicStats, type H9PublicStatsOverview } from "@/lib/admin/h9-client";
 import { pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
-import { ConfirmFacts, ModuleToolbar, count } from "./h9-parts";
+import { formatBusinessTimeCompact, businessZone } from "@/lib/admin/business-time";
+import { ConfirmFacts, ModuleToolbar, count, type AppDisplayRead } from "./h9-parts";
 
 type ScalarKey = "intervalMs" | "throughputMin" | "throughputMax" | "latencyJitterMs";
 type Draft = Record<ScalarKey, string> & { centers: { id: string; sharePct: string; latencyMs: string }[] };
@@ -24,6 +25,12 @@ const FIELDS: { key: ScalarKey; label: string; unit: string; scale?: number; hin
   { key: "latencyJitterMs", label: "延迟浮动上限", unit: "毫秒", hint: "0–60,000 的整数", what: "App 上的延迟 = 基础延迟 + 0 到这个数之间的波动，只往上浮。" },
 ];
 const CENTER_NAMES: Record<string, string> = { sg: "新加坡", jp: "东京", vn: "胡志明市", uk: "伦敦", fr: "巴黎", de: "法兰克福", "us-ny": "纽约", "us-sj": "圣何塞" };
+/** 各中心在线节点读不到的原因（GrowthPublicStatsService.appDisplay 的 unavailable，ae9783f7）。 */
+const CENTER_REASON: Record<string, string> = {
+  APP_GLOBE_DISPLAY_UNAVAILABLE: "8 个中心的占比都是 0，App 分不出各中心的数",
+  HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "首页在线设备这一刻没有数，分不出各中心",
+  HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页在线设备，分不出各中心",
+};
 const hasShares = (config: GlobeDisplayConfig) => config.centers.every(center => center.sharePct !== undefined);
 /** 后端还没下发分布比例时,按现有节点数换算一份参考比例,只读展示。 */
 function shareText(config: GlobeDisplayConfig, center: GlobeDisplayConfig["centers"][number]): string {
@@ -36,8 +43,10 @@ function draftsFrom(config: GlobeDisplayConfig): Draft {
     centers: config.centers.map(center => ({ id: center.id, sharePct: shareText(config, center), latencyMs: String(center.latencyMs) })) } as Draft;
 }
 
-export function H9GlobeDisplay({ ctx, data, refreshing, blocked, ready, onPending, onSaved, onRefresh, onIssue }: {
+export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, ready, onPending, onSaved, onRefresh, onIssue }: {
   ctx: HCtx; data: H9PublicStatsOverview; refreshing: boolean; onSaved: (next: H9PublicStatsOverview) => void;
+  /** App 此刻显示的数：各中心在线节点由服务端按 App 同一算法分好，这里只照写。 */
+  appDisplay: AppDisplayRead;
   blocked: boolean; ready: RefObject<boolean>; onPending: () => void;
   onRefresh: () => Promise<H9PublicStatsOverview | undefined>;
   /** 保存没得到明确结果时交给页面，写进页面上方的提醒。 */
@@ -139,11 +148,22 @@ export function H9GlobeDisplay({ ctx, data, refreshing, blocked, ready, onPendin
   const note = refreshing ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
   const jitter = draft ? h9DraftNumber(draft.latencyJitterMs) : Number.NaN;
   const shareGap = Number((100 - shareTotal).toFixed(2));
+  // 各中心在线节点是 App 显示用的推算（APP_DISPLAY_SIMULATION），合计等于首页在线设备；读不到写「—」并说原因，不当 0。
+  const app = appDisplay.state === "ready" ? appDisplay.data : null;
+  const centerNodes = app?.centerNodes ?? null;
+  const nodesOf = (id: string) => centerNodes?.find(row => row.id === id)?.onlineNodes ?? null;
+  const nodesTotal = centerNodes && app?.homeDisplay ? app.homeDisplay.onlineDevices : null;
+  const nodesReason = app?.unavailable.find(item => item.field === "centerNodes[].onlineNodes")?.reason;
+  const nodesNote = appDisplay.state === "loading" ? "正在读取 App 显示的在线节点…"
+    : appDisplay.state === "error" ? <>App 显示的在线节点没读到<Explain label="失败原因" content={appDisplay.message} /></>
+      : app!.centerNodesSource === undefined ? "服务端还不给各中心的在线节点"
+        : nodesTotal == null ? `App 显示的在线节点读不到：${CENTER_REASON[nodesReason ?? ""] ?? "服务端没给出原因"}`
+          : `App 显示的在线节点 · 取样 ${formatBusinessTimeCompact(app!.capturedAt, "—")}（${businessZone().label}）${app!.sourceEnvironment === "SANDBOX" ? " · 测试环境" : ""}`;
 
   return <section aria-label="全球网络展示">
     <Panel title="全球网络 · 8 个中心" icon={Globe2} tone="role-2" sub={`主配置 v${data.version}`}
       explain={<>
-        <p>App「全球网络」页的模拟展示。在线节点总数就是首页数字增长里的在线设备，进行中任务总数就是赚取页任务中心显示的数（真实进行中作业数 + 全球作业基座）。</p>
+        <p>App「全球网络」页的模拟展示。在线节点总数就是首页数字增长里的在线设备，进行中任务总数就是赚取页任务中心显示的数（进行中作业数 + 全球作业基座）。</p>
         <p>占比只决定这两个总数怎么分到 8 个中心，各中心加起来正好等于总数；每小时任务量和延迟按下面的参数模拟。这些都不是实测遥测。</p>
       </>}>
       {conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>}>
@@ -156,7 +176,7 @@ export function H9GlobeDisplay({ ctx, data, refreshing, blocked, ready, onPendin
             onChange={event => setDraft({ ...draft, [field.key]: event.target.value })} />}
         </Field>)}</div>
         <Table label="8 个中心的占比和延迟" className="h9-centers">
-          <thead><tr><Th>中心</Th><Th>占比</Th><Th>基础延迟</Th><Th align="right">App 上的延迟</Th></tr></thead>
+          <thead><tr><Th>中心</Th><Th>占比</Th><Th align="right">App 显示的在线节点<Explain label="App 显示的在线节点" content="按已保存的占比把首页在线设备分到 8 个中心，是 App 显示用的推算，不是节点台账。改了占比，保存后才变。" /></Th><Th>基础延迟</Th><Th align="right">App 上的延迟</Th></tr></thead>
           <tbody>
             {draft.centers.map((center, index) => {
               const share = h9DraftNumber(center.sharePct);
@@ -169,6 +189,7 @@ export function H9GlobeDisplay({ ctx, data, refreshing, blocked, ready, onPendin
                     disabled={locked || !sharesSupported}
                     onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, sharePct: event.target.value } : row) })} />
                 </span></Td>
+                <Td align="right">{nodesOf(center.id) == null ? "—" : `${count(nodesOf(center.id))} 台`}</Td>
                 <Td><NumberInput aria-label={`${CENTER_NAMES[center.id]}${"基础延迟"}`} unit="毫秒" min={0} max={60000} inputMode="numeric" value={center.latencyMs} disabled={locked}
                   onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, latencyMs: event.target.value } : row) })} /></Td>
                 <Td align="right">{Number.isFinite(base) && Number.isFinite(jitter) ? `${count(base)}–${count(base + jitter)} 毫秒` : "—"}</Td>
@@ -182,11 +203,13 @@ export function H9GlobeDisplay({ ctx, data, refreshing, blocked, ready, onPendin
                   : shareTotal === 100 ? <StatusTag tone="ok">等于 100%</StatusTag>
                     : Number.isFinite(shareTotal) ? <StatusTag tone="warn">{shareGap > 0 ? `还差 ${shareGap}%` : `多了 ${-shareGap}%`}</StatusTag> : null}
               </span></Td>
+              <Td align="right"><b>{nodesTotal == null ? "—" : `${count(nodesTotal)} 台`}</b></Td>
               <Td />
               <Td />
             </Tr>
           </tbody>
         </Table>
+        <p className="h9-chart-note">{nodesNote}</p>
         <p className="h9-band-rule">占比 0–100%、最多两位小数，8 个中心合计 100%；基础延迟 0–60,000 的整数毫秒。</p>
         {!next && !shareError && <Notice tone="warn">请检查填写范围、整数要求以及上下限顺序。</Notice>}
       </>}

@@ -78,7 +78,7 @@ export function useSupportManagementCommand<T, R>(options: {
           return;
         }
         if (receipt.status !== "SUCCEEDED") {
-          setMessage("原操作仍未确认，请稍后再查询。");
+          setMessage("原操作结果未知，请稍后再查询原结果。");
           return;
         }
         result = receipt.result;
@@ -96,7 +96,7 @@ export function useSupportManagementCommand<T, R>(options: {
       if (action === "query" && status === 404 && code === "SUPPORT_COMMAND_NOT_FOUND") {
         const restricted = denied || command.denied === true;
         setReceiptMissing(!restricted);
-        setMessage(restricted ? "还没查到原结果，当前授权仍未确认，请稍后再查。" : "还没查到原结果。");
+        setMessage(restricted ? "还没查到原结果，授权结果未知，请稍后再查。" : "还没查到原结果。");
       } else if (action === "submit" && [400, 404, 409, 422].includes(status ?? 0) && code && !code.startsWith("IDEMPOTENCY_")) {
         store.forget(slot, commandKey); setPending(undefined);
         options.onFailure(payload); const reason = displayAdminError(error); setMessage(reason.startsWith("操作未完成") ? reason : `本次操作未完成。${reason}`);

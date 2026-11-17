@@ -25,6 +25,8 @@ export type HCtx = Omit<DCtx, "openActionConfirm" | "toast"> & {
   closeConfirm?: (req?: ConfirmReq) => void;
   toast: (message: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq | null) => void;
+  /** Read-only: the shell's action confirm is open, so its error is already shown inside the dialog. */
+  confirmOpen?: boolean;
   /** UI convenience only; the backend remains the final authority boundary. */
   can: (authority: string) => boolean;
 };

@@ -3,8 +3,8 @@
 /**
  * I4 信任中心的画面件：版块卡、字段清单、两版对照、草稿编辑区、结果未知提醒的位置。
  * 只负责排版和由已读到的数据推出来的显示（App 能不能打开、哪些字 App 公开时清空），不发请求、不改判断。
- * App 规则的出处：后端 OpsTrustDisclosureService.publishedSections（六个版块都公开、每块当前版完整）和
- * App src/api/trust-section-api.ts（每块最多 80 个字段）。这里只是提示，App 实际读取以后端为准。
+ * App 规则的出处：后端 OpsTrustDisclosureService.publishedSections（只给已公开的版块，每块当前版要完整）和
+ * App src/api/trust-section-api.ts（接受 0–6 块，每块最多 80 个字段）。这里只是提示，App 实际读取以后端为准。
  */
 import { useState, type ReactNode } from "react";
 import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store, Users, type LucideIcon } from "lucide-react";
@@ -25,11 +25,11 @@ export const LANGS: readonly { value: Lang; label: string }[] = [
 
 export const SECTION_INFO: Record<string, { name: string; where: string; icon: LucideIcon }> = {
   financials: { name: "财务数字", where: "App 页面不读这块，平台数据另有来源", icon: Coins },
-  leadership: { name: "核心团队", where: "信任中心「核心团队」，只列带有效链接的人", icon: Users },
+  leadership: { name: "核心团队", where: "信任中心「管理团队」，只列带有效链接的人", icon: Users },
   nexNarrative: { name: "UVT 介绍", where: "UVT 介绍页，和信任中心的托管、保修、账户安全说明", icon: Landmark },
-  complianceBadges: { name: "合规徽章", where: "App 页面不读这块，只参加整页检查", icon: BadgeCheck },
+  complianceBadges: { name: "合规徽章", where: "App 页面不读这块；公开时版本不完整会让整页读不出来", icon: BadgeCheck },
   auditsReserves: { name: "审计与储备", where: "信任中心「审计」和商品详情，有报告才出现", icon: FileSearch },
-  listings: { name: "上市信息", where: "App 页面不读这块，只参加整页检查", icon: Store },
+  listings: { name: "上市信息", where: "App 页面不读这块；公开时版本不完整会让整页读不出来", icon: Store },
 };
 /** 卡片上预览哪几个字段：挑信任中心真正显示的那几项，挑不到就取前两项。 */
 export const PREVIEW_KEYS: Record<string, readonly string[]> = {
@@ -45,6 +45,16 @@ export function previewFields(sectionKey: string, fields: readonly TrustField[])
   const wanted = (PREVIEW_KEYS[sectionKey] ?? []).map((key) => zh.find((field) => base(field.key) === key)).filter(Boolean) as TrustField[];
   return (wanted.length ? wanted : zh).slice(0, 2);
 }
+/** 这一块没公开（下架或没发布）时 App 上少了什么：App test@0306001c trust.vue、nex.vue、store/detail.vue（H5 Lite 同）。 */
+export const UNPUBLISHED_EFFECT: Record<string, string> = {
+  financials: "App 不读这一块，App 上没有变化",
+  leadership: "信任中心的「管理团队」整块收起",
+  nexNarrative: "信任中心「服务保障」里托管、保修、账户安全三行和「规则与资料」里的「UVT 使用说明」入口收起；直接打开 UVT 说明页显示「暂无 UVT 说明」",
+  complianceBadges: "App 不读这一块，App 上没有变化",
+  auditsReserves: "信任中心「服务保障」里的「审计与储备证明」一行收起，商品详情的资料区显示「暂无相关资料」",
+  listings: "App 不读这一块，App 上没有变化",
+};
+export const unpublishedEffect = (key: string) => UNPUBLISHED_EFFECT[key] ?? "App 上这一块收起";
 export const sectionName = (key: string, fallback?: string) => SECTION_INFO[key]?.name ?? fallback ?? key;
 
 const LOCALIZED = /^(.+?)[._-](zh|vi|en)$/i;
@@ -111,7 +121,7 @@ export function snapshotReasonText(code: string | null, sectionKey = ""): string
     case "AI_CLIENT_COUNT_UNSUPPORTED": return "没有真实统计";
     case "SUBHERO_CLAIM_UNSUPPORTED": return "宣传语没有依据";
     case "SUBHERO_ADDITIONAL_LANGUAGE_UNSUPPORTED": return "跟英文宣传语一起不公开";
-    case "TRUST_SECTION_PUBLISHED_SNAPSHOT_INVALID": return "有版块没公开或当前版不完整";
+    case "TRUST_SECTION_PUBLISHED_SNAPSHOT_INVALID": return "有公开的版块当前版不完整";
     case "TRUST_SECTION_SANDBOX_RUN_ID_REQUIRED": return "测试环境没配运行号";
     default: return "其他原因";
   }

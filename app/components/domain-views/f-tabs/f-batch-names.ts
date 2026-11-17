@@ -6,7 +6,8 @@ const BATCH_ITEM_NAMES: Record<string, string> = {
   "F.binary.residualPolicy": "没匹配上的订单额",
 };
 
-const itemName = (key: string) => BATCH_ITEM_NAMES[key] ?? key.match(/^F\.unilevel\.(L[1-7])\.paused$/)?.[1]?.concat(" 按层暂停");
+// 七层的按层暂停用同一个权限，缺就是七层都缺：不单说某一层。
+const itemName = (key: string) => BATCH_ITEM_NAMES[key] ?? (/^F\.unilevel\.L[1-7]\.paused$/.test(key) ? "按层暂停" : undefined);
 
 /**
  * 整批权限的说法：判断照用 fConfigBatchPermissionIssue（逐项、按顺序取第一个缺的），
