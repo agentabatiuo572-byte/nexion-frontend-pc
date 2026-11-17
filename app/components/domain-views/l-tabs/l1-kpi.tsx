@@ -6,7 +6,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L1 · 关键指标（报表页样板）。查询条 → 结论 → 四张概览卡 → 八项指标 ┬ 所选指标明细 → 折叠组 → 相关页面。
- * 状态只用 kpiState 的现有比较，分母少于 5 算样本过小（T10、今日概览决定 8）；口径与目标只读锁定，页面没有修改入口。
+ * 状态沿用 kpiState 的现有比较；可用性、样本保护和注册批次均以服务端为准。
  * 查询状态写网址（ST-23），优先于本机保存的视图；导出由操作者填理由（OP-115），文件到 L5 下载。
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -22,7 +22,7 @@ import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
-import { kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
+import { kpiState, num, rec } from "./live-data";
 import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
@@ -30,25 +30,13 @@ import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownErro
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
+import { validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
 import { L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
 
-type Kpi = Omit<KpiRow, "value" | "spark"> & {
-  value: number | null;
-  spark: KpiTrendPoint[];
-  sparkSuppressed?: boolean[];
-  suppressed?: boolean;
-  previousSuppressed?: boolean;
-  available?: boolean;
-  unavailableReason?: string;
-  status?: string;
-  momDelta?: number | null;
-  numerator?: number | null;
-  denominator?: number | null;
-};
+type Kpi = L1KpiRow;
 type KpiExt = {
   fx: string;
   fxBold: string[];
@@ -65,18 +53,19 @@ const tgtLabel = (k: Kpi) => {
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
-type KpiState = "g" | "y" | "r" | "na" | "small";
-const SMALL_SAMPLE = 5;
+type KpiState = "g" | "y" | "r" | "na" | "small" | "inapp";
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
 const kpiStatus = (k: Kpi, offset: number): KpiState => {
+  if (k.scope === "NOT_APPLICABLE_TO_COHORT") return "inapp";
+  if (k.maturityStatus === "IMMATURE") return "na";
   if (k.suppressed) return "small";
   if (k.available === false || k.value == null) return "na";
-  return k.denominator != null && k.denominator < SMALL_SAMPLE ? "small" : kpiState({ ...k, value: k.value }, offset);
+  return kpiState({ ...k, value: k.value }, offset);
 };
-const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done", small: "done" };
-const stateText = (state: KpiState, k: Kpi) => ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "暂无法计算", small: "样本过小" })[state];
+const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done", small: "done", inapp: "done" };
+const stateText = (state: KpiState, k: Kpi) => k.maturityStatus === "PARTIAL" && !k.suppressed ? "PARTIAL" : ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "暂无法计算", small: "样本过小", inapp: "—" })[state];
 /** 未达标排最前，其次接近目标、暂无法计算和样本过小，达标的放最后；同一档按指标编号。 */
-const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, na: 2, small: 2, g: 3 };
+const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, na: 2, small: 2, inapp: 2, g: 3 };
 /** 后端的不可用原因写成人话，事实来自 L1KpiAnalytics 的分母。 */
 const REASON_TEXT: Record<string, string> = {
   NO_REGISTRATION_DENOMINATOR: "这个范围没有注册完成的用户，所以暂无法计算，不按 0% 算。",
@@ -94,7 +83,8 @@ const batchText = (vis = "") => vis.replace(/^V(\d+).*$/, "第 $1 批");
 const WINDOW_NAME: Record<Exclude<L1Window, "custom">, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
 const SLICES = ["cohort", "phase", "locale", "ref"] as const;
 const SLICE_NAME = { cohort: "注册周", phase: "运营阶段", locale: "语言", ref: "渠道" } as const;
-const URL_KEYS = ["window", "from", "to", ...SLICES] as const;
+const URL_KEYS = ["window", "from", "to", "granularity", "asOf", ...SLICES] as const;
+const DEFAULT_QUERY: L1KpiQuery = { window: "7d", granularity: "registration_week" };
 const COHORT_FORMAT = /^\d{4}-W\d{2}$/;
 const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics/operations"] as const;
 /** 全是 0 不是走势，不画图，写一句话（DP-62）。 */
@@ -138,6 +128,8 @@ function queryFromUrl(search: string): L1KpiQuery | null {
   const phase = params.get("phase") ?? "";
   const cohort = params.get("cohort") ?? "";
   return {
+    granularity: params.get("granularity") === "registration_month" ? "registration_month" : "registration_week",
+    asOf: params.get("asOf") || undefined,
     ...(custom ? { window: "custom" as const, from, to } : { window: raw === "1d" || raw === "30d" ? raw : "7d" as const }),
     cohort: COHORT_FORMAT.test(cohort) ? cohort : undefined,
     phase: /^P[1-6]$/.test(phase) ? phase : undefined,
@@ -150,7 +142,7 @@ function writeQueryToUrl(query: L1KpiQuery) {
   const url = new URL(window.location.href);
   URL_KEYS.forEach((key) => url.searchParams.delete(key));
   url.searchParams.set("window", query.window ?? "7d"); // 默认范围也写，否则刷新会被本机视图盖掉
-  (["from", "to", ...SLICES] as const).forEach((key) => { if (query[key]) url.searchParams.set(key, String(query[key])); });
+  (["from", "to", "granularity", "asOf", ...SLICES] as const).forEach((key) => { if (query[key]) url.searchParams.set(key, String(query[key])); });
   window.history.replaceState(window.history.state, "", url);
 }
 
@@ -185,11 +177,11 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
   const syncPending = () => setPending(pendingExports.list()[0] ?? null);
   useEffect(syncPending, []);
 
-  const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading || (source && source.status !== "ready"));
+  const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading || !source || source.status !== "ready");
   const exportData = source ? source.data : ctx.biData?.l1;
   const exportMode = resolveL1ExportMode(exportData, sourceUnavailable);
   const exportUnavailableReason = resolveL1ExportUnavailableReason(
-    exportData, ctx.biLoading ? "loading" : ctx.biError ? "error" : source?.status ?? "ready",
+    exportData, ctx.biLoading || !source ? "loading" : ctx.biError ? "error" : source.status,
   );
   const query = source?.query ?? { window: "7d" as const };
   const pageName = findByPath(EXPORT_PAGE)?.l2.name ?? "数据导出与监管报告";
@@ -232,7 +224,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
   };
 
   const openConfirm = (mode: L1ExportMode) => {
-    const rows = mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
+    const rows = query.granularity ? "—" : mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
     ctx.openActionConfirm({ briefKind: "export",
       action: "导出关键指标",
       detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
@@ -245,7 +237,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
           <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
           <Fact k="文件格式">CSV</Fact>
           <Fact k="文件行数">{rows}，另有表头</Fact>
-          <Fact k="文件内容">{mode === "series" ? "8 项指标的可用数值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性" : "当前累计数"}{mode !== "totals" && <Explain label="样本过小的项怎么导出" content="受保护项标为样本过小，相关数值留空。" />}</Fact>
+          <Fact k="文件内容">{query.granularity ? "—" : mode === "series" ? "8 项指标的可用数值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性" : "当前累计数"}{mode !== "totals" && <Explain label="样本过小的项怎么导出" content="受保护项标为样本过小，相关数值留空。" />}</Fact>
         </Facts>
       ),
       confirmLabel: "确认导出",
@@ -415,9 +407,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [phaseFilter, setPhaseFilter] = useState("");
   const [localeFilter, setLocaleFilter] = useState("");
   const [refFilter, setRefFilter] = useState("");
-  const [applied, setApplied] = useState<L1KpiQuery>({ window: "7d" }); // 屏幕上这份数据的条件（ST-18）
+  const [applied, setApplied] = useState<L1KpiQuery>(DEFAULT_QUERY); // 屏幕上这份数据的条件（ST-18）
   const [queryNotice, setQueryNotice] = useState("");
-  const [localData, setLocalData] = useState<Record<string, unknown> | null>(null);
+  const [localData, setLocalData] = useState<L1Dashboard | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [readAt, setReadAt] = useState("");
@@ -425,146 +417,90 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [drillTrend, setDrillTrend] = useState<{ values: KpiTrendPoint[]; suppressedPoints?: boolean[] } | null>(null);
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
-  const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
-  const urlToWrite = useRef<L1KpiQuery | null>(null); // 用户发起、结果还没写进网址的那次查询
+  const selectedQuery = useRef<L1KpiQuery>(DEFAULT_QUERY);
+  const initialized = useRef(false);
   const drillRead = useRef(0);
 
   useEffect(() => {
-    l1Requests.current.invalidate();
-    drillRead.current += 1;
-    setDrillKpi(null);
-    setDrillTrend(null);
-    setDrillError("");
-    setRefreshError("");
-    const parentData = ctx.biData?.l1;
-    const query = selectedQuery.current;
-    const hasSelection = query.window !== "7d" || Boolean(query.from || query.to || query.cohort || query.phase || query.locale || query.ref);
-    if (!hasSelection) setLocalData(null);
-    if (parentData && hasSelection) {
-      setRefreshing(true);
-      onExportSource?.({ parentData, data: parentData, query, status: "loading" });
-      l1Requests.current.run(
-        () => fetchL1Kpi(query),
-        next => {
-          validateL1Dashboard(next);
-          setLocalData(next);
-          setWin(query.window ?? "7d");
-          setApplied(query);
-          if (urlToWrite.current === query) writeQueryToUrl(query); // 父级读取抢掉了原请求时由这里补写
-          onExportSource?.({ parentData, data: next, query, status: "ready" });
-        },
-        error => {
-          setRefreshError(displayAdminReadError(error));
-          onExportSource?.({ parentData, data: parentData, query, status: "error" });
-        },
-        () => setRefreshing(false),
-      );
-    } else {
-      setRefreshing(false);
-      onExportSource?.({ parentData, data: parentData, query, status: parentData ? "ready" : "loading" });
+    let next = selectedQuery.current;
+    if (!initialized.current) {
+      let saved: ReturnType<typeof loadL1LocalView> = null;
+      try {
+        saved = loadL1LocalView(window.localStorage);
+      } catch {
+        // Storage may be disabled; the URL and default query still work.
+      }
+      if (saved) {
+        setPhaseOn(saved.phaseOn);
+        setYlOffset(saved.ylOffset);
+        setOvlSel(saved.ovlSel);
+      }
+      next = queryFromUrl(window.location.search) ?? (saved ? {
+        ...(saved.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved.window }),
+        granularity: saved.granularity,
+        cohort: saved.cohortFilter || undefined, phase: saved.phaseFilter || undefined,
+        locale: saved.localeFilter || undefined, ref: saved.refFilter || undefined,
+      } : DEFAULT_QUERY);
+      setWin(next.window ?? "7d");
+      setCustomFrom(next.from ?? "");
+      setCustomTo(next.to ?? "");
+      setCohortFilter(next.cohort ?? "");
+      setPhaseFilter(next.phase ?? "");
+      setLocaleFilter(next.locale ?? "");
+      setRefFilter(next.ref ?? "");
+      initialized.current = true;
     }
+    // Even the default week view requires the versioned cohort endpoint, never the parent's legacy six points.
+    reloadKpi(next, false);
   }, [ctx.biData?.l1]);
 
   useEffect(() => () => {
     l1Requests.current.invalidate();
+    drillRead.current += 1;
   }, []);
 
-  useEffect(() => {
-    let saved: ReturnType<typeof loadL1LocalView> = null;
-    try {
-      saved = loadL1LocalView(window.localStorage);
-    } catch {
-      saved = null;
-    }
-    const fromUrl = queryFromUrl(window.location.search);
-    if (!saved && !fromUrl) return;
-    if (saved) {
-      setGran(saved.gran);
-      setPhaseOn(saved.phaseOn);
-      setYlOffset(saved.ylOffset);
-      setOvlSel(saved.ovlSel);
-    }
-    const restored: L1KpiQuery = fromUrl ?? {
-      ...(saved?.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved?.window }),
-      cohort: saved?.cohortFilter || undefined, phase: saved?.phaseFilter || undefined,
-      locale: saved?.localeFilter || undefined, ref: saved?.refFilter || undefined,
-    };
-    setWin(restored.window ?? "7d");
-    setCustomFrom(restored.from ?? saved?.customFrom ?? "");
-    setCustomTo(restored.to ?? saved?.customTo ?? "");
-    setCohortFilter(restored.cohort ?? "");
-    setPhaseFilter(restored.phase ?? "");
-    setLocaleFilter(restored.locale ?? "");
-    setRefFilter(restored.ref ?? "");
-    selectedQuery.current = restored;
-    setRefreshing(true);
-    onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: restored, status: "loading" });
-    l1Requests.current.run(
-      () => fetchL1Kpi(restored),
-      (next) => {
-        validateL1Dashboard(next);
-        setLocalData(next);
-        setApplied(restored);
-        setRefreshError("");
-        onExportSource?.({ parentData: ctx.biData?.l1, data: next, query: restored, status: "ready" });
-      },
-      (error) => {
-        setRefreshError(displayAdminReadError(error));
-        onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: restored, status: "error" });
-      },
-      () => setRefreshing(false),
-    );
-    return () => l1Requests.current.invalidate();
-  }, []);
-
-  const query = selectedQuery.current;
-  const selectedReadRequired = query.window !== "7d" || Boolean(query.from || query.to || query.cohort || query.phase || query.locale || query.ref);
-  const data = localData ?? (selectedReadRequired ? undefined : ctx.biData?.l1);
+  const data = localData;
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
-  const rawKpis = rows<Kpi>(data?.kpis).map((item) => item.n === 6 ? { ...item, name: "消息推送点击率" } : item);
+  const rawKpis = (data?.kpis ?? []).map((item) => item.n === 6 ? { ...item, name: "消息推送点击率" } : item);
   const liveTotals = readL1LiveTotals(data);
-  let protocolBroken = false;
-  if (rawKpis.length) {
-    try {
-      validateL1Dashboard(data);
-    } catch {
-      protocolBroken = true;
-    }
-  }
 
   const draftSlices = { cohort: cohortFilter || undefined, phase: phaseFilter || undefined, locale: localeFilter || undefined, ref: refFilter || undefined };
   const appliedSlices = { cohort: applied.cohort, phase: applied.phase, locale: applied.locale, ref: applied.ref };
-  const appliedTime = { window: applied.window, from: applied.from, to: applied.to };
+  const appliedTime = { window: applied.window, from: applied.from, to: applied.to, granularity: applied.granularity };
 
   /** 读取入口只收完整的查询对象。草稿只有显式应用时才拼进来，刷新、移除条件、重试都不碰（ST-18）。 */
-  const reloadKpi = (next: L1KpiQuery) => {
+  const reloadKpi = (next: L1KpiQuery, notify = true) => {
     setQueryNotice("");
     setRefreshing(true);
     setLocalData(data ?? null);
     selectedQuery.current = next;
-    urlToWrite.current = next;
+    drillRead.current += 1;
+    setDrillKpi(null);
+    setDrillTrend(null);
+    setDrillError("");
     onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "loading" });
     l1Requests.current.run(
-      () => fetchL1Kpi(next),
+      () => fetchL1Kpi(next).then(result => validateL1Dashboard(result, next)),
       (result) => {
-        validateL1Dashboard(result);
+        const boundQuery = result.query ?? next;
         setLocalData(result);
-        onExportSource?.({ parentData: ctx.biData?.l1, data: result, query: next, status: "ready" });
+        onExportSource?.({ parentData: ctx.biData?.l1, data: result, query: boundQuery, status: "ready" });
         drillRead.current += 1;
         setDrillKpi(null);
         setDrillTrend(null);
         setDrillError("");
         setRefreshError("");
         setWin(next.window ?? "7d");
-        setApplied(next);
-        writeQueryToUrl(next);
-        ctx.toast(`关键指标 已按${next.window === "custom" ? `${next.from} 至 ${next.to}` : WINDOW_NAME[next.window ?? "7d"]}重新加载`, "success");
+        setApplied(boundQuery);
+        setGran(boundQuery.granularity === "registration_month" ? "month" : "week");
+        writeQueryToUrl(boundQuery);
+        if (notify) ctx.toast(`关键指标 已按${next.window === "custom" ? `${next.from} 至 ${next.to}` : WINDOW_NAME[next.window ?? "7d"]}重新加载`, "success");
       },
       (error) => {
         const message = displayAdminReadError(error);
         setRefreshError(message);
         onExportSource?.({ parentData: ctx.biData?.l1, data, query: next, status: "error" });
-        ctx.toast(`关键指标 刷新失败 · ${message}`, "error");
+        if (notify) ctx.toast(`关键指标 刷新失败 · ${message}`, "error");
       },
       () => setRefreshing(false),
     );
@@ -589,14 +525,18 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   };
   const removeSlice = (key: typeof SLICES[number]) => {
     ({ cohort: setCohortFilter, phase: setPhaseFilter, locale: setLocaleFilter, ref: setRefFilter })[key]("");
-    reloadKpi({ ...applied, [key]: undefined });
+    reloadKpi({ ...applied, asOf: undefined, [key]: undefined });
   };
   const saveView = () => {
+    if (!data) {
+      ctx.toast(refreshError ? "关键指标加载失败，请重试" : "关键指标加载中，请稍候", "warn");
+      return;
+    }
     let saved: ReturnType<typeof saveL1LocalView> = null;
     try {
       // 存屏幕上这份，不存没应用的输入：它和网址一致，刷新才真的还是这个视图。
       saved = saveL1LocalView(window.localStorage, {
-        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", gran, phaseOn, ylOffset, ovlSel,
+        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", granularity: applied.granularity, phaseOn, ylOffset, ovlSel,
         cohortFilter: applied.cohort ?? "", phaseFilter: applied.phase ?? "", localeFilter: applied.locale ?? "", refFilter: applied.ref ?? "",
       });
     } catch {
@@ -618,7 +558,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             return;
           }
           setCustomOpen(false);
-          reloadKpi({ window: next, ...appliedSlices });
+          reloadKpi({ window: next, granularity: applied.granularity, ...appliedSlices });
         }}
       />}
       more={<>
@@ -633,7 +573,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             label="按注册周或月分组"
             value={gran}
             items={[{ value: "week", label: "注册周（如2026-W42）" }, { value: "month", label: "注册月" }]}
-            onChange={(next) => { setGran(next); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`, "info"); }}
+            onChange={(next) => { reloadKpi({ ...applied, asOf: undefined, granularity: next === "month" ? "registration_month" : "registration_week" }); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`, "info"); }}
           />
           <Explain label="分组方式的说明" content="只影响保存视图，不改数据。" />
           <Check label="显示运营阶段切换" checked={phaseOn} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`, "info"); }} />
@@ -659,7 +599,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           <Input id="l1-custom-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
           <label className="rd-note" htmlFor="l1-custom-to">止</label>
           <Input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
-          <Button disabled={refreshing} disabledReason={customBlocked} onClick={() => reloadKpi({ window: "custom", from: customFrom, to: customTo, ...appliedSlices })}>应用自定义</Button>
+          <Button disabled={refreshing} disabledReason={customBlocked} onClick={() => reloadKpi({ window: "custom", from: customFrom, to: customTo, granularity: applied.granularity, ...appliedSlices })}>应用自定义</Button>
           <Explain label="自定义范围的说明" content={`${businessZone().label}，含结束日，最长 400 天。`} />
         </div>
       )}
@@ -667,12 +607,13 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   );
 
   const retryLast = () => reloadKpi(selectedQuery.current);
-  const retryFirstRead = () => { if (selectedReadRequired) retryLast(); else void ctx.reloadBi?.(); };
+  const retryFirstRead = retryLast;
 
   const report = () => {
     const KPIS = rawKpis;
-    const WEEKS = strings(data?.weeks);
-    const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
+    const WEEKS = data?.weeks ?? [];
+    const PHASE_SWITCH_IDX = data?.phaseSwitchIndex == null ? -1 : num(data.phaseSwitchIndex, -1);
+    const applicableCount = data?.applicableKpiCount ?? KPIS.length;
     const KPI_EXT = rec<KpiExt>(data?.kpiExt);
     const KPI_PLAIN = Object.fromEntries(Object.entries(rec<string>(data?.kpiPlain)).map(([n, plain]) => [n, KPI_EXT[n]?.fx === NOVA_FX ? NOVA_PLAIN : plain]));
     const states = KPIS.map((item) => kpiStatus(item, ylOffset));
@@ -690,9 +631,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
     const ext = {
       ...baseExt,
-      num: k.numerator == null ? baseExt.num : String(k.numerator),
-      den: k.denominator == null ? baseExt.den : String(k.denominator),
-      note: REASON_TEXT[k.unavailableReason ?? ""] ?? (k.available === false ? "这个范围缺数据，暂无法计算，不按 0% 算。" : baseExt.fx === NOVA_FX ? NOVA_NOTE : baseExt.note),
+      num: k.numerator == null ? null : String(k.numerator),
+      den: k.denominator == null ? null : String(k.denominator),
+      note: k.scope === "NOT_APPLICABLE_TO_COHORT" ? "—" : k.maturityStatus === "PARTIAL" ? "PARTIAL" : REASON_TEXT[k.unavailableReason ?? ""] ?? (k.available === false ? "这个范围缺数据，暂无法计算，不按 0% 算。" : baseExt.fx === NOVA_FX ? NOVA_NOTE : baseExt.note),
     };
     const kState = kpiStatus(k, ylOffset);
     const phase = rec(data?.currentPhase);
@@ -712,11 +653,11 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           fetchL1KpiDrilldown(kpiId, applied),
           fetchL1KpiTrend(kpiId, applied),
         ]);
-        const checkedDrilldown = validateL1Drilldown(drilldown, kpiId);
-        const checkedTrend = validateL1Trend(trend, kpiId);
+        const checkedDrilldown = validateL1Drilldown(drilldown, kpiId, applied, WEEKS);
+        const checkedTrend = validateL1Trend(trend, kpiId, applied, WEEKS);
         if (read !== drillRead.current) return;
-        setDrillKpi(checkedDrilldown.selected as Kpi);
-        setDrillTrend({ values: checkedTrend.values as KpiTrendPoint[], suppressedPoints: checkedTrend.suppressedPoints as boolean[] | undefined });
+        setDrillKpi(checkedDrilldown.selected);
+        setDrillTrend({ values: checkedTrend.values, suppressedPoints: checkedTrend.suppressedPoints });
       } catch (error) {
         if (read !== drillRead.current) return;
         const message = displayAdminReadError(error);
@@ -739,21 +680,21 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const goalMarks: { key: string; text: string; value: number; tone: StateTone }[] = k.dir === "band"
       ? [{ key: "low", text: `下限 ${k.band?.[0]}${unitText(k)}`, value: k.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${k.band?.[1]}${unitText(k)}`, value: k.band?.[1] ?? 0, tone: "ok" }]
       : [{ key: "target", text: `目标 ${target}${unitText(k)}`, value: target, tone: "ok" }, { key: "yellow", text: `接近线 ${pct(yellowLine)}`, value: yellowLine, tone: "warn" }];
-    const trendOf = (index: number) => (states[index] === "small" ? [] : KPIS[index].spark); // 样本过小的比例不画
+    const trendOf = (index: number) => KPIS[index].points ? KPIS[index].spark : states[index] === "small" ? [] : KPIS[index].spark;
     const showTrendColumn = KPIS.some((_, index) => hasTrend(trendOf(index)));
     const phaseEvent = phaseOn && PHASE_SWITCH_IDX >= 0 ? { index: PHASE_SWITCH_IDX, text: "运营阶段切换" } : undefined;
 
     // 指数只对单侧目标成立：越高越好算实际 ÷ 目标，越低越好算目标 ÷ 实际，高于 100 都是好于目标。
     // 健康带没有单一目标，不换算，按真实值和上下限单独画（DP-63）。
-    const picks = ovlSel.map((index) => ({ ...KPIS[index], spark: trendOf(index) }));
+    const picks = ovlSel.filter(index => KPIS[index].scope !== "NOT_APPLICABLE_TO_COHORT").map((index) => ({ ...KPIS[index], spark: trendOf(index) }));
     const bandPicks = picks.filter((item) => item.dir === "band");
     const compared = picks.filter((item) => item.dir !== "band").map((item, position) => ({
       item,
       slot: (position < 4 ? position + 1 : "other") as ChartSlot,
       values: item.spark.map((value) => value === null ? null : (item.dir === "lte" ? (item.target / value) * 100 : (value / item.target) * 100)),
     }));
-    const drawable = compared.filter(({ item, values }) => item.available !== false && hasTrend(values) && values.every((value) => value === null || Number.isFinite(value)));
-    const bandDrawable = bandPicks.filter((item) => item.available !== false && hasTrend(item.spark));
+    const drawable = compared.filter(({ item, values }) => (item.points || item.available !== false) && hasTrend(values) && values.every((value) => value === null || Number.isFinite(value)));
+    const bandDrawable = bandPicks.filter((item) => (item.points || item.available !== false) && hasTrend(item.spark));
     const skipped = [...compared.filter((entry) => !drawable.includes(entry)).map(({ item }) => item), ...bandPicks.filter((item) => !bandDrawable.includes(item))];
     const drawnCount = drawable.length + bandDrawable.length;
 
@@ -761,14 +702,14 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       <>
         {red > 0
           ? <Conclusion state="danger" lead hint="点一行看原因。" explain="未达标的排在下面最前面。">关键指标：<b>{red}</b> 项未达标</Conclusion>
-          : unavailable === KPIS.length
+          : unavailable === applicableCount
             ? <Conclusion state="unknown" hint={`选更长的时间范围再看；仍不足 5 人时等样本积累。${count("na") > 0 ? "缺数据的项点开看原因。" : ""}`} explain={SMALL_SAMPLE_NOTE}>关键指标：暂时无法判断</Conclusion>
-            : green === KPIS.length
+            : green === applicableCount
               ? <Conclusion state="ok" hint="这页无需处理。">关键指标：全部达标</Conclusion>
               : <Conclusion state="neutral" explain={unavailable > 0 ? "有的项人数太少或缺数据，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
 
         <StatBand label="指标概览">
-          <Stat lead={red === 0} label="已达标指标" value={green} unit={`/ ${KPIS.length}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" explain="满足对应指标的目标。" />
+          <Stat lead={red === 0} label="已达标指标" value={green} unit={`/ ${applicableCount}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" explain="满足对应指标的目标。" />
           <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
             sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button></>}
             explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
@@ -794,9 +735,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   return (
                     <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => { void selectKpi(index); revealDetail(); }} onKeyDown={moveRow} title="点击查看明细">
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                      <Td align="right"><Cell num main={state === "small" || state === "na" ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
+                      <Td align="right"><Cell num main={item.value == null ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
-                      {showTrendColumn && <Td>{state === "small"
+                      {showTrendColumn && <Td>{state === "small" && !item.points
                         ? <span className="rd-note">—</span>
                         : item.sparkSuppressed?.includes(true)
                           ? <><Sparkline label={`${operatorCopyText(item.name)}的走势，样本过小时段留空`} values={item.spark} /><span className="rd-note">部分时段样本过小</span></>
@@ -829,7 +770,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             ))}
           >
             <div className="rd-stack">
-              {kState !== "na" && kState !== "small" && (
+              {k.available && (
                 <ThresholdMeter
                   label="当前值和目标"
                   rows={[{ key: "now", label: "当前", value: k.value!, text: `${k.value}${unitText(k)}`, tone: STATE_TONE[kState] }]}
@@ -837,8 +778,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                 />
               )}
               <Facts>
-                {(kState === "na" || kState === "small") && <Fact k="当前值">—</Fact>}
-                {(kState === "na" || kState === "small") && <Fact k="目标值">{tgtShort(k)}</Fact>}
+                {!k.available && <Fact k="当前值">—</Fact>}
+                {!k.available && <Fact k="目标值">{tgtShort(k)}</Fact>}
                 {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
                 {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
                 {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
@@ -847,7 +788,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <p className="rd-note">解读：{kState === "small" ? <>人数太少，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</p>
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
-                : kState === "small"
+                : kState === "small" && !k.points
                   ? null
                   : hasTrend(k.spark)
                   ? <Panel plain headingLevel={3} title="最近在变好还是变坏" explain="所选时间范围等分六段。">
@@ -861,7 +802,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                       />
                     </Panel>
                   : <p className="rd-note">{k.sparkSuppressed?.includes(true) ? "样本过小，趋势时段留空。" : k.spark.length >= 2 && k.spark.every((point) => point === 0) ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
-              {kState !== "small" && hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
+              {hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
               <Fold inset title="这项指标怎么算" summary={`指标 ${k.n} 的公式和开放批次`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
@@ -970,9 +911,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
 
   const firstError = refreshError || ctx.biError;
   const body = rawKpis.length
-    ? protocolBroken
-      ? <BlockState state="error" title="关键指标加载失败" detail="收到的数据不完整，已停止显示。" onRetry={retryFirstRead} retryLabel="重新加载" />
-      : report()
+    ? report()
     : liveTotals.length
       ? <L1LiveTotals metrics={liveTotals} />
       : refreshing || ctx.biLoading
@@ -990,7 +929,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         actions={exporting.button}
         meta={<span className="rd-toolbar">
           {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
-          <Button variant="ghost" size="sm" loading={refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => reloadKpi(applied)}>刷新</Button>
+          <Button variant="ghost" size="sm" loading={refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => reloadKpi({ ...applied, asOf: undefined })}>刷新</Button>
         </span>}
         readOnly={ctx.canExport ? undefined : "只能查看，导出需报表管理权限"}
       />

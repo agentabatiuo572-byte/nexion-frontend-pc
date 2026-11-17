@@ -28,8 +28,9 @@ export function resolveL1ExportMode(raw: unknown, sourceUnavailable: boolean): L
   if (record(raw).available === false) return null;
   if (hasDetailedL1Attempt(raw)) {
     try {
-      validateL1Dashboard(raw);
-      const kpis = record(raw).kpis as Array<Record<string, unknown>>;
+      const dashboard = validateL1Dashboard(raw);
+      const kpis = dashboard.kpis;
+      if (dashboard.granularity) return kpis[0].points?.length ? "series" : null;
       if (!kpis.some((row) => row.available === true || row.suppressed === true)) return null;
       return kpis.every((row) => Array.isArray(row.spark) && row.spark.length === 6
         && row.spark.every((point) => point !== null))
@@ -74,6 +75,7 @@ export function l1ReportInput(mode: L1ExportMode, query: L1KpiQuery): LReportCre
     phase: query.phase,
     locale: query.locale,
     ref: query.ref,
+    ...(query.granularity ? { granularity: query.granularity, asOf: query.asOf } : {}),
     exportType: complete ? "KPI 序列" : "KPI 当前汇总",
     timeRange: complete ? "当前时间范围" : "当前数据",
     fields: complete
