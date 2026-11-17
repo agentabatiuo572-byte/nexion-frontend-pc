@@ -5,7 +5,7 @@ import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Mod
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { eCommandClosureOffer, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, offerNotice, type ClosureOffer, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
@@ -36,17 +36,19 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在执行", text: expired ? "原操作还在执行，稍后再查；不要重复提交。" : "原操作还在执行，过一会儿再查询；现在重试不会重复执行，也拿不到新结果。" };
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", title: "已结案", text: "核查确认是后台拒绝，记录已解除。" };
   if (receiptRejected(receipt)) return { tone: "warn", title: "后台拒绝", text: expired
-    ? "后台拒绝了，不保证没有改动；已过 24 小时，需要核查结案。"
+    ? "后台拒绝了，不保证没有改动；已过 24 小时，可按「后台拒绝」结案。"
     : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
+  // 过期的记为失败、仍未知：按结案框能选的结论说下一步；这里不知道账号的调查权限，没有权限的另有 ClosureContact。
+  const step = closureLine(eCommandClosureOffer(outcome, expired), receipt, true);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "记为失败", text: expired
-    ? "这次操作记为失败；有这次的成功记录才能结案。"
+    ? step!
     : "这次操作记为失败。可以按原请求重试，会按原内容再执行一次。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
     ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。"
     : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
-  return { tone: "warn", title: "仍未知", text: expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。"
-    : "原操作处理到一半中断了，重试也拿不到新结果；需要按证据核查结案。" };
+  return { tone: "warn", title: "仍未知", text: (receipt.originalStatus === "UNKNOWN" ? step : undefined) ?? (expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。"
+    : "原操作处理到一半中断了，重试也拿不到新结果；需要按证据核查结案。") };
 }
 
 /** The row's collapsed tag and sentence once the original has been looked up (RecoveryItem.result). */
