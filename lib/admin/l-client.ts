@@ -959,11 +959,18 @@ function withReason<T extends Record<string, unknown>>(body: T, reason: string) 
 }
 
 export const lBiActions: LBiActions = {
-  createReport: (input, reason, stableIdempotencyKey) => apiRequest("/reports", {
-    method: "POST",
-    headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
-    body: JSON.stringify(withReason(input, reason)),
-  }).then(() => undefined),
+  createReport: async (input, reason, stableIdempotencyKey) => {
+    const data = await apiRequest<{ created?: unknown }>("/reports", {
+      method: "POST",
+      headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
+      body: JSON.stringify(withReason(input, reason)),
+    });
+    const created = rec(data?.created);
+    if (typeof created.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(created.reportId)
+      || typeof created.type !== "string" || !["KPI_SERIES", "FUNNEL_COHORT", "FINANCE_AGG", "OPERATIONS_AGG"].includes(created.type)) {
+      throw new LOutcomeUnknownError();
+    }
+  },
   createRegulatoryReport: async (input, reason, stableIdempotencyKey) => {
     const data = await regulatoryRequest<Record<string, unknown>>("/report", {
       method: "POST",
