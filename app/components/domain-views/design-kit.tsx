@@ -632,6 +632,29 @@ function initEditValue(spec?: EditSpec | null): string {
   return options.includes(current) ? current : "";
 }
 
+// Plain decimal inputs stay exact even beyond the precision of a JavaScript number.
+function normalizeEditDecimal(raw: string): string | null {
+  const value = raw.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) return null;
+  const [whole, fraction = ""] = value.replace(/^[+-]/, "").split(".");
+  const integer = whole.replace(/^0+/, "") || "0";
+  const decimal = fraction.replace(/0+$/, "");
+  return `${value.startsWith("-") && (integer !== "0" || decimal) ? "-" : ""}${integer}${decimal ? "." + decimal : ""}`;
+}
+
+function compareEditDecimals(left: string, right: string): number | undefined {
+  const a = normalizeEditDecimal(left), b = normalizeEditDecimal(right);
+  if (a === null || b === null) return undefined;
+  if (a === b) return 0;
+  const negative = a.startsWith("-");
+  if (negative !== b.startsWith("-")) return negative ? -1 : 1;
+  const [ai, af = ""] = a.replace(/^-/, "").split(".");
+  const [bi, bf = ""] = b.replace(/^-/, "").split(".");
+  const places = Math.max(af.length, bf.length);
+  const order = ai.length !== bi.length ? ai.length > bi.length : ai !== bi ? ai > bi : af.padEnd(places, "0") > bf.padEnd(places, "0");
+  return (order ? 1 : -1) * (negative ? -1 : 1);
+}
+
 // 用十进制整数校验步长，避免合法小数被浮点除法误拒；不舍入输入。
 function isDecimalStepAligned(value: string, base: number, step: number): boolean {
   const parts = [value, String(base), String(step)].map((raw) => {
@@ -660,7 +683,7 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
   if (spec.max !== undefined && numeric > spec.max) return false;
-  if (spec.disallowCurrent && numeric === Number(spec.current)) return false;
+  if (spec.disallowCurrent && compareEditDecimals(normalized, spec.current ?? "") === 0) return false;
   if (spec.step !== undefined && spec.step > 0
     && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
@@ -710,7 +733,7 @@ function multiFieldIssues(spec: MultiFieldSpec, state: BusinessFormValue): Recor
       }
     } else if (f.inputKind === "number" && !feedback?.invalid && (raw || f.required === false)) {
       const n = Number(state[f.key]);
-      const off = !Number.isFinite(n) ? false
+      const off = raw && normalizeEditDecimal(raw) === null ? true : !Number.isFinite(n) ? true
         : (f.min != null && n < f.min) || (f.max != null && n > f.max)
           || (f.step != null && f.step > 0 && f.min != null && !isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step));
       if (off) issues[f.key] = `${f.label}要填 ${numberRangeText(f)}`;
@@ -1618,7 +1641,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (spec.requireAnyChange) {
       const normalize = (field: (typeof spec.fields)[number], raw: string | undefined) => {
         const value = (raw ?? "").trim();
-        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return String(Number(value));
+        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return normalizeEditDecimal(value) ?? value;
         return value;
       };
       const changed = spec.fields.filter(isVisible).some((field) =>
@@ -3812,14 +3835,15 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
-  const currentNumber = spec?.current?.trim() ? Number(spec.current) : Number.NaN;
-  const newNumber = Number(newVal);
+  const decimalDirection = compareEditDecimals(newVal, spec?.current ?? "");
   const directionalAmplifies = typeof spec?.amplifiesWhen === "function"
     ? spec.amplifiesWhen(newVal)
     : typeof spec?.amplifiesWhen === "object"
     ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to
-    : spec?.amplifiesWhen && newVal.trim() !== "" && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
-    ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
+    : spec?.amplifiesWhen && decimalDirection !== undefined
+    ? spec.amplifiesWhen === "increase" ? decimalDirection > 0 : decimalDirection < 0
+    : spec?.amplifiesWhen && !spec.current?.trim() && normalizeEditDecimal(newVal) === "0"
+    ? false
     : undefined;
   const effectiveAmplifies = (activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.amplifies?.(businessValue) : undefined) ?? directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
@@ -3864,7 +3888,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editIssue = !emptyChosen && !numberBad && isEditValueValid(spec, newVal) ? spec?.validate?.(newVal) : undefined;
   const editValueOk = !editIssue && (emptyChosen || (!numberBad && isEditValueValid(spec, newVal)));
-  const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && Number(newVal) === Number(spec.current)));
+  const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   const canConfirm = !blockedReason && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked

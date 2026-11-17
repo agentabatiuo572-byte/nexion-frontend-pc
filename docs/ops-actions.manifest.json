@@ -31,7 +31,7 @@
     "B4": ["OPS-B-09", "OPS-B-10"],
     "B5": ["OPS-B-11", "OPS-B-12", "OPS-B-13", "OPS-B-14", "OPS-B-16"],
     "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35", "OPS-C-36", "OPS-C-38"],
-    "C2": ["OPS-C-01", "OPS-C-02a"],
+    "C2": ["OPS-C-01", "OPS-C-02a", "OPS-C-10", "OPS-C-39"],
     "C3": ["OPS-C-03", "OPS-C-21"],
     "C5": ["OPS-C-18", "OPS-C-37", "OPS-C-38"],
     "C6": ["OPS-C-20"],
@@ -481,7 +481,19 @@
       "status": "built",
       "view": "c-tabs/c2-actions.tsx + c5-security.tsx",
       "batch": "P1",
-      "restAction": "revokeUserSessions"
+      "restAction": "proposeSessionRevocation",
+      "note": "C2 通过审批申请撤销用户会话，domain C / op c2_session_revoke_all；C5 同用撤销审批入口（旧 revokeUserSessions 已无页面调用）"
+    },
+    {
+      "id": "OPS-C-39",
+      "domain": "C",
+      "object": "账户代看与名单(C2)",
+      "action": "开始或结束代看、维护黑白名单",
+      "status": "built",
+      "view": "c-tabs/c2-actions.tsx",
+      "batch": "done",
+      "restActions": ["startUserImpersonation", "terminateUserImpersonation", "upsertUserAccountList", "removeUserAccountList"],
+      "note": "审批映射 c2_impersonate_start / c2_impersonate_terminate / c2_blocklist_upsert / c2_blocklist_remove，沿用现有授权与命令恢复"
     },
     {
       "id": "OPS-C-11",
@@ -2900,12 +2912,12 @@
       "id": "OPS-E-17",
       "domain": "E",
       "object": "AI 任务定价配置面(E2)",
-      "action": "保存并回读六类任务奖励区间、最低显存与 Kill/恢复配置",
-      "status": "built",
+      "action": "旧六类任务定价写入口已退役",
+      "status": "readonly",
       "view": "e-tabs/e2-tasks.tsx",
       "batch": "done",
-      "restAction": "updateE2TaskPricing",
-      "note": "服务端配置持久化、回读、审计与 outbox 已完成；生产派发/路由消费、可信完成证明和隔离 Sandbox 已由 OPS-E-18 完成"
+      "reason": "E2 改版决定 A07/A08/A09/A12 已下线：PC 不再提供旧六类任务定价写入，客户端写函数和 BFF PUT 放行已删除。GET/HEAD 只读兼容保留，当前 E2 页面不再调用；后端 PUT 仍在，待后端退役。",
+      "note": "沿用 OPS-D-11/12/13 的 readonly 退役留痕格式；当前任务池运行时能力仍由 OPS-E-18 登记"
     },
     {
       "id": "OPS-E-18",

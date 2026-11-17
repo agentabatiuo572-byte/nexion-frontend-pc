@@ -21,6 +21,7 @@ export type MCtx = {
   contentLoading: boolean;
   /** Re-reads only the knowledge base. A full refresh rebuilds the open conversation and would close the picker. */
   refreshKnowledge: () => Promise<void>;
+  refreshTemplates: () => Promise<void>;
   loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<import("./data").SessionConvo | undefined>;
   /** notice 是权限失效时给人看的话，放在这页顶部，不随会话和本组件重置。 */
   invalidateScope: (conversationNo?: string, customerId?: string, notice?: string) => void;

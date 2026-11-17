@@ -1730,6 +1730,30 @@ export async function readSupportKnowledge() {
   return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
 }
 
+export async function readSupportTemplates() {
+  const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
+  const scripts = templates.scripts!.map(adaptScript);
+  return {
+        categories: templates.categories!.map(adaptCategory),
+        advisorPolicy: {
+          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
+          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
+          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
+          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
+          audience: str(templates.advisorPolicy?.audience),
+        },
+        workbenchPolicy: {
+          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
+        },
+        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
+        segmentFields: [...templates.segmentFields!],
+        scripts,
+        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
+        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
+        sessionTemplatesAvailable: true,
+      };
+}
+
 export async function fetchMContentData(onProgress?: (data: MContentData) => void, page?: string): Promise<MContentData> {
   const mContentSessionKey = currentMContentSessionKey();
   let snapshot = initialMContentData();
@@ -1847,27 +1871,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
       return;
     }
     try {
-      const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
-      const scripts = templates.scripts!.map(adaptScript);
-      publish({
-        categories: templates.categories!.map(adaptCategory),
-        advisorPolicy: {
-          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
-          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
-          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
-          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
-          audience: str(templates.advisorPolicy?.audience),
-        },
-        workbenchPolicy: {
-          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
-        },
-        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
-        segmentFields: [...templates.segmentFields!],
-        scripts,
-        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
-        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
-        sessionTemplatesAvailable: true,
-      });
+      publish(await readSupportTemplates());
     } catch {
       publish({
         categories: [],
@@ -1991,6 +1995,17 @@ export function parseM3MessagePage(value: unknown, no: string): M3MessagePage {
   if (new Set(readContexts.map(context => context.conversationNo)).size !== readContexts.length) invalid();
   return { conversation, messages, hasMore: row.hasMore as boolean, nextBeforeMessageId, customerIdentity, replyContext: { ready: reply.ready as boolean, targets }, readContexts };
 }
+/** Resolves the current assignment's thread without changing the historical thread owner. */
+export async function resolveMConversationContinuation(no: string, actorId: number) {
+  const detail = await fetchMConversationDetail(no);
+  const customerId = String(detail.customerId);
+  const customer = await supportClient.customerDetail(customerId);
+  if (customer.agentAdminId !== actorId || !customer.assignmentId) throw new Error("CONVERSATION_PEER_CHANGED");
+  const state = detail.writeState;
+  if (!state || state.currentAssignmentAgentId !== String(actorId)) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  return { customerId, conversationNo: state.writableConversationNo };
+}
+
 export async function fetchM3MessagePage(no: string, beforeMessageId?: number, signal?: AbortSignal): Promise<M3MessagePage> {
   const cursor = beforeMessageId === undefined ? "" : `?beforeMessageId=${supportWireId(beforeMessageId, "beforeMessageId")}`;
   return parseM3MessagePage(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}/messages${cursor}`, { signal }), no);

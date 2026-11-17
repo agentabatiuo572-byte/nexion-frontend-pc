@@ -104,10 +104,10 @@
 - 拦截和队列订单的 `gateType`、`gateReason`、`etaLabel` 允许后端 SQL NULL，继续使用原空值显示；其他必填字段及字段类型继续严格校验。
 - 参数审批共用文件保持原合同。直接写恢复以本节较新的「改版接线与 R1 直接写」为准。
 
-**① 目的 & 对齐**: 配置 NEX↔USDT 兑换的三阈值风控 caps、gate 决策与排队逻辑,作为「代币经济」资金从 NEX 形态流出到 USDT(可提现)形态的闸门。对齐前端 **§9.4**(`/me/wallet/exchange`:§9.4.1 Swap UI / §9.4.2 三阈值 caps / §9.4.3 Gate 决策 / §9.4.4 风控仪表盘)+ **§9.11c.1**(exchange 三阈值接口)。服务业务目标:在合规(FATF Travel Rule / MiCA 叙事)与兑付安全约束内,限制 NEX→USDT 的日流出速度,保护资金池水位,服务 **B1 兑付覆盖率水位**(内部风控口径;§18.2 八项 KPI 闭集无「资金安全」项,本模块为风控/兑付安全杠杆,不以臆造 KPI 锚定)。
+**① 目的 & 对齐**: 配置 NEX↔USDT 兑换的个人与平台日额度风控 caps、gate 决策与排队逻辑,作为「代币经济」资金从 NEX 形态流出到 USDT(可提现)形态的闸门。对齐前端 **§9.4**(`/me/wallet/exchange`:§9.4.1 Swap UI / §9.4.2 个人与平台日额度 caps / §9.4.3 Gate 决策 / §9.4.4 风控仪表盘)+ **§9.11c.1**(exchange 个人与平台日额度接口)。服务业务目标:在合规(FATF Travel Rule / MiCA 叙事)与兑付安全约束内,限制 NEX→USDT 的日流出速度,保护资金池水位,服务 **B1 兑付覆盖率水位**(内部风控口径;§18.2 八项 KPI 闭集无「资金安全」项,本模块为风控/兑付安全杠杆,不以臆造 KPI 锚定)。
 
 **② 后台界面**:
-- **caps 配置面**:`USER_DAILY_CAP / PLATFORM_DAILY_CAP / KYC_LIFETIME_THRESHOLD` 三阈值 + 当前实时占用(用户侧分布 / 平台日池占用 %)。
+- **caps 配置面**:`USER_DAILY_CAP / PLATFORM_DAILY_CAP` 两项日额度 + 当前实时占用(用户侧分布 / 平台日池占用 %)。
 - **Gate 决策监控**:三类拦截命中计数与趋势(`kyc-required / user-cap / platform-cap`)。
 - **Queue 视图**：展示超额度排队订单及取消入口。已预占来源资金的订单，其可用余额已减少；成交不会重复扣款，取消退回来源币种的预占金额并写退款账本。无预占记录的历史订单在成交时扣来源金额；取消仅终止订单，不扣款也不退款。页面说明与取消确认均按此区分，不把全部队列描述为未扣余额（2026-11-04，BUG-217）。
 - **风控仪表盘**(对齐 §9.4.4):平台日池进度条 + KYC 触发线命中分布 + Queue 深度。
@@ -119,7 +119,6 @@
 |---|---|---|---|---|
 | `USER_DAILY_CAP_USD` | **现状值(§9.4.2 / §13.3)**:50 | 0–10,000 | 实时(当日额度判定即用新值) | §9.4.4 用户日 cap 进度条 + gate `user-cap` |
 | `PLATFORM_DAILY_CAP_USD` | **现状值(§9.4.2 / §13.3)**:20,000 | 0–10,000,000 | 实时 | §9.4.4 平台日池进度条 + gate `platform-cap` |
-| `KYC_LIFETIME_THRESHOLD_USD` | **现状值(§9.4.2 / §13.3)**:100 | 0–100,000 | 实时(累计达阈值即触发) | gate `kyc-required` → 引导 `/me/wallet/topup?kyc=1` |
 | `EXCHANGE_FEE_PCT`(兑换手续费率) | **现状值(§9.4.1 `exchange.feeFree` / §13.3)**:0%(免费推广期) | 0%–10% | 降费先审批，升费直接写；排队单按执行时有效费率计算 | §9.4.1 swap UI `feeLabel/feeFree`;开费后值同步显示 |
 | `EXCHANGE_FEE_MIN_USD`(最低单笔手续费) | 0.50(随费率启用生效;`EXCHANGE_FEE_PCT=0` 时不计) | 0–5 | 降低先审批，提高直接写；排队单按执行时有效最低费计算 | 单笔实际手续费 = `max(amount × EXCHANGE_FEE_PCT, EXCHANGE_FEE_MIN_USD)` |
 | Queue 启用(超 cap 排队 vs 直接拒绝) | 启用(超 cap 进次日队列) | bool | 实时 | `user-cap`/`platform-cap` 弹窗「Queue for tomorrow」 |
@@ -133,7 +132,7 @@
 **④ 操作动作**:
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 改三阈值 caps | 财务(lead)/ 超管(2026-06 操作确认决议,放宽方向原复核层级就高为执行门槛) | G2-MD1(理由必填+B1 红线预检(放宽方向)) | `admin.exchange_caps_changed`(字段 / 前后值 / coverageAtSubmit / 原因 / operator) |
+| 改个人与平台日额度 caps | 财务(lead)/ 超管(2026-06 操作确认决议,放宽方向原复核层级就高为执行门槛) | G2-MD1(理由必填+B1 红线预检(放宽方向)) | `admin.exchange_caps_changed`(字段 / 前后值 / coverageAtSubmit / 原因 / operator) |
 | 改 `EXCHANGE_FEE_PCT` / `EXCHANGE_FEE_MIN_USD` | 财务(lead)/ 超管 | G2-MD2(理由必填+B1 红线预检(降费率方向)) | `admin.exchange_fee_changed`(字段 / 前后值 / coverageAtSubmit / 原因 / operator) |
 | 切 Queue 启用 / 处理次日队列 | 运营(lead)/ 超管 | G2-MD3(理由必填) | `admin.exchange_queue_config_changed` |
 | swap 全局 pause(kill) | 风控(lead)/ 超管(止血方向) | G2-MD4(理由必填) | `admin.exchange_paused`(reason / geo_block / operator)→ 同步 J1 |
@@ -147,7 +146,7 @@
 
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
-| 改三阈值 caps | ② caps 配置面三阈值卡「编辑」 | 行内按钮 | 仅财务(lead)/ 超管渲染;swap 已 pause 时置灰 | 打开弹窗 G2-MD1 |
+| 改个人与平台日额度 caps | ② caps 配置面个人与平台日额度卡「编辑」 | 行内按钮 | 仅财务(lead)/ 超管渲染;swap 已 pause 时置灰 | 打开弹窗 G2-MD1 |
 | 改费率(`EXCHANGE_FEE_PCT` / `EXCHANGE_FEE_MIN_USD`) | ② caps 配置面费率卡「编辑」 | 行内按钮 | 仅财务(lead)/ 超管渲染 | 打开弹窗 G2-MD2 |
 | 切 Queue 启用 / 处理次日队列 | ② Queue 视图顶部开关 / 队列工具栏「处理今日批次」 | 开关 / 次按钮 | 仅运营(lead)/ 超管可操作;队列为空时「处理」置灰 | 打开弹窗 G2-MD3 |
 | swap 全局 pause | ② caps 配置面「全局暂停」 | 警示按钮 | 仅风控(lead)/ 超管渲染;仅未 pause 态显示 | 打开弹窗 G2-MD4 |
@@ -168,7 +167,7 @@
 
 - **按钮区**：`[取消]` · `[确认提交]`；必填或范围校验未通过时禁用，提交中锁定。兑换紧急暂停时额度与超额处理方式入口禁用，手续费仍可修改。
 - **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关,内联阻断条)/ 422(超出 ③ 表范围,server 返回合法区间)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403(执行权不符)。
-- **成功反馈**:弹窗关闭;caps 卡就地更新;toast「三阈值已生效 · 已记审计」;事件 `admin.exchange_caps_changed`;实时告警超管 + 财务 lead。
+- **成功反馈**:弹窗关闭;caps 卡就地更新;toast「个人与平台日额度已生效 · 已记审计」;事件 `admin.exchange_caps_changed`;实时告警超管 + 财务 lead。
 
 ##### [G2-MD2] 兑换费率变更
 - **功能**：修改 `EXCHANGE_FEE_PCT` / `EXCHANGE_FEE_MIN_USD`，保存后立即生效。
@@ -198,13 +197,13 @@
 - **成功反馈**:弹窗关闭;swap 状态灯变红;toast「已暂停 · 已记审计」;事件 `admin.exchange_paused`;实时告警超管 + 风控 lead;同步 J1 矩阵 + B5 风险雷达。恢复经 A3-MD3(仅超管 + B1 红线预检)。
 
 **⑤ 接口**(收敛 §9.11c.1 / §9.11d.1):
-- `GET /api/config/exchange/caps` — 三阈值 + Queue 配置 + 费率配置;**server-canonical**,前端 §9.4.1 swap UI(`feeLabel/feeFree`)+ §9.4.2 gate 判定读此。
+- `GET /api/config/exchange/caps` — 个人与平台日额度 + Queue 配置 + 费率配置;**server-canonical**,前端 §9.4.1 swap UI(`feeLabel/feeFree`)+ §9.4.2 gate 判定读此。
 - `GET /api/admin/exchange/queue?cursor=` — 次日队列监控(server 权威待处理单)。
 - `POST /api/admin/market/exchange/queue/process` 携带 `Idempotency-Key` 执行批次。G2「拦截与排队」结果卡分别列出成交、跳过、失败的订单，显示服务端给出的原因，并按回执 `orderStatus` 标明订单状态。`FAILED` 显示「订单已失败」，`QUEUED` 显示「订单仍在队列」，`CANCELLED` 显示「订单已取消」。结果未确认时，重试相同批次参数和理由沿用原命令号。只有收到有效批次回执并刷新队列后，才确认本次结果。
 - 批量处理排队结果未知时，「处理结果未知。可以关掉确认框，在页面上方点「查询原结果」，查看原批次的结果。」只在确认框里写一次，不另弹提示，页面上方的「操作提示」也不再写；核对查不到时提示标题写「没有查到原批次的结果」，正文不再重复这句。
 - 同一操作员有待核对批次时，G2 原按钮区显示「核对原处理」，队列为空也可打开。弹窗只读显示原笔数和理由，以原 `Idempotency-Key` 通过 `GET /api/admin/market/exchange/queue/process` 核对所属回执。收到有效回执并刷新现有队列后恢复普通入口。服务端明确返回 `404 G2_BATCH_RECEIPT_NOT_FOUND` 时继续保留原记录，不允许仅据此清号或开新批次。其他查询失败同样保留原记录。
 - `GET /api/admin/exchange/gate-stats?window=` — 三类拦截命中统计(喂仪表盘)。
-- `PUT /api/admin/exchange/caps` — 改三阈值 + Queue 配置(经确认弹窗 G2-MD1 / G2-MD3,reason 必填(空值 400 `REASON_REQUIRED`);**放宽 server 先核 B1,< 红线返 422**)。
+- `PUT /api/admin/exchange/caps` — 改个人与平台日额度 + Queue 配置(经确认弹窗 G2-MD1 / G2-MD3,reason 必填(空值 400 `REASON_REQUIRED`);**放宽 server 先核 B1,< 红线返 422**)。
 - `PUT /api/admin/exchange/fee` — 改 `EXCHANGE_FEE_PCT` / `EXCHANGE_FEE_MIN_USD`(经确认弹窗 G2-MD2,reason 必填;**降费率 server 先核 B1,< 红线返 422**;仅新单生效)。
 - `POST /api/admin/exchange/pause` — swap 全局 pause(对齐 §9.11d.1;经确认弹窗 G2-MD4,reason 必填;payload `geo_block: string[]`;携 `Idempotency-Key`)。
 
@@ -224,7 +223,7 @@
 
 **⑦ 风控 & 联动**:
 - **server-canonical(§9.11d.2)**:gate 决策(三类拦截)server 权威;`useWalletPairing.walletPaired` 客户端可篡改,KYC 触发线命中后真值在 server `GET /api/kyc/status`,兑换 endpoint 二次 enforce(client 跳过无效)。
-- **跨模块联动**:`KYC_LIFETIME_THRESHOLD` 命中 → **K5 KYC 复审**(累计兑换 KYC 阈值**分阶段归属**:**V1 阶段权威在 K5(C4 / G2 只读引用),V3 G2 落地后移交 G2**——§3.14:`K5(V1)/ G2(V3)`;C4 消费 / 兑换日 cap 三阈值另归 G2;V1 K5 §⑦ 已声明「兑换触发阈值由 G2 配置」);`exchange.swapped` → D4 swap bill + 影响 D3 资金池(NEX→USDT 减 USDT 储备)。
+- **跨模块联动**:KYC 累计阈值已退役，不再触发 K5 复审；`exchange.swapped` → D4 swap bill + 影响 D3 资金池(NEX→USDT 减 USDT 储备)。
 - **手续费分配联动 G3/D1**:`EXCHANGE_FEE_PCT > 0` 时,每笔 `exchange.swapped` 的手续费按 **30% 进 G3 NEX 回购销毁池**(对应 G3⑦ 周曲线排程器回购销毁量)/ **70% 进 D1 `fee_buffer` 备付金**(D1③ Card 渠道同一备付金池累积口径);费率/分配比例改动经 `admin.exchange_fee_changed` 审计,喂 L3 财务报表的「手续费收入分解」面与 B1 备付金/回购口径敏感性分析。
 - **B1 前置(① 跨域事实)**:放宽 caps 提交即 server 核验覆盖率红线。
 - **篡改防御(§9.11d.2)**:client 不得本地绕过 cap / gate;排队取消由 server 处置,client 仅订阅 Queue 态。

@@ -137,6 +137,7 @@ function activeAnalyticsConditions(state: AnalyticsQueryState, groups: SupportAn
 export function analyticsErrorText(error: unknown): string {
   if (error instanceof AnalyticsEntryError) return error.message;
   if (error instanceof SupportClientError) {
+    if (error.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE") return "统计来源暂不可用，请稍后重试。";
     if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
     if (error.status === 401) return "登录已失效，请重新登录。";
     if (error.status === 403) return "当前范围已无查看权限，请重新核对负责范围。";

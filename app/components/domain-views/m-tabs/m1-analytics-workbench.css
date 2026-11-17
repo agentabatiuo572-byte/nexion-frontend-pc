@@ -111,6 +111,7 @@
 .sa-personal-first-sources .sa-number-wrap{font-weight:500}
 
 .m1-live-service{display:grid;gap:var(--rd-section-gap)}
+.m1-live-roster-name{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%}.m1-live-roster-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sa-link.sa-dash{text-decoration:none}
 .rd-head-actions>.avatar-control-button{--rd-btn-pad:12px;height:var(--rd-control-h)}
 /* 待分配: the confirm dialog names the customers first, as a compact list. */

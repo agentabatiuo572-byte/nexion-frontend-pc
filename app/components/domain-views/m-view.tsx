@@ -21,6 +21,7 @@ import {
   fetchMConversationDetail,
   fetchMContentData,
   readSupportKnowledge,
+  readSupportTemplates,
   mContentActions,
   type MContentData,
   type MLoadConfigWrite,
@@ -215,6 +216,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const refreshKnowledge = useCallback(async () => {
     const next = await readSupportKnowledge();
+    if (currentAuthEpoch.current === authEpoch) setMData((previous) => previous && { ...previous, ...next });
+  }, [authEpoch]);
+
+  const refreshTemplates = useCallback(async () => {
+    const next = await readSupportTemplates();
     if (currentAuthEpoch.current === authEpoch) setMData((previous) => previous && { ...previous, ...next });
   }, [authEpoch]);
 
@@ -625,6 +631,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     refreshM5Content: () => reloadMContent(true),
     contentLoading: mLoading,
     refreshKnowledge,
+    refreshTemplates,
     loadConversationDetail,
     invalidateScope,
     commandExpired: (part: string) => mCommands.list().some((record) => record.fingerprint.includes(part) && isRetryExpired(record)),

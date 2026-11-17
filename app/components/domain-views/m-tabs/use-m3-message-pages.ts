@@ -28,6 +28,11 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
   const readCursor = useRef<number | undefined>(undefined);
   const version = summary ? `${summary.id}:${summary.version}:${summary.lastPublicMessageId ?? ""}:${summary.status}:${summary.unread}` : "";
   const versionRef = useRef(version);
+  const invalidateWriteState = useCallback((no: string) => {
+    if (summaryRef.current?.id !== no) return;
+    detailController.current?.abort(); detailSerial.current++;
+    setWriteState({ key: keyRef.current });
+  }, []);
   const request = useCallback(async (kind: "reset" | "older" | "latest", supersede = false, contextCursor?: number) => {
     const current = summaryRef.current, requestKey = keyRef.current;
     if (!current || !requestKey || controller.current && !supersede) return;
@@ -100,6 +105,7 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
     readReady: Boolean(safe.page && safe.page.conversation.id === summary?.id && (safe.failed === "older" || !safe.loading && !safe.error) && safe.page.conversation.version >= (summary?.version ?? 0)),
     contextReady: Boolean(safe.page && safe.page.conversation.id === summary?.id && !safe.gap && (safe.failed === "older" || !safe.loading && !safe.error) && safe.page.conversation.version >= (summary?.version ?? 0)),
     loadOlder: () => request("older"), retry: () => request(safe.failed), refresh: () => request("latest"), newest: () => request("reset", true),
+    invalidateWriteState,
     refreshReadContexts: (page: { beforeMessageId?: number }) => request("latest", true, page.beforeMessageId),
   };
 }

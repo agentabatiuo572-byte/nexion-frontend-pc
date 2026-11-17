@@ -78,6 +78,9 @@
 .m3s-hold[data-hold="other"] { color: var(--rd-warn); }
 .m3s-back, .m3s-profile-toggle, .m3s-profile-narrow { display: none !important; }
 .m3s-notices { flex: none; display: flex; flex-direction: column; gap: var(--rd-space-2); padding: var(--rd-space-2) var(--rd-space-4); }
+/* 会话栏窄：恢复面板每条两行，第一行对象、标签、按钮，第二行一句结论。 */
+.m3s-notices .fund-row-line { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 0; }
+.m3s-notices .fund-row-text { grid-column: 1 / -1; grid-row: 2; padding-left: 18px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m3s-body { position: relative; flex: 1; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); background: var(--rd-bg); scrollbar-gutter: stable; }
 .m3s-body:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
 .m3s-body > [data-m3-message-id] { display: flex; flex-direction: column; gap: var(--rd-space-3); }
