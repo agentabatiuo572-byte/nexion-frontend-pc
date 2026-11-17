@@ -887,7 +887,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   // 有几块在公开：全公开、只公开一部分、一块都没公开，三种说法。
   const hiddenCount = APP_SECTION_ORDER.length - publicCount;
   const publicLead = hiddenCount === 0 ? "六个版块都在公开" : publicCount === 0 ? "六个版块都没公开，App 信任中心只显示公司资质、白皮书、平台运行数据和规则与资料" : `${publicCount} 个版块在公开，${hiddenCount} 个没公开、在 App 上收起`;
-  const blankExplain = <><p>正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的核心团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
+  const blankExplain = <><p>正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的管理团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
   const pendingText = pendingTrustSectionKeys.size > 0 ? `${pendingTrustSectionKeys.size} 个版块等另一位批准` : "";
   const draftText = draftSections.size > 0 ? `${draftSections.size} 个版块有待发布的草稿` : "";
   const conclusion = issues.length

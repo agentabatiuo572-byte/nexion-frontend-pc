@@ -25,7 +25,7 @@ export const LANGS: readonly { value: Lang; label: string }[] = [
 
 export const SECTION_INFO: Record<string, { name: string; where: string; icon: LucideIcon }> = {
   financials: { name: "财务数字", where: "App 页面不读这块，平台数据另有来源", icon: Coins },
-  leadership: { name: "核心团队", where: "信任中心「管理团队」，只列带有效链接的人", icon: Users },
+  leadership: { name: "管理团队", where: "信任中心「管理团队」，只列带有效链接的人", icon: Users },
   nexNarrative: { name: "UVT 介绍", where: "UVT 介绍页，和信任中心的托管、保修、账户安全说明", icon: Landmark },
   complianceBadges: { name: "合规徽章", where: "App 页面不读这块；公开时版本不完整会让整页读不出来", icon: BadgeCheck },
   auditsReserves: { name: "审计与储备", where: "信任中心「审计」和商品详情，有报告才出现", icon: FileSearch },
