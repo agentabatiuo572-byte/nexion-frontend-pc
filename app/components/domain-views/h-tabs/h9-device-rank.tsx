@@ -14,7 +14,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, settledText } from "../fund-command-check";
-import { DIRECT_RECOVERY_INTRO, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
@@ -213,7 +213,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
           ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
           ctx.openActionConfirm(null);
           await load();
-        }
+        } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
       }} />}
     <Panel title="设备预估排名" icon={Trophy} tone="role-4" sub={data ? `排名设置 v${data.version} · 单独保存` : undefined}
       explain="独立的一套设置：自己的版本、自己保存，不受本页其他块影响。App 用首页数字增长的在线设备数和这里的档位估一个排名；这不是真实榜单，不影响收益和奖励。">

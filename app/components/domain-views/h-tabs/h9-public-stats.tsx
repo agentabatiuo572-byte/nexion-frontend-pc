@@ -52,7 +52,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, settledText } from "../fund-command-check";
-import { DIRECT_RECOVERY_INTRO, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { useSearchParams } from "next/navigation";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
@@ -540,7 +540,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
           ctx.openActionConfirm(null);
           await load(record.original?.display.module);
-        }
+        } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
       }} />}
   </>;
   /** 排名的结果未知提醒在排名那一块里；切到别的块时，在页面上方给一个入口。 */
@@ -834,7 +834,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     {issue?.kind === "rejected" && !ctx.confirmOpen && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message}{/没有保存/.test(issue.message) ? "" : " 这次没有保存，按原因改好后再保存。"}</Notice>}
     {error && <Notice tone="danger" title="刷新没成功">{error} 页面上还是上次读到的值，已填写的内容保留，请重试。</Notice>}
     {!issue && !error && (unresolved
-      ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存结果未知：先查询原结果，有结论前不能再保存</Conclusion>
+      ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存还没有结论：先处理上方的记录，有结论前不能再保存</Conclusion>
       : savedTick
       ? <Conclusion state="ok">首页数字{values.homeDisplayEnabled ? "增长中" : "已暂停"}，设备预估排名{rank.state === "ready" ? rank.config.enabled ? "已开启" : "已关闭" : rank.state === "failed" ? "读取失败" : "读取中"}；没有要处理的事</Conclusion>
       : <Conclusion state="warn" action={module !== "network" ? <Button size="sm" onClick={() => setModule("network")}>去看注册人数</Button> : undefined}>网络脉搏注册人数只配了月增长率，App 上有的位置显示「不可用」</Conclusion>)}
