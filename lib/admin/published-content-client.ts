@@ -10,7 +10,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await guardedFetch(path, { ...init, cache: "no-store" }).catch((error: Error) => { throw isWrite ? new OutcomeUnknownError(error.message) : error; });
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!response.ok || !body || body.code !== 0 || body.data == null) {
-    const message = formatAdminApiError(body?.message, `PUBLISHED_CONTENT_REQUEST_FAILED_${response.status}`);
+    const message = formatAdminApiError(body?.message, `PUBLISHED_CONTENT_REQUEST_FAILED_${response.status}`, isWrite ? "write" : "read");
     throw Object.assign(isWrite && (outcomeStaysUnknown(response.status, body?.code) || isIdempotencyOutcomeOpen(body?.message)) ? new OutcomeUnknownError(message) : new Error(message), { status: response.status, apiCode: body?.code, reasonCode: body?.message });
   }
   return body.data;
