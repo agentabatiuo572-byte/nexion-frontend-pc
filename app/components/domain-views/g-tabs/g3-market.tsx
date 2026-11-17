@@ -871,7 +871,7 @@ function G3MarketEditor() {
       {header}
       {confirmationPanels}
 
-      {error && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
+      {error && !confirm && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
       {conclusion}
       {rereadPending && <Notice tone="progress" title={REREAD_TEXT} action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新读取</Button>}>读到最新价格之前，表里的修改先不可用；还有原记录的那一项照样能打开。</Notice>}
 

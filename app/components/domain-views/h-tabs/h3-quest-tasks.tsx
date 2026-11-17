@@ -81,6 +81,9 @@ const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
 export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [mc, setMc] = useState<H3ActionConfirmReq | null>(null);
+  // 页签自己关框时记下来：框关了才需要轻提示，框开着错误就写在框里。
+  const openMc = useRef<H3ActionConfirmReq | null>(null);
+  openMc.current = mc;
   // 保存被「别人先改过」拒绝：页面已重读，这里留住这次要改的内容，让运营和现值对照。
   const [stale, setStale] = useState<{ title: string; before: string; after: string } | null>(null);
   const [releasing, setReleasing] = useState<H3PendingCommand | null>(null);
@@ -107,6 +110,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       },
     };
     attempt.finish = () => {
+      if (openMc.current === request) openMc.current = null;
       setMc(current => current === request ? null : current);
       setCreating(current => current === editor ? null : current);
     };
@@ -168,7 +172,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     await region.reload();
   }, () => fresh.current);
   const refresh = async () => {
-    setMc(null); shellCtx.closeConfirm?.();
+    openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
     await reload();
     await region.reload();
     const results = await mutations.refreshTickets();
@@ -829,7 +833,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       run: async () => { await mutations.retry(original); },
     };
     confirmation.current = { action: c.action, title: c.title, target: c.target, commandKey: original.commandKey,
-      finish: () => setMc(current => current === request ? null : current) };
+      finish: () => { if (openMc.current === request) openMc.current = null; setMc(current => current === request ? null : current); } };
     setMc(request);
   };
   // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
@@ -925,7 +929,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   change: <Change from={`${shownValue(write.change.before)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} to={`${shownValue(write.change.after)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} />, approver: FUND_APPROVER, holds: "这一项" }));
                 return;
               }
-              toast(error instanceof Error ? displayAdminError(error) : "操作失败");
+              if (openMc.current !== mc) toast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}
