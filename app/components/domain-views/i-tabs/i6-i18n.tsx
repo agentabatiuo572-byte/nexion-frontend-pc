@@ -886,8 +886,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       quizQuestions,
       passScore: Number(form?.passScore),
       retryLimit: Number(form?.retries),
-      completionCondition: form?.completionCond || "quiz_passed",
-      rewardEvent: form?.rewardEvent || "quiz.passed",
+      completionCondition: form?.completionCond ?? "",
+      rewardEvent: form?.rewardEvent ?? "",
       expectedRevision,
       version: form?.version || undefined,
     };

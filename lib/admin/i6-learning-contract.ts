@@ -5,6 +5,15 @@ export function parseI6Json(text: string): unknown {
   return JSON.parse(text.replace(/("rewardNex"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
 }
 
+/** Payloads have already passed the course boundary; blank/null are the same stored option. */
+export function validateI6CourseOptions(requested: Partial<Record<"completionCondition" | "rewardEvent", unknown>>, stored?: Partial<Record<"completionCondition" | "rewardEvent", unknown>>) {
+  for (const key of ["completionCondition", "rewardEvent"] as const) {
+    if (String(requested[key] ?? "").trim() !== String(stored?.[key] ?? "").trim()) {
+      throw new Error("LEARNING_COURSE_OPTION_RETIRED");
+    }
+  }
+}
+
 function invalid(): never { throw new Error("I6 返回数据格式异常，请刷新重试"); }
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();

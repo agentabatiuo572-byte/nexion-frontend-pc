@@ -6,7 +6,7 @@ import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExp
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
-import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview } from "./i6-learning-contract";
+import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
@@ -182,6 +182,9 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
   if (command.original?.owner !== useAdminAuth.getState().session?.adminId) throw new Error("登录身份已变更，请重新打开页面。");
   const permission = i6RetryPermission(command);
   if (permission) throw new Error(permission);
+  if (command.operation === "course-create" || command.operation === "course-draft" && command.snapshot?.course) {
+    validateI6CourseOptions(command.input, command.operation === "course-create" ? undefined : command.snapshot?.course);
+  }
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   let response: Response, payload: ApiResult<unknown>;

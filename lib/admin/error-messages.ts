@@ -3235,6 +3235,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RETIRED_FEATURE: "这项已停用，不能再修改。",
   H7_VOUCHER_SPLITTABLE_RETIRED: "代金券拆分已停用，不能设为可拆分。",
   K2_WELCOME_GIFT_SCOPE_RETIRED: "按手机号或设备检测新人礼已停用；请选择实体或账户簇。",
+  LEARNING_COURSE_OPTION_RETIRED: "课程完成条件和发奖事件已停用，不能新增或修改；历史值请保持原样。",
   SUNSET_CAPABILITY_READONLY: "该能力已下线或只读,不能继续操作。",
   // 用户端质押开仓、领取、提前解锁被拒（AppStakingService），后台质押页只读，不会直接收到。
   STAKING_POOL_NOT_ACTIVE: "这一档质押产品不存在或不在售，不能开仓。",
