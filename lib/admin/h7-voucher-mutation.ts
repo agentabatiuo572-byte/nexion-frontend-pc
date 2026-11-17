@@ -51,8 +51,8 @@ export function requireH7Actor(adminId: number, write: boolean): AdminSession {
 
 export function createH7VoucherMutation(session: AdminSession, context: H7DirectContext, voucher: H7Voucher, reason: string): H7DirectMutation {
   const voucherInput: Omit<H7Voucher, "splittable"> & { splittable?: boolean } = { ...voucher };
-  // An unchanged historical toggle is not a new configuration write. The original
-  // context still retains its value; retries send these exact prepared bytes.
+  // 57ecd268 fixes preservation when omitted; explicitly resending historical true
+  // is still rejected. Keep omission on both backends and retain exact retry bytes.
   if (context.kind === "update" && voucher.splittable === context.voucher.splittable) delete voucherInput.splittable;
   if (context.kind !== "status") validateH7VoucherWrite(voucherInput);
   const status = context.kind === "status" ? context.voucher.status === "active" ? "paused" : "active" : undefined;
