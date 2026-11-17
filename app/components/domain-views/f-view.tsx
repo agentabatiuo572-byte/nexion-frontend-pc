@@ -1,5 +1,6 @@
 "use client";
 
+import { fConfigBatchPermissionIssue } from "@/lib/admin/f-config-batch";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
@@ -16,7 +17,8 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
-import { f4HeadCapAmplifies } from "@/lib/admin/f4-money";
+import { f4HeadCapAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
+import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   addF1VRankReward,
@@ -604,6 +606,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (slot !== F2_ACTIVATION_SLOT && (f2Loading || f2Error || !f2Overview)) return "七层比例没读到，这部分没有判断";
     if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
         && (f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy)) return "好友奖励政策没读到，暂不能改";
+    if (slot === "f-config-batch:F2") {
+      const issue = fConfigBatchPermissionIssue(Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`), session?.authorities ?? []);
+      if (issue) return issue;
+    }
     const key = slot.startsWith("f-config:") ? slot.slice(9) : slot;
     if (f2Pending(key)) return "等另一位管理员批准";
     const layer = key.match(/^F\.unilevel\.(?:nex\.)?(L[1-7])$/)?.[1];
@@ -769,6 +775,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const normalized = changes.map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
       .filter((item) => item.key && item.value);
     if (!normalized.length) throw new Error("F_CONFIG_BATCH_EMPTY");
+    const current = useAdminAuth.getState().session;
+    if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    const issue = fConfigBatchPermissionIssue(normalized.map(item => item.key), current.authorities);
+    if (issue) throw new Error(issue);
     const def = findHighOp("f_config_batch");
     if (!def) throw new Error("F_OP_NOT_FOUND:f_config_batch");
     await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
@@ -1112,6 +1122,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     recoverF4,
     refreshF4,
     updateF4Config: async (key, value, reason, expectedVersion, expectedMaterialRevision) => {
+      if (["F.pool.monthlyCap", "F.leaderboard.poolUsd"].includes(key) && f4MonthlyCap(value) === null) throw new Error("F4_POOL_MONEY_INVALID");
+      if (key === "F.pool.settleCron") { const issue = f4WeeklyCronIssue(value); if (issue) throw new Error(issue); }
       const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
       const headCap = key === "F.pool.top1MaxPct" || key === "F.pool.top5MaxPct";
       const current = f4Submission.current?.overview ?? f4Overview;

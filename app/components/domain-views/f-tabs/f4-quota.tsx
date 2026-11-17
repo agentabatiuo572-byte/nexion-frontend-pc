@@ -13,6 +13,7 @@ import type { F4AmbassadorApplication, F4LeadershipPoolOverview } from "@/lib/ad
 import { count, decimalText, stamp, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type StageKey = "materials" | "business" | "finance" | "approve" | "approved" | "rejected" | "legacy";
 
@@ -95,12 +96,12 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           {data.quotaRows.map((quota) => <li key={quota.id} data-tight={quota.tight ? "" : undefined}>
             <span className="f4-quota-head">
               <span className="f4-quota-name"><b>{quota.name}</b><span data-mono>{quota.productNo || quota.quotaCode}</span></span>
-              {canWrite && <Button size="sm" onClick={() => openQuota(quota)}>调额度</Button>}
+              {canWrite && <Button size="sm" disabledReason={quota.monthlyQuota === null ? displayAdminError(new Error("HARDWARE_QUOTA_EXPECTED_VALUE_REQUIRED")) : undefined} onClick={() => openQuota(quota)}>调额度</Button>}
             </span>
             <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
             <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={quota.tight ? "warn" : "role-2"}
-              state={quota.cap > 0 ? "ready" : "empty"} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.cap} 台`} quiet />
-            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.cap)} 台</span>{quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
+              state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText={displayAdminError(new Error("HARDWARE_QUOTA_EXPECTED_VALUE_REQUIRED"))} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
+            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
           </li>)}
         </ul> : <BlockState state="empty" title="还没有设置购机名额" />}
         <KeyValues rows={[

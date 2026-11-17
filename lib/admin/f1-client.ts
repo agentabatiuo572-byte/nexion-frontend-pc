@@ -10,6 +10,8 @@ import type { F1PolicyValues } from "./f1-policy-change";
 import { f3SpilloverState } from "./f3-policy";
 import { f4Decimal, f4MonthlyCap } from "./f4-money";
 import { readF4VoteProjection } from "./f4-vote-projection";
+import type { F4AmbassadorMetricBasis } from "./f-overview-contract";
+export type { F4AmbassadorMetricBasis } from "./f-overview-contract";
 import type { BusinessZone } from "./business-time";
 import {
   assertF1Overview,
@@ -255,6 +257,7 @@ interface BackendF4QuotaRow {
   unlockMode?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
+  monthlyQuota?: string | null;
   tight?: boolean | string | null;
 }
 
@@ -329,6 +332,7 @@ interface BackendF4LeadershipPoolOverview {
   ambassadorBudgetCapLabel?: string | null;
   ambassadorKolBudgetPct?: number | string | null;
   ambassadorNextQuotaReviewDate?: string | null;
+  ambassadorMetricBasis?: F4AmbassadorMetricBasis;
   leaderboardPeriods?: unknown;
   leaderboardPoolLabel?: string | null;
   leaderboardParticipantCount?: number | string | null;
@@ -463,6 +467,7 @@ interface BackendF5CommissionAuditOverview {
   nextCursor?: string | number | null;
   total?: number | string | null;
   anomalies?: Record<string, unknown>[] | null;
+  layerRatioComparisons?: F5LayerRatioComparison[];
   coolingPolicy?: Record<string, unknown>[] | null;
   operationHistory?: Record<string, unknown>[] | null;
   activeSuspensions?: Record<string, unknown>[] | null;
@@ -787,6 +792,7 @@ export interface F4QuotaRow {
   criteriaKnown: boolean;
   current: number;
   cap: number;
+  monthlyQuota?: string | null;
   tight: boolean;
 }
 
@@ -989,6 +995,7 @@ export interface F4LeadershipPoolOverview {
   ambassadorBudgetCapLabel: string;
   ambassadorKolBudgetPct: number;
   ambassadorNextQuotaReviewDate: string;
+  ambassadorMetricBasis?: F4AmbassadorMetricBasis;
   leaderboardPeriods?: F4LeaderboardPeriods;
   /** Point rankings await the page's point labels/units; never feed them to USDT slots. */
   leaderboardComputePointPeriods?: F4ComputePointPeriods;
@@ -1099,12 +1106,27 @@ export interface F5CommissionQuery {
 export interface F5Anomaly {
   id: string;
   type: string;
+  currency?: string;
   commissionId: string;
   userId: string;
   evidence: string;
   relatedKCluster: string;
   status: string;
 }
+
+export type F5LayerRatioComparison = {
+  currency: string;
+  available: true;
+  reason: null;
+  layers: Array<{ layer: number; actualPct: string; theoreticalPct: string; deviation: string }>;
+} | {
+  currency: string;
+  available: false;
+  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE";
+  layers: null;
+  theoreticalPct: null;
+  deviation: null;
+};
 
 export interface F5CoolingPolicy {
   kind: string;
@@ -1159,6 +1181,7 @@ export interface F5CommissionAuditOverview {
   nextCursor: string;
   total: number;
   anomalies: F5Anomaly[];
+  layerRatioComparisons?: F5LayerRatioComparison[];
   coolingPolicy: F5CoolingPolicy[];
   operationHistory: F5OperationHistory[];
   activeSuspensions: Array<{ userId: string; kind: string; reason: string; operator: string; updatedAt: string }>;
@@ -1606,6 +1629,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     criteriaKnown: quotaCriteriaKnown(row),
     current: toNumber(row.current),
     cap: toNumber(row.cap),
+    monthlyQuota: row.monthlyQuota,
     tight: toBoolean(row.tight),
   }));
   const ambassadorBands = (data?.ambassadorBands ?? []).map((row) => ({
@@ -1686,6 +1710,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     ambassadorBudgetCapLabel: asText(data?.ambassadorBudgetCapLabel),
     ambassadorKolBudgetPct: toNumber(data?.ambassadorKolBudgetPct),
     ambassadorNextQuotaReviewDate: asText(data?.ambassadorNextQuotaReviewDate),
+    ambassadorMetricBasis: data?.ambassadorMetricBasis,
     leaderboardPeriods,
     leaderboardComputePointPeriods,
     leaderboardPoolLabel: asText(data?.leaderboardPoolLabel, asText(config.leaderboardPoolUsd)),
@@ -1804,12 +1829,14 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     anomalies: (data?.anomalies ?? []).map((item) => ({
       id: asText(item.id, "AN-UNKNOWN"),
       type: asText(item.type, "unknown"),
+      currency: item.currency as string | undefined,
       commissionId: asText(item.commissionId, ""),
       userId: item.userId == null ? "" : String(item.userId),
       evidence: asText(item.evidence, ""),
       relatedKCluster: asText(item.relatedKCluster, ""),
       status: asText(item.status, "open"),
     })),
+    layerRatioComparisons: data.layerRatioComparisons,
     coolingPolicy: (data?.coolingPolicy ?? []).map((item) => ({
       kind: asText(item.kind, ""),
       days: toNumber(item.days),
@@ -1906,7 +1933,7 @@ async function f1Request<T>(
       result = JSON.parse(raw.replace(/("(?:poolUsd|perVoteUsd|totalVotes)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else if (path === "/leadership-pool" && !isWrite) {
       const raw = await response.text();
-      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct|monthlyQuota)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
     } else if (/^\/rates(?:\?|$)/.test(path) && !isWrite) {
       const raw = await response.text();
@@ -1920,7 +1947,7 @@ async function f1Request<T>(
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
       // Keep each monetary JSON lexeme before binary floating point can round it.
-      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {

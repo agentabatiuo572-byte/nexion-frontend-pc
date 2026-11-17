@@ -2,13 +2,14 @@
 
 /** Existing F4 confirmation markup, shared by new edits and saved originals. */
 import { Facts, Fact, KeyValues, StatusTag } from "@/app/components/rd";
-import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
+import { f4WeeklyCronIssue, validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import { decimalText } from "./f4-shared";
-import { f4Decimal, f4HeadCapAmplifies, f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { f4Decimal, f4HeadCapAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
@@ -143,7 +144,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.monthlyCap": {
       spec = { briefKind: "config", name: "调整团队激励池每月上限", op: "param", paramKey: "F.pool.monthlyCap",
-              edit: { kind: "text", current: data.monthlyCapLabel },
+              edit: { kind: "text", current: data.configValues["F.pool.monthlyCap"] ?? data.monthlyCapLabel,
+                validate: value => f4MonthlyCap(value) === null ? displayAdminError(new Error("F4_POOL_MONEY_INVALID")) : undefined },
               title: "调整团队激励池每月上限", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: "保存时不检查格式，写错会让池不能结算。请写数字，可带 K、M。" },
               completionCopy: approvalCopy("F4 写权限"),
@@ -153,6 +155,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.pool.settleCron": {
       spec = { briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式",
+                validate: value => { const issue = f4WeeklyCronIssue(value); return issue ? displayAdminError(new Error(issue)) : undefined; },
                 hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
                 preview: (value) => `这样写是：${describeSettleCron(value, data.settlementZone) ?? "自定义时间，页面读不出，系统按原文执行"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? (value.trim() ? "每周自动结算一次，结算刚结束的那一周。" : "")}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
@@ -175,8 +178,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config",
     name: `${quota.name} 月额度调整`, op: "param",
     paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
-    expectedVersion: quota.cap,
-    edit: { kind: "number", current: String(quota.cap), unit: "台" },
+    expectedVersion: quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? undefined : Number(quota.monthlyQuota),
+    edit: { kind: "number", current: quota.monthlyQuota === undefined ? String(quota.cap) : quota.monthlyQuota ?? "", unit: "台" },
     title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。新额度不能低于本月已用。",
@@ -187,7 +190,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
       { key: "code", label: "额度编号", value: <span data-mono>{quota.quotaCode || quota.id}</span> },
     ]} />,
-    detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.cap}。如果别人刚改过，会提示你刷新后再改。`,
+    detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"}。如果别人刚改过，会提示你刷新后再改。`,
   };
       break;
     }
@@ -303,7 +306,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.leaderboard.poolUsd": {
       spec = { briefKind: "config", name: "调整本周榜单奖池", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd",
-              edit: { kind: "text", current: data.configValues["F.leaderboard.poolUsd"] ?? "" },
+              edit: { kind: "text", current: data.configValues["F.leaderboard.poolUsd"] ?? "",
+                validate: value => f4MonthlyCap(value) === null ? displayAdminError(new Error("F4_POOL_MONEY_INVALID")) : undefined },
               title: "调整周榜奖池覆盖额", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: "保存时不检查金额格式，请填数字。" },
               completionCopy: approvalCopy("F4 资金权限"),

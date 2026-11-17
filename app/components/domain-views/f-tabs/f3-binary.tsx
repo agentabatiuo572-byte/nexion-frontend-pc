@@ -29,6 +29,7 @@ import { pendingPlacement, forgetPlacement } from "@/lib/admin/f3-placements-cli
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { fConfigBatchPermissionIssue } from "@/lib/admin/f-config-batch";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FViewCtx } from "./types";
 import { F3Placements, recoverPlacement } from "./f3-placements";
@@ -310,6 +311,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     if (configProposals.some(row => row.fingerprint === slot)) return undefined;
     if (ctx.f3Loading || ctx.f3Error || !cfg) return "团队平衡奖励读取失败，请重新读取后再操作。";
     const targets = key === F3_BATCH_SLOT ? ["F.binary.settlePeriod", "F.binary.residualPolicy"] : [key];
+    const permissionIssue = key === F3_BATCH_SLOT ? fConfigBatchPermissionIssue(targets, useAdminAuth.getState().session?.authorities ?? []) : undefined;
+    if (permissionIssue) return permissionIssue;
     return targets.some(target => f3PendingFor(ctx.f3ApprovalRows, target)) ? "这个对象已有待批单，请先到操作记录与审批核对。" : undefined;
   };
 

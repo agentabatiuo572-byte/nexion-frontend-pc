@@ -3,6 +3,19 @@ import { f4Decimal } from "./f4-money";
 
 type JsonRecord = Record<string, unknown>;
 
+// Schema for 06d5874c metadata, never a fallback for missing server facts.
+const F4_AMBASSADOR_METRIC_BASIS = {
+  source: "nx_team_ambassador_application", period: "ALL_TIME", timeFilter: "NONE", excludedDeleted: true,
+  metrics: {
+    ambassadorPendingCount: { aggregation: "COUNT", statusFilter: "PENDING", unit: "APPLICATION" },
+    ambassadorBudgetApprovedLabel: { aggregation: "SUM", field: "requested_budget_usdt", statusFilter: "APPROVED", currency: "USDT", amountBasis: "APPLICATION_REQUESTED_BUDGET", isPaidAmount: false },
+    ambassadorBudgetCapLabel: { aggregation: "SUM", field: "requested_budget_usdt", statusFilter: "ALL", currency: "USDT", amountBasis: "APPLICATION_REQUESTED_BUDGET", isBudgetCap: false },
+    ambassadorKolBudgetPct: { aggregation: "MAX", field: "kol_budget_pct", statusFilter: "ALL" },
+    ambassadorNextQuotaReviewDate: { aggregation: "MIN", field: "event_date", statusFilter: "PENDING", isQuarterPlan: false },
+  },
+} as const;
+export type F4AmbassadorMetricBasis = typeof F4_AMBASSADOR_METRIC_BASIS;
+
 export const F5_KIND_LABELS: Record<string, string> = {
   direct_purchase: "好友购买奖励", direct_device_earning: "好友设备收益奖励",
   network: "团队购买奖励", binary: "团队平衡奖励", peer: "同级奖励", cultivation: "好友升级奖励", leadership: "团队激励池", genesis: "创世节点收益",
@@ -327,6 +340,8 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
     const item = record(value, "F4", `quotaRows[${index}]`);
     positiveInteger(item.id, "F4", `quotaRows[${index}].id`);
     for (const key of ["current", "cap"]) nonNegativeInteger(item[key], "F4", `quotaRows[${index}].${key}`);
+    if (item.monthlyQuota !== undefined && item.monthlyQuota !== null
+      && (typeof item.monthlyQuota !== "string" || !/^\d+$/.test(item.monthlyQuota) || !Number.isSafeInteger(Number(item.monthlyQuota)))) invalid("F4", `quotaRows[${index}].monthlyQuota`);
   });
   array(row, "quotaUsages", "F4").forEach((value, index) => {
     const item = record(value, "F4", `quotaUsages[${index}]`);
@@ -340,6 +355,19 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
     text(item.status, "F4", `ambassadorApplications[${index}].status`);
   });
   array(row, "ambassadorBands", "F4");
+  if (row.ambassadorMetricBasis !== undefined) {
+    const basis = object(row, "ambassadorMetricBasis", "F4");
+    for (const key of ["source", "period", "timeFilter", "excludedDeleted"] as const) {
+      if (basis[key] !== F4_AMBASSADOR_METRIC_BASIS[key]) invalid("F4", `ambassadorMetricBasis.${key}`);
+    }
+    const metrics = object(basis, "metrics", "F4");
+    for (const [key, expected] of Object.entries(F4_AMBASSADOR_METRIC_BASIS.metrics)) {
+      const metric = object(metrics, key, "F4");
+      for (const [field, expectedValue] of Object.entries(expected)) {
+        if (metric[field] !== expectedValue) invalid("F4", `ambassadorMetricBasis.metrics.${key}.${field}`);
+      }
+    }
+  }
   array(row, "podium", "F4");
   const votes = array(row, "voteWeights", "F4");
   votes.forEach((value, index) => {
@@ -549,7 +577,32 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const requestCursor = cursor(pagination.requestCursor, "pagination.requestCursor");
   const topCursor = cursor(row.nextCursor, "nextCursor");
   const nestedCursor = cursor(pagination.nextCursor, "pagination.nextCursor");
-  array(row, "anomalies", "F5");
+  array(row, "anomalies", "F5").forEach((value, index) => {
+    const anomaly = record(value, "F5", `anomalies[${index}]`);
+    if (anomaly.currency !== undefined && !["USDT", "UVT"].includes(text(anomaly.currency, "F5", `anomalies[${index}].currency`))) invalid("F5", `anomalies[${index}].currency`);
+  });
+  if (row.layerRatioComparisons !== undefined) {
+    array(row, "layerRatioComparisons", "F5").forEach((value, index) => {
+      const path = `layerRatioComparisons[${index}]`;
+      const comparison = record(value, "F5", path);
+      const currency = text(comparison.currency, "F5", `${path}.currency`);
+      if (!["USDT", "UVT"].includes(currency)) invalid("F5", `${path}.currency`);
+      if (comparison.available === false) {
+        if (!["F5_LAYER_RATIO_THEORY_UNAVAILABLE", "F5_LAYER_RATIO_LAYER_UNAVAILABLE", "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE"].includes(text(comparison.reason, "F5", `${path}.reason`))
+          || comparison.layers !== null || comparison.theoreticalPct !== null || comparison.deviation !== null) invalid("F5", path);
+      } else if (comparison.available === true) {
+        if (currency !== "USDT" || comparison.reason !== null) invalid("F5", path);
+        array(comparison, "layers", "F5").forEach((value, layerIndex) => {
+          const layerPath = `${path}.layers[${layerIndex}]`;
+          const layer = record(value, "F5", layerPath);
+          positiveInteger(layer.layer, "F5", `${layerPath}.layer`);
+          for (const key of ["actualPct", "theoreticalPct", "deviation"]) {
+            if (typeof layer[key] !== "string" || f4Decimal(layer[key]) === null) invalid("F5", `${layerPath}.${key}`);
+          }
+        });
+      } else invalid("F5", `${path}.available`);
+    });
+  }
   array(row, "coolingPolicy", "F5");
   array(row, "operationHistory", "F5");
   array(row, "activeSuspensions", "F5").forEach((value, index) => {

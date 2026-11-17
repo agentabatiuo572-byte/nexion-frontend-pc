@@ -1,3 +1,4 @@
+import { fConfigBatchTargetType } from "./f-config-batch";
 import { accountAvatarFields } from "./account-avatar-contract.ts";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
@@ -1938,7 +1939,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: `batch:${String(ctx.sourceDomain ?? "F")}` }),
     buildTargets: (ctx) => (Array.isArray(ctx.changes) ? ctx.changes : []).map((item) => {
       const change = item as { key?: unknown };
-      return { domain: "F", type: "ui_config", id: String(change.key ?? "") };
+      return { domain: "F", type: fConfigBatchTargetType(String(change.key ?? "")), id: String(change.key ?? "") };
     }),
   },
   // f_ui_config: UI keys toggle/文案(F.vrank.permanent/F.binary.paused/F.leaderboard.paused 等)。amplifies false。
