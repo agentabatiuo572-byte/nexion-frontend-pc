@@ -11,7 +11,7 @@ import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
-import { h3Decimal, h3MissionEnableRefusal } from "@/lib/admin/h3-contract";
+import { h3Decimal, h3MissionEnableRefusal, type H3TaskContract } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
@@ -130,10 +130,10 @@ export function casExpected(value: string) {
   return !normalized || normalized === "-" ? "__MISSING__" : normalized;
 }
 
-export function contractForTask(task: QuestTask, contracts: Array<Record<string, any>> | undefined) {
+export function contractForTask(task: QuestTask, contracts: H3TaskContract[] | undefined): H3TaskContract {
   // Mission codes are stable across legacy numeric projections and reordering.
   // A missing contract must stay missing, never borrow the adjacent task's facts.
-  if (task.taskCode) return contracts?.find((item) => item.taskKey === task.taskCode) ?? {};
+  if (task.taskCode) return contracts?.find((item) => (item.missionCode ?? item.taskKey) === task.taskCode) ?? {};
   return task.id == null ? {} : contracts?.find((item) => String(item.taskId) === String(task.id)) ?? {};
 }
 

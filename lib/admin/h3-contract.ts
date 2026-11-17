@@ -2,6 +2,59 @@ import type { H3QuestEventBinding } from "./h-client";
 
 export type H3Task = Record<string, any>;
 
+export interface H3TaskContract extends Record<string, any> {
+  missionCode?: string;
+  completed24h?: number | null;
+  b3Default?: boolean | number | string;
+  retentionOnlyDefault?: boolean | number | string;
+  attributionAvailable?: boolean;
+  fieldSemantics?: { serverEvent: string; b3: string; retentionOnly: string; sample24h: string; anomalyPct: string };
+  completionBasis?: { source: string; timestamp: string; states: string[]; window: string; deduplication: string };
+}
+
+/** Only the tasks GET supplies these aggregates; absent fields retain the legacy unknown state. */
+export type H3Stats = {
+  dayOneTaskCount?: number;
+  weeklyTier1Count?: number;
+  weeklyTier2Count?: number;
+  monthlyMissionCount?: number;
+  phaseBonusP3?: string;
+  operatingStatsAvailable?: boolean;
+  operatingStatsComplete?: boolean;
+  operatingStatsReason?: string;
+  dayOneRate24h?: number | null;
+  dayOneRateGrace?: number | null;
+  dayOneRate24hAvailable?: boolean;
+  dayOneRateGraceAvailable?: boolean;
+  dayOneClaimCounts?: { fullEligible: number; fullClaimed: number; graceEligible: number; graceClaimed: number };
+  dayOneRateBasis?: string;
+  dayOneRateUnit?: string;
+  dayOneClaimTimeSource?: string;
+  dayOneWindowSource?: string;
+  weeklyDone?: number | null;
+  weeklyDoneAvailable?: boolean;
+  weeklyKnownDone?: number;
+  weeklyUndatedCount?: number;
+  weeklyUnknownTierCount?: number;
+  t1Done?: number | null;
+  t2Done?: number | null;
+  weeklyCompletionTimeSource?: string;
+  weeklyTierSource?: string;
+  weeklyNex?: string | null;
+  weeklyNexAsset?: string;
+  weeklyPaidByAsset?: Array<{ asset: string; amount: string; ledgerCount: number }>;
+  weeklyPaidSource?: string;
+  monthlyInflight?: number | null;
+  monthlyInflightAvailable?: boolean;
+  monthlyInflightReason?: string;
+  userScope?: string;
+  asOf?: string;
+  weekTimeZone?: string;
+  storageTimeZone?: string;
+  weekFromStorage?: string;
+  weekUntilExclusiveStorage?: string;
+};
+
 /** f85e1742/ec68f13e: documented write contract; ASCII codes compare without changing stored values. */
 export function h3MissionEnableRefusal(taskKind: string, taskCode: string): "H3_MISSION_RETIRED" | undefined {
   return taskKind === "MISSION" && ["weekly_t1_nex_v2_lock", "weekly_t1_stake_fallback", "weekly_t2_stake_small"].includes(taskCode.toLowerCase())
@@ -15,7 +68,7 @@ export function h3MissionCreationRefusal(missionType: string, missionCode: strin
 }
 
 export type H3Model = {
-  h3Stats: Record<string, unknown>;
+  h3Stats: H3Stats;
   dayOneWindow: string;
   dayOneEligibilityHours: string;
   dayOneTriReward: string;
@@ -27,7 +80,7 @@ export type H3Model = {
   weeklyMultipliers: Array<{ p: string; mult: string | null }>;
   monthlyMissions: H3Task[];
   taskMonitor: Array<{ label: string; note: string }>;
-  taskContracts: Array<Record<string, any>>;
+  taskContracts: H3TaskContract[];
   promoBanner: Record<string, any>;
   contentLocales: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly: Record<string, any>;
@@ -47,9 +100,53 @@ export function parseH3Model(value: unknown): H3Model {
   };
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "promoBanner", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
+  const stats = row.h3Stats;
+  if (stats.operatingStatsAvailable !== undefined) {
+    const invalid = () => { throw new Error("H3_RESPONSE_INVALID"); };
+    if (typeof stats.operatingStatsAvailable !== "boolean" || typeof stats.operatingStatsComplete !== "boolean"
+      || typeof stats.monthlyInflightAvailable !== "boolean") invalid();
+    strings(stats, ["monthlyInflightReason", "dayOneRateBasis", "dayOneRateUnit", "weeklyNexAsset", "userScope"]);
+    for (const key of ["dayOneRate24h", "dayOneRateGrace", "weeklyDone", "t1Done", "t2Done", "monthlyInflight"]) {
+      const value = stats[key];
+      if (value !== null && (typeof value !== "number" || !Number.isFinite(value) || value < 0
+        || (key.startsWith("dayOneRate") ? value > 100 : !Number.isSafeInteger(value)))) invalid();
+    }
+    if (stats.weeklyNex !== null && (typeof stats.weeklyNex !== "string" || h3Decimal(stats.weeklyNex) === null)) invalid();
+    if (stats.operatingStatsAvailable) {
+      strings(stats, ["asOf", "weekTimeZone", "storageTimeZone", "weekFromStorage", "weekUntilExclusiveStorage",
+        "dayOneClaimTimeSource", "dayOneWindowSource", "weeklyCompletionTimeSource", "weeklyTierSource", "weeklyPaidSource"]);
+      for (const key of ["dayOneRate24hAvailable", "dayOneRateGraceAvailable", "weeklyDoneAvailable"]) {
+        if (typeof stats[key] !== "boolean") invalid();
+      }
+      const claims = object(stats.dayOneClaimCounts);
+      for (const key of ["fullEligible", "fullClaimed", "graceEligible", "graceClaimed"]) {
+        if (!Number.isSafeInteger(claims[key]) || claims[key] < 0) invalid();
+      }
+      for (const key of ["weeklyKnownDone", "weeklyUndatedCount", "weeklyUnknownTierCount"]) {
+        if (!Number.isSafeInteger(stats[key]) || stats[key] < 0) invalid();
+      }
+      if (!Array.isArray(stats.weeklyPaidByAsset)) invalid();
+      for (const paid of stats.weeklyPaidByAsset) {
+        const item = object(paid);
+        strings(item, ["asset", "amount"]);
+        if (h3Decimal(item.amount) === null || !Number.isSafeInteger(item.ledgerCount) || item.ledgerCount < 0) invalid();
+      }
+    } else strings(stats, ["operatingStatsReason"]);
+  }
   for (const key of ["dayOneTasks", "weeklyTier1", "weeklyTier2", "monthlyMissions", "dayOneStates", "weeklyMultipliers", "taskMonitor", "taskContracts", "eventBindings"]) {
     if (!Array.isArray(row[key])) throw new Error("H3_RESPONSE_INVALID");
     row[key].forEach(object);
+  }
+  for (const contract of row.taskContracts) {
+    if (contract.completed24h === undefined) continue;
+    strings(contract, ["missionCode"]);
+    if (contract.completed24h !== null && (!Number.isSafeInteger(contract.completed24h) || contract.completed24h < 0)
+      || typeof contract.attributionAvailable !== "boolean"
+      || [contract.b3Default, contract.retentionOnlyDefault].some(value => ![true, false, 0, 1, "0", "1", "true", "false"].includes(value))) throw new Error("H3_RESPONSE_INVALID");
+    strings(object(contract.fieldSemantics), ["serverEvent", "b3", "retentionOnly", "sample24h", "anomalyPct"]);
+    const basis = object(contract.completionBasis);
+    strings(basis, ["source", "timestamp", "window", "deduplication"]);
+    if (!Array.isArray(basis.states) || basis.states.some(state => typeof state !== "string")) throw new Error("H3_RESPONSE_INVALID");
   }
   for (const task of [...row.dayOneTasks, ...row.weeklyTier1, ...row.weeklyTier2, ...row.monthlyMissions]) {
     strings(task, ["taskCode", "taskKind", "status", "reward"]);

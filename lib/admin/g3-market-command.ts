@@ -48,6 +48,26 @@ export function g3MarketObjectKey(change: G3MarketChange) {
     : change.action === "current-price" ? "currentPrice" : "schedule";
 }
 
+export function g3MarketObjectReadState(overview: G3ReadOverview, key: string) {
+  const type = key.startsWith("weekly:") ? "nex_market_curve"
+    : ["schedule", "pin", "loop"].includes(key) ? "nex_market_control" : "nex_market_override";
+  return overview.objectStates?.find(row => row.target.type === type && row.target.id === (key.startsWith("weekly:") ? "weekly" : key));
+}
+
+/** New requests only: original-key recovery must still reach the authoritative writer. */
+export function g3MarketReadBlockedCode(overview: G3ReadOverview, change: G3MarketChange, value?: string, forceApproval = false) {
+  const environment = overview.environmentWriteState?.entries.find(entry => change.action === "curve-cell"
+    ? entry.operation === "g3_curve_update" && entry.field === change.field && (value === undefined || Number(value) !== Number(change.current))
+    : change.action === "current-price" && entry.operation === "g3_override" && entry.overrideKey === "currentPrice");
+  if (environment?.environmentDisabled) return environment.reasonCode ?? G3_ENVIRONMENT_FORBIDDEN;
+  const state = g3MarketObjectReadState(overview, g3MarketObjectKey(change));
+  if (!state?.locked) return undefined;
+  // Weekly/current-price direct tightening deliberately bypasses the A2 lock in the backend.
+  if ((change.action === "curve-cell" || change.action === "current-price")
+    && !(forceApproval || value !== undefined && g3MarketRequiresApproval(change, value))) return undefined;
+  return state.pendingApproval ? "OBJECT_ALREADY_PENDING" : "OBJECT_LOCKED_BY_A2";
+}
+
 function slot(adminId: number, change: G3MarketChange) {
   return `${adminId}:G3:${g3MarketObjectKey(change)}`;
 }
@@ -127,7 +147,7 @@ export function g3MarketFailureCode(error: unknown): string {
   return error && typeof error === "object" && "backendMessage" in error ? String(error.backendMessage ?? "") : "";
 }
 
-/** Refresh only the original maker's known tickets; never infer locks from an overview. */
+/** Refresh the original maker's saved tickets; object locks come separately from the GET projection. */
 export async function refreshG3MarketApprovals(adminId: number) {
   const rows = listG3MarketCommands(adminId).filter(row => row.ticketId);
   const results = await Promise.allSettled(rows.map(async row => {

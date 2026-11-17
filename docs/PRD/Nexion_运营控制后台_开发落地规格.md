@@ -482,7 +482,7 @@ I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App
 | `/api/store/purchase-eligibility?productNo=` | GET | **COMPLETE**：读取当前登录用户的 V-rank、有效直推、团队业绩与 E1 `purchaseGate`，返回 `eligible/decisionCode/evaluatedAt`；畸形门或事实缺失失败关闭。该端点供提交前提示，普通/组合下单、Trade-in 与容量替换入口均执行最终服务端复验 | 用户令牌 | E1 / E3 |
 | `/api/withdrawals/attempts/:idempotencyKey/abandon` | POST | **COMPLETE**：对结果未知的提现尝试做服务端核验与放弃：与 submit 共用用户行锁；已提交返回 canonical withdrawal，未提交写 ABANDONED tombstone；同 key 异 body 拒绝 | 用户令牌 + 原冻结请求体 | D2 / App 钱包 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
-| `/api/admin/config/task-pricing` | GET / HEAD（PC 只读兼容） | 旧六类任务定价写入口按 E2-A07/A08/A09/A12 退役；当前 E2 页面没有 GET 调用，保留的 fetchE2TaskPricing 仅为只读兼容；PC BFF 拒绝 PUT，后端原 PUT 尚存待退役 | 无 PC 写入口 | E2 |
+| `/api/admin/config/task-pricing` | GET / HEAD（PC 只读兼容） | 旧六类任务定价写入口按 E2-A07/A08/A09/A12 退役；当前 E2 页面没有 GET 调用，保留的 fetchE2TaskPricing 仅为只读兼容；PC BFF 拒绝 PUT，后端60305188已移除PUT映射，通过原安全过滤后HTTP/code 405、METHOD_NOT_ALLOWED，GET和device_e2_read保留；E2-BE-01已交付 | 无 PC 写入口 | E2 |
 | `/api/admin/devices/e3/config` | GET / PATCH | E3 产能曲线 + 换新阶梯统一配置；拒绝退役键、未知键、无变化与非法保序 | E3-MD1(高敏字段) | E3 |
 | `/api/app/trade-in/config` | GET | 用户端换新开关、资格和 4/5 阶梯只读投影 | — | E3 |
 | `/api/app/trade-in/{config\|quote\|submit}` | GET / POST | 用户换新配置、报价与原子提交；submit 携 Idempotency-Key，折抵不入余额 | — | E3 |

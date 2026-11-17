@@ -47,6 +47,8 @@ interface BackendOverrides {
 }
 
 interface BackendOverview {
+  objectStates?: unknown;
+  environmentWriteState?: unknown;
   priceAvailable?: boolean;
   currentPrice?: RawNumber;
   activeDayIndex?: RawNumber;
@@ -115,6 +117,8 @@ export interface G3Overrides {
 }
 
 export interface G3Overview {
+  objectStates?: G3ObjectReadState[];
+  environmentWriteState?: G3EnvironmentWriteState;
   priceAvailable?: boolean;
   currentPrice: number;
   activeDayIndex: number;
@@ -129,6 +133,21 @@ export interface G3Overview {
   curveRevision?: string;
   priceRevision?: string;
   scheduleRevision?: string;
+}
+
+export interface G3ObjectReadState {
+  target: { domain: "G"; type: "nex_market_curve" | "nex_market_control" | "nex_market_override"; id: string };
+  locked: boolean;
+  pendingApproval: boolean;
+  pendingOperationId: string | null;
+  pendingOperator: string | null;
+  pendingCreatedAt: string | null;
+}
+
+export interface G3EnvironmentWriteState {
+  manualTuningAllowedByEnvironment: boolean;
+  entries: Array<{ operation: string; field?: string; condition?: string; overrideKey?: string; action?: string;
+    environmentDisabled: boolean; reasonCode: string | null }>;
 }
 
 /** The read contract includes legitimate unknowns; the existing editor requires complete baselines. */
@@ -246,6 +265,7 @@ function normalizeReadOverview(data: BackendOverview | null | undefined): G3Read
   if (data.priceAvailable !== undefined && typeof data.priceAvailable !== "boolean"
     || coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") throw new Error("UVT 价格数据加载失败，请刷新重试");
   return {
+    ...normalizeG3WriteStates(data),
     priceAvailable: data.priceAvailable,
     currentPrice: data.currentPrice === null ? null : requireNumber(data.currentPrice, "currentPrice"),
     activeDayIndex,
@@ -283,6 +303,52 @@ function normalizeReadOverview(data: BackendOverview | null | undefined): G3Read
     priceRevision: data.priceRevision,
     scheduleRevision: data.scheduleRevision,
   };
+}
+
+/** GET-only projections are optional on old servers and on mutation receipts. */
+function normalizeG3WriteStates(data: BackendOverview): Pick<G3Overview, "objectStates" | "environmentWriteState"> {
+  const invalid = () => { throw new Error("UVT 价格数据加载失败，请刷新重试"); };
+  const object = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+    return value as Record<string, unknown>;
+  };
+  const result: Pick<G3Overview, "objectStates" | "environmentWriteState"> = {};
+  if (data.objectStates !== undefined) {
+    if (!Array.isArray(data.objectStates)) return invalid();
+    const seen = new Set<string>();
+    result.objectStates = data.objectStates.map(value => {
+      const row = object(value), target = object(row.target);
+      const keys = target.type === "nex_market_curve" ? ["weekly"] : target.type === "nex_market_control" ? ["schedule", "pin", "loop"]
+        : target.type === "nex_market_override" ? ["currentPrice", "volatilityPct", "oracle", "deviationPct", "costBasis", "paused"] : [];
+      const key = `${target.type}:${target.id}`;
+      if (target.domain !== "G" || typeof target.id !== "string" || !keys.includes(target.id) || seen.has(key)
+        || typeof row.locked !== "boolean" || typeof row.pendingApproval !== "boolean"
+        || [row.pendingOperationId, row.pendingOperator, row.pendingCreatedAt].some(cell => cell !== null && typeof cell !== "string")
+        || row.pendingApproval && (!row.locked || !row.pendingOperationId)) return invalid();
+      seen.add(key);
+      return row as unknown as G3ObjectReadState;
+    });
+    if (seen.size !== 10) return invalid();
+  }
+  if (data.environmentWriteState !== undefined) {
+    const state = object(data.environmentWriteState);
+    if (typeof state.manualTuningAllowedByEnvironment !== "boolean" || !Array.isArray(state.entries)) return invalid();
+    const entries = new Set<string>();
+    for (const value of state.entries) {
+      const entry = object(value);
+      const key = `${entry.operation}:${entry.action ?? ""}:${entry.field ?? ""}:${entry.overrideKey ?? ""}`;
+      if (typeof entry.operation !== "string" || typeof entry.environmentDisabled !== "boolean"
+        || entry.reasonCode !== null && typeof entry.reasonCode !== "string"
+        || entry.environmentDisabled && !entry.reasonCode
+        || ["field", "condition", "overrideKey", "action"].some(key => entry[key] !== undefined && typeof entry[key] !== "string")
+        || !["g3_curve_update::pumpProbability:", "g3_override:::currentPrice", "g3_market_policy_change:curve-cell:pumpProbability:", "g3_market_policy_change:current-price::"].includes(key)
+        || entries.has(key)) return invalid();
+      entries.add(key);
+    }
+    if (entries.size !== 4) return invalid();
+    result.environmentWriteState = state as unknown as G3EnvironmentWriteState;
+  }
+  return result;
 }
 
 /** Preserve the existing editor contract without substituting numeric values for unavailable reads. */

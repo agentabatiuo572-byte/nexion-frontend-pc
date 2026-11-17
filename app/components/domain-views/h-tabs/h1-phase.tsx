@@ -60,7 +60,7 @@ import {
   type H1Phases,
   type H1RhythmOverview
 } from "@/lib/admin/h-client";
-import { h1DialIssue } from "@/lib/admin/h1-dial-validation";
+import { H1_DIAL_LIMITS, h1DialIssue } from "@/lib/admin/h1-dial-validation";
 import {
   beginH1,
   executeH1,
@@ -97,8 +97,7 @@ const DIALS = [
     key: "newUserBonusMultiplier",
     label: "新用户加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.newUserBonusMultiplier,
     what: "本月新用户相关奖励的倍率",
     effect: "调高是放大，要审批；已结算的奖励不保证补发。"
   },
@@ -106,8 +105,7 @@ const DIALS = [
     key: "inviteRewardMultiplier",
     label: "邀请加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.inviteRewardMultiplier,
     what: "本月邀请奖励的倍率",
     effect: "调高是放大，要审批；已结算的邀请奖励不重算。"
   },
@@ -115,8 +113,7 @@ const DIALS = [
     key: "reinvestMultiplier",
     label: "锁定计划加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.reinvestMultiplier,
     what: "参与锁定计划使用的阶段倍率",
     effect: "调高是放大，要审批；已参与的仍按参与时的倍率。"
   },
@@ -124,8 +121,7 @@ const DIALS = [
     key: "withdrawCooldownDays",
     label: "到账审查窗口",
     unit: "天",
-    min: 0,
-    max: 90,
+    ...H1_DIAL_LIMITS.withdrawCooldownDays,
     what: "提现从提交起要等多少天才能放行",
     effect: "调低是放大，要审批。越南盾提现每笔都等；USDT 在加强合规审查开着，且超过 1,000\u00a0USDT 时才等；风控延迟、冻结的也按它算。"
   },
@@ -133,8 +129,7 @@ const DIALS = [
     key: "binaryDailyCap",
     label: "团队平衡奖励每日上限",
     unit: "USD",
-    min: 0,
-    max: 50000,
+    ...H1_DIAL_LIMITS.binaryDailyCap,
     what: "每日团队平衡奖励的封顶额",
     effect: "调高是放大，要审批；可以设成 0。"
   },
@@ -142,8 +137,7 @@ const DIALS = [
     key: "questBonusMultiplier",
     label: "任务加成",
     unit: "倍",
-    min: 1,
-    max: 4,
+    ...H1_DIAL_LIMITS.questBonusMultiplier,
     what: "本月任务奖励的倍率",
     effect: "调高是放大，要审批；已结算的任务奖励不重算。"
   },
@@ -151,8 +145,7 @@ const DIALS = [
     key: "complianceHoldEnabled",
     label: "加强合规审查",
     unit: "",
-    min: 0,
-    max: 1,
+    ...H1_DIAL_LIMITS.complianceHoldEnabled,
     what: "USDT 提现加强人工审查的开关",
     effect: "关闭是放大，要审批。开启时 USDT 三个网络的提现每笔人工审查，本金超过 1,000 USDT 的还要等到账审查窗口；关闭后也不保证自动通过。"
   },
@@ -401,6 +394,7 @@ export default function H1Phase({ ctx,
   const stepState = (row: H1Pending, index: number) => {
     const request = row.requests[index];
     if (request.acknowledged) return "已保存";
+    if (index > 0 && request.sent === false) return "还没发出";
     if (row.requests.slice(0, index).some((item) => !item.acknowledged)) return "还没发出";
     if (!(request.commandKey in receipts)) return row.state === "rejected" ? row.retryRejected ? "重试被拒绝" : "未保存" : "结果未知";
     const receipt = receipts[request.commandKey];
@@ -868,7 +862,10 @@ export default function H1Phase({ ctx,
           if (result.settled) {
             // 整条了结：后台拒绝和没有执行分开说；两步的，另一步已保存要一起说。
             const saved = steps ? row.requests.filter((request) => !result.outcomes.some((outcome) => outcome.request.commandKey === request.commandKey && eCommandResult(outcome.receipt) !== "SUCCEEDED")).map((request) => `${request.label}已保存`).join("，") : "";
-            const ended = !unresolved ? "" : eCommandResult(unresolved.receipt) === "REJECTED" ? SETTLED_REJECTED : "核查确认没有执行，记录已解除，可以重新修改。";
+            // 排在后面、从没发出过的一步不是「核查确认没有执行」：没有请求到过后台。
+            const neverSent = !!unresolved && result.steps.some((step) => step.request.commandKey === unresolved.request.commandKey && step.state === "NOT_SENT");
+            const ended = !unresolved ? "" : eCommandResult(unresolved.receipt) === "REJECTED" ? SETTLED_REJECTED
+              : neverSent ? "没有发出，记录已解除；要做请重新修改。" : "核查确认没有执行，记录已解除，可以重新修改。";
             const confirmed = result.outcomes.some((outcome) => outcome.receipt?.originalStatus === "CONFIRMED_SUCCEEDED");
             const text = ended ? `${lead}${saved ? `${saved}；${unresolved!.request.label}：` : ""}${ended}`
               : confirmed ? `${row.label}：核查确认已执行，记录已解除，不要再做一次。` : `${lead}${row.label}已保存`;
@@ -880,7 +877,10 @@ export default function H1Phase({ ctx,
             const open = result.outcomes.find((outcome) => !eCommandSettled(outcome.receipt));
             const index = open ? current.requests.findIndex((request) => request.commandKey === open.request.commandKey) : -1;
             const unsent = index > 0 && current.requests.slice(0, index).some((request) => !request.acknowledged);
-            setFeedback(`${lead}${steps && open ? `${open.request.label}${unsent ? "" : "："}` : ""}${unsent ? "还没发出，原记录继续保留；请到操作记录与审批核对。" : stepLine(row, open?.receipt ?? null)}`);
+            // 前面的步骤都确认了、这一步还没发出：24 小时内按原请求重试就是接着发这一步。
+            const nextUnsent = !unsent && !!open && result.steps.some((step) => step.request.commandKey === open.request.commandKey && step.state === "NOT_SENT");
+            setFeedback(`${lead}${steps && open ? `${open.request.label}${unsent || nextUnsent ? "" : "："}` : ""}${unsent ? "还没发出，原记录继续保留；请到操作记录与审批核对。"
+              : nextUnsent ? "还没发出；按原请求重试接着发。" : stepLine(row, open?.receipt ?? null)}`);
           }
         } finally { syncPending(); await reload(); }
         return;
