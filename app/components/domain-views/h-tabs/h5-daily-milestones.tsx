@@ -842,8 +842,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               return (
                 <ConfigRow key={rule.key} name={name}
                   what={copy?.what ?? (rule.sub ? operatorCopyText(rule.sub) : undefined)}
-                  when="已停用，只显示以前存的值"
-                  effect={copy?.effect ?? "不影响签到和发奖。"}
+                  when="已停用，不能再改"
+                  note={copy?.effect ?? "不影响签到和发奖。"}
                   value={<span className="h5-value">
                     <span className="h5-value-num">{ruleValueText(rule)}</span>
                     <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>
