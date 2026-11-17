@@ -1027,7 +1027,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
               <tr>
                 <Th>{ui.subject}</Th>
                 {ui.columns.map((column) => <Th key={column.label} align={column.num ? "right" : undefined}>{column.label}{column.explain && <Explain label={`${column.label}的说明`} content={column.explain} />}</Th>)}
-                <Th>风险等级<Explain label="风险等级的说明" content={<><p>{ui.levelRule}</p><p>等级只在这一类里比较，和别的类的同一级含义不同。</p></>} /></Th>
+                <Th>风险等级<Explain label="风险等级的说明" content={<><p>{ui.levelRule}</p><p>只在这一类里比较，别的类同一级含义不同。</p></>} /></Th>
                 <Th align="right" sticky="end">处置</Th>
               </tr>
             </thead>
