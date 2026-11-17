@@ -28,7 +28,7 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -1345,6 +1345,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
       setClosingOrdinary(null); updateRecovery(value => value + 1);
       if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await finishRecovery(record.commandKey); }
+      else toast(CLOSURE_KEPT_TEXT, "warn");
     }} />;
   const ordinaryExplain = DIRECT_RECOVERY_INTRO;
   const recoveryMore = (total: number) => total > 3
