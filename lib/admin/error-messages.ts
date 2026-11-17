@@ -3234,7 +3234,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PHASE_PARAM_READONLY: "当前阶段参数只读,不能修改。",
   RETIRED_FEATURE: "这项已停用，不能再修改。",
   H7_VOUCHER_SPLITTABLE_RETIRED: "代金券拆分已停用，不能设为可拆分。",
-  K2_WELCOME_GIFT_SCOPE_RETIRED: "按手机号或设备检测新人礼已停用；请选择实体或账户簇。",
+  K2_WELCOME_GIFT_SCOPE_RETIRED: "按手机号、设备检测已停用，这次没有保存；改选「同一人或组织」或「账户组」后再保存。",
   LEARNING_COURSE_OPTION_RETIRED: "课程完成条件和发奖事件已停用，不能新增或修改；历史值请保持原样。",
   DAILY_STREAK_SAVER_EMPTY: "没有可用的断签补救卡，本次未恢复连签。",
   DAILY_STREAK_NOT_BROKEN: "当前签到记录不满足断签补救条件，本次未恢复连签。",
