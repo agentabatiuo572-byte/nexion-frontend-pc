@@ -772,7 +772,7 @@ export default function RiskRadarPage() {
               </p>
               <Notice tone="neutral">
                 <p>和「紧急停用开关」共用，那边也跟着变。</p>
-                <p>是否自动暂停提现，由那边按自己的统计判断。</p>
+                <p>两边看同一个提现压力，到红线那边自动暂停提现。</p>
               </Notice>
               {requiresApproval && (
                 <Notice tone="warn" title="提高红线要审批">

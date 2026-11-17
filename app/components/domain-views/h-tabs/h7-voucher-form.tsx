@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { BellOff, CircleSlash, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
+import { validateH7VoucherMoneyPrecision } from "@/lib/admin/h7-voucher-money";
 import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
@@ -69,6 +70,12 @@ export function formErrors(state: H7FormValue): Record<string, string> {
   if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) e.popupCooldownHours = "要填 0–720 的整数";
   if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) e.popupMaxPerSession = "要填 1–10 的整数";
   return e;
+}
+
+/** 填的时候就提示：和提交前的精度检查是同一个函数，多于 6 位小数保存时会被拒（a38c7676）。只提示，不改「下一步」的校验。 */
+function precisionHint(raw: string | undefined) {
+  try { validateH7VoucherMoneyPrecision({ type: "fixed", amountUSD: raw }); return undefined; }
+  catch { return "最多 6 位小数"; }
 }
 
 const list = (csv: string | undefined) => (csv ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -223,16 +230,17 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
                   ? <Field label="减百分之几" required hint="1–99 的整数" error={shown.percent} help="8 是减订单金额的 8%，不是八折；App 显示「8% 折扣」。">
                     {(control) => <NumberInput {...control} unit="%" min={1} max={99} step={1} value={value.percent} onChange={(e) => set("percent", e.target.value)} />}
                   </Field>
-                  : <Field label="面额" required hint="1–1,000,000" error={shown.amountUSD} help="下单直接减这么多。">
+                  : <Field label="面额" required hint="1–1,000,000" error={shown.amountUSD ?? precisionHint(value.amountUSD)} help="下单直接减这么多。">
                     {(control) => <NumberInput {...control} unit={UNIT} min={1} max={1_000_000} value={value.amountUSD} onChange={(e) => set("amountUSD", e.target.value)} />}
                   </Field>}
-                <Field label="使用门槛" hint="0＝无门槛" help="订单满这个数才能用。">
+                <Field label="使用门槛" hint="0＝无门槛" error={precisionHint(value.minPurchaseUSD)} help="订单满这个数才能用。">
                   {(control) => <NumberInput {...control} unit={UNIT} min={0} value={value.minPurchaseUSD} onChange={(e) => set("minPurchaseUSD", e.target.value)} />}
                 </Field>
-                {showMax && <Field label="最多减" hint="0＝不封顶" help={percent ? "一单最多减这么多。" : "满减券也按它封顶。"}>
+                {showMax && <Field label="最多减" hint="0＝不封顶" error={precisionHint(value.maxDiscountUSD)} help={percent ? "一单最多减这么多。" : "满减券也按它封顶。"}>
                   {(control) => <NumberInput {...control} unit={UNIT} min={0} value={value.maxDiscountUSD} onChange={(e) => set("maxDiscountUSD", e.target.value)} />}
                 </Field>}
               </div>
+              <p className="rd-form-help">金额最多 6 位小数。</p>
             </section>
 
             <section className="h7-form-section" aria-labelledby="h7-f-who">

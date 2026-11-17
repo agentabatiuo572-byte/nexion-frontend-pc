@@ -133,6 +133,9 @@ const RETIRED_OPERATION_COPY = "此操作已退役，不能批准或重新发起
 /** 后端给 coverageCheckOnApproval 的三类单：K1 解除误判、判定为正常；J1 紧急开关恢复；大使申请批准（另有一句）。低于红线时各自什么不变按类写（OpsAuditCenterService.toTicket）。 */
 const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
 const J1_RESTORE_COVERAGE_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，开关保持关闭，业务继续暂停。";
+/** J1 恢复单后端存的对象是开关代号（「恢复业务开关 · withdraw」）；显示成紧急停用开关页卡片上的名字（OpsKillSwitchService 的 GATE_SEEDS）。 */
+const J1_GATE_NAMES: Record<string, string> = { withdraw: "提现开关", staking: "质押开关", genesis: "创世节点开关", exchange: "兑换开关", trial: "试用开关" };
+const j1GateName = (key: string) => J1_GATE_NAMES[key] ?? key;
 const PENDING_LOCK = "这张单有一次操作结果未知，先到页面上方核对";
 const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
@@ -155,6 +158,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (["a6_role_status_update", "a6_role_disable", "a6_role_delete", "a6_role_grants_update"].includes(w.operationCode ?? ""))
     return "另一位有审批批准权限和对应业务权限的管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
+  // AuditReplayBusinessPermissionGuard.validateJ1RestoreChecker：超级管理员，且有审批批准权限和业务开关恢复权限。
+  if (w.operationCode === "j1_gate_resume") return "另一位有审批批准权限和业务开关恢复权限的超级管理员";
   // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
   if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
@@ -522,6 +527,7 @@ function middle(text: string, max: number) {
 
 function actionName(ticket: string | { action: string; obj?: string; after?: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
   if (typeof ticket !== "string" && (ticket.operationCode === "k1_release_param" || ticket.operationCode === "k1_earnings_release")) return A2_ACTION_NAMES[ticket.operationCode];
+  if (typeof ticket !== "string" && ticket.operationCode === "j1_gate_resume" && ticket.obj) return `恢复业务开关 · ${j1GateName(ticket.obj)}`;
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
@@ -778,6 +784,7 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
   if (w.objDisplayName) return a2ObjectText(w);
   if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.operationCode === "k1_earnings_release") return `收益记录 ${w.obj}`;
+  if (w.operationCode === "j1_gate_resume") return j1GateName(w.obj);
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" && fund.period) return fund.period;
   if (fund?.kind === "f5Status" && fund.eventId) return `奖励记录 ${fund.eventId}`;
@@ -1732,6 +1739,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (fBatchTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`对象原文 ${w.obj}${fBatchTicket(w)?.digest ? "（清单太长，只存了摘要）" : ""}`} /></>;
     const ambassador = !w.objDisplayName && /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
     if (ambassador) return <>区域大使申请 <span data-mono className="a2-code">#{ambassador[1]}</span><Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
+    if (w.operationCode === "j1_gate_resume") return <>{j1GateName(w.obj)}<Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */
@@ -1953,7 +1961,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return {
       briefKind,
       title: "批准审批单",
-      action: <>确认执行 · {w.id}({fBatchTicket(w) ? actionName(w) : a2ActionText(w.action)})</>,
+      action: <>确认执行 · {w.id}({fBatchTicket(w) || w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)})</>,
       effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}谁能批准：{approvalExecutorLabel(w)}。</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
@@ -2010,7 +2018,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const rejectRequest = (w: A2OperationRow): ActionConfirmReq => ({
     briefKind: "record",
     title: "驳回审批单",
-    action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
+    action: <>取消执行 · {w.id} · {w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)}</>,
     effect: <>{subject(w)}{immediate}</>,
     detail: <>{w.retiredOperation ? "此操作已退役。驳回后保留历史记录，不能重新发起。" : "驳回后这张单结束，要做需重新发起。"}</>,
     facts: ticketFacts(w, "reject", (() => {
