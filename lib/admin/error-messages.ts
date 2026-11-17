@@ -262,7 +262,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   G7_REPURCHASE_PARAM_KEY_INVALID: "后端不支持这项锁定计划参数，请重新读取并核对参数。",
   G7_REPURCHASE_PRODUCT_NOT_FOUND: "锁定计划产品不存在，本次未保存，请联系后端核对 REPURCHASE_90D 产品。",
   G7_NUMBER_INVALID: "后端无法解析锁定计划参数值，本次未保存，请核对输入格式。",
-  G7_APY_OUT_OF_RANGE: "参考年奖励率要大于 0%、不超过 300%，本次未保存，请改新值。",
+  G7_APY_OUT_OF_RANGE: "参考年奖励率要大于 0%、不超过 300%，请改新值。",
   G7_PENALTY_OUT_OF_RANGE: "提前解锁扣款须在 0–100% 之间，本次未保存，请核对新值。",
   G7_NURTURE_OUT_OF_RANGE: "好友升级奖励倍率须在 1–10 倍之间，本次未保存，请核对新值。",
   G7_LOCK_DAYS_OUT_OF_RANGE: "锁仓期限须为 1–3650 天的整数，本次未保存，请核对新值。",
