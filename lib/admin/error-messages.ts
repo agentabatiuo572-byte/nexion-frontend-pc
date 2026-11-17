@@ -1389,6 +1389,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AMBASSADOR_POLICY_APPROVAL_FORBIDDEN: "这次大使规则操作不符合原审批单或对象锁；请在「操作记录与审批」核对原单。",
   F4_POOL_UNLOCK_VRANK_INVALID: "参与等级只能选择 V1–V8；请核对后重新提交。",
   F4_SETTLE_CRON_INVALID: "自动结算时间格式无效；请填写后端支持的五段或六段定时表达式。",
+  F4_POOL_MONEY_INVALID: "奖池金额格式无效，本次未保存；请填写 0 或正数，可带 $、逗号及 K、M。",
   F4_SETTLEMENT_REASON_REQUIRED: "结算理由至少填写 8 字；请补充处理依据后提交。",
   F4_LEADERBOARD_PERIOD_INVALID: "派奖周期无效；请重新打开总榜派奖。",
   F4_CLOSED_PERIOD_REQUIRED: "这次派奖缺少有效的已结束周期；请核对原审批单的周期。",
