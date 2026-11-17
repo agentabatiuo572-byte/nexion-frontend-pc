@@ -644,6 +644,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-page .f4-recovery-time, .f4-page .f4-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .f4-page .f4-recovery-zone { margin: var(--rd-space-2) 0 0; }
 .f4-page .f4-recovery-actions { display: inline-flex; justify-content: flex-end; gap: var(--rd-space-2); }
+.f4-page .f4-recovery-line { grid-column: 1 / -1; margin-top: -4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.f4-page .f4-recovery-line[data-tone="danger"] { color: var(--rd-danger); }
 
 /* 团队激励池：一块里只有一个最强的数。 */
 .f4-page .f4-pool-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr); gap: var(--rd-space-6); align-items: start; }

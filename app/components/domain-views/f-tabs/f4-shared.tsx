@@ -130,6 +130,8 @@ export type F4RecoveryRow = {
   /** 在等批准（不是结果未知、也没过期）。标题按这个分开说。 */
   pending?: boolean;
   actions?: ReactNode;
+  /** 最近一次查询原结果查到了什么，写在这一行下面。 */
+  line?: { tone: "warn" | "danger"; text: string };
 };
 
 /** 结果未知：提交时没收到确定结果。直接记录的写操作和走审批的申请各一句。 */
@@ -155,6 +157,7 @@ export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
             <span className="f4-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="f4-recovery-state">{row.tag}</span>
             <span className="f4-recovery-actions">{row.actions}</span>
+            {row.line && <span className="f4-recovery-line" role="status" data-tone={row.line.tone}>{row.line.text}</span>}
           </li>
         ))}
       </ul>

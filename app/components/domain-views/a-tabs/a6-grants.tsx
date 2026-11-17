@@ -307,6 +307,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
               <Search size={14} aria-hidden />
               <Input aria-label="权限搜索" data-search="" placeholder="搜权限名、权限码或页面，如 提现、A6" value={permQuery} onChange={(e) => setPermQuery(e.target.value)} />
             </label>
+            {auditor && <p className="a6-muted">只读审计只能有查看权限，修改和敏感操作的权限勾不上。</p>}
             <div className="a6-perm-grid">
               <nav className="a6-mods" aria-label="模块">
                 {filteredGroups.map((g) => {
@@ -361,7 +362,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
                                   const delta = on === wasPerm.has(pp.permissionCode) ? undefined : on ? "add" : "remove";
                                   return (
                                     <label key={pp.permissionCode} className="a6-perm" title={pp.permissionCode} data-on={on ? "" : undefined} data-delta={delta}>
-                                      <Checkbox checked={on} disabled={!on && !canSelectPerm(pp.permissionCode)} title={!on && !canSelectPerm(pp.permissionCode) ? displayAdminError(new Error("AUDIT_ROLE_WRITE_FORBIDDEN")) : undefined} onChange={() => togglePerm(pp.permissionCode)} />
+                                      <Checkbox checked={on} disabled={!on && !canSelectPerm(pp.permissionCode)} title={!on && !canSelectPerm(pp.permissionCode) ? "只读审计只能有查看权限" : undefined} onChange={() => togglePerm(pp.permissionCode)} />
                                       <span className="a6-perm-text">
                                         <span className="a6-perm-name">{permLabel(pp.permissionCode, pp)}</span>
                                         <span className="a6-perm-code">{pp.permissionCode}</span>

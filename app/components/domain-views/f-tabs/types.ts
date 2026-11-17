@@ -205,6 +205,8 @@ export interface FViewCtx {
   f4Loading: boolean;
   f4Error: string | null;
   f4Proposals: FDomainAttempt[];
+  /** 恢复区每一行最近一次查询原结果查到了什么，按原请求编号。 */
+  f4QueryNotes: Record<string, { tone: "warn" | "danger"; text: string }>;
   f4PolicyWrites: FDirectAttempt[];
   f4ApprovalRows: A2OperationRow[];
   recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;

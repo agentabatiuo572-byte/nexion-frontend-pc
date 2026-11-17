@@ -17,6 +17,8 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
+import { fDirectSettledText, fProposalEndText } from "./f-tabs/f-release";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -177,6 +179,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f4Error, setF4Error] = useState<string | null>(null);
   const [f4Proposals, setF4Proposals] = useState<FDomainAttempt[]>([]);
   const [f4PolicyWrites, setF4PolicyWrites] = useState<FDirectAttempt[]>([]);
+  // 恢复区每一行最近一次「查询原结果」查到了什么（只给还留着的记录；查到结论的记录清掉，改用轻提示）。
+  const [f4QueryNotes, setF4QueryNotes] = useState<Record<string, { tone: "warn" | "danger"; text: string }>>({});
   const [f4ApprovalRows, setF4ApprovalRows] = useState<A2OperationRow[]>([]);
   const f4Submission = useRef<F4ConfirmationSnapshot | undefined>(undefined);
   const [f5Page, setF5Page] = useState<{
@@ -483,18 +487,33 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4VoteProjection({ status: "idle" });
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
     let resolved = false;
+    const note = (value?: { tone: "warn" | "danger"; text: string }) => setF4QueryNotes(({ [original.commandKey]: _, ...rest }) => value ? { ...rest, [original.commandKey]: value } : rest);
+    note();
     try {
       if (record.kind === "policy") {
         if (mode === "release") throw new Error("直接保存的原操作只能核对，不能解除记录。");
         if (mode === "retry") { await sendF4Policy(owner); resolved = true; }
-        else resolved = (await queryF4Policy(owner, original as FDirectAttempt)).settled;
+        else {
+          const result = await queryF4Policy(owner, original as FDirectAttempt);
+          resolved = result.settled;
+          if (resolved) setToast(fDirectSettledText(result.receipt!.originalStatus));
+          else note({ tone: "warn", text: isRetryExpired(original) ? "这次没查到结论，结果仍未知；已过 24 小时，到操作记录与审批核对。" : "这次没查到结论，结果仍未知；可以稍后再查。" });
+        }
       } else {
         const ticket = mode === "release" ? (await releaseF4Proposal(owner, original), null)
           : mode === "retry" ? await sendF4Proposal(owner, original.fingerprint) : await queryF4Proposal(owner, original);
         resolved = mode === "release" || !!ticket;
-        if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
+        if (mode === "query") {
+          if (!ticket) note({ tone: "warn", text: isRetryExpired(original) ? "没查到原审批单。已过 24 小时，可以解除这条记录。" : "没查到原审批单，可以稍后再查。" });
+          else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
+          else setToast(fProposalEndText(ticket.status));
+        } else if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : fProposalEndText(ticket.status));
       }
       return record.kind === "policy" && mode === "query" || resolved;
+    } catch (error) {
+      // 查询失败的原因写在恢复区这一行；确认框里的查询照旧由框自己显示。
+      if (mode === "query") note({ tone: "danger", text: `查询没有成功：${displayAdminError(error)}` });
+      throw error;
     } finally {
       const retained = record.kind === "proposal" ? listF4Proposals(owner) : listF4PolicyWrites(owner);
       if (resolved || !retained.some(row => row.commandKey === original.commandKey)) setActionConfirm(null);
@@ -1029,9 +1048,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       markF2Loading();
       setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
       try {
-        const ticket = await queryF2Proposal(session.adminId, original);
-        if (!ticket) setToast(displayAdminError("A2_PROPOSAL_NOT_FOUND"));
-        return ticket;
+        // 查到什么由恢复区那一行原地写，这里不再另弹轻提示。
+        return await queryF2Proposal(session.adminId, original);
       } finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
     },
     releaseF2Proposal: async slot => {
@@ -1142,6 +1160,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Loading,
     f4Error,
     f4Proposals,
+    f4QueryNotes,
     f4PolicyWrites,
     f4ApprovalRows,
     recoverF4,
