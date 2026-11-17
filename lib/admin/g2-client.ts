@@ -85,6 +85,13 @@ interface BackendGeoBlocked {
   reason?: string | null;
 }
 
+export interface G2EmergencyExchangeSwitch {
+  available: boolean;
+  enabled: boolean | null;
+  sourceKey: "killswitch.exchange" | "emergency.killswitch.exchange" | null;
+  unavailableReason: "MISSING" | "INVALID" | null;
+}
+
 export interface BackendOverview {
   domain?: string | null;
   asset?: string | null;
@@ -96,6 +103,7 @@ export interface BackendOverview {
   gateDetails?: Record<string, BackendGateDetail | null> | null;
   swap?: BackendSwap | null;
   disclosureGate: { exchange: boolean };
+  emergencySwitch?: { exchange: G2EmergencyExchangeSwitch };
   geoBlocked?: BackendGeoBlocked[] | null;
   coverage?: BackendCoverage | null;
   serverCanonical?: boolean | null;
@@ -171,7 +179,7 @@ export interface G2Coverage {
 
 export interface G2Swap {
   enabled: boolean;
-  /** I5 masks the J1 value in this response; null is not a confirmed emergency pause. */
+  /** Only the independent J1 fact can confirm a pause; unavailable or older responses stay unknown. */
   emergencyPaused: boolean | null;
   status: string;
   configKey: string;
@@ -193,6 +201,7 @@ export interface G2Overview {
   gateDetails: Record<string, G2GateDetail>;
   swap: G2Swap;
   disclosureGate: { exchange: boolean };
+  emergencySwitch: { exchange: G2EmergencyExchangeSwitch } | null;
   geoBlocked: G2GeoBlocked[];
   coverage: G2Coverage;
   serverCanonical: boolean;
@@ -308,6 +317,7 @@ export function normalizeG2ExchangeOverview(data: BackendOverview | null | undef
   const coverage = data?.coverage ?? {};
   const swap = data!.swap!;
   const swapEnabled = toBool(swap.enabled, true);
+  const emergencySwitch = data!.emergencySwitch ?? null;
   const gateDetails = data?.gateDetails ?? {};
   return {
     stats: {
@@ -327,13 +337,14 @@ export function normalizeG2ExchangeOverview(data: BackendOverview | null | undef
     },
     swap: {
       enabled: swapEnabled,
-      emergencyPaused: swap.blockedBy === "I5_DISCLOSURE_GATE" ? null : !swapEnabled,
+      emergencyPaused: emergencySwitch?.exchange.available === true ? !emergencySwitch.exchange.enabled : null,
       status: asText(swap.status, "enabled"),
       configKey: asText(swap.configKey, "killswitch.exchange"),
       linkedDomain: asText(swap.linkedDomain, "J1"),
       blockedBy: data!.swap!.blockedBy,
     },
     disclosureGate: { exchange: data!.disclosureGate.exchange },
+    emergencySwitch,
     geoBlocked: (data?.geoBlocked ?? []).map((row) => ({
       cc: asText(row.cc),
       name: asText(row.name),

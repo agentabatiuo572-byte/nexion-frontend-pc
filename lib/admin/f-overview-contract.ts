@@ -315,6 +315,7 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
     array(row, "blockedAttempts", "F3").forEach((value, index) => {
       const attempt = record(value, "F3", `blockedAttempts[${index}]`);
       for (const key of ["settlementNo", "blockedAt"]) text(attempt[key], "F3", `blockedAttempts[${index}].${key}`);
+      if (attempt.user !== undefined && attempt.user !== null) text(attempt.user, "F3", `blockedAttempts[${index}].user`);
       for (const key of ["ownerUserId", "settlementDate", "reason", "settlementMode", "a2OperationId", "proposerName", "approverName"]) {
         if (attempt[key] !== null && typeof attempt[key] !== "string") invalid("F3", `blockedAttempts[${index}].${key}`);
       }

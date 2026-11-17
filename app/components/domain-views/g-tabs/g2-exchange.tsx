@@ -1050,8 +1050,8 @@ function G2ExchangePage() {
       {recoveryNotice()}
 
       <StatBand label="兑换摘要">
-        <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : swap.enabled ? PlayCircle : PauseCircle} tone={swap.emergencyPaused === null ? "neutral" : swap.enabled ? "ok" : "warn"}
-          value={swap.emergencyPaused === null ? "—" : swap.enabled ? "开着" : "已暂停"} sub={swap.emergencyPaused === null ? "披露闸门开着，读不到" : swap.enabled ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
+        <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle} tone={swap.emergencyPaused === null ? "neutral" : !swap.emergencyPaused ? "ok" : "warn"}
+          value={swap.emergencyPaused === null ? "—" : !swap.emergencyPaused ? "开着" : "已暂停"} sub={swap.emergencyPaused === null ? "披露闸门开着，读不到" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
           explain={swap.emergencyPaused === null ? "风险披露闸门对兑换开着时，后端把这里显示成关，分不出真实的开关状态；到「紧急停用开关」看。" : "和「紧急停用开关」里的兑换开关是同一个。"} />
         <Stat label="排队中" icon={ListOrdered} tone={stats.queueDepth > 0 ? "warn" : "role-3"}
           value={fmtCount(stats.queueDepth)} unit="单"
