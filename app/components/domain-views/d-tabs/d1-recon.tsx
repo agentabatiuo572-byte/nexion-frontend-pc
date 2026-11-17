@@ -516,8 +516,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     record: command.commandOrigin ? command : undefined,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先读取现在的值核对；按原请求重试不会重复执行。",
-    blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
+    hint: command.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原请求重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原请求重试不会重复执行。",
+    blocked: command.expiresAt <= Date.now() ? command.commandOrigin ? "已超过 24 小时，不能再按原请求重试，先查询原结果" : D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     expired: command.expiresAt <= Date.now(),
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),
@@ -526,7 +526,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     after: () => { void refreshAfterWrite(); setBankKey(value => value + 1); },
   });
   const bankItems: D1PendingItem[] = [
-    ...bankPending.map(command => ({ ...pendingItem({ ...command, method: "POST", body: "" }, () => retryD1PendingBankOrderCommand(command.commandKey), canBankReconcile), hint: "先在下面的列表核对订单和用户钱包；按原请求重试不会重复入账。" })),
+    ...bankPending.map(command => ({ ...pendingItem({ ...command, method: "POST", body: "" }, () => retryD1PendingBankOrderCommand(command.commandKey), canBankReconcile), hint: command.commandOrigin ? "结论以查询原结果为准，下面列表的订单和钱包只能参考。按原请求重试不会重复入账。" : "升级前留下的记录，查不了原结果。先在下面的列表核对订单和用户钱包；按原请求重试不会重复入账。" })),
     ...bankSettingsPending.map(command => pendingItem(command, () => command.path === "/vietqr/config" ? retryD1PendingCommand(command.commandKey) : retryD1PendingTopupCommand(command.commandKey),
       command.path === "/vietqr/config" ? canManageBankConfig : canManageChannels)),
   ];
