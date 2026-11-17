@@ -232,7 +232,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                 <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
                   {!rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
-                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，请联系值班人员补上。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
+                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
                       : pausedRaw ? <StatusTag tone="danger" explain={`存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
