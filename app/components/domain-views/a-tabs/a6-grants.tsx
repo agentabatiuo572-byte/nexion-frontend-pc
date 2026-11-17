@@ -10,7 +10,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Coins, Eye, PenLine, Search, ShieldAlert, TriangleAlert } from "lucide-react";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
 import type { A6GrantsRequest, A6RoleDetail } from "@/lib/admin/a6-client";
 import type { A7MenuTreeNode } from "@/lib/admin/a7-client";
 import type { A8Permission } from "@/lib/admin/a8-client";
@@ -35,16 +35,7 @@ export function AmplifiesTag() {
   return <StatusTag tone="warn" icon={Coins}>可能多付钱</StatusTag>;
 }
 
-/** 权限的人话名：区域大使两项用专用名，其余用权限清单的名称，没有名称时写权限码。 */
-export function permLabel(code: string, perm: A8Permission | undefined): string {
-  const f4 = F4_MATERIAL_PERMISSIONS.find((item) => item.code === code)?.label;
-  if (f4) return f4;
-  return operatorCopyText(perm?.permissionName || code);
-}
-
-export function menuLabel(node: A7MenuTreeNode): string {
-  return node.menuNameZh || node.menuName;
-}
+export { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
 
 export function flattenMenus(tree: readonly A7MenuTreeNode[]): A7MenuTreeNode[] {
   const out: A7MenuTreeNode[] = [];

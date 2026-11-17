@@ -5,6 +5,10 @@ import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
 import { readE4Money } from "./e4-refund-amount";
+import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
+import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
+import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -71,6 +75,7 @@ type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
 export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
+  roleGrantsDiff?: unknown;
   ruleTaskAction?: A2RuleTaskAction | null;
   approveDeniedCode?: number | null;
   approveDeniedMessage?: string | null;
@@ -179,7 +184,27 @@ export interface A2Stats {
   weeklyWithdrawn: number;
 }
 
+export interface A2RoleGrantsDiff {
+  permissionCodesAdded: string[];
+  permissionCodesRemoved: string[];
+  menuIdsAdded: number[];
+  menuIdsRemoved: number[];
+}
+
+/** Missing means a readable catalogue has no entry; unavailable means it could not be read. */
+type A2CatalogueStatus = "found" | "missing" | "unavailable";
+
+export interface A2RoleGrantsReview {
+  permissionsAdded: { code: string; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+  permissionsRemoved: { code: string; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+  menusAdded: { id: number; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+  menusRemoved: { id: number; name: string | null; catalogueStatus: A2CatalogueStatus }[];
+}
+
 export interface A2OperationRow {
+  /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
+  roleGrantsDiff: A2RoleGrantsDiff | null;
+  roleGrantsReview: A2RoleGrantsReview | null;
   ruleTaskAction?: A2RuleTaskAction;
   approveDeniedMessage?: string;
   rejectDeniedMessage?: string;
@@ -349,6 +374,73 @@ function formatTime(value: string | null | undefined) {
   return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const codes = (items: unknown): items is string[] => Array.isArray(items)
+    && items.every(code => typeof code === "string" && !!code.trim());
+  const ids = (items: unknown): items is number[] => Array.isArray(items)
+    && items.every(id => typeof id === "number" && Number.isSafeInteger(id) && id > 0);
+  if (!codes(row.permissionCodesAdded) || !codes(row.permissionCodesRemoved)
+    || !ids(row.menuIdsAdded) || !ids(row.menuIdsRemoved)) return null;
+  return {
+    permissionCodesAdded: row.permissionCodesAdded, permissionCodesRemoved: row.permissionCodesRemoved,
+    menuIdsAdded: row.menuIdsAdded, menuIdsRemoved: row.menuIdsRemoved,
+  };
+}
+
+function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {
+  const permission = (code: string) => {
+    const entry = permissions?.get(code);
+    return { code, name: entry ? permLabel(code, entry) : null,
+      catalogueStatus: (entry ? "found" : permissions ? "missing" : "unavailable") as A2CatalogueStatus };
+  };
+  const menu = (id: number) => {
+    const entry = menus?.get(id);
+    return { id, name: entry ? menuLabel(entry) : null,
+      catalogueStatus: (entry ? "found" : menus ? "missing" : "unavailable") as A2CatalogueStatus };
+  };
+  return {
+    permissionsAdded: diff.permissionCodesAdded.map(permission), permissionsRemoved: diff.permissionCodesRemoved.map(permission),
+    menusAdded: diff.menuIdsAdded.map(menu), menusRemoved: diff.menuIdsRemoved.map(menu),
+  };
+}
+
+/** Optional names never add an A2 read/approval permission requirement or invalidate a ticket receipt. */
+async function withRoleGrantsNames(rows: A2OperationRow[]): Promise<A2OperationRow[]> {
+  const diffs = rows.flatMap(row => row.roleGrantsDiff ? [row.roleGrantsDiff] : []);
+  if (!diffs.length) return rows;
+  const authorities = useAdminAuth.getState().session?.authorities ?? [];
+  const [permissions, menus] = await Promise.allSettled([
+    (async () => {
+      if (!authorities.includes("platform_a8_read") || !diffs.some(diff => diff.permissionCodesAdded.length || diff.permissionCodesRemoved.length)) return undefined;
+      const catalogue = new Map<string, A8Permission>();
+      let total = Infinity;
+      for (let pageNum = 1; catalogue.size < total; pageNum++) {
+        const page = await fetchA8Permissions({ pageNum, pageSize: 100 });
+        total = page.total;
+        if (!page.records.length && catalogue.size < total) throw new Error("A8_CATALOG_TRUNCATED");
+        for (const permission of page.records) {
+          if (catalogue.has(permission.permissionCode)) throw new Error("A8_CATALOG_DUPLICATE_PAGE");
+          catalogue.set(permission.permissionCode, permission);
+        }
+        if (pageNum >= 1000 || catalogue.size > total) throw new Error("A8_CATALOG_INCOMPLETE");
+      }
+      return catalogue;
+    })(),
+    (async () => {
+      if (!authorities.includes("platform_a7_read") || !diffs.some(diff => diff.menuIdsAdded.length || diff.menuIdsRemoved.length)) return undefined;
+      const catalogue = new Map<number, A7MenuTreeNode>();
+      const walk = (node: A7MenuTreeNode) => { catalogue.set(node.id, node); node.children.forEach(walk); };
+      (await fetchA7MenusOverview()).tree.forEach(walk);
+      return catalogue;
+    })(),
+  ]);
+  return rows.map(row => row.roleGrantsDiff ? { ...row, roleGrantsReview: roleGrantsReview(row.roleGrantsDiff,
+    permissions.status === "fulfilled" ? permissions.value : undefined,
+    menus.status === "fulfilled" ? menus.value : undefined) } : row);
+}
+
 function fromTicket(ticket: BackendTicket): A2OperationRow {
   if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
   if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
@@ -380,7 +472,10 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
       phoneCalibrationProposal = parsePhoneProposalView(JSON.parse(ticket.phoneCalibrationProposal ?? "null"));
     } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
+  const roleGrantsDiff = readRoleGrantsDiff(ticket.roleGrantsDiff);
   return {
+    roleGrantsDiff,
+    roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
     ruleTaskAction: ticket.ruleTaskAction ?? undefined,
     approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
     rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,
@@ -451,7 +546,7 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   };
 }
 
-function normalizeOverview(data: BackendOverview | null | undefined): A2Overview {
+async function normalizeOverview(data: BackendOverview | null | undefined): Promise<A2Overview> {
   const stats = data?.stats ?? {};
   return {
     stats: {
@@ -464,7 +559,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
       weeklyExpired: toNumber(stats.weeklyExpired),
       weeklyWithdrawn: toNumber(stats.weeklyWithdrawn),
     },
-    operationQueue: (data?.operationQueue ?? []).map(fromTicket),
+    operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(fromTicket)),
     operationHistory: (data?.operationHistory ?? []).map((row) => ({ ...row })),
     mechanismParams: (data?.mechanismParams ?? []).map((row) => ({ ...row, locked: !!row.locked })),
     confirmCategories: (data?.confirmCategories ?? []).map((row) => ({ ...row })),
@@ -595,7 +690,7 @@ export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue =
     try { operationQueue.push(fromTicket(row)); }
     catch { operationQueueInvalidCount += 1; }
   }
-  return { ...normalizeOverview({ ...data, operationQueue: [] }), operationQueue, operationQueueInvalidCount };
+  return { ...await normalizeOverview({ ...data, operationQueue: [] }), operationQueue: await withRoleGrantsNames(operationQueue), operationQueueInvalidCount };
 }
 
 export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string) {
@@ -606,7 +701,7 @@ export async function approveA2Operation(operationId: string, reason: string, co
     f4Payout: operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout",
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
   });
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 export async function rejectA2Operation(operationId: string, reason: string, commandKey?: string) {
@@ -615,7 +710,7 @@ export async function rejectA2Operation(operationId: string, reason: string, com
     body: JSON.stringify({ reason }),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-reject" }),
   });
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 export type RetentionExecution = {
@@ -705,7 +800,7 @@ export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = 
       throw new Error("提交结果不完整，请稍后再查。");
     }
     if (strictTicket === "h8" && !validH8CommandTicket(row)) throw new Error("H8_PROPOSAL_RECEIPT_INVALID");
-    return fromTicket(row);
+    return (await withRoleGrantsNames([fromTicket(row)]))[0];
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
         && (!strictNotFound || "backendMessage" in failure && failure.backendMessage === "A2_PROPOSAL_NOT_FOUND")) return null;
@@ -726,7 +821,7 @@ export async function withdrawA2Operation(operationId: string, reason: string, o
     body: JSON.stringify({ reason, expectedStatus: "pending", operator }),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-withdraw" }),
   });
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 export async function createA2OperationProposal(input: {
@@ -761,7 +856,7 @@ export async function createA2OperationProposal(input: {
     throw new A2OutcomeUncertainError("H8_PROPOSAL_RECEIPT_INVALID", commandKey!);
   }
   if (strictTicket && !hasProposalTicketFacts(row)) throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
-  return fromTicket(row);
+  return (await withRoleGrantsNames([fromTicket(row)]))[0];
 }
 
 /**
