@@ -10,6 +10,7 @@ import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversatio
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
@@ -28,7 +29,7 @@ import { ownerLabel } from "./hd-ui";
 import { AssignAdvisorDialog, hasPendingFirstAssignment } from "./m3-assign-advisor";
 import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-alerts";
 import { legacySupportDestination, privateMessageRecovery, supportEnhancements, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
-import { RecoveryPanel } from "../recovery-panel";
+import { businessResultUnavailableText, RecoveryPanel } from "../recovery-panel";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
 
@@ -48,9 +49,9 @@ type StoredMessage = PendingMutationRecord & { payload: string };
 // Legacy timeout rows must survive private-message housekeeping even when their payload cannot be recovered.
 const pendingMessages = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-private-pending-v1", retainExpiredRecords: true, isValidRecord: (row) => typeof row.payload === "string" || /^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint) });
 const pendingTimeoutPolicies = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-timeout-pending-v1", retainExpiredRecords: true, isValidRecord: (row) => typeof row.payload === "string" });
-export type SessionEndRecord = PendingMutationRecord & { actorId: number; customerId: string; sessionRef?: string };
+export type SessionEndRecord = PendingMutationRecord & { actorId: number; customerId: string; sessionRef?: string; rejection?: { status: number; backendMessage: string } };
 // Keep legacy customer-only records; new commands bind one reception instance and never overwrite older evidence.
-const sessionEndCommands = createPendingMutationStore<SessionEndRecord>({ storageKey: "nexion-admin-m3-session-end-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && typeof row.customerId === "string" });
+const sessionEndCommands = createPendingMutationStore<SessionEndRecord>({ storageKey: "nexion-admin-m3-session-end-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && typeof row.customerId === "string" && (row.rejection === undefined || isExplicitRejection(row.rejection) && row.rejection.status !== 404) });
 export function readSessionEndRecords(actorId: number, customerId: string | undefined): SessionEndRecord[] {
   return sessionEndCommands.list().filter(row => row.actorId === actorId && row.customerId === customerId);
 }
@@ -493,7 +494,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [holdEndCommand, setHoldEndCommand] = useState<SessionEndRecord | null>(null);
   const [holdEndCommands, setHoldEndCommands] = useState<SessionEndRecord[]>([]);
   const [legacyEndChecked, setLegacyEndChecked] = useState<string | null>(null);
-  const [holdEndRejected, setHoldEndRejected] = useState<Set<string>>(() => new Set());
+  const holdEndRejected = new Set(holdEndCommands.filter(record => record.rejection).map(record => record.commandKey));
   const [holdEndRelease, setHoldEndRelease] = useState<SessionEndRecord | null>(null);
   const holdEndView = useRef({ customerId: holdCustomer, commandKey: holdEndCommand?.commandKey });
   holdEndView.current = { customerId: holdCustomer, commandKey: holdEndCommand?.commandKey };
@@ -509,7 +510,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     setHoldEndCommand(previous => saved.find(row => row.sessionRef && row.sessionRef === hold?.sessionRef)
       ?? saved.find(row => row.commandKey === previous?.commandKey) ?? saved[0] ?? null);
     setHoldEnding(false);
-    setHoldEndRejected(previous => new Set([...previous].filter(key => saved.some(row => row.commandKey === key))));
     setHoldEndRelease(previous => saved.some(row => row.commandKey === previous?.commandKey) ? previous : null);
     setLegacyEndChecked(null);
   }, [adminId, holdCustomer, authEpoch, hold?.sessionRef]);
@@ -1031,7 +1031,52 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (identityRef.current === identity) setActionError(displayAdminError(cause));
     }
   };
-  const send = async (kind: "TEXT" | "IMAGE" | "SKU" | "LINK", retry?: Pending) => {
+  const send = async (kind: "TEXT" | "IMAGE" | "SKU" | "LINK", retry?: Pending, queryOnly = false) => {
+    if (queryOnly) {
+      if (busy) return;
+      const pendingMessage = retry ?? pending;
+      const first = pendingMessage ? null : firstPending;
+      const record = pendingMessage ?? first;
+      if (!record) return;
+      const slot = first ? firstPendingKey(adminId, first.customerId) : pendingKey(adminId);
+      const identity = identityRef.current;
+      setBusy(true); setSendError("");
+      try {
+        const result = await supportClient.command(record.key);
+        if (identityRef.current !== identity) return;
+        if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError("原消息结果仍未知，请稍后再查；不会重新发送。"); return; }
+        pendingMessages.forget(slot, record.key);
+        if (first) setFirstPending(null); else setPending(null);
+        if (result.status === "FAILED") { setSendError("消息发送失败。草稿已保留，可修改后重新发送。"); return; }
+        const draftSlot = first ? `first:${first.customerId}` : pendingMessage!.conversationId;
+        setDrafts(previous => ({ ...previous, [draftSlot]: previous[draftSlot] === record.body ? "" : previous[draftSlot] }));
+        if (pendingMessage?.kind === "IMAGE") clearAttachment(false);
+        setMaintenanceChosen(false); setSelectedClosedIds(new Set()); setContentChoice(null);
+        setProfileDetail(null); setProfileRetry(value => value + 1); setHoldRetry(value => value + 1);
+        window.dispatchEvent(new Event("support-todo-changed"));
+        try {
+          await ctx.refreshConversations();
+          if (identityRef.current !== identity) return;
+          if (first) {
+            setContinuation(null);
+            const receipt = result.result;
+            if (receipt && typeof receipt === "object" && "conversationNo" in receipt && typeof receipt.conversationNo === "string") {
+              followSelection.current = true;
+              setSelectedId(receipt.conversationNo); setRequestedCustomerId(null);
+              const url = new URL(window.location.href);
+              url.searchParams.delete("customerId"); url.searchParams.set("conversationNo", receipt.conversationNo);
+              window.history.replaceState(null, "", url);
+            }
+          }
+          setSendError("原消息已发送。请刷新会话查看。");
+        } catch {
+          if (identityRef.current === identity) setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。");
+        }
+      } catch (cause) {
+        if (identityRef.current === identity) setSendError(`原消息结果暂时查不到：${displayAdminError(cause)} 记录已保留，不会重新发送。`);
+      } finally { if (identityRef.current === identity) setBusy(false); }
+      return;
+    }
     if (busy || !conversationsAvailable || recoveryBlocksTarget) return;
     sendAdminTyping(false);
     const identity = identityRef.current;
@@ -1370,7 +1415,6 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const settle = (message = "") => {
       sessionEndCommands.forget(command.fingerprint, command.commandKey);
       if (holdEndView.current.customerId === command.customerId) setHoldEndCommands(readSessionEndRecords(command.actorId, command.customerId));
-      setHoldEndRejected(previous => new Set([...previous].filter(key => key !== command.commandKey)));
       const visible = current();
       setHoldEndCommand(previous => previous?.customerId === command.customerId && previous.commandKey === command.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === command.customerId) ?? null : previous);
       if (visible) { setActionError(message); setActionResult(""); setHoldRetry((value) => value + 1); setHoldEnding(false); }
@@ -1394,13 +1438,21 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       }
       if (queryOriginal) { if (current()) setActionResult(isRetryExpired(command) ? `原操作查不到结果；${RETRY_EXPIRED_TEXT}。` : "原操作查不到结果，原记录继续保留，没有重发。"); return; }
       if (recovering && isRetryExpired(command)) { if (current()) setActionResult(`${RETRY_EXPIRED_TEXT}。`); return; }
+      if (command.rejection) {
+        sessionEndCommands.remember(command.fingerprint, command.commandKey, { ...command, rejection: undefined });
+        const commandKey = command.commandKey;
+        const saved = sessionEndCommands.list().find(row => row.commandKey === commandKey);
+        setHoldEndCommand(saved ?? command); setHoldEndCommands(readSessionEndRecords(adminId, holdCustomer));
+        if (!saved || saved.rejection || !sessionEndCommands.isDurablyStored(command.fingerprint, command.commandKey)) { setActionError("浏览器无法保存这次操作的记录，还没结束会话；请检查浏览器设置后重试。"); return; }
+      }
       submitted = true;
       await supportClient.endSessionHold(command.customerId, command.commandKey, command.sessionRef!);
       if (stamp === identityRef.current) settle();
     } catch (cause) {
       if (stamp !== identityRef.current) return;
-      if (submitted && rejectedSupportWrite(cause)) {
-        if (current()) { setHoldEndRejected(previous => new Set(previous).add(command.commandKey)); setActionError(recovering ? `重试被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原来那次可能已经结束了。` : `结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。这次没有结束。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
+      if (submitted && cause instanceof SupportClientError && rejectedSupportWrite(cause)) {
+        sessionEndCommands.remember(command.fingerprint, command.commandKey, { ...command, rejection: { status: cause.status, backendMessage: cause.backendMessage! } });
+        if (current()) { const saved = readSessionEndRecords(adminId, command.customerId); setHoldEndCommands(saved); setHoldEndCommand(saved.find(row => row.commandKey === command.commandKey) ?? command); setActionError(recovering ? `重试被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原来那次可能已经结束了。` : `结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。这次没有结束。`); if (cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
       else if (current()) setHoldRetry((value) => value + 1);
     } finally { if (current()) setHoldEnding(false); }
@@ -1526,15 +1578,15 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setTimeoutPolicy(next); setTimeoutInput(undefined); pendingTimeoutPolicies.forget(timeoutSlot); return true;
     } catch (cause) {
       if (stamp !== timeoutIdentityRef.current) return false;
-      const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
+      const status = cause instanceof SupportClientError ? (cause.status >= 200 && cause.status < 300 ? cause.apiCode : cause.status) : undefined;
       if (submitted) {
         setTimeoutPending(null); setTimeoutInput(undefined);
         setActionResult("超时策略已保存，但最新设置读取失败，请重新打开超时策略核对。");
         return true;
-      } else if ([400, 401, 403, 404, 409, 422].includes(status) && !isIndeterminateSupportError(cause)) {
+      } else if (cause instanceof SupportClientError && !cause.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(cause.status, cause.apiCode)) {
         pendingTimeoutPolicies.forget(timeoutSlot);
         if (status === 403) await revokeTimeoutWrite(stamp);
-        else if (status === 409) { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
+        else if (status === 409 && cause.backendMessage === "M3_TIMEOUT_POLICY_STALE") { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
         else setTimeoutError(displayAdminError(cause));
       } else { setTimeoutPending(command); setTimeoutError("保存结果未知，请查询原结果；不会重复提交。"); }
       return false;
@@ -1551,8 +1603,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== timeoutIdentityRef.current) return;
       if (result.status === "SUCCEEDED") {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutInput(undefined); setTimeoutOpen(false);
-        setActionResult("超时策略已保存。");
-        const policy = await fetchMConversationTimeoutPolicy().catch(() => { setActionResult("超时策略已保存，但最新设置读取失败，请重新打开超时策略核对。"); return null; });
+        // This legacy scope exposes processing status, not the original business code.
+        // Keep this as processed until the backend supplies the saved business result.
+        const processed = businessResultUnavailableText("超时策略");
+        setActionResult(processed);
+        const policy = await fetchMConversationTimeoutPolicy().catch(cause => { if (stamp === timeoutIdentityRef.current) setActionResult(`${processed} ${displayAdminError(cause)}`); return null; });
         if (stamp !== timeoutIdentityRef.current) return;
         if (policy) setTimeoutPolicy(policy); setTimeoutError("");
       } else if (result.status === "FAILED") {
@@ -1635,10 +1690,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
 
   return <>
     {holdEndRelease && <ReleaseModal label="结束会话" explain="先看这位客户是不是还在接待中再解除；重试被拒不等于原来那次没结束。确认后会重新读取这次接待的状态，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
+      const saved = sessionEndCommands.list().find(record => record.commandKey === holdEndRelease.commandKey && record.fingerprint === holdEndRelease.fingerprint && record.actorId === adminId && record.customerId === holdEndRelease.customerId);
+      if (!saved?.rejection) { setHoldEndRelease(null); return; }
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
       setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdEndRelease.customerId) ?? null : previous);
       setHoldEndCommands(readSessionEndRecords(adminId, holdEndRelease.customerId));
-      setHoldEndRejected(previous => new Set([...previous].filter(key => key !== holdEndRelease.commandKey))); setHoldEndRelease(null); setActionError(""); setHoldRetry(value => value + 1);
+      setHoldEndRelease(null); setActionError(""); setHoldRetry(value => value + 1);
     }} />}
     <PageHeader pageId="M3" title="专属会话" back={back}
       summary={<>{summary} <Explain label="时间和更新方式" content={`时间均为${zoneLabel}。${streamReady ? "有新消息时自动更新。" : ""}`} /></>}
