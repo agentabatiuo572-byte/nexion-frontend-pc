@@ -173,14 +173,13 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
   };
 }
 
-/** 后端读到的锁：哪张单、谁发起、什么时候；七天计划和现价降低不受锁限制（后端直接收紧绕过审批锁）。 */
-function lockDetail(state: G3ObjectReadState, key: string): ReactNode {
+/** 后端读到的锁：哪张单、谁发起、什么时候。df26b572 起七天计划和现价也和其他项一样，锁着时调低也不能直接改。 */
+function lockDetail(state: G3ObjectReadState): ReactNode {
   const ticket = state.pendingOperationId;
-  const lowerOk = key === "currentPrice" || /^weekly:D\d:(targetPrice|pumpProbability)$/.test(key);
   return <>
     <p>{state.pendingApproval ? "有一张申请在等另一位超级管理员批准，批准前不生效。" : "被一张审批锁住，单号没读到。"}</p>
     {ticket && <p>审批单 <span data-mono="">{ticket}</span> · {state.pendingOperator ?? "发起人没读到"} · {state.pendingCreatedAt ? `${formatBusinessTimeCompact(state.pendingCreatedAt, "—")}（${businessZone().label}）提交` : "提交时间没读到"}</p>}
-    <p>{key.endsWith(":volatilityPct") ? "波动幅度照常可改。" : lowerOk ? "降低仍可直接保存；提高要等这张单批准、驳回或撤回。" : "批准、驳回或撤回后才能改。"}</p>
+    <p>这张单批准、驳回或撤回之前，这一项不能再改。</p>
     {ticket && <p>到「操作记录与审批」按单号找这张单。</p>}
   </>;
 }
@@ -382,7 +381,7 @@ function G3MarketEditor() {
       if (commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key)) continue;
       if (!state.locked) delete OBJECT_STATES[key];
       else OBJECT_STATES[key] = { kind: state.pendingApproval ? "approval" : "locked",
-        detail: lockDetail(state, key), verification: "current", observedAt: Date.now() };
+        detail: lockDetail(state), verification: "current", observedAt: Date.now() };
     }
   }
   const hasRecovery = (key: string) => commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key);
@@ -613,9 +612,7 @@ function G3MarketEditor() {
     const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
     const ticket = (code === "OBJECT_ALREADY_PENDING" || code === "OBJECT_LOCKED_BY_A2") && overview
       ? g3MarketObjectReadState(overview, g3MarketObjectKey(change))?.pendingOperationId : undefined;
-    if (ticket) return change.action === "curve-cell" || change.action === "current-price"
-      ? `审批单 ${ticket} 还在等批准：提高要等它批准、驳回或撤回；降低可以直接保存。`
-      : `审批单 ${ticket} 还在等批准，批准、驳回或撤回后才能改。`;
+    if (ticket) return `审批单 ${ticket} 还在等批准，批准、驳回或撤回后才能改。`;
     return code === G3_ENVIRONMENT_FORBIDDEN ? G3_TUNING_FORBIDDEN : code ? messageOf(new Error(code)) : undefined;
   };
   const confirmationPanels = <>
