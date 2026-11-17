@@ -1,11 +1,11 @@
+import { f4Decimal } from "./f4-money";
+
 /** Explicit operator inputs for the backend's one-time, approved L1–L7 INSERT. */
 export interface F2UnilevelBootstrapLayer {
   layerNo: number;
   usdtPct: string;
   nexPerUsd: string;
 }
-import { f4Decimal } from "./f4-money";
-
 
 /** 028c16e3: validate new proposals without normalizing the retained command text. */
 export function validateF2UnilevelBootstrap(params: Record<string, unknown>) {
