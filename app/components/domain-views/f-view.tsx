@@ -17,7 +17,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
-import { f4HeadCapAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
+import { f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
@@ -788,7 +788,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         : sourceDomain === "F4" ? normalized.map(item => `${item.key}=${(f4Submission.current?.overview ?? f4Overview)?.configValues[item.key] ?? "—"}`).join(" / ") : "当前设置",
       after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
       type: "fund",
-      amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
+      amplifies: normalized.some((item) => sourceDomain === "F4" && (item.key === "F.pool.monthlyCap" || item.key === "F.leaderboard.poolUsd")
+        ? f4MoneyAmplifies(item.key, (f4Submission.current?.overview ?? f4Overview)!.configValues, item.value) : isFFundAmplifyingKey(item.key)),
       gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain,
       command: def.buildCommand({ changes: normalized, sourceDomain }),
       targets: def.buildTargets?.({ changes: normalized, sourceDomain }),
@@ -1127,7 +1128,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
       const headCap = key === "F.pool.top1MaxPct" || key === "F.pool.top5MaxPct";
       const current = f4Submission.current?.overview ?? f4Overview;
-      const amplifies = headCap && current
+      const moneyKey = key === "F.pool.monthlyCap" || key === "F.leaderboard.poolUsd";
+      const amplifies = moneyKey && current ? f4MoneyAmplifies(key, current.configValues, value) : headCap && current
         ? f4HeadCapAmplifies(key, current.configValues[key], value)
         : vote ? Number(value) > vote.votes : undefined;
       await proposeFConfig("F4", key, value, reason, expectedVersion, amplifies, expectedMaterialRevision);

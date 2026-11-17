@@ -8,7 +8,7 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import { decimalText } from "./f4-shared";
-import { f4Decimal, f4HeadCapAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { f4Decimal, f4HeadCapAmplifies, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
@@ -164,8 +164,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       break;
     }
     case action === "F.pool.monthlyCap": {
-      spec = { briefKind: "config", name: "调整团队激励池每月上限", op: "param", paramKey: "F.pool.monthlyCap",
+      spec = { briefKind: "config", name: "调整团队激励池每月上限", amplify: true, op: "param", paramKey: "F.pool.monthlyCap",
               edit: { kind: "text", current: data.configValues["F.pool.monthlyCap"] ?? data.monthlyCapLabel,
+                amplifiesWhen: value => f4MoneyAmplifies("F.pool.monthlyCap", data.configValues, value),
                 validate: value => f4MonthlyCap(value) === null ? POOL_MONEY_INVALID : undefined, hint: POOL_MONEY_HINT },
               title: "调整团队激励池每月上限", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: POOL_MONEY_CHECK },
@@ -328,6 +329,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.leaderboard.poolUsd": {
       spec = { briefKind: "config", name: "调整本周榜单奖池", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd",
               edit: { kind: "text", current: data.configValues["F.leaderboard.poolUsd"] ?? "",
+                amplifiesWhen: value => f4MoneyAmplifies("F.leaderboard.poolUsd", data.configValues, value),
                 validate: value => f4MonthlyCap(value) === null ? POOL_MONEY_INVALID : undefined, hint: POOL_MONEY_HINT },
               title: "调整周榜奖池覆盖额", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: POOL_MONEY_CHECK },
