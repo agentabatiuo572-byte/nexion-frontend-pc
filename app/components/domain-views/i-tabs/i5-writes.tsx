@@ -32,7 +32,7 @@ import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECo
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { RECOVERY_LINE } from "../e-tabs/e-command-check";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
@@ -507,7 +507,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
           toast(settledText({ status: receipt!.originalStatus }), "success");
           pendingWrites.forget(record.fingerprint, record.commandKey); sync();
           await onSettled(record);
-        }
+        } else toast(CLOSURE_KEPT_TEXT, "warn");
       }} />}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />}
   </>;
