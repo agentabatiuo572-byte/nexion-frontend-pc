@@ -3031,7 +3031,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   COPY_FRAMEWORK_VALUE_INVALID: "新的值和原值均须非空且不超过 80 字，请核对后再保存。",
   COPY_FRAMEWORK_PARAM_NOT_FOUND: "实验全局设置项不存在，请重新加载后核对。",
   COPY_FRAMEWORK_VALUE_CONFLICT: "这个设置已被其他人修改，本次未覆盖；请重新加载后核对新值。",
-  COPY_ADOPT_DRAFT_PENDING: "这条文案未发布且仍有草稿，不能采纳实验结果；请先发布或删除草稿，再重新采纳。",
+  COPY_ADOPT_DRAFT_PENDING: "文案已下架且有草稿，采纳后用户也看不到。先发布或删掉草稿，再采纳。",
   COPY_AUDIENCE_INVALID: "受众条件无效，请选择连续的平台阶段、至多一种语言及非负整数注册天数。",
   COPY_AUDIENCE_REQUIRED: "请填写受众条件后再提交。",
   COPY_VI_REQUIRED: "请填写越南语正文后再提交。",

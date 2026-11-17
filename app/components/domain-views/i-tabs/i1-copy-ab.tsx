@@ -11,7 +11,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { BookOpen, CheckCircle2, Eye, FileText, FlaskConical, History, Layers, ListChecks, MapPin, Plus, Settings2, ShieldAlert, TriangleAlert } from "lucide-react";
+import { BookOpen, CheckCircle2, CircleSlash, Eye, FileText, FlaskConical, History, Layers, ListChecks, MapPin, Plus, Settings2, ShieldAlert, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IrreversibleTag, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds, type MoreMenuItem, type JudgmentRow } from "@/app/components/rd";
 import { PaginationExemptionList, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -72,6 +72,8 @@ const ZONE = "北京时间";
 
 const LIVE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const OFFLINE = (text: string) => <StatusTag tone="neutral" filled>{text}</StatusTag>;
+/** 2b04a8fb：这四项已停用，新后端不再返回，新保存会被拒；旧后端还返回时只读显示以前存的值。 */
+const RETIRED_FRAMEWORK_KEYS = new Set(["split", "aud", "sample", "maxrun"]);
 
 // 占位符是数据槽,任一语言漏掉就会渲染出半截句子。
 // 取三语**交集**而不是并集:并集会把「历史数据本来就少一种语言」变成一道死锁 ——
@@ -468,7 +470,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     name: row.name,
     cur: row.current,
     sub: row.description,
+    retired: RETIRED_FRAMEWORK_KEYS.has(row.key.trim().toLowerCase()),
   }));
+  const retiredFrameworkCount = EXP_FRAMEWORK.filter((p) => p.retired).length;
   const EXPS: ExpRow[] = (data?.experiments ?? []).map((row) => ({
     id: row.id,
     copyKey: row.copyKey,
@@ -888,12 +892,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   };
 
   const adjustFramework = (key: string, name: string, cur: string) => openConfirm({ briefKind: "config",
-    action: <>实验框架参数 · {name}</>,
+    action: <>实验全局设置 · {name}</>,
     title: `调整 ${name}`,
-    detail: <>当前值：<b>{cur}</b>。目前只保存这个值，创建、启动和运行实验都不读它。</>,
+    detail: <>当前值：<b>{cur}</b>。</>,
     effect: OFFLINE("目前不影响实验运行"),
     reasonPlaceholder: "例如：工单号、调整依据",
-    statedBrief: { impact: "只保存新的值；创建、启动和运行实验都不读它。", check: "核对新值，最多 80 字。" },
+    statedBrief: { impact: "创建、启动和运行实验都不读这一项。", check: "核对新值，最多 80 字。" },
     input: { label: "新的值", placeholder: cur },
     reason: true,
     okLabel: "保存",
@@ -1148,7 +1152,6 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       </Facts>,
       content: <>
         {copy && crowdNotice(winnerVersion?.copyPosition ?? copy.copyPosition, copy.key, false)}
-        {copy?.draftVersion && copy.status.toLowerCase() === "archived" && <Notice tone="warn" title="这条文案已下架">{`采纳后版本换成 ${winnerVersion?.v ?? "胜出的那组"}，但文案仍是下架，用户看不到。`}</Notice>}
         {copy && winnerVersion && <CompareTexts beforeLabel={isPublished(copy) ? `线上 ${copy.version}` : `已下架 ${copy.version}`} afterLabel={`采纳后 ${winnerVersion.v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(winnerVersion)!} />}
       </>,
       run: (reason) => {
@@ -1383,18 +1386,24 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           );
         })}
       </div>
-      <Fold title="实验全局设置" icon={Settings2} tone="role-other" summary={EXP_FRAMEWORK.length ? `${EXP_FRAMEWORK.length} 项 · 目前不影响实验运行` : "没有设置项"}
-        explain="这些值只保存，创建、启动和运行实验都不读它们；采纳要求每组至少 100 人是固定规则，不在这里。后端已登记待处理。">
-        {EXP_FRAMEWORK.length === 0
-          ? <BlockState state="empty" title="没有读到全局设置" />
-          : <ConfigList label="实验全局设置">
-              {EXP_FRAMEWORK.map((p) => {
-                const cur = liveFw(p.key, p.cur);
-                return <ConfigRow key={p.key} name={p.name} what={p.sub || "—"} when="保存后只记下新值" effect="目前不影响实验运行。" value={cur}
+      {EXP_FRAMEWORK.length > 0 && <Fold title="实验全局设置" icon={Settings2} tone="role-other"
+        summary={retiredFrameworkCount === EXP_FRAMEWORK.length ? `${retiredFrameworkCount} 项 · 已停用`
+          : retiredFrameworkCount > 0 ? `${retiredFrameworkCount} 项已停用 · ${EXP_FRAMEWORK.length - retiredFrameworkCount} 项目前不影响实验运行`
+            : `${EXP_FRAMEWORK.length} 项 · 目前不影响实验运行`}
+        explain={retiredFrameworkCount > 0
+          ? "这几项已停用，不影响实验，也不能再改，这里只留以前存的值。采纳看的是每组至少 100 人，不是这里的样本量。"
+          : "创建、启动和运行实验都不读这些值；采纳要求每组至少 100 人是固定规则，不在这里。"}>
+        <ConfigList label="实验全局设置">
+          {EXP_FRAMEWORK.map((p) => {
+            const cur = liveFw(p.key, p.cur);
+            return p.retired
+              ? <ConfigRow key={p.key} name={p.name} when="已停用，不能再改" note="不影响实验：分组和受众看每个实验自己的设置。"
+                  value={<span className="i1-retired-value">{cur}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></span>} />
+              : <ConfigRow key={p.key} name={p.name} what={p.sub || "—"} when="保存后只记下新值" effect="目前不影响实验运行。" value={cur}
                   action={canManageExperiments ? <Button size="sm" disabledReason={lockReason(`framework:${p.key}`)} onClick={() => adjustFramework(p.key, p.name, cur)}>调整</Button> : undefined} />;
-              })}
-            </ConfigList>}
-      </Fold>
+          })}
+        </ConfigList>
+      </Fold>}
     </div>
   );
 
