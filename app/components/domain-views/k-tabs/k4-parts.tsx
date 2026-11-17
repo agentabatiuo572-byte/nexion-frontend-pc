@@ -278,7 +278,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
         <Th>维度 · 命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
-        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="评分时记下的原文。提现速度一项把各币种合在一起算，「$」不代表美元；点「各币种明细」看各币种原额，旧评分记录没有明细。" /></span></Th>
+        <Th><span className="k4-th">证据（原文）<Explain label="证据是什么" content="评分时记下的原文。提现速度一项把各币种合在一起算，「$」不代表美元；点「各币种明细」看各币种原额，旧评分记录没有明细。" /></span></Th>
       </tr></thead>
       <tbody>
         {rows.map((row) => (

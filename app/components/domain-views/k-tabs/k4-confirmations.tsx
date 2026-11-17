@@ -124,7 +124,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
       ),
       statedBrief: {
         impact: `v${draft.version} 立即成为生效版本，v${overview.model.version} 自动归档；全部评分用户分批按新规则重算，人工改分保留。`,
-        check: "提交前已核对：草稿没有未保存的修改；发布人是有评分规则修改权限的超级管理员（后端会再核一次）。",
+        check: "提交前已核对：草稿没有未保存的修改；发布人是有评分规则修改权限的超级管理员（提交时会再核一次）。",
       },
       reasonPlaceholder: "写清发布依据，例如：复盘结论、审批记录号",
       ...recovery,
@@ -171,10 +171,10 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
         <Fact k="人工改分" tone={overview.overrideActive > 0 ? "warn" : undefined}>{overview.overrideActive > 0 ? `${fmt(overview.overrideActive)} 人的人工改分会被清除` : saved ? "提交时没有生效的人工改分" : "现在没有生效的人工改分"}</Fact>
       </Facts>
     ),
-    content: <Notice tone="warn">在这一次请求里把全部评分用户算完才返回（最多 1000 人），人数多时要等一会儿；有一人算失败整次都不生效。评分历史和人工改分记录保留，但改分不再生效。</Notice>,
+    content: <Notice tone="warn">一次把全部评分用户算完才出结果（最多 1000 人），人数多时要等一会儿；有一人算失败整次都不生效。评分历史和人工改分记录保留，但改分不再生效。</Notice>,
     statedBrief: {
       impact: `当前全部评分用户按 v${overview.model.version} 重新计算并清除人工改分，新分数立即生效。`,
-      check: "实际处理的是执行那一刻有评分的用户，人数可能和现在看到的不同；后端核对评分规则版本没变、人数不超过 1000。",
+      check: "实际处理的是执行那一刻有评分的用户，人数可能和现在看到的不同；执行时核对评分规则没被别人改过、人数不超过 1000。",
     },
     reasonPlaceholder: "写清为什么要全部重算",
       ...recovery,
