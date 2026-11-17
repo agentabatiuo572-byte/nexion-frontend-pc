@@ -10,6 +10,7 @@ import { useAdminAuth } from "../store/admin-auth";
 import type { F3ConfirmationSnapshot } from "./f3-approval";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
 import type { F5ConfirmationSnapshot } from "./f5-approval";
+import { validateF2UnilevelBootstrap } from "./f2-unilevel-bootstrap";
 
 export const F2_ACTIVATION_SLOT = "f-seven-layer-activation";
 export const F2_POLICY_SLOT = "f-direct-referral-policy";
@@ -136,6 +137,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
   if (spec && original) throw new Error("F2_PROPOSAL_UNRESOLVED");
   if (!original) {
     if (!spec) throw new Error("F2_PROPOSAL_ORIGINAL_MISSING");
+    if (spec.command.op === "f_unilevel_bootstrap") validateF2UnilevelBootstrap(spec.command.params);
     const request = {
       action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
       operator: current.operator || current.username, operatorRole: roleLabel(current.role),
