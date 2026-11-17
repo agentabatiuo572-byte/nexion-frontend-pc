@@ -46,6 +46,13 @@ const REASON_HINT = "例如：监管来函编号、事件编号、工单号";
 const NO_REAL = <StatusTag tone="neutral" icon={FlaskConical}>不动真实业务</StatusTag>;
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const APPROVER = "另一位管理员在「操作记录与审批」批准；需有审批权和应急预案执行权，你不能批自己的申请";
+/** 查询原结果查到执行申请已经结束：轻提示写结论（和 F2、J1 同一组说法）。批准回放只有执行完才成功（中途失败回 J4_EXECUTION_PARTIAL，单子留在待审批），执行完也可能有跳过的步骤。 */
+const J4_PROPOSAL_END = {
+  approved: "原执行申请已批准：预案已按顺序执行完；每一步是做了还是跳过，到「执行记录」看。",
+  rejected: "原执行申请已驳回：预案没有执行；需要时重新发起。",
+  withdrawn: "原执行申请已撤回：预案没有执行。",
+  expired: "原执行申请已过期：没人处理，预案没有执行；需要时重新发起。",
+} as const;
 /** 执行每一步要有对应页面的处置权限（J4-P02），后端提交时再按预案快照核一次。 */
 const TARGET_AUTHORITY: Record<string, string> = {
   J1: "emergency_j1_gate_kill",
@@ -167,6 +174,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
         setVerifiedProposals((previous) => ({ ...previous, [record.commandKey]: row }));
         if (row.status !== "pending") {
+          toast(J4_PROPOSAL_END[row.status], row.status === "approved" ? "success" : "warn");
           openActionConfirm(null);
           activeConfirmation.current = null;
           await actions.reloadJEmergency();

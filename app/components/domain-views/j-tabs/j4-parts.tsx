@@ -245,7 +245,7 @@ export function draftMissing(draft: PlaybookDraft) {
   needs(draft.lines.join("\n"), "动作序列");
   needs(draft.rollback, "回滚方案");
   if (parseSopSlaMinutes(draft.sla) == null) missing.push("响应时限须为 1-1440 分钟整数");
-  if (draft.lines.some((line) => line.trim().startsWith("I3·"))) needs(draft.notifyCampaignNo, "I3 通知活动");
+  if (draft.lines.some((line) => line.trim().startsWith("I3·"))) needs(draft.notifyCampaignNo, "通知活动");
   return missing;
 }
 
