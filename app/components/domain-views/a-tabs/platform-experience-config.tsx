@@ -90,7 +90,7 @@ export function PlatformExperienceConfig() {
         </div></div>
         <h3 id="a3-languages" className="a3-experience-heading">界面语言</h3>
         {config.interfaceLanguages
-          ? <div className="tiny" style={{ marginBottom: 8 }}>英文始终开启。关闭后，用户在语言列表里看不到这种语言；正在使用它的用户改用自己选过或账号里的其他已开启语言，没有就用英文。App 下次读取配置后生效。</div>
+          ? <div className="tiny" style={{ marginBottom: 8 }}>英文始终开启。关闭后，用户在语言列表里看不到这种语言；正在使用它的用户依次改用自己选过的、账号里的或手机系统的已开启语言，都没有就用英文。App 下次读取配置后生效。</div>
           : <div className="atint" style={{ marginBottom: 8 }}>系统支持后，可以在这里开关界面语言，现在只能查看。</div>}
         <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th></tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
           const languages = config.interfaceLanguages;
