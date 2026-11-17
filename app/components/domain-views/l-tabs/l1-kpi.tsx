@@ -54,14 +54,16 @@ const tgtLabel = (k: Kpi) => {
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
 type KpiState = "g" | "y" | "r" | "none" | "source" | "young" | "small" | "inapp";
-type Metric = Pick<L1CohortPoint, "available" | "unavailableReason" | "value"> & { maturityStatus?: string; scope?: Kpi["scope"] };
+type Metric = Pick<L1CohortPoint, "available" | "unavailableReason" | "value"> & { suppressed?: boolean; maturityStatus?: string; scope?: Kpi["scope"] };
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
-/** 算不出的按后端原因分五类：样本过小优先于成熟度（BE-19）；一个满观察期的人都没有才是观察期未满。 */
+/** 算不出的按后端原因分五类：样本过小优先于成熟度（BE-19）；一个满观察期的人都没有才是观察期未满。
+ *  后端标了保护（人数不足 5，含一个都没有）的一律算样本过小，不按「分母为 0」的原因说「没人…」，否则 0 人和 1–4 人能分出来。 */
 const blankState = (m: Metric): KpiState | null => {
   if (m.scope === "NOT_APPLICABLE_TO_COHORT" || m.unavailableReason === "COHORT_NOT_APPLICABLE") return "inapp";
   if (m.unavailableReason === "SOURCE_INCOMPLETE") return "source";
   if (m.unavailableReason === "BELOW_MINIMUM") return "small";
   if (m.maturityStatus === "IMMATURE") return "young";
+  if (m.suppressed) return "small";
   if (m.available === false || m.value == null) return "none";
   return null;
 };
@@ -113,10 +115,16 @@ const URL_KEYS = ["window", "from", "to", "granularity", "asOf", ...SLICES] as c
 const DEFAULT_QUERY: L1KpiQuery = { window: "7d", granularity: "registration_week" };
 const COHORT_FORMAT = /^\d{4}-W\d{2}$/;
 const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics/operations"] as const;
-/** 全是 0 不是走势，不画图，写一句话（DP-62）。 */
-const hasTrend = (values: readonly KpiTrendPoint[]) => values.length >= 2 && values.some((value) => value !== null && value !== 0);
+/** 全是 0 不是走势，不画图，写一句话（DP-62）；只有 1 批有数值时也只是一个点，不画。 */
+const hasTrend = (values: readonly KpiTrendPoint[]) => values.filter((value) => value !== null).length >= 2 && values.some((value) => value !== null && value !== 0);
 /** 有数值的点都是 0（空着的不算）。 */
 const allZero = (values: readonly KpiTrendPoint[]) => values.length >= 2 && values.some((value) => value === 0) && values.every((value) => value === null || value === 0);
+/** 画不出走势的原因：全是 0、0 和空着的都有（空着的是人数太少或算不出，不当 0）、全空着分开说。 */
+const flatText = (values: readonly KpiTrendPoint[]) => values.length < 2 ? "批次不到 2 个"
+  : values.every((value) => value === 0) ? "每批都是 0"
+  : allZero(values) ? "有数值的批次都是 0"
+  : values.every((value) => value === null) ? "各批次都算不出"
+  : "有数值的批次不到 2 个";
 const hasSlice = (query: L1KpiQuery) => SLICES.some((key) => Boolean(query[key]));
 const DETAIL_ID = "l1-kpi-detail";
 /** 上下排（1366 以下）时点一行看不到右边的明细，滚到明细（PG-42）；并排时不动。 */
@@ -758,7 +766,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       ? [{ key: "low", text: `下限 ${k.band?.[0]}${unitText(k)}`, value: k.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${k.band?.[1]}${unitText(k)}`, value: k.band?.[1] ?? 0, tone: "ok" }]
       : [{ key: "target", text: `目标 ${target}${unitText(k)}`, value: target, tone: "ok" }, { key: "yellow", text: `接近线 ${pct(yellowLine)}`, value: yellowLine, tone: "warn" }];
     const trendOf = (index: number) => KPIS[index].points ? KPIS[index].spark : states[index] === "small" ? [] : KPIS[index].spark;
-    const showTrendColumn = KPIS.some((_, index) => hasTrend(trendOf(index)));
+    // 有一项有不是 0 的数就留趋势列，画不出的行写原因；全是 0 或空着时整列收起，表下写一句。
+    const showTrendColumn = KPIS.some((_, index) => trendOf(index).length >= 2 && trendOf(index).some((value) => value !== null && value !== 0));
+    /** 不适用的一项各批都空着，不算进「有数值的批次」那句。 */
+    const cohortValues = KPIS.flatMap((item, index) => item.scope === "NOT_APPLICABLE_TO_COHORT" ? [] : trendOf(index));
     const phaseEvent = phaseOn && PHASE_SWITCH_IDX >= 0 ? { index: PHASE_SWITCH_IDX, text: "运营阶段切换" } : undefined;
 
     // 指数只对单侧目标成立：越高越好算实际 ÷ 目标，越低越好算目标 ÷ 实际，高于 100 都是好于目标。
@@ -826,8 +837,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                         : hasTrend(item.spark)
                         ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
                         : allZero(item.spark)
-                          ? <span className="rd-note">每批都是 0</span>
-                          : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">{item.spark.length === 1 ? "只有 1 批" : "趋势数据不足"}</span>}</Td>}
+                          ? <span className="rd-note">{flatText(item.spark)}</span>
+                          : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">{item.spark.length === 1 ? "只有 1 批" : flatText(item.spark)}</span>}</Td>}
                       <Td><StatusTag tone={STATE_TONE[state]}>{stateText(state, item)}</StatusTag></Td>
                     </Tr>
                   );
@@ -838,8 +849,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               ? <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围没有注册批次，没有走势。</p>
               : WEEKS.length === 1
               ? <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">只有 1 个注册批次（{WEEKS[0]}），没有走势可画。</p>
-              : KPIS.some((_, index) => allZero(trendOf(index)))
-              ? <p className="rd-note rd-panel-foot">有数值的指标每批都是 0，没有走势可画。</p>
+              : allZero(cohortValues)
+              ? <p className="rd-note rd-panel-foot">{cohortValues.every((value) => value === 0) ? "每项指标每批都是 0" : "有数值的批次都是 0"}，没有走势可画。</p>
               : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">各批次都算不出数值，画不出走势；点一行看原因。</p>)}
           </Panel>
 
@@ -887,7 +898,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                       />
                       {partialEdges.length > 0 && <p className="rd-note">{partialEdges.map((point) => point.bucketKey).join("、")} 不完整：只含所选范围内注册的用户。</p>}
                     </Panel>
-                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的汇总。` : points.length === 0 ? "这个范围没有注册批次。" : allZero(k.spark) ? "有数值的批次都是 0，没有走势可画。" : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
+                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的汇总。` : points.length === 0 ? "这个范围没有注册批次。" : allZero(k.spark) ? `${flatText(k.spark)}，没有走势可画。` : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
               {points.length > 0 && kState !== "inapp" && (
                 <Fold inset title="各批次" summary={`${points.length} 批 · ${points.filter((point) => point.value !== null).length} 批有数值`}>
                   <div className="rd-stack">
@@ -989,7 +1000,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <RecordList label="未绘制的指标" records={skipped.map((item) => ({
                 id: String(item.n),
                 value: `#${item.n} ${operatorCopyText(item.name)}`,
-                object: item.spark.length < 2 ? "批次不到 2 个" : allZero(item.spark) ? "每批都是 0" : item.spark.every((value) => value === null) ? "各批次都算不出" : "有数值的批次不到 2 个",
+                object: flatText(item.spark),
               }))} />
             </Fold>}
           </div>
