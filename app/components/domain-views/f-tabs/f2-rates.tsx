@@ -417,7 +417,6 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
         { key: "diamond", label: "钻石档门槛(USD)", current: ptDiamond, inputKind: "number", min: 0, showDiff: true },
       ],
     },
-    content: <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">只存这四个数，不按门槛开通权益，也不改奖励比例。</Notice>,
     statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "后端检查四个都是数字且逐档不降低。" },
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
     completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
