@@ -147,6 +147,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。改成 0 后这一级不再分池，仍留在这页，之后可以改回。",
         check: "调高票数时先看兑付覆盖率；填 0 到 1,000,000，带小数时只取整数部分。",
       },
+      coverageLead: "调高票数：池的总额不变，这一级多分、其他等级少分",
+      coverageCheck: "批准时系统查兑付覆盖率，低于红线不执行。",
       completionCopy: approvalCopy("F4 写权限"),
       detail: `${vote.v} 当前 ${vote.votes} 票。票数越多，这个等级每人分到的团队激励池越多；池的总额不会因此变大。`,
     };
