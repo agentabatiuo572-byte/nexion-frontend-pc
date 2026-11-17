@@ -187,7 +187,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
       return { kind: "proposal" as const, ticket };
     }
   }
-  if (isRetryExpired(record)) throw new Error(`${RETRY_EXPIRED_TEXT}。`);
+  if (isRetryExpired(record)) throw new Error(`${RETRY_EXPIRED_TEXT}`);
   try {
     if (original.kind === "proposal") {
       const ticket = await createA2OperationProposal(JSON.parse(record.body) as HIProposal, key, true);

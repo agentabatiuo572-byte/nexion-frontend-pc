@@ -1461,8 +1461,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         }
         return;
       }
-      if (queryOriginal) { if (current()) setActionResult(isRetryExpired(command) ? `原操作查不到结果；${RETRY_EXPIRED_TEXT}。` : "原操作查不到结果，原记录继续保留，没有重发。"); return; }
-      if (recovering && isRetryExpired(command)) { if (current()) setActionResult(`${RETRY_EXPIRED_TEXT}。`); return; }
+      if (queryOriginal) { if (current()) setActionResult(isRetryExpired(command) ? `原操作查不到结果；${RETRY_EXPIRED_TEXT}` : "原操作查不到结果，原记录继续保留，没有重发。"); return; }
+      if (recovering && isRetryExpired(command)) { if (current()) setActionResult(`${RETRY_EXPIRED_TEXT}`); return; }
       if (command.rejection) {
         sessionEndCommands.remember(command.fingerprint, command.commandKey, { ...command, rejection: undefined });
         const commandKey = command.commandKey;
@@ -1825,8 +1825,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
         </header>
         {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}。` : holdEndRejected.has(record.commandKey) ? "这次接待的结束被拒绝了，原记录还在；核对后可以解除原操作记录。" : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
-          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? isRetryExpired(record) ? `还不能确认这条结束记录是哪一次接待的，可以查原结果；${RETRY_EXPIRED_TEXT}。` : "还不能确认这条结束记录是哪一次接待的，可以查原结果；点「结束会话」会先按它核对，可能按原操作重试。" : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}。` : ""}`}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : holdEndRejected.has(record.commandKey) ? "这次接待的结束被拒绝了，原记录还在；核对后可以解除原操作记录。" : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
+          {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? isRetryExpired(record) ? `还不能确认这条结束记录是哪一次接待的，可以查原结果；${RETRY_EXPIRED_TEXT}` : "还不能确认这条结束记录是哪一次接待的，可以查原结果；点「结束会话」会先按它核对，可能按原操作重试。" : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : ""}`}</Notice>)}
           {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
             explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。时间为${businessZone().label}。`}
             items={sessionEndRecoveries.filter(record => record.instanceState === "historical").map(record => {
@@ -1835,7 +1835,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
               return { key: record.commandKey, createdAt: record.createdAt,
                 object: Number.isFinite(started) ? `${businessStamp(started)} 开始的接待` : "没记下是哪次接待",
                 tag: rejected ? <StatusTag tone="warn">被拒绝</StatusTag> : isRetryExpired(record) ? <StatusTag tone="done" icon={TimerOff}>已过期</StatusTag> : <StatusTag tone="neutral" icon={Search}>只能查询</StatusTag>,
-                line: rejected ? "结束被拒绝，核实后可以解除这条记录。" : isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}。` : "结果未知，只能查原结果。",
+                line: rejected ? "结束被拒绝，核实后可以解除这条记录。" : isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : "结果未知，只能查原结果。",
                 detail: <p>发出时间：{businessStamp(record.createdAt)}</p>,
                 tech: <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{record.commandKey}</span></Fact></Facts></Fold>,
                 actions: <><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{rejected && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</> };
