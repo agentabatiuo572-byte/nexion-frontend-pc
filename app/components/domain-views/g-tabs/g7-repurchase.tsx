@@ -846,7 +846,7 @@ function G7RepurchasePage() {
             <p>每项自己保存，只影响之后新开的订单。调高年奖励率、调低提前解锁扣款会让平台多付钱，调高好友升级奖励倍率按规则也算放大方向（目前只记倍率、不发好友奖励）；这三种改动要另一位超级管理员批准，批准前不变；反方向确认后立即生效。</p>
             <p>一项有待批的申请时，这一项被审批锁住，调高调低都改不了，直到批准、驳回或撤回；其他参数不受影响。</p>
           </>}>
-          {coreRows.length === 0 && <BlockState state="empty" compact title="锁定计划参数现在没有" detail="锁定计划产品不存在时这里是空的，不按默认值算。请找值班核对锁定计划产品。" />}
+          {coreRows.length === 0 && <BlockState state="empty" compact title="锁定计划参数现在没有" detail="锁定计划产品不存在时这里是空的，不按默认值算。请联系值班人员核对锁定计划产品。" />}
           <ConfigList label="锁定计划参数">
             {coreRows.map(paramRow)}
               <ConfigRow name="限时锁定计划倍率"

@@ -84,7 +84,7 @@ export function lifecycleOf(event: LegacyEvent) {
   if (lifecycle === "upcoming") return { key: "upcoming", label: "预告", tone: "neutral" as const, explain: "已登记、还没开放：App 上用户还参加不了。" };
   if (lifecycle === "ongoing") return { key: "ongoing", label: "进行中", tone: "ok" as const, explain: "已对用户开放。结束后不能再开。" };
   if (lifecycle === "ended") return { key: "ended", label: "已结束", tone: "done" as const, explain: "已结束：不能再开放，这页也不再提供改奖励；已有的参与、奖励和操作记录保留。" };
-  return { key: "unknown", label: "状态未知", tone: "warn" as const, explain: "系统给的状态这页不认识，请找值班核对。" };
+  return { key: "unknown", label: "状态未知", tone: "warn" as const, explain: "系统给的状态这页不认识，请联系值班人员核对。" };
 }
 
 export function unknownTag(kind: "approval" | "direct") {
