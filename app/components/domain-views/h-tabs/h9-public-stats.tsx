@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Rea
 import { RefreshCw, SlidersHorizontal, Smartphone, TableProperties } from "lucide-react";
 import { BlockState, Button, Change, Conclusion, DiffList, Explain, Fact, KeepText, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
 import { PaginationExemption } from "../design-kit";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   H9_FIELDS,
   fetchH9AppDisplay,
@@ -48,7 +48,11 @@ import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./
 import { AppNumber, AppPreview, AuditFoot, type AppDisplayRead, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
 import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundClosureModal } from "../fund-command-check";
+import { receiptFact } from "../recovery-panel";
 import { useSearchParams } from "next/navigation";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
@@ -161,6 +165,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   };
   const [, syncPending] = useReducer(n => n + 1, 0);
   const pending = pendingH9Command("main");
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<H9Command | null>(null);
   const [saving, setSaving] = useState(false);
   const ready = useRef(false);
   const [rank, setRank] = useState<RankSnapshot>({ state: "loading" });
@@ -196,8 +202,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     ctx.openActionConfirm(null);
     const original = pendingH9Command("main");
     if (original) {
-      try { await queryH9Command("main", original); }
-      catch { /* Auxiliary receipt errors must not disable the current configuration read. */ }
+      try {
+        const receipt = await queryH9Command("main", original);
+        setOutcomes(all => ({ ...all, [original.commandKey]: { receipt } }));
+      } catch (cause) {
+        setOutcomes(all => ({ ...all, [original.commandKey]: { error: displayAdminError(cause) } }));
+      }
       syncPending();
     }
     try {
@@ -508,11 +518,27 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
     actions: <>
       <Button size="sm" disabled={loading} onClick={() => { if (pending.original) setModule(pending.original.display.module); void load(pending.original?.display.module); }}>查询原结果</Button>
+      {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
       <Button size="sm" disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
         disabled={saving} onClick={() => recover(pending)}>按原请求重试</Button>
     </>,
   }] : [];
-  const recoveryNotice = <H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />;
+  const recoveryNotice = <><H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />
+    {closing && <FundClosureModal label={closing.original ? moduleLabel(closing.original.display.module) : "首页与网络展示设置"} createdAt={closing.createdAt}
+      offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
+      facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
+      onClose={() => setClosing(null)} onSubmit={async evidence => {
+        const record = closing;
+        const receipt = await queryH9Command("main", record, evidence);
+        setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
+        setClosing(null);
+        syncPending();
+        if (eCommandSettled(receipt)) {
+          ctx.openActionConfirm(null);
+          await load(record.original?.display.module);
+        }
+      }} />}
+  </>;
   /** 排名的结果未知提醒在排名那一块里；切到别的块时，在页面上方给一个入口。 */
   const rankPending = pendingH9Command("rank");
   const unresolved = [pending && (pending.original ? moduleLabel(pending.original.display.module) : "主配置"), rankPending && "设备预估排名"].filter(Boolean).join("、");

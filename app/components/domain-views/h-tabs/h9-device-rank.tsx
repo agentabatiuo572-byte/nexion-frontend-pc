@@ -10,8 +10,12 @@ import { BlockState, Button, Change, Explain, Fact, Input, Notice, NumberInput, 
 import { fetchDeviceRankConfig, prepareDeviceRankConfig, updateDeviceRankConfig } from "@/lib/admin/device-rank-client";
 import { deviceRankConfigError, type DeviceRankConfig, type DeviceRankTierDraft } from "@/lib/admin/device-rank-config";
 import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
-import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundClosureModal } from "../fund-command-check";
+import { receiptFact } from "../recovery-panel";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
 import type { RankSnapshot } from "./h9-overview";
@@ -27,6 +31,8 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
   const canWrite = ctx.can("growth_h9_write");
   const [, syncPending] = useReducer(n => n + 1, 0);
   const pending = pendingH9Command("rank");
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<H9Command | null>(null);
   const ready = useRef(false);
   const [data, setData] = useState<DeviceRankConfig | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -47,8 +53,12 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
     setLoading(true);
     const original = pendingH9Command("rank");
     if (original) {
-      try { await queryH9Command("rank", original); }
-      catch { /* Auxiliary receipt errors must not disable the current configuration read. */ }
+      try {
+        const receipt = await queryH9Command("rank", original);
+        setOutcomes(all => ({ ...all, [original.commandKey]: { receipt } }));
+      } catch (cause) {
+        setOutcomes(all => ({ ...all, [original.commandKey]: { error: displayAdminError(cause) } }));
+      }
       syncPending();
     }
     try { accept(await fetchDeviceRankConfig()); }
@@ -176,6 +186,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
       </>} rows={[{ key: pending.commandKey, name: "设备预估排名", change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
         actions: <>
           <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原结果</Button>
+          {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
           <Button size="sm" disabled={saving} disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
             onClick={() => recover(pending)}>按原请求重试</Button>
         </> }]} />
@@ -186,6 +197,20 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
 
   return <section className="h9-rank" aria-label="设备预估排名">
     {issueNotice}
+    {closing && <FundClosureModal label={"设备预估排名"} createdAt={closing.createdAt}
+      offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
+      facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
+      onClose={() => setClosing(null)} onSubmit={async evidence => {
+        const record = closing;
+        const receipt = await queryH9Command("rank", record, evidence);
+        setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
+        setClosing(null);
+        syncPending();
+        if (eCommandSettled(receipt)) {
+          ctx.openActionConfirm(null);
+          await load();
+        }
+      }} />}
     <Panel title="设备预估排名" icon={Trophy} tone="role-4" sub={data ? `排名设置 v${data.version} · 单独保存` : undefined}
       explain="独立的一套设置：自己的版本、自己保存，不受本页其他块影响。App 用首页数字增长的在线设备数和这里的档位估一个排名；这不是真实榜单，不影响收益和奖励。">
       {loading && !data && <BlockState state="loading" title="设备预估排名读取中…" />}
