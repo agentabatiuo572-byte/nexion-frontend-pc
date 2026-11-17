@@ -111,6 +111,11 @@ async function checkTicket(original: F2Proposal, ticket: A2OperationRow) {
   if (!ticket.mine || !op || ticket.operationCode !== op || !original.spec || !await fConfigObjectMatches(op, original.spec.obj, ticket.obj)) {
     throw new Error("F2_PROPOSAL_RESPONSE_MISMATCH");
   }
+  // b72c1c26: only the server's validated numeric projection is approval evidence.
+  // Keep original.request unchanged so recovery posts the identical body and hash.
+  return op === "f_unilevel_bootstrap"
+    ? { ...original.spec, action: ticket.action, before: ticket.before, after: ticket.after }
+    : original.spec;
 }
 
 export async function queryF2Proposal(adminId: number, original: F2Recovery) {
@@ -123,8 +128,8 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
     remember({ ...original, ticket: undefined, absent: true });
     return null;
   }
-  await checkTicket(original, ticket);
-  if (ticket.status === "pending") remember({ ...original, ticket, received: true, absent: false });
+  const spec = await checkTicket(original, ticket);
+  if (ticket.status === "pending") remember({ ...original, spec, ticket, received: true, absent: false });
   else forgetF2Proposal(original);
   return ticket;
 }
@@ -174,13 +179,13 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
   }
   // Replayed POST receipts are historical. Only GET can establish current status.
   remember({ ...original, received: true, ticket: undefined, absent: false });
-  await checkTicket(original, ticket);
+  const ticketSpec = await checkTicket(original, ticket);
   if (recovering) {
     const latest = await queryF2Proposal(adminId, { ...original, received: true });
     if (!latest) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
     return latest;
   }
-  remember({ ...original, ticket, received: true, absent: false });
+  remember({ ...original, spec: ticketSpec, ticket, received: true, absent: false });
   return ticket;
 }
 
