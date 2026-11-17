@@ -123,6 +123,14 @@ const KIND_DEFAULT_ROUTE: Record<string, string> = {
 const RETIRED_CTA: Record<string, string> = { "/pages/staking/staking": "赚取 · 质押", "/staking": "赚取 · 质押" };
 const retiredCta = (href?: string) => (href ? RETIRED_CTA[href.trim()] : undefined);
 const RETIRED_CTA_NOTE = "这个页面已下线，点了不会跳转";
+/**
+ * 82fd6cb2：存着已停用去向的草稿和已排期活动，新的排期和立即发送会被拒（页面先拦下）。草稿能编辑改选；已排期的不能编辑，只能取消后新建。
+ * 已发出的历史活动不受影响，详情照旧写 RETIRED_CTA_NOTE。
+ */
+const RETIRED_CTA_FIX: Partial<Record<CampaignRow["st"], string>> = {
+  draft: "「点了去哪」的页面已停用：先编辑换一个，再排期",
+  scheduled: "「点了去哪」的页面已停用，可能发不出去：取消排期后新建一条",
+};
 /** 一组里默认显示几张卡，多的点「显示全部」切到这个状态。 */
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
@@ -443,7 +451,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Fact k="发给谁">{c.audience}</Fact>
         <Fact k="优先级" tone={c.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[c.tier]?.[0] ?? "未知"}${c.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
         <Fact k="原定时间">{`${whenText(c)}（${businessZone().label}）`}</Fact>
-        {retiredCta(c.ctaHref) && <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}：${RETIRED_CTA_NOTE}`}</Fact>}
+        {retiredCta(c.ctaHref) && <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}（已停用）`}</Fact>}
       </Facts>
     ),
     statedBrief: {
@@ -570,7 +578,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
         const part = (value?: string) => value === undefined ? { title: undefined, body: undefined } : splitNotificationBody(value);
-        const routeName = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已下线）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+        const routeName = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
         const languageName = (value: string) => AUDIENCE_CATALOG?.languages.find((option) => option.value === value)?.label ?? value;
         rows = [...inGroup("基本信息", [conflictRow("状态", stateText(now), "草稿"), conflictRow("名称", now?.name, form.name),
           conflictRow("通知类型", now ? kindLabel(now.kind) : undefined, kindLabel(form.kind)),
@@ -601,7 +609,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         rebuild = live ? () => { setScheduleRow(live); setScheduleVerified(false); } : undefined;
       } else if (live) {
         const opened = campaignCommand?.snapshot;
-        const routeName = (href?: string) => href === undefined ? undefined : retiredCta(href) ? `${retiredCta(href)}（已下线）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+        const routeName = (href?: string) => href === undefined ? undefined : retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
         const budget = (row?: NotificationCampaignRow) => row?.budget === null || row?.budget === undefined ? undefined : `${row.budget} USD`;
         // 别人改的可能是名称、预算这些，不只状态和正文；只比两项会出现「两边一样」却被拒。
         rows = [conflictRow("状态", opened ? stateText(opened) : "—", stateText(now)), conflictRow("名称", opened?.name, now?.name),
@@ -733,7 +741,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
 
   /* ---------- render helpers ---------- */
-  const ctaLabelOf = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已下线）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+  const ctaLabelOf = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
   const NO_CRITICAL = "排期、发送和取消紧急通知要有紧急通知发送权限";
 
   const renderActions = (c: CampaignRow, size: "sm" | "md" = "sm"): ReactNode => {
@@ -742,7 +750,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     if (st === "draft") {
       return (
         <>
-          <Button size={size} variant={size === "md" ? "primary" : undefined} icon={<CalendarClock size={14} aria-hidden />} aria-label={`排期 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL)} onClick={() => sendCmp(c)}>排期</Button>
+          <Button size={size} variant={size === "md" ? "primary" : undefined} icon={<CalendarClock size={14} aria-hidden />} aria-label={`排期 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL) || (retiredCta(c.ctaHref) ? RETIRED_CTA_FIX.draft : undefined)} onClick={() => sendCmp(c)}>排期</Button>
           <Button size={size} icon={<FilePen size={14} aria-hidden />} aria-label={`编辑 ${c.name}`} disabledReason={lockReason(c.id)} onClick={() => { setDetail(null); editDraft(c); }}>编辑</Button>
           <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} disabledReason={lockReason(c.id)} onClick={() => deleteDraft(c)}>删除</Button>
         </>
@@ -751,7 +759,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     if (st === "scheduled") {
       return (
         <>
-          <Button size={size} variant="danger-outline" icon={<Send size={14} aria-hidden />} aria-label={`立即发送 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL)} onClick={() => sendNow(c)}>立即发送</Button>
+          <Button size={size} variant="danger-outline" icon={<Send size={14} aria-hidden />} aria-label={`立即发送 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL) || (retiredCta(c.ctaHref) ? RETIRED_CTA_FIX.scheduled : undefined)} onClick={() => sendNow(c)}>立即发送</Button>
           <Button size={size} aria-label={`取消排期 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL)} onClick={() => cancelScheduled(c)}>取消排期</Button>
         </>
       );
@@ -916,7 +924,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <h3 className="i3-group-title" id={`i3-group-${key}`}>{iconOf(icon)}{title}<span className="i3-group-count">{`${rows.length} 条`}</span></h3>
         <div className="i3-cards">
           {(limited ? rows.slice(0, GROUP_PREVIEW) : rows).map((row) => (
-            <CampaignCard key={row.id} row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} />
+            <CampaignCard key={row.id} row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} alert={retiredCta(row.ctaHref) ? RETIRED_CTA_FIX[liveSt(row)] : undefined} />
           ))}
         </div>
         {limited && <Button variant="ghost" size="sm" onClick={() => setStFlt(key)}>{`显示全部 ${rows.length} 条`}</Button>}
@@ -996,7 +1004,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 <ol className="i3-rail" aria-label="排期时间线">
                   {upcoming.map((row, index) => (
                     <ScheduleItem key={row.id} row={row} first={index === 0 || (index === 1 && upcoming[0].st === "sending" && row.st === "scheduled")}>
-                      <CampaignCard row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} />
+                      <CampaignCard row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} alert={retiredCta(row.ctaHref) ? RETIRED_CTA_FIX[liveSt(row)] : undefined} />
                     </ScheduleItem>
                   ))}
                 </ol>
@@ -1127,7 +1135,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Fact k="预计" lead unit="人">{quantityText(scheduleRow.reach)}</Fact>
             <Fact k="通知">{scheduleRow.name}</Fact>
             <Fact k="发给谁">{scheduleRow.audience}</Fact>
-            {retiredCta(scheduleRow.ctaHref) && <Fact k="点了去哪" tone="warn">{`${retiredCta(scheduleRow.ctaHref)}：${RETIRED_CTA_NOTE}`}</Fact>}
+            {retiredCta(scheduleRow.ctaHref) && <Fact k="点了去哪" tone="warn">{`${retiredCta(scheduleRow.ctaHref)}（已停用）`}</Fact>}
             <Fact k="优先级" tone={scheduleRow.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[scheduleRow.tier][0]}${scheduleRow.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
             <Fact k="能不能撤">发出前可以取消，取消后不能再排期；发出后撤不回</Fact>
           </Facts>
@@ -1158,6 +1166,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               <Button variant="ghost" size="sm" loading={contentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void actions.reloadIContent()}>刷新</Button>
             </div>
             {!shownDetail && <Notice tone="warn">刷新后的列表里没有这条了，可能已被删除。下面是之前读到的内容。</Notice>}
+            {retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)] && <Notice tone="warn">{`${RETIRED_CTA_FIX[liveSt(c)]}。`}</Notice>}
             <Facts>
               <Fact k={reachLabel(c)} lead unit={campaignQuantity(c, "reach") === "—" ? undefined : "人"}>{campaignQuantity(c, "reach")}</Fact>
               <Fact k="状态"><CampaignStatusTag st={liveSt(c)} /></Fact>
@@ -1183,7 +1192,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               {deliveryGap(c) && <Fact k="原因">{deliveryGap(c)}</Fact>}
               {deliveryGap(c) && c.deliveryFacts?.sentCount != null && <Fact k="已核对到的">{`送达 ${c.deliveryFacts.sentCount.toLocaleString("en-US")} 人 · ${sentWindow(c.deliveryFacts.firstSentAt, c.deliveryFacts.lastSentAt, c.deliveryFacts.sentCount)}（${businessZone().label}）`}</Fact>}
               {deliveryGap(c) && /^\d+$/.test(c.sent.trim()) && <Fact k="活动记录写的">{`${Number(c.sent.trim()).toLocaleString("en-US")} 人，不是实际送达数`}</Fact>}
-              {retiredCta(c.ctaHref)
+              {retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)]
+                ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}（已停用）`}</Fact>
+                : retiredCta(c.ctaHref)
                 ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}：${RETIRED_CTA_NOTE}`}<Explain label="已下线的去向" content="App 里不再显示这个按钮，点通知只标已读。原来存的去向照原样留在这条活动里。" /></Fact>
                 : <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>}
               <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : retiredCta(c.ctaHref) ? "不跳转（设的页面已下线）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : c.kind === "staking" ? "不跳转（质押页已下线）" : "不跳转"}</Fact>
@@ -1302,11 +1313,11 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
                 {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={(next) => set("kind", next)}
                   options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
-              <Field label="点了去哪" error={retiredCta(form.ctaHref) ? "已下线，点了不会跳转，请换一个去向。" : undefined}
+              <Field label="点了去哪" error={retiredCta(form.ctaHref) ? "已停用，换一个才能保存。" : undefined}
                 help={retiredCta(form.ctaHref) ? undefined : form.ctaHref ? (form.kind === "system" ? "通知里出现按钮，点按钮去这里；系统通知左滑不跳。" : "通知里出现按钮，点按钮和左滑都去这里。") : form.kind === "system" ? "没有按钮，点了只标已读；系统通知左滑不跳。" : form.kind === "staking" ? "没有按钮，点了只标已读；质押页已下线，左滑不跳。" : `没有按钮，点了只标已读；左滑仍按类型去默认页。`}>
                 {(control) => <Select {...control} aria-label="点了去哪" value={form.ctaHref} disabled={frozen || !deliveryCatalog} onChange={(next) => set("ctaHref", next)}
                   options={[...(deliveryCatalog?.ctaRoutes ?? []).map((option) => ({ value: option.value, label: option.label })),
-                    ...(retiredCta(form.ctaHref) ? [{ value: form.ctaHref, label: `${retiredCta(form.ctaHref)}（已下线）`, disabled: true }] : [])]} />}
+                    ...(retiredCta(form.ctaHref) ? [{ value: form.ctaHref, label: `${retiredCta(form.ctaHref)}（已停用）`, disabled: true }] : [])]} />}
               </Field>
             </div>
           </section>

@@ -169,12 +169,14 @@ export function NotificationPreview({ lang, title, body, ctaLabel, tier, kindLab
 }
 
 /** 一条活动的卡：标题、通知第一行、发给谁和人数、什么时候发、动作。整张可点开详情。 */
-export function CampaignCard({ row, kindLabel, selected, onOpen, actions }: {
+export function CampaignCard({ row, kindLabel, selected, onOpen, actions, alert }: {
   row: CampaignRow;
   kindLabel: string;
   selected: boolean;
   onOpen: () => void;
   actions?: ReactNode;
+  /** 排期或发送前要先处理的事（比如去向已停用）：一个标签，悬停看怎么办。 */
+  alert?: string;
 }) {
   const zh = splitBody(row.bodyZh);
   return (
@@ -183,6 +185,7 @@ export function CampaignCard({ row, kindLabel, selected, onOpen, actions }: {
         <CampaignStatusTag st={row.st} />
         <TierTag tier={row.tier} />
         <span className="i3-card-kind">{kindLabel}</span>
+        {alert && <StatusTag tone="warn" icon={AlertTriangle} explain={alert}>去向已停用</StatusTag>}
       </div>
       <button type="button" className="i3-card-open" onClick={onOpen} aria-label={`打开 ${row.name} 详情`}>
         <span className="i3-card-name">{row.name}</span>
