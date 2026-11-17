@@ -10,6 +10,8 @@ import type { F1PolicyValues } from "./f1-policy-change";
 import { f3SpilloverState } from "./f3-policy";
 import { f4Decimal, f4MonthlyCap } from "./f4-money";
 import { readF4VoteProjection } from "./f4-vote-projection";
+import type { F4AmbassadorMetricBasis } from "./f-overview-contract";
+export type { F4AmbassadorMetricBasis } from "./f-overview-contract";
 import type { BusinessZone } from "./business-time";
 import {
   assertF1Overview,
@@ -330,6 +332,7 @@ interface BackendF4LeadershipPoolOverview {
   ambassadorBudgetCapLabel?: string | null;
   ambassadorKolBudgetPct?: number | string | null;
   ambassadorNextQuotaReviewDate?: string | null;
+  ambassadorMetricBasis?: F4AmbassadorMetricBasis;
   leaderboardPeriods?: unknown;
   leaderboardPoolLabel?: string | null;
   leaderboardParticipantCount?: number | string | null;
@@ -992,6 +995,7 @@ export interface F4LeadershipPoolOverview {
   ambassadorBudgetCapLabel: string;
   ambassadorKolBudgetPct: number;
   ambassadorNextQuotaReviewDate: string;
+  ambassadorMetricBasis?: F4AmbassadorMetricBasis;
   leaderboardPeriods?: F4LeaderboardPeriods;
   /** Point rankings await the page's point labels/units; never feed them to USDT slots. */
   leaderboardComputePointPeriods?: F4ComputePointPeriods;
@@ -1706,6 +1710,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     ambassadorBudgetCapLabel: asText(data?.ambassadorBudgetCapLabel),
     ambassadorKolBudgetPct: toNumber(data?.ambassadorKolBudgetPct),
     ambassadorNextQuotaReviewDate: asText(data?.ambassadorNextQuotaReviewDate),
+    ambassadorMetricBasis: data?.ambassadorMetricBasis,
     leaderboardPeriods,
     leaderboardComputePointPeriods,
     leaderboardPoolLabel: asText(data?.leaderboardPoolLabel, asText(config.leaderboardPoolUsd)),

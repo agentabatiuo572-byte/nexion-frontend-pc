@@ -3,6 +3,19 @@ import { f4Decimal } from "./f4-money";
 
 type JsonRecord = Record<string, unknown>;
 
+// Schema for 06d5874c metadata, never a fallback for missing server facts.
+const F4_AMBASSADOR_METRIC_BASIS = {
+  source: "nx_team_ambassador_application", period: "ALL_TIME", timeFilter: "NONE", excludedDeleted: true,
+  metrics: {
+    ambassadorPendingCount: { aggregation: "COUNT", statusFilter: "PENDING", unit: "APPLICATION" },
+    ambassadorBudgetApprovedLabel: { aggregation: "SUM", field: "requested_budget_usdt", statusFilter: "APPROVED", currency: "USDT", amountBasis: "APPLICATION_REQUESTED_BUDGET", isPaidAmount: false },
+    ambassadorBudgetCapLabel: { aggregation: "SUM", field: "requested_budget_usdt", statusFilter: "ALL", currency: "USDT", amountBasis: "APPLICATION_REQUESTED_BUDGET", isBudgetCap: false },
+    ambassadorKolBudgetPct: { aggregation: "MAX", field: "kol_budget_pct", statusFilter: "ALL" },
+    ambassadorNextQuotaReviewDate: { aggregation: "MIN", field: "event_date", statusFilter: "PENDING", isQuarterPlan: false },
+  },
+} as const;
+export type F4AmbassadorMetricBasis = typeof F4_AMBASSADOR_METRIC_BASIS;
+
 export const F5_KIND_LABELS: Record<string, string> = {
   direct_purchase: "好友购买奖励", direct_device_earning: "好友设备收益奖励",
   network: "团队购买奖励", binary: "团队平衡奖励", peer: "同级奖励", cultivation: "好友升级奖励", leadership: "团队激励池", genesis: "创世节点收益",
@@ -342,6 +355,19 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
     text(item.status, "F4", `ambassadorApplications[${index}].status`);
   });
   array(row, "ambassadorBands", "F4");
+  if (row.ambassadorMetricBasis !== undefined) {
+    const basis = object(row, "ambassadorMetricBasis", "F4");
+    for (const key of ["source", "period", "timeFilter", "excludedDeleted"] as const) {
+      if (basis[key] !== F4_AMBASSADOR_METRIC_BASIS[key]) invalid("F4", `ambassadorMetricBasis.${key}`);
+    }
+    const metrics = object(basis, "metrics", "F4");
+    for (const [key, expected] of Object.entries(F4_AMBASSADOR_METRIC_BASIS.metrics)) {
+      const metric = object(metrics, key, "F4");
+      for (const [field, expectedValue] of Object.entries(expected)) {
+        if (metric[field] !== expectedValue) invalid("F4", `ambassadorMetricBasis.metrics.${key}.${field}`);
+      }
+    }
+  }
   array(row, "podium", "F4");
   const votes = array(row, "voteWeights", "F4");
   votes.forEach((value, index) => {
