@@ -49,7 +49,7 @@ function rowsOf(s: H3Stats): Row[] {
     { key: "paid", name: "本周发放的任务奖励", range: week,
       value: !ok ? "—" : paid.length ? paid.map((row) => `${money(row.amount)} ${row.asset}`).join("；") : `0.00 ${s.weeklyNexAsset ?? "UVT"}`,
       basis: !ok ? "这次读不到" : paid.length ? `已到账，按币种分开：${paid.map((row) => `${row.asset} ${count(row.ledgerCount)} 笔`).join("、")}` : "本周还没有到账的任务奖励" },
-    { key: "monthly", name: "正在做月度挑战的人数", range: "—", value: "没有这项统计", basis: "月度挑战不记录谁在做，所以没有这个数" },
+    { key: "monthly", name: "正在做月度挑战的人数", range: "—", value: "没有这项统计", basis: "月度挑战不记录谁在做" },
   ];
 }
 
