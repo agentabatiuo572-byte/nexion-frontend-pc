@@ -606,8 +606,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (slot !== F2_ACTIVATION_SLOT && (f2Loading || f2Error || !f2Overview)) return "七层比例没读到，这部分没有判断";
     // An empty active read is only a candidate: the server also checks hidden historical rows.
     if (slot === F2_BOOTSTRAP_SLOT && f2Overview?.unilevel.length) return displayAdminError("F2_UNILEVEL_RULES_ALREADY_CONFIGURED");
-    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
+    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
         && (f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy)) return "好友奖励政策没读到，暂不能改";
+    if (slot === F2_BOOTSTRAP_SLOT && f2Overview?.unilevel.length) return displayAdminError("F2_UNILEVEL_RULES_ALREADY_CONFIGURED");
     if (slot === "f-config-batch:F2") {
       const issue = fBatchIssueText(Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`), session?.authorities ?? []);
       if (issue) return issue;
@@ -1039,6 +1040,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     },
     recoverF2SevenLayerActivation: () => sendF2(F2_ACTIVATION_SLOT),
     bootstrapF2Unilevel: async (layers, reason) => {
+      const current = await fetchF2DirectReferralPolicy();
+      setF2DirectPolicy(current);
+      if (current.sevenLayerEnabled && current.policySchemaVersion === 2 && current.purchaseSplit.enabled) {
+        throw new Error("L1_LEGACY_NEX_READ_ONLY_DURING_SPLIT");
+      }
       const def = findHighOp("f_unilevel_bootstrap");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_unilevel_bootstrap");
       await sendF2(F2_BOOTSTRAP_SLOT, {
