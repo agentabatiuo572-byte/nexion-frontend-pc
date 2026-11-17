@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
 
 /**
  * Security headers — applied to every route. Demo-safe baseline for an internal
@@ -60,6 +61,8 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Shared node_modules lives in a sibling worktree.
+  turbopack: { root: resolve(__dirname, "..") },
   // Opt-in Linux deployment artifact; ordinary local builds retain their existing layout.
   output: process.env.NEXGRID_STANDALONE_BUILD === "1" ? "standalone" : undefined,
   async rewrites() {
