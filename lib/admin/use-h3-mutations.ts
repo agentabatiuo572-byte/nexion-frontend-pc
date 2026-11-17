@@ -19,7 +19,7 @@ type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Direct = { kind: "direct"; path: string; method: "POST" | "PATCH" | "DELETE"; body: string };
 export type H3Change = {
   target: string; action: string; title: string; before: string; after: string; reason: string; success: string;
-  editValue?: string; businessValue?: Record<string, string>;
+  editValue?: string; businessValue?: Record<string, string>; rewardCurrency?: string;
 };
 export interface H3PendingCommand extends PendingMutationRecord {
   store: H3CommandStore;
@@ -52,6 +52,7 @@ function savedCommands(adminId: number | undefined, operator: string): H3Pending
         const c = saved.change;
         if (![c.target, c.action, c.title, c.before, c.after, c.reason, c.success].every(v => typeof v === "string")
           || c.editValue !== undefined && typeof c.editValue !== "string"
+          || c.rewardCurrency !== undefined && (typeof c.rewardCurrency !== "string" || !/^[A-Za-z]+$/.test(c.rewardCurrency))
           || c.businessValue !== undefined && (!c.businessValue || Object.values(c.businessValue).some(v => typeof v !== "string"))) return [];
         const request = saved.request;
         if (request.kind === "approval") {
