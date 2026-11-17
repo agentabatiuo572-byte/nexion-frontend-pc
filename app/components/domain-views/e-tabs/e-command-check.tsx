@@ -4,7 +4,7 @@ import { SearchCheck, ShieldCheck } from "lucide-react";
 import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
+import { eCommandClosureRequests, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, offerNotice, type ClosureOffer, closureConflict, closureTime, receiptExplain, receiptRejected, type ClosureBasis } from "../recovery-panel";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
@@ -23,8 +23,7 @@ const SUCCEEDED_BY_RECEIPT = "后台按这次操作自己的处理记录核对�
 
 /** Closure is offered after 24 hours or once the backend itself reports the result as unknown; never to an active writer. */
 export function closureOpen(outcome: CommandOutcome | undefined, expired: boolean) {
-  const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
-  return status !== "PROCESSING" && (expired || status === "UNKNOWN");
+  return eCommandClosureRequests(outcome && "receipt" in outcome ? outcome.receipt : null, expired).conclusions.length > 0;
 }
 
 /** 标签和资金页的面板同一组叫法（查询失败、没有查到、还在执行、记为失败、仍未知、后台拒绝、已处理）。 */

@@ -17,7 +17,8 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { useRbacCommands, type A7Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
-import { FundClosureModal, closureKnown } from "../fund-command-check";
+import { FundClosureModal } from "../fund-command-check";
+import { eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
 import { receiptFact } from "../recovery-panel";
 import { rbacClosureConclusions, rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -387,7 +388,7 @@ export default function A7Menus() {
               const shown = outcome && rbacOutcomeView(outcome, { expired, canRetry: canWrite, canClose: canClose });
               const conclusions = rbacClosureConclusions(outcome, expired);
               // The existing fund form cannot submit NOT_EXECUTED; its shared owner must add that option first.
-              const closable = canClose && conclusions.some(conclusion => conclusion === "REJECTED" || conclusion === "SUCCEEDED");
+              const closable = canClose && conclusions.length > 0;
               return (
                 <li key={record.commandKey}>
                   <span className="a7-recovery-name">{record.name}</span>
@@ -467,8 +468,7 @@ export default function A7Menus() {
 
       {closing && (() => {
         const receipt = outcomes[closing.commandKey]?.receipt ?? null;
-        const basis = closureKnown({ receipt });
-        return <FundClosureModal label={closing.name} createdAt={closing.createdAt} known={basis && { ...basis, success: basis.success === "receipt" ? "receipt" : "never" }}
+        return <FundClosureModal label={closing.name} createdAt={closing.createdAt} offer={eCommandClosureRequests(receipt, isRetryExpired(closing))}
           facts={<>
             <Fact k="菜单"><span data-mono>{closing.change}</span></Fact>
             <Fact k="系统记录">{receiptFact(receipt, "记录保留")}</Fact>
