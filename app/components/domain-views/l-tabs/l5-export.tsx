@@ -69,7 +69,7 @@ function cohortScope(value: string): ScopeParts {
   const group = COHORT_GROUP[fields.granularity ?? ""];
   if (!range || !asOf || !group) return { main: "范围读不出", raw: value };
   const slices = Object.keys(COHORT_SLICE).filter((key) => fields[key]).map((key) => `${COHORT_SLICE[key]} ${fields[key]}`);
-  return { main: `${range}注册 · ${group}`, sub: [`数据截至 ${asOf}`, ...slices].join(" · ") };
+  return { main: `${range}${dates ? " " : ""}注册 · ${group}`, sub: [`数据截至 ${asOf}`, ...slices].join(" · ") };
 }
 
 function reportScopeParts(value: string): ScopeParts {
@@ -143,6 +143,9 @@ function downloadBlob(blob: Blob, fileName: string) {
   link.remove();
   URL.revokeObjectURL(href);
 }
+
+/** 导出记录里后端写的类型名，换成任务表的叫法。 */
+const AUDIT_LABEL: Record<string, string> = { "KPI 聚合": "关键指标汇总", "漏斗聚合": "转化与留存汇总", "财务聚合": "财务汇总", "运营聚合": "运营汇总" };
 
 function exportTypeText(value: string) { return value.replace(/^KPI/, "关键指标").replaceAll("聚合", "汇总"); }
 
@@ -468,8 +471,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const EXPORT_TASKS = taskPage?.records ?? [];
   const MASK_RULES = rows<MaskRule>(data.maskRules);
   const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
-  // 只换显示：「名称 / 范围」里的范围按任务表同一种写法翻成人话。
-  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows.map((row) => ({ ...row, what: row.what.replace(/ \/ (.+)$/, (_, scope: string) => ` / ${reportScopeText(scope)}`) }));
+  // 只换显示：「名称 / 范围」的名称用任务表的叫法，范围按任务表同一种写法翻成人话。
+  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows.map((row) => ({ ...row, what: row.what.replace(/^(.+?) \/ (.+)$/, (_, label: string, scope: string) => `${label === "财务聚合" && row.pii ? "脱敏资金明细" : AUDIT_LABEL[label] ?? label} / ${reportScopeText(scope)}`) }));
   const CROSS_MODULE_BLOCKERS = rows<{ code: string; label: string; status: string; reason: string }>(data.crossModuleBlockers);
   const effSt = (t: LExportTask): string => t.st.toUpperCase();
   const effActs = (t: LExportTask): LExportTask["acts"] => t.acts;
@@ -800,7 +803,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
                 {listState === "ready" && otherTasks.map((t) => (
                   <Tr key={t.id}>
                     <Td><Cell main={taskTitle(t, exportTypeText)} sub={<span data-mono="">{t.id}</span>} title={`${taskTitle(t, exportTypeText)} · ${t.id} · ${taskSource(t)}`} /></Td>
-                    <Td><ScopeCell scope={t.scope} /></Td>
+                    <Td grow><ScopeCell scope={t.scope} /></Td>
                     <Td grow><Cell main={operatorCopyText(t.fields)} sub={`${t.pii ? "含隐私 · " : ""}${t.mask === "—" ? "不含隐私" : MASK_LABEL[t.mask]}`} title={operatorCopyText(t.fields)} /></Td>
                     <Td align="right"><Cell num main={rowsText(t.rows)} /></Td>
                     <Td><TaskStatusTag task={t} unknown={recoveryIds.has(t.id)} /></Td>
