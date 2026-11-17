@@ -215,20 +215,20 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     const { dayIndex, field } = change;
     return { briefKind: "config",
       action: `修改一周价格计划 · D${dayIndex + 1} · ${FIELD_NAME[field]}`,
-      title: `修改 D${dayIndex + 1} 波动幅度`,
-      detail: "七天计划里每一天各有一个波动幅度，推进到这一天时抄进当天配置。",
-      effect: <StatusTag tone="neutral" icon={Info} explain="后端保存这个值，但发布价格时直接用目标价，没有按波动幅度随机涨跌；已提给后端接上或退役。">目前不生效</StatusTag>,
+      title: `D${dayIndex + 1} 波动幅度的原操作`,
+      detail: <>七天波动幅度已停用，不能再改。这里只查原操作的结果。</>,
+      effect: <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>,
       facts: <Facts>
-        <Fact k="改的是">D{dayIndex + 1} 的计划波动幅度（百分数，2 表示 ±2%）</Fact>
-        <Fact k="现在用不用">后端还没有使用：价格按目标价发布，现价和用户兑换都不变</Fact>
-        <Fact k="提交时检查">七天计划在你打开后没有被别人改过，否则拒绝</Fact>
+        <Fact k="原操作改的是">D{dayIndex + 1} 的计划波动幅度（2 表示 ±2%）</Fact>
+        <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
+        <Fact k="按原请求重试">执行过就返回原结果，没执行过会被拒绝</Fact>
       </Facts>,
-      statedBrief: { impact: "只改七天计划里这一天的波动幅度，现价和用户兑换不变。", check: "核对是哪一天、新值，理由写清依据或工单号。" },
+      statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       amplifies: false,
-      confirmLabel: "确认修改",
+      confirmLabel: "按原请求重试",
       edit: { kind: "number", current, min: 0, max: 20, step: 0.01, disallowCurrent: true, unit: "%", hint: "0–20，最多两位小数" },
       change,
-      success: `D${dayIndex + 1} ${FIELD_NAME[field]}已保存，到那一天生效`,
+      success: `D${dayIndex + 1} 波动幅度的原操作已有结果`,
     };
   }
   if (change.action === "control") {
@@ -903,7 +903,9 @@ function G3MarketEditor() {
                 {state && <span className="g3-cell-tag"><ObjectTag state={state} /></span>}
                 <span className="g3-cell">
                   <span className="g3-num">{fieldText(field, frameValue(frame, field))}</span>
-                  {(allowed(curveAuthority(field)) || hasRecovery(`weekly:D${dayIndex + 1}:${field}`)) && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={lockReason(`weekly:D${dayIndex + 1}:${field}`) ?? (field === "pumpProbability" && !hasRecovery(`weekly:D${dayIndex + 1}:${field}`) ? tuningBlocked : undefined)} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
+                  {field === "volatilityPct"
+                    ? hasRecovery(`weekly:D${dayIndex + 1}:${field}`) && <Button size="sm" aria-label={`查询或重试 D${dayIndex + 1} 波动幅度的原操作`} disabledReason={lockReason(`weekly:D${dayIndex + 1}:${field}`)} onClick={() => openCurveCellMc(dayIndex, field)}>查询或重试</Button>
+                    : (allowed(curveAuthority(field)) || hasRecovery(`weekly:D${dayIndex + 1}:${field}`)) && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={lockReason(`weekly:D${dayIndex + 1}:${field}`) ?? (field === "pumpProbability" && !hasRecovery(`weekly:D${dayIndex + 1}:${field}`) ? tuningBlocked : undefined)} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
                 </span>
               </Td>
             );
@@ -964,7 +966,7 @@ function G3MarketEditor() {
         explain={<>
           <p>看图：七天里目标价怎么走、今天在第几天、哪天最高。现价和今天计划价的对照在「最近 24 小时价格」。</p>
           <p>改计划不改现价。推进到某一天（或固定到这一天）时，现价才按它的目标价发布。</p>
-          <p>表里只放决定价格的目标价；上涨概率和波动幅度目前不影响公布价，在页面下方「目前不生效的参数」。</p>
+          <p>表里只放决定价格的目标价；上涨概率目前不影响公布价，波动幅度已停用，都在页面下方「目前不生效的参数」。</p>
         </>}>
         <Figure width={560} stack="wide" graphic={planFigure}>
           {planTable}
@@ -1050,21 +1052,22 @@ function G3MarketEditor() {
       </Fold>
 
       <Fold title="目前不生效的参数" icon={CircleHelp} tone="role-other"
-        summary={`3 项目前不生效${retiredRows.length ? ` · ${retiredRows.length} 项已停用` : ""}，不影响公布价和兑换`}
-        explain="能保存，但发布价格和兑换都不读它们，已提给后端接上或退役。">
+        summary={`2 项目前不生效 · ${retiredRows.length + 1} 项已停用，不影响公布价和兑换`}
+        explain="上涨概率和初始成本价能保存，但发布价格和兑换都不读它们，已提给技术同事接上或退役。已停用的不能再改。">
         <div className="g3-subhead">七天上涨概率<span className="g3-subnote">目前不生效</span><Explain label="七天上涨概率" content={<><p>0.35 表示 35%。推进到这一天时写进当天配置；公布价直接用目标价，上涨概率目前不影响公布价。</p><p>提高要另一位超级管理员批准，降低直接保存。</p><p>{TUNING_RULE}</p></>} />
           {MANUAL_TUNING === "forbidden" && <StatusTag tone="neutral" icon={Lock} explain={G3_TUNING_FORBIDDEN}>当前环境不能改</StatusTag>}</div>
         {weekTable("pumpProbability")}
-        <div className="g3-subhead">七天波动幅度<span className="g3-subnote">目前不生效</span><Explain label="七天波动幅度" content="七天计划里每一天的波动幅度（2 表示 ±2%），推进到这一天时抄进当天配置。发布价格直接用目标价，不按它随机涨跌。" /></div>
-        {weekTable("volatilityPct")}
         <ConfigList label="其他不生效的参数">
           <ConfigRow name="初始成本价" what="UVT 的初始成本价" effect="App 会收到这个值，但现在没有页面显示盈亏；不影响价格和兑换"
             value={<span className="g3-value">{overview.overrides.costBasis == null ? "未配置" : `${price(overview.overrides.costBasis)} USDT`}<ObjectTag state={OBJECT_STATES.costBasis} /></span>}
             action={allowed("finprod_g3_write") || hasRecovery("costBasis") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("costBasis")} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "App 现在没有页面显示它，不影响价格和兑换")}>调整</Button> : undefined} />
         </ConfigList>
         {/* 已停用的一组和上面分开：沿用「排程执行情况」那条分隔线（.g3-run），不改共用的域样式。 */}
-        {retiredRows.length > 0 && <section className="g3-run" aria-label="已停用的设置">
-          <div className="g3-subhead">已停用的设置<span className="g3-subnote">不能再改</span><Explain label="已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原请求重试。" /></div>
+        <section className="g3-run" aria-label="已停用的设置">
+          <div className="g3-subhead">七天波动幅度<span className="g3-subnote">已停用 · 不能再改</span><Explain label="七天波动幅度" content={<><p>七天计划里每天的波动幅度已停用，不影响价格和兑换。表里是还留着的旧值，2 表示 ±2%。</p><p>有没结论的原操作时，格子里可以查询或按原请求重试。</p></>} /></div>
+          {weekTable("volatilityPct")}
+          {retiredRows.length > 0 && <>
+          <div className="g3-subhead">其他已停用的设置<span className="g3-subnote">不能再改</span><Explain label="其他已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原请求重试。" /></div>
           <ConfigList label="已停用的设置">
             {retiredRows.map((row) => (
               <ConfigRow key={row.key} name={RETIRED_OVERRIDE_NAME[row.key]} what={row.what} effect="已停用，不影响价格和兑换"
@@ -1072,7 +1075,8 @@ function G3MarketEditor() {
                 action={hasRecovery(row.key) ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason(row.key)} onClick={row.open}>查询或重试</Button> : undefined} />
             ))}
           </ConfigList>
-        </section>}
+          </>}
+        </section>
       </Fold>
 
       <RelatedLinks reach={reach} />
