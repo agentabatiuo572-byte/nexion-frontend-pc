@@ -76,7 +76,8 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const isWrite = !!init?.method && init.method !== "GET";
-  const isK1ApprovalWrite = isWrite && (path.startsWith("/multi-account/params/") || path.startsWith("/multi-account/release-params/"));
+  const isK1ApprovalWrite = isWrite && (path.startsWith("/multi-account/params/") || path.startsWith("/multi-account/release-params/")
+    || /^\/multi-account\/releases\/[^/]+\/manual$/.test(path));
   const commandKey = init?.commandKey ?? newK1CommandKey();
   if (isWrite && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", commandKey);
   let res: Response;
@@ -564,7 +565,7 @@ export type KRiskActions = {
   updateK1Param: (key: string, value: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   updateK1ReleaseParam: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   fetchK1ProtectedEntries: () => Promise<K1ProtectedEntry[]>;
-  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string) => Promise<void>;
+  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   updateK1ClusterStatus: (clusterId: string, status: ClusterStatus, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string) => Promise<void>;
@@ -1892,8 +1893,8 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
       } as K1ProtectedEntry;
     });
   },
-  manualReleaseK1Entry: (entryNo, reason, commandKey) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
-    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason)),
+  manualReleaseK1Entry: (entryNo, reason, commandKey, operator) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
+    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason, operator)),
   }).then(() => undefined),
   updateK1ClusterStatus: (clusterId, status, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ status, expectedVersion }, reason)) }).then(() => undefined),
   updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),

@@ -13,7 +13,7 @@ import { KeepText,
   ConflictBar, Modal, Notice, NumberInput, PageHeader, PageTabs, Pager, Panel, RecordList, ReleaseModal, SectionNav, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useSectionNav,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
-import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1RequestError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -62,6 +62,7 @@ function isK1PendingCommand(record: PendingMutationRecord): record is K1PendingC
     && value.fingerprint === `${value.kind}|${value.target}`
     && (value.kind !== "param" && value.kind !== "release-param" || typeof value.operator === "string" && !!value.operator
       && typeof value.value === "string" && (value.kind !== "release-param" || Number.isSafeInteger(value.version) && value.version! >= 0))
+    && (value.kind !== "entry" || typeof value.operator === "string" && !!value.operator)
     && (value.kind !== "registration-param" || isOriginalCommandOrigin(value.commandOrigin, a3ParamCommandRoutes.K1));
 }
 /** 全部写操作共用一张表，刷新后还能用同一命令号按原内容重试。 */
@@ -808,9 +809,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           () => reloadAfter(`${name}已保存，${effect}`, `${name}已保存，但暂时无法读取最新数据；请刷新本页核对`));
       }
       case "entry":
-        return sendCommand(record, (key) => ctx.actions.manualReleaseK1Entry(target, reason, key), async () => {
+        return sendCommand(record, (key) => ctx.actions.manualReleaseK1Entry(target, reason, key, record.operator), async () => {
           await refreshProtectedEntries();
           ctx.toast(`${target} 已放行。能否提现还看账户组和其他提现条件。`, "success");
+        }).catch(async (cause) => {
+          if (cause instanceof K1RequestError && (cause.reasonCode === "K1_EARNINGS_RELEASE_STALE"
+            || cause.reasonCode === "K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED")) await refreshProtectedEntries();
+          // Re-read only. The existing confirmation keeps the reason and shows the refusal.
+          throw cause;
         });
       case "whitelist-add":
         return sendCommand(record, (key) => ctx.actions.upsertK1Whitelist(target, record.note!, reason, record.expireText!, key),
