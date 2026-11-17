@@ -2,6 +2,7 @@ import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   L2_TRIAL_RESPONSE_INVALID: "试用漏斗的数据口径或人数不完整，暂时无法核对。请重新查询。",
+  TRIAL_EVENT_LINKAGE_INCOMPLETE: "试用事件缺少用户、时间或同一笔试用的关联，人数和比例暂不可用。请联系值班人员核对事件记录。",
   H3_ACTUAL_ASSIGNMENTS_RESPONSE_INVALID: "实际分配的每周时间窗数据不完整，暂时无法核对。请重新读取地区规则。",
   G3_SCHEDULE_EXECUTION_RESPONSE_INVALID: "排程执行记录不完整，暂时无法核对实际结果。请重新读取。",
   G3_SCHEDULE_EXECUTION_READ_FAILED: "排程执行记录暂时读不到，不能确认实际结果。请重新读取。",
