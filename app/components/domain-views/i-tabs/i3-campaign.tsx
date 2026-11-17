@@ -985,7 +985,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             explain="全部没删除的活动，不分月份。" />
           <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate ?? "—"} sub={`左滑推算 ${I3_STATS.weeklySwipe ?? "—"}`}
             explain={<>
-              <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新（已提后端），不是实时已读率。</p>
+              <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新，不是实时已读率。</p>
               <p>左滑推算：已读数 × 3.1%，不是实际左滑次数，也不分本周。</p>
             </>} />
         </>}
