@@ -405,16 +405,18 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
   }, [pending]);
   useEffect(() => { if (canRead) void ctx.reloadKRisk({ withdrawRules: { rulePageNum: rulePage, rulePageSize, hitPageNum: hitPage, hitPageSize, hitAction } }).then(() => setReadAt(Date.now())).catch(() => undefined); }, [canRead, ctx.reloadKRisk, rulePage, rulePageSize, hitPage, hitPageSize, hitAction]);
   const overview = ctx.risk.withdrawRules;
-  const [coverage, setCoverage] = useState<K3Coverage | null>(null);
-  const canReadCoverage = authorities.some(authority => ["overview_b1_read", "finance_d3_read", "bi_l3_read"].includes(authority));
+  const [legacyCoverage, setCoverage] = useState<K3Coverage | null>(null);
+  const canReadLegacyCoverage = authorities.some(authority => ["overview_b1_read", "finance_d3_read", "bi_l3_read"].includes(authority));
+  const canReadCoverage = overview?.coverage !== undefined || canReadLegacyCoverage;
+  const coverage = overview?.coverage ?? legacyCoverage;
   useEffect(() => {
     setCoverage(null);
-    if (!overview || !canReadCoverage) return;
+    if (!overview || overview.coverage !== undefined || !canReadLegacyCoverage) return;
     const controller = new AbortController();
     void fetchK3Coverage(controller.signal).then(value => { if (!controller.signal.aborted) setCoverage(value); })
       .catch(() => { if (!controller.signal.aborted) setCoverage(null); });
     return () => controller.abort();
-  }, [overview, canReadCoverage]);
+  }, [overview, canReadLegacyCoverage]);
   useEffect(() => { if (overview) setLastRulePage({ total: overview.rules.total, pageNum: overview.rules.pageNum, pageSize: overview.rules.pageSize }); }, [overview]);
   // A successful read replaces the snapshot; a failed read must not present it as current.
   useEffect(() => {

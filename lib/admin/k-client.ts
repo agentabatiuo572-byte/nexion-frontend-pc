@@ -331,9 +331,11 @@ export type K3Rule = {
   version: number;
 };
 export type K3RouteCount = { key: RuleAction; label: string; count: number; n: number; color: string };
-export type K3Coverage = { coverageRatio: number; redlinePct: number; reliable: boolean; redlineBreached: boolean };
+export type K3Coverage =
+  | { coverageRatio: number; redlinePct: number; reliable: true; redlineBreached: boolean }
+  | { coverageRatio: null; redlinePct: null; reliable: false; redlineBreached: null };
 
-/** K3 overview has no coverage projection in 441c412b. Use the existing authorised B1 read. */
+/** Legacy K3 overviews omit coverage. Keep the existing authorised B1 read for those backends. */
 export async function fetchK3Coverage(signal?: AbortSignal): Promise<K3Coverage> {
   const response = await guardedFetch("/api/admin/treasury/coverage", { cache: "no-store", signal });
   const payload: ApiResult<unknown> = await response.json();
@@ -345,7 +347,9 @@ export async function fetchK3Coverage(signal?: AbortSignal): Promise<K3Coverage>
   // redlineBreached uses exact B1 amounts, rather than the rounded display ratio.
   const reliable = data.valuationReliable === true && ratio !== null && ratio >= 0 && redline !== null && redline > 0
     && typeof data.redlineBreached === "boolean";
-  return { coverageRatio: ratio ?? 0, redlinePct: redline ?? 0, reliable, redlineBreached: data.redlineBreached !== false };
+  return reliable
+    ? { coverageRatio: ratio!, redlinePct: redline!, reliable: true, redlineBreached: data.redlineBreached as boolean }
+    : { coverageRatio: null, redlinePct: null, reliable: false, redlineBreached: null };
 }
 export type K3DryRunResult = {
   batchNo: string;
@@ -381,6 +385,7 @@ export type WithdrawRuleOverview = {
   routeCounts: K3RouteCount[];
   routeTotal: number;
   hits: AdminPage<K3Hit>;
+  coverage?: K3Coverage;
   sources?: string[];
 };
 
@@ -1332,7 +1337,23 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
     ? undefined
     : requiredK3Array(data.sources, "withdrawRules.sources").map((value, index) =>
       requiredK3String(value, `withdrawRules.sources[${index}]`));
-  return { dimensions, rules, routeCounts, routeTotal, hits, sources };
+  let coverage: K3Coverage | undefined;
+  if (data.coverage !== undefined) {
+    const row = requiredK3Record(data.coverage, "withdrawRules.coverage");
+    const reliable = requiredK3Boolean(row.reliable, "withdrawRules.coverage.reliable");
+    if (reliable) {
+      if (typeof row.coverageRatio !== "number" || !Number.isFinite(row.coverageRatio) || row.coverageRatio < 0
+        || typeof row.redlinePct !== "number" || !Number.isFinite(row.redlinePct) || row.redlinePct <= 0)
+        invalidK3Response("withdrawRules.coverage");
+      coverage = { coverageRatio: row.coverageRatio, redlinePct: row.redlinePct, reliable: true,
+        redlineBreached: requiredK3Boolean(row.redlineBreached, "withdrawRules.coverage.redlineBreached") };
+    } else {
+      if (row.coverageRatio !== null || row.redlinePct !== null || row.redlineBreached !== null)
+        invalidK3Response("withdrawRules.coverage");
+      coverage = { coverageRatio: null, redlinePct: null, reliable: false, redlineBreached: null };
+    }
+  }
+  return { dimensions, rules, routeCounts, routeTotal, hits, sources, coverage };
 }
 
 const K4_RESPONSE_INVALID = "K4_RESPONSE_INVALID";
