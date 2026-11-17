@@ -30,6 +30,7 @@ import {
   type G3ReadOverview,
   type G3ObjectReadState,
   type G3OverrideKey,
+  type G3ScheduleExecutionRead,
 } from "@/lib/admin/g3-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -41,6 +42,7 @@ import {
 } from "@/lib/admin/g3-market-command";
 import { OperationConfirmModal, useToast, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
+import { G3ScheduleResult } from "./g3-schedule-result";
 
 /** 本页的共用确认框请求：action 照旧是记进操作记录的名字，title 只写动作和对象（VS-101）。 */
 type G3ConfirmReq = {
@@ -427,9 +429,12 @@ function G3MarketEditor() {
       ? "finprod_g3_curve_pump_prob_write"
       : "finprod_g3_write";
   const [gaps, setGaps] = useState<G3ReadGaps>(NO_GAPS);
+  // 排程实际结果只有页面自己的读取带；写入回来的概览不带，保留上次读到的。
+  const [scheduleRead, setScheduleRead] = useState<G3ScheduleExecutionRead>();
   // 写入和确认框回来的是完整读数（价格、覆盖率都读到了）；页面自己的读取可能缺其中一样或两样。
   const showRead = useCallback((read: G3ReadOverview) => {
     const next = readBaseline(read); setOverviewState(next.overview); setGaps(next.gaps);
+    if (read.scheduleExecutionRead) setScheduleRead(read.scheduleExecutionRead);
     if (read.environmentWriteState) setManualTuning(read.environmentWriteState.manualTuningAllowedByEnvironment ? "allowed" : "forbidden");
   }, []);
   // 按原请求恢复成功后，手里的概览已经不是那次写入之后的状态；重读成功之前不能拿它当新修改的基准。
@@ -791,6 +796,7 @@ function G3MarketEditor() {
   const pauseEngine = () => openDirect({ action: "override", key: "paused", current: String(paused) }, String(!paused));
 
   // 一句话结论：只说配置，不说排程「运行正常」（G3-BE-04）；缺价不写成 0（G3-BE-01）。
+  const lastFailed = scheduleRead?.state === "ready" && scheduleRead.data.lastAttempt?.outcome === "FAILED";
   const coverageExplain = "这次算不出可靠的兑付覆盖率，不等于低于红线。降价、改计划、暂停照常能做；提高价格、固定到更高的一天、恢复自动变化会被拒绝，以「资金储备与应付款」为准。";
   const conclusion = priceMissing
     ? <Conclusion state="warn" explain="没有可用的价格记录时，页面不显示现价，也不拿它算和计划价的差；七天计划、价格历史和运行方式照常能看。" hint="先核对价格历史；一直读不到请联系值班同事。">{coverageUnknown ? "UVT 价格暂时读不到，兑付覆盖率也读不准" : "UVT 价格暂时读不到"}</Conclusion>
@@ -804,9 +810,11 @@ function G3MarketEditor() {
           ? <Conclusion state="warn" hint={allowed("finprod_g3_write") ? "在「运行方式」里首次配置自动按日推进，批准后启用。" : "请有修改权限的同事在「运行方式」首次配置自动按日推进。"}
             explain={`没有排程时价格不会自动切换。「今天 D${curDay}」是后端算出的当前生效日：固定的那天 > 上次推进记下的那天 > 都没有时按 UTC 星期几，所以没推进过时它每天会变，但现价不跟着变。`}>
             自动推进还没配置，现价 {price(overview.currentPrice)} USDT 不会自动切换</Conclusion>
+          : lastFailed
+            ? <Conclusion state="warn" hint="原因在「运行方式」的排程执行情况里。">最近一次排程执行失败，现价 {price(overview.currentPrice)} USDT</Conclusion>
           : pinned
             ? <Conclusion state="neutral" icon={PinIcon}>价格固定在 {pinV.trim().toUpperCase()}，现价 {price(overview.currentPrice)} USDT，不自动切换</Conclusion>
-            : <Conclusion state="neutral" icon={CalendarRange} explain="这句话只说配置：没有暂停、没有固定、排程已配置。页面看不到排程最近一次有没有真的执行，现价和计划价可以不同。">排程已配置，今天是 D{curDay}，现价 {price(overview.currentPrice)} USDT</Conclusion>;
+            : <Conclusion state="neutral" icon={CalendarRange} explain="没有暂停、没有固定、排程已配置。排程实际执行了没有，看「运行方式」里的排程执行情况；现价和计划价可以不同。">排程已配置，今天是 D{curDay}，现价 {price(overview.currentPrice)} USDT</Conclusion>;
 
   const historyLatest = historyPoints.at(-1)?.sampledAt;
   // 横轴只写时刻；24 小时窗口里时刻撞上时才带日期，保证每格名字不同。
@@ -931,7 +939,7 @@ function G3MarketEditor() {
           </>} />
         <Stat tone={paused || runtimeStatus.tone === "warn" ? "warn" : "role-3"} icon={paused ? PauseCircle : pinned ? PinIcon : Activity} label="运行方式" value={runtimeStatus.label}
           sub={`今天 D${curDay} / 7 · ${scheduleMissing ? "自动推进未配置" : schedV}`}
-          explain="暂停优先，其次固定，再次按排程推进。这里只说配置，看不到排程最近一次是否真的执行。" />
+          explain="暂停优先，其次固定，再次按排程推进。排程实际执行了没有，看「运行方式」里的排程执行情况。" />
         <Stat tone="role-4" icon={Star} label="本周最高目标价" value={price(peak)} unit="USDT"
           sub={peakDay >= 0 ? `D${peakDay + 1}` : undefined}
           explain="七天计划里最高的目标价，不是历史最高成交价。提高目标价时，后端按改后的这个值复核兑付覆盖率。" />
@@ -952,7 +960,6 @@ function G3MarketEditor() {
           <p>看图：七天里目标价怎么走、今天在第几天、哪天最高。现价和今天计划价的对照在「最近 24 小时价格」。</p>
           <p>改计划不改现价。推进到某一天（或固定到这一天）时，现价才按它的目标价发布。</p>
           <p>表里只放决定价格的目标价；上涨概率和波动幅度目前不影响公布价，在页面下方「目前不生效的参数」。</p>
-          <p>待批的提高申请存在时，后端现在仍允许直接降低这一项，会让原审批单批准时冲突。</p>
         </>}>
         <Figure width={560} stack="wide" graphic={planFigure}>
           {planTable}
@@ -1014,6 +1021,7 @@ function G3MarketEditor() {
               );
             })}
           </ConfigList>
+          <G3ScheduleResult read={scheduleRead} onRetry={() => void refresh()} retrying={refreshing} />
         </Panel>
       </div>
 
