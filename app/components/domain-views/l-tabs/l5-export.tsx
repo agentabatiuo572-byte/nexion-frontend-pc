@@ -85,7 +85,7 @@ function reportScopeParts(value: string): ScopeParts {
 /** 任务表的范围格：读不出的写「范围读不出」，原文收进问号里的技术信息。 */
 function ScopeCell({ scope }: { scope: string }) {
   const parts = reportScopeParts(scope);
-  if (parts.raw) return <span className="l5-scope-unread">范围读不出<Explain label="技术信息" content={<span data-mono="">{parts.raw}</span>} /></span>;
+  if (parts.raw) return <span className="l5-scope-unread">范围读不出<Explain label="技术信息" content={<><p>技术信息：排查时把下面这段发给技术同事。</p><p data-mono="">{parts.raw}</p></>} /></span>;
   return <Cell main={parts.main} sub={parts.sub} title={reportScopeText(scope)} />;
 }
 
@@ -803,7 +803,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
                 {listState === "ready" && otherTasks.map((t) => (
                   <Tr key={t.id}>
                     <Td><Cell main={taskTitle(t, exportTypeText)} sub={<span data-mono="">{t.id}</span>} title={`${taskTitle(t, exportTypeText)} · ${t.id} · ${taskSource(t)}`} /></Td>
-                    <Td grow><ScopeCell scope={t.scope} /></Td>
+                    <Td className="l5-scope"><ScopeCell scope={t.scope} /></Td>
                     <Td grow><Cell main={operatorCopyText(t.fields)} sub={`${t.pii ? "含隐私 · " : ""}${t.mask === "—" ? "不含隐私" : MASK_LABEL[t.mask]}`} title={operatorCopyText(t.fields)} /></Td>
                     <Td align="right"><Cell num main={rowsText(t.rows)} /></Td>
                     <Td><TaskStatusTag task={t} unknown={recoveryIds.has(t.id)} /></Td>
