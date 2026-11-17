@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import Link from "next/link";
 import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, SearchCheck, Server, User, Workflow } from "lucide-react";
 import {
@@ -209,7 +210,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
               : expiredMissing ? { tone: "neutral", label: "没有建成", line: "查询确认申请没有建成，也没有审批单，可以解除。" } : undefined,
           actions: <>
             {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
-            {!created && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "UNKNOWN" && access.canSubmit && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
+            {!created && access.canSubmit && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
             {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
             {expiredMissing && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           </>,
@@ -322,6 +323,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => { ctx.releaseE4Pending(releasing); setReleasing(null); }}
       explain="已超过 24 小时，查询确认这次申请没有建成：系统里没有它，或它失败后已整体撤销，也查不到审批单。确认时会再查一次，结果有变或查到审批单就不解除。解除后这单可以重新处理，系统按这单现在的状态校验。" />}
     {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} facts={<Fact k="订单">{closing.orderNo}</Fact>}
+      offer={eCommandClosureOffer(ctx.e4InvestigationResults[closing.commandKey], closing.expiresAt <= Date.now())}
       onClose={() => setClosing(null)} onSubmit={async evidence => { await ctx.checkE4Investigation(closing, evidence); setClosing(null); }} />}
   </>;
 }
