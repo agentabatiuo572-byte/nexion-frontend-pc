@@ -26,13 +26,17 @@ import {
 
 const CHANNEL_NAME: Record<string, string> = { zalo: "Zalo", telegram: "Telegram", whatsapp: "WhatsApp", messenger: "Messenger", sms: "短信", x: "X", copy: "复制链接", poster: "分享海报", system: "系统分享" };
 const INTENT_NAME: Record<string, string> = { scheme: "打开应用", web: "打开链接", copy: "复制链接", poster: "生成海报", system: "系统分享" };
-/** App visibleChannels：启用的 scheme 类照常显示，点了复制文案并引导去该 App 粘贴；system 只有 H5 支持系统分享时显示；复制和海报是面板自带的。 */
+/**
+ * App（origin/test 3359a77e）：团队页邀请卡固定有「分享海报」「复制链接」；外部渠道只在分享海报里出现，
+ * 打开链接和打开应用两类合计取前 4 个（share-poster-sheet linkChannels），系统分享排在最后叫「更多」，
+ * 网页版要浏览器支持、原生 App 照常显示（share.ts visibleChannels）。scheme 点了复制文案并引导去该 App 粘贴。
+ */
 const IN_APP: Record<string, { text: string; tone: "ok" | "neutral" | "warn"; icon?: LucideIcon; explain: string }> = {
-  web: { text: "显示", tone: "ok", explain: "启用后出现在 App 分享面板里，点了用链接模板打开对应网页或短信。" },
-  scheme: { text: "显示", tone: "ok", explain: "启用后出现在 App 分享面板里。点了复制邀请文案，提示用户去这个 App 粘贴；不计入分享次数。" },
-  system: { text: "仅 H5", tone: "neutral", icon: Globe, explain: "只在 H5 并且浏览器支持系统分享时显示，原生 App 里不显示。" },
-  copy: { text: "面板自带", tone: "neutral", icon: Smartphone, explain: "App 分享面板固定有复制链接，这里关掉也还在。" },
-  poster: { text: "面板自带", tone: "neutral", icon: Smartphone, explain: "App 分享面板固定有分享海报，这里关掉也还在。" },
+  web: { text: "显示", tone: "ok", explain: "启用后出现在 App 的分享海报里，点了用链接模板打开对应网页或短信。打开链接和打开应用两类合计只显示前 4 个。" },
+  scheme: { text: "显示", tone: "ok", explain: "启用后出现在 App 的分享海报里。点了复制邀请文案，提示用户去这个 App 粘贴；不计入分享次数。打开链接和打开应用两类合计只显示前 4 个。" },
+  system: { text: "显示", tone: "ok", icon: Globe, explain: "启用后排在分享海报渠道的最后，叫「更多」，点了调起手机自带的分享。网页版要浏览器支持才显示。" },
+  copy: { text: "App 固定有", tone: "neutral", icon: Smartphone, explain: "App 团队页和分享海报里固定有「复制链接」，这里关掉也还在。" },
+  poster: { text: "App 固定有", tone: "neutral", icon: Smartphone, explain: "App 团队页固定有「分享海报」按钮，这里关掉也还在。" },
 };
 const SAMPLE_CODE = "AB12CD";
 
@@ -173,6 +177,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const previewChannel = webChannels.find((channel) => channel.key === previewKey) ?? webChannels.find((channel) => channel.enabled) ?? webChannels[0];
   const assembled = previewChannel && link ? assemble(previewChannel.textTemplate, previewChannel.urlTemplate, link) : null;
   const visibleInApp = config.channels.filter((channel) => channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme"));
+  const systemInApp = config.channels.some((channel) => channel.enabled && channel.intentType === "system");
   const languages = config.interfaceLanguages;
   const onLanguages = INTERFACE_LANGUAGES.filter((language) => language.base || !languages || languages.includes(language.code));
   const h3 = reach("/growth/quest", "growth_h3_read");
@@ -202,19 +207,19 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       : error && !confirmOpen && <Notice tone="danger" title={original ? undefined : "没有保存"}>{error}</Notice>}
 
     <Panel title="分享链接和渠道" icon={Share2} tone="role-2" sub={`${config.channels.length} 个渠道 · 启用 ${config.channels.filter((channel) => channel.enabled).length} 个`}
-      explain="用户在 App 里点「邀请」「分享」时用这里的设置。外部渠道能不能打开还要看用户手机上有没有装对应应用。" >
+      explain="App 团队页的「复制链接」「分享海报」都用这里的分享链接；分享海报里的外部渠道按这里的设置显示，能不能打开还要看用户手机上有没有装对应应用。" >
       <div className="a3-with-preview">
         <div className="rd-form-stack">
           <div id="a3-sharing"><Field label="分享基础链接" help="App 把用户的邀请码直接接在后面，不自动补斜杠">
             {(control) => <Input {...control} aria-label="分享基础链接" placeholder="https://… 结尾通常是 / 或 =" value={config.baseUrl} disabled={fieldsLocked} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} />}
           </Field></div>
           {config.channels.length === 0 ? <Notice tone="warn" title="还没有设置分享渠道" action={canWrite && <Button size="sm" disabled={fieldsLocked} onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>填入推荐的 9 个渠道</Button>}>
-            App 分享面板里只有自带的复制链接和海报。<KeepText text="填入推荐渠道后要保存才生效。" />
+            App 里只有固定的复制链接和分享海报，海报里没有外部渠道。<KeepText text="填入推荐渠道后要保存才生效。" />
           </Notice> : <Table label="分享渠道">
             <thead><tr><Th>渠道</Th><Th>启用</Th><Th>在 App 里</Th><Th>文案模板</Th><Th>链接模板</Th></tr></thead>
             <tbody>
               {config.channels.map((channel, index) => {
-                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 分享面板里。" } : IN_APP[channel.intentType];
+                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 的分享海报里。" } : IN_APP[channel.intentType];
                 const name = CHANNEL_NAME[channel.key] ?? channel.key;
                 return <Tr key={channel.key} selected={previewChannel?.key === channel.key}>
                   <Td><Cell main={name} sub={INTENT_NAME[channel.intentType] ?? "未知方式"} /></Td>
@@ -232,7 +237,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {preview("分享", <>
           <dl className="a3-preview-rows">
             <div><dt>分享出去的链接</dt><dd>{link ? <span className="a3-preview-link">{config.baseUrl}<mark>{SAMPLE_CODE}</mark></span> : <span className="a3-preview-empty">没有链接，App 里分享按钮不可用</span>}</dd></div>
-            <div><dt>分享面板里的外部渠道</dt><dd>{visibleInApp.length ? visibleInApp.map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、") : "没有"}<span className="a3-preview-sub">另外固定有复制链接、分享海报</span></dd></div>
+            <div><dt>分享海报里的外部渠道</dt><dd>{visibleInApp.length ? visibleInApp.slice(0, 4).map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、") : "没有"}{systemInApp && "，最后是「更多」"}<span className="a3-preview-sub">{visibleInApp.length > 4 ? `只显示前 4 个，另外 ${visibleInApp.length - 4} 个不显示；` : ""}另外固定有保存图片、复制链接</span></dd></div>
           </dl>
           {webChannels.length > 0 && <>
             <Segments label="看哪个渠道" value={previewChannel?.key ?? ""} onChange={(value) => setPreviewKey(String(value))} items={webChannels.map((channel) => ({ value: channel.key, label: CHANNEL_NAME[channel.key] ?? channel.key }))} />
