@@ -10,7 +10,7 @@ import { queryM4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -403,7 +403,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
             mCommands.forget(record.fingerprint, record.commandKey); syncPending();
             closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
             await readCurrent();
-          }
+          } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}
 
 
