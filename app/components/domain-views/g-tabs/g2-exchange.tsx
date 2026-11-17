@@ -1083,7 +1083,7 @@ function G2ExchangePage() {
         <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle}
           tone={switchUnread === "absent" ? "neutral" : switchUnread || swap.emergencyPaused ? "warn" : "ok"}
           value={switchUnread === "absent" ? "—" : switchUnread === "missing" ? "没有设置" : switchUnread === "invalid" ? "设置有误" : !swap.emergencyPaused ? "开着" : "已暂停"}
-          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "兑换现在是停的" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
+          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "按关闭处理" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
           explain={switchUnread === "absent" ? "这次没读到兑换开关的状态，到「紧急停用开关」看。"
             : switchUnread ? "「紧急停用开关」里的兑换开关读不出开或关，兑换按关闭处理。"
             : "和「紧急停用开关」里的兑换开关是同一个。"} />
