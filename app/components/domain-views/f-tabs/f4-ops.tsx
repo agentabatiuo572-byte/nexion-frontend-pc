@@ -23,32 +23,32 @@ import { FReleaseButton } from "./f-release";
 import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
-import { fConfigSpec } from "../a-tabs/a2-f-config";
 
-/**
- * 没有确认快照的旧申请：原记录存的是「动作 · 配置键」和「键=值」，显示时换成页面上这一项的名字（和 A2 同一张表），
- * 配置键不上屏；记录里存的值不改。整批改动按「名字 原值 → 新值」逐项写。
- */
+type Section = "pool" | "quota" | "board";
+const SECTIONS: readonly Section[] = ["pool", "quota", "board"];
+
 /** 改动列的值补上单位（比例 %、金额 USDT），只给纯数字补，读到的已带单位或「未配置」原样写。 */
 function withUnit(key: string | undefined, value: string) {
   const unit = key === "F.pool.ratio" ? "%" : key === "F.pool.monthlyCap" || key === "F.leaderboard.poolUsd" ? " USDT" : "";
   return unit && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${unit === "%" ? value.trim() : decimalText(value)}${unit}` : value;
 }
 
-function legacyF4(spec: ProposeSpec) {
+/**
+ * 没有确认快照的旧申请：原记录存的是「动作 · 配置键」和「键=值」。显示时换成本页确认框里这一项的名字（nameOf），
+ * 配置键不上屏；记录里存的值不改。整批改动按「名字 原值 → 新值」逐项写。
+ */
+function legacyF4(spec: ProposeSpec, nameOf: (key: string) => string | undefined) {
   const keys = spec.obj.split(",");
-  const items = keys.map((key) => fConfigSpec(key)?.item);
+  const names = keys.map(nameOf);
+  if (keys.length === 1) return { name: names[0] ?? spec.action.replace(/ · F\.[\w.]+$/, ""), change: `${withUnit(keys[0], spec.before)} → ${withUnit(keys[0], spec.after)}` };
+  const items = names.map((name) => name?.replace(/^调整/, ""));
   const pairs = (text: string) => new Map(text.split(" / ").flatMap((part) => { const m = /^(F\.[\w.]+)=(.*)$/.exec(part.trim()); return m ? [[m[1], m[2]] as const] : []; }));
-  if (keys.length === 1) return { name: fConfigSpec(keys[0], spec.after)?.action ?? spec.action.replace(/ · F\.[\w.]+$/, ""), change: `${withUnit(keys[0], spec.before)} → ${withUnit(keys[0], spec.after)}` };
   const before = pairs(spec.before), after = pairs(spec.after);
   return {
     name: items.every(Boolean) ? `调整${items.join("、")}` : `调整 ${keys.length} 项设置`,
     change: keys.map((key, index) => `${items[index] ?? "其他设置"} ${withUnit(key, before.get(key) ?? "—")} → ${withUnit(key, after.get(key) ?? "—")}`).join("；"),
   };
 }
-
-type Section = "pool" | "quota" | "board";
-const SECTIONS: readonly Section[] = ["pool", "quota", "board"];
 
 export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommissions: () => void }) {
   const [section, setSection] = useState<Section>("pool");
@@ -62,6 +62,11 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const canApprove = ctx.can("network_f4_ambassador_approve");
   const canReview = ctx.can("network_f4_ambassador_material_review") || ctx.can("network_f4_ambassador_finance_review");
   const readOnly = !canWrite && !canFund && !canControl && !canApprove && !canReview && !ctx.canSubmitTeamApproval("F4");
+  // 旧申请的名字取本页确认框的标题（页面打开调整框时也这样取）；本页没有这一项的确认框时不猜。
+  const legacyName = (key: string) => {
+    if (!data) return undefined;
+    try { return f4Confirmation(ctx, { action: key, overview: data, policy: ctx.f4AmbassadorPolicy }).name; } catch { return undefined; }
+  };
   const recoveries: NonNullable<Parameters<typeof ctx.openActionConfirm>[0]["f4Recovery"]>[] = [
     ...ctx.f4Proposals.map(original => ({ kind: "proposal" as const, original })),
     ...ctx.f4PolicyWrites.map(original => ({ kind: "policy" as const, original })),
@@ -70,7 +75,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     const original = record.original;
     const spec = record.kind === "proposal" ? record.original.spec : undefined;
     const confirm = original.f4Snapshot ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
-    const legacy = spec && legacyF4(spec);
+    const legacy = spec && legacyF4(spec, legacyName);
     const snapshot = original.f4Snapshot;
     const form = confirm?.businessForm;
     const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${decimalText(value)} USDT` : value;
