@@ -1953,7 +1953,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {help?.whatIf?.(value)}
                 {loosening && !RELEASE_AFFECTS_EARNINGS.has(key) && "保存时仍检查兑付覆盖率，低于红线或无法读取时不能保存。"}
                 {/* 放大资金流出方向的告知:真正的拦截在服务端,本页没有覆盖率数据,不做客户端预检。不影响收益的几项写在上一句。 */}
-                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}{approvalMode ? "提交和批准时都检查兑付覆盖率，低于红线不能通过。" : "保存时检查兑付覆盖率，低于红线不能保存。"}</span></span>}
+                {loosening && RELEASE_AFFECTS_EARNINGS.has(key) && <span className="rd-diff-note" data-tone="warn" data-proof="k1-release-loosen-warning"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{key === "duplicateAccountFreezeFrom" ? "已有余额可能恢复提现，新增收益也可能不再锁定。" : "这项调整可能增加可提现收益。"}{approvalMode ? "提交、批准时兑付覆盖率都不能低于红线。" : "保存时检查兑付覆盖率，低于红线不能保存。"}</span></span>}
               </>}
               error={limits ? fieldError(problem, typed, "value") : undefined}>
               {limits && range
