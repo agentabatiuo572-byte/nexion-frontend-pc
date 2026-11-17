@@ -609,6 +609,8 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-pending-who { color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 .h3-pending-ticket { color: var(--rd-text-3); }
 .h3-pending-lines { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-3) 0; padding: var(--rd-space-2) var(--rd-space-3); border-left: 2px solid var(--rd-warn); border-radius: 0 var(--rd-radius-control) var(--rd-radius-control) 0; background: var(--rd-warn-bg); }
+.h3-pending-lines[data-named] { grid-template-columns: minmax(0, max-content) minmax(0, 1fr); align-items: center; column-gap: var(--rd-space-3); }  /* 月度挑战：主题一列，标签对齐 */
+.h3-pending-lines[data-named] > .h3-pending-label { max-width: 16em; overflow-wrap: anywhere; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .h3-phase[data-locked] { border-color: var(--rd-warn); }
 .h3-phase-key .rd-tag { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }  /* 标签跟编号同一行同字号，倍率格不被撑高 */
 .h3-card-proposed { color: var(--rd-warn); font-weight: var(--rd-weight-medium); }
