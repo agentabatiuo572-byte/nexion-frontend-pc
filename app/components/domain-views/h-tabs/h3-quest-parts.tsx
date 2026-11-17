@@ -251,6 +251,13 @@ export function submittedText(submittedBy: string | null, submittedAt: string | 
   return `${[submittedBy, at].filter(Boolean).join(" · ")} 提交${at && zone ? `（${businessZone().label}）` : ""}`;
 }
 
+/** 标签说明的第一句：提交时的原值和申请值；原值是后端的「没设置」标记时是第一次设置。 */
+export function pendingChangeText(approval: H3PendingApproval, format: (value: string) => string) {
+  const after = approval.proposedValue == null ? "—" : format(approval.proposedValue);
+  if (approval.currentValue === "__MISSING__") return `第一次设置，申请改成 ${after}。`;
+  return `提交时是 ${approval.currentValue == null ? "—" : format(approval.currentValue)}，申请改成 ${after}。`;
+}
+
 /** 待审批标签：说明里写申请内容、谁什么时候提交、单号；单号只在这里。 */
 export function backendPendingTag(approval: H3PendingApproval | H3PendingMissionCreation, change: ReactNode, auditHref?: string) {
   return <StatusTag tone="warn" icon={Clock3} explain={<>
@@ -278,11 +285,10 @@ export function H3PendingLine({ approval, format, auditHref, label }: { approval
     </span>;
   }
   // 现在的值就在这一项旁边，行里只写申请改成什么；提交时的原值放说明里。
-  const before = approval.currentValue == null ? "—" : format(approval.currentValue);
   const after = approval.proposedValue == null ? "—" : format(approval.proposedValue);
   return <span className="h3-pending" data-kind="pending">
     {label && <span className="h3-pending-label">{label}</span>}
-    {backendPendingTag(approval, `提交时是 ${before}，申请改成 ${after}。`)}
+    {backendPendingTag(approval, pendingChangeText(approval, format))}
     <span>申请改成 <b className="h3-pending-change">{after}</b></span>
     <span className="h3-pending-who">{submittedText(approval.submittedBy, approval.submittedAt)}</span>
     {auditHref && <Link className="rd-link" href={auditHref} prefetch={false}>看审批单</Link>}

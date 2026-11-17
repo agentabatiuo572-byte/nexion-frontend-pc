@@ -35,7 +35,7 @@ import {
   TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, legacyAssetText, mulDecimal,
   acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
-  H3CreationList, H3PendingLine, backendPendingTag, lockedTag,
+  H3CreationList, H3PendingLine, backendPendingTag, lockedTag, pendingChangeText,
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
 import { H3RegionPanel, REGION_APPROVER, useH3RegionPolicy } from "./h3-region-policy";
@@ -847,7 +847,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (!lock) return pendingOf(key) ? pendingTag() : null;
     if (lock.ticketId == null) return lockedTag();
     const format = pendingFormat(key);
-    return backendPendingTag(lock, `提交时是 ${lock.currentValue == null ? "—" : format(lock.currentValue)}，申请改成 ${lock.proposedValue == null ? "—" : format(lock.proposedValue)}。`, auditHref(key));
+    return backendPendingTag(lock, pendingChangeText(lock, format), auditHref(key));
   };
   const pendingLine = (key: string, label?: string) => {
     const lock = backendLock(key);
