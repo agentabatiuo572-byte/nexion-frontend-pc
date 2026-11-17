@@ -371,6 +371,8 @@ export type K3Hit = {
   dimension: string;
   action: RuleAction;
   reason: string;
+  /** Current joined rule condition, not the condition captured when the hit occurred. */
+  conditionText?: string | null;
   timeText: string;
 };
 export type WithdrawRuleOverview = {
@@ -1300,6 +1302,7 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
     dimension: requiredK3String(row.dimension, `${path}.dimension`),
     action: requiredK3RuleAction(row.action, `${path}.action`),
     reason: requiredK3String(row.reason, `${path}.reason`, true),
+    conditionText: row.conditionText == null ? row.conditionText : requiredK3String(row.conditionText, `${path}.conditionText`, true),
     timeText: requiredK3String(row.timeText, `${path}.timeText`),
   }));
   const sources = data.sources === undefined
