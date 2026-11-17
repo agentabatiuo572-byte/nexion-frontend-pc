@@ -155,7 +155,8 @@ function roundedMoneyMatches(display: number, raw: number, field: string) {
 
 function authoritativeRatio(numerator: number, denominator: number): number {
   if (denominator === 0) return numerator === 0 ? 0 : 1;
-  return Math.round((numerator / denominator) * 10_000) / 10_000;
+  // J1 rounds the percentage to four places before B5 converts it to a ratio.
+  return Math.round((numerator / denominator) * 1_000_000) / 1_000_000;
 }
 
 function authoritativePercentage(numerator: number, denominator: number): number {
@@ -311,13 +312,15 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   const ratioReserveUsdt = num(bankrun.ratioReserveUsdt, "bankrun.ratioReserveUsdt");
   roundedMoneyMatches(withdraw24hUsdt, ratioWithdraw24hUsdt, "bankrun.withdraw24hUsdt");
   roundedMoneyMatches(reserveUsdt, ratioReserveUsdt, "bankrun.reserveUsdt");
-  if (ratioReserveUsdt === 0) {
-    if (ratioCalculable || ratio24h !== null) invalid("bankrun.ratio24h");
+  if (!ratioCalculable) {
+    // Pre-J1 responses used null for zero reserves; retain the server's value.
+    if (ratioReserveUsdt !== 0 || ratio24h !== null) invalid("bankrun.ratio24h");
     const expectedBankrunLight = ratioWithdraw24hUsdt > 0 ? "red" : "unavailable";
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   } else {
-    if (!ratioCalculable || ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
-    close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), 0.00001, "bankrun.ratio24h");
+    if (ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
+    // Legacy ratios rounded to four places; allow that half-unit plus J1's finer rounding.
+    close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), ratioReserveUsdt > 0 ? 0.000051 : 0.00000001, "bankrun.ratio24h");
     const expectedBankrunLight = ratio24h * 100 >= redPct ? "red" : ratio24h * 100 >= yellowPct ? "yellow" : "green";
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   }

@@ -1,5 +1,6 @@
 import { createA2CommandKey } from "./a2-client";
 import { growthRequest, parseH7Voucher, validateH7VoucherWrite, type H7Voucher } from "./h-client";
+import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -50,6 +51,7 @@ export function requireH7Actor(adminId: number, write: boolean): AdminSession {
 }
 
 export function createH7VoucherMutation(session: AdminSession, context: H7DirectContext, voucher: H7Voucher, reason: string): H7DirectMutation {
+  if (context.kind !== "status") validateH7VoucherMoneyPrecision(context.values);
   const voucherInput: Omit<H7Voucher, "splittable"> & { splittable?: boolean } = { ...voucher };
   // 57ecd268 fixes preservation when omitted; explicitly resending historical true
   // is still rejected. Keep omission on both backends and retain exact retry bytes.

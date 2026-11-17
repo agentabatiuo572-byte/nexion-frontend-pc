@@ -8,6 +8,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
+import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
 
 interface ApiResult<T> {
   code: number;
@@ -722,8 +723,9 @@ export async function fetchH7Vouchers(): Promise<H7Overview> {
   return { vouchers, skus, stats };
 }
 
-export function validateH7VoucherWrite(voucher: { splittable?: boolean }) {
+export function validateH7VoucherWrite(voucher: { splittable?: boolean; type?: string; amountUSD?: number | string | null; minPurchaseUSD?: number | string | null; maxDiscountUSD?: number | string | null }) {
   if (voucher.splittable === true) throw new Error("H7_VOUCHER_SPLITTABLE_RETIRED");
+  validateH7VoucherMoneyPrecision(voucher);
 }
 
 export async function createH7Voucher(voucher: Record<string, any>, reason: string) {
