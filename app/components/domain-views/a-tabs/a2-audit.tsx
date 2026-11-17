@@ -129,7 +129,9 @@ const HIST_TONE: Record<string, StateTone> = { pending: "warn", approved: "ok", 
 
 const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
 const RETIRED_OPERATION_COPY = "此操作已退役，不能批准或重新发起；保留原申请和历史记录，待审申请可按原权限驳回或撤回。";
+/** 后端给 coverageCheckOnApproval 的三类单：K1 解除误判、判定为正常；J1 紧急开关恢复；大使申请批准（另有一句）。低于红线时各自什么不变按类写（OpsAuditCenterService.toTicket）。 */
 const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
+const J1_RESTORE_COVERAGE_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，开关保持关闭，业务继续暂停。";
 const PENDING_LOCK = "这张单有一次操作结果未知，先到页面上方核对";
 const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
@@ -145,13 +147,15 @@ const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不
 function approvalCoverageCopy(w: A2OperationRow) {
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "批准时系统会重新核对材料、核验结论、认可金额和兑付覆盖率；有一项不满足就不执行，审批单继续待处理，申请和预算额度不变。"
-    : COVERAGE_ON_APPROVAL_COPY;
+    : w.operationCode === "j1_gate_resume" ? J1_RESTORE_COVERAGE_COPY : COVERAGE_ON_APPROVAL_COPY;
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
   if (["a6_role_status_update", "a6_role_disable", "a6_role_delete", "a6_role_grants_update"].includes(w.operationCode ?? ""))
     return "另一位有审批批准权限和对应业务权限的管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
+  // K1RiskApproval.validateChecker：有效超级管理员且有审批批准权限，不能是提交人。
+  if (w.operationCode === "k1_release_param" || w.operationCode === "k1_earnings_release") return "另一位有审批批准权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
   if (w.operationCode === "h5_streak_milestone" || w.operationCode === "h5_power_up_config" || w.operationCode === "h5_earn_milestone") return "另一位有审批批准权限的超级管理员";
@@ -315,6 +319,16 @@ function approvalRefusedText(operationCode: string | null | undefined, cause: un
   // F 域配置（放宽方向）和 F5 补发：后端在改之前拒（OpsTeamService.updateUiConfig 等、F5CommissionService.reissueInternal），单子和锁都不动。
   if (code === "COVERAGE_BELOW_REDLINE" && F_CONFIG_CODES.includes(operationCode ?? "")) return "兑付覆盖率低于红线，这次批准没有执行，设置没有改；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
   if (code === "COVERAGE_BELOW_REDLINE" && operationCode === "f5_commission_reissue") return "兑付覆盖率低于红线，这次补发没有执行，一笔都没补；审批单还是待审批。等覆盖率恢复后再批准，或驳回。";
+  // K1 两类：后端在改之前拒（RiskReleaseParamsService.applyApproved、EarningsReleaseService.manualReleaseOnce），单子和锁都不动。
+  if (operationCode === "k1_release_param" || operationCode === "k1_earnings_release") {
+    const kept = operationCode === "k1_release_param" ? "规则没有改" : "钱没有动";
+    if (code === "K1_RELEASE_PARAM_STALE") return "这项规则在提交后被别人改过，这次批准没有执行，规则没有改；审批单还是待审批。请驳回，或请发起人撤回后重新提交。";
+    if (code === "K1_EARNINGS_RELEASE_STALE") return "这笔收益在提交后有变化，这次批准没有执行，钱没有动；审批单还是待审批。请驳回，或请发起人撤回后重新提交。";
+    if (code === "K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED") return "这笔收益已全部追回或状态已变，这次批准没有执行，钱没有动；审批单还是待审批。请驳回，或请发起人撤回。";
+    if (code === "COVERAGE_BELOW_REDLINE") return `兑付覆盖率低于红线，这次批准没有执行，${kept}；审批单还是待审批。等覆盖率恢复后再批准，或驳回。`;
+    if (code === "K1_COVERAGE_UNAVAILABLE") return `兑付覆盖率暂时读不到，这次批准没有执行，${kept}；审批单还是待审批。等能读到后再批准，或驳回。`;
+    return undefined;
+  }
   const f4 = operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout";
   if (!f4 && operationCode !== "f_commission_status") return undefined;
   if (code === "COVERAGE_BELOW_REDLINE") return f4 ? "兑付覆盖率低于红线，这次批准没有执行，钱没有动；审批单还是待审批。等覆盖率恢复后再批准，或驳回。"
@@ -454,6 +468,8 @@ function approvalTiming(w: A2OperationRow) {
   if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
   if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
   if (w.coverageCheckOnApproval) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
+  if (w.operationCode === "k1_release_param") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对规则没被改过、兑付覆盖率够，才改；点「驳回」原操作不执行。" };
+  if (w.operationCode === "k1_earnings_release") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对这笔收益没变、兑付覆盖率够，才放行；点「驳回」原操作不执行。" };
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
@@ -776,6 +792,50 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
   if (ambassador) return `区域大使申请 #${ambassador[1]}`;
   return w.obj;
 }
+/**
+ * K1 两类资金审批的前后摘要是后端建单时自己记的（RiskReleaseParamsService、EarningsReleaseService 的 previewApproval）：
+ * 拆成批准人要核对的几项，参数键和版本只进技术信息。格式对不上时返回 undefined，照原来的写法显示原文。
+ */
+type K1TicketView = { kind: "param"; key: string; name: string; from: string; to: string; versionFrom: string; versionTo: string }
+  | { kind: "release"; entryNo: string; userId: string; asset: string; net: string; source: string; sourceRef: string; bucket: string; coverage: string; redline: string };
+const K1_PARAM_SUMMARY = /^(duplicateAccountPendingFrom|duplicateAccountFreezeFrom) = (\d+)；版本 (\d+)$/;
+const K1_RELEASE_SUMMARY = /^收益 (.+?)；用户 (\d+)；(\S+) 净额 (\d+(?:\.\d+)?)；来源 ([^/；]+)\/(.*?)；(bonus_locked|pending_review) → withdrawable；当前覆盖率 (\d+(?:\.\d+)?)% \/ 红线 (\d+(?:\.\d+)?)%$/;
+const K1_SOURCE_NAMES: Record<string, string> = { TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" };
+function k1TicketView(w: { operationCode?: string | null; before: string; after: string }): K1TicketView | undefined {
+  if (w.operationCode === "k1_release_param") {
+    const b = K1_PARAM_SUMMARY.exec(w.before.trim()), a = K1_PARAM_SUMMARY.exec(w.after.trim());
+    return b && a && b[1] === a[1] ? { kind: "param", key: b[1], name: K1_APPROVAL_PARAM_NAMES[b[1]], from: b[2], to: a[2], versionFrom: b[3], versionTo: a[3] } : undefined;
+  }
+  if (w.operationCode !== "k1_earnings_release") return undefined;
+  const m = K1_RELEASE_SUMMARY.exec(w.before.trim());
+  return m ? { kind: "release", entryNo: m[1], userId: m[2], asset: m[3], net: m[4], source: m[5], sourceRef: m[6], bucket: m[7], coverage: m[8], redline: m[9] } : undefined;
+}
+/** 后端写的净额去掉了末尾 0：只补到两位、加千分位，不舍入。 */
+const k1Amount = (text: string) => { const [whole, frac = ""] = text.split("."); return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac.padEnd(2, "0")}`; };
+const k1Source = (code: string) => K1_SOURCE_NAMES[code.toUpperCase()] ?? `来源 ${code}`;
+const k1Bucket = (bucket: string) => bucket === "bonus_locked" ? "锁定奖励" : "审核中";
+/** 列表「变更」一格。 */
+function k1ChangeCell(v: K1TicketView) {
+  return v.kind === "param" ? { main: `${v.from} → ${v.to} 个账户`, sub: v.name }
+    : { main: `${k1Amount(v.net)} ${nexGridBrandText(v.asset)}`, sub: `${k1Source(v.source)} · 用户 ${userCode(v.userId)}` };
+}
+/** 抽屉和批准框里的几项：放的是哪一笔、多少、谁的；或改哪个阈值、从多少到多少。 */
+function K1TicketFacts({ v }: { v: K1TicketView }) {
+  return v.kind === "param" ? <>
+    <Fact k={v.name}><Change from={`${v.from} 个账户`} to={`${v.to} 个账户`} /></Fact>
+    <Fact k="批准后">{v.key === "duplicateAccountFreezeFrom" ? "新值生效：新增收益和这组账户现在能不能提现都按新值判断" : "新值生效：之后的新增收益按新值处理"}</Fact>
+  </> : <>
+    <Fact k="净额" lead tone="role-1" unit={nexGridBrandText(v.asset)}>{k1Amount(v.net)}</Fact>
+    <Fact k="用户"><span data-mono>{userCode(v.userId)}</span></Fact>
+    <Fact k="来源">{k1Source(v.source)} <span data-mono className="a2-code">{v.sourceRef}</span></Fact>
+    <Fact k="前后状态"><Change from={k1Bucket(v.bucket)} to="已放行" /></Fact>
+    <Fact k="提交时覆盖率">{`${v.coverage}%（红线 ${v.redline}%）`}</Fact>
+    <Fact k="批准后">只放行这一笔，不另发奖、不生成提现单；能否提现还看账户组和其他提现条件</Fact>
+  </>;
+}
+const k1Tech = (v: K1TicketView) => v.kind === "param" ? `参数键 ${v.key} ｜ 版本 ${v.versionFrom} → ${v.versionTo}` : `用户内部号 ${v.userId} ｜ 原状态 ${v.bucket}`;
+const K1_APPROVAL_CHECK = { param: "批准时先核对这项规则没被别人改过、兑付覆盖率够；不满足就不改，审批单留着待审批。",
+  release: "批准时先核对这笔收益没变、兑付覆盖率够；不满足就不放行，审批单留着待审批。" } as const;
 const COURSE_VALUE_TEXT: Record<string, Record<string, string>> = {
   status: { published: "已发布", draft: "草稿", archived: "已下架", PUBLISHED: "已发布", DRAFT: "草稿", SUPERSEDED: "历史版本" },
   sourceStatus: { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本", LEGACY_DRAFT: "旧草稿（无独立版本）" },
@@ -1859,7 +1919,27 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
     const amplifies = w.amplifies && !w.coverageCheckOnApproval;
-    const fund = fundSpec(w);
+    const k1 = k1TicketView(w);
+    const k1Spec: FundSpec | undefined = k1 && (k1.kind === "release" ? {
+      irreversible: true,
+      impact: "批准后这笔收益放行，能否提现还看账户组和其他提现条件。",
+      check: "核对用户、净额、来源和发起理由，理由写清依据或工单号。",
+      detail: "只放行这一笔，不另发奖、不生成提现单。",
+      coverageLead: "批准后这笔钱不再锁住",
+      coverageUnknown: "批准后这笔钱不再锁住，兑付覆盖率暂时读不到",
+      coverageCheck: K1_APPROVAL_CHECK.release,
+      facts: <K1TicketFacts v={k1} />,
+    } : {
+      irreversible: false,
+      impact: k1.key === "duplicateAccountFreezeFrom" ? "批准后新值生效，已有余额可能恢复提现。" : "批准后新值生效，可能增加可提现收益。",
+      check: "核对修改前后的值和发起理由，理由写清依据或工单号。",
+      detail: "",
+      coverageLead: "放宽后可能多放收益",
+      coverageUnknown: "放宽后可能多放收益，兑付覆盖率暂时读不到",
+      coverageCheck: K1_APPROVAL_CHECK.param,
+      facts: <K1TicketFacts v={k1} />,
+    });
+    const fund = fundSpec(w) ?? k1Spec;
     const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
     return {
       briefKind,
@@ -1924,7 +2004,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     action: <>取消执行 · {w.id} · {a2ActionText(w.action)}</>,
     effect: <>{subject(w)}{immediate}</>,
     detail: <>{w.retiredOperation ? "此操作已退役。驳回后保留历史记录，不能重新发起。" : "驳回后这张单结束，要做需重新发起。"}</>,
-    facts: ticketFacts(w, "reject"),
+    facts: ticketFacts(w, "reject", (() => {
+      const v = k1TicketView(w);
+      return v && (v.kind === "release" ? <Fact k="净额" lead tone="role-1" unit={nexGridBrandText(v.asset)}>{k1Amount(v.net)}</Fact>
+        : <Fact k={v.name}><Change from={`${v.from} 个账户`} to={`${v.to} 个账户`} /></Fact>);
+    })()),
     statedBrief: w.retiredOperation
       ? { impact: "改为已驳回，原操作不执行。", check: "理由写清驳回依据或工单号。" }
       : { impact: "改为已驳回，原操作不执行；可以重新发起。", check: "理由写清驳回依据或工单号。" },
@@ -2270,7 +2354,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   </TableMessage>
                 ) : qPageRows.map((w) => {
                   const batch = fBatchTicket(w);
-                  const change = batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
+                  const k1 = k1TicketView(w);
+                  const change = k1 ? k1ChangeCell(k1) : batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
                     : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
@@ -2478,6 +2563,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
         ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
+  const shownK1 = shown ? k1TicketView(shown) : undefined;
   const judgment: JudgmentRow[] = shown ? [
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
@@ -2485,6 +2571,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     { label: "要做什么", value: actionName(shown) },
     { label: "对象", value: objectNode(shown) },
+    ...(shownK1?.kind === "param" ? [{ label: "改动", value: <Change from={`${shownK1.from} 个账户`} to={`${shownK1.to} 个账户`} /> }]
+      : shownK1?.kind === "release" ? [{ label: "这笔收益", value: `${k1Amount(shownK1.net)} ${nexGridBrandText(shownK1.asset)} · ${k1Source(shownK1.source)} · 用户 ${userCode(shownK1.userId)}` }] : []),
     ...(shownF5Ids.length === 1 ? [{ label: "这笔奖励", value: <F5CurrentValue id={shownF5Ids[0]} /> }] : []),
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
@@ -2500,6 +2588,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "真实发钱，不能撤销。批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
     : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
       : shownFund?.kind === "f5Reissue" ? `真实补发，不能撤销。${shownCover?.check ?? ""}`
+        : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? `会让平台多付钱。${K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"]}`
         : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const ticketFooter = shown && (shownOwn || shownCanApprove || shownCanReject ? (
@@ -2563,7 +2652,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          {fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
+          {shownK1 ? <section className="a2-change-review" aria-label="完整变更内容">
+              <div className="a2-change-title">完整变更内容<Explain label="技术信息" content={k1Tech(shownK1)} /></div>
+              <Facts><K1TicketFacts v={shownK1} /></Facts>
+            </section>
+            : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />}
