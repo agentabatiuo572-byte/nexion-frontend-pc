@@ -54,8 +54,12 @@ function bankrunDimension(data: B5Radar): Dimension {
     // 出金压力到 70% 只提醒，不触发自动暂停：最多标「注意」，和下面写的「提醒」一致（DT-13）。
     : b.pressureLight === "red" ? "warn" : b.light === "green" ? "ok" : "neutral";
   const pressureText = b.pressureRatio === null ? "暂无法计算" : ratioPct(b.pressureRatio);
+  // 可用储备是 0 时，J1 和这页同一个算法：没有提现记 0%，有提现记 100%（TreasuryEmergencySignalFacadeAdapter.bankRunRatio）。
+  const noReserve = b.ratio24h !== null && b.ratioReserveUsdt === 0;
   const headline = b.ratio24h === null
-    ? (b.light === "red" ? <>可用储备为 <b>0</b>，近 24 小时有提现，按告警处理</> : <>近 24 小时没有提现，可用储备也是 0，提现压力无法计算</>)
+    ? (b.light === "red" ? <>可用储备为 <b>0</b>，近 24 小时有提现，按告警处理</> : <>近 24 小时没有提现，可用储备也是 0</>)
+    : noReserve && b.ratio24h === 0 ? <>提现压力 <b>0%</b>：近 24 小时没有提现，可用储备也是 0</>
+    : noReserve && b.light === "red" ? <>提现压力按 <b>{ratioPct(b.ratio24h)}</b> 算（可用储备是 0），达到红线 {red}</>
     : b.light === "red" ? <>提现压力 <b>{ratioPct(b.ratio24h)}</b>，达到红线 {red}</>
       : b.light === "yellow" ? <>提现压力 <b>{ratioPct(b.ratio24h)}</b>，达到黄线 {yellow}</>
         : b.pressureLight === "red" ? <>出金压力 <b>{pressureText}</b>，{b.pressureCalculable ? "达到 70% 提醒线" : "近 24 小时没有流入但有出金"}</>
@@ -77,7 +81,8 @@ function bankrunDimension(data: B5Radar): Dimension {
     level,
     headline,
     zero: b.ratio24h === 0,
-    quiet: b.ratio24h === null ? "无法计算" : <>{ratioPct(b.ratio24h)} <span className="b5-muted">· 黄线 {yellow} · 红线 {red}</span></>,
+    quiet: b.ratio24h === null ? "无法计算" : noReserve && b.ratio24h === 0 ? <>0% <span className="b5-muted">· 没有提现，可用储备也是 0</span></>
+      : <>{ratioPct(b.ratio24h)} <span className="b5-muted">· 黄线 {yellow} · 红线 {red}</span></>,
     body: b.ratio24h === null ? facts : (
       <Figure width={420} stack="wide" graphic={
         <ThresholdMeter label="提现压力和黄线、红线" rows={[{ key: "bankrun", label: "提现压力", value: b.ratio24h * 100, text: ratioPct(b.ratio24h), tone: b.light === "red" ? "danger" : b.light === "yellow" ? "warn" : "ok" }]}
@@ -85,8 +90,9 @@ function bankrunDimension(data: B5Radar): Dimension {
       }>{facts}</Figure>
     ),
     explain: <>
-      <p>提现压力 = 近 24 小时提现申请 ÷ 可用储备，只算 USDT。提现不含已失败、已拒绝、已取消的单；可用储备是已确认的储备账本净额。</p>
-      <p>黄线、红线和「紧急停用开关」共用（那边叫挤兑红线），在这里改，那边跟着变。是否自动暂停提现由紧急停用开关按它自己的统计判断，这页标红不一定马上暂停提现。</p>
+      <p>提现压力 = 近 24 小时提现申请 ÷ 可用储备，只算 USDT。提现申请含后来被拒、失败、取消的单。</p>
+      <p>可用储备是 0 时，没有提现记 0%，有提现记 100%。可用储备和兑付覆盖率用的是同一个数。</p>
+      <p>黄线、红线和「紧急停用开关」共用（那边叫挤兑红线），改这里那边跟着变。两边看同一个提现压力，到红线那边会自动暂停提现，可能比这页晚一会儿。</p>
       <p>出金压力 =（提现出金 + 佣金）÷ 近 24 小时全部流入，70% 是固定提醒线，只提醒，不自动处理。</p>
     </>,
   };
@@ -222,7 +228,7 @@ function coverageDimension(data: B5Radar): Dimension {
     ),
     explain: <>
       <p>和「资金与应付款总览」同一组数：储备 ÷ 应付款。低于红线标告警，低于健康线标注意。</p>
-      <p>这里的储备和提现压力用的可用储备算法不同，两个数不能直接比。</p>
+      <p>这里的储备和提现压力里的可用储备是同一个数，那边取到两位小数。</p>
     </>,
   };
 }
