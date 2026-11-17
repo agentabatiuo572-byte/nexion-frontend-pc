@@ -1,5 +1,13 @@
 import { formatAdminApiError } from "./error-messages";
 
+/** 24fa2815: only the persisted batch object is shortened; the original POST stays complete. */
+export async function fConfigObjectMatches(operation: string, original: string, returned: string): Promise<boolean> {
+  if (returned === original) return true;
+  if (operation !== "f_config_batch" || original.length <= 255 || !/^F\.batch:[0-9a-f]{64}$/.test(returned)) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(original));
+  return returned === `F.batch:${[...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 // 7bfde504/f4712255: batch entries use the same ordered authority/target mapping as single writes.
 const TEAM_RATE_KEYS = new Set(["directRoyaltyPct", "networkRoyaltyPct", "binaryPairRatePct", "maxCombinedOutflowPct", "minPayoutUsdt"]);
 const TEAM_WRITE_KEYS = new Set(["rankWindowDays", "hardwareQuotaPerRank"]);

@@ -1,4 +1,4 @@
-import { fConfigBatchPermissionIssue } from "./f-config-batch";
+import { fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { configApprovalAttempts, configApprovalOriginalInput } from "./withdrawal-config-approval";
@@ -92,10 +92,10 @@ function remember(original: FDomainAttempt) {
 const storeFor = (original: FDomainAttempt) => isFund(original) ? configApprovalAttempts : fCommands;
 const forget = (original: FDomainAttempt) => storeFor(original).forget(original.fingerprint, original.commandKey);
 
-function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
+async function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   // 111e00cd ticketMetadata includes persisted command.op for every F command.
   // Delegated ambassador descriptors rewrite visible action/before/after.
-  if (!ticket.mine || !original.spec || ticket.obj !== original.spec.obj || ticket.operationCode !== original.spec.command.op) {
+  if (!ticket.mine || !original.spec || ticket.operationCode !== original.spec.command.op || !await fConfigObjectMatches(original.spec.command.op, original.spec.obj, ticket.obj)) {
     throw new A2OutcomeUncertainError("原审批单与保存的操作对不上，请到操作记录核对。", original.commandKey);
   }
 }
@@ -110,7 +110,7 @@ export async function queryF4Proposal(adminId: number, original: FDomainAttempt)
     remember({ ...original, ticket: undefined, absent: true });
     return null;
   }
-  checkTicket(original, ticket);
+  await checkTicket(original, ticket);
   if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false });
   else forget(original);
   return ticket;
@@ -156,7 +156,7 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
     throw error;
   }
   remember({ ...original, received: true, ticket: undefined, absent: false });
-  checkTicket(original, ticket);
+  await checkTicket(original, ticket);
   if (recovering) return queryReceived(adminId, { ...original, received: true });
   remember({ ...original, received: true, ticket, absent: false });
   return ticket;
@@ -179,6 +179,8 @@ export async function releaseF4Proposal(adminId: number, original: FDomainAttemp
   if (!ticket) forget(original);
 }
 
-export function f4PendingFor(rows: A2OperationRow[], spec: ProposeSpec) {
-  return rows.find(row => row.status === "pending" && row.operationCode === spec.command.op && row.obj === spec.obj);
+export async function f4PendingFor(rows: A2OperationRow[], spec: ProposeSpec) {
+  for (const row of rows) {
+    if (row.status === "pending" && row.operationCode === spec.command.op && await fConfigObjectMatches(spec.command.op, spec.obj, row.obj)) return row;
+  }
 }

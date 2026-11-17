@@ -506,7 +506,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
     if (!f4Overview || f4Loading || f4Error) throw new Error("奖励池、名额和排行榜读取失败，请重新读取后再操作。");
-    if (f4PendingFor(f4ApprovalRows, spec)) throw new Error("OBJECT_ALREADY_PENDING");
+    if (await f4PendingFor(f4ApprovalRows, spec)) throw new Error("OBJECT_ALREADY_PENDING");
     try {
       const ticket = await sendF4Proposal(owner, slot, spec, f4Submission.current ?? mc?.f4Snapshot);
       setF4ApprovalRows(rows => [...rows, ticket]);
