@@ -225,7 +225,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         comparison: isCondition ? undefined : <div className="f1-policy-comparison">
           <Facts><Fact k={fieldLabel}><Change from={currentLabel} to={isF1FundReward(values.rtype) && !(values.amount ?? "").trim() ? `${values.rtype.toUpperCase()} · 金额还没填` : afterRewardLabel(values)} /></Fact></Facts>
           {!isCondition && isF1FundReward(editor.reward?.type) && isF1FundReward(values.rtype) && editor.reward!.type !== values.rtype
-            && <p className="f1-policy-note">换币种按 B1 现在的 UVT 价格精确折算，提交和批准时各重新判断一次是否变多。</p>}
+            && <p className="f1-policy-note">换币种按现在的 UVT 价格精确折算，提交和批准时各重新判断一次是否变多。</p>}
         </div>,
       } : undefined,
       recover: (reason, values) => submit(reason, values, "lookup"),

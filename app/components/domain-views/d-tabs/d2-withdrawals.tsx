@@ -1602,7 +1602,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const blocked = detailBlockedReason(row);
     if (blocked) return blocked;
     if (!developmentCapabilities?.simulateCooldownExpiry || !hasAuthority("finance_d2_withdrawal_approve")) return "当前账号或环境不能模拟冷却到期";
-    if (!developmentSimulationEligible(row)) return "只有 H1 阶段冷却中的已放行提现可以模拟到期";
+    if (!developmentSimulationEligible(row)) return "只有系统冷却中的已放行提现可以模拟到期";
     if (parseBusinessTime(row.holdUntil) <= Date.now()) return "这笔已到复查时间，无需模拟；请刷新查看系统复查结果";
     return undefined;
   }

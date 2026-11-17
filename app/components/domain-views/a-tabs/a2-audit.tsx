@@ -1071,8 +1071,10 @@ function fieldPairs(before: string, after: string): Array<[string, string, strin
 function deviceApprovalValue(value: string, operationCode?: string) {
   if (!["e5_device_activate", "e5_device_force_activate", "e5_device_deactivate", "e5_device_unbind"].includes(operationCode ?? "")) return value;
   const states: Record<string, string> = { ACTIVATED: "ACTIVE", ACTIVE: "ACTIVE", ONLINE: "ONLINE", BUSY: "BUSY", RUNNING: "RUNNING", OFFLINE: "OFFLINE", INVENTORY: "INVENTORY", RECYCLED: "RECYCLED", DEACTIVATED: "DEACTIVATED", UNBOUND: "UNBOUND" };
-  // 设备管理页把 INACTIVE 归在「待激活」；RETIRED、SUSPENDED 还没有定下的叫法，先写原值。
+  // 和设备管理页同一个叫法：INACTIVE 在「待激活」，SUSPENDED 是「已暂停」，RETIRED 是「已停用」下的「已退役」。
   if (value === "INACTIVE") return "待激活";
+  if (value === "SUSPENDED") return "已暂停";
+  if (value === "RETIRED") return "已停用（已退役）";
   const state = states[value];
   return state ? operatorDeviceStatus(state) : value;
 }

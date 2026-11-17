@@ -2489,7 +2489,7 @@ export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string,
     stableIdempotencyKey: commandKey, expectsData: true,
   });
   try { assertF1Overview(data); }
-  catch { throw new F1OutcomeUncertainError("操作结果不完整，请按原操作重试核对。", commandKey); }
+  catch { throw new F1OutcomeUncertainError("操作结果不完整，请按原请求重试核对。", commandKey); }
   return normalizeOverview(data as BackendOverview);
 }
 

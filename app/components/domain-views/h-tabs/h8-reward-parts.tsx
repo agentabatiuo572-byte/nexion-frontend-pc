@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass } from "lucide-react";
-import { Explain, Notice, StatusTag } from "@/app/components/rd";
+import { Explain, KeepText, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
 /** 后端金额是普通十进制串（最多 6 位小数）。去掉补的末尾 0，至少 2 位，整数带千分位；不经过浮点，不舍入。 */
@@ -71,7 +71,7 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
         <div className="h8-flow-body">
           <span className="h8-flow-title">风控筛选
             <Explain label="风控筛选拦什么" content={<>
-              <p>两种发放方式都拦：K2「拦截新人礼」、账户被标记，以及账户组被标记或冻结。</p>
+              <p><KeepText text="两种发放方式都拦：账户被标记的，账户组被标记或冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={["账户组被标记或冻结的，", "在「异常套利与刷量排查」被拦截新人礼的。"]} /></p>
               <p>现在是「{mode}」。{mode === "先过风险检查再发" ? "命中待复核风险的也先不发。" : "只跳过待复核这一层，上面这些照样拦。"}</p>
             </>} />
           </span>

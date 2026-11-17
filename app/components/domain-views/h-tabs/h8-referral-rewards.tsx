@@ -17,7 +17,7 @@ import Link from "next/link";
 import { ArrowLeftRight, Check, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import {
   BlockState, Button, Change, Conclusion, ConfigList, ConfigRow, DiffField, Explain, Fact, Facts, Field, Input,
-  IrreversibleTag, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
+  IrreversibleTag, KeepText, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
   type StateTone,
 } from "@/app/components/rd";
 import {
@@ -68,9 +68,12 @@ const WHO: Record<string, { who: string; per: string; icon: typeof Gift }> = {
 const APPROVER = "另一位超级管理员";
 const SETTLE_APPROVER = "另一位管理员";
 const MODE_HELP: Record<string, string> = {
-  risk_bucket: "命中待复核风险的新人先不发；K2「拦截新人礼」、账户或账户组被标记、冻结的也不发。",
-  direct: "只跳过待复核风险这一层；K2「拦截新人礼」、账户或账户组被标记、冻结的照样不发。",
+  risk_bucket: "命中待复核风险的新人先不发；账户或账户组被标记或冻结的、在「异常套利与刷量排查」被拦截新人礼的也不发。",
+  direct: "只跳过待复核风险这一层；账户或账户组被标记或冻结的、在「异常套利与刷量排查」被拦截新人礼的照样不发。",
 };
+/** 带菜单名的这一段整段换行，不在名字中间断开，也不把「的。」甩到下一行。 */
+const K2_NAME = ["账户或账户组被标记、冻结的，", "账户或账户组被标记或冻结的、", "在「异常套利与刷量排查」被拦截新人礼的。", "在「异常套利与刷量排查」被拦截新人礼的"];
+const modeHelp = (mode: string | undefined) => mode && MODE_HELP[mode] ? <KeepText text={MODE_HELP[mode]} phrases={K2_NAME} /> : undefined;
 
 /** 指定新人的结算条件（e6d5bdca 资格读取）：一句结论 + 批准后会怎样。读到的空值写未知，不推断。 */
 type EligibilityRead = { id: number; state: "loading" } | { id: number; state: "ready"; data: H8SettlementEligibility } | { id: number; state: "error"; message: string };
@@ -397,7 +400,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               </Field>
               <Facts>
                 <Fact k="改后">{directionTag(value) ?? "—"}</Fact>
-                <Fact k="改后怎么筛">{MODE_HELP[value] ?? MODE_HELP[rawCurrent]}</Fact>
+                <Fact k="改后怎么筛">{modeHelp(value) ?? modeHelp(rawCurrent)}</Fact>
                 <Fact k="生效时间"><Change from={gateNow} to={dir === "loosen" ? "批准那一刻" : "保存那一刻"} /></Fact>
                 <Fact k="等结算的注册">{resetFact(dir === "loosen" ? "批准" : "保存")}</Fact>
               </Facts>
@@ -752,7 +755,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           explain="生效时间起注册、已开钱包、还没结算、也没被风控拦下的新人，有没有邀请人都算。奖励停用时照样统计，但不能结算。" />
         <Stat icon={ShieldAlert} tone="role-3" label="被风控拦下" value={countText(data.blockedByK2)} unit="位"
           explain={<>
-            <p>生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：K2「拦截新人礼」、账户或账户组被标记、冻结的。</p>
+            <p><KeepText text="生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：账户或账户组被标记、冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={K2_NAME} /></p>
             <p>发放方式是「先过风险检查再发」时，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
           </>} />
         <Stat icon={Check} tone="role-3" label="已结算" value={countText(data.settled)} unit="位"
@@ -778,7 +781,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             <ConfigRow name="发放方式"
               what="结算时怎么过风控"
               when={`改成「符合资格就直接发」要${APPROVER}批准；改回确认后立即保存`}
-              effect={MODE_HELP[String(data.params["newcomer.lockMode"])]}
+              effect={modeHelp(String(data.params["newcomer.lockMode"]))}
               note="两种方式都保留首购冻结；已冻结的礼包按当初的方式解冻。"
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />

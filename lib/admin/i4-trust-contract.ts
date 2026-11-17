@@ -22,7 +22,7 @@ export function parseI4PublishedSnapshot(value: unknown): TrustPublishedSnapshot
         return typeof item.key === "string" && typeof item.cleared === "boolean"
           && (item.reason === null || typeof item.reason === "string");
       }))) {
-    throw new Error("I4 返回数据格式异常，请刷新重试");
+    throw new Error("数据暂时读不出来，请刷新重试。");
   }
   return row as TrustPublishedSnapshotView;
 }
@@ -33,7 +33,7 @@ export function parseI4SectionVersion(value: unknown): TrustSectionVersionView {
   if (!row || !["sectionKey", "version", "description", "structure", "status", "operator", "updatedAt"].every(key => typeof row[key] === "string")
     || !Number.isSafeInteger(row.revision) || Number(row.revision) < 0 || !Array.isArray(row.fields)
     || !row.fields.every(field => field && typeof field === "object" && ["key", "label", "value"].every(key => typeof field[key] === "string"))) {
-    throw new Error("I4 返回数据格式异常，请刷新重试");
+    throw new Error("数据暂时读不出来，请刷新重试。");
   }
   return row as TrustSectionVersionView;
 }

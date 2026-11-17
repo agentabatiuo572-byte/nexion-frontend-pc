@@ -5,7 +5,7 @@ import { CheckCircle2, Clock3, KeyRound, RefreshCw, ShieldAlert } from "lucide-r
 import { BlockState, Button, Cell, Change, Check, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, Fold, IconButton, KeepText, Modal, Notice, NumberInput, PageTabs, Pager, Panel, ReleaseBody, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTimeCompact, businessZone, businessZoneText } from "@/lib/admin/business-time";
-import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts, retryPaymentPolicy, releaseRejectedPaymentPolicy, isCompletePaymentPolicy, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
+import { PaymentPasswordApiError, fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts, retryPaymentPolicy, releaseRejectedPaymentPolicy, isCompletePaymentPolicy, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
 import { paymentPolicyFields, trimPaymentReason, type PaymentPolicy, type PaymentPolicyValues, type PaymentPasswordStatus, type PaymentPasswordAttempts, type PaymentPolicyReceipt } from "@/lib/admin/payment-password-contract";
 import { PaymentSecurityList } from "@/app/components/payment-security/payment-security-list";
 import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
@@ -67,7 +67,8 @@ function PaymentPolicySection({ owner, canWrite, visible, onPendingChange, onBus
       if (!live.current) return;
       setReceipt(result);
       if (result.status !== "PENDING") { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); await load(); }
-    } catch (failure) { if (live.current) setError(failureText(failure)); }
+    // 结果未知由下面那条「上一笔规则调整结果未知」说，上方不再另起一条说同一件事。
+    } catch (failure) { if (live.current) setError(failure instanceof PaymentPasswordApiError && failure.unknownOutcome && pendingPaymentPolicy(owner) ? "" : failureText(failure)); }
     finally { mutation.current = false; onBusyChange?.(false); if (live.current) { setBusy(false); const next = pendingPaymentPolicy(owner); setPending(next); if (next) { setReviewing(false); setEditing(false); } onPendingChange?.(); } }
   }
   return <Panel aria-label="支付密码规则" title="支付密码规则" icon={KeyRound} explain="钱包余额付款和修改原支付密码共用错误次数。登录锁与钱包支付密码锁分开。" actions={<>{canWrite && <Button aria-label="调整支付密码规则" size="sm" disabledReason={loading ? "正在读取规则" : busy ? "正在提交" : editReason} onClick={() => { if (!policy) return; setValues({ maxAttempts: String(policy.values.maxAttempts), windowMinutes: String(policy.values.windowMinutes), lockMinutes: String(policy.values.lockMinutes) }); setReason(""); setConfirmed(false); setReceipt(null); setEditing(true); }}>调整规则</Button>}<IconButton aria-label="重新加载规则" disabled={loading || busy} onClick={() => { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); void load(); }}><RefreshCw size={16} /></IconButton></>}>
