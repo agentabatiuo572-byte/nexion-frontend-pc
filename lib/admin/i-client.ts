@@ -1248,8 +1248,41 @@ export type NotificationCampaignStats = {
   monthScheduled: number;
   monthDraft: number;
   criticalInflight: number;
-  avgReadRate: string;
-  weeklySwipe: string;
+  avgReadRate?: string | null;
+  weeklySwipe?: string | null;
+  basis?: {
+    asOf: string;
+    timeZone: string;
+    storageTimeZone: string;
+    monthFrom: string;
+    weekFrom: string;
+    rangeEndExclusive: string;
+    monthBasis: string;
+    notificationBasis: string;
+    deliveryFactsComplete: boolean;
+    knownSentCount: number;
+    knownReadCount: number;
+    weeklyReadCount: number | null;
+    weeklyReadKnownCount: number;
+    undatedReadCount: number;
+    weeklyReadAvailable: boolean;
+    weeklyReadBasis: string;
+    weeklySwipeAvailable: boolean;
+    weeklySwipeReason: string;
+  };
+};
+
+export type NotificationCampaignDeliveryFacts = {
+  source: string;
+  timeZone: string;
+  asOf: string;
+  complete: boolean;
+  reason: string | null;
+  sentCount: number | null;
+  readCount: number | null;
+  firstSentAt: string | null;
+  lastSentAt: string | null;
+  timeBasis: string;
 };
 
 export type NotificationCampaignRow = {
@@ -1262,7 +1295,9 @@ export type NotificationCampaignRow = {
   status: "draft" | "scheduled" | "sending" | "sent" | "failed" | "cancelled";
   schedule: string;
   sent: string;
-  read: string;
+  read?: string | null;
+  /** Incomplete facts leave sent as a legacy record value; absent facts identify legacy reads. */
+  deliveryFacts?: NotificationCampaignDeliveryFacts;
   bodyEn: string;
   bodyZh: string;
   bodyVi: string;

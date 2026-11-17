@@ -8,7 +8,7 @@ import { useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
 import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
-import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 
 export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
   kind: string;
@@ -51,15 +51,29 @@ export function CampaignStatusTag({ st }: { st: CampaignRow["st"] }) {
 }
 
 /** reach、sent、read 是后端的字符串，「-」和空不是 0。 */
-export const quantityText = (value?: string) => {
+export const quantityText = (value?: string | null) => {
   const raw = (value ?? "").trim();
   if (!/^\d+$/.test(raw)) return "—";
   return Number(raw).toLocaleString("en-US");
 };
 
+/** Unknown coverage cannot be presented as a full campaign total. The legacy value stays on row.sent for review. */
+export function campaignQuantity(row: CampaignRow, field: "sent" | "read" | "reach"): string {
+  if (!row.deliveryFacts || field === "reach" && row.st !== "sent") return quantityText(row[field]);
+  if (!row.deliveryFacts.complete) return "—";
+  const count = field === "read" ? row.deliveryFacts.readCount : row.deliveryFacts.sentCount;
+  return quantityText(count === null ? undefined : String(count));
+}
+
 /** 发送时间这一格：只有已排期的是时间，其余是后端写的状态说明。 */
 export function whenText(row: CampaignRow): string {
   if (row.st === "scheduled") return /^\d{4}-\d{2}-\d{2}T/.test(row.schedule) ? formatBusinessTimeCompact(row.schedule, row.schedule) : row.schedule || "—";
+  if (row.st === "sent" && row.deliveryFacts) {
+    if (!row.deliveryFacts.complete) return "—";
+    const first = formatBusinessTimeFull(row.deliveryFacts.firstSentAt, "—");
+    const last = formatBusinessTimeFull(row.deliveryFacts.lastSentAt, "—");
+    return row.deliveryFacts.sentCount === 1 ? first : `${first} – ${last}`;
+  }
   if (row.st === "draft") return "还没排期";
   if (row.st === "sending") return "正在写入用户通知";
   if (row.st === "sent") return "已发出";
@@ -158,7 +172,7 @@ export function CampaignCard({ row, kindLabel, selected, onOpen, actions }: {
       </button>
       <dl className="i3-card-facts">
         <div><dt>发给谁</dt><dd>{row.audience}</dd></div>
-        <div><dt>{reachLabel(row)}</dt><dd data-num="" data-empty={quantityText(row.reach) === "—" ? "" : undefined}>{quantityText(row.reach) === "—" ? "—" : `${quantityText(row.reach)} 人`}</dd></div>
+        <div><dt>{reachLabel(row)}</dt><dd data-num="" data-empty={campaignQuantity(row, "reach") === "—" ? "" : undefined}>{campaignQuantity(row, "reach") === "—" ? "—" : `${campaignQuantity(row, "reach")} 人`}</dd></div>
         <div><dt>发送</dt><dd>{whenText(row)}</dd></div>
       </dl>
       {actions && <div className="i3-card-actions">{actions}</div>}

@@ -150,7 +150,20 @@ function validateI3(moduleId: IModuleId, value: Record<string, unknown>) {
   for (const key of ["monthCampaigns", "monthSent", "monthScheduled", "monthDraft", "criticalInflight"]) {
     if (typeof stats[key] !== "number" || !Number.isInteger(stats[key]) || Number(stats[key]) < 0) fail(moduleId);
   }
-  for (const key of ["avgReadRate", "weeklySwipe"]) if (typeof stats[key] !== "string") fail(moduleId);
+  for (const key of ["avgReadRate", "weeklySwipe"]) {
+    if (typeof stats[key] !== "string" && (stats.basis === undefined || stats[key] != null)) fail(moduleId);
+  }
+  if (stats.basis !== undefined) {
+    const basis = record(moduleId, stats.basis);
+    for (const key of ["asOf", "timeZone", "storageTimeZone", "monthFrom", "weekFrom", "rangeEndExclusive", "monthBasis", "notificationBasis", "weeklyReadBasis", "weeklySwipeReason"]) {
+      if (typeof basis[key] !== "string") fail(moduleId);
+    }
+    for (const key of ["deliveryFactsComplete", "weeklyReadAvailable", "weeklySwipeAvailable"]) if (typeof basis[key] !== "boolean") fail(moduleId);
+    for (const key of ["knownSentCount", "knownReadCount", "weeklyReadKnownCount", "undatedReadCount"]) {
+      if (typeof basis[key] !== "number" || !Number.isInteger(basis[key]) || Number(basis[key]) < 0) fail(moduleId);
+    }
+    if (basis.weeklyReadCount !== null && (typeof basis.weeklyReadCount !== "number" || !Number.isInteger(basis.weeklyReadCount) || Number(basis.weeklyReadCount) < 0)) fail(moduleId);
+  }
   for (const campaign of records(moduleId, value.campaigns)) parseNotificationCampaign(campaign);
   for (const cap of records(moduleId, value.capRules)) {
     if (!["critical", "high", "normal", "low"].includes(String(cap.tier))
@@ -175,10 +188,27 @@ function validateI3(moduleId: IModuleId, value: Record<string, unknown>) {
 /** Shared by the overview, durable original-row snapshots and write receipts at their input boundaries. */
 export function parseNotificationCampaign(input: unknown): unknown {
   const row = record("I3", input);
-  if (!["id", "name", "kind", "audience", "reach", "schedule", "sent", "read", "bodyZh", "bodyVi", "bodyEn", "ctaHref", "ctaLabel", "swipeTo"].every((key) => typeof row[key] === "string")
+  if (!["id", "name", "kind", "audience", "reach", "schedule", "sent", "bodyZh", "bodyVi", "bodyEn", "ctaHref", "ctaLabel", "swipeTo"].every((key) => typeof row[key] === "string")
     || !["critical", "high", "normal", "low"].includes(String(row.tier))
     || !["draft", "scheduled", "sending", "sent", "failed", "cancelled"].includes(String(row.status))
     || typeof row.revision !== "number" || !Number.isInteger(row.revision) || row.revision < 0) fail("I3");
+  if (row.read != null && typeof row.read !== "string") fail("I3");
+  if (row.deliveryFacts !== undefined) {
+    const facts = record("I3", row.deliveryFacts);
+    // Write receipts still carry an empty map; only overview reads project delivery facts.
+    if (Object.keys(facts).length === 0) delete row.deliveryFacts;
+    else {
+      for (const key of ["source", "timeZone", "asOf", "timeBasis"]) if (typeof facts[key] !== "string") fail("I3");
+      if (typeof facts.complete !== "boolean" || facts.reason !== null && typeof facts.reason !== "string") fail("I3");
+      for (const key of ["sentCount", "readCount"]) {
+        if (facts[key] !== null && (typeof facts[key] !== "number" || !Number.isInteger(facts[key]) || Number(facts[key]) < 0)) fail("I3");
+      }
+      for (const key of ["firstSentAt", "lastSentAt"]) if (facts[key] !== null && (typeof facts[key] !== "string"
+        || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?[+-]\d{2}:\d{2}$/.test(String(facts[key])))) fail("I3");
+      if (facts.complete && ["sentCount", "readCount", "firstSentAt", "lastSentAt"].some(key => facts[key] === null)) fail("I3");
+    }
+  }
+  if (row.deliveryFacts === undefined && typeof row.read !== "string") fail("I3");
   // BigDecimal budget is nullable. No decimal rounding or default zero at the read boundary.
   if (row.budget != null && !(typeof row.budget === "string" && /^(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(row.budget))
     && !(typeof row.budget === "number" && Number.isFinite(row.budget) && row.budget >= 0)) fail("I3");
