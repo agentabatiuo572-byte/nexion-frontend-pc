@@ -47,7 +47,7 @@ export function initialForm(v?: H7Voucher, toDateInput?: (ms: number) => string)
   };
 }
 
-/** 原表单的校验，一条不改；按字段归位，好写在字段下面。 */
+/** 按字段归位；金额精度和输入提示、提交前检查保持一致。 */
 export function formErrors(state: H7FormValue): Record<string, string> {
   const e: Record<string, string> = {};
   if (!state.name?.trim()) e.name = "请填写名称";
@@ -61,6 +61,11 @@ export function formErrors(state: H7FormValue): Record<string, string> {
     const p = Number(state.percent);
     if (!Number.isInteger(p) || p < 1 || p > 99) e.percent = "要填 1–99 的整数";
   }
+  for (const key of ["amountUSD", "minPurchaseUSD", "maxDiscountUSD"] as const) {
+    if (key === "amountUSD" && state.type !== "fixed") continue;
+    const hint = precisionHint(state[key]);
+    if (hint && !e[key]) e[key] = hint;
+  }
   const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (surfs.some((s) => !(SURFACES as readonly string[]).includes(s))) e.claimSurfaces = "领取入口只能选首页、商城、我的、收益";
   const issuanceLimit = Number(state.issuanceLimit);
@@ -72,7 +77,7 @@ export function formErrors(state: H7FormValue): Record<string, string> {
   return e;
 }
 
-/** 填的时候就提示：和提交前的精度检查是同一个函数，多于 6 位小数保存时会被拒（a38c7676）。只提示，不改「下一步」的校验。 */
+/** 填写提示和「下一步」共用提交前的精度检查（a38c7676），不先 Number 化或舍入。 */
 function precisionHint(raw: string | undefined) {
   try { validateH7VoucherMoneyPrecision({ type: "fixed", amountUSD: raw }); return undefined; }
   catch { return "最多 6 位小数"; }

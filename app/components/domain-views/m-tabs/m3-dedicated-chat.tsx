@@ -77,6 +77,11 @@ const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientE
   && cause.status !== 404
   && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
+// ce376f39 OpsConversationController.sendCommand checks ownership before idempotency and message writes.
+// These codes settle a first submission only: a retry may be denied before replaying an older success.
+const rejectedMessageOwnership = (cause: unknown) => cause instanceof SupportClientError
+  && (cause.status === 404 && cause.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND"
+    || cause.status === 403 && cause.backendMessage === "SUPPORT_WRITE_FORBIDDEN");
 const conversationPeerChanged = (cause: unknown) => cause instanceof SupportClientError
   && cause.status === 409 && cause.backendMessage === "CONVERSATION_PEER_CHANGED";
 
@@ -1176,7 +1181,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             // Someone else started talking first: lock the composer with their details and keep the draft.
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             lockFromBusy(requestedCustomerId, busyHold);
-          } else if (submitted && rejectedSupportWrite(cause)) {
+          } else if (submitted && (rejectedSupportWrite(cause) || !firstPending && rejectedMessageOwnership(cause))) {
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
             else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
@@ -1272,10 +1277,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         lockFromBusy(String(selected.customerId), busyHold);
         return;
       }
-      if (identityRef.current === identity && submitted && rejectedSupportWrite(cause)) {
+      if (identityRef.current === identity && submitted && (rejectedSupportWrite(cause) || !retry && rejectedMessageOwnership(cause))) {
         pendingMessages.forget(pendingKey(adminId)); setPending(null);
         void ctx.refreshConversations().catch(() => {});
-        if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "消息没有发出，内容已清除：你对这个会话的权限变了。请回客户列表核对。"); setSendError("当前会话权限已变化，请返回客户列表核对。"); }
+        if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
         else setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
         return;
       }
