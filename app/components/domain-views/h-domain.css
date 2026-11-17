@@ -489,6 +489,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-sub-head { display: flex; align-items: center; gap: var(--rd-space-1); margin: var(--rd-space-2) 0 0; }
 .h3-sub-head h3 { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .h3-empty-line { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h3-retired-sum { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
 /* 任务卡 */
 .h3-tasks-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: var(--rd-space-4); min-width: 0; }
 @container hdom (max-width: 1000px) { .h3-tasks-layout { grid-template-columns: minmax(0, 1fr); } }

@@ -43,7 +43,7 @@ import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 
 type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
-type Tab = "dayOne" | "weekly" | "bindings" | "monthly" | "promo";
+type Tab = "dayOne" | "weekly" | "bindings" | "monthly";
 type ListKey = "dayOne" | "t1" | "t2";
 type Locale = "en" | "zh" | "vi";
 
@@ -308,34 +308,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(key, value, expected, reason, label);
-      },
-    } as H3ActionConfirmReq);
-  };
-
-  const openPromoStatus = () => {
-    const current = text(model?.promoBanner?.status, "").toLowerCase();
-    if (!current) { toast(displayAdminError(new Error("PROMO_BANNER_NOT_CONFIGURED"))); return; }
-    const next = conflictDraft.intent ?? (current === "active" ? "paused" : "active");
-    if (next === current) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样，没有改动"); return; }
-    openActionConfirm({ rebaseValue: next, target: "promoBanner.status", briefKind: "record",
-      action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
-      title: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
-      detail: <>只改备用促销卡的状态，不影响每周任务卡。App 目前不显示备用卡。</>,
-      effect: next === "active"
-        ? <StatusTag tone="progress" filled explain={`${FUND_APPROVER}在「操作记录与审批」批准后才启用；批准前什么都不变。`}>批准后生效</StatusTag>
-        : immediate,
-      facts: <Facts>
-        <Fact k="状态"><Change from={current === "active" ? "已启用" : "已暂停"} to={next === "active" ? "已启用" : "已暂停"} /></Fact>
-        <Fact k="App 上">目前不显示，也没有领取</Fact>
-        <Fact k="每周任务卡">不受影响</Fact>
-        {approverFacts(next === "active")}
-      </Facts>,
-      statedBrief: { impact: "只改备用促销卡的状态；不停周任务卡，也不发钱。", check: "确认是要改备用卡；理由写清依据。" },
-      confirmLabel: next === "active" ? "提交审批" : "确认暂停",
-      coverageLead: "启用备用卡是放大方向，要另一位超级管理员批准",
-      amplifies: next === "active",
-      run: async (reason) => {
-        await updateConfigWithExpected("promoBanner.status", next, current, reason, "首页备用促销卡状态");
       },
     } as H3ActionConfirmReq);
   };
@@ -1424,75 +1396,25 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     </div>
   );
 
-  // ----- 首页备用卡 -----
+  // ----- 首页备用卡（d7540265：七项设置已停用，新保存一律被拒；只读显示以前存的值，收在页底折叠里） -----
   const promoBase = decimalOf(promo.baseReward);
   const promoMult = decimalOf(promo.multiplier);
-  const promoFacts = (key: string, label: string, current: string | null, unit: string) => (value?: string) => {
-    const direction = directionOf(current, value ?? null);
-    return <Facts>
-      <Fact k={label}>{value ? <Change from={current == null ? "—" : `${current}${unit}`} to={`${value}${unit}`} /> : current == null ? "—" : `${current}${unit}`}</Fact>
-      {key === "promoBanner.baseReward" || key === "promoBanner.multiplier" ? whenFact(direction) : null}
-      <Fact k="App 上">目前不显示备用卡，改了用户看不到</Fact>
-      <Fact k="发钱">不发：只存参数</Fact>
-      {approverFacts((key === "promoBanner.baseReward" || key === "promoBanner.multiplier") && direction === "up")}
-    </Facts>;
-  };
-  const promoTab = (
-    <div {...tabIds.panel("promo")} className="h3-tabpanel">
-      <Panel title="首页备用促销卡" icon={Megaphone} tone="role-other"
-        sub={<StatusTag tone="neutral" icon={CircleSlash}>App 目前不显示</StatusTag>}
-        explain="原设计是首页没有可领的每周任务时，显示一张跳商城的备用卡。现在 App 只读到这些参数，没有显示和领取，改了用户看不到；已提后端和 App 决定接上还是退役。">
-        <ConfigList label="备用卡参数">
-          <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"}
-            sub={promoStatus ? (lockTag("promoBanner.status") ?? "启用要批准") : "没读到备用卡配置"}
-            what="备用卡开还是关。" when={`启用：提交审批，${FUND_APPROVER}批准后生效；暂停立即生效。`} effect="不影响每周任务卡。"
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.status")} onClick={conflictDraft.register(JSON.stringify(["openPromoStatus:1"]), openPromoStatus)}>{promoStatus === "active" ? "暂停" : "启用"}</Button> : undefined} />
-          <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} sub={lockTag("promoBanner.baseReward") ?? "调高要批准"}
-            what="备用卡上写的基础奖励。" when={`调高：提交审批，${FUND_APPROVER}批准后生效；调低立即生效。`}
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.baseReward")} onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:1"]), () => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promo.baseReward), 0, 100000, 1, "increase", {
-              title: "改备用卡基础奖励", effect: directionEffect("备用卡"), facts: promoFacts("promoBanner.baseReward", "基础奖励", promoBase, " UVT"),
-              statedBrief: { impact: "只存参数，App 目前不显示，不发钱。", check: "0–100,000 的整数。" },
-              confirmLabelForValue: (value) => directionOf(promoBase, value ?? null) === "up" ? "提交审批" : "确认修改",
-              coverageLead: "调高备用卡奖励是放大方向，要另一位超级管理员批准", hint: "0–100,000 的整数",
-            }))}>调整</Button> : undefined} />
-          <ConfigRow name="展示倍率" value={promoMult == null ? "—" : `${promoMult}×`} sub={lockTag("promoBanner.multiplier") ?? "调高要批准"}
-            what="备用卡上写的倍率，和每周任务的倍率无关。" when={`调高：提交审批，${FUND_APPROVER}批准后生效；调低立即生效。`}
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("promoBanner.multiplier")} onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:2"]), () => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promo.multiplier), 0.1, 5, 0.1, "increase", {
-              title: "改备用卡展示倍率", effect: directionEffect("备用卡"), facts: promoFacts("promoBanner.multiplier", "展示倍率", promoMult, "×"),
-              statedBrief: { impact: "只存参数，App 目前不显示，不改每周任务倍率。", check: "0.1–5。" },
-              confirmLabelForValue: (value) => directionOf(promoMult, value ?? null) === "up" ? "提交审批" : "确认修改",
-              coverageLead: "调高备用卡倍率是放大方向，要另一位超级管理员批准", hint: "0.1–5",
-            }))}>调整</Button> : undefined} />
-          <ConfigRow name="卡上写的奖励" value={mulDecimal(promoBase, promoMult) == null ? "—" : `${mulDecimal(promoBase, promoMult)} UVT`}
-            sub="基础奖励 × 展示倍率" what="只读，按上面两项算。" effect="没有对应的领取和发币，不是实际应付金额。" />
-          <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`}
-            what="卡上显示的倒计时。" effect="只是展示，不改任何任务的真实期限。"
-            action={canModuleWrite ? <span className="rd-row-actions">
-              <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:3"]), () => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promo.countdownDays), 0, 365, 1, undefined, {
-                title: "改备用卡倒计时天数", effect: immediate, facts: promoFacts("promoBanner.countdownDays", "倒计时天数", decimalOf(promo.countdownDays), " 天"),
-                statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–365 的整数。" }, confirmLabel: "确认修改", hint: "0–365 的整数",
-              }))}>改天数</Button>
-              <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:4"]), () => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promo.countdownHours), 0, 23, 1, undefined, {
-                title: "改备用卡倒计时小时", effect: immediate, facts: promoFacts("promoBanner.countdownHours", "倒计时小时", decimalOf(promo.countdownHours), " 小时"),
-                statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–23 的整数。" }, confirmLabel: "确认修改", hint: "0–23 的整数",
-              }))}>改小时</Button>
-            </span> : undefined} />
-          <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"}
-            what="卡上写的设备名称，是一段文字，不是商品编号。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:6"]), () => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promo.targetDevice), false, {
-              title: "改备用卡推荐设备", effect: immediate,
-              facts: <Facts><Fact k="App 上">目前不显示备用卡，改了用户看不到</Fact><Fact k="商品">只是文字，不核对商品是否存在</Fact></Facts>,
-              statedBrief: { impact: "只存一段文字，App 目前不显示。", check: "最多 128 字。" }, confirmLabel: "确认修改", hint: "最多 128 字",
-            }))}>调整</Button> : undefined} />
-          <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
-            sub="后端没给币种" what="卡上显示的设备日收益数字。" effect="只是展示，不改设备收益和用户钱包；币种等后端补上。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openNumericConfig:5"]), () => openNumericConfig("promoBanner.targetDaily", "转化卡显示的日收益", text(promo.targetDaily), 0, 1000000, 0.01, undefined, {
-              title: "改备用卡日收益", effect: immediate, facts: promoFacts("promoBanner.targetDaily", "日收益", decimalOf(promo.targetDaily), ""),
-              statedBrief: { impact: "只存参数，App 目前不显示。", check: "0–1,000,000。" }, confirmLabel: "确认修改", hint: "0–1,000,000",
-            }))}>调整</Button> : undefined} />
-        </ConfigList>
-      </Panel>
-    </div>
+  const promoFold = (
+    <Fold title="首页备用卡" icon={Megaphone} tone="role-other"
+      summary={<span className="h3-retired-sum"><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>{promoStatus ? "以前存的值，仅供查看" : "没读到以前存的值"}</span>}
+      explain="这 7 项设置已停用，不能再改，也不能启用；这里只显示以前存的值。">
+      <ConfigList label="首页备用卡以前存的值">
+        <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"} />
+        <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} />
+        <ConfigRow name="展示倍率" value={promoMult == null ? "—" : `${promoMult}×`} />
+        <ConfigRow name="卡上写的奖励" value={mulDecimal(promoBase, promoMult) == null ? "—" : `${mulDecimal(promoBase, promoMult)} UVT`}
+          sub="基础奖励 × 展示倍率" what="按上面两项算，不是实际发的奖励。" />
+        <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
+        <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
+        <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
+          sub="没有币种" />
+      </ConfigList>
+    </Fold>
   );
 
   // ----- 数据口径（第三层） -----
@@ -1544,7 +1466,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     { value: "weekly" as const, label: "每周任务", count: stuckIn(t1) + stuckIn(t2) + (regionPending ? 1 : 0) },
     { value: "bindings" as const, label: "完成条件", count: orphans.length },
     { value: "monthly" as const, label: "历史月度挑战" },
-    { value: "promo" as const, label: "首页备用卡" },
   ];
 
   const detailName = detailTask ? text(detailTask.task ?? detailTask.cond) : "";
@@ -1567,8 +1488,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {tab === "weekly" && weeklyTab}
       {tab === "bindings" && bindingsTab}
       {tab === "monthly" && monthlyTab}
-      {tab === "promo" && promoTab}
       {contracts}
+      {promoFold}
 
       <Drawer open={!!detailTask} onClose={() => setDetail(null)} title="任务详情" icon={ListChecks} tone="role-2" sub={detailTask ? nameOf(detailTask) : undefined}
         nav={{ hasPrev: detailIndex > 0, hasNext: detailIndex >= 0 && detailIndex < detailList.length - 1,
