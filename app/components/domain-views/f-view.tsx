@@ -51,7 +51,7 @@ import {
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
-import { type FDomainAttempt, commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
+import { type FDomainAttempt, commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
 import { F3_SETTLEMENT_SLOT, listF3Proposals, queryF3Proposal, releaseF3Proposal, sendF3Proposal, settlementSpec, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
 import { canRetryF4Proposal, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, releaseF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
@@ -604,8 +604,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const f2Record = (slot: string) => session ? f2ProposalRecord(session.adminId, slot) : undefined;
   const f2WriteBlocked = (slot: string): string | undefined => {
     if (slot !== F2_ACTIVATION_SLOT && (f2Loading || f2Error || !f2Overview)) return "七层比例没读到，这部分没有判断";
-    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
+    // An empty active read is only a candidate: the server also checks hidden historical rows.
+    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
         && (f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy)) return "好友奖励政策没读到，暂不能改";
+    if (slot === F2_BOOTSTRAP_SLOT && f2Overview?.unilevel.length) return displayAdminError("F2_UNILEVEL_RULES_ALREADY_CONFIGURED");
     if (slot === "f-config-batch:F2") {
       const issue = fBatchIssueText(Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`), session?.authorities ?? []);
       if (issue) return issue;
@@ -1036,6 +1038,20 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
     },
     recoverF2SevenLayerActivation: () => sendF2(F2_ACTIVATION_SLOT),
+    bootstrapF2Unilevel: async (layers, reason) => {
+      const current = await fetchF2DirectReferralPolicy();
+      setF2DirectPolicy(current);
+      if (current.sevenLayerEnabled && current.policySchemaVersion === 2 && current.purchaseSplit.enabled) {
+        throw new Error("L1_LEGACY_NEX_READ_ONLY_DURING_SPLIT");
+      }
+      const def = findHighOp("f_unilevel_bootstrap");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f_unilevel_bootstrap");
+      await sendF2(F2_BOOTSTRAP_SLOT, {
+        action: def.action, obj: "unilevel_bootstrap/current", before: "无 UNILEVEL 规则", after: "L1–L7",
+        type: "fund", amplifies: true, gate: { roles: [] }, gateLabel: def.gateLabel,
+        reason, sourceDomain: "F2", command: def.buildCommand({ layers }), target: def.buildTarget({}),
+      });
+    },
     changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {
       if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请团队购买奖励结算的权限。");
       if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("团队购买奖励结算暂时不能启用，请刷新后重试。");

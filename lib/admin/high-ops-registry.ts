@@ -1985,6 +1985,19 @@ export const HIGH_OPS: HighOpDef[] = [
       return { domain: "F", type: applicationId ? "ambassador_application" : "ui_config", id: applicationId ?? String(ctx.key) };
     },
   },
+  // 6cda1e99: bootstrap is one approved command, never fourteen single-field updates.
+  {
+    op: "f_unilevel_bootstrap",
+    domain: "F",
+    action: "首次配置 L1–L7 团队购买奖励",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "unilevel_rule",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_unilevel_bootstrap",
+      params: { expectedVersion: 0, layers: ctx.layers } }),
+    buildTarget: () => ({ domain: "F", type: "unilevel_rule", id: "bootstrap" }),
+  },
   // f_unilevel_rule: F.unilevel.L{n}(usdtRate) / F.unilevel.nex.L{n}(nexPerUsd)。amplifies true(费率放大佣金流出)。
   {
     op: "f_unilevel_rule",
