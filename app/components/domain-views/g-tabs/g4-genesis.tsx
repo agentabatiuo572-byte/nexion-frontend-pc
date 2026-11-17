@@ -1272,7 +1272,7 @@ function G4GenesisPage() {
           explain="今天这一批（按业务日）真实发出去的节点数和金额。系统目前没有每天自动发放（已提给技术同事），要发请在「每日分红」里手动发放。" />
         <Stat label="没处理完的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
           sub={pendingCount > 0 ? "见上面的提醒" : "没有压着的申请"}
-          explain="你在这台电脑上提交过、还没处理完的申请：参数修改、每日收益比例、补发收益、价格档位。待审批是在等另一位超级管理员批准；结果未知是提交时没收到确定结果，可能已经生效，先查询原结果。已过期或审批已结束的，查询原结果后清掉。别人发起的审批在「操作记录与审批」里看。" />
+          explain="你在这台电脑上提交、还没处理完的申请。待审批是在等另一位超级管理员批准；结果未知是可能已经生效，先查询原结果。别人发起的在「操作记录与审批」看。" />
       </StatBand>
 
       <Panel title="销售进度与价格档位" icon={Layers} tone="role-2"
