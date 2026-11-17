@@ -186,7 +186,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (commandKey && confirmation.current?.commandKey === commandKey) confirmation.current.finish();
     await reload();
     await region.reload();
-  }, () => fresh.current);
+  }, () => fresh.current, model);
   const refresh = async () => {
     openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
     await reload();
@@ -819,9 +819,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   // ===== 权威待审批读取和保存的原请求 =====
-  const pendingApprovals = mutations.pendingApprovals.filter(t => ["h3_quest_config", "h3_mission_create"].includes(t.operationCode ?? ""));
-  const pendingOf = (key: string) => pendingApprovals.find((item) => item.obj === key);
-  const lockReason = (key: string) => pendingOf(key) ? "这一项有一张等批准的申请，审批结束前不能再改" : mutations.record(key) ? "这一项结果未知，请先查询原结果" : undefined;
+  const pendingApprovals = mutations.pendingTargets;
+  const pendingOf = (key: string) => pendingApprovals.includes(key);
+  const lockReason = (key: string) => pendingOf(key) ? "这一项有一张等批准的申请，审批结束前不能再改" : mutations.blocked(key) ? "这一项结果未知，请先查询原结果" : undefined;
   const lockTag = (key: string) => pendingOf(key) ? pendingTag() : null;
 
   // ===== 渲染 =====

@@ -1,6 +1,6 @@
 "use client";
 
-import { h3QuestConfigWriteRefusal } from "./h3-contract";
+import { h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
@@ -87,7 +87,7 @@ function savedCommands(adminId: number | undefined, operator: string): H3Pending
 }
 
 /** H3-only transport and recovery. The page owns all existing form markup. */
-export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean) {
+export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean, model: H3Model | null) {
   const session = useAdminAuth(s => s.session);
   const adminId = session?.adminId;
   const operator = session?.operator || session?.username || "";
@@ -134,7 +134,18 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     return ticket;
   };
   const pendingApprovals = () => [...new Map([...(auditRows.current ?? []), ...confirmedTickets.current.values()].map(t => [t.id, t])).values()];
-  const blocked = (target: string) => !!record(target) || pendingApprovals().some(t => t.obj === target && t.status === "pending");
+  // GET facts supersede the A2 queue for the keys it covers. Unknown active locks
+  // still block new writes, but only verified tickets are called pending approvals.
+  const pendingTargets = () => [...new Set([
+    ...pendingApprovals().filter(t => t.status === "pending"
+      && ["h3_quest_config", "h3_mission_create"].includes(t.operationCode ?? "")
+      && !(t.operationCode === "h3_quest_config" && model?.pendingApprovals !== undefined && t.obj in model.pendingApprovals)
+      && !(t.operationCode === "h3_mission_create" && model?.pendingMissionCreations !== undefined)).map(t => t.obj),
+    ...Object.entries(model?.pendingApprovals ?? {}).filter(([, approval]) => approval?.ticketId != null).map(([key]) => key),
+    ...(model?.pendingMissionCreations ?? []).flatMap(approval => approval.ticketId != null && approval.missionCode != null ? [approval.missionCode] : []),
+  ])];
+  const blocked = (target: string) => !!record(target) || model?.pendingApprovals?.[target] != null
+    || model?.pendingMissionCreations?.some(approval => approval.missionCode === target) === true || pendingTargets().includes(target);
   const send = async (r: H3PendingCommand, recovering: boolean) => {
     requireActor(true, r.store === "region");
     if (isRetryExpired(r)) throw new Error(RETRY_EXPIRED_TEXT);
@@ -214,7 +225,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   };
 
   return {
-    records: records(), record, blocked, query, pendingApprovals: pendingApprovals(), auditKnown: auditRows.current !== null,
+    records: records(), record, blocked, query, pendingApprovals: pendingApprovals(), pendingTargets: pendingTargets(), auditKnown: auditRows.current !== null,
     canRetry(r: H3PendingCommand) {
       if (isRetryExpired(r) || r.acknowledged || r.request.kind === "legacy-region") return false;
       try { requireActor(true, r.store === "region"); return true; } catch { return false; }
