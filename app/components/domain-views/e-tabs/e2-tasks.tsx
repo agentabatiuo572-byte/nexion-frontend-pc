@@ -32,7 +32,7 @@ const LEVELS = FIXED_DEVICE_LEVELS.map(level => ({ key: level.code, label: level
 const PRODUCT_STATES = { PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_DEVICES: "已下架有设备" } as const;
 const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 120, text: "120" }];
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
-const GENERATION = "服务端生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
+const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
 const RETRY_HELP = "重新发送保存的原请求，系统认得出是同一次提交，不会另加一批。这不是只读查询。";
 
 function readQuery(params: URLSearchParams): Query {
@@ -284,7 +284,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         const receipt = await checkE2Command(closing, evidence);
         syncPending(); showOutcome(closing, { receipt }); setClosing(null);
         if (eCommandSettled(receipt)) await refresh();
-        else ctx.toast("核查结论已记录，后端仍记为结果未知，原操作继续锁定。");
+        else ctx.toast("核查结论已记录，原操作仍是结果未知，继续锁定。");
       }} />}
     {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下是上次读到的数据，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh()} />}
     {(pools.state !== "error" || pools.data.length > 0) && <div className="e2-levels"><StatBand cards role="tablist" label="任务等级">
@@ -349,7 +349,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {originalRejected && !originalExpired ? <Button variant="primary" disabled={saving} onClick={() => setReleasing(true)}>解除原操作记录</Button>
             : !originalExpired && <Button variant={dialog.kind === "status" && !dialog.enabled ? "danger" : "primary"} loading={saving} loadingText="提交中…" disabledReason={dialog.original ? retryBlock(dialog.original) : formBlock}
               onClick={() => { if (dialog.original) void send(dialog.original, true); else { setTouched({ count: true, reason: true }); void submit(); } }}>{dialog.original ? "按原请求重试" : dialog.kind === "random" ? "确认添加并生效" : dialog.enabled ? "确认启用" : "确认停用"}</Button>}</>}>
-      {releasing && dialog.original ? <div className="rd-stack"><ReleaseBody label={`${dialog.pool.code} ${dialog.pool.name} · ${e2CommandLabel(dialog.original)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只移除这条原操作记录，不办理后端核查结案。" /><Facts><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{dialog.original.request.body.reason}</Fact></Facts></div>
+      {releasing && dialog.original ? <div className="rd-stack"><ReleaseBody label={`${dialog.pool.code} ${dialog.pool.name} · ${e2CommandLabel(dialog.original)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉这条原操作记录，不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{dialog.original.request.body.reason}</Fact></Facts></div>
         : <div className="rd-stack">
           {dialog.original && <Notice tone="warn" title={originalExpired ? "已超过 24 小时，不能再重试" : originalRejected ? "按原请求重试被明确拒绝" : "结果未知，原操作已冻结"}>
             {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先查询原结果，再决定是否解除原操作记录；这次拒绝不会自动清除它。" : retryBlock(dialog.original) ?? "只能按原请求重试：系统认得出是同一次提交，不会重复执行。"}

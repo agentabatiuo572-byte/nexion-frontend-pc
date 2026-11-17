@@ -82,7 +82,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
     <Panel title="任务节奏" icon={Activity} tone="role-2" sub={readAt ? `读取于 ${readAt}` : undefined}>
       {poolError ? <BlockState state="error" title="任务节奏暂不可读" detail={poolError} onRetry={()=>void ctx.refreshE2()} /> : <StatBand fit>
         <Stat label="启用任务" icon={ListTodo} tone="role-2" lead value={poolLoading ? "—" : pool?.enabledCount ?? "—"} unit="个" sub={pool ? `共 ${pool.taskCount} 个` : undefined} />
-        <Stat label="平均时长" icon={Clock3} tone="role-3" value={poolLoading || !pool?.enabledCount ? "—" : pool.avgDurationMinutes ?? "—"} unit="分钟" explain={!pool?.enabledCount?"没有启用任务，无法估算。":"服务端启用任务的平均时长，原样显示。"}/>
+        <Stat label="平均时长" icon={Clock3} tone="role-3" value={poolLoading || !pool?.enabledCount ? "—" : pool.avgDurationMinutes ?? "—"} unit="分钟" explain={!pool?.enabledCount?"没有启用任务，无法估算。":"已启用任务的平均时长，原样显示。"}/>
         <Stat label="约每天单数" icon={Activity} tone="role-2" value={poolLoading || !pool?.enabledCount ? "—" : pool.estTasksPerDevicePerDay ?? "—"} unit="单/台/天" explain={!pool?.enabledCount?"没有启用任务，无法估算。":"1440 分钟除以启用任务的平均时长，不保证实际完成量。"}/>
       </StatBand>}
     </Panel>

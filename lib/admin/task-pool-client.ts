@@ -89,7 +89,7 @@ export function parseTaskPool(value: unknown): TaskPool {
       : parsed.avgDurationMinutes === null || Number(parsed.avgDurationMinutes) <= 0 || Number(parsed.avgDurationMinutes) > 120
         || parsed.estTasksPerDevicePerDay === null || Number(parsed.estTasksPerDevicePerDay) <= 0)
     || new Set(parsed.referencedBy.map(item => item.productKey)).size !== parsed.referencedBy.length)) {
-    throw new Error("任务等级数据不完整，请刷新或核对后端配置。");
+    throw new Error("任务等级数据不完整，请刷新；仍不行请联系值班人员核对配置。");
   }
   return parsed;
 }
@@ -139,7 +139,7 @@ export async function fetchTaskPools(kind: TaskPool["kind"] = "DEVICE"): Promise
   if (!Array.isArray(raw)) throw new Error("任务池列表不完整，请刷新重试。");
   const pools = raw.map(parseTaskPool);
   if (kind === "DEVICE" && (pools.length !== 4 || new Set(pools.map(pool => pool.code)).size !== 4 || pools.some(pool => pool.kind !== "DEVICE"))) {
-    throw new Error("固定任务等级尚未加载，请刷新或核对后端配置。");
+    throw new Error("固定任务等级还没读到，请刷新；仍不行请联系值班人员核对配置。");
   }
   return pools.sort((a, b) => a.sortOrder - b.sortOrder);
 }
