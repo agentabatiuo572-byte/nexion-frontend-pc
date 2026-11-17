@@ -51,7 +51,7 @@ export const UNPUBLISHED_EFFECT: Record<string, string> = {
   leadership: "信任中心的「管理团队」整块收起",
   nexNarrative: "信任中心「服务保障」里托管、保修、账户安全三行和「规则与资料」里的「UVT 使用说明」入口收起；直接打开 UVT 说明页显示「暂无 UVT 说明」",
   complianceBadges: "App 不读这一块，App 上没有变化",
-  auditsReserves: "信任中心「服务保障」里的「审计与储备证明」一行收起，商品详情的资料区显示「暂无相关资料」",
+  auditsReserves: "商品详情资料区显示「暂无相关资料」，信任中心「服务保障」的「审计与储备证明」一行收起",
   listings: "App 不读这一块，App 上没有变化",
 };
 export const unpublishedEffect = (key: string) => UNPUBLISHED_EFFECT[key] ?? "App 上这一块收起";
