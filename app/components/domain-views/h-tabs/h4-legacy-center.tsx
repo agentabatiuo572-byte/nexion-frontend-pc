@@ -1073,7 +1073,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const budgetText = budget ? budgetNumber(text(budget.value, "")) : "";
   const budgetLeft = usedPayout !== null && budgetText ? decimalMinus(budgetText, usedPayout) : null;
   const budgetSpent = budgetLeft !== null && (budgetLeft.startsWith("-") || /^0(\.0+)?$/.test(budgetLeft));
-  const tierUsage = new Map((wheelDailyUsage?.tiers ?? []).map((row) => [row.tierName, row.usedToday]));
+  // The editable overview contains active tiers only; null stock identifies historical usage.
+  const tierUsage = new Map((wheelDailyUsage?.tiers ?? []).filter(row => row.dailyStock !== null).map((row) => [row.tierName, row.usedToday]));
   const conclusion = wheelBroken
     ? <Conclusion state="danger" lead icon={CircleAlert} hint="先处理「等你处理」第一行。">App 转盘现在抽不了{gapCount > 0 ? `，还有 ${gapsByEvent.length} 个活动缺翻译` : ""}</Conclusion>
     : todos.length > 0 ? <Conclusion state="warn" lead icon={ListChecks}>有 {todos.length} 件事等你处理</Conclusion>
