@@ -836,6 +836,17 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const auditHref = (object: string | null) => canAudit ? `/platform/audit?domain=H${object ? `&object=${encodeURIComponent(object)}` : ""}` : undefined;
   const pendingFormat = (key: string) => (value: string) => key === "dayOne.triReward" ? operatorCopyText(value)
     : key.startsWith("weekly.mult.") ? `${value.replace(/[×x]\s*$/, "")}×` : `${amountText(value) ?? value} UVT`;
+  const codeOf = (task: QuestTask) => text(task.taskCode ?? task.missionCode ?? task.id, "");
+  // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT）：现在的奖励、申请改成的金额都带这一行的币种。
+  // 后端把金额补到 6 位小数：去掉末尾的 0，最少留 2 位，不舍入。
+  const monthlyAmount = (value: string) => value.replace(/^(\d+)(?:\.(\d+))?/, (_, w: string, f = "") => `${amountText(w)}.${f.replace(/0+$/, "").padEnd(2, "0")}`);
+  const monthlyRow = (mission: QuestTask) => {
+    const rewardKey = `monthly.${codeOf(mission)}.reward`;
+    const reward = legacyAssetText(text(mission.reward));
+    const unit = /[A-Za-z]+$/.exec(reward.text.trim())?.[0];
+    const format = (value: string) => unit ? `${monthlyAmount(value)} ${unit}` : monthlyAmount(value);
+    return { rewardKey, reward, unit, rewardShown: monthlyAmount(reward.text), format, lock: backendLock(rewardKey), label: text(mission.theme) };
+  };
   const lockReason = (key: string) => {
     const lock = backendLock(key);
     if (lock && lock.ticketId == null) return "审批锁定：读不出申请内容，到「操作记录与审批」核对";
@@ -865,8 +876,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
   const openRecovery = (original: H3PendingCommand) => {
     const c = original.change;
-    const request: H3ActionConfirmReq = { briefKind: "config", action: c.action, title: c.title, detail: <Change from={shownValue(c.before)} to={shownValue(c.after)} />,
-      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求"><Change from={shownValue(c.before)} to={shownValue(c.after)} /></Fact></Facts>,
+    const request: H3ActionConfirmReq = { briefKind: "config", action: c.action, title: c.title, detail: changeOf(c),
+      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求">{changeOf(c)}</Fact></Facts>,
       initialReason: c.reason, getPendingReason: () => mutations.record(c.target)?.change.reason,
       inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
         disabledReason: mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果",
@@ -880,11 +891,19 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
   const shownValue = (value: string) => value === "" ? "—" : value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
     ?? TASK_CATEGORY_LABELS[part] ?? TASK_ACTION_ROUTE_LABELS[part] ?? part).join(" · ");
+  // 奖励和倍率的原请求只存数字：按这一项的单位写，月度奖励带那一行的币种。
+  const changeValue = (target: string, value: string) => {
+    if (value === "" || value === "—" || !/^(?:mission\.[^.]+\.reward|monthly\.[^.]+\.reward|weekly\.mult\.[^.]+|dayOne\.triReward)$/.test(target)) return shownValue(value);
+    if (!target.startsWith("monthly.")) return pendingFormat(target)(value);
+    const mission = model?.monthlyMissions?.find((row) => `monthly.${codeOf(row)}.reward` === target);
+    return mission ? monthlyRow(mission).format(value) : monthlyAmount(value);
+  };
+  const changeOf = (c: H3PendingCommand["change"]) => <Change from={changeValue(c.target, c.before)} to={changeValue(c.target, c.after)} />;
   const releasable = (original: H3PendingCommand) => original.request.kind !== "direct" && isRetryExpired(original) && !original.acknowledged && !original.ticket;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";
     return {
-      key: original.commandKey, name: original.change.action, change: <Change from={shownValue(original.change.before)} to={shownValue(original.change.after)} />,
+      key: original.commandKey, name: original.change.action, change: changeOf(original.change),
       submittedAt: original.createdAt,
       tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
         : isRetryExpired(original) ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct"),
@@ -1002,7 +1021,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const bindings = model.eventBindings ?? [];
   const lists: Record<ListKey, QuestTask[]> = { dayOne, t1, t2 };
   const all = [...dayOne, ...t1, ...t2];
-  const codeOf = (task: QuestTask) => text(task.taskCode ?? task.missionCode ?? task.id, "");
   const nameOf = (task: QuestTask) => localizedValue(codeOf(task), "zh") || taskTitleText(text(task.task ?? task.cond));
   const bindingsOf = (task: QuestTask) => bindings.filter((binding) => binding.questCode === codeOf(task));
   const localeGaps = (task: QuestTask) => (["en", "zh", "vi"] as const).filter((locale) => !localizedValue(codeOf(task), locale)).map((locale) => LOCALE_LABEL[locale]);
@@ -1053,7 +1071,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <p>启用中按任务的状态数，只算新手任务和每周任务；历史月度挑战不算。</p>
         <p>「做不完」是已启用、但后端判定还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
         {active.length === 0 && <p>没有启用的任务时，已发出的那一份不变；之后注册的用户、之后发布的每周任务都不会有新任务。</p>}
-        <p>等批准的修改和新建任务，打开这页的人都看得到，对应项会锁住。历史月度挑战的奖励除外：要能进「操作记录与审批」才看得到。</p>
+        <p>等批准的修改和新建任务，打开这页的人都看得到，对应项会锁住。</p>
         <p>结果未知只记在提交它的浏览器标签页里。</p>
       </>}
       action={canAudit ? <Link className="rd-link" href="/platform/audit?domain=H" prefetch={false}>看待批准的申请</Link> : undefined}>
@@ -1420,6 +1438,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
 
   // ----- 历史月度 -----
+  const monthlyPending = monthly.map(monthlyRow).filter((row) => row.lock);
   const monthlyTab = (
     <div {...tabIds.panel("monthly")} className="h3-tabpanel">
       <Panel title="历史月度挑战" icon={History} tone="role-other" sub={`${monthly.length} 个 · 历史功能`}
@@ -1438,18 +1457,15 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             </thead>
             <tbody>
               {monthly.map((mission) => {
-                const rewardKey = `monthly.${codeOf(mission)}.reward`;
-                const reward = legacyAssetText(text(mission.reward));
-                // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT），确认框里新金额带上同一个币种。
-                const unit = /[A-Za-z]+$/.exec(reward.text.trim())?.[0];
-                // 后端把金额补到 6 位小数：去掉末尾的 0，最少留 2 位，不舍入。
-                const rewardShown = reward.text.replace(/^(\d+)(?:\.(\d+))?/, (_, w: string, f = "") => `${amountText(w)}.${f.replace(/0+$/, "").padEnd(2, "0")}`);
+                const { rewardKey, reward, unit, rewardShown, format, lock, label } = monthlyRow(mission);
                 const status = taskStatusOf(mission);
-                const label = text(mission.theme);
+                // 待审批、审批锁定在奖励下面标一个标签；申请改成多少、谁提交的写在表下面。
+                const mark = lock ? lock.ticketId == null ? lockedTag() : backendPendingTag(lock, pendingChangeText(lock, format), auditHref(rewardKey))
+                  : pendingOf(rewardKey) ? pendingTag() : null;
                 return <Tr key={text(mission.id)}>
                   <Td grow><Cell main={label} sub={text(mission.goals, "") || "—"} title={label} /></Td>
                   <Td><Cell main={text(mission.age)} /></Td>
-                  <Td align="right"><Cell num main={rewardShown} sub={reward.legacy ? "旧名称 NEX" : undefined} /></Td>
+                  <Td align="right"><Cell num main={rewardShown} sub={mark || reward.legacy ? <span data-tagline="">{mark}{reward.legacy && "旧名称 NEX"}</span> : undefined} /></Td>
                   <Td><TaskStatusTag task={mission} /></Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
                     <Button size="sm" disabledReason={lockReason(rewardKey)} onClick={conflictDraft.register(JSON.stringify(["openTaskReward:1", mission.id]), () => openTaskReward(rewardKey, text(mission.theme), text(mission.reward), {
@@ -1486,6 +1502,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               })}
             </tbody>
           </Table>}
+        {/* 主题长短不一：主题单独一列，后面的标签和申请内容上下对齐。 */}
+        {monthlyPending.length > 0 && <div className="h3-pending-lines" data-named="">
+          {monthlyPending.map((row) => <Fragment key={row.rewardKey}>
+            <span className="h3-pending-label">{row.label}</span>
+            {row.lock && <H3PendingLine approval={row.lock} format={row.format} auditHref={auditHref(row.rewardKey)} />}
+          </Fragment>)}
+        </div>}
       </Panel>
     </div>
   );
