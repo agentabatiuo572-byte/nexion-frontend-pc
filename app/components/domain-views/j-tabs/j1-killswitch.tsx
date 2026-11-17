@@ -1,4 +1,6 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * J1 紧急停用开关（应急控制页，PG-48）。五项业务：提现、质押、创世节点、兑换、试用。
@@ -15,7 +17,7 @@ import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, Confi
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
@@ -428,7 +430,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const recoveryPanel = <FundRecoveryPanel rows={[...pendingRows, ...restoreRows]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
     link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link>} />;
 
-  const releaseModal = closing && <FundClosureModal label={"input" in closing ? closing.input.action : closing.label} createdAt={closing.createdAt} known={closureKnown(investigationResults[closing.commandKey])}
+  const releaseModal = closing && <FundClosureModal label={"input" in closing ? closing.input.action : closing.label} createdAt={closing.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing))}
     onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />;
 
   const header = (

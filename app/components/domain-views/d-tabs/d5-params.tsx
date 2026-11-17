@@ -1,4 +1,6 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * USDT 提现参数（配置页，PG-46）。默认只显示名称、值和「调整」，点「调整」打开抽屉整组填写，抽屉提交后才开最终确认（闸门 2 第 37 条）。
@@ -56,7 +58,7 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -959,10 +961,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   ];
   const pendingNotices = <>
     <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} known={closureKnown(investigationResults[loosenRecord.commandKey])} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
+    {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} offer={eCommandClosureOffer(investigationResults[loosenRecord.commandKey], isRetryExpired(loosenRecord))} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
     {directClosing && <CommandClosureModal label={editTitle(directClosing.label.replace(/^调整提现参数 · /, ""))} commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
-      known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="改动">{describeChanges(directClosing.changes)}</Fact>}
+      offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="改动">{describeChanges(directClosing.changes)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
         const record = directClosing;
         const { receipt, settled: done } = await queryD5DirectCommand(record, evidence);

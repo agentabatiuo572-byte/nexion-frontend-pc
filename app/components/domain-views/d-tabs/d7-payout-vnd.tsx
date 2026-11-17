@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * 越南盾提现参数（配置页，PG-46，样板照 H2）：默认只看名称和值，8 项在抽屉里整组修改（闸门 2 第 37 条）。
@@ -30,7 +31,7 @@ import {
 } from "@/lib/admin/payout-vnd-contract";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { RecoveryPanel, recoveryTitle } from "../recovery-panel";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -736,7 +737,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     {releasing && <ReleaseModal label="参数修改" onCancel={() => setReleasing(null)} onConfirm={releasePending}
       explain="重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。" />}
     {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
-      known={closureKnown(investigationResults[directClosing.commandKey])} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
+      offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
         const record = directClosing;
         const { receipt, settled: done } = await queryD7DirectCommand(record, evidence);
@@ -744,7 +745,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         setDirectClosing(null);
         if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
       }} />}
-    {closing && approval && <FundClosureModal label="放宽提交" createdAt={approval.createdAt} known={closureKnown(investigationResults[approval.commandKey])}
+    {closing && approval && <FundClosureModal label="放宽提交" createdAt={approval.createdAt} offer={eCommandClosureOffer(investigationResults[approval.commandKey], isRetryExpired(approval))}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(approval, evidence); setClosing(false); }} />}
   </>;
 

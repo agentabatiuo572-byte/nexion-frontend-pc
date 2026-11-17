@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * I2 消息推送（改版页，原名 Nova 消息推送）。服务端把平台上真实发生的事做成业务推送，发到 App「消息 · 通知」；运营在这里管频道、
@@ -28,7 +29,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
 import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from "./i-conflict";
@@ -850,7 +851,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   });
   const unknownNotice = <>
     <FundRecoveryPanel rows={recoveryRows} settled={settledRows} onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
-    {closing && <FundClosureModal label={`${closing.action} · ${unknownObject(closing)}`} createdAt={closing.createdAt} known={closureKnown(outcomes[closing.commandKey])}
+    {closing && <FundClosureModal label={`${closing.action} · ${unknownObject(closing)}`} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={unknownChange(closing) ? <Fact k="改动">{unknownChange(closing)}</Fact> : undefined}
       onClose={() => setClosing(null)} onSubmit={async (evidence: FundCommandEvidence) => {
         const record = closing;

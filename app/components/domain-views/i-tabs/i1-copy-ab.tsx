@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 /**
@@ -19,7 +20,7 @@ import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
@@ -365,7 +366,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   });
   const pendingNotice = <>
     <FundRecoveryPanel rows={recoveryRows} settled={settledRows} onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
-    {closing && <FundClosureModal label={recordLabel(closing)} createdAt={closing.createdAt} known={closureKnown(outcomes[closing.commandKey])}
+    {closing && <FundClosureModal label={recordLabel(closing)} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={closing.change ? <Fact k="改动">{closing.change}</Fact> : undefined}
       onClose={() => setClosing(null)} onSubmit={async (evidence: FundCommandEvidence) => {
         const record = closing;
