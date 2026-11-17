@@ -14,7 +14,7 @@ export function validateI6CourseOptions(requested: Partial<Record<"completionCon
   }
 }
 
-function invalid(): never { throw new Error("I6 返回数据格式异常，请刷新重试"); }
+function invalid(): never { throw new Error("数据暂时读不出来，请刷新重试。"); }
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
   return value as Record<string, unknown>;

@@ -1,7 +1,7 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { I2_RETIRED_TEMPLATE_CTAS, parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
+import { I2_RETIRED_TEMPLATE_CTAS, I_DATA_UNREADABLE, parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1731,7 +1731,7 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
   const safeError = (moduleId: string, result: PromiseSettledResult<unknown>) => {
     if (result.status === "fulfilled") return undefined;
     const message = result.reason instanceof Error ? result.reason.message : "";
-    return message === `${moduleId} 返回数据格式异常，请刷新重试`
+    return message === I_DATA_UNREADABLE
       ? message
       : `${moduleId} 数据加载失败，请刷新重试`;
   };
@@ -1805,7 +1805,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   estimateI3Audience: async (target) => {
     const value = await apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) });
     if (!value || !Number.isSafeInteger(value.estimatedUsers) || value.estimatedUsers < 0 || !value.target
-      || Object.entries(target).some(([key, expected]) => value.target[key as keyof NotificationAudienceTarget] !== expected)) throw new Error("I3 受众估算返回数据格式异常，请重新估算");
+      || Object.entries(target).some(([key, expected]) => value.target[key as keyof NotificationAudienceTarget] !== expected)) throw new Error("受众人数暂时估不出来，请重新估算。");
     return value;
   },
   scheduleI3Campaign: (campaignNo, scheduledAt, expectedRevision, reason, snapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt, expectedRevision }, reason)) }, snapshot),
@@ -1839,7 +1839,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   publishI6LocalizedMessage: (messageKey, body, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
   archiveI6LocalizedMessage: (messageKey, expectedVersion, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }, snapshot).then(() => undefined),
   fetchI6MessageVersions: (messageKey) => apiRequest<unknown>(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions`).then(value => {
-    if (!Array.isArray(value)) throw new Error("词条历史返回数据格式异常，请刷新重试");
+    if (!Array.isArray(value)) throw new Error("词条历史暂时读不出来，请刷新重试。");
     return value.map(parseI6Message);
   }),
   rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }, snapshot).then(() => undefined),
@@ -1847,7 +1847,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   createI6Course: (courseId, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
   updateI7CourseDraft: (courseId, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
   fetchI7CourseVersions: (courseId) => apiRequest<unknown>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`).then(value => {
-    if (!Array.isArray(value)) throw new Error("课程版本返回数据格式异常，请刷新重试");
+    if (!Array.isArray(value)) throw new Error("课程版本暂时读不出来，请刷新重试。");
     return value.map(parseI6CourseVersion);
   }),
   fetchI7NextCourseVersion: async (courseId) => {

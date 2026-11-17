@@ -38,8 +38,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** 读到的内容不完整时页面上显示的一句（I4、I6 的合同校验写同一句）；不带页面代号。 */
+export const I_DATA_UNREADABLE = "数据暂时读不出来，请刷新重试。";
+
 function fail(moduleId: IModuleId): never {
-  throw new Error(`${moduleId} 返回数据格式异常，请刷新重试`);
+  void moduleId;
+  throw new Error(I_DATA_UNREADABLE);
 }
 
 function record(moduleId: IModuleId, value: unknown): Record<string, unknown> {
