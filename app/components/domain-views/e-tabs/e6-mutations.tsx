@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { SearchCheck } from "lucide-react";
 import Link from "next/link";
@@ -290,7 +291,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         {(r.payload.kind === "device" || r.payload.kind === "risk" && outcomes[r.commandKey]) && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={expired} summarized={!refused} />}
         {riskShown && <div className="e-check-outcome"><StatusTag tone={riskShown.tone}>{riskShown.title}</StatusTag><p>{riskShown.text}</p></div>}
         {r.payload.kind === "device" && !m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <ClosureContact />}
-        {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <ClosureContact />}
+        {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && closureOpen(outcomes[r.commandKey], expired) && <ClosureContact />}
       </>;
       return { key: waiting ? `waiting:${r.commandKey}` : r.commandKey, object: r.label, createdAt: r.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
         result: (r.payload.kind === "device" || r.payload.kind === "risk") && !refused ? commandOutcomeSummary(outcomes[r.commandKey], expired) : undefined,
@@ -299,9 +300,16 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         actions: <>
           {r.payload.kind === "proposal" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
           {r.payload.kind === "device" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
-          {r.payload.kind === "risk" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
+          {r.payload.kind === "risk" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(async receipt => {
+            showRisk(r, receipt as PhoneRiskReceipt | null);
+            if (r.payload.kind !== "risk" || r.payload.receiptVersion !== 1 || !receipt || ["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes((receipt as PhoneRiskReceipt).status)) return;
+            try {
+              const original = await discoverECommand({ commandKey: r.commandKey, originalMethod: "PUT", originalPath: "/api/admin/config/phone-calibration/risk", originalAdminId: String(r.owner) });
+              showDevice(r, original);
+            } catch (failure) { setOutcomes(values => ({ ...values, [r.commandKey]: { error: eReadError(failure) } })); }
+          }, () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
           {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
-          {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && riskReceipts[r.commandKey]?.status !== "PROCESSING" && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
+          {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
           {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
           {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
           {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>准备新变更</Button>}
@@ -320,6 +328,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     <RecoveryPanel title={recoveryTitle(items.length - items.filter(item => item.key.startsWith("waiting:")).length - records.filter(r => r.terminal).length, items.filter(item => item.key.startsWith("waiting:")).length, records.filter(r => r.terminal).length)} tone="warn"
       explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
     {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
+      offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}
       onClose={() => setClosing(null)} onSubmit={async evidence => {
         const receipt = await m.checkDirect(closing, evidence) as ECommandInvestigation | null;
