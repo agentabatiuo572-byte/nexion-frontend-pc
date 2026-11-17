@@ -682,13 +682,15 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
   // 全球作业基座。
   const jobs = values.activeJobsBase;
+  const appJobs = display?.activeJobsDisplay;
+  const jobsUnavailable = display?.unavailable.find(item => item.field === "activeJobsDisplay")?.reason;
   const jobsModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "jobs"} {...ids.panel("jobs")}>
     <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
       <AppPreview where="App 赚取页 · 任务中心"
         explain="真实进行中作业数这页读不到。真实数读不到时，只有当天两种币的已实现收益都确为 0，App 才只显示基座；否则显示不可用。全球网络页的进行中任务也是这个数。"
         status="真实进行中作业数这页读不到">
-        <AppNumber label="全球作业进行中" value={jobs == null ? "真实数" : <>真实数 + {count(jobs)}</>} unit="个" empty={jobs == null}
-          sub={jobs == null ? "基座未发布，只显示真实进行中作业数" : jobs === 0 ? "发布了 0，显示的就是真实数" : undefined} />
+        <AppNumber label="全球作业进行中" value={appJobs === undefined ? jobs == null ? "真实数" : <>真实数 + {count(jobs)}</> : count(appJobs)} unit="个" empty={appJobs === undefined ? jobs == null : appJobs === null}
+          sub={appJobs === null && jobsUnavailable ? formatAdminApiError(jobsUnavailable, "H9_DATA_LOAD_FAILED") : jobs == null ? "基座未发布，只显示真实进行中作业数" : jobs === 0 ? "发布了 0，显示的就是真实数" : undefined} />
       </AppPreview>
     </Panel>
     <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}>
