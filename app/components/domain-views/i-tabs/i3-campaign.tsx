@@ -27,9 +27,9 @@ import { receiptFact } from "../recovery-panel";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { businessClock, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
-import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
+import { BODY_SENT, campaignQuantity, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, sentWindow, deliveryGap, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -182,6 +182,13 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       return latest;
     });
   const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
+  // 新后端的本月统计按活动创建时间分组（stats.basis，后端 f0a25fa4）；旧后端没有 basis，统计卡照旧。
+  const statsBasis = I3_STATS.basis;
+  const zoneLabel = businessZone().label;
+  // basis 里的界限是存储时钟、可能不带秒（LocalDateTime.toString），补上秒再按业务时区写。
+  const basisDay = (value: string | undefined) => formatBusinessTimeCompact(value && /T\d{2}:\d{2}$/.test(value) ? `${value}:00` : value, "—").slice(0, 10);
+  const monthStart = basisDay(statsBasis?.monthFrom);
+  const weekStart = basisDay(statsBasis?.weekFrom);
   const CAMPAIGNS: CampaignRow[] = (data?.campaigns ?? []).map((row) => ({
     ...row,
     st: row.status,
@@ -923,16 +930,36 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {conclusion}
 
       <StatBand label="通知活动概况">
-        <Stat tone="role-3" icon={CalendarClock} label="等着发" value={String(I3_STATS.monthScheduled)} unit="条" sub={`其中紧急 ${I3_STATS.criticalInflight} 条`}
-          explain="已排期和发送中的活动。紧急指紧急优先级的活动条数。" />
-        <Stat tone="role-2" icon={FilePen} label="草稿" value={String(I3_STATS.monthDraft)} unit="条" explain="还没排期，不会发给任何人。" />
-        <Stat tone="role-2" icon={Send} label="已发送" value={String(I3_STATS.monthSent)} unit="条" sub={`活动共 ${I3_STATS.monthCampaigns} 条`}
-          explain="全部没删除的活动，不分月份。" />
-        <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate ?? "—"} sub={`左滑推算 ${I3_STATS.weeklySwipe ?? "—"}`}
-          explain={<>
-            <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新（已提后端），不是实时已读率。</p>
-            <p>左滑推算：已读数 × 3.1%，不是实际左滑次数，也不分本周。</p>
-          </>} />
+        {statsBasis ? <>
+          <Stat tone="role-3" icon={Layers} label="本月新建的活动" value={String(I3_STATS.monthCampaigns)} unit="个" sub={`${monthStart} 起，按创建时间`}
+            explain={<>
+              <p>{`${monthStart} 起（${zoneLabel}）新建、没删除的活动个数，到现在为止。是活动个数，不是发出去的通知条数。`}</p>
+              <p>上个月建、这个月才发的活动不算在这里。</p>
+            </>} />
+          <Stat tone="role-2" icon={Send} label="其中已发送" value={String(I3_STATS.monthSent)} unit="个" sub={`等着发 ${I3_STATS.monthScheduled} · 草稿 ${I3_STATS.monthDraft}`}
+            explain="本月新建的活动里，现在各是什么状态：已发送、等着发（已排期和发送中）、草稿。取消和失败的不在这三项里。" />
+          <Stat tone="role-3" icon={CalendarClock} label="等着发的紧急活动" value={String(I3_STATS.criticalInflight)} unit="个" sub="不限月份"
+            explain="现在所有已排期和发送中、紧急优先级的活动，不只本月新建的。" />
+          <Stat tone="role-3" icon={Users} label="已读率" value={I3_STATS.avgReadRate ?? "—"}
+            sub={I3_STATS.avgReadRate == null ? statsBasis.deliveryFactsComplete ? "还没有送达记录" : "送达记录不全，算不出" : statsBasis.weeklyReadAvailable && statsBasis.weeklyReadCount != null ? `本周已读 ${statsBasis.weeklyReadCount.toLocaleString("en-US")} 条` : "本周已读算不出"}
+            explain={<>
+              <p>所有已发送活动：用户实际读了的通知 ÷ 实际送达的通知，用户读了就更新。只算还留在用户通知里的。</p>
+              <p>{`本周从 ${weekStart} 起（${zoneLabel}）。`}</p>
+              {!statsBasis.deliveryFactsComplete && <p>{`有活动的送达记录不全，已读率先不算。能核对到的：送达 ${statsBasis.knownSentCount.toLocaleString("en-US")} 条，已读 ${statsBasis.knownReadCount.toLocaleString("en-US")} 条。`}</p>}
+              {statsBasis.deliveryFactsComplete && !statsBasis.weeklyReadAvailable && <p>{`有 ${statsBasis.undatedReadCount.toLocaleString("en-US")} 条已读没记下读的时间，本周已读算不出。`}</p>}
+            </>} />
+        </> : <>
+          <Stat tone="role-3" icon={CalendarClock} label="等着发" value={String(I3_STATS.monthScheduled)} unit="条" sub={`其中紧急 ${I3_STATS.criticalInflight} 条`}
+            explain="已排期和发送中的活动。紧急指紧急优先级的活动条数。" />
+          <Stat tone="role-2" icon={FilePen} label="草稿" value={String(I3_STATS.monthDraft)} unit="条" explain="还没排期，不会发给任何人。" />
+          <Stat tone="role-2" icon={Send} label="已发送" value={String(I3_STATS.monthSent)} unit="条" sub={`活动共 ${I3_STATS.monthCampaigns} 条`}
+            explain="全部没删除的活动，不分月份。" />
+          <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate ?? "—"} sub={`左滑推算 ${I3_STATS.weeklySwipe ?? "—"}`}
+            explain={<>
+              <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新（已提后端），不是实时已读率。</p>
+              <p>左滑推算：已读数 × 3.1%，不是实际左滑次数，也不分本周。</p>
+            </>} />
+        </>}
       </StatBand>
 
       <Panel title="通知活动" icon={Bell} tone="role-3" data-proof="i3-campaign-list" sub={`${filtered.length} 条 · 时间为${businessZone().label}`}
@@ -1111,7 +1138,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Facts>
               <Fact k={reachLabel(c)} lead unit={campaignQuantity(c, "reach") === "—" ? undefined : "人"}>{campaignQuantity(c, "reach")}</Fact>
               <Fact k="状态"><CampaignStatusTag st={liveSt(c)} /></Fact>
-              <Fact k="发送">{c.st === "scheduled" ? `${whenText(c)}（${businessZone().label}）` : whenText(c)}</Fact>
+              <Fact k="发送">{c.st === "scheduled" || c.st === "sent" && c.deliveryFacts?.complete ? `${whenText(c)}（${businessZone().label}）` : whenText(c)}</Fact>
               <Fact k="发给谁">{c.audience}</Fact>
               <Fact k="优先级"><TierTag tier={c.tier} /></Fact>
               <Fact k="类型">{kindLabel(c.kind)}</Fact>
@@ -1130,6 +1157,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             </section>
             <Facts>
               <Fact k="送达 / 已读">{c.st === "sent" ? `${campaignQuantity(c, "sent")} / ${campaignQuantity(c, "read")}` : "—"}</Fact>
+              {deliveryGap(c) && <Fact k="原因">{deliveryGap(c)}</Fact>}
+              {deliveryGap(c) && c.deliveryFacts?.sentCount != null && <Fact k="已核对到的">{`送达 ${c.deliveryFacts.sentCount.toLocaleString("en-US")} 人 · ${sentWindow(c.deliveryFacts.firstSentAt, c.deliveryFacts.lastSentAt, c.deliveryFacts.sentCount)}（${businessZone().label}）`}</Fact>}
+              {deliveryGap(c) && /^\d+$/.test(c.sent.trim()) && <Fact k="活动记录写的">{`${Number(c.sent.trim()).toLocaleString("en-US")} 人，不是实际送达数`}</Fact>}
               <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>
               <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : "不跳转"}</Fact>
               <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>

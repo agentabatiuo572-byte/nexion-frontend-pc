@@ -4,7 +4,7 @@
  * Proposals and original-command recovery are supplied by H3's mutation owner. */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Globe, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Globe, Pencil, Plus, RefreshCw, Shuffle, Trash2, TriangleAlert } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Explain, Fact, Facts, IconButton, Input, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
@@ -12,6 +12,9 @@ import {
   fetchH3WeeklyRegionPolicy,
   h3WeeklyRegionPolicyParams,
   validateH3WeeklyRegionMappings,
+  type H3AssignedWeeklyWindow,
+  type H3ActualWeeklyAssignments,
+  type H3WeeklyAllocationState,
   type H3WeeklyRegionMapping,
   type H3WeeklyRegionPolicy,
 } from "@/lib/admin/h-client";
@@ -152,6 +155,61 @@ function windowText(zone: string, now: number) {
 }
 const zoneLabel = (zone: string) => ZONE_NAMES[zone] ?? "";
 
+// ===== 用户现在实际在的一周（H3-BE-09，后端 5278e138 WeeklyRegionPolicyService.actualAssignments）=====
+// 按分配时记下的区号分组；同一区号可以有几段。和「常规的一周」对不上时标出来，原因只写后端能证明的：时区不同、不是整周、旧规则。
+const people = (count: number) => `${count.toLocaleString("en-US")} 人`;
+/** 不在本周的几种情况，按运营关心的顺序；缺记录、记录有误另起一行提醒。 */
+const OTHER_STATE: Array<[H3WeeklyAllocationState, string]> = [
+  ["UNASSIGNED", "还没分配"],
+  ["EXPIRED_ASSIGNMENT", "上一周已结束"],
+  ["FUTURE_ASSIGNMENT", "下一周才开始"],
+];
+/** 和「常规的一周」比：一样返回 null；不一样返回原因，只写后端能证明的（不是整周、旧规则、时区不同）。区号没记下时只看是不是整周。 */
+function windowDiff(window: H3AssignedWeeklyWindow, zone: string | undefined, now: number): string | null {
+  const nonstandard = "不是周一到周一的整周：规则第一次生效或用户换了区号的那一周，从原来那一周结束时接上。";
+  if (window.boundaryShape === "NONSTANDARD_WEEK_BOUNDARIES") return nonstandard;
+  const regular = zone ? weekWindow(zone, now) : null;
+  if (!regular || !window.assignedFrom || !window.assignedUntil
+    || Date.parse(window.assignedFrom) === regular.start && Date.parse(window.assignedUntil) === regular.end) return null;
+  if (window.boundaryShape === "LEGACY_FROZEN") return "按旧规则分配的一周（北京时间），用户从自己的下一周开始换。";
+  if (window.timeZone && window.timeZone !== zone) return `按 ${zoneLabel(window.timeZone) || window.timeZone}（${window.timeZone}）分配，和现在的规则不同；用户从自己的下一周开始换。`;
+  return "和按规则算的这一周起止不同。";
+}
+function ActualWindows({ windows, zone, now, showCode }: { windows: H3AssignedWeeklyWindow[]; zone?: string; now: number; showCode?: boolean }) {
+  if (windows.length === 0) return <Cell main="—" sub="现在没人" />;
+  // 和常规的一周一样的合成一行只写人数，不再重复起止；不一样的每段写全起止并标出来。
+  const same = zone ? windows.filter(window => !windowDiff(window, zone, now)) : [];
+  const codes = (rows: H3AssignedWeeklyWindow[]) => showCode ? [...new Set(rows.map(window => window.callingCode).filter(Boolean))].join("、") : "";
+  return <div className="h3-actual">
+    {same.length > 0 && <div className="h3-actual-row"><Cell main={people(same.reduce((sum, window) => sum + window.users, 0))} sub={`和常规的一周相同${codes(same) ? ` · ${codes(same)}` : ""}`} /></div>}
+    {windows.filter(window => !same.includes(window)).sort((a, b) => (a.assignedFrom ?? "").localeCompare(b.assignedFrom ?? "")).map((window, index) => {
+      const diff = windowDiff(window, zone, now);
+      const code = showCode && window.callingCode ? ` · ${window.callingCode}` : "";
+      const from = window.assignedFrom ? Date.parse(window.assignedFrom) : null;
+      const until = window.assignedUntil ? Date.parse(window.assignedUntil) : null;
+      return <div key={index} className="h3-actual-row">
+        <Cell main={from === null ? "起始时间没记下" : `${businessStamp(from)}（${weekdayText(from)}）起`}
+          sub={`${until === null ? "结束时间没记下" : `到 ${businessStamp(until)}（${weekdayText(until)}）`} · ${people(window.users)}${code}`} />
+        {diff && <StatusTag tone="neutral" icon={Shuffle} explain={diff}>和规则不同</StatusTag>}
+      </div>;
+    })}
+  </div>;
+}
+function ActualSummary({ actual }: { actual: H3ActualWeeklyAssignments }) {
+  const others = OTHER_STATE.map(([state, label]) => [label, actual.allocationStateCounts[state] ?? 0] as const).filter(([, users]) => users > 0);
+  const broken = (actual.allocationStateCounts.HEADER_MISSING ?? 0) + (actual.allocationStateCounts.HEADER_INVALID ?? 0);
+  return <div className="h3-actual-sum">
+    <p>{`本周已分到 ${people(actual.knownCurrentAssignedUsers)}，共 ${people(actual.scopeUsers)}`}
+      {others.length > 0 && `；${others.map(([label, users]) => `${label} ${people(users)}`).join("，")}`}
+      <Explain label="人数怎么算" content={<>
+        <p>只算正常状态、不是测试账户的用户，每人看最近一次分到的那一周。「上一周已结束」是最近一次分到的那一周已经过了，还没分到新的一周。</p>
+        <p>区号是分配那一刻记下的，不按用户现在的手机号重新算。</p>
+        <p>{`截至 ${businessStamp(Date.parse(actual.asOf))}（${businessZone().label}）。`}</p>
+      </>} /></p>
+    {broken > 0 && <p className="h3-actual-warn"><TriangleAlert size={14} aria-hidden />{`${people(broken)}的每周记录缺失或有误，上面的人数不全。`}</p>}
+  </div>;
+}
+
 export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; canAudit: boolean }) {
   const { canRead, canWrite, canReadA2, policy, draft, setDraft, setDraftBase, draftBase, loading, error, reviewError, invalid, pending, commandBlocked, staleDraft, reload, submit } = region;
   if (!canRead) return null;
@@ -159,6 +217,12 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
   const firstUnset = policy?.revision === 0 && !policy.nextActivation;
   const editBlock = loading ? "正在读取地区规则" : error ? "地区规则读取失败，读到后才能编辑" : reviewError ? reviewError : pending ? "已有一份修改在等批准，批准或驳回前不能再改" : commandBlocked ? "这一项结果未知，请先查询原结果" : firstUnset ? "首次生效时间还没确定，暂时不能提交修改" : undefined;
   const rows = draft ?? policy?.mappings ?? [];
+  // 编辑时只看规则本身；实际一列只在查看时出现，旧后端没给就不出现。
+  const actual = !draft ? policy?.actualAssignments : undefined;
+  const mapped = new Set((policy?.mappings ?? []).map(row => row.callingCode));
+  const actualOf = (code: string) => actual?.currentWindows.filter(window => window.callingCodeKnown && window.callingCode === code) ?? [];
+  const actualOther = actual?.currentWindows.filter(window => window.callingCodeKnown && !mapped.has(window.callingCode ?? "")) ?? [];
+  const actualUnknown = actual?.currentWindows.filter(window => !window.callingCodeKnown) ?? [];
   const sub = policy ? `${policy.source === "DEFAULT" ? "默认规则，还没发布过" : `已发布第 ${policy.revision} 版`} · ${rows.length} 个区号 · 时间为${businessZone().label}` : undefined;
   const actions = <>
     <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void reload()}>刷新</Button>
@@ -187,7 +251,8 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
           <tr>
             <Th>手机号区号</Th>
             <Th>时区</Th>
-            <Th>{`常规的一周（${businessZone().label}）`}<Explain label="这一列怎么算" content={`示意，不是每位用户的实际周：按这个时区周一 00:00 到下周一 00:00，换成${businessZone().label}写。规则第一次生效和用户换了区号的那一周，从用户原来那一周结束时接上。改动后用户从自己的下一周开始换。`} /></Th>
+            <Th>{`常规的一周（${businessZone().label}）`}<Explain label="这一列怎么算" content={`按这个时区周一 00:00 到下周一 00:00 算的示意，换成${businessZone().label}写。${actual ? "用户实际的一周看右边一列。" : "规则第一次生效和用户换了区号的那一周，从用户原来那一周结束时接上。"}改动后用户从自己的下一周开始换。`} /></Th>
+            {actual && <Th>{`现在实际（${businessZone().label}）`}<Explain label="这一列怎么算" content="用户现在实际在的这一周和人数，按分配时记下的区号。同一区号可能有几段：规则改过或用户换了区号，那一周从原来那一周结束时接上。" /></Th>}
             {draft && <Th sticky="end"><span className="rd-sr-only">删除</span></Th>}
           </tr>
         </thead>
@@ -206,6 +271,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
               <Td><b>{row.callingCode}</b></Td>
               <Td><span data-mono="">{row.zoneId}</span>{zoneLabel(row.zoneId) && <span className="h3-region-zone">{zoneLabel(row.zoneId)}</span>}</Td>
               <Td>{windowText(row.zoneId, now)}</Td>
+              {actual && <Td><ActualWindows windows={actualOf(row.callingCode)} zone={row.zoneId} now={now} /></Td>}
             </Tr>
           ))}
           {draft && draft.length === 0 && <TableMessage columns={4}>全部删除后，以后所有用户都用越南时间。</TableMessage>}
@@ -213,10 +279,18 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
             <Td><span className="h3-region-other">其他区号</span></Td>
             <Td><span data-mono="">{DEFAULT_ZONE}</span><span className="h3-region-zone">越南时间 · 默认</span></Td>
             <Td>{windowText(DEFAULT_ZONE, now)}</Td>
+            {actual && <Td><ActualWindows windows={actualOther} zone={DEFAULT_ZONE} now={now} showCode /></Td>}
             {draft && <Td sticky="end" data-fit="" />}
           </Tr>
+          {actualUnknown.length > 0 && <Tr>
+            <Td><span className="h3-region-other">区号没记下</span></Td>
+            <Td>—</Td>
+            <Td>—</Td>
+            <Td><ActualWindows windows={actualUnknown} now={now} /></Td>
+          </Tr>}
         </tbody>
       </Table>}
+      {actual && <ActualSummary actual={actual} />}
       {canWrite && draft && <div className="h3-region-edit">
         {invalid && <Notice tone="warn">{invalid}</Notice>}
         {staleDraft && <Notice tone="warn">规则刚被别人修改过，你填写的内容还在。请取消编辑、刷新后重新修改。</Notice>}

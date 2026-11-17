@@ -8,7 +8,7 @@ import { useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
 import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
-import { businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
   kind: string;
@@ -65,14 +65,30 @@ export function campaignQuantity(row: CampaignRow, field: "sent" | "read" | "rea
   return quantityText(count === null ? undefined : String(count));
 }
 
+/** 发给多人时是一段时间：首条到末条，写到分钟；同一天只写一次日期，同一分钟写「这一分钟内」。时区由调用方写一次。 */
+export function sentWindow(firstAt: string | null, lastAt: string | null, count: number | null): string {
+  const first = formatBusinessTimeCompact(firstAt, "—");
+  if (count === 1 || first === "—") return first;
+  const last = formatBusinessTimeCompact(lastAt, "—");
+  if (last === first) return `${first} 这一分钟内`;
+  return `${first} – ${last.slice(0, 10) === first.slice(0, 10) ? last.slice(11) : last}`;
+}
+
+/** 已发送但送达记录不全：为什么人数和时间是「—」。旧后端没有送达记录这一项，不写。 */
+export function deliveryGap(row: CampaignRow): string | null {
+  const facts = row.deliveryFacts;
+  if (row.st !== "sent" || !facts || facts.complete) return null;
+  return facts.sentCount === null
+    ? "没找到这条活动的送达记录，送达、已读和发送时间暂时核对不了。"
+    : "送达记录和活动记录的人数对不上，送达、已读和发送时间暂时核对不了。";
+}
+
 /** 发送时间这一格：只有已排期的是时间，其余是后端写的状态说明。 */
 export function whenText(row: CampaignRow): string {
   if (row.st === "scheduled") return /^\d{4}-\d{2}-\d{2}T/.test(row.schedule) ? formatBusinessTimeCompact(row.schedule, row.schedule) : row.schedule || "—";
   if (row.st === "sent" && row.deliveryFacts) {
     if (!row.deliveryFacts.complete) return "—";
-    const first = formatBusinessTimeFull(row.deliveryFacts.firstSentAt, "—");
-    const last = formatBusinessTimeFull(row.deliveryFacts.lastSentAt, "—");
-    return row.deliveryFacts.sentCount === 1 ? first : `${first} – ${last}`;
+    return sentWindow(row.deliveryFacts.firstSentAt, row.deliveryFacts.lastSentAt, row.deliveryFacts.sentCount);
   }
   if (row.st === "draft") return "还没排期";
   if (row.st === "sending") return "正在写入用户通知";
@@ -172,7 +188,7 @@ export function CampaignCard({ row, kindLabel, selected, onOpen, actions }: {
       </button>
       <dl className="i3-card-facts">
         <div><dt>发给谁</dt><dd>{row.audience}</dd></div>
-        <div><dt>{reachLabel(row)}</dt><dd data-num="" data-empty={campaignQuantity(row, "reach") === "—" ? "" : undefined}>{campaignQuantity(row, "reach") === "—" ? "—" : `${campaignQuantity(row, "reach")} 人`}</dd></div>
+        <div><dt>{reachLabel(row)}</dt><dd data-num="" data-empty={campaignQuantity(row, "reach") === "—" ? "" : undefined}>{campaignQuantity(row, "reach") === "—" ? "—" : `${campaignQuantity(row, "reach")} 人`}{deliveryGap(row) && <Explain label="为什么没有数" content={deliveryGap(row)} />}</dd></div>
         <div><dt>发送</dt><dd>{whenText(row)}</dd></div>
       </dl>
       {actions && <div className="i3-card-actions">{actions}</div>}
