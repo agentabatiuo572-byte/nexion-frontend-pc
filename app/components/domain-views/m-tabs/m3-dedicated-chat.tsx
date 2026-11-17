@@ -71,6 +71,7 @@ const lostPermission = (cause: unknown) => cause != null && typeof cause === "ob
 const MESSAGE_UNKNOWN = "上条消息发送结果未知，先查询原结果；按原请求重试不会重复发送。";
 const MESSAGE_STILL_UNKNOWN = "原消息结果仍未知，记录继续保留，稍后再查询。";
 const MESSAGE_FAILED = "原消息发送失败，记录已解除；草稿还在，可以修改后重新发送。";
+const PEER_CHANGED_SEND_REFUSAL = "本次发送已被拒绝：这条已不是当前会话。原文已保留；续接时仅带入空的输入框，已有草稿时两份都保留。";
 
 const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientError
   && cause.status !== 404
@@ -304,6 +305,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const [recoveryError, setRecoveryError] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState("");
   const [sendError, setSendError] = useState("");
+  const [peerChangedDraft, setPeerChangedDraft] = useState<{ identity: string; customerId: string; sourceKey: string } | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [attachmentPolicy, setAttachmentPolicy] = useState<SupportAttachmentPolicy | null>(null);
   const [attachmentPolicyError, setAttachmentPolicyError] = useState("");
@@ -549,6 +551,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const myName = session?.operator || session?.username || "";
   const canContinueConversation = Boolean(!qualificationUnknown && canWriteM3 && !heldByOther && selected?.detailReady
     && selected.ownerAdminId === adminId && selected.writeState?.currentAssignmentAgentId === String(adminId)
+    && selected.writeState.writableConversationNo !== selected.id
     && (selected.status !== "open" || selected.writeState.canReply === false));
   const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueConversation ? selected?.writeState?.writableConversationNo ? "可以打开当前会话继续。" : "可以发起会话继续。" : "");
   // M-26 / M-54: messages are service replies by default. Per SPEC FEAT-M04 and CONTRACTS §5 (owner decision R05),
@@ -610,6 +613,21 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const currentProfileDetail = profileDetail?.customerId === selected?.customerId ? profileDetail : null;
   const targetKey = selected?.id ?? (requestedCustomerId ? `first:${requestedCustomerId}` : "");
   const draft = drafts[targetKey] ?? "";
+  // Both explicit continuation and a refused send's automatic landing use the same draft rules.
+  const carryContinuationDraft = useCallback((sourceKey: string, destinationKey: string, customerId: string) => {
+    if (pending || firstPending || readPending(pendingKey(adminId)) || readPending(firstPendingKey(adminId, customerId))) return;
+    setDrafts(current => {
+      if (!current[sourceKey]?.trim() || current[destinationKey]?.trim()) return current;
+      const updated = { ...current, [destinationKey]: current[sourceKey] };
+      delete updated[sourceKey];
+      return updated;
+    });
+  }, [adminId, pending, firstPending]);
+  useEffect(() => {
+    if (!peerChangedDraft || peerChangedDraft.identity !== identityRef.current || !selected?.detailReady
+      || selected.customerId !== peerChangedDraft.customerId || selected.writeState?.currentAssignmentAgentId !== String(adminId)) return;
+    carryContinuationDraft(peerChangedDraft.sourceKey, selected.id, peerChangedDraft.customerId);
+  }, [peerChangedDraft, selected?.id, selected?.customerId, selected?.detailReady, selected?.writeState, adminId, carryContinuationDraft]);
   const recoveryBlocksTarget = recoveries.some(({ locator }) => Boolean(locator.conversationId && locator.conversationId === selected?.id) || Boolean(locator.customerId && locator.customerId === (selected?.customerId ?? requestedCustomerId)));
   const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3 && !heldByOther && (selected ? selected.detailReady === true && selected.writeState?.canReply === true && closedCandidatesReady && (canSendTo(selected, adminId) || holdAllowsOther && canSendTo({ ...selected, ownerAdminId: adminId }, adminId)) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.assignmentId && (firstDetail.agentAdminId === adminId || holdAllowsOther)));
   // 没有本人客户、没有可分配的客服时入口直接禁用，不打开弹窗再说做不了。读不到不拦，弹窗里有失败和重试。
@@ -836,7 +854,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     };
   }, []);
   useEffect(() => {
-    setDrafts({}); setDraftOwner(0); setActionResult(""); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
+    setDrafts({}); setDraftOwner(0); setPeerChangedDraft(null); setActionResult(""); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
     setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
@@ -915,7 +933,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setSendError(MESSAGE_UNKNOWN);
     } catch { pendingMessages.forget(pendingKey(adminId)); }
   }, [adminId, conversationsAvailable, authEpoch, visible, pending, requestedCustomerId, revokeCustomer, qualificationUnknown]);
-  useEffect(() => { clearAttachment(); if (!pending && !firstPending) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
+  useEffect(() => { clearAttachment(); if (!pending && !firstPending && (!peerChangedDraft || peerChangedDraft.identity !== identityRef.current || peerChangedDraft.customerId !== (selected?.customerId ?? requestedCustomerId ?? peerChangedDraft.customerId))) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
   useEffect(() => {
     if (!selected || !messagePages.readReady || !conversationsAvailable || selected.ownerAdminId !== adminId || document.visibilityState === "hidden" || !chatColumnRef.current?.getClientRects().length) return;
     const contexts = messagePages.page?.readContexts.filter(context => !context.alreadyRead) ?? [];
@@ -990,7 +1008,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const select = (convo: SessionConvo) => {
     setMessageOpening(value => value + 1);
     if (firstPending) { if (!busy) setSendError("首条消息发送结果未知，先查询原结果，再切换会话。"); return; }
-    clearAttachment(pending?.kind !== "IMAGE"); setContinuation(null); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息发送结果未知，请回原会话查询原结果。" : "");
+    clearAttachment(pending?.kind !== "IMAGE"); setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息发送结果未知，请回原会话查询原结果。" : "");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
 
@@ -1046,7 +1064,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (!record) return;
       const slot = first ? firstPendingKey(adminId, first.customerId) : pendingKey(adminId);
       const identity = identityRef.current;
-      setBusy(true); setSendError("");
+      setBusy(true); setPeerChangedDraft(null); setSendError("");
       try {
         const result = await supportClient.command(record.key);
         if (identityRef.current !== identity) return;
@@ -1094,7 +1112,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       const record = firstPending ?? { key: newKey(), clientMessageId: crypto.randomUUID(), body: draft.trim(), intent, customerId: requestedCustomerId, assignmentId: firstDetail!.assignmentId!, version: firstDetail!.version, replyTargets: closedReplyTargets };
       if (!record.body) return;
       if (!firstPending && record.intent === "MAINTENANCE") {
-        setBusy(true); setSendError("");
+        setBusy(true); setPeerChangedDraft(null); setSendError("");
         const due = await maintenanceStillDue(requestedCustomerId);
         if (identityRef.current === identity) setBusy(false);
         if (!due) return;
@@ -1102,7 +1120,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       const stored = rememberPending(firstPendingKey(adminId, requestedCustomerId), record.key, record);
       setFirstPending(record);
       if (!stored) { setBusy(false); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
-      setBusy(true); setSendError("");
+      setBusy(true); setPeerChangedDraft(null); setSendError("");
       let submitted = false;
       try {
         let conversationNo = "";
@@ -1150,8 +1168,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           if (conversationPeerChanged(cause)) {
             if (submitted && rejectedSupportWrite(cause)) {
               pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
+              setPeerChangedDraft({ identity, customerId: record.customerId, sourceKey: `first:${record.customerId}` });
             }
-            setSendError(submitted && rejectedSupportWrite(cause) ? `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。` : MESSAGE_UNKNOWN);
+            setSendError(submitted && rejectedSupportWrite(cause) ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
             await refreshChangedPeer(identity);
           } else if (submitted && busyHold) {
             // Someone else started talking first: lock the composer with their details and keep the draft.
@@ -1174,7 +1193,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     let currentVersion = selected.version;
     let currentStatus = selected.status.toUpperCase();
     if (!retry) {
-      setBusy(true); setSendError("");
+      setBusy(true); setPeerChangedDraft(null); setSendError("");
       try {
         const state = await supportClient.conversationState(selected.id);
         if (identityRef.current !== identity) return;
@@ -1210,7 +1229,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const stored = rememberPending(pendingKey(adminId), record.key, record);
     setPending(record);
     if (!stored) { setBusy(false); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
-    setBusy(true); setSendError("");
+    setBusy(true); setPeerChangedDraft(null); setSendError("");
     const input = { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
     let ok = false, submitted = false;
     try {
@@ -1242,8 +1261,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (identityRef.current === identity && conversationPeerChanged(cause)) {
         if (submitted && rejectedSupportWrite(cause)) {
           pendingMessages.forget(pendingKey(adminId)); setPending(null);
+          setPeerChangedDraft({ identity, customerId: String(selected.customerId), sourceKey: record.conversationId });
         }
-        setSendError(submitted && rejectedSupportWrite(cause) ? "本次发送已被拒绝：这条已不是当前会话。原文还在；客户仍归你时，打开当前会话或发起会话会把它带过去。" : MESSAGE_UNKNOWN);
+        setSendError(submitted && rejectedSupportWrite(cause) ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
         await refreshChangedPeer(identity);
         return;
       }
@@ -1378,21 +1398,17 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== identityRef.current) return;
       if (next.conversationNo && !visible.some(convo => convo.id === next.conversationNo)) await ctx.refreshConversations();
       if (stamp !== identityRef.current) return;
-      if (!pending && !firstPending && !readPending(pendingKey(adminId)) && !readPending(firstPendingKey(adminId, next.customerId))) {
-        const destinationKey = next.conversationNo ?? `first:${next.customerId}`;
-        setDrafts(current => {
-          if (!current[sourceKey]?.trim() || current[destinationKey]?.trim()) return current;
-          const updated = { ...current, [destinationKey]: current[sourceKey] };
-          delete updated[sourceKey];
-          return updated;
-        });
-      }
+      carryContinuationDraft(sourceKey, next.conversationNo ?? `first:${next.customerId}`, next.customerId);
       setContinuation(next);
       const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", next.customerId); window.history.replaceState(null, "", url);
       setRequestedCustomerId(next.customerId);
       setScreen("chat");
     } catch (cause) {
-      if (stamp === identityRef.current) setActionError(displayAdminError(cause));
+      if (stamp !== identityRef.current) return;
+      if (conversationPeerChanged(cause) || cause instanceof Error && cause.message === "CONVERSATION_PEER_CHANGED") {
+        await refreshChangedPeer(stamp);
+        if (stamp === identityRef.current) setActionError("客户归属已变化，请核对客户归属。");
+      } else setActionError(displayAdminError(cause));
     } finally { if (stamp === identityRef.current) setActionChecking(false); }
   };
 
@@ -1849,7 +1865,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             ? <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息发送结果未知，暂时不能再发。</Notice>
             : !canWriteM3 ? <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>
             : !selected.writeState ? <Notice tone="warn" action={<Button size="sm" onClick={() => void refreshChangedPeer(identityRef.current)}>重新读取会话</Button>}>还没确认这条会话能不能回复，确认前先不能发送。</Notice>
-            : selected.status !== "open" ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
+            : selected.status !== "open" && selected.writeState.writableConversationNo !== selected.id ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
             : selectedUnbound ? <Notice tone="warn">该客户还没有专属客服，等待主管分配后回复。</Notice>
             : selected.writeState?.canReply === false ? threadNotice(selected.writeState)
             : !currentProfileDetail ? <Notice tone="danger" action={<Button size="sm" onClick={() => setProfileRetry((value) => value + 1)}>重试</Button>}>客户归属核对失败：{profileError}</Notice>
@@ -1908,7 +1924,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       </aside>
       {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); setActionResult(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => setActionResult(`已确认原分配，专属客服为 ${name}。会话刷新失败，请刷新会话核对。`)); }} />}
       {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={baseBlocked ?? noOwnCustomers} onClose={() => { setBulkOpen(false); setEntryCheck(value => value + 1); }} />}
-      {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
+      {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
       {timeoutOpen && timeoutPolicy && <IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={() => { if (timeoutLatest) { setTimeoutPolicy(timeoutLatest); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutError(""); setTimeoutInput(input => input && { ...input, reason: "" }); } }} onClose={() => { if (!timeoutSaving) setTimeoutOpen(false); }} onSave={saveTimeout} />}
       {timeoutOpen && !timeoutPolicy && <Modal title="会话超时策略" icon="clock" footer={<Button onClick={() => setTimeoutOpen(false)}>关闭</Button>} onClose={() => setTimeoutOpen(false)}><p role={timeoutError ? "alert" : "status"}>{timeoutError || "正在加载…"}</p>{timeoutError && <Button size="sm" onClick={() => void openTimeout()}>重新加载</Button>}</Modal>}
     </section>
