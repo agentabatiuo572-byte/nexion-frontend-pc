@@ -29,7 +29,7 @@ import { pendingPlacement, forgetPlacement } from "@/lib/admin/f3-placements-cli
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { fConfigBatchPermissionIssue } from "@/lib/admin/f-config-batch";
+import { fBatchIssueText } from "./f-batch-names";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FViewCtx } from "./types";
 import { F3Placements, recoverPlacement } from "./f3-placements";
@@ -311,7 +311,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     if (configProposals.some(row => row.fingerprint === slot)) return undefined;
     if (ctx.f3Loading || ctx.f3Error || !cfg) return "团队平衡奖励读取失败，请重新读取后再操作。";
     const targets = key === F3_BATCH_SLOT ? ["F.binary.settlePeriod", "F.binary.residualPolicy"] : [key];
-    const permissionIssue = key === F3_BATCH_SLOT ? fConfigBatchPermissionIssue(targets, useAdminAuth.getState().session?.authorities ?? []) : undefined;
+    const permissionIssue = key === F3_BATCH_SLOT ? fBatchIssueText(targets, useAdminAuth.getState().session?.authorities ?? []) : undefined;
     if (permissionIssue) return permissionIssue;
     return targets.some(target => f3PendingFor(ctx.f3ApprovalRows, target)) ? "这个对象已有待批单，请先到操作记录与审批核对。" : undefined;
   };
@@ -532,7 +532,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             what={`多久结算一次，以及两组匹配后没匹配上的订单额怎么处理。日子按业务日历（${zone}）划分。`}
             when="两项同一张审批单，批准时一起写入；之后每一次结算按新设置判断到没到结算日、怎么扣已匹配的订单额，不是从下一期才开始。已经记账的不重算。"
             effect={`改成转结：${RESIDUAL_TEXT.转结.what}`}
-            note="只靠委托发起审批的账号，这一项会被后端拒绝（整批修改还没配权限，已提后端）。"
+            note="两项各按单独修改的权限核；缺哪项的权限，「调整」上会写明。"
             value={<span className="f3-cfg"><span className="f3-cfg-value">{text(periodEff)} · {residualLabel(text(residualEff))}</span><span className="f3-cfg-dir">改成转结可能多付钱</span></span>}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked(F3_BATCH_SLOT)} onClick={openPeriod}>调整</Button> : undefined} />
           <ConfigRow name="自动分组"
@@ -761,7 +761,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       <Fact k="什么时候生效">两项同一张审批单，批准时一起写入，失败都不改</Fact>
       <Fact k="之后的结算">下一次结算就按新设置，不是排到下一期</Fact>
       <Fact k="已经记账的">不重算</Fact>
-      <Fact k="谁会被拒">只靠委托发起审批的账号，这一项会被后端拒绝（整批修改还没配权限，已提后端）；不会拆成两张单</Fact>
+      <Fact k="权限">两项各按单独修改的权限核；缺一项就提交不了，不会拆成两张单</Fact>
     </Facts>,
     detail: "结算周期和没匹配上的订单额怎么处理，同一张审批单。",
     statedBrief: (value) => ({
