@@ -112,8 +112,13 @@ export function useE3Proposals() {
       // E3 replays the creation receipt. Only a current-ticket GET can establish pending after retry.
       commands.remember(record.fingerprint, record.commandKey, { ...record, state: retry ? "submitted" : "pending", ticketId: ticket.id });
     } catch (error) {
+      const response = error as { httpStatus?: number; apiCode?: number; backendMessage?: string };
+      if (retry && response.backendMessage === "E3_CONFIG_KEY_RETIRED" && canQuery) {
+        // A retired-key refusal cannot settle the original. Read its ticket instead.
+        try { if (await lookup(record)) return; }
+        catch (queryError) { setQueryErrors([displayAdminReadError(queryError)]); }
+      }
       // A2 performs object-lock checks inside command deduplication. A lock refusal is a verdict on this command.
-      const response = error as { httpStatus?: number; apiCode?: number };
       if (retry ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error) && response.httpStatus !== undefined
           && isDeterministicRejection(response.httpStatus, response.apiCode)) commands.forget(record.fingerprint, record.commandKey);
       throw error;
