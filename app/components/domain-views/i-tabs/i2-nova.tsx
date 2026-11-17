@@ -36,7 +36,7 @@ import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from 
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
-  catalogName, channelName, cooldownSentence, durationText, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
+  RETIRED_PLACEHOLDER, catalogName, channelName, cooldownSentence, durationText, hasRetiredPlaceholder, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
 } from "./i2-parts";
 import { ChannelDrawer, DistDrawer, TemplateDrawer, UNREACHABLE_CTA, UNREACHABLE_TEXT, ctaLabel, type ChannelFormValue, type TemplateFormValue } from "./i2-forms";
 
@@ -464,6 +464,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             const used = [...new Set([t.titleZh, t.bodyZh, t.titleVi, t.bodyVi, t.titleEn, t.bodyEn].flatMap(placeholdersOf))];
             return used.length ? <Fact k="变量" tone="danger">{`有 ${used.join("、")}：这个频道填不了，发布会被拒`}</Fact> : null;
           })()}
+          {t && (ch === SOCIAL_CHANNEL && hasRetiredPlaceholder(t.titleZh, t.bodyZh, t.titleVi, t.bodyVi, t.titleEn, t.bodyEn)
+            ? <Fact k="变量" tone="danger">{`有已停用的 ${RETIRED_PLACEHOLDER}，发布会被拒：先编辑删掉`}</Fact>
+            : hasRetiredPlaceholder(...Object.values(data?.templates.find((row) => row.channel === ch)?.translations ?? {}).flatMap((row) => [row.title, row.body]))
+              ? <Fact k="变量" tone="danger">{`旧译文里有已停用的 ${RETIRED_PLACEHOLDER}，发布会被拒；这页改不了，请联系技术同事`}</Fact> : null)}
           <Fact k="频道状态" tone={n && !n.on ? "warn" : undefined}>{n ? (n.on ? "已启用" : "已停用，发布后要另外点「启用」") : "—"}</Fact>
         </Facts>
       ),
@@ -537,7 +541,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <Fact k="频道">{n ? channelName(n.key, n.name) : tplForm.channel}</Fact>
           <Fact k="模板">{`${tplForm.name} · ${tplForm.version}`}</Fact>
           <Fact k="语言">{tplForm.titleEn.trim() && tplForm.bodyEn.trim() ? "中文、越南语、英语" : "中文、越南语（英语没填）"}</Fact>
-          <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(tplForm.cta) ? "warn" : undefined}>{`${ctaLabel(CTA_OPTIONS, tplForm.cta)}${UNREACHABLE_CTA.has(tplForm.cta) ? `（${UNREACHABLE_TEXT}）` : ""}`}</Fact>
+          <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(tplForm.cta) ? "warn" : undefined}>{ctaLabel(CTA_OPTIONS, tplForm.cta)}</Fact>
           {n?.on && <Fact k="频道状态"><Change from="已启用" to="已停用" tone="warn" /></Fact>}
         </Facts>
       ),
@@ -971,9 +975,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const templateChannelOptions = novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
     .map((n) => ({ value: n.key, label: `${channelName(n.key, n.name)}（${n.key}）` }));
+  const tplRetiredTranslations = !!editTplChannel && hasRetiredPlaceholder(...Object.values(data?.templates.find((t) => t.channel === editTplChannel)?.translations ?? {}).flatMap((t) => [t.title, t.body]));
   const tplBlocked = lockReason(`channel:${tplForm.channel}`) || (!tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
     : !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() ? "填写中文标题和正文" : !tplForm.titleVi.trim() || !tplForm.bodyVi.trim() ? "填写越南语标题和正文"
-      : (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim()) ? "英语标题和正文要么都填，要么都空" : undefined);
+      : (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim()) ? "英语标题和正文要么都填，要么都空"
+        : UNREACHABLE_CTA.has(tplForm.cta) ? "「点击后去哪」已停用，请改选一个"
+          : hasRetiredPlaceholder(tplForm.titleZh, tplForm.bodyZh, tplForm.titleVi, tplForm.bodyVi, tplForm.titleEn, tplForm.bodyEn) ? `删掉已停用的 ${RETIRED_PLACEHOLDER}`
+            : tplRetiredTranslations ? "旧译文里有已停用的变量，请联系技术同事" : undefined);
   const currentTpl = detailTpl ? tplOf(detailTpl) ?? null : null;
   const currentEvent = detailEvent !== null ? visibleSocialEvents.find((event) => event.id === detailEvent) ?? null : null;
   const zone = businessZone().label;
@@ -1036,7 +1044,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     ))}
                   </span></Td>
                   <Td grow><Cell main={nexGridBrandText(t.titleZh) || "—"} sub={nexGridBrandText(t.bodyZh)} title={`${t.titleZh} · ${t.bodyZh}`} /></Td>
-                  <Td><Cell main={ctaLabel(CTA_OPTIONS, t.cta)} sub={UNREACHABLE_CTA.has(t.cta) ? "App 打不开" : undefined} title={UNREACHABLE_CTA.has(t.cta) ? UNREACHABLE_TEXT : undefined} /></Td>
+                  <Td><Cell main={ctaLabel(CTA_OPTIONS, t.cta)} sub={UNREACHABLE_CTA.has(t.cta) && tplStatus(t.ch) === "draft" ? "保存前要改选" : undefined} title={UNREACHABLE_CTA.has(t.cta) ? UNREACHABLE_TEXT : undefined} /></Td>
                   {canWriteI2 && <Td sticky="end"><span className="rd-row-actions">{tplRowActions(t)}</span></Td>}
                 </Tr>
               );
@@ -1153,21 +1161,28 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           const t = currentTpl;
           const social = t.ch === SOCIAL_CHANNEL;
           const used = [...new Set([t.titleZh, t.bodyZh, t.titleVi, t.bodyVi, t.titleEn, t.bodyEn].flatMap(placeholdersOf))];
+          const retiredTranslations = hasRetiredPlaceholder(...Object.values(data?.templates.find((row) => row.channel === t.ch)?.translations ?? {}).flatMap((row) => [row.title, row.body]));
+          const retired = used.includes(RETIRED_PLACEHOLDER) || retiredTranslations;
           const ctaNote = UNREACHABLE_CTA.has(t.cta) ? <StatusTag tone="warn">{UNREACHABLE_TEXT}</StatusTag> : undefined;
           return <div className="rd-stack">
             <Facts>
               <Fact k="频道">{displayOf(t.ch)}</Fact>
               <Fact k="状态">{TEMPLATE_STATE_TEXT[tplStatus(t.ch)] ?? tplStatus(t.ch)}</Fact>
               <Fact k="版本">{t.v}</Fact>
-              <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(t.cta) ? "warn" : undefined}>{`${ctaLabel(CTA_OPTIONS, t.cta)}${UNREACHABLE_CTA.has(t.cta) ? `（${UNREACHABLE_TEXT}）` : ""}`}</Fact>
+              <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(t.cta) ? "warn" : undefined}>{ctaLabel(CTA_OPTIONS, t.cta)}{UNREACHABLE_CTA.has(t.cta) && <Explain label="已停用的去向"
+                content="App 上没有这个页面，用户点了打不开。已发布的照常发送；草稿再保存前要改选一个。" />}</Fact>
             </Facts>
+            {(social && used.includes(RETIRED_PLACEHOLDER) || retiredTranslations) && <Notice tone="warn">{
+              !social || !used.includes(RETIRED_PLACEHOLDER) ? `其他语言的旧译文里有已停用的 ${RETIRED_PLACEHOLDER}，这页改不了，保存和发布会被拒。请联系技术同事处理。`
+                : tplStatus(t.ch) === "draft" ? `${RETIRED_PLACEHOLDER}（来源备注）已停用，保存和发布都会被拒，先编辑删掉。`
+                  : `这版里有已停用的 ${RETIRED_PLACEHOLDER}（来源备注），可能发不出去。要换内容，归档、删除后新建模板。`}</Notice>}
             {!social && used.length > 0 && <Notice tone="warn">{tplStatus(t.ch) === "published"
               ? `这个频道不替换变量，用户会看到原样的 ${used.join("、")}。换新模板时要删掉变量，否则保存会被拒。`
               : `这个频道不替换变量，带着 ${used.join("、")} 保存或发布都会被拒，先编辑删掉。`}</Notice>}
             <div className="i2-langs">
               {([["ZH", "中文", t.titleZh, t.bodyZh, true], ["VI", "越南语", t.titleVi, t.bodyVi, true], ["EN", "英语", t.titleEn, t.bodyEn, false]] as const).map(([lang, label, title, body, req]) => {
                 const filled = langState(title, body);
-                const shown = social ? previewText(title, body, lang, sampleEvent) : { title, body };
+                const shown = social && !retired ? previewText(title, body, lang, sampleEvent) : { title, body };
                 return <section key={lang} className="i2-lang" aria-label={label}>
                   <h3 className="i2-lang-head">{label}{filled ? <StatusTag tone="ok">已填</StatusTag> : req ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
                   <dl className="i2-lang-text">
@@ -1180,7 +1195,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               })}
             </div>
             <p className="i2-sentence">{social
-              ? sampleEvent ? `预览用最近一条真实事件 #${sampleEvent.id} 填进变量；用户收到时换成当时抽到的事件。` : "现在没有真实事件，预览里变量原样显示。"
+              ? retired ? `模板带已停用的 ${RETIRED_PLACEHOLDER}，预览不替换变量。` : sampleEvent ? `预览用最近一条真实事件 #${sampleEvent.id} 填进变量；用户收到时换成当时抽到的事件。` : "现在没有真实事件，预览里变量原样显示。"
               : "这个频道发送时直接用模板原文。"}</p>
           </div>;
         })()}
@@ -1230,7 +1245,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       )}
       {tplDrawer && (
         <TemplateDrawer editing={!!editTplChannel} form={tplForm} setForm={setTplForm} channels={templateChannelOptions} ctaOptions={CTA_OPTIONS}
-          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} blocked={tplBlocked} onClose={closeTplDrawer} onSubmit={submitTpl} />
+          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} blocked={tplBlocked} onClose={closeTplDrawer} onSubmit={submitTpl} />
       )}
     </div>
   );

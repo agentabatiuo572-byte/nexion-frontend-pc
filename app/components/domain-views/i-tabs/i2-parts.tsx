@@ -132,10 +132,13 @@ export function ChannelCard({ name, keyText, on, source, tick, cooldown, phase, 
   );
 }
 
-export const PLACEHOLDERS = ["{actor}", "{name}", "{city}", "{amount}", "{eventType}", "{sourceNote}"] as const;
+export const PLACEHOLDERS = ["{actor}", "{name}", "{city}", "{amount}", "{eventType}"] as const;
 export const PLACEHOLDER_TEXT: Record<string, string> = {
-  "{actor}": "人物（脱敏）", "{name}": "人物（同 {actor}）", "{city}": "地区（脱敏）", "{amount}": "金额区间或人数", "{eventType}": "事件类型代码", "{sourceNote}": "来源备注；提现类是内部状态码，会原样进通知",
+  "{actor}": "人物（脱敏）", "{name}": "人物（同 {actor}）", "{city}": "地区（脱敏）", "{amount}": "金额区间或人数", "{eventType}": "事件类型代码",
 };
+/** f5f82ba3：「来源备注」变量已停用，新保存和发布都会被拒，发送时也不再替换。 */
+export const RETIRED_PLACEHOLDER = "{sourceNote}";
+export const hasRetiredPlaceholder = (...texts: readonly string[]) => texts.some((text) => text.includes(RETIRED_PLACEHOLDER));
 export const placeholdersOf = (text: string) => [...new Set(text.match(/\{[A-Za-z][A-Za-z0-9_]*}/g) ?? [])];
 
 const SUMMARY: Record<"ZH" | "VI" | "EN", (e: NovaSocialEventView) => string> = {
@@ -145,13 +148,13 @@ const SUMMARY: Record<"ZH" | "VI" | "EN", (e: NovaSocialEventView) => string> = 
 };
 
 /**
- * 预览用：照后端真实动态的渲染规则把一条真实事件填进模板（替换六个变量，正文没有变量时在后面接一句事件摘要），
- * 只在页面里显示，不发请求。其他频道后端不替换变量，原样给。
+ * 预览用：照后端真实动态的渲染规则把一条真实事件填进模板（替换五个变量，正文没有变量时在后面接一句事件摘要），
+ * 只在页面里显示，不发请求。其他频道后端不替换变量，原样给。带已停用的 {sourceNote} 时后端不渲染，这里也原样给。
  */
 export function previewText(title: string, body: string, lang: "ZH" | "VI" | "EN", event: NovaSocialEventView | null) {
-  if (!event) return { title, body };
+  if (!event || hasRetiredPlaceholder(title, body)) return { title, body };
   const values: Record<string, string> = {
-    actor: event.actorDisplay ?? "", name: event.actorDisplay ?? "", city: event.cityDisplay ?? "", amount: event.amountDisplay ?? "", eventType: event.eventType ?? "", sourceNote: event.sourceNote ?? "",
+    actor: event.actorDisplay ?? "", name: event.actorDisplay ?? "", city: event.cityDisplay ?? "", amount: event.amountDisplay ?? "", eventType: event.eventType ?? "",
   };
   const fill = (text: string) => Object.entries(values).reduce((out, [key, value]) => out.split(`{${key}}`).join(value.trim()), text.trim());
   const hasVar = Object.keys(values).some((key) => body.includes(`{${key}}`));

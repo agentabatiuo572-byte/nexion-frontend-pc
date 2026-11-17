@@ -9,13 +9,16 @@ import { Button, Decision, Drawer, Field, Input, Notice, NumberInput, Select, St
 import { formatNovaDuration, NOVA_TIME_UNITS, type NovaTimeUnit } from "@/lib/admin/nova-cadence";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { NovaOptionView, NovaSocialEventView } from "@/lib/admin/i-client";
-import { AppNotice, DistEditor, noticeCategory, DIST_SLOT, NO_SOURCE, PLACEHOLDERS, PLACEHOLDER_TEXT, cooldownSentence, placeholdersOf, previewText, tickSentence } from "./i2-parts";
+import { AppNotice, DistEditor, noticeCategory, DIST_SLOT, NO_SOURCE, PLACEHOLDERS, PLACEHOLDER_TEXT, RETIRED_PLACEHOLDER, cooldownSentence, placeholdersOf, previewText, tickSentence } from "./i2-parts";
 
+/** f47d6121：App 上没有页面的三个去向已停用，目录里不再有；新保存会被拒，已发布的模板和已发出的通知不变。名称是停用前目录里的叫法。 */
 export const UNREACHABLE_CTA = new Set(["/devices", "/support", "/me/weekly"]);
+const RETIRED_CTA_NAME: Record<string, string> = { "/devices": "设备商城", "/support": "客服中心", "/me/weekly": "每周回顾" };
 export const UNREACHABLE_TEXT = "App 目前打不开这个去向";
+export const RETIRED_CTA_FIX = "已停用，请改选一个";
 export const ctaLabel = (options: readonly NovaOptionView[], value: string) => {
   const found = options.find((option) => option.value === value);
-  return found ? operatorCopyText(found.label) : value || "—";
+  return found ? operatorCopyText(found.label) : UNREACHABLE_CTA.has(value) ? `${RETIRED_CTA_NAME[value]}（已停用）` : value || "—";
 };
 
 export type ChannelFormValue = { name: string; runtimeSource: string; tickValue: string; tickUnit: NovaTimeUnit; cooldownValue: string; cooldownUnit: NovaTimeUnit };
@@ -98,15 +101,16 @@ const LOCALES: readonly { key: Locale; lang: "ZH" | "VI" | "EN"; label: string; 
 
 /** 三语里正文变量对不上、用了不认识的变量：只提醒，后端保存时会再查。 */
 export function templateIssues(form: TemplateFormValue) {
-  const sets = LOCALES.filter((l) => l.required || form[`body${l.key}`].trim()).map((l) => ({ label: l.label, vars: placeholdersOf(form[`body${l.key}`]) }));
+  // 已停用的 {sourceNote} 单独提示删掉，不算进「三语变量要一样」，免得提示去别的语言补上它。
+  const sets = LOCALES.filter((l) => l.required || form[`body${l.key}`].trim()).map((l) => ({ label: l.label, vars: placeholdersOf(form[`body${l.key}`]).filter((v) => v !== RETIRED_PLACEHOLDER) }));
   const all = [...new Set(sets.flatMap((s) => s.vars))];
   const mismatch = all.length ? sets.filter((s) => all.some((v) => !s.vars.includes(v))).map((s) => `${s.label}少了 ${all.filter((v) => !s.vars.includes(v)).join("、")}`) : [];
   const used = [...new Set(LOCALES.flatMap((l) => [...placeholdersOf(form[`title${l.key}`]), ...placeholdersOf(form[`body${l.key}`])]))];
-  const unknown = used.filter((v) => !(PLACEHOLDERS as readonly string[]).includes(v));
+  const unknown = used.filter((v) => v !== RETIRED_PLACEHOLDER && !(PLACEHOLDERS as readonly string[]).includes(v));
   return { mismatch, unknown, used };
 }
 
-export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, social, sample, blocked, onClose, onSubmit }: {
+export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, social, sample, retiredInTranslations, blocked, onClose, onSubmit }: {
   editing: boolean;
   form: TemplateFormValue;
   setForm: (next: TemplateFormValue) => void;
@@ -115,6 +119,8 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   /** 选的是真实动态频道：变量会换成真实事件的内容。 */
   social: boolean;
   sample: NovaSocialEventView | null;
+  /** 存着的其他语言旧译文里有已停用的 {sourceNote}：这页改不了译文，保存一定被拒。 */
+  retiredInTranslations?: boolean;
   blocked?: string;
   onClose: () => void;
   onSubmit: () => void;
@@ -122,7 +128,10 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   const issues = templateIssues(form);
   const varSpots = LOCALES.flatMap((l) => [placeholdersOf(form[`title${l.key}`]).length ? `${l.label}标题` : "", placeholdersOf(form[`body${l.key}`]).length ? `${l.label}正文` : ""]).filter(Boolean);
   const enPair = !!form.titleEn.trim() !== !!form.bodyEn.trim();
-  const ctaNote = UNREACHABLE_CTA.has(form.cta) ? <StatusTag tone="warn">{UNREACHABLE_TEXT}</StatusTag> : undefined;
+  const retiredCta = UNREACHABLE_CTA.has(form.cta);
+  /** 带已停用的 {sourceNote} 时后端整份模板都不渲染：预览也不替换变量。 */
+  const retiredPreview = issues.used.includes(RETIRED_PLACEHOLDER) || !!retiredInTranslations;
+  const ctaNote = retiredCta ? <StatusTag tone="warn">{UNREACHABLE_TEXT}</StatusTag> : undefined;
   return (
     <Drawer open wide onClose={onClose} title={editing ? "编辑模板" : "新建模板"} icon={FileText} tone="role-4" sub={editing ? form.name : undefined}
       explain={<>
@@ -141,9 +150,10 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
           <Field label="版本" required hint="最多 32 字">
             <Input value={form.version} maxLength={32} onChange={(e) => setForm({ ...form, version: e.target.value })} placeholder="v1" />
           </Field>
-          <Field label="点击后去哪" required error={UNREACHABLE_CTA.has(form.cta) ? UNREACHABLE_TEXT : undefined}>
+          <Field label="点击后去哪" required error={retiredCta ? RETIRED_CTA_FIX : undefined}>
             <Select aria-label="点击后去哪" value={form.cta} onChange={(value) => setForm({ ...form, cta: value })} placeholder="请选择"
-              options={ctaOptions.map((option) => ({ value: option.value, label: `${operatorCopyText(option.label)}${UNREACHABLE_CTA.has(option.value) ? "（App 打不开）" : ""}` }))} />
+              options={[...ctaOptions.map((option) => ({ value: option.value, label: operatorCopyText(option.label) })),
+                ...(retiredCta ? [{ value: form.cta, label: ctaLabel(ctaOptions, form.cta), disabled: true }] : [])]} />
           </Field>
         </div>
 
@@ -153,6 +163,8 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
           <span className="i2-vars-note">发送时换成真实事件的内容</span>
         </div> : <div className="i2-vars"><span className="i2-vars-note">只有真实动态频道会替换变量，其他频道的标题和正文里不能有 {"{…}"}</span></div>}
         {!social && issues.used.length > 0 && <Notice tone="warn">{`${varSpots.join("、")}里有 ${issues.used.join("、")}：这个频道填不了，保存会被拒，先删掉。`}</Notice>}
+        {social && issues.used.includes(RETIRED_PLACEHOLDER) && <Notice tone="warn">{`${RETIRED_PLACEHOLDER}（来源备注）已停用，删掉才能保存。`}</Notice>}
+        {retiredInTranslations && <Notice tone="warn" title="这个模板这页存不了">其他语言的旧译文里有已停用的 {RETIRED_PLACEHOLDER}，这页改不了译文，保存会被拒。请联系技术同事处理。</Notice>}
         {issues.unknown.length > 0 && <Notice tone="warn">{`不认识的变量：${issues.unknown.join("、")}，保存会被拒。`}</Notice>}
         {issues.mismatch.length > 0 && <Notice tone="warn">{`三种语言正文里的变量要一样：${issues.mismatch.join("；")}。`}</Notice>}
 
@@ -161,7 +173,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
             const title = form[`title${l.key}`];
             const body = form[`body${l.key}`];
             const filled = !!title.trim() && !!body.trim();
-            const shown = social ? previewText(title, body, l.lang, sample) : { title, body };
+            const shown = social && !retiredPreview ? previewText(title, body, l.lang, sample) : { title, body };
             return (
               <section key={l.key} className="i2-lang" aria-label={l.label}>
                 <h3 className="i2-lang-head">{l.label}{filled ? <StatusTag tone="ok">已填</StatusTag> : l.required ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
@@ -178,7 +190,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
           })}
         </div>
         <p className="i2-sentence">{social
-          ? sample ? `预览用最近一条真实事件 #${sample.id} 填进变量，只在这里显示，不会发出。` : "现在没有可用的真实事件，预览里变量原样显示。"
+          ? retiredPreview ? `模板带已停用的 ${RETIRED_PLACEHOLDER}，预览不替换变量。` : sample ? `预览用最近一条真实事件 #${sample.id} 填进变量，只在这里显示，不会发出。` : "现在没有可用的真实事件，预览里变量原样显示。"
           : "预览是示意：变量原样显示，实际按 App 截断。"}</p>
       </div>
     </Drawer>
