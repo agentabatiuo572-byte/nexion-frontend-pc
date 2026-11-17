@@ -482,20 +482,24 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openCreateEvent = () => {
+    const builtIds = new Set((model?.events ?? []).map((event) => event.id));
+    const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !builtIds.has(code));
+    const builtCount = H4_EVENT_RULE_CODES.size - freeCodes.length;
     openActionConfirm({ briefKind: "config",
       action: "新建活动",
       title: "新建既有活动",
       statedBrief: { impact: "建成预告，不对用户开放。", check: "核对编号、玩法和奖励，理由写清依据。" },
       effect: <StatusTag tone="neutral" filled>建成预告，不开放</StatusTag>,
-      detail: <>新建一个活动。活动 ID 用英文且不能重复；主推活动必须在进行中，且同时只能有一个。</>,
-      facts: <Notice tone="warn" title="目前只有内置活动可以开放">自定义编号的活动建好后暂时不能开放（后端待办 H4-BE-01）。</Notice>,
+      detail: <>只能新建内置活动，每个编号只能建一个。</>,
       amplifies: true,
       reasonPlaceholder: "例如：按运营排期登记新活动",
       confirmLabel: "新建活动",
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "id", label: "活动编号", current: "", placeholder: "如 evt-summer", required: true, explain: "英文字母、数字、_ 或 -，2–63 位，不能重复，建好后不能改。" },
+          { key: "id", label: "活动编号", current: "", inputKind: "select", mustChoose: true, options: freeCodes, required: true,
+            help: freeCodes.length === 0 ? "内置活动都已建好，没有能新建的编号" : builtCount > 0 ? `已建的 ${builtCount} 个不在列表里` : undefined,
+            explain: "只能用这几个内置编号，建好后不能改。" },
           { key: "name", label: "活动名", current: "", placeholder: "如 夏日狂欢", required: true },
           { key: "kind", label: "玩法", current: "discount", inputKind: "select", options: KIND_OPTIONS, optionLabels: Object.fromEntries(KIND_OPTIONS.map((kind) => [kind, KIND_LABEL(kind)])) },
           { key: "reward", label: "奖励", current: "", placeholder: "如 100 UVT", required: false, explain: "没有玩法规则的活动只认正数的 UVT 或 USDT。" },
