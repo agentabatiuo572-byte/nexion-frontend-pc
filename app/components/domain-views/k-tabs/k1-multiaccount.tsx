@@ -1,4 +1,6 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -21,7 +23,7 @@ import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-mult
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1795,7 +1797,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       })()}
 
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认；解除后这项设置仍可能被系统锁住。" />}
-      {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} known={closureKnown(investigationResults[closing.commandKey])}
+      {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing))}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>
   );

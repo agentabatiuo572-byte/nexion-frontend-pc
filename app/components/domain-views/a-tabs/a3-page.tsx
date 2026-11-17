@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * A3 系统配置（改版）。五块各读各的、各存各的，没有「一次保存全页」：
@@ -31,7 +32,7 @@ import {
   type A3SystemHealth,
 } from "@/lib/admin/a3-client";
 import { GRecoveryNotice, expiredTag, unknownTag, type GRecoveryRow } from "../g-tabs/g-recovery";
-import { FundClosureModal, closureKnown, fundRecoveryStatus } from "../fund-command-check";
+import { FundClosureModal, fundRecoveryStatus } from "../fund-command-check";
 import { SETTLED_REJECTED, receiptFact } from "../recovery-panel";
 import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
 import type { FundCommandEvidence, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
@@ -446,7 +447,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const outcome = originalOutcomes[record.commandKey];
     const shown = outcome && originalShown(record, outcome);
     const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
-    const closable = !!record.commandOrigin && canInvestigateECommand("platform_a3_read") && (status === "UNKNOWN" || isRetryExpired(record) && (status === "SUCCEEDED" || status === "FAILED"));
+    const closable = !!record.commandOrigin && canInvestigateECommand("platform_a3_read") && eCommandClosureOffer(outcome, isRetryExpired(record)).conclusions.length > 0;
     return {
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
     key: record.commandKey, name: record.name, change: isContent(record) ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
@@ -660,7 +661,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}
-      {originalClosing && <FundClosureModal label={originalClosing.name} createdAt={originalClosing.createdAt} known={closureKnown(originalOutcomes[originalClosing.commandKey])}
+      {originalClosing && <FundClosureModal label={originalClosing.name} createdAt={originalClosing.createdAt} offer={eCommandClosureOffer(originalOutcomes[originalClosing.commandKey], isRetryExpired(originalClosing))}
         facts={<><Fact k="改动">{originalClosing.change}</Fact>
           <Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(originalOutcomes[originalClosing.commandKey]), "记录保留")}</Fact></>}
         onClose={() => setOriginalClosing(null)}
