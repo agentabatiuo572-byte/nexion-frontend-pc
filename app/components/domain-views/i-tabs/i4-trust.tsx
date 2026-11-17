@@ -657,8 +657,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       else {
         let receipt = null;
         try {
-          receipt = await queryI4DraftReceipt(record);
-          setDraftOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
+          const next = await queryI4DraftReceipt(record);
+          receipt = next;
+          setDraftOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next } }));
         } catch (error) {
           setDraftOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
         }
