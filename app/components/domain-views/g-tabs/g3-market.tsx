@@ -108,8 +108,8 @@ function ratio(value: number) {
 }
 
 /** 百分数点（2 表示 ±2%），最多八位小数。 */
-function pctText(value: number) {
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 8 })}%`;
+function pctText(value: number | null) {
+  return value === null ? null : `${value.toLocaleString("en-US", { maximumFractionDigits: 8 })}%`;
 }
 
 function rawValue(value: number | null) {

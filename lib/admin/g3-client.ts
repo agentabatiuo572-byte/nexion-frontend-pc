@@ -109,7 +109,7 @@ export interface G3Coverage {
 
 export interface G3Overrides {
   currentPrice: number;
-  volatilityPct: number;
+  volatilityPct: number | null;
   oracle: string;
   deviationPct: number | null;
   costBasis: number | null;
@@ -359,7 +359,7 @@ function normalizeReadOverview(data: BackendOverview | null | undefined): G3Read
     })),
     overrides: {
       currentPrice: overrides.currentPrice === null ? null : requireNumber(overrides.currentPrice, "overrides.currentPrice"),
-      volatilityPct: requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
+      volatilityPct: overrides.volatilityPct == null ? null : requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
       oracle: asText(overrides.oracle),
       deviationPct: parseNumber(overrides.deviationPct),
       costBasis: parseNumber(overrides.costBasis),
@@ -403,7 +403,9 @@ function normalizeG3WriteStates(data: BackendOverview): Pick<G3Overview, "object
       seen.add(key);
       return row as unknown as G3ObjectReadState;
     });
-    if (seen.size !== 10) return invalid();
+    // New overviews omit the three retired targets; old saved replies still include them.
+    if (["nex_market_curve:weekly", "nex_market_control:schedule", "nex_market_control:pin", "nex_market_control:loop",
+      "nex_market_override:currentPrice", "nex_market_override:costBasis", "nex_market_override:paused"].some(key => !seen.has(key))) return invalid();
   }
   if (data.environmentWriteState !== undefined) {
     const state = object(data.environmentWriteState);
@@ -591,6 +593,11 @@ export async function updateG3Control(
   );
 }
 
+/** Only standalone overrides are retired; weekly frame fields and original requests remain valid contracts. */
+export function g3OverrideWriteRefusal(key: G3OverrideKey): "RETIRED_FEATURE" | undefined {
+  return ["oracle", "deviationPct", "volatilityPct"].includes(key) ? "RETIRED_FEATURE" : undefined;
+}
+
 export async function updateG3Override(
   overrideKey: G3OverrideKey,
   value: string,
@@ -598,6 +605,11 @@ export async function updateG3Override(
   reason: string,
   operator: string,
 ) {
+  const refusal = g3OverrideWriteRefusal(overrideKey);
+  // Existing legacy commands must use the stored bytes and key, including successful old receipts.
+  const fingerprint = stableMutationFingerprint("PATCH", `/nex/overrides/${encodeURIComponent(overrideKey)}`,
+    JSON.stringify({ value, expectedValue, reason, operator }));
+  if (refusal && !g3LegacyCommands.get(`g3-override-${overrideKey}:${fingerprint}`)) throw new Error(refusal);
   return g3OverviewMutation(
     `/nex/overrides/${encodeURIComponent(overrideKey)}`,
     "PATCH",
