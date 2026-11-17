@@ -1323,7 +1323,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
       <span className="i6-pending-act">
         <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
-        {view === "learn" && canInvestigateECommand("content_i7_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
+        {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
         <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : expired ? "已超过 24 小时，不能再重试，只能查询。" : i6RetryPermission(record)}
           onClick={() => void retryOrdinary(record)}>按原请求重试</Button>
       </span>
@@ -1540,6 +1540,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </Conclusion>
       {conflictUi}
       {ordinaryRecovery}
+      {ordinaryClosure}
 
       <Panel title="三种语言齐不齐" icon={Languages} tone="role-2" sub={`共 ${count(total)} 条 · ${count(NAMESPACES.length)} 个模块`}
         explain="按每条文案现在的内容算（草稿也算）。「可上线」是系统算的：已发布、三语齐、变量一致且通过质量检查的才算。">
