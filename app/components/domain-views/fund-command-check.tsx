@@ -178,17 +178,20 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settl
   onDismissSettled?: (key: string) => void;
   /** 已解除的提示行末尾的按钮，例如「查看逐笔结果」。 */
   settledAction?: (item: FundSettled) => ReactNode;
-  /** 默认按每行查到的结果数：「N 项操作结果未知」「N 项操作还没结案」或两者都有；有待审批等别的状态时页面自己写。 */
+  /** 默认按每行的标签数：「N 项操作结果未知」「N 项操作还没结案」「N 项在等审批」「N 项已有结论」，只写有的几种。 */
   heading?: string;
 }) {
   const [all, setAll] = useState(false);
   const { ordered, box } = useFreshFirst(rows);
   const visible = all ? ordered : ordered.slice(0, 3);
-  const open = rows.filter(row => OPEN_LABELS.includes(shown(row).label)).length;
+  const labels = rows.map(row => shown(row).label);
+  const open = labels.filter(label => OPEN_LABELS.includes(label)).length;
+  const waiting = labels.filter(label => label === "待审批").length;
+  const ended = labels.filter(label => label === "没有建成").length;
   return <>
     {settled?.map(item => <SettledLine key={item.key} label={item.label} text={settledText(item)} action={settledAction?.(item)}
       onDismiss={onDismissSettled && (() => onDismissSettled(item.key))} />)}
-    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? recoveryTitle(rows.length - open, 0, 0, open)}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
+    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? recoveryTitle(rows.length - open - waiting - ended, waiting, ended, open)}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
       <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} />)}</ul>
       {(rows.length > 3 || link) && <div className="fund-rows-foot">
         {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll(value => !value)}>{all ? "只看前 3 条" : `展开全部 ${rows.length} 条`}</Button>}

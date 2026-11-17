@@ -337,7 +337,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const savedNotice = <>
     {settled.map((item) => <SettledLine key={item.key} label={item.label} text={SETTLED_TEXT[item.status] ?? SETTLED_OTHER}
       onDismiss={() => setSettled((current) => current.filter((row) => row.key !== item.key))} />)}
-    <FundRecoveryPanel rows={recoveryRows} heading="修改告警设置 · 结果未知" />
+    <FundRecoveryPanel rows={recoveryRows} />
     {closing && command && record && <CommandClosureModal label="修改告警设置" commandKey={command.commandKey} createdAt={command.createdAt} offer={eCommandClosureOffer(outcome, isRetryExpired(command))}
       facts={<>
         <Fact k="改动">{savedChange(saved!)}</Fact>
