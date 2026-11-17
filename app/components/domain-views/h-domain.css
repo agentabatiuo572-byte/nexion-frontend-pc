@@ -604,6 +604,13 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-region-other { color: var(--rd-text-2); }
 .h3-region-edit { display: flex; flex-direction: column; gap: var(--rd-space-3); margin-top: var(--rd-space-3); }
 .h3-region-gap { flex: 1; }
+/* 「现在实际」一列：同一区号几段时间窗上下排，每段后面跟「和规则不同」；表下一行人数小结。 */
+.h3-actual { display: grid; gap: var(--rd-space-2); }
+.h3-actual-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px var(--rd-space-2); }
+.h3-actual-sum { display: grid; gap: 4px; margin-top: var(--rd-space-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.h3-actual-sum p { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; }
+.h3-actual-warn { color: var(--rd-text); }
+.h3-actual-warn svg { color: var(--rd-warn); flex: none; }
 /* 详情抽屉 */
 .h3-detail-block { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .h3-locales { display: grid; gap: var(--rd-space-2); margin: 0; }
