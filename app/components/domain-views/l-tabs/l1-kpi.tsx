@@ -19,7 +19,7 @@ import { KeepText, BlockState, Button, Cell, Check, Conclusion, DiffField, Expla
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessDay, businessStamp, businessZone } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
 import { kpiState, num, rec } from "./live-data";
@@ -30,7 +30,7 @@ import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownErro
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
+import { validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1CohortPoint, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
 import { L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
@@ -53,31 +53,57 @@ const tgtLabel = (k: Kpi) => {
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
-type KpiState = "g" | "y" | "r" | "na" | "small" | "inapp";
+type KpiState = "g" | "y" | "r" | "none" | "source" | "young" | "small" | "inapp";
+type Metric = Pick<L1CohortPoint, "available" | "unavailableReason" | "value"> & { maturityStatus?: string; scope?: Kpi["scope"] };
 const tgtShort = (k: Kpi) => tgtLabel(k).replace("目标 ", "").replace("健康带 ", "");
-const kpiStatus = (k: Kpi, offset: number): KpiState => {
-  if (k.scope === "NOT_APPLICABLE_TO_COHORT") return "inapp";
-  if (k.maturityStatus === "IMMATURE") return "na";
-  if (k.suppressed) return "small";
-  if (k.available === false || k.value == null) return "na";
-  return kpiState({ ...k, value: k.value }, offset);
+/** 算不出的按后端原因分五类：样本过小优先于成熟度（BE-19）；一个满观察期的人都没有才是观察期未满。 */
+const blankState = (m: Metric): KpiState | null => {
+  if (m.scope === "NOT_APPLICABLE_TO_COHORT" || m.unavailableReason === "COHORT_NOT_APPLICABLE") return "inapp";
+  if (m.unavailableReason === "SOURCE_INCOMPLETE") return "source";
+  if (m.unavailableReason === "BELOW_MINIMUM") return "small";
+  if (m.maturityStatus === "IMMATURE") return "young";
+  if (m.available === false || m.value == null) return "none";
+  return null;
 };
-const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", na: "done", small: "done", inapp: "done" };
-const stateText = (state: KpiState, k: Kpi) => k.maturityStatus === "PARTIAL" && !k.suppressed ? "PARTIAL" : ({ g: "达标", y: k.dir === "band" ? "在健康带外" : "接近目标", r: "未达标", na: "暂无法计算", small: "样本过小", inapp: "—" })[state];
-/** 未达标排最前，其次接近目标、暂无法计算和样本过小，达标的放最后；同一档按指标编号。 */
-const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, na: 2, small: 2, inapp: 2, g: 3 };
+const kpiStatus = (k: Kpi, offset: number): KpiState => blankState(k) ?? kpiState({ ...k, value: k.value! }, offset);
+const pointStatus = (k: Kpi, point: L1CohortPoint, offset: number): KpiState => blankState(point) ?? kpiState({ ...k, value: point.value! }, offset);
+/** 一部分人满了观察期：照常给值和判断，另标「暂定」。 */
+const isPartial = (m: Metric) => m.available && m.maturityStatus === "PARTIAL";
+const STATE_TONE: Record<KpiState, StateTone> = { g: "ok", y: "warn", r: "danger", none: "done", source: "done", young: "done", small: "done", inapp: "done" };
+const BLANK_TEXT = { none: "没有数据", source: "来源不全", young: "观察期未满", small: "样本过小", inapp: "不适用" } as const;
+const stateText = (state: KpiState, k: Kpi) => state === "g" ? "达标" : state === "y" ? (k.dir === "band" ? "在健康带外" : "接近目标") : state === "r" ? "未达标" : BLANK_TEXT[state];
+/** 未达标排最前，其次接近目标、各类算不出的，达标的放后面，不适用的放最后；同一档按指标编号。 */
+const STATE_RANK: Record<KpiState, number> = { r: 0, y: 1, source: 2, young: 2, small: 2, none: 2, g: 3, inapp: 4 };
+const BLANK_KINDS = ["source", "young", "small", "none"] as const;
 /** 后端的不可用原因写成人话，事实来自 L1KpiAnalytics 的分母。 */
 const REASON_TEXT: Record<string, string> = {
-  NO_REGISTRATION_DENOMINATOR: "这个范围没有注册完成的用户，所以暂无法计算，不按 0% 算。",
-  NO_STORE_VIEW_DENOMINATOR: "这个范围没有看过商城的用户，所以暂无法计算，不按 0% 算。",
-  NO_DEVICE_HOLDER_DENOMINATOR: "这个范围没有设备持有者，所以暂无法计算，不按 0% 算。",
-  NO_PUSH_SENT_DENOMINATOR: "这个范围没有发送过消息推送，暂无法计算，不按 0% 算。",
-  NO_DIRECT_REFERRAL_DENOMINATOR: "这个范围没有直接邀请的好友，所以暂无法计算，不按 0% 算。",
-  NO_MATURE_DAY7_COHORT: "这个范围还没有注册满 7 天的用户，所以暂无法计算，不按 0% 算。",
+  NO_REGISTRATION_DENOMINATOR: "这个范围没有注册完成的用户，算不出，不按 0% 算。",
+  NO_STORE_VIEW_DENOMINATOR: "这些注册用户里没人看过商城，算不出，不按 0% 算。",
+  NO_DEVICE_HOLDER_DENOMINATOR: "这些注册用户里没有设备持有者，算不出，不按 0% 算。",
+  NO_PUSH_SENT_DENOMINATOR: "这些注册用户里没人收到过消息推送，算不出，不按 0% 算。",
+  NO_DIRECT_REFERRAL_DENOMINATOR: "这些注册用户里没有被直接邀请来的好友，算不出，不按 0% 算。",
   NO_GENESIS_PURCHASES: "这个范围没有创世节点购买记录，还没售罄，售罄天数暂无法计算。",
   GENESIS_NOT_SOLD_OUT: "创世节点还没累计售出 1,000，售罄天数暂无法计算。",
 };
-const SMALL_SAMPLE_NOTE = "每项统计样本至少 5 人才显示。首笔收益到账、注册后浏览商城按分子人数算（收到首笔收益的人、看过商城的人），创世节点售罄速度按购买人数，其余按分母人数。少于 5 人不下结论；扩大范围仍不足时，等样本积累后再看。受保护的当前人数不显示。";
+const YOUNG_TEXT: Record<number, string> = {
+  1: "这些用户刚注册，首笔收益的计时还没走完，走完才算。",
+  2: "这些用户注册后的第 7 天还没过完，过完才算留存。",
+};
+const SOURCE_REG_TEXT = "这批有用户缺注册记录，这项算不出；以前的记录不会补。";
+const SOURCE_OLD_TEXT = "这批有用户注册超过 13 个月，早年的记录不全，算不出。选近 13 个月内的注册时间再看。";
+const INAPP_TEXT = "这项是全站累计售出 1,000 个节点用的天数，不分注册批次。";
+const PARTIAL_TEXT = "暂定：这批还有人没满观察期，只算了已满的人，数值之后会变。";
+const GROUP_NAME = { registration_week: "注册周", registration_month: "注册月" } as const;
+const instantStamp = (value: string) => businessStamp(Date.parse(value));
+/** 批次的注册时间段，年份看批次编号：两头都是零点的写「05-04 至 05-10」（含结束日），否则写到分钟。 */
+function regSpan(from: string, toExclusive: string) {
+  const start = instantStamp(from).slice(5);
+  const end = instantStamp(toExclusive).slice(5);
+  return start.endsWith(" 00:00") && end.endsWith(" 00:00")
+    ? `${start.slice(0, 5)} 至 ${businessStamp(Date.parse(toExclusive) - 86_400_000).slice(5, 10)}`
+    : `${start} 至 ${end}`;
+}
+const SMALL_SAMPLE_NOTE = "每项统计样本至少 5 人才显示。首笔收益到账、注册后浏览商城按分子人数算（收到首笔收益的人、看过商城的人），其余按分母人数。少于 5 人不下结论；扩大范围仍不足时，等样本积累后再看。受保护的当前人数不显示。";
 /** 「V1 实时」是 PRD 的上线批次（§1.6 后台可见性），不是刷新方式。 */
 const batchText = (vis = "") => vis.replace(/^V(\d+).*$/, "第 $1 批");
 const WINDOW_NAME: Record<Exclude<L1Window, "custom">, string> = { "1d": "近 24 小时", "7d": "近 7 天", "30d": "近 30 天" };
@@ -89,6 +115,8 @@ const COHORT_FORMAT = /^\d{4}-W\d{2}$/;
 const RELATED = ["/analytics/funnel-cohort", "/analytics/financial", "/analytics/operations"] as const;
 /** 全是 0 不是走势，不画图，写一句话（DP-62）。 */
 const hasTrend = (values: readonly KpiTrendPoint[]) => values.length >= 2 && values.some((value) => value !== null && value !== 0);
+/** 有数值的点都是 0（空着的不算）。 */
+const allZero = (values: readonly KpiTrendPoint[]) => values.length >= 2 && values.some((value) => value === 0) && values.every((value) => value === null || value === 0);
 const hasSlice = (query: L1KpiQuery) => SLICES.some((key) => Boolean(query[key]));
 const DETAIL_ID = "l1-kpi-detail";
 /** 上下排（1366 以下）时点一行看不到右边的明细，滚到明细（PG-42）；并排时不动。 */
@@ -146,8 +174,12 @@ function writeQueryToUrl(query: L1KpiQuery) {
   window.history.replaceState(window.history.state, "", url);
 }
 
+const timeName = (query: L1KpiQuery) => query.window === "custom" ? `${query.from} 至 ${query.to}` : WINDOW_NAME[query.window ?? "7d"];
+/** 「近 7 天注册」「2026-05-04 至 2026-11-17 注册」：日期后空一格。 */
+const regTime = (query: L1KpiQuery) => `${timeName(query)}${query.window === "custom" ? " " : ""}注册`;
+/** 分组时时间范围是注册时间：「近 7 天」是近 7 天注册的用户，不是近 7 天发生的事。 */
 function queryScope(query: L1KpiQuery) {
-  const time = query.window === "custom" ? `${query.from} 至 ${query.to}` : WINDOW_NAME[query.window ?? "7d"];
+  const time = query.granularity ? `${regTime(query)}，按${GROUP_NAME[query.granularity]}` : timeName(query);
   return [time, ...SLICES.filter((key) => query[key]).map((key) => `${SLICE_NAME[key]} ${query[key]}`)].join("，");
 }
 
@@ -224,20 +256,26 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
   };
 
   const openConfirm = (mode: L1ExportMode) => {
-    const rows = query.granularity ? "—" : mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
+    // 分组导出是长表：每项指标每个批次一行（后端 prepareRegistrationCohortSnapshot），批次数取本页这份数据。
+    const buckets = query.granularity ? (exportData as L1Dashboard).weeks.length : 0;
+    const unit = query.granularity === "registration_month" ? "月" : "周";
+    const rows = query.granularity ? `${8 * buckets} 行，每项指标每个注册${unit}一行` : mode === "totals" ? `${readL1LiveTotals(exportData).length} 行，一个累计数一行` : "8 行，一项指标一行";
     ctx.openActionConfirm({ briefKind: "export",
       action: "导出关键指标",
       detail: `聚合数据，不含用户隐私。提交后生成任务，文件到「${pageName}」下载。`,
-      statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: "看时间范围对不对。" },
+      statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: query.granularity ? "看注册时间和分组对不对。" : "看时间范围对不对。" },
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组做周会复盘",
       facts: (
         <Facts>
           <Fact k="范围">{mode === "totals" ? "当前累计" : queryScope(query)}</Fact>
+          {query.asOf && <Fact k="数据截至">{instantStamp(query.asOf)}（{businessZone().label}）</Fact>}
           <Fact k="接收人">{L1_EXPORT_RECIPIENT}</Fact>
           <Fact k="文件格式">CSV</Fact>
           <Fact k="文件行数">{rows}，另有表头</Fact>
-          <Fact k="文件内容">{query.granularity ? "—" : mode === "series" ? "8 项指标的可用数值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性" : "当前累计数"}{mode !== "totals" && <Explain label="样本过小的项怎么导出" content="受保护项标为样本过小，相关数值留空。" />}</Fact>
+          <Fact k="文件内容">{query.granularity ? `各注册${unit}的数值、人数和状态，不含汇总值` : mode === "series" ? "8 项指标的可用数值、目标和六段趋势" : mode === "snapshot" ? "8 项指标的可用数值、目标和可用性" : "当前累计数"}{mode !== "totals" && (query.granularity
+            ? <Explain label="算不出的批次怎么导出" content="算不出或样本过小的批次，数值和人数留空，另一列写原因。" />
+            : <Explain label="样本过小的项怎么导出" content="受保护项标为样本过小，相关数值留空。" />)}</Fact>
         </Facts>
       ),
       confirmLabel: "确认导出",
@@ -309,7 +347,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
         disabledReason={pending ? "上一次导出结果未知，先到页面上方查询原结果" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
         onClick={() => { if (exportMode) { setFinished(null); openConfirm(exportMode); } }}
       >
-        {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
+        {exportMode === "series" || (!exportMode && query.granularity) ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
       </Button>
       <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
     </>) : null,
@@ -494,7 +532,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         setApplied(boundQuery);
         setGran(boundQuery.granularity === "registration_month" ? "month" : "week");
         writeQueryToUrl(boundQuery);
-        if (notify) ctx.toast(`关键指标 已按${next.window === "custom" ? `${next.from} 至 ${next.to}` : WINDOW_NAME[next.window ?? "7d"]}重新加载`, "success");
+        if (notify) ctx.toast(`关键指标已按${next.granularity ? `${GROUP_NAME[next.granularity]}、` : ""}${timeName(next)}重新加载`, "success");
       },
       (error) => {
         const message = displayAdminReadError(error);
@@ -546,21 +584,34 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   };
   const draftChanged = SLICES.some((key) => (draftSlices[key] ?? "") !== (applied[key] ?? ""));
 
+  // 切分组时屏幕上还是旧数据，分段先不跳，旁边写正在切；成功后才换成新分组，失败保持原样，旧图不会配上新名字。
+  const switchingTo = refreshing && selectedQuery.current.granularity !== applied.granularity ? selectedQuery.current.granularity : undefined;
   const queryBar = (
     <FilterBar
-      scope={<Segments<L1Window>
-        label="时间范围"
-        value={customPicking ? "custom" : win}
-        items={[{ value: "1d", label: "近 24 小时" }, { value: "7d", label: "近 7 天" }, { value: "30d", label: "近 30 天" }, { value: "custom", label: "自定义" }]}
-        onChange={(next) => {
-          if (next === "custom") {
-            setCustomOpen(true);
-            return;
-          }
-          setCustomOpen(false);
-          reloadKpi({ window: next, granularity: applied.granularity, ...appliedSlices });
-        }}
-      />}
+      scope={<>
+        <Segments
+          label="分组"
+          value={gran}
+          items={[{ value: "week", label: "按注册周" }, { value: "month", label: "按注册月" }]}
+          onChange={(next) => reloadKpi({ ...applied, asOf: undefined, granularity: next === "month" ? "registration_month" : "registration_week" })}
+        />
+        <span className="l1-scope-label">注册时间</span>
+        <Segments<L1Window>
+          label="注册时间"
+          value={customPicking ? "custom" : win}
+          items={[{ value: "1d", label: "近 24 小时" }, { value: "7d", label: "近 7 天" }, { value: "30d", label: "近 30 天" }, { value: "custom", label: "自定义" }]}
+          onChange={(next) => {
+            if (next === "custom") {
+              setCustomOpen(true);
+              return;
+            }
+            setCustomOpen(false);
+            reloadKpi({ window: next, granularity: applied.granularity, ...appliedSlices });
+          }}
+        />
+        <Explain label="注册时间的说明" content="选的是用户的注册时间：「近 7 天」看的是近 7 天注册的用户，每个批次是同一周或同一月注册的人。" />
+        {switchingTo && <span className="rd-note" role="status">正在按{GROUP_NAME[switchingTo]}重算…</span>}
+      </>}
       more={<>
         <FilterField label="注册周"><Input aria-label="注册周筛选" placeholder="年份与周数，如 2026-W42" value={cohortFilter} onChange={(event) => { setCohortFilter(event.target.value); setQueryNotice(""); }} /></FilterField>
         <FilterField label="运营阶段"><Select aria-label="运营阶段筛选" value={phaseFilter} onChange={setPhaseFilter} options={[{ value: "", label: "全部阶段" }, ...["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => ({ value, label: value }))]} /></FilterField>
@@ -569,14 +620,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         <div className="rd-filter-more-row"><Button type="submit" disabled={refreshing}>应用筛选</Button></div>
         <div className="rd-filter-more-row">
           <span className="rd-note">显示设置</span>
-          <Segments
-            label="按注册周或月分组"
-            value={gran}
-            items={[{ value: "week", label: "注册周（如2026-W42）" }, { value: "month", label: "注册月" }]}
-            onChange={(next) => { reloadKpi({ ...applied, asOf: undefined, granularity: next === "month" ? "registration_month" : "registration_week" }); ctx.toast(`已选${next === "week" ? "注册周" : "注册月"} · 只影响保存视图，不改数据`, "info"); }}
-          />
-          <Explain label="分组方式的说明" content="只影响保存视图，不改数据。" />
-          <Check label="显示运营阶段切换" checked={phaseOn} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`, "info"); }} />
+          {/* 分组数据不带阶段切换点（后端 phaseMarkers=false），开关留着、随视图保存，现在没有可画的标记。 */}
+          <Check label="显示运营阶段切换" checked={phaseOn} disabled={Boolean(applied.granularity)} explain={applied.granularity ? "按注册批次看时图上不标阶段切换，切换时间到「运营阶段状态」看。" : undefined} onChange={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`, "info"); }} />
         </div>
       </>}
       moreCount={SLICES.filter((key) => applied[key]).length}
@@ -587,7 +632,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       canClear={!refreshing && (hasSlice(applied) || draftChanged)}
       sort={<div className="rd-filter-end">
         <Button onClick={saveView}>保存为视图</Button>
-        <Explain label="保存为视图存什么" content="只存在这台电脑的浏览器里。统计规则与目标值只读，这里只把时间范围、切片和显示方式存下来，不保存数据、权限或业务状态，也不用确认。" />
+        <Explain label="保存为视图存什么" content="只存在这台电脑的浏览器里。统计规则与目标值只读，这里只把分组、注册时间、切片和显示方式存下来，不保存数据、权限或业务状态，也不用确认。" />
       </div>}
       result={draftChanged ? "条件未应用" : undefined}
       applied={SLICES.filter((key) => applied[key]).map((key) => ({ key, label: `${SLICE_NAME[key]} ${applied[key]}`, onRemove: () => removeSlice(key) }))}
@@ -612,6 +657,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const report = () => {
     const KPIS = rawKpis;
     const WEEKS = data?.weeks ?? [];
+    // 周批次的横轴写「W19」，跨年时写「26-W19」，长编号排不开；各批次表里写全。
+    const TICKS = applied.granularity === "registration_week" ? WEEKS.map((key) => new Set(WEEKS.map((item) => item.slice(0, 4))).size > 1 ? key.slice(2) : key.slice(5)) : WEEKS;
     const PHASE_SWITCH_IDX = data?.phaseSwitchIndex == null ? -1 : num(data.phaseSwitchIndex, -1);
     const applicableCount = data?.applicableKpiCount ?? KPIS.length;
     const KPI_EXT = rec<KpiExt>(data?.kpiExt);
@@ -621,7 +668,12 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const green = count("g");
     const yellow = count("y");
     const red = count("r");
-    const unavailable = count("na") + count("small");
+    const unavailable = BLANK_KINDS.reduce((sum, kind) => sum + count(kind), 0);
+    const blankKinds = BLANK_KINDS.filter((kind) => count(kind) > 0);
+    // 每种原因不拆行，折行只落在「·」后面。
+    const blankSummary = blankKinds.map((kind, index) => <span key={kind} className="l1-nowrap">{BLANK_TEXT[kind]} {count(kind)}{index < blankKinds.length - 1 ? " · " : ""}</span>);
+    const grouped = Boolean(applied.granularity);
+    const unitName = applied.granularity === "registration_month" ? "月" : "周";
     const order = KPIS.map((_, index) => index).sort((a, b) => STATE_RANK[states[a]] - STATE_RANK[states[b]] || KPIS[a].n - KPIS[b].n);
     const safeSelKpi = Math.min(picked ?? order[0], KPIS.length - 1);
     const baseKpi = KPIS[safeSelKpi];
@@ -629,13 +681,22 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       ? { ...baseKpi, ...drillKpi, name: baseKpi.name, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
       : baseKpi;
     const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
+    const kState = kpiStatus(k, ylOffset);
+    const points = k.points ?? [];
+    const partialEdges = points.filter((point) => point.partial);
+    // #4 也来源不全时是注册超过 13 个月（历史保留期），只有 #1–#3 来源不全时是缺注册记录（L1KpiAnalytics.cohortMetric）。
+    const oldHistory = KPIS.find((item) => item.n === 4)?.unavailableReason === "SOURCE_INCOMPLETE";
+    const blankNote = (state: KpiState, row: Metric & { n?: number }) => state === "inapp" ? INAPP_TEXT
+      : state === "source" ? (oldHistory || (row.n ?? k.n) > 3 ? SOURCE_OLD_TEXT : SOURCE_REG_TEXT)
+      : state === "young" ? YOUNG_TEXT[k.n] ?? REASON_TEXT.NO_REGISTRATION_DENOMINATOR
+      : state === "none" ? REASON_TEXT[row.unavailableReason ?? ""] ?? REASON_TEXT.NO_REGISTRATION_DENOMINATOR
+      : undefined;
     const ext = {
       ...baseExt,
       num: k.numerator == null ? null : String(k.numerator),
       den: k.denominator == null ? null : String(k.denominator),
-      note: k.scope === "NOT_APPLICABLE_TO_COHORT" ? "—" : k.maturityStatus === "PARTIAL" ? "PARTIAL" : REASON_TEXT[k.unavailableReason ?? ""] ?? (k.available === false ? "这个范围缺数据，暂无法计算，不按 0% 算。" : baseExt.fx === NOVA_FX ? NOVA_NOTE : baseExt.note),
+      note: blankNote(kState, k) ?? (baseExt.fx === NOVA_FX ? NOVA_NOTE : baseExt.note),
     };
-    const kState = kpiStatus(k, ylOffset);
     const phase = rec(data?.currentPhase);
     const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
     const attributionLinks = assertL1AttributionLinks(ext.jump);
@@ -703,23 +764,28 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         {red > 0
           ? <Conclusion state="danger" lead hint="点一行看原因。" explain="未达标的排在下面最前面。">关键指标：<b>{red}</b> 项未达标</Conclusion>
           : unavailable === applicableCount
-            ? <Conclusion state="unknown" hint={`选更长的时间范围再看；仍不足 5 人时等样本积累。${count("na") > 0 ? "缺数据的项点开看原因。" : ""}`} explain={SMALL_SAMPLE_NOTE}>关键指标：暂时无法判断</Conclusion>
+            ? <Conclusion state="unknown" hint="各项都算不出或人数太少，点一行看原因。" explain={<>
+                <p>来源不全：这批有用户缺注册记录或注册太早，算不出。</p>
+                <p>观察期未满：用户注册时间太近，还不能算。</p>
+                <p>样本过小：少于 5 人不显示，不下结论。</p>
+                <p>没有数据：这个范围没有对应的用户。</p>
+              </>}>关键指标：暂时无法判断</Conclusion>
             : green === applicableCount
               ? <Conclusion state="ok" hint="这页无需处理。">关键指标：全部达标</Conclusion>
-              : <Conclusion state="neutral" explain={unavailable > 0 ? "有的项人数太少或缺数据，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
+              : <Conclusion state="neutral" explain={unavailable > 0 ? "有的项算不出或人数太少，不算达标。" : "接近目标的排在下面最前面。"}>关键指标：没有未达标的项</Conclusion>}
 
         <StatBand label="指标概览">
-          <Stat lead={red === 0} label="已达标指标" value={green} unit={`/ ${applicableCount}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" explain="满足对应指标的目标。" />
+          <Stat lead={red === 0} label="已达标指标" value={green} unit={`/ ${applicableCount}`} tone={green > 0 ? "ok" : undefined} icon={CheckCircle2} iconTone="ok" explain={applicableCount < KPIS.length ? "满足对应指标的目标。创世节点售罄速度按注册批次看时不适用，不计入。" : "满足对应指标的目标。"} />
           <Stat label="接近目标的指标" value={yellow} tone={yellow > 0 ? "warn" : undefined} icon={Gauge} iconTone="warn"
             sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button></>}
             explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
-          <Stat label="暂无法判断" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub={`缺数据 ${count("na")} 项 · 样本过小 ${count("small")} 项`} explain="缺数据算不出来；样本过小的数值受保护。两类都不按 0% 算，也不算未达标。" />
+          <Stat label="暂无法判断" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub={blankKinds.length ? blankSummary : "每项都算得出"} explain="来源不全、观察期未满、没有数据的算不出；样本过小的数值受保护。都不按 0% 算，也不算未达标。" />
           <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
-            explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : "当前时间范围内没有阶段切换记录。"} />
+            explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : grouped ? "按注册批次看时图上不标阶段切换，切换时间到「运营阶段状态」看。" : "当前时间范围内没有阶段切换记录。"} />
         </StatBand>
 
         <div className="rd-split" data-detail="">
-          <Panel title="八项指标" explain="未达标的排在前面，点一行看明细。" icon={ListChecks} tone="role-2" flush>
+          <Panel title="八项指标" sub={applied.granularity ? `${regTime(applied)} · 按${GROUP_NAME[applied.granularity]} · ${WEEKS.length} 批` : undefined} explain="未达标的排在前面，点一行看明细。" icon={ListChecks} tone="role-2" flush>
             <Table label="选择要查看的关键指标" rowFocus data-tight={showTrendColumn ? "" : undefined}>
               <thead><tr>
                 <Th>指标</Th>
@@ -735,28 +801,30 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   return (
                     <Tr key={item.n} selected={index === safeSelKpi} tabIndex={index === safeSelKpi ? 0 : -1} onOpen={() => { void selectKpi(index); revealDetail(); }} onKeyDown={moveRow} title="点击查看明细">
                       <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                      <Td align="right"><Cell num main={item.value == null ? "—" : `${item.value}${unitText(item)}`} sub={state === "na" || state === "small" || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
+                      <Td align="right"><Cell num main={item.value == null ? "—" : `${item.value}${unitText(item)}`} sub={isPartial(item) ? "暂定" : blankState(item) || (item.momDelta == null && !item.previousSuppressed) ? undefined : deltaText(item)} /></Td>
                       <Td align="right"><Cell num main={tgtShort(item)} /></Td>
-                      {showTrendColumn && <Td>{state === "small" && !item.points
+                      {showTrendColumn && <Td>{state === "inapp"
                         ? <span className="rd-note">—</span>
-                        : item.sparkSuppressed?.includes(true)
-                          ? <><Sparkline label={`${operatorCopyText(item.name)}的走势，样本过小时段留空`} values={item.spark} /><span className="rd-note">部分时段样本过小</span></>
+                        : hasTrend(item.spark) && item.spark.includes(null)
+                          ? <Sparkline label={`${operatorCopyText(item.name)}的走势，算不出的批次留空`} values={item.spark} />
                         : hasTrend(item.spark)
                         ? <Sparkline label={`${operatorCopyText(item.name)}的走势`} values={item.spark} />
-                        : item.spark.length >= 2 && item.spark.every((point) => point === 0)
-                          ? <span className="rd-note">每段都是 0</span>
-                          : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>}</Td>}
+                        : allZero(item.spark)
+                          ? <span className="rd-note">每批都是 0</span>
+                          : <span className="rd-note" data-proof="l1-kpi-trend-unavailable">{item.spark.length === 1 ? "只有 1 批" : "趋势数据不足"}</span>}</Td>}
                       <Td><StatusTag tone={STATE_TONE[state]}>{stateText(state, item)}</StatusTag></Td>
                     </Tr>
                   );
                 })}
               </tbody>
             </Table>
-            {!showTrendColumn && (KPIS.some((item) => item.sparkSuppressed?.includes(true))
-              ? <p className="rd-note rd-panel-foot">部分时段样本过小，趋势留空。</p>
-              : KPIS.some((_, index) => trendOf(index).length >= 2 && trendOf(index).every((point) => point === 0))
-              ? <p className="rd-note rd-panel-foot">这个范围有趋势的指标每段都是 0，没有走势可画。</p>
-              : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围的数据不够，画不出走势。</p>)}
+            {!showTrendColumn && (WEEKS.length === 0
+              ? <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">这个范围没有注册批次，没有走势。</p>
+              : WEEKS.length === 1
+              ? <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">只有 1 个注册批次（{WEEKS[0]}），没有走势可画。</p>
+              : KPIS.some((_, index) => allZero(trendOf(index)))
+              ? <p className="rd-note rd-panel-foot">有数值的指标每批都是 0，没有走势可画。</p>
+              : <p className="rd-note rd-panel-foot" data-proof="l1-kpi-trend-unavailable">各批次都算不出数值，画不出走势；点一行看原因。</p>)}
           </Panel>
 
           <Panel
@@ -780,29 +848,53 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <Facts>
                 {!k.available && <Fact k="当前值">—</Fact>}
                 {!k.available && <Fact k="目标值">{tgtShort(k)}</Fact>}
-                {kState !== "small" && <Fact k="分子">{ext.num}</Fact>}
-                {kState !== "small" && <Fact k="分母">{ext.den}</Fact>}
-                {kState !== "small" && <Fact k="较上期">{deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
+                {k.available && <Fact k="分子">{ext.num}</Fact>}
+                {k.available && <Fact k="分母">{ext.den}</Fact>}
+                {k.available && <Fact k="较上期">{k.scope ? "按注册批次看时不比较" : deltaText(k).replace(/^较上期 ?/, "")}</Fact>}
                 <Fact k="统计范围">{queryScope(applied)}</Fact>
               </Facts>
               <p className="rd-note">解读：{kState === "small" ? <>人数太少，不下结论<Explain label="样本过小的说明" content={SMALL_SAMPLE_NOTE} /></> : <AutoGloss>{operatorCopyText(ext.note)}</AutoGloss>}</p>
+              {isPartial(k) && <p className="rd-note">{PARTIAL_TEXT}</p>}
               {drillError
                 ? <BlockState state="error" title="明细和趋势暂时加载不出来" detail={`其他内容不受影响。${drillError}`} onRetry={() => void selectKpi(safeSelKpi)} />
-                : kState === "small" && !k.points
+                : kState === "inapp"
                   ? null
                   : hasTrend(k.spark)
-                  ? <Panel plain headingLevel={3} title="最近在变好还是变坏" explain="所选时间范围等分六段。">
+                  ? <Panel plain headingLevel={3} title={grouped ? `各注册${unitName}的走势` : "最近在变好还是变坏"} explain={grouped ? `每个点是同一${unitName}注册的用户。空着的批次算不出，原因见「各批次」。` : "所选时间范围等分六段。"}>
                       <TrendLines
                         label={`${operatorCopyText(k.name)}的走势`}
-                        ticks={WEEKS}
+                        ticks={TICKS}
                         format={pct}
                         series={[{ key: "kpi", label: operatorCopyText(k.name), slot: 2, values: k.spark }]}
                         marks={goalMarks}
                         event={phaseEvent}
                       />
+                      {partialEdges.length > 0 && <p className="rd-note">{partialEdges.map((point) => point.bucketKey).join("、")} 不完整：只含所选范围内注册的用户。</p>}
                     </Panel>
-                  : <p className="rd-note">{k.sparkSuppressed?.includes(true) ? "样本过小，趋势时段留空。" : k.spark.length >= 2 && k.spark.every((point) => point === 0) ? "这段时间每段都是 0，没有走势可画。" : "这个范围的数据不够，画不出走势。"}</p>}
-              {hasTrend(k.spark) && k.sparkSuppressed?.includes(true) && <p className="rd-note">部分时段样本过小，曲线在这些时段留空。</p>}
+                  : <p className="rd-note">{points.length === 1 ? `只有 1 个注册批次（${points[0].bucketKey}），数值就是上面的当前值。` : points.length === 0 ? "这个范围没有注册批次。" : allZero(k.spark) ? "有数值的批次都是 0，没有走势可画。" : k.spark.every((point) => point === null) ? "各批次都算不出，原因见「各批次」。" : "有数值的批次不到 2 个，画不出走势。"}</p>}
+              {points.length > 0 && kState !== "inapp" && (
+                <Fold inset title="各批次" summary={`${points.length} 批 · ${points.filter((point) => point.value !== null).length} 批有数值`}>
+                  <div className="rd-stack">
+                    <Table label={`${operatorCopyText(k.name)}的各注册批次`}>
+                      <thead><tr><Th>注册{unitName}</Th><Th>注册时间（{businessZone().label}）</Th><Th align="right">数值</Th><Th>状态</Th></tr></thead>
+                      <tbody>
+                        {points.map((point) => {
+                          const state = pointStatus(k, point, ylOffset);
+                          return (
+                            <Tr key={point.bucketKey}>
+                              <Td><Cell main={point.bucketKey} sub={point.partial ? "不完整" : undefined} /></Td>
+                              <Td><Cell main={regSpan(String(point.selectedFrom), String(point.selectedToExclusive))} /></Td>
+                              <Td align="right"><Cell num main={point.value == null ? "—" : `${point.value}${unitText(k)}`} sub={isPartial(point) ? "暂定" : undefined} /></Td>
+                              <Td><StatusTag tone={STATE_TONE[state]}>{stateText(state, k)}</StatusTag></Td>
+                            </Tr>
+                          );
+                        })}
+                      </tbody>
+                    </Table>
+                    <PaginationExemptionList items={[{ label: "关键指标 注册批次表", kind: "fixed-matrix", maxRows: 60, reason: "注册批次最多 60 个，超过时后端直接拒绝" }]} />
+                  </div>
+                </Fold>
+              )}
               <Fold inset title="这项指标怎么算" summary={`指标 ${k.n} 的公式和开放批次`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
                   <div>{renderFx(ext.fx, ext.fxBold)}</div>
@@ -813,9 +905,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
           </Panel>
         </div>
 
-        {showTrendColumn && <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${ovlSel.length} 项，画出 ${drawnCount} 项` : `已选 ${ovlSel.length} 项，没有走势可画`}
+        {showTrendColumn && <Fold title="这几项相对目标在变好还是变坏" icon={Activity} tone="role-2" summary={drawnCount ? `已选 ${picks.length} 项，画出 ${drawnCount} 项` : `已选 ${picks.length} 项，没有走势可画`}
           explain={<>
-            <p>至少留一项。对比多个指标的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看。按行为记录中的运营阶段统计。</p>
+            <p>{grouped ? "至少留一项。对比多个指标在各注册批次的走向，看是哪一批变了。" : "至少留一项。对比多个指标的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看。按行为记录中的运营阶段统计。"}</p>
             <p>高于 100 是好于目标。越高越好的指标算实际值 ÷ 目标值，越低越好的算目标值 ÷ 实际值，只看各自的走向，不比谁离目标远。</p>
           </>}>
           <div className="rd-stack">
@@ -823,13 +915,15 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               {order.map((index) => {
                 const item = KPIS[index];
                 const on = ovlSel.includes(index);
-                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && ovlSel.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
+                // 不适用的一项不能勾，保存过的勾选留在视图里，不画（画图集合已排除它）。
+                if (item.scope === "NOT_APPLICABLE_TO_COHORT") return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={false} disabled explain="按注册批次看时不适用。" onChange={() => undefined} />;
+                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && picks.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
               })}
             </div>
             {drawable.length > 0 && (
               <Figure width={640} graphic={<TrendLines
                 label="多个关键指标的对比趋势"
-                ticks={WEEKS}
+                ticks={TICKS}
                 format={(value) => value.toFixed(0)}
                 series={drawable.map(({ item, slot, values }) => ({ key: String(item.n), label: `#${item.n} ${operatorCopyText(item.name)}`, slot, values }))}
                 marks={[{ key: "target", text: "100 = 等于目标", value: 100, tone: "ok" }]}
@@ -853,7 +947,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <Panel key={item.n} plain headingLevel={3} title={`${operatorCopyText(item.name)}有没有在健康带里`} explain="没有单一目标，按真实值画。">
                 <Figure width={640} graphic={<TrendLines
                   label={`${operatorCopyText(item.name)}和健康带`}
-                  ticks={WEEKS}
+                  ticks={TICKS}
                   format={(value) => `${Number(value.toFixed(1))}${unitText(item)}`}
                   series={[{ key: String(item.n), label: operatorCopyText(item.name), slot: 2, values: item.spark }]}
                   marks={[{ key: "low", text: `下限 ${item.band?.[0]}${unitText(item)}`, value: item.band?.[0] ?? 0, tone: "ok" }, { key: "high", text: `上限 ${item.band?.[1]}${unitText(item)}`, value: item.band?.[1] ?? 0, tone: "ok" }]}
@@ -871,7 +965,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               <RecordList label="未绘制的指标" records={skipped.map((item) => ({
                 id: String(item.n),
                 value: `#${item.n} ${operatorCopyText(item.name)}`,
-                object: states[KPIS.findIndex((kpi) => kpi.n === item.n)] === "small" ? "样本过小" : item.sparkSuppressed?.includes(true) ? "部分时段样本过小，其余趋势不足" : item.spark.length >= 2 && item.spark.every((value) => value === 0) ? "每段都是 0" : "趋势数据不足",
+                object: item.spark.length < 2 ? "批次不到 2 个" : allZero(item.spark) ? "每批都是 0" : item.spark.every((value) => value === null) ? "各批次都算不出" : "有数值的批次不到 2 个",
               }))} />
             </Fold>}
           </div>
@@ -910,6 +1004,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   };
 
   const firstError = refreshError || ctx.biError;
+  const asOfText = data?.observationAsOf ? instantStamp(data.observationAsOf) : "";
+  const shownScope = applied.granularity ? `${GROUP_NAME[applied.granularity]}、${timeName(applied)}` : timeName(applied);
   const body = rawKpis.length
     ? report()
     : liveTotals.length
@@ -928,7 +1024,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         summary={<AutoGloss>{summary}</AutoGloss>}
         actions={exporting.button}
         meta={<span className="rd-toolbar">
-          {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
+          {asOfText
+            ? <span>数据截至 {asOfText}（{businessZone().label}）<Explain label="数据时间说明" content="只算这个时间之前发生的事。打开时读取，不自动刷新；点「刷新」算到最新。" /></span>
+            : readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
           <Button variant="ghost" size="sm" loading={refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => reloadKpi({ ...applied, asOf: undefined })}>刷新</Button>
         </span>}
         readOnly={ctx.canExport ? undefined : "只能查看，导出需报表管理权限"}
@@ -937,7 +1035,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       {queryBar}
       {refreshError && rawKpis.length > 0 && (
         <Notice tone="warn" title="关键指标刷新失败" action={<Button size="sm" onClick={retryLast}>重试</Button>}>
-          以下是 {readAt} 的数据，时间范围未切换。{refreshError}
+          下面仍是{shownScope}、截至 {asOfText || readAt} 的数据，条件没有切换。{refreshError}
         </Notice>
       )}
       {body}

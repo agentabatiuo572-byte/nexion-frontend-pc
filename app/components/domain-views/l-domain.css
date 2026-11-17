@@ -440,6 +440,8 @@
 
 /* 规则表：放得下时计算方式一行，1024 放不下时折行，上线批次留在屏内（DT-16）。 */
 .l1-rule-fx .rd-cell-main { white-space: normal; text-wrap: balance; }  /* 两行匀开，第二行不留单字 */
+.l1-nowrap { white-space: nowrap; }
+.l1-scope-label { font-size: var(--rd-text-aux); color: var(--rd-text-3); margin-left: 8px; }  /* 两组分段之间写一次「注册时间」，时间范围不会被读成事件时间 */
 
 /* ======================= L3 财务报表（改版，rd） =======================
    只放这页自己的排法，颜色、字号、间距都取 --rd-* 令牌。名称、单位和画法跟资金与应付款总览、资金储备与应付款一致。 */
