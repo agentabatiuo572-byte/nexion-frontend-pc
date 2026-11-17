@@ -163,9 +163,9 @@
 .mdom .m5-panels { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .mdom .m5-policy-grid, .mdom .m5-modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .mdom .m5-seat-row { display: grid; grid-template-columns: minmax(180px, 1fr) 220px minmax(220px, 1.2fr) 170px; }
-/* 绑定专属客服弹窗：理由框只能竖着拉；已绑定标签比普通标签小一号。原来写在行内样式里。 */
+/* 绑定专属客服弹窗：理由框只能竖着拉；已绑定标签用辅助字号。原来写在行内样式里。 */
 .mdom .m5-bind-reason { resize: vertical; }
-.mdom .m5-bound-chip { height: 20px; font-size: 11px; border: none; }
+.mdom .m5-bound-chip { height: 20px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); border: none; }
 .mdom .m5 .sec-h, .mdom .m5-heading, .mdom .m5-category-row, .mdom .m5-template-row, .mdom .m5-pager { flex-wrap: wrap; }
 .mdom .m5-category-row > span:first-child { flex-shrink: 0; }
 .mdom .m5-seat-row .chip { max-width: 100%; height: auto; min-height: 22px; flex-wrap: wrap; white-space: normal; }
