@@ -938,9 +938,9 @@ export default function H1Phase({ ctx,
         const title = rowTitle(row);
         const line = rowLine(row);
         const answer = feedback && checked === row.commandKey && feedback !== line ? feedback : undefined;
-        return { key: row.commandKey, object: `${row.label}${row.ticket ? ` · 审批单 ${row.ticket.id}` : ""}`, createdAt: row.createdAt,
+        return { key: row.commandKey, object: row.label, createdAt: row.createdAt,
           tag: <StatusTag tone={row.state === "approval" ? "progress" : "warn"}>{row.state === "approval" ? "待审批" : row.state === "rejected" ? row.retryRejected ? "重试被拒绝" : "提交被拒绝" : "结果未知"}</StatusTag>,
-          line: row.state === "approval" ? "批准前参数不变，可以查询审批进度。" : row.state === "rejected" ? `拒绝原因：${row.rejectionReason ?? "没有记下，请查询原结果核对。"}`
+          line: row.state === "approval" ? `${row.ticket ? `审批单 ${row.ticket.id} ` : ""}在等批准，批准前参数不变。` : row.state === "rejected" ? `拒绝原因：${row.rejectionReason ?? "没有记下，请查询原结果核对。"}`
             : isRetryExpired(row) ? "超过 24 小时不能再重试，先查询原结果。" : row.requests.some((request) => request.kind === "proposal") ? "可能已经提交，先查询原结果。" : "可能已经生效，先查询原结果。",
           result: title && line ? { tag: <StatusTag tone={title === "记为失败" ? "neutral" : title === "还在执行" ? "progress" : "warn"}>{title}</StatusTag>, line } : undefined,
           note: answer, actions: recordActions(row, false),
