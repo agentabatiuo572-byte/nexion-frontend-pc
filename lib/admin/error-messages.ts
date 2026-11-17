@@ -3384,7 +3384,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   NOVA_TEMPLATE_CTA_UNSUPPORTED: "这个跳转去向不在后端目录中，请重新加载后选择。",
   NOVA_TEMPLATE_PLACEHOLDERS_MISMATCH: "英语标题和正文须成对填写，各语言正文变量须一致，请核对。",
   NOVA_TEMPLATE_TRANSLATIONS_INVALID: "额外语言译文不符合要求，请核对语言代码、标题和正文。",
-  NOVA_TEMPLATE_PLACEHOLDER_UNSUPPORTED: "这个频道填不了模板里的变量，没有保存或发布。先删掉标题和正文里的 {…}；三种语言都删了还被拒，是其他语言的译文里还有，这页改不了，请联系值班人员。",
+  NOVA_TEMPLATE_PLACEHOLDER_UNSUPPORTED: "这个频道填不了模板里的变量，没有保存或发布。先删掉标题和正文里的 {…}；都删了还被拒，是其他语言的译文里还有，这页改不了，请联系值班人员。",
   NOVA_SOCIAL_DISTRIBUTION_INVALID: "每类事件概率须为 0–100 的整数，请核对整组概率。",
   NOVA_SOCIAL_DISTRIBUTION_KEY_INVALID: "事件概率里有无效类型，请重新加载目录后再调整。",
   NOVA_KEY_INVALID: "频道编号须为 2–64 位英文字母、数字、下划线或横线，请核对。",
