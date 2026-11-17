@@ -199,7 +199,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         : loading ? "正在读取最新值，你填的都还在。"
           : <>最新值没读到，你填的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
     </Notice>
-      : error && !confirmOpen && <Notice tone="danger" title="没有保存">{error}</Notice>}
+      : error && !confirmOpen && <Notice tone="danger" title={original ? undefined : "没有保存"}>{error}</Notice>}
 
     <Panel title="分享链接和渠道" icon={Share2} tone="role-2" sub={`${config.channels.length} 个渠道 · 启用 ${config.channels.filter((channel) => channel.enabled).length} 个`}
       explain="用户在 App 里点「邀请」「分享」时用这里的设置。外部渠道能不能打开还要看用户手机上有没有装对应应用。" >
@@ -326,7 +326,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         <Button disabled={saving} onClick={() => setConfirmOpen(false)}>取消</Button>
         <Button variant="primary" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : undefined} onClick={() => void save()}>确认修改</Button>
       </>}>
-      {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
+      {error && <Notice tone="danger" title={original ? undefined : "没有保存"}>{error}</Notice>}
       <Facts>
         <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>
         <Fact k="版本">v{config.version} → v{config.version + 1}</Fact>

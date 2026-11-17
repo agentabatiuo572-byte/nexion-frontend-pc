@@ -1,5 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
@@ -1048,6 +1049,14 @@ function fieldPairs(before: string, after: string): Array<[string, string, strin
   return a.map((m, i) => [m![1], b[i]![2] || "未设置", m![2] || "未设置"]);
 }
 
+/** 设备审批只翻译后端给出的状态码；占位的原状态不能用设备当前状态补写。 */
+function deviceApprovalValue(value: string, operationCode?: string) {
+  if (!["e5_device_activate", "e5_device_force_activate", "e5_device_deactivate", "e5_device_unbind"].includes(operationCode ?? "")) return value;
+  const states: Record<string, string> = { ACTIVATED: "ACTIVE", ACTIVE: "ACTIVE", DEACTIVATED: "DEACTIVATED", UNBOUND: "UNBOUND" };
+  const state = states[value];
+  return state ? operatorDeviceStatus(state) : value;
+}
+
 /**
  * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
  * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
@@ -1059,7 +1068,7 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   if (fund?.kind === "f5Suspension") return fund.suspended ? "批准时的状态" : "暂停中";
   if (fund?.kind === "f5Reissue") return "";
   if (fund?.kind === "f5Reverse") return "批准时的状态";
-  return changeBeforeText(row);
+  return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string }) => {
   const fund = fundTicket(row);
@@ -1067,7 +1076,7 @@ const changeAfter = (row: { after: string; obj?: string; action?: string; operat
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
   if (fund?.kind === "f5Suspension") return fund.suspended ? "暂停中" : "已恢复";
   if (fund?.kind === "f5Reissue") return `生成 ${fund.count ?? "—"} 条新记录`;
-  return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : row.after;
+  return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : deviceApprovalValue(row.after, row.operationCode);
 };
 const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
   : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
