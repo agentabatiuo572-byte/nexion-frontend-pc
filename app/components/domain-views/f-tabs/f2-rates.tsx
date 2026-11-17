@@ -84,7 +84,7 @@ function useF2Model(ctx: FViewCtx) {
 
 const approvalCopy = (perm: string) => `批准人要是另一位管理员，需有审批批准权限和「${perm}」权限；批准前按原设置执行。`;
 const effectTag = <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；只影响之后新算的订单，已经算好的不重算。">批准后生效</StatusTag>;
-const COVERAGE_CHECK = "批准时后端检查兑付覆盖率，低于红线不会执行。";
+const COVERAGE_CHECK = "批准时检查兑付覆盖率，低于红线不会执行。";
 
 /* ───────────── 每层分多少 ───────────── */
 
@@ -232,16 +232,16 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                 <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nexText)}</span> : num(rate.nexText)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
                   {!rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
-                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，要后端补上。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
+                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
-                      : pausedRaw ? <StatusTag tone="danger" explain={`后端存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
+                      : pausedRaw ? <StatusTag tone="danger" explain={`存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
                         : <StatusTag tone="neutral" explain="暂停开关没配。按层暂停里七层都选一次。">未配置</StatusTag>}
                   {rate && gated && m.rank?.legal && <StatusTag tone="neutral" icon={Lock} explain={`上级要到 ${m.rank.normalized} 及以上才拿得到这一层；等级不够这一层记 0。`}>需 {m.rank.normalized}+</StatusTag>}
                   {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
                 </span></Td>
                 <Td align="right"><span className="f2-row-actions">
-                  {direct ? <span className="f2-fixed">比例固定<Explain label="第 1 层比例为什么改不了" content="第 1 层 USDT 比例固定 10%，后台不能改；启用整体结算时后端要求它是 10%。" /></span>
+                  {direct ? <span className="f2-fixed">比例固定<Explain label="第 1 层比例为什么改不了" content="第 1 层 USDT 比例固定 10%，后台不能改；启用整体结算时要求它是 10%。" /></span>
                     : m.canRoyaltyRate && <Button size="sm" aria-label={`调整 ${level} USDT 比例`} disabledReason={usdtPending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.${level}`)} onClick={() => openRate(level)}>{rate ? "改比例" : "设置比例"}</Button>}
                   {m.canRoyaltyRate && (!nexLocked ? <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={nexPending ? "等另一位管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.nex.${level}`)} onClick={() => openNex(level)}>改系数</Button>
                     : <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={m.l1NexStatus}>改系数</Button>)}
@@ -271,8 +271,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
 const PARAM_HELP: Record<string, { what: string; effect: string; hint?: string; note?: string; perm: string; unit?: string }> = {
   "F.unilevel.depthGate": { what: "从哪一层起要看上级的等级", effect: "比如选 L3：L3–L7 的上级要到解锁等级才拿得到；可以选 L1", perm: "团队奖励规则" },
   "F.unilevel.depthGateRank": { what: "解锁起点及以后各层，上级至少要到的 V 等级", effect: "等级不够的上级这一层记 0", perm: "团队奖励规则" },
-  "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。后端不检查下限是否不大于上限", perm: "团队奖励规则" },
-  "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。后端不检查下限是否不大于上限", perm: "团队奖励规则" },
+  "F.influence.clampMin": { what: "L2–L7 影响分的最小值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: "团队奖励规则" },
+  "F.influence.clampMax": { what: "L2–L7 影响分的最大值", effect: "影响分按上级团队月业绩算，乘进 L2–L7 的奖励；L1 不受影响。保存时不检查下限是否不大于上限", perm: "团队奖励规则" },
   "F.promo.weekMultiplier": { what: "活动周每层奖励再乘的倍数，含 L1", effect: "调高平台多付钱", hint: "1–3 倍", perm: "团队奖励比例", unit: "倍" },
   "F.unilevel.mergeExitMaxPct": { what: "一笔订单七层 USDT 奖励最多占订单的比例", effect: "超出时从 L1 往下分完为止；旧 UVT 系数另发的 UVT 不算在内", hint: "0–100%", perm: "团队奖励规则", unit: "%" },
 };
@@ -298,7 +298,7 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
       : { kind: "number", current: value, ...(promo ? { min: 1, max: 3, unit: "倍", amplifiesWhen: "increase" as const } : merge ? { min: 0, max: 100, unit: "%" } : {}), hint: help.hint },
     facts: parsed && !parsed.legal ? <Facts><Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact></Facts>
       : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
-    statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "核对新值；后端保存时不检查上下限的大小关系。" },
+    statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "核对新值；保存时不检查上下限的大小关系。" },
     detail: `${name} · 现在 ${value || "未配置"}。只影响之后的购买奖励结算。`,
     completionCopy: approvalCopy(help.perm), coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(paramKey, next, reason); },
@@ -426,7 +426,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
         { key: "diamond", label: "钻石档门槛(USD)", current: ptDiamond, inputKind: "number", min: 0, showDiff: true },
       ],
     },
-    statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "后端检查四个都是数字且逐档不降低。" },
+    statedBrief: { impact: "批准后保存新的四档门槛；目前只保存门槛，不会自动开通权益，也不影响任何奖励。", check: "系统检查四个都是数字且逐档不降低。" },
     detail: `合作伙伴权益门槛 · ${partnerState} · 不影响任何奖励。`,
     completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, bv) => {
@@ -457,7 +457,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
           <span className="f2-tier-value"><strong>{num(thresholds[index])}</strong> USD</span>
         </li>)}
       </ol>
-        : <BlockState state="empty" title={partnerTiersRaw ? "门槛配置无效" : "门槛未配置"} detail={partnerTiersRaw ? `后端存的内容读不出四个逐档不降低的数，请重新配置。` : "四档门槛都还没设置。"} />}
+        : <BlockState state="empty" title={partnerTiersRaw ? "门槛配置无效" : "门槛未配置"} detail={partnerTiersRaw ? "存的内容读不出四个逐档不降低的数，请重新配置。" : "四档门槛都还没设置。"} />}
       {pending && <p className="f2-inline-tag"><StatusTag tone="warn" icon={Clock3}>待审批</StatusTag>等另一位管理员批准</p>}
       <div className="f2-perk-toggle">
         <Button size="sm" variant="ghost" aria-expanded={showTierDetails} aria-controls="royalty-partner-details" onClick={() => setShowTierDetails(!showTierDetails)}>{showTierDetails ? "收起权益说明" : "查看权益说明"}</Button>

@@ -123,7 +123,7 @@ export function F3Placements() {
           options={[{ value: "ALL", label: "全部成员" }, { value: "ASSIGNED", label: "已分组" }, { value: "UNASSIGNED", label: "未分组" }]} />
       </FilterField>
     </FilterBar>
-    {pending && <Notice tone="warn" title={<>分组结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经分好了。点「查询原结果」按原来的邀请人和成员读回；读到已在原来那一组就算完成，读到在另一组说明不能换。仍没分组时保留这条，不会自动再提交一次。" /></>}
+    {pending && <Notice tone="warn" title={<>分组结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经分好了。点「查询原结果」按原来的邀请人和成员重新读取；读到已在原来那一组就算完成，读到在另一组说明不能换。仍没分组时保留这条，不会自动再提交一次。" /></>}
       action={<Button size="sm" disabled={busy} onClick={() => void checkPending()}>查询原结果</Button>}>
       邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} → {pending.leg} 组
     </Notice>}
@@ -163,7 +163,7 @@ export function F3Placements() {
         <Fact k="邀请人用户编号">{selected.ownerUserId}</Fact>
         <Fact k="这次要分的成员">成员 {selected.memberUserId} → <span className="f3-leg" data-leg={selected.leg}>{selected.leg} 组</span></Fact>
       </Facts>
-      <Notice tone="warn" title="归了就不能换">分组后不能改到另一组，页面和后端都没有换组的入口。直接写入，不走审批，也不触发结算。</Notice>
+      <Notice tone="warn" title="归了就不能换">分组后不能改到另一组，没有换组的入口。直接写入，不走审批，也不触发结算。</Notice>
     </Modal>}
   </Panel>;
 }

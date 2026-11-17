@@ -153,7 +153,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ? <Conclusion state="warn" icon={CircleHelp} hint="在下面的列表里逐条核对；有结论前不要换个办法重做。">有 {openOriginals} 项原操作还没有结论，先逐条核对</Conclusion>
     : permanent === "unset"
       ? <Conclusion state="warn" icon={ShieldOff} hint="在下面「九级共用的设置」里明确开启或关闭。"
-        explain="后端读不到这项设置时按关闭执行：用户下一次被评估时，没达标就降到实际达到的等级。">不降级保护没有设置，按关闭执行：没达标的用户会降级</Conclusion>
+        explain="没有这项设置时按关闭执行：用户下一次被评估时，没达标就降到实际达到的等级。">不降级保护没有设置，按关闭执行：没达标的用户会降级</Conclusion>
       : <Conclusion state="neutral" icon={Layers3}
         hint={unconfigured.length ? `${unconfigured.join("、")} 还没有升级奖励。` : undefined}>
         {fmt(total)} 位会员分在九级里，人最多的是 {busiest.v}（{fmt(busiest.pop)} 人）</Conclusion>;
@@ -242,7 +242,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const protectionValue = permanent === "on"
     ? <StatusTag tone="ok" icon={ShieldCheck}>已开启</StatusTag>
     : permanent === "off" ? <StatusTag tone="neutral" icon={ShieldOff}>已关闭</StatusTag>
-      : <StatusTag tone="warn" icon={TriangleAlert} explain="后端没读到这项设置，按关闭执行。">未设置，按关闭执行</StatusTag>;
+      : <StatusTag tone="warn" icon={TriangleAlert} explain="没有这项设置，按关闭执行。">未设置，按关闭执行</StatusTag>;
   const openProtection = (next: "on" | "off") => {
     const action = next === "off" ? "关闭不降级保护" : "开启不降级保护";
     const now = permanent === "on" ? "已开启" : permanent === "off" ? "已关闭" : "未设置（按关闭执行）";
@@ -280,7 +280,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     proposalSlot: "f-config:F.vrank.titles",
     action: "设置各级头衔", briefKind: "config", title: "设置各级头衔", confirmLabel: "提交审批",
     effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有团队等级修改权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍按原来的头衔显示。`}>批准后生效</StatusTag>,
-    statedBrief: { impact: "只改这页和接口下发的头衔文字，不影响晋升条件和奖励；App 现在只显示 V0–V8，不显示头衔。", check: "每一级都要填。" },
+    statedBrief: { impact: "只改这页和发给 App 的头衔文字，不影响晋升条件和奖励；App 现在只显示 V0–V8，不显示头衔。", check: "每一级都要填。" },
     businessForm: {
       kind: "multi-field",
       fields: rows.map((row) => ({ key: row.v, label: row.v, current: titlesByLevel[row.v] ?? "", inputKind: "text" as const, placeholder: `${row.v} 头衔` })),
@@ -312,12 +312,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           </span> : undefined} />
         <ConfigRow name="奖品名称" value={prizeName ? <span className="f1-strong">{prizeName}</span> : <span className="f1-weak">未配置</span>}
           what="会员等级奖品的显示名字，不影响奖励和晋升。"
-          where="这页显示；App 接口会下发这个名字，App 现在没有地方显示它。没配置时接口下发默认名。"
+          where="这页显示；这个名字也会发给 App，App 现在没有地方显示它。没配置时发默认名。"
           when="提交审批，另一位管理员批准后生效。"
           action={canWrite ? <Button size="sm" onClick={openPrize}>{prizeName ? "修改" : "配置"}</Button> : undefined} />
         <ConfigRow name="各级头衔" value={<span className="f1-strong">已设置 {titleCount}/{rows.length} 级</span>}
           what="每一级的称呼，只用于显示，不影响奖励和晋升。"
-          where="这页的等级卡和接口下发的等级名；App 现在只显示 V0–V8，不显示头衔。"
+          where="这页的等级卡和发给 App 的等级名；App 现在只显示 V0–V8，不显示头衔。"
           when="提交审批，另一位管理员批准后生效；每一级都要填。"
           action={canWrite ? <Button size="sm" onClick={openTitles}>设置头衔</Button> : undefined} />
         <ConfigRow name="团队激励池" value={leadership
@@ -337,7 +337,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     const readUserRank = async (values: BusinessFormValue) => {
       const request = ++overrideRead.current;
       const userId = values.userId?.trim() ?? "";
-      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">这页读不到；批准时后端按当时的等级核对方向</Fact></Facts> } : current);
+      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">这页读不到；批准时按当时的等级核对方向</Fact></Facts> } : current);
       let rank: string | undefined;
       if (/^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read")) {
         try {
@@ -348,7 +348,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         } catch { /* Read failure keeps the prepared unknown state; never infer V0. */ }
       }
       if (overrideRead.current === request) setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current,
-        facts: <Facts><Fact k="现在的等级">{rank ?? "这页读不到；批准时后端按当时的等级核对方向"}</Fact></Facts>,
+        facts: <Facts><Fact k="现在的等级">{rank ?? "这页读不到；批准时按当时的等级核对方向"}</Fact></Facts>,
       } : current);
     };
     setConfirm({
@@ -361,7 +361,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
       coverageLead: "升级会按目标等级的奖励模板发奖，可能让平台多付钱",
       coverageCheck: "批准执行时按目标等级发奖励，发资金奖励前检查兑付覆盖率。",
-      facts: <Facts><Fact k="现在的等级">这页读不到；批准时后端按当时的等级核对方向</Fact></Facts>,
+      facts: <Facts><Fact k="现在的等级">这页读不到；批准时按当时的等级核对方向</Fact></Facts>,
       statedBrief: (value) => {
         const user = value.userId?.trim() ? `用户 ${value.userId.trim()}` : "这位用户";
         const target = value.targetV || "目标等级";
@@ -504,7 +504,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
                     {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag> : null}
                     {!canWrite || raw0(field, row) || (field === "legRank" && (row.legCount ?? "0") === "0") ? null : <span className="f1-dir">调低要批准</span>}
                   </span>}
-                  sub={value === undefined ? "后端没给这一项" : [prevText !== undefined && prev ? `${prev.v} ${prevText}` : undefined, nextText !== undefined && next ? `${next.v} ${nextText}` : undefined].filter(Boolean).join(" · ") || undefined}
+                  sub={value === undefined ? "这项数据现在没有" : [prevText !== undefined && prev ? `${prev.v} ${prevText}` : undefined, nextText !== undefined && next ? `${next.v} ${nextText}` : undefined].filter(Boolean).join(" · ") || undefined}
                   action={value !== undefined && (canWrite || pending) ? (describedBy) => (
                     <span className="f1-row-actions">
                       <Button size="sm" aria-describedby={describedBy} aria-label={`${pending ? "查看原操作" : "调整"} ${row.v} ${f1ConditionLabels[field]}`}
@@ -559,7 +559,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
             { key: "peer", label: "同级奖比例", value: `${(row.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}%`,
               explain: "这是配置值；同级奖现在不派发，App 也显示为未开放。" },
             { key: "votes", label: "团队激励池票数", value: `${fmt(row.votes)} 票`, explain: "这一级每人在团队激励池里的票数，在「奖励池、名额与排行榜」改。" },
-            { key: "visible", label: "App 显示", value: row.visible ? "显示" : "隐藏", explain: "后端只返回启用的等级，正常都是显示；这页没有切换入口。" },
+            { key: "visible", label: "App 显示", value: row.visible ? "显示" : "隐藏", explain: "这里只列启用的等级，正常都是显示；这页没有切换入口。" },
           ].map((item) => <div key={item.key}>
             <dt>{item.label}<Explain label={`${item.label}的说明`} content={item.explain} /></dt>
             <dd>{item.value}</dd>

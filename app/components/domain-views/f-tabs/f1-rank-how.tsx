@@ -208,7 +208,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
     {baseStatus === "PUBLISHED" ? <StatusTag tone="ok">已发布</StatusTag> : <StatusTag tone="neutral">草稿</StatusTag>}
     <span>版本号 {document.version || "—"}</span>
     <span>修订号 {document.revision}</span>
-    {document.revision === 0 && <StatusTag tone="warn" icon={CircleHelp} explain="后台还没保存过，或者读取时后端用了内置的默认说明。这不代表运营已经保存或发布过。">内置默认内容</StatusTag>}
+    {document.revision === 0 && <StatusTag tone="warn" icon={CircleHelp} explain="还没保存过，或者读取时用的是内置的默认说明。这不代表运营已经保存或发布过。">内置默认内容</StatusTag>}
   </span>;
 
   return (
@@ -221,7 +221,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
           {comparison && howSave && <Button size="sm" variant="ghost" disabled={loading || !!releasing} onClick={() => setReleasing("open")}>解除原操作记录</Button>}</>}>
         {comparison
           ? <p>{`现在的内容和原提交对不上：修订号应为 ${comparison.revision.expected}，实际是 ${comparison.revision.current}，内容${comparison.contentMatches ? "相同" : "不同"}。核对后可以解除。`}</p>
-          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先读回核对；你填的内容还在下面。</p>}
+          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先刷新核对；你填的内容还在下面。</p>}
       </Notice>}
       {releasing && comparison && howSave && <Modal title="解除原操作记录" icon={ShieldCheck} busy={releasing === "busy"} onClose={() => setReleasing(null)}
         footer={<><Button disabled={releasing === "busy"} onClick={() => setReleasing(null)}>取消</Button>
@@ -235,7 +235,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
             <Fact k="保存为" tone={comparison.status.matches ? undefined : "warn"}>{sameOr(comparison.status.matches, statusName(comparison.status.submitted), statusName(comparison.status.current))}</Fact>
             <Fact k="内容" tone={comparison.contentMatches ? undefined : "warn"}>{comparison.contentMatches ? "全部语言相同" : "和原提交不同"}</Fact>
           </Facts>
-          <p><KeepText text="确认时会再读一次。只清本标签页的记录，不撤销原保存；你填的内容留在编辑器里。" /><Explain label="为什么可以解除" content="这项保存按修订号比较：原请求就算晚到也只会生效一次，之后基于旧修订号的保存会被后端拒绝并重读，不会悄悄覆盖。" /></p>
+          <p><KeepText text="确认时会再读一次。只清本标签页的记录，不撤销原保存；你填的内容留在编辑器里。" /><Explain label="为什么可以解除" content="原请求就算晚到也只会生效一次；之后照旧内容提交的保存会被拒绝并重新读取，不会悄悄覆盖。" /></p>
         </div>
       </Modal>}
       {preserveDraft.current && document && baseline && (() => {

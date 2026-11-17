@@ -448,8 +448,8 @@ export default function DualLedgerPage() {
     : { kind: record.kind, idempotencyKey: record.commandKey, original: record });
   const queryWrite = async (record: B1PendingWrite) => {
     if (await refreshB1()) setToast(record.expiresAt <= Date.now()
-      ? "已读回现在的值。现在的值说明不了原操作成没成，记录继续保留。"
-      : "已读回现在的值。说明不了原操作成没成，可以按原请求重试，不会重复执行。");
+      ? "已读取现在的值。现在的值说明不了原操作成没成，记录继续保留。"
+      : "已读取现在的值。说明不了原操作成没成，可以按原请求重试，不会重复执行。");
   };
   const queryApproval = async () => {
     if (!session || !pendingApproval) return;
@@ -929,7 +929,7 @@ export default function DualLedgerPage() {
         <Conclusion state="unknown" icon={ShieldQuestion}>资金状态：暂时无法判断</Conclusion>
         <BlockState state="error"
           title={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "应付款明细是空的，暂时算不出构成" : b1DataError}
-          detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "系统没有返回九类应付款。重读一次；仍是空的请联系值班人员核对账本（B1_LEDGER_ACCOUNTS_EMPTY）。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
+          detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "九类应付款一项都没读到。重读一次；仍是空的请联系值班人员核对账本。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
           onRetry={refreshB1} retryLabel="重新读取" />
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
         {dialog}

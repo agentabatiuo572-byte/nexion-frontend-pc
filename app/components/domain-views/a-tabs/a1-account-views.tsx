@@ -248,7 +248,7 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
   const enabled = account.status === "enabled";
   return (
     <Drawer open wide onClose={onClose} title={operatorDisplayName(account)} icon={UserRound} tone="role-3" busy={busy} nav={nav}
-      sub={<span className="a1-drawer-sub"><span data-mono>{account.username || "登录名未返回"}</span><span>账号编号 <span data-mono>{account.id}</span></span>{isSelf && <StatusTag tone="neutral">你自己</StatusTag>}</span>}
+      sub={<span className="a1-drawer-sub"><span data-mono>{account.username || "登录名读不到"}</span><span>账号编号 <span data-mono>{account.id}</span></span>{isSelf && <StatusTag tone="neutral">你自己</StatusTag>}</span>}
       footer={<Decision others={<Button onClick={onClose}>关闭</Button>} primary={<Button variant="primary" icon={<PencilLine size={14} />} disabledReason={editBlockReason ?? undefined} onClick={onEdit}>编辑账号</Button>} />}>
       <div className="a1-page a1-sheet">
       <div className="a1-detail-head">
@@ -285,7 +285,7 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
               <li key={session.sessionId}>
                 <MonitorSmartphone size={16} aria-hidden className="a1-session-icon" />
                 <span className="a1-session-main">
-                  <span className="a1-session-device">{session.device || "未知设备"}<span data-mono>{session.ipAddress || "IP 未返回"}</span></span>
+                  <span className="a1-session-device">{session.device || "未知设备"}<span data-mono>{session.ipAddress || "IP 读不到"}</span></span>
                   <span className="a1-session-time">登录 {minuteText(session.issuedAt)} · 最近活动 {minuteText(session.lastSeenAt)}</span>
                 </span>
                 <Button size="sm" variant="danger-outline" disabledReason={sessionRevokeBlockReason ?? undefined} onClick={() => onRevokeSession(session.sessionId)} aria-label={`让 ${session.device || "未知设备"} 下线`}>让此设备下线</Button>
@@ -607,7 +607,7 @@ export function PasswordResetDrawer({ result, created, onClose }: { result: A1Pa
       <Notice tone="warn" title="关闭后不会再显示临时密码">请通过可靠渠道告诉账号本人，不要发在群里。</Notice>
       <Facts>
         <Fact k="账号">{operatorDisplayName(account)}</Fact>
-        <Fact k="登录名"><span data-mono>{account.username || "未返回"}</span></Fact>
+        <Fact k="登录名"><span data-mono>{account.username || "读不到"}</span></Fact>
       </Facts>
       <div className="a1-temp-password">
         <span className="a1-temp-password-k">临时密码</span>

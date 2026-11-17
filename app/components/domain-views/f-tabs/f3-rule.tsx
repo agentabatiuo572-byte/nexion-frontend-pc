@@ -82,7 +82,7 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
       <div className="f3-flow-residual" data-changed={changed?.includes("residual") ? "" : undefined}>
         <span className="f3-flow-residual-k">没匹配上的订单额</span>
         <span className="f3-flow-residual-v">{shown("residual", residualLabel, "没读到")}</span>
-        {!compact && <span className="f3-flow-residual-what">{RESIDUAL_TEXT[next?.residual ?? rule.residual]?.short ?? "后端不认这个值，结算会被拦下"}</span>}
+        {!compact && <span className="f3-flow-residual-what">{RESIDUAL_TEXT[next?.residual ?? rule.residual]?.short ?? "这个值无效，结算会被拦下"}</span>}
       </div>
     </div>
   );

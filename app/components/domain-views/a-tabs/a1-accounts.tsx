@@ -677,7 +677,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     facts: (
       <Facts>
         <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
-        <Fact k="登录名"><span data-mono>{op.username || "未返回"}</span></Fact>
+        <Fact k="登录名"><span data-mono>{op.username || "读不到"}</span></Fact>
         <Fact k="在线设备">{op.sessions} 台，确认后马上全部下线</Fact>
         <Fact k="两步验证">不变</Fact>
       </Facts>
@@ -722,7 +722,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       facts: (
         <Facts>
           <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
-          {usernameChanged && <Fact k="登录名"><Change from={op.username || "未返回"} to={form.username} /></Fact>}
+          {usernameChanged && <Fact k="登录名"><Change from={op.username || "读不到"} to={form.username} /></Fact>}
           {form.displayName !== operatorDisplayName(op) && <Fact k="显示名"><Change from={operatorDisplayName(op)} to={form.displayName} /></Fact>}
           {(form.email ?? "") !== (op.email || "") && <Fact k="工作邮箱"><Change from={op.email || "未填写"} to={form.email || "未填写"} /></Fact>}
           {form.avatarAssetId && form.avatarAssetId !== op.avatarAssetId && <Fact k="头像">换成新头像</Fact>}
@@ -1110,7 +1110,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <Facts>
           <Fact k="账号">{operatorDisplayLabel(target)}</Fact>
           <Fact k="设备">{session?.device || "未知设备"}</Fact>
-          <Fact k="IP"><span data-mono>{session?.ipAddress || "未返回"}</span></Fact>
+          <Fact k="IP"><span data-mono>{session?.ipAddress || "读不到"}</span></Fact>
           <Fact k="最近活动">{minuteText(session?.lastSeenAt)}</Fact>
         </Facts>
       ),
@@ -1392,7 +1392,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                   <Td>
                     <span className="a1-who">
                       <SupportAvatar name={operatorDisplayName(op)} path={op.avatarAssetId?`/api/admin/platform/accounts/${op.id}/avatar`:undefined} version={op.avatarVersion??undefined}/>
-                      <Cell main={<>{operatorDisplayName(op)}{self && <span className="a1-self">你</span>}</>} sub={<span data-mono>{op.username || "登录名未返回"}</span>} title={operatorDisplayLabel(op)} />
+                      <Cell main={<>{operatorDisplayName(op)}{self && <span className="a1-self">你</span>}</>} sub={<span data-mono>{op.username || "登录名读不到"}</span>} title={operatorDisplayLabel(op)} />
                     </span>
                   </Td>
                   <Td><Cell main={roleName(restoring.current?.snapshot.roles ?? roles, op.role)} sub={permissionDiffReady ? permSummary(codesOf(op.role)) : undefined} /></Td>

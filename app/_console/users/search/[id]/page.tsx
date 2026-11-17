@@ -1135,7 +1135,7 @@ export default function UserDetailPage() {
 
   /** 汇总是后端能核对到的小计，不保证覆盖全部历史（后端 fieldStatuses 写 PARTIAL）。第二行放最近一笔，「已核对小计」收进问号。 */
   const usdtTotals = asArray(detail.financial?.byCurrency).find((row) => row.currency === "USDT")?.fieldStatuses as JsonRecord | undefined;
-  const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" && <p>这次后端标明只核对到一部分，是已核对小计。</p>;
+  const subtotal = (field: string) => usdtTotals?.[field] === "PARTIAL" && <p>这次只核对到一部分，这是已核对的小计。</p>;
   // 最近一笔写在累计数第二行，一眼对上是哪个数的（产品 2026-11-07）。
   const depositRecent = <Recent label="最近一笔" openLabel="查看最近一笔充值"
     note={detail.latestDepositStatus === "ERROR" ? "暂时读不到" : detail.latestDepositStatus !== "READY" ? "—" : latestDeposit ? undefined : "暂无充值"}
@@ -1216,7 +1216,7 @@ export default function UserDetailPage() {
   const unreadCount = unreadable.length > 0 ? `${unreadable.length} 组资料加载失败` : "";
   // 最重要的两件写出来，其余写数量（DP-10）；危险的排在前面。
   const issueText = [issues.slice(0, 2).map((issue) => issue.text).join("，") + (issues.length > 2 ? `，还有 ${issues.length - 2} 件` : ""), unreadText].filter(Boolean).join("；");
-  const scopeNote = `这个账号看不到的区块不在内${detail.risk?.cases !== undefined ? "，风险案件读取失败时后端也返回 0" : ""}`;
+  const scopeNote = `这个账号看不到的区块不在内${detail.risk?.cases !== undefined ? "，风险案件读取失败时也显示 0" : ""}`;
   const checkedExplain = <p>核对了：{checked.join("、")}。{scopeNote}。</p>;
   const pendingCount = pendingCommands.length + corrections.length;
   const conclusion = nonActive
@@ -1472,7 +1472,7 @@ export default function UserDetailPage() {
         <Values rows={[
           ...(detail.risk ? [[hasRiskScore || !riskAuthorityReady ? "风险分" : "风险档", hasRiskScore ? <StatusTag key="score" tone={riskTone}>{riskScore} · {riskBand}</StatusTag> : riskBand] as const] : []),
           ...(detail.risk?.flags !== undefined ? [["风险标记", riskFlags(detail.risk.flags, detail.risk.cases !== undefined)] as const] : []),
-          ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。案件读取失败时后端也返回 0，这个数不能证明没有案件。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
+          ...(detail.risk?.cases !== undefined ? [[<>风险案件<Explain label="风险案件的口径" content="按最近 20 条案件算。案件读取失败时也显示 0，这个数不能证明没有案件。" /></>, `${numberLabel(detail.risk.openCaseCount)} 个未关闭`] as const] : []),
           ...(detail.financial ? [
             ["UVT 余额", amountText(summary.walletNex ?? profile.walletNex, "UVT")] as const,
             [<>提现申请额<Explain label="提现申请额的口径" content="能核对到的处理中提现本金小计，不是已到账的钱，也不保证覆盖全部历史。" /></>, amountText(summary.withdrawRequestedUsd)] as const,
@@ -1485,7 +1485,7 @@ export default function UserDetailPage() {
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
           <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
-            {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时后端也返回空，写 0 或没有记录不能证明没登录过。">
+            {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时也显示为空，0 条或没有记录不能证明没登录过。">
               <Values rows={[
                 ["在线登录设备", numberLabel(summary.activeSessionCount)],
                 ["两步验证", securityValue(summary.twoFactorEnabled, "开启", "关闭")],
@@ -1660,7 +1660,7 @@ export default function UserDetailPage() {
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(pendingOutcomes[closingCommand.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosingCommand(null)} onSubmit={(evidence) => closePending(closingCommand, evidence)} />}
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。`} />}
+        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除只删掉本页的这条记录，不算核查结案；这个对象可能仍被锁住。`} />}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}

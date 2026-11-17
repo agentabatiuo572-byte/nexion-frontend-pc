@@ -503,30 +503,30 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
   const verifyCregisCommand = async (record: D1PendingCommand) => {
     const kept = "状态可能是别人改的，记录继续保留。";
-    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；读回不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
+    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
-      return `读回：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
+      return `读取结果：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
     }
     const next = parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions"));
     setData(next);
     const network = new URLSearchParams(record.path.split("?")[1] ?? "").get("network") as FundsNetwork | null;
     if (record.path.startsWith("/cregis/addresses/provision") && network) {
       const pool = poolOf(next, network);
-      return pool?.available ? `读回：${network} 可分配 ${pool.unassigned}、待创建 ${pool.queued ?? 0}、总计 ${pool.total}。看待创建有没有多出这一个，再到操作记录确认。` : `读回：${network} 地址池暂时读不到。记录继续保留。`;
+      return pool?.available ? `读取结果：${network} 可分配 ${pool.unassigned}、待创建 ${pool.queued ?? 0}、总计 ${pool.total}。看待创建有没有多出这一个，再到操作记录确认。` : `读取结果：${network} 地址池暂时读不到。记录继续保留。`;
     }
     if (record.path.startsWith("/cregis/reconciliation/run") && network) {
       const run = next.reconcileRuns?.find(row => rowNetwork(row) === network);
-      return run ? `读回：${network} 最近一次完整对账「${cregisStateText(run.status)}」，${time(run.completedAt ?? run.startedAt)}（${zoneLabel()}）。${kept}` : `读回：${network} 还没有完整对账记录。${kept}`;
+      return run ? `读取结果：${network} 最近一次完整对账「${cregisStateText(run.status)}」，${time(run.completedAt ?? run.startedAt)}（${zoneLabel()}）。${kept}` : `读取结果：${network} 还没有完整对账记录。${kept}`;
     }
     if (record.path.startsWith("/cregis/review-cases")) {
       let cid = "";
       try { cid = String((JSON.parse(record.body) as { cid?: unknown }).cid ?? ""); } catch { /* 复核决定的 body 里没有 cid */ }
       const id = record.path.split("/")[3];
       const found = (next.reviewCases ?? []).find(row => (id && id !== "" && String(row.id) === id) || (cid && String(row.cid) === cid));
-      return found ? `读回：复核工单 #${text(found.id)} 现在是「${cregisStateText(found.status)}」。${kept}` : `读回：待复核列表里没有这条工单，可能已经处理完。请到操作记录确认。`;
+      return found ? `读取结果：复核工单 #${text(found.id)} 现在是「${cregisStateText(found.status)}」。${kept}` : `读取结果：待复核列表里没有这条工单，可能已经处理完。请到操作记录确认。`;
     }
-    return `读回：收款状态已重新读取。${kept}`;
+    return `收款状态已重新读取。${kept}`;
   };
   const pendingItems: D1PendingItem[] = pending.map((record): D1PendingItem => {
     const refundChallenge = record.path === "/cregis/exception-ownership/challenges"
@@ -568,7 +568,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       setData(next);
       const gateNow = next.provisionGate;
       const nets = (next.networkSwitches ?? []).map(row => `${text(row.network)} 充值${row.depositEnabled ? "开" : "关"}`).join("、");
-      return `读回：${nets || "各网充值开关读不到"}，链上出款${gateNow?.payoutEnabled ? "开" : "关"}，待复核提案 ${next.switchCases?.filter(row => row.status === "MAKER_DONE").length ?? 0} 个。状态可能是别人改的，记录继续保留。`;
+      return `读取结果：${nets || "各网充值开关读不到"}，链上出款${gateNow?.payoutEnabled ? "开" : "关"}，待复核提案 ${next.switchCases?.filter(row => row.status === "MAKER_DONE").length ?? 0} 个。状态可能是别人改的，记录继续保留。`;
     },
     auditHref: "/platform/audit?domain=D",
     retry: async () => { setBusy(true); try { await retryD1PendingCregisSwitchCommand(record.commandKey); } finally { setBusy(false); } },
@@ -756,7 +756,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                   const row = data.networkSwitches!.find(item => item.network === network);
                   if (!row) return <tr key={network}>
                     <Td><Cell main={network} sub={networkName[network]} /></Td>
-                    <Td><Cell main="尚未配置" sub="待后端配置" /></Td>
+                    <Td><Cell main="尚未配置" sub="请联系值班人员配置" /></Td>
                     <Td><Cell main={<StatusTag tone="warn">待核实</StatusTag>} sub="请核对部署后刷新" /></Td>
                     {canManage && <Td sticky="end" align="right"><Button size="sm" variant="secondary" disabledReason="这个网络尚未配置">调整</Button></Td>}
                   </tr>;

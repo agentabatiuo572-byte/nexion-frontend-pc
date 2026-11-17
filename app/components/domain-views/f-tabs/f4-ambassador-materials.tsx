@@ -299,7 +299,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         pendingRef.current = attempt; setPending(attempt);
         try {
           const next = await reviewF4AmbassadorMaterials(application.id, attempt.input, attempt.commandKey);
-          if (!next || next.applicationId !== application.id || next.materialRevision !== attempt.input.expectedMaterialRevision) throw new F1OutcomeUncertainError("核验后返回的内容对不上，请刷新材料后继续原核验。", attempt.commandKey);
+          if (!next || next.applicationId !== application.id || next.materialRevision !== attempt.input.expectedMaterialRevision) throw new F1OutcomeUncertainError("核验后读到的内容对不上，请刷新材料后继续原核验。", attempt.commandKey);
           reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
           setPacket(null); setConfirmation(null); ctx.toast("材料核验已记录"); await refresh(); await ctx.refreshF4();
         } catch (cause) {

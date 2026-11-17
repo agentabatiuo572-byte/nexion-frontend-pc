@@ -213,7 +213,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             const result = await fetchPhoneOperation(mode === "id" ? { operationId: lookup.trim() } : { commandType: type, idempotencyKey: lookup.trim() });
             if (live.current) {
                 setReceipt(result);
-                setQueryMessage(result ? "已读回原发布结果；当前策略可能已被后续发布改变。" : "暂未查到原发布结果，仍待核实。不会重新发布。");
+                setQueryMessage(result ? "已重新读到原发布结果；当前策略可能已被后续发布改变。" : "暂未查到原发布结果，仍待核实。不会重新发布。");
             }
         }
         catch (failure) {

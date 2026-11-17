@@ -169,7 +169,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           </tbody>
         </Table>
         <Fold title="申请汇总" summary="累计已批准、累计申请的预算和最早的待审活动"
-          explain="这几个数是后端汇总所有申请（不分月份）得到的，不是本月数，也不是预算上限；名称已按真实口径写。">
+          explain="这几个数是所有申请（不分月份）的汇总，不是本月数，也不是预算上限；名称已按真实口径写。">
           <KeyValues rows={[
             { key: "approved", label: "累计已批准预算", value: presentText(data.ambassadorBudgetApprovedLabel, "—"), explain: "所有已批准申请的金额合计，不分月份。" },
             { key: "requested", label: "累计申请预算", value: presentText(data.ambassadorBudgetCapLabel, "—"), explain: "所有申请（含未批、已驳回）的申请金额合计，不是预算上限。" },
