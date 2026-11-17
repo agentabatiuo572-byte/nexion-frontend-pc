@@ -1,3 +1,5 @@
+import { h3QuestConfigWriteRefusal } from "./h3-contract";
+import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
 import { h4CommandRequest, markH4Read } from "./h4-mutations";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -515,6 +517,8 @@ export async function withH3WeeklyRegionProposalKey(
 }
 
 export async function updateH3QuestConfig(key: string, value: string, reason: string, expectedValue: string) {
+  const refusal = h3QuestConfigWriteRefusal(key);
+  if (refusal) throw new Error(refusal);
   return growthRequest<Record<string, any>>(
     `/quest-events/config/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
@@ -564,6 +568,8 @@ export async function fetchH5CheckIn(): Promise<Record<string, any>> {
 }
 
 export async function updateH5CheckInRule(key: string, value: string, expectedValue: string, reason: string) {
+  const refusal = h5RuleWriteRefusal(key);
+  if (refusal) throw new Error(refusal);
   return growthRequest<Record<string, any>>(
     `/check-in/rules/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
@@ -1287,7 +1293,14 @@ export async function deleteH4QuestEvent(eventId: string, expectedVersion: strin
   }, `删除既有活动 · ${eventId}`);
 }
 
+// 5676c145: supported IDs, independent of the seven existing legal gameplay kinds.
+const H4_SUPPORTED_EVENT_CODES = new Set([
+  "evt-pro-upgrade-7d", "evt-refer-5-get-pro", "evt-weekend-double-nex", "evt-regional-pk",
+  "evt-spring-spin", "evt-reinvest-bonus", "evt-onboarding-7d", "evt-black-friday", "evt-anniversary-spin",
+]);
+
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
+  if (!H4_SUPPORTED_EVENT_CODES.has(String(event.id ?? "").trim())) throw new Error("EVENT_CODE_UNSUPPORTED");
   return h4CommandRequest(
     "/quest-events/events",
     { method: "POST", body: JSON.stringify({ ...event, reason, operator: currentAdminOperator() }) },

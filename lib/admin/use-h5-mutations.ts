@@ -8,7 +8,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { growthRequest } from "./h-client";
-import { h5Amount, parseH5Model, type H5Model } from "./h5-contract";
+import { h5RuleWriteRefusal, h5Amount, parseH5Model, type H5Model } from "./h5-contract";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -215,6 +215,9 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
   };
   const run = async (change: H5Change, onCommand?: (commandKey: string) => void) => {
     const actor = requireActor(change.target, true);
+    const ruleKey = change.target.startsWith("rule:") ? change.target.slice(5) : undefined;
+    const refusal = ruleKey === undefined ? undefined : h5RuleWriteRefusal(ruleKey);
+    if (refusal) throw new Error(refusal);
     if (!isFresh()) throw new Error("请先成功刷新签到数据，再发起新的修改。");
     if (record(change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
     const fingerprint = `${actor.adminId}|H5|${change.target}`;

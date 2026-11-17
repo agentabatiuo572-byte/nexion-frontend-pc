@@ -1601,15 +1601,16 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("上次的修改记录已变化，请刷新后再查。");
       const result = await supportClient.command(command.key);
       if (stamp !== timeoutIdentityRef.current) return;
-      if (result.status === "SUCCEEDED") {
+      if (result.status === "SUCCEEDED" && (result.businessCode == null || result.businessCode === 0)) {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutInput(undefined); setTimeoutOpen(false);
-        // This legacy scope exposes processing status, not the original business code.
-        // Keep this as processed until the backend supplies the saved business result.
-        const processed = businessResultUnavailableText("超时策略");
+        const processed = result.businessCode === 0 ? "超时策略已保存。" : businessResultUnavailableText("超时策略");
         setActionResult(processed);
         const policy = await fetchMConversationTimeoutPolicy().catch(cause => { if (stamp === timeoutIdentityRef.current) setActionResult(`${processed} ${displayAdminError(cause)}`); return null; });
         if (stamp !== timeoutIdentityRef.current) return;
         if (policy) setTimeoutPolicy(policy); setTimeoutError("");
+      } else if (result.status === "SUCCEEDED" && result.businessCode != null && result.businessCode !== 0) {
+        // The receipt has no original reason; the conflict slot claims someone else changed it.
+        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(false); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
       } else if (result.status === "FAILED") {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
       } else setTimeoutError("结果仍未知，请稍后再查；原记录和输入已保留。");

@@ -261,7 +261,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const numericBounds = (key: string): { min?: number; max?: number; step?: number } => {
     if (/capacity\.band\dDeltaPct$/.test(key)) return { min: -100, max: 100, step: 0.01 };
     if (/capacity\.floorPct$|ladder\.(cut|credit)\d$/.test(key)) return { min: 0, max: 100, step: 0.01 };
-    if (/stageEarlyEnd|stageMidEnd|cycleMonths|maxDevicesPerOrder/.test(key)) return { min: 1, max: 1000000, step: 1 };
+    if (key === "E.tradein.maxDevicesPerOrder") return { min: 1, max: 1, step: 1 };
+    if (/stageEarlyEnd|stageMidEnd|cycleMonths/.test(key)) return { min: 1, max: 1000000, step: 1 };
     return { min: 0, max: 1000000, step: 1 };
   };
   type Single = { label: string; key: string; unit: string; amplify?: boolean; editKind?: "number" | "select"; options?: string[]; optionLabels?: Record<string, string>;

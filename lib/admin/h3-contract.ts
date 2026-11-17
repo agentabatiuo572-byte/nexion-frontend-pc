@@ -70,6 +70,7 @@ export function h3MissionCreationRefusal(missionType: string, missionCode: strin
 export type H3Model = {
   h3Stats: H3Stats;
   dayOneWindow: string;
+  dayOneWindowConfig?: { key: "dayOne.windowMs"; readOnly: true; retired: true; valueKind: "DISPLAY_TEXT_ONLY" };
   dayOneEligibilityHours: string;
   dayOneTriReward: string;
   dayOneTasks: H3Task[];
@@ -87,6 +88,11 @@ export type H3Model = {
   eventBindings: H3QuestEventBinding[];
 };
 
+/** d9e2038f: match the writer's normalized key without changing historical values. */
+export function h3QuestConfigWriteRefusal(key: string): "H3_DAY_ONE_WINDOW_RETIRED" | undefined {
+  return key.replace(/H3\.|H4\.|event\./g, "") === "dayOne.windowMs" ? "H3_DAY_ONE_WINDOW_RETIRED" : undefined;
+}
+
 /** The tasks endpoint is independent of H4. Nullable SQL cells stay nullable. */
 export function parseH3Model(value: unknown): H3Model {
   const object = (v: unknown): Record<string, any> => {
@@ -100,6 +106,10 @@ export function parseH3Model(value: unknown): H3Model {
   };
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "promoBanner", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
+  if (row.dayOneWindowConfig !== undefined) {
+    const config = object(row.dayOneWindowConfig);
+    if (config.key !== "dayOne.windowMs" || config.readOnly !== true || config.retired !== true || config.valueKind !== "DISPLAY_TEXT_ONLY") throw new Error("H3_RESPONSE_INVALID");
+  }
   const stats = row.h3Stats;
   if (stats.operatingStatsAvailable !== undefined) {
     const invalid = () => { throw new Error("H3_RESPONSE_INVALID"); };

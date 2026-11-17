@@ -1,7 +1,7 @@
 import { f4Decimal } from "./f4-money";
 
 /** H5's wire boundary; nullable statistics and retired-business availability stay nullable. */
-export type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean | number };
+export type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean | number; configurable?: boolean; writeBlockedReason?: string };
 export type StreakMilestone = { id: number; day: string; reward: string; kind?: string };
 export type PowerUp = { id: number; day: number; label: string; sub?: string; downstream?: string | null; note?: string; effectType?: string; businessAvailable?: boolean | null };
 export type EarnMilestone = { id: number; key: string; threshold: string; nex: string; weekTrigger?: number | null };
@@ -19,6 +19,11 @@ export type H5Model = {
   tickInterval: { value: string; seconds: number; min: number; max: number; note: string };
   coverage: { coverageRatio: string | null; redlinePct: string | null; reliable: boolean; redlineBreached: boolean };
 };
+
+/** 2c900ce6/40490584: retired keys are rejected before creating a new direct write or proposal. */
+export function h5RuleWriteRefusal(key: string): "RETIRED_FEATURE" | undefined {
+  return ["interval", "brokenHours", "broken", "reviveCards", "saver"].includes(key) ? "RETIRED_FEATURE" : undefined;
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("H5_RESPONSE_INVALID");
@@ -83,7 +88,9 @@ export function parseH5Model(value: unknown): H5Model {
       weekRevive: optionalCount("weekRevive"), weekMsTrigger: optionalCount("weekMsTrigger"), weekMsNex: optionalText("weekMsNex"),
     },
     rules: ruleRows.map(r => ({ key: string(r.key), name: string(r.name), sub: string(r.sub), cur: string(r.cur),
-      hot: typeof r.hot === "boolean" ? r.hot : integer(r.hot) })),
+      hot: typeof r.hot === "boolean" ? r.hot : integer(r.hot),
+      configurable: r.configurable === undefined ? undefined : bool(r.configurable),
+      writeBlockedReason: r.writeBlockedReason === undefined ? undefined : string(r.writeBlockedReason) })),
     streakMilestones: rows("streakMilestones").map(r => ({ id: integer(r.id), day: string(r.day), reward: string(r.reward), kind: string(r.kind) })),
     streakDistribution: rows("streakDistribution").map(r => ({ day: string(r.day), count: integer(r.count), height: integer(r.height) })),
     powerUps: rows("powerUps").map(r => ({ id: integer(r.id), day: integer(r.day), label: string(r.label),

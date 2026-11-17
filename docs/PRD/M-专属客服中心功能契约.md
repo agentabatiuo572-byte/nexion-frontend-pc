@@ -1,5 +1,7 @@
 # M 专属客服中心功能契约
 
+2026-11-17 hd-sync46：743e0828已按M3-BE-01至少业务码范围交付原businessCode，PC超时查询0成功、非0失败、缺码沿已处理。旧只返回status的欠项说明只适用于旧回执/旧后端；409没有原message，STALE与UNCHANGED不能分，精确拒绝原因另交后端。详见《后台九项后端同步-20261117》。
+
 ## 2026-11-17 M3 超时策略业务回包（hd-fix-misc5-1）
 
 首次保存按全站 isDeterministicRejection 处理 HTTP 状态与 apiCode，HTTP 200 内明确的业务拒绝不再留作结果未知；幂等未决仍保留。M3_TIMEOUT_POLICY_STALE 沿现有版本冲突流程保留输入、读回当前设置，核对后重新确认；UNCHANGED 等其它拒绝显示错误表已有原因，不一律解释成别人改过。仅改超时策略，消息及其它 M3 写入的判据未动。
