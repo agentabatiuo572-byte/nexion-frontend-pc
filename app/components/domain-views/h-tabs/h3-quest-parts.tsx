@@ -6,12 +6,13 @@
  * 选项表和取值小工具照旧页面 h3-quest-events.tsx 原样搬过来（那边的 H4 部分不动）。
  */
 import { useState, type ReactNode } from "react";
-import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Smartphone } from "lucide-react";
+import Link from "next/link";
+import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Lock, Smartphone } from "lucide-react";
 import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
-import { h3Decimal, h3MissionEnableRefusal, type H3TaskContract } from "@/lib/admin/h3-contract";
+import { h3Decimal, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
@@ -242,6 +243,83 @@ export function pendingTag(approver = "另一位超级管理员", note = "批准
   return <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准。${note}`}>待审批</StatusTag>;
 }
 
+// ===== 后端读回的待审批：读得出申请写申请内容、谁、什么时候；读不出的叫「审批锁定」，不叫待审批 =====
+/** 提交人和时间（业务时区写在同一处）；后端没给的不写。 */
+export function submittedText(submittedBy: string | null, submittedAt: string | null, zone = true) {
+  const at = submittedAt ? formatBusinessTimeCompact(submittedAt, "—") : null;
+  if (!submittedBy && !at) return "";
+  return `${[submittedBy, at].filter(Boolean).join(" · ")} 提交${at && zone ? `（${businessZone().label}）` : ""}`;
+}
+
+/** 待审批标签：说明里写申请内容、谁什么时候提交、单号；单号只在这里。 */
+export function backendPendingTag(approval: H3PendingApproval | H3PendingMissionCreation, change: ReactNode, auditHref?: string) {
+  return <StatusTag tone="warn" icon={Clock3} explain={<>
+    <p>{change}</p>
+    <p>{submittedText(approval.submittedBy, approval.submittedAt)}</p>
+    <p>等另一位超级管理员批准；批准前什么都不变，这一项不能再改。</p>
+    {approval.ticketId && <p className="h3-pending-ticket">审批单号 <span data-mono="">{approval.ticketId}</span></p>}
+    {auditHref && <p><Link className="rd-link" href={auditHref} prefetch={false}>看审批单</Link></p>}
+  </>}>待审批</StatusTag>;
+}
+
+export const LOCKED_NOTE = "有一张没结束的审批，读不出申请内容。到「操作记录与审批」按这一项核对；审批结束前不能改。";
+export function lockedTag(note = LOCKED_NOTE) {
+  return <StatusTag tone="warn" icon={Lock} explain={note}>审批锁定</StatusTag>;
+}
+
+/** 一项配置的待审批或审批锁定，排成一行：标签、申请改成什么、谁什么时候、去审批单。 */
+export function H3PendingLine({ approval, format, auditHref, label }: { approval: H3PendingApproval; format: (value: string) => string; auditHref?: string; label?: ReactNode }) {
+  if (approval.ticketId == null) {
+    return <span className="h3-pending" data-kind="locked">
+      {label && <span className="h3-pending-label">{label}</span>}
+      {lockedTag()}
+      <span>读不出申请内容</span>
+      {auditHref && <Link className="rd-link" href={auditHref} prefetch={false}>去核对</Link>}
+    </span>;
+  }
+  // 现在的值就在这一项旁边，行里只写申请改成什么；提交时的原值放说明里。
+  const before = approval.currentValue == null ? "—" : format(approval.currentValue);
+  const after = approval.proposedValue == null ? "—" : format(approval.proposedValue);
+  return <span className="h3-pending" data-kind="pending">
+    {label && <span className="h3-pending-label">{label}</span>}
+    {backendPendingTag(approval, `提交时是 ${before}，申请改成 ${after}。`)}
+    <span>申请改成 <b className="h3-pending-change">{after}</b></span>
+    <span className="h3-pending-who">{submittedText(approval.submittedBy, approval.submittedAt)}</span>
+    {auditHref && <Link className="rd-link" href={auditHref} prefetch={false}>看审批单</Link>}
+  </span>;
+}
+
+/** 申请新建、还没批准的任务：不是正式任务，不做成任务卡；奖励没给就是「—」。 */
+export function H3CreationList({ rows, typeLabel, auditHref }: { rows: H3PendingMissionCreation[]; typeLabel: (type: string | null) => string; auditHref: (code: string | null) => string | undefined }) {
+  const [open, setOpen] = useState(false);
+  if (rows.length === 0) return null;
+  const shown = open ? rows : rows.slice(0, 3);
+  return <section className="h3-creating" aria-label="申请新建、等批准的任务">
+    <div className="h3-sub-head">
+      <h3>{`申请新建 · ${rows.length} 个等批准`}</h3>
+      <Explain label="申请新建的任务是什么" content={<>
+        <p>奖励大于 0 的新任务要另一位超级管理员批准才建好；批准前任务不存在，不在下面的任务里，同一个编号也不能再提交。</p>
+        <p>批准后建好的任务是已停用，绑定完成条件后再启用。</p>
+      </>} />
+      <span className="h3-creating-zone">{`提交时间为${businessZone().label}`}</span>
+    </div>
+    <ul className="h3-creating-list">
+      {shown.map((row, index) => {
+        const reward = row.rewardPoints == null ? "—" : `${amountText(String(row.rewardPoints))} UVT`;
+        const href = auditHref(row.missionCode);
+        return <li key={row.ticketId ?? `${row.missionCode}-${index}`}>
+          <span className="h3-creating-state">{backendPendingTag(row, <>新建「{row.missionName ?? "—"}」，奖励 {reward}</>)}</span>
+          <span className="h3-creating-name"><b>{row.missionName ?? "—"}</b><span data-mono="">{row.missionCode ?? "—"}</span></span>
+          <span className="h3-creating-facts">{`${typeLabel(row.missionType)} · 奖励 ${reward}`}</span>
+          <span className="h3-pending-who">{submittedText(row.submittedBy, row.submittedAt, false)}</span>
+          <span className="h3-creating-go">{href && <Link className="rd-link" href={href} prefetch={false}>看审批单</Link>}</span>
+        </li>;
+      })}
+    </ul>
+    {rows.length > 3 && <button type="button" className="rd-link h3-creating-more" onClick={() => setOpen(!open)}>{open ? "收起" : `展开其余 ${rows.length - 3} 个`}</button>}
+  </section>;
+}
+
 /** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
 export function acknowledgedTag() {
   return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
@@ -414,10 +492,12 @@ export function WeeklyFormula({ rows, h1, h1Phase, weekly, weeklyPhase, h1Link }
 }
 
 // ===== 阶段倍率格 =====
-export function PhaseStrip({ items, currentPhase, action }: {
+export function PhaseStrip({ items, currentPhase, action, mark }: {
   items: Array<{ p: string; mult: string | null }>;
   currentPhase: string;
   action?: (phase: string, mult: string) => ReactNode;
+  /** 这一阶段有待审批或审批锁定时的标签；详情在倍率格下面那一行。 */
+  mark?: (phase: string) => ReactNode;
 }) {
   return (
     <ol className="h3-phases" aria-label="每周阶段倍率">
@@ -425,9 +505,10 @@ export function PhaseStrip({ items, currentPhase, action }: {
         const phase = cleanPhaseKey(item.p);
         const value = decimalOf(item.mult);
         const current = phase === currentPhase;
+        const flag = mark?.(phase);
         return (
-          <li key={item.p} className="h3-phase" data-current={current ? "" : undefined}>
-            <span className="h3-phase-key">{phase}{current && <span className="h3-phase-mark">现在</span>}</span>
+          <li key={item.p} className="h3-phase" data-current={current ? "" : undefined} data-locked={flag ? "" : undefined}>
+            <span className="h3-phase-key">{phase}{current && <span className="h3-phase-mark">现在</span>}{flag}</span>
             <span className="h3-phase-value" data-empty={value == null ? "" : undefined}>{value == null ? "—" : <>{value}<span>×</span></>}</span>
             {action?.(phase, text(item.mult))}
           </li>
