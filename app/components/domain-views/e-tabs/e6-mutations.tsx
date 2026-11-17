@@ -305,6 +305,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
             if (r.payload.kind !== "risk" || r.payload.receiptVersion !== 1 || !receipt || ["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes((receipt as PhoneRiskReceipt).status)) return;
             try {
               const original = await discoverECommand({ commandKey: r.commandKey, originalMethod: "PUT", originalPath: "/api/admin/config/phone-calibration/risk", originalAdminId: String(r.owner) });
+              if (eCommandSettled(original)) m.forget(r);
               showDevice(r, original);
             } catch (failure) { setOutcomes(values => ({ ...values, [r.commandKey]: { error: eReadError(failure) } })); }
           }, () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
