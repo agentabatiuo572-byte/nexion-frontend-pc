@@ -23,7 +23,7 @@ import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictVie
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -925,6 +925,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
           setClosing(null); syncPending();
           if (fundCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await refreshAfterMutation(record); }
+          else toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}
       {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
