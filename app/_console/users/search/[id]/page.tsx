@@ -44,7 +44,7 @@ import { queryUserDetailCommand, userDetailCommandOrigin, userDetailCommandRoute
 import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
 import type { FundCommandEvidence, FundCommandOrigin, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
-import { FundClosureModal, closureKnown } from "@/app/components/domain-views/fund-command-check";
+import { FAILED_EXPIRED_LINE, FundClosureModal, PROCESSING_LINE, UNKNOWN_LINE, closureKnown } from "@/app/components/domain-views/fund-command-check";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -1271,11 +1271,11 @@ export default function UserDetailPage() {
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
         none: { tone: "warn" as const, label: "没有查到", line: "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
-        PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : "稍后再查，执行完之前不要重试。" },
+        PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE },
         FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。"
-          : expired && canClose ? `系统记录这次失败了；${elsewhere}` : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
+          : expired && canClose ? FAILED_EXPIRED_LINE : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
         UNKNOWN: { tone: "warn" as const, label: "仍未知", line: !canClose ? "系统也没有结果，到操作记录与审批核对。"
-          : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" },
+          : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE },
         REJECTED: { tone: "warn" as const, label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${retryable ? "按原请求重试可看原因，不会重复执行。" : elsewhere}` },
         PROCESSED: { tone: "warn" as const, label: "已处理", line: `后台已处理，看不出成没成；${retryable ? "按原请求重试可确认，不会重复执行。" : elsewhere}` },
       }[found];
