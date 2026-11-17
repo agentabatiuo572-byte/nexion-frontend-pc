@@ -1,6 +1,7 @@
 import { createA2CommandKey } from "./a2-client";
 import { growthRequest, parseH7Voucher, validateH7VoucherWrite, type H7Voucher } from "./h-client";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
+import { isH7VoucherExpired } from "./h7-voucher-time";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -58,12 +59,15 @@ export function createH7VoucherMutation(session: AdminSession, context: H7Direct
   if (context.kind === "update" && voucher.splittable === context.voucher.splittable) delete voucherInput.splittable;
   if (context.kind !== "status") validateH7VoucherWrite(voucherInput);
   const status = context.kind === "status" ? context.voucher.status === "active" ? "paused" : "active" : undefined;
+  const now = Date.now();
+  if (context.kind === "status" && status === "active" && isH7VoucherExpired(context.voucher.endAt, now)) {
+    throw new Error("H7_VOUCHER_EXPIRED");
+  }
   const label = context.kind === "create" ? "新增" : context.kind === "update" ? "编辑" : status === "active" ? "投放" : "暂停";
   const operator = session.operator || session.username;
   const body = context.kind === "status"
     ? { key: "status", value: status, reason, operator, expectedValue: String(context.voucher.version) }
     : { ...voucherInput, ...(context.kind === "update" ? { expectedVersion: context.voucher.version } : {}), reason, operator };
-  const now = Date.now();
   return {
     fingerprint: `${session.adminId}:${voucher.id}`, commandKey: createA2CommandKey(`h7-${context.kind}`),
     createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: session.adminId,

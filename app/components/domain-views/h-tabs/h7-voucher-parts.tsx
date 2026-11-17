@@ -10,7 +10,7 @@ import { Button, Explain, Notice, SegmentBar, StatusTag } from "@/app/components
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
-import { h7DateFacts, h7Stamp } from "@/lib/admin/h7-voucher-time";
+import { h7DateFacts, h7Stamp, isH7VoucherExpired } from "@/lib/admin/h7-voucher-time";
 export type { H7Voucher } from "@/lib/admin/h-client";
 
 export const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
@@ -83,7 +83,7 @@ export function voucherSentence(v: Pick<H7Voucher, "type" | "amountUSD" | "perce
 
 export type H7Phase = "expired" | "upcoming" | "running";
 export function voucherPhase(v: Pick<H7Voucher, "startAt" | "endAt">, now: number): H7Phase {
-  if (v.endAt > 0 && v.endAt < now) return "expired";
+  if (isH7VoucherExpired(v.endAt, now)) return "expired";
   if (v.startAt > 0 && v.startAt > now) return "upcoming";
   return "running";
 }

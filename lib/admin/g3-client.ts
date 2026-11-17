@@ -593,7 +593,7 @@ export async function updateG3Control(
   );
 }
 
-/** Only standalone overrides are retired; weekly frame fields and original requests remain valid contracts. */
+/** Refusal for new standalone override writes. */
 export function g3OverrideWriteRefusal(key: G3OverrideKey): "RETIRED_FEATURE" | undefined {
   return ["oracle", "deviationPct", "volatilityPct"].includes(key) ? "RETIRED_FEATURE" : undefined;
 }

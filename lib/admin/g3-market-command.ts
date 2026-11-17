@@ -54,9 +54,15 @@ export function g3MarketObjectReadState(overview: G3ReadOverview, key: string) {
   return overview.objectStates?.find(row => row.target.type === type && row.target.id === (key.startsWith("weekly:") ? "weekly" : key));
 }
 
+function g3MarketWriteRefusal(change: G3MarketChange) {
+  if (change.action === "curve-cell" && change.field === "volatilityPct") return "RETIRED_FEATURE";
+  if (change.action === "override") return g3OverrideWriteRefusal(change.key);
+}
+
 /** New requests only: original-key recovery must still reach the authoritative writer. */
 export function g3MarketReadBlockedCode(overview: G3ReadOverview, change: G3MarketChange, value?: string, _forceApproval = false) {
-  if (change.action === "override" && g3OverrideWriteRefusal(change.key)) return "RETIRED_FEATURE";
+  const refusal = g3MarketWriteRefusal(change);
+  if (refusal) return refusal;
   const environment = overview.environmentWriteState?.entries.find(entry => change.action === "curve-cell"
     ? entry.operation === "g3_curve_update" && entry.field === change.field && (value === undefined || Number(value) !== Number(change.current))
     : change.action === "current-price" && entry.operation === "g3_override" && entry.overrideKey === "currentPrice");
@@ -184,10 +190,8 @@ export async function executeG3MarketChange(
   const fingerprint = slot(session.adminId, change);
   let command = previous;
   if (!command) {
-    if (change.action === "override") {
-      const refusal = g3OverrideWriteRefusal(change.key);
-      if (refusal) throw new Error(refusal);
-    }
+    const refusal = g3MarketWriteRefusal(change);
+    if (refusal) throw new Error(refusal);
     value = value.trim();
     reason = reason.trim();
     if (change.action === "schedule") {
