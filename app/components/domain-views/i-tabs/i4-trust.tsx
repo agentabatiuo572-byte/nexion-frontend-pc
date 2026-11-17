@@ -479,7 +479,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       businessForm: {
         kind: "multi-field",
         fields: [
-          ...(requiresDataSource(s) ? [{ key: "dataSource", label: "财务/UVT 数据来源", inputKind: "text" as const, placeholder: "报表、账本快照或市场数据编号", required: true, wide: true, maxLength: 500, explain: "写清这些数字从哪来，后端最多收 500 字。只是说明，不会替你核对数字。" }] : []),
+          ...(requiresDataSource(s) ? [{ key: "dataSource", label: "财务/UVT 数据来源", inputKind: "text" as const, placeholder: "报表、账本快照或市场数据编号", required: true, wide: true, maxLength: 500, explain: "写清这些数字从哪来，最多 500 字。只是说明，不会替你核对数字。" }] : []),
           { key: "bilingualConfirmed", label: "已逐项核对中、越、英三语，关键数字一致", inputKind: "checkbox" as const, required: true, wide: true },
         ],
       },
@@ -894,7 +894,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     pendingTrustSectionKeys.size > 0 && `${pendingTrustSectionKeys.size} 个版块等另一位批准`,
     draftSections.size > 0 && `${draftSections.size} 个版块有待发布的草稿`,
   ].filter(Boolean).join(" · ") || undefined;
-  const conclusionExplain = <><p>下架或没发布的版块在 App 上整块收起，别的照常显示；六块都没公开时，信任中心照常打开，公司资质、白皮书、平台运行数据和规则与资料还在。</p><p>公开的版块当前版要有说明和结构、中越英三语齐全、不超过 {APP_FIELD_LIMIT} 项内容；有一块不满足，App 信任中心整页读不出来。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以后端为准。</p></>;
+  const conclusionExplain = <><p>下架或没发布的版块在 App 上整块收起，别的照常显示；六块都没公开时，信任中心照常打开，公司资质、白皮书、平台运行数据和规则与资料还在。</p><p>公开的版块当前版要有说明和结构、中越英三语齐全、不超过 {APP_FIELD_LIMIT} 项内容；有一块不满足，App 信任中心整页读不出来。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以保存时的检查为准。</p></>;
   // 有几块在公开：全公开、只公开一部分、一块都没公开，三种说法。
   const hiddenCount = APP_SECTION_ORDER.length - publicCount;
   const publicLead = hiddenCount === 0 ? "六个版块都在公开" : publicCount === 0 ? "六个版块都没公开，App 信任中心只显示公司资质、白皮书、平台运行数据和规则与资料" : `${publicCount} 个版块在公开，${hiddenCount} 个没公开、在 App 上收起`;
