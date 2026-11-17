@@ -544,9 +544,6 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     && revenueStreamsRaw.every((row) => Number.isFinite(num(row.amountUsdt)) && num(row.amountUsdt) >= 0)
     && liabilitiesRaw.length > 0
     && liabilitiesRaw.every((row) => row.amount === null ? data.valuationReliable === false && row.category === "nex_v2_future" : Number.isFinite(row.amount) && row.amount >= 0)
-    && coverageSeries.length >= 2
-    && coverageTicks.length === coverageSeries.length
-    && coverageSeries.every(Number.isFinite)
     && ["reserveUsd", "liabilitiesUsd"].every((key) => hasNumber(ledgerRaw, key))
     && ["coverageRatio", "redLine", "yellowLine", "netExposure"].every((key) => hasNumber(treasuryRaw, key))
     && ["submitted", "confirmed", "rejected", "delayed", "frozen"].every((key) => hasNumber(redemptionRaw, key))
