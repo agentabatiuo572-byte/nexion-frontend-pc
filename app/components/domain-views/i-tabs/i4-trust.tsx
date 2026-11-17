@@ -34,7 +34,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf, CLOSURE_KEPT_TEXT } from "../recovery-panel";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -758,6 +758,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       setDraftOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
       setClosingDraft(null); syncCommands();
       if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await rereadAfterResolution([record.sectionKey], [record.commandKey]); }
+      else toast(CLOSURE_KEPT_TEXT);
     }} />}
     {releasingSection && <ReleaseModal label={`${sectionName(releasingSection.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[releasingSection.action]} · ${releasingSection.before} → ${releasingSection.after === "archived" ? "已下架" : releasingSection.after}`}
     explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
