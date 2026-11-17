@@ -29,15 +29,21 @@ import { fConfigSpec } from "../a-tabs/a2-f-config";
  * 没有确认快照的旧申请：原记录存的是「动作 · 配置键」和「键=值」，显示时换成页面上这一项的名字（和 A2 同一张表），
  * 配置键不上屏；记录里存的值不改。整批改动按「名字 原值 → 新值」逐项写。
  */
+/** 改动列的值补上单位（比例 %、金额 USDT），只给纯数字补，读到的已带单位或「未配置」原样写。 */
+function withUnit(key: string | undefined, value: string) {
+  const unit = key === "F.pool.ratio" ? "%" : key === "F.pool.monthlyCap" || key === "F.leaderboard.poolUsd" ? " USDT" : "";
+  return unit && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? `${unit === "%" ? value.trim() : decimalText(value)}${unit}` : value;
+}
+
 function legacyF4(spec: ProposeSpec) {
   const keys = spec.obj.split(",");
   const items = keys.map((key) => fConfigSpec(key)?.item);
   const pairs = (text: string) => new Map(text.split(" / ").flatMap((part) => { const m = /^(F\.[\w.]+)=(.*)$/.exec(part.trim()); return m ? [[m[1], m[2]] as const] : []; }));
-  if (keys.length === 1) return { name: fConfigSpec(keys[0], spec.after)?.action ?? spec.action.replace(/ · F\.[\w.]+$/, ""), change: `${spec.before} → ${spec.after}` };
+  if (keys.length === 1) return { name: fConfigSpec(keys[0], spec.after)?.action ?? spec.action.replace(/ · F\.[\w.]+$/, ""), change: `${withUnit(keys[0], spec.before)} → ${withUnit(keys[0], spec.after)}` };
   const before = pairs(spec.before), after = pairs(spec.after);
   return {
     name: items.every(Boolean) ? `调整${items.join("、")}` : `调整 ${keys.length} 项设置`,
-    change: keys.map((key, index) => `${items[index] ?? "其他设置"} ${before.get(key) ?? "—"} → ${after.get(key) ?? "—"}`).join("；"),
+    change: keys.map((key, index) => `${items[index] ?? "其他设置"} ${withUnit(key, before.get(key) ?? "—")} → ${withUnit(key, after.get(key) ?? "—")}`).join("；"),
   };
 }
 
@@ -70,7 +76,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${decimalText(value)} USDT` : value;
     const change = form?.kind === "multi-field" && snapshot?.businessValue
       ? form.fields.filter(field => snapshot.businessValue![field.key] !== field.current).map(field => `${field.label} ${amount(field.key, field.current ?? "")} → ${amount(field.key, snapshot.businessValue![field.key])}`).join("；")
-      : confirm?.edit ? `${confirm.edit.current ?? "—"} → ${snapshot?.value ?? spec?.after ?? "—"}`
+      : confirm?.edit ? `${withUnit(confirm.paramKey, confirm.edit.current ?? "—")} → ${withUnit(confirm.paramKey, snapshot?.value ?? spec?.after ?? "—")}`
         : confirm?.statedBrief?.impact ?? legacy?.change ?? "—";
     return {
       key: original.commandKey,

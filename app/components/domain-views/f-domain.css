@@ -637,8 +637,9 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-page .f4-card-meter { display: flex; flex-direction: column; gap: var(--rd-space-2); --rd-track-w: 100%; }
 
 /* 结果未知逐条提醒：改的是什么、改成什么、什么时候、状态、按钮。 */
-.f4-page .f4-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
-.f4-page .f4-recovery li { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+/* 各行共用一套列宽（子网格），名字、改动、时间、状态、按钮上下对齐。 */
+.f4-page .f4-recovery { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr) max-content max-content auto; gap: var(--rd-space-2) 0; margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.f4-page .f4-recovery li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
 .f4-page .f4-recovery-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
 .f4-page .f4-recovery-change { min-width: 0; color: var(--rd-text); overflow-wrap: anywhere; }
 .f4-page .f4-recovery-time, .f4-page .f4-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
