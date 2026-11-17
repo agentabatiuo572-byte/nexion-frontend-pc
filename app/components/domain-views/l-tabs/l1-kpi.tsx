@@ -696,7 +696,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const k = drillKpi?.n === baseKpi.n
       ? { ...baseKpi, ...drillKpi, name: baseKpi.name, spark: drillTrend?.values ?? drillKpi.spark ?? baseKpi.spark, sparkSuppressed: drillTrend?.suppressedPoints ?? drillKpi.sparkSuppressed }
       : baseKpi;
-    const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
+    const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂时没有这项指标的解读", jump: [] };
     const kState = kpiStatus(k, ylOffset);
     const points = k.points ?? [];
     const partialEdges = points.filter((point) => point.partial);
@@ -796,7 +796,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             sub={<>距目标 {ylOffset}% 以内 · <button type="button" className="rd-link" onClick={() => setEditingOffset(true)}>调整接近范围</button></>}
             explain={`没达标，但离目标不超过 ${ylOffset}%；购买转化在健康带外也算这里。调整只改你看到的状态，不改业务规则。`} />
           <Stat label="暂无法判断" value={unavailable} tone={unavailable > 0 ? "done" : undefined} icon={CircleHelp} iconTone="done" sub={blankKinds.length ? blankSummary : "每项都算得出"} explain="来源不全、观察期未满、没有数据的算不出；样本过小的数值受保护。都不按 0% 算，也不算未达标。" />
-          <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未返回"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
+          <Stat label="当前运营阶段" value={phaseKnown ? String(phase.code) : "未提供"} unit={phaseKnown ? `· ${String(phase.name ?? "")} · 第 ${num(phase.month, 0)} 月` : undefined} tone="role-2" icon={Flag}
             explain={PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间。" : grouped ? "按注册批次看时图上不标阶段切换，切换时间到「运营阶段状态」看。" : "当前时间范围内没有阶段切换记录。"} />
         </StatBand>
 
@@ -998,7 +998,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         <Fold title="指标规则表" icon={Lock} summary={`${KPIS.length} 项 · 算法和目标已锁定`}
           explain={<>
             <p><AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></p>
-            <p><AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前返回数据为准。</AutoGloss></p>
+            <p><AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前读到的数据为准。</AutoGloss></p>
           </>}>
           <div className="rd-stack">
             <Table label="关键指标的计算方式">
