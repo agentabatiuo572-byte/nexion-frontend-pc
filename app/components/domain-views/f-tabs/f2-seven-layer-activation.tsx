@@ -19,6 +19,7 @@ import { f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-ticket";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
 import { FReleaseButton, F_PROPOSAL_CREATED_LINE, fProposalEndText } from "./f-release";
+import { useFreshFirst } from "../recovery-panel";
 import type { FViewCtx } from "./types";
 
 
@@ -163,7 +164,11 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   const [active, setActive] = useState<string | null>(null);
   // 查过的那一行原地写查到了什么；查到已结束的审批单时记录清掉，改用轻提示。
   const [notes, setNotes] = useState<Record<string, { tone: "warn" | "danger"; text: string }>>({});
+  // 和资金页的面板一样默认露三条：刚发出的排最前，再是查询失败和过期的，等批准的放最后。
+  const [all, setAll] = useState(false);
   const attempts = ctx.f2Proposals;
+  const rank = (attempt: F2Recovery) => notes[attempt.commandKey]?.tone === "danger" ? 0 : attempt.ticket?.status === "pending" ? 2 : attempt.expiresAt <= Date.now() ? 0 : 1;
+  const { ordered, box } = useFreshFirst([...attempts].sort((a, b) => rank(a) - rank(b)).map((attempt) => ({ attempt, key: attempt.commandKey, createdAt: attempt.createdAt })));
   if (!attempts.length && !error) return null;
   const canAudit = ctx.can("platform_a2_read");
   async function recover(attempt: F2Recovery, query: boolean) {
@@ -185,9 +190,9 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <Notice tone="warn" title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
-        {attempts.map((attempt) => {
+        {(all ? ordered : ordered.slice(0, 3)).map(({ attempt }) => {
           const { name, change } = attemptLabel(attempt);
           const expired = attempt.expiresAt <= Date.now();
           return <li key={attempt.commandKey}>
@@ -208,9 +213,10 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
           </li>;
         })}
       </ul>
+      {attempts.length > 3 && <div className="fund-rows-foot"><Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `展开全部 ${attempts.length} 条`}</Button></div>}
       <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link></>}</p>
       {error && <Notice tone="danger" title="按原请求重试没有成功">{error.text}</Notice>}
-    </Notice>
+    </Notice></div>
   );
 }
 

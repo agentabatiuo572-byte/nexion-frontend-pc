@@ -619,7 +619,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
             { key: "batch", label: "模拟批次", value: dryRunResult.batchNo, mono: true }, { key: "window", label: "样本窗口", value: `${dryRunResult.sampleWindowDays} 天` }, { key: "completed", label: "完成时间", value: dryRunCompletedText(dryRunResult) },
             { key: "evaluated", label: "实际评估", value: `${fmt(dryRunResult.evaluatedWithdrawals)} 笔` }, { key: "active", label: "已启用规则", value: `${fmt(dryRunResult.activeRules)} 条`, explain: "模拟实际执行时读取的当前生效规则，不是草稿预览。" },
             { key: "hits", label: "命中次数", value: `${fmt(dryRunResult.hitCount)} 次`, explain: "按匹配规则次数累计；同一提现可命中多条，因此可以大于样本笔数。" },
-          ]} /></div><section className="k3-simulation-dist" aria-label="模拟样本裁决分布"><h3 className="k3-simulation-title">模拟样本裁决分布<Explain label="模拟样本裁决分布的说明" content="这一批实际评估的样本，每笔只计一次最终K3裁决；放行只表示K3没有拦截，不等于已打款。" /></h3><Distribution rows={dryRunResult.routeCounts} total={dryRunResult.evaluatedWithdrawals} simulation /></section></div>
+          ]} /></div><section className="k3-simulation-dist" aria-label="模拟样本裁决分布"><h3 className="k3-simulation-title">模拟样本裁决分布<Explain label="模拟样本裁决分布的说明" content="这一批实际评估的样本，每笔只按最后结论计一次；放行只表示这里的规则没拦下，不等于已打款。" /></h3><Distribution rows={dryRunResult.routeCounts} total={dryRunResult.evaluatedWithdrawals} simulation /></section></div>
             : <BlockState state="empty" title="尚未模拟" detail="最近一次结果只在当前页面保留，刷新后不承诺找回。" />}
         </Fold>
         <div className="rd-links">{[["提现审核", "/finance/withdrawals"], ["USDT 提现参数", "/finance/params"], ["多账户风险排查", "/risk/multi-account"], ["操作记录与审批", "/platform/audit"]].map(([label, href]) => reach(href) && <Link key={href} href={href}>{label}</Link>)}</div>

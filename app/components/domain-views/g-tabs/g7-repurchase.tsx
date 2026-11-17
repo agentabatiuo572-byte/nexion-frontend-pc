@@ -543,7 +543,7 @@ function G7RepurchasePage() {
             {original
               ? <Fact k="原申请"><Change from={currentText} to={originalValue ? paramValueText(param.key, originalValue) : "—"} /></Fact>
               : directRecovery ? <Fact k="提交时">{currentText}</Fact> : param.key === "presets" && <Fact k="现在">{currentText}</Fact>}
-            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{directRecovery
+            <Fact k="什么时候生效">{directRecovery
               ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，不会重复执行。"
               : original
               ? original.ticket?.status === "pending"
@@ -552,7 +552,7 @@ function G7RepurchasePage() {
               : !copy?.loosen
                 ? "确认后立即生效"
                 : loose === true
-                  ? `${copy.loosen}：提交审批，另一位超级管理员（需有审批批准权限）批准后才生效；批准前参数不变，这一项被锁住`
+                  ? `${copy.loosen}：批准后才生效，批准前不能再改这一项`
                   : loose === false
                     ? `${copy.tighten}：确认后立即生效`
                     : nextText
