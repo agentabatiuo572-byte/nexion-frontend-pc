@@ -13,13 +13,14 @@ import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } f
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, settledText } from "../fund-command-check";
+import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
 import type { RankSnapshot } from "./h9-overview";
-import { AppPreview, ConfirmFacts, H9RecoveryNotice, ModuleToolbar, count, saveIssueKind, type SaveIssueKind } from "./h9-parts";
+import { AppPreview, ConfirmFacts, H9RecoveryNotice, h9Status, ModuleToolbar, count, saveIssueKind, type SaveIssueKind } from "./h9-parts";
 
 const tierDrafts = (config: DeviceRankConfig): DeviceRankTierDraft[] => config.tiers.map((tier) => ({
   name: tier.name, sharePct: String(tier.sharePct), minTops: String(tier.minTops), maxTops: String(tier.maxTops),
@@ -56,6 +57,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
       try {
         const receipt = await queryH9Command("rank", original);
         setOutcomes(all => ({ ...all, [original.commandKey]: { receipt } }));
+        if (eCommandSettled(receipt)) ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
       } catch (cause) {
         setOutcomes(all => ({ ...all, [original.commandKey]: { error: displayAdminError(cause) } }));
       }
@@ -181,9 +183,11 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
     });
   };
   const issueNotice = pending ? <H9RecoveryNotice explain={<>
-        <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。{error}</p>
-        <p>点「查询原结果」读现在的设置；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的档位和理由，不会重复保存。</p>
+        <p>{DIRECT_RECOVERY_INTRO}</p>
+        {error && <p>{error}</p>}
       </>} rows={[{ key: pending.commandKey, name: "设备预估排名", change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
+        status: h9Status(pending, outcomes[pending.commandKey], canWrite),
+        tech: <TechInfo commandKey={pending.commandKey} receipt={receiptOf(outcomes[pending.commandKey])} />,
         actions: <>
           <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原结果</Button>
           {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
@@ -207,9 +211,10 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
         setClosing(null);
         syncPending();
         if (eCommandSettled(receipt)) {
+          ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
           ctx.openActionConfirm(null);
           await load();
-        }
+        } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
       }} />}
     <Panel title="设备预估排名" icon={Trophy} tone="role-4" sub={data ? `排名设置 v${data.version} · 单独保存` : undefined}
       explain="独立的一套设置：自己的版本、自己保存，不受本页其他块影响。App 用首页数字增长的在线设备数和这里的档位估一个排名；这不是真实榜单，不影响收益和奖励。">

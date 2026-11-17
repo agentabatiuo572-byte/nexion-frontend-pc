@@ -8,7 +8,9 @@ import { useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
 import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
-import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { OPEN_RESULT_LABELS } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
 
 export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
   kind: string;
@@ -240,8 +242,9 @@ export function CapCard({ tier, cap, policy, locked, pending, action }: { tier: 
   );
 }
 
-/** submitted：审批单已建，批没批准还没查到。note：查询后的一句结论。 */
-export type I3RecoveryRow = { key: string; name: string; object: string; change?: string; submittedAt: number; expired: boolean; submitted?: boolean; note?: string; actions: ReactNode };
+/** submitted：审批单已建，批没批准还没查到。status：查过原结果的标签（共用面板的叫法）。note：这一行下面的一句结论。 */
+export type I3RecoveryRow = { key: string; name: string; object: string; change?: string; submittedAt: number; expired: boolean; submitted?: boolean;
+  status?: { tone: StateTone; label: string; more?: string }; note?: ReactNode; actions: ReactNode };
 
 /**
  * 结果未知逐条提醒：由页面传入持久化的原操作；未读取到概览时同样显示。
@@ -252,11 +255,11 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
   const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   const submitted = rows.filter((row) => row.submitted).length;
-  const title = [rows.length - submitted > 0 && `${rows.length - submitted} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`].filter(Boolean).join(" · ");
+  const open = rows.filter((row) => row.status && OPEN_RESULT_LABELS.includes(row.status.label)).length;
+  const title = [rows.length - submitted - open > 0 && `${rows.length - submitted - open} 项操作结果未知`, open > 0 && `${open} 项操作还没结案`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`].filter(Boolean).join(" · ");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<>
-      <p>提交时没收到确定结果，可能已经执行。先「查询原结果」。</p>
-      <p>24 小时内可以「按原请求重试」，系统认得出是同一次提交，不会重复发送或重复建审批单；过了 24 小时只能查询。</p>
+      <p>{DIRECT_RECOVERY_INTRO}</p>
       <p>保留上限的申请过期后，按原请求明确查不到这张单，说明没建成，可以确认解除。</p>
     </>} /></>}>
       <ul className="i3-recovery" aria-label="结果未知的操作">
@@ -265,7 +268,8 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
             <span className="i3-recovery-name">{row.name}</span>
             <span className="i3-recovery-object">{row.object}{row.change ? ` · ${row.change}` : ""}</span>
             <span className="i3-recovery-time">{`${businessStamp(row.submittedAt)} 提交`}</span>
-            <StatusTag tone={row.expired || row.submitted ? "neutral" : "warn"} icon={CircleHelp}>{row.submitted ? "已提交，状态未查到" : row.expired ? "已过期" : "结果未知"}</StatusTag>
+            {row.status ? <StatusTag tone={row.status.tone} explain={row.status.more}>{row.status.label}</StatusTag>
+              : <StatusTag tone={row.expired || row.submitted ? "neutral" : "warn"} icon={CircleHelp}>{row.submitted ? "已提交，状态未查到" : row.expired ? "已过期" : "结果未知"}</StatusTag>}
             <span className="i3-recovery-actions">{row.actions}</span>
             {row.note && <span className="i3-recovery-note">{row.note}</span>}
           </li>

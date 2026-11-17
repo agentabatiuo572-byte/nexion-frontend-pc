@@ -26,8 +26,11 @@ export function closureOpen(outcome: CommandOutcome | undefined, expired: boolea
   return eCommandClosureOffer(outcome, expired).conclusions.length > 0;
 }
 
-/** 标签和资金页的面板同一组叫法（查询失败、没有查到、还在执行、记为失败、仍未知、后台拒绝、已处理）。 */
-function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" | "warn" | "progress" | "neutral" | "done" | "danger"); title: string; text: string } {
+/**
+ * 标签和资金页的面板同一组叫法（查询失败、没有查到、还在执行、记为失败、仍未知、后台拒绝、已处理）。
+ * canClose：这个账号能不能核查结案；不能的，要结案的那几句改说找有调查权限的超级管理员。
+ */
+function view(outcome: CommandOutcome, expired: boolean, canClose = true): { tone: Tone & ("ok" | "warn" | "progress" | "neutral" | "done" | "danger"); title: string; text: string } {
   if ("error" in outcome) return { tone: "danger", title: "查询失败", text: outcome.error };
   const receipt = outcome.receipt;
   if (!receipt) return { tone: "warn", title: "没有查到", text: expired
@@ -36,25 +39,25 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在执行", text: expired ? "原操作还在执行，稍后再查；不要重复提交。" : "原操作还在执行，过一会儿再查询；现在重试不会重复执行，也拿不到新结果。" };
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", title: "已结案", text: "核查确认是后台拒绝，记录已解除。" };
   if (receiptRejected(receipt)) return { tone: "warn", title: "后台拒绝", text: expired
-    ? "后台拒绝了，不保证没有改动；已过 24 小时，可按「后台拒绝」结案。"
+    ? canClose ? "后台拒绝了，不保证没有改动；已过 24 小时，可按「后台拒绝」结案。" : "后台拒绝了，不保证没有改动；请有调查权限的超级管理员核查结案。"
     : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
-  // 过期的记为失败、仍未知：按结案框能选的结论说下一步；这里不知道账号的调查权限，没有权限的另有 ClosureContact。
-  const step = closureLine(eCommandClosureOffer(outcome, expired), receipt, true);
+  // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine）。
+  const step = closureLine(eCommandClosureOffer(outcome, expired), receipt, canClose);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "记为失败", text: expired
     ? step!
     : "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
-    ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。"
+    ? canClose ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。" : "后台已处理，看不出成没成；请有调查权限的超级管理员核查结案。"
     : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
-  return { tone: "warn", title: "仍未知", text: (receipt.originalStatus === "UNKNOWN" ? step : undefined) ?? (expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。"
-    : "原操作处理到一半中断了，重试也拿不到新结果；需要按证据核查结案。") };
+  return { tone: "warn", title: "仍未知", text: (receipt.originalStatus === "UNKNOWN" ? step : undefined) ?? (!canClose ? "原操作处理到一半中断了；请有调查权限的超级管理员核查结案。"
+    : expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。" : "原操作处理到一半中断了，重试也拿不到新结果；需要按证据核查结案。") };
 }
 
 /** The row's collapsed tag and sentence once the original has been looked up (RecoveryItem.result). */
-export function commandOutcomeSummary(outcome: CommandOutcome | undefined, expired: boolean) {
+export function commandOutcomeSummary(outcome: CommandOutcome | undefined, expired: boolean, canClose = true) {
   if (!outcome) return undefined;
-  const shown = view(outcome, expired);
+  const shown = view(outcome, expired, canClose);
   return { tag: <StatusTag tone={shown.tone}>{shown.title}</StatusTag>, line: shown.text };
 }
 
@@ -62,9 +65,9 @@ export function commandOutcomeSummary(outcome: CommandOutcome | undefined, expir
  * One block under a pending notice: what the backend says about the original command.
  * `summarized` means the row already shows the tag and sentence (commandOutcomeSummary); only the longer notes stay here.
  */
-export function CommandOutcomeLine({ outcome, expired, summarized }: { outcome?: CommandOutcome; expired: boolean; summarized?: boolean }) {
+export function CommandOutcomeLine({ outcome, expired, summarized, canClose = true }: { outcome?: CommandOutcome; expired: boolean; summarized?: boolean; canClose?: boolean }) {
   if (!outcome) return null;
-  const shown = view(outcome, expired);
+  const shown = view(outcome, expired, canClose);
   const receipt = "receipt" in outcome ? outcome.receipt : null;
   const last = receipt?.investigation;
   const more = receiptExplain(receipt);
@@ -109,7 +112,9 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
   const basis: ClosureBasis | undefined = offer ? undefined : known === true ? { rejected: false, success: "audit" } : known || undefined;
   const choices: Conclusion[] = offer ? offer.conclusions : basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : []), "NOT_EXECUTED"]
     : ["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"];
-  const [conclusion, setConclusion] = useState<Conclusion | "">("");
+  // 只有一个结论可选时直接写明（和资金结案框一样），不出下拉。
+  const fixed = choices.length === 1 ? choices[0] : undefined;
+  const [conclusion, setConclusion] = useState<Conclusion | "">(fixed ?? "");
   const [reference, setReference] = useState("");
   const [auditId, setAuditId] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
@@ -121,9 +126,10 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
   const byReceipt = offer ? offer.success !== "audit" : basis?.success === "receipt";
   const withAudit = conclusion === "SUCCEEDED" && !byReceipt;
   const auditValid = !auditId.trim() || /^[1-9]\d{0,17}$/.test(auditId.trim());
+  const help = conclusion === "SUCCEEDED" && byReceipt ? SUCCEEDED_BY_RECEIPT : conclusion === "NOT_EXECUTED" && offer ? ROLLBACK_HELP : conclusion ? CONCLUSION_HELP[conclusion] : undefined;
   const block = !conclusion ? "请选择核查结论" : !referenceLength ? "请写明核查依据" : referenceLength > 512 ? "核查依据最多 512 字"
     : !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
-  return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!!conclusion || !!reference || !!auditId} onClose={onClose}
+  return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!fixed && !!conclusion || !!reference || !!auditId} onClose={onClose}
     footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabledReason={block} onClick={async () => {
       setTouched(true);
       if (block || !conclusion) return;
@@ -142,13 +148,14 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, known
         <Fact k="原操作">{label}</Fact>
         {facts}
         <Fact k="首次提交">{closureTime(createdAt)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span></>} /></Fact>
+        {fixed && <Fact k="核查结论">{CONCLUSION_TEXT[fixed]}</Fact>}
       </Facts>
       <Notice tone="warn">{offer ? offerNotice(offer) : basis?.rejected ? "后台当时拒绝了这次操作，可以按「后台拒绝」结案；其他结论要证据对得上，对不上会退回，记录保留。"
         : basis ? "这次请求后台有处理记录：证据对得上才确认并解除锁定，对不上会退回，记录保留。" : "按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。"}</Notice>
-      <Field label="核查结论" required help={conclusion === "SUCCEEDED" && byReceipt ? SUCCEEDED_BY_RECEIPT : conclusion === "NOT_EXECUTED" && offer ? ROLLBACK_HELP : conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
+      {fixed ? <p className="rd-note">{help}</p> : <Field label="核查结论" required help={help} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
           options={choices.map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
-      </Field>
+      </Field>}
       <Field label="核查依据" required hint="最多 512 字" error={touched && (!referenceLength || referenceLength > 512) ? referenceLength ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
         <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder={conclusion ? CLOSURE_PLACEHOLDER_BY[conclusion] ?? CLOSURE_PLACEHOLDER : CLOSURE_PLACEHOLDER} value={reference} onChange={event => setReference(event.target.value)} />
       </Field>

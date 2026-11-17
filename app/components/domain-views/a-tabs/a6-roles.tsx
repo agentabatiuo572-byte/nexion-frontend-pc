@@ -18,10 +18,10 @@ import { buildRoleMetadataPayload, PlatformMutationReadbackError } from "@/lib/a
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { a6GrantsProblem, rbacAuthority, rbacProposal, useRbacCommands, type A6Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { canInvestigateECommand, eCommandClosureRequests, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { canInvestigateECommand, eCommandClosureRequests, eCommandSettled, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { rbacClosureConclusions, rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
 import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { TechInfo, receiptFact } from "../recovery-panel";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import {
@@ -63,7 +63,7 @@ type Submitted = {
 };
 
 /** 已备好的原操作提醒，由持久保存的完整请求驱动。 */
-type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; line?: string; actions: ReactNode };
+type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; line?: string; receipt?: ECommandInvestigation | null; actions: ReactNode };
 
 /** 审批单最后一次查到的状态；只有回执、还没查到状态时单独写。 */
 const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; tone: "warn" | "progress" | "ok" | "neutral"; icon: LucideIcon }> = {
@@ -609,7 +609,7 @@ export default function A6Roles() {
       || original.kind === "a6-status" && overview?.roles.some(role => role.id === original.role.id && role.status === original.status));
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
-      line: shown?.line,
+      line: shown?.line, receipt: outcome?.receipt,
       tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? original.kind === "a6-status" ? "原请求超过 24 小时，不能再重试。没查到审批单和原结果，但角色已经是要改成的状态，可以解除这条记录。" : "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原请求重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>,
@@ -677,7 +677,7 @@ export default function A6Roles() {
                 <span className="a6-recovery-time">{businessStamp(row.submittedAt)} 提交</span>
                 {row.tag}
                 <span className="a6-recovery-actions">{row.actions}</span>
-                {row.line && <span className="a6-recovery-line" role="status">{row.line}</span>}
+                {row.line && <span className="a6-recovery-line" role="status">{row.line} <TechInfo commandKey={row.key} receipt={row.receipt} /></span>}
               </li>
             ))}
           </ul>

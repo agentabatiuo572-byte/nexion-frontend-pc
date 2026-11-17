@@ -33,8 +33,9 @@ import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
+import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -648,6 +649,12 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     ? (SECTION_FIELDS[sec.key] ?? []).find(([key]) => /(^|[._-])(url|link|href)($|[._-])/i.test(key))?.[1] ?? ""
     : "";
 
+  /** 草稿操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。草稿直接生效，不建审批单。 */
+  const draftStatus = (record: I4DraftCommand, outcome: FundInvestigationOutcome | undefined) => {
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i4_read"),
+      canRetry: !isRetryExpired(record) && !!record.original && !i4DraftPermission() });
+    return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
+  };
   const recoverDraft = async (record: I4DraftCommand, retry: boolean) => {
     if (inFlight.current) return;
     inFlight.current = true; setRecovering(record.commandKey);
@@ -655,18 +662,18 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     try {
       if (retry) { await retryI4DraftCommand(record); await rereadAfterResolution([record.sectionKey], [record.commandKey]); toast(`${record.sectionKey} ${record.version} 草稿已${record.action === "delete" ? "删除" : "保存"}`); }
       else {
-        let receipt = null;
+        let outcome: FundInvestigationOutcome;
         try {
-          const next = await queryI4DraftReceipt(record);
-          receipt = next;
-          setDraftOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next } }));
+          outcome = { receipt: await queryI4DraftReceipt(record) };
         } catch (error) {
-          setDraftOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+          outcome = { error: displayAdminError(error) };
         }
-        if (eCommandSettled(receipt)) { await rereadAfterResolution([record.sectionKey], [record.commandKey]); return; }
-        const current = await fetchI4TrustOverview();
-        const row = current.trustSectionVersions.find(row => row.sectionKey === record.sectionKey && row.version === record.version);
-        toast(`${sectionName(record.sectionKey)} ${record.version} · ${row ? `${statusZh(row.status)} · ${row.revision}` : "暂无版本"}。当前读取不能证明原操作结果，原记录继续保留。`);
+        setDraftOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
+        const receipt = receiptOf(outcome);
+        if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await rereadAfterResolution([record.sectionKey], [record.commandKey]); return; }
+        await fetchI4TrustOverview();
+        const shown = draftStatus(record, outcome);
+        toast(`${shown.label}：${shown.line}`);
         await actions.reloadIContent();
       }
     } catch (error) {
@@ -709,8 +716,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           void queryI4DocumentCommand(record).then(result => { setDocumentRecovery({ ...record, observation: result.current }); syncCommands(); }, error => toast(displayAdminError(error)));
         }}>查询原结果</Button> };
     }),
-    ...draftCommands.map(record => ({ key: record.commandKey, kind: "unknown" as const, name: `${sectionName(record.sectionKey)} · ${{ create: "新建草稿", edit: "编辑草稿", delete: "删除草稿" }[record.action]}`,
-      change: record.version, submittedAt: timeText(new Date(record.createdAt).toISOString()), tag: unknownTag(),
+    ...draftCommands.map(record => ({ key: record.commandKey, kind: OPEN_RESULT_LABELS.includes(draftStatus(record, draftOutcomes[record.commandKey]).label) ? "open" as const : "unknown" as const,
+      name: `${sectionName(record.sectionKey)} · ${{ create: "新建草稿", edit: "编辑草稿", delete: "删除草稿" }[record.action]}`,
+      change: record.version, submittedAt: timeText(new Date(record.createdAt).toISOString()),
+      tag: <StatusTag tone={draftStatus(record, draftOutcomes[record.commandKey]).tone} explain={draftStatus(record, draftOutcomes[record.commandKey]).more}>{draftStatus(record, draftOutcomes[record.commandKey]).label}</StatusTag>,
+      note: <>{draftStatus(record, draftOutcomes[record.commandKey]).line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(draftOutcomes[record.commandKey])} /></>,
       actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverDraft(record, false)}>查询原结果</Button>
         {canInvestigateECommand("content_i4_read") && eCommandClosureOffer(draftOutcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosingDraft(record)}>核查结案</Button>}
         <Button size="sm" disabledReason={isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !record.original ? "原操作记录不完整，只能查询核对，不能重试。" : i4DraftPermission()}
@@ -748,7 +758,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const receipt = await queryI4DraftReceipt(record, evidence);
       setDraftOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
       setClosingDraft(null); syncCommands();
-      if (eCommandSettled(receipt)) await rereadAfterResolution([record.sectionKey], [record.commandKey]);
+      if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await rereadAfterResolution([record.sectionKey], [record.commandKey]); }
+      else toast(CLOSURE_KEPT_TEXT);
     }} />}
     {releasingSection && <ReleaseModal label={`${sectionName(releasingSection.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[releasingSection.action]} · ${releasingSection.before} → ${releasingSection.after === "archived" ? "已下架" : releasingSection.after}`}
     explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
@@ -887,7 +898,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   // 有几块在公开：全公开、只公开一部分、一块都没公开，三种说法。
   const hiddenCount = APP_SECTION_ORDER.length - publicCount;
   const publicLead = hiddenCount === 0 ? "六个版块都在公开" : publicCount === 0 ? "六个版块都没公开，App 信任中心只显示公司资质、白皮书、平台运行数据和规则与资料" : `${publicCount} 个版块在公开，${hiddenCount} 个没公开、在 App 上收起`;
-  const blankExplain = <><p>正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的核心团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
+  const blankExplain = <><p>正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的管理团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
   const pendingText = pendingTrustSectionKeys.size > 0 ? `${pendingTrustSectionKeys.size} 个版块等另一位批准` : "";
   const draftText = draftSections.size > 0 ? `${draftSections.size} 个版块有待发布的草稿` : "";
   const conclusion = issues.length

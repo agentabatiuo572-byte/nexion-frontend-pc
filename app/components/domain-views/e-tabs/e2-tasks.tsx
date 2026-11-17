@@ -22,7 +22,8 @@ import type { EViewCtx } from "./types";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
+import { TechInfo, receiptOf } from "../recovery-panel";
+import { CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -270,10 +271,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => { viewOriginal(record); setReleasing(true); }}>解除原操作记录</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
-      <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>
-      {pendingNote && <p>{pendingNote}</p>}
-      <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} />
-      {!canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <ClosureContact />}
+      {/* 过期后下一步只说一处：查过的由下面的结论句说（含核查结案），没查过的先查询。 */}
+      {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原结果。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
+      {pendingNote && !outcomes[record.commandKey] && <p>{pendingNote}</p>}
+      <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} canClose={canInvestigate} />
+      {outcomes[record.commandKey] && <p><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p>}
     </Notice>)}
     <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
     {closing && <CommandClosureModal label={`${closing.pool.code} ${closing.pool.name} · ${e2CommandLabel(closing)}`} commandKey={closing.commandKey} createdAt={closing.createdAt}

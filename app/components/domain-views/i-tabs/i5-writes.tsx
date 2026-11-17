@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { KeepText, Button, Explain, Fact, Modal, Notice, ReleaseModal } from "@/app/components/rd";
+import { Button, Fact, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -31,8 +31,9 @@ import type { ActionConfirmReq, ICtx } from "./types";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
+import { OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
 type ContentCall =
@@ -80,7 +81,8 @@ const pendingWrites = createPendingMutationStore<I5Pending>({
 
 export const WRITE_LOCKED = "这一项有一次操作结果未知，先到页面上方处理";
 export const CONFLICT_TEXT = "这项刚被别人改过。";
-const EXPIRED_TEXT = "已超过 24 小时，不能再重试，只能查询原结果。";
+/** 查询成功、记录还没了结时展开处的一句：记录还在，这一项先不能改；下一步写在行上。 */
+const KEPT_NOTE = "已查询，记录继续保留；这一项暂时不能修改。";
 
 const PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 
@@ -396,9 +398,16 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     try {
       const receipt = await queryInvestigation(record);
       if (eCommandSettled(receipt)) {
+        toast(settledText({ status: receipt!.originalStatus }), "success");
         pendingWrites.forget(record.fingerprint, record.commandKey); sync();
         await onSettled(record);
+        return;
       }
+      // 查到了但还没了结（仍未知、没有查到、记为失败等）：行上的标签和句子已按查到的换掉；这里换掉上一次「查询没有成功」的话。
+      note(record, KEPT_NOTE);
+      const expired = record.expiresAt <= Date.now();
+      const shown = fundRecoveryStatus({ outcome: { receipt }, expired, canRetry: !expired, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
+      toast(`${shown.label}：${shown.line}`, "warn");
     } catch (cause) {
       setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
       note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
@@ -414,6 +423,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         try {
           const receipt = await queryInvestigation(record);
           if (eCommandSettled(receipt)) {
+            toast(settledText({ status: receipt!.originalStatus }), "success");
             pendingWrites.forget(record.fingerprint, record.commandKey); sync();
             await onSettled(record);
             return;
@@ -421,7 +431,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         } catch (cause) {
           setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
         }
-        note(record, "没查到原审批单，结果仍未知，记录继续保留。");
+        note(record, "没查到原审批单，记录继续保留。");
         return;
       }
       pendingWrites.forget(record.fingerprint, record.commandKey);
@@ -455,24 +465,36 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   };
 
   const auditHref = "/platform/audit?domain=I";
-  const notices: ReactNode = pending.map((record) => {
+  /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
+  const statusOf = (record: I5Pending, expired: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
+    const outcome = outcomes[record.commandKey];
+    // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
+    if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: "重试被明确拒绝；核对原因后可以解除。" };
+    if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
+      line: expired ? "超过 24 小时不能再重试，先查询原结果。" : canQuery ? "可能已经提交，先查询原结果。" : "可能已经提交，这个账号查不了原结果，到操作记录与审批核对。" };
+    const shown = fundRecoveryStatus({ outcome, expired, canRetry: !expired, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
+    return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
+  };
+  const items: RecoveryItem[] = pending.map((record) => {
     const expired = record.expiresAt <= Date.now();
-    return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} action={<>
+    const shown = statusOf(record, expired);
+    return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
+      tag: <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag>, line: shown.line,
+      note: notes[record.commandKey] || undefined,
+      actions: <>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原结果</Button>}
         {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原结果</Button>}
         {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>查询原结果</Button>}
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
-      </>}>
-        {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。<KeepText text={expired ? EXPIRED_TEXT : "按原请求重试不会重复执行。"} />
-        {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="这条操作怎么恢复" rows={[{ k: "恢复", v: expired ? "原操作结果仍未知，记录继续保留，这一项仍不能操作。请到操作记录与审批核对。" : recoveryText(record.op, canQuery) }, { k: "请求编号", v: record.commandKey }]} />
-        {notes[record.commandKey] && <div><KeepText text={notes[record.commandKey]} /></div>}
-      </Notice>
-    );
+      </>,
+      detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{!expired && recoveryText(record.op, canQuery)}</p>,
+      tech: <p className="fund-row-tech"><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p> };
   });
+  const open = pending.filter((record) => OPEN_RESULT_LABELS.includes(statusOf(record, record.expiresAt <= Date.now()).label)).length;
+  const notices: ReactNode = <RecoveryPanel items={items} title={recoveryTitle(pending.length - open, 0, 0, open)} explainLabel="结果未知怎么处理" explain={DIRECT_RECOVERY_INTRO}
+    foot={reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />;
 
   const releaseModal = <>
     {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
@@ -483,9 +505,10 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         const receipt = await queryInvestigation(record, evidence);
         setClosing(null);
         if (eCommandSettled(receipt)) {
+          toast(settledText({ status: receipt!.originalStatus }), "success");
           pendingWrites.forget(record.fingerprint, record.commandKey); sync();
           await onSettled(record);
-        }
+        } else toast(CLOSURE_KEPT_TEXT, "warn");
       }} />}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />}
   </>;

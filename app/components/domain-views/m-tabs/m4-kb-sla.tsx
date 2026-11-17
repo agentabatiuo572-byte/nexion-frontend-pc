@@ -9,8 +9,9 @@ import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { queryM4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
+import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -331,19 +332,27 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     }
     if (actorId !== useAdminAuth.getState().session?.adminId) return;
     if (result?.settled) {
+      ctx.toast(settledText({ status: result.receipt!.originalStatus }), "success");
       mCommands.forget(record.fingerprint, record.commandKey); syncPending();
       closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
     }
     await readCurrent();
   };
-  const pendingRows = pendingCommands.map((record) => ({ key: record.commandKey,
+  const pendingRows = pendingCommands.map((record) => {
+    const outcome = outcomes[record.commandKey];
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("service_m4_read"),
+      canRetry: !!record.faq && canWriteM4 && !isRetryExpired(record) });
+    return { key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
-    submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
+    submittedAt: record.createdAt, expired: isRetryExpired(record),
+    status: { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) },
+    note: <>{shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(outcome)} /></>,
+    actions: <>
       <Button size="sm" disabled={writePending} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending} onClick={() => setClosing(record)}>核查结案</Button>}
       {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
-    </>,
-  }));
+    </> };
+  });
 
   // 首屏数字：只算这页的问答，不随筛选变。读不到时写「—」，不当成 0。
   const published = visibleFaqs.filter((faq) => faq.status === "published");
@@ -391,10 +400,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
           setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
           setClosing(null);
           if (result.settled) {
+            ctx.toast(settledText({ status: result.receipt!.originalStatus }), "success");
             mCommands.forget(record.fingerprint, record.commandKey); syncPending();
             closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
             await readCurrent();
-          }
+          } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}
 
 

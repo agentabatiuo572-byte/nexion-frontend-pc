@@ -41,6 +41,8 @@ export type FundRecoveryRow = {
   canRetry: boolean;
   /** 这一行有没有「查询原结果」按钮；不传时按记录本身能不能查判断。 */
   canQuery?: boolean;
+  /** 这个账号能不能核查结案；不传时按记录本身（fundInvestigationAccess）判断。没有资金原记录的页面自己传。 */
+  canClose?: boolean;
   /** 页面自己的状态（待审批、直接保存查不了等），优先于查询结果；more 是展开后的说明（同一档和共用的一样，见 processedStatus）。 */
   status?: { tone: StateTone; label: string; line: string; more?: string };
   actions: ReactNode;
@@ -72,11 +74,11 @@ export function fundReadBlock(record: FundCommandRecord) {
 }
 
 /** 一条记录现在的标签和那句话；没有用这个面板的页面（A3）也用它，同一个状态一个说法。 */
-export function fundRecoveryStatus(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "canRetry" | "canQuery" | "status" | "copy">): Shown {
+export function fundRecoveryStatus(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "canRetry" | "canQuery" | "canClose" | "status" | "copy">): Shown {
   return shown(row);
 }
 
-function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "canRetry" | "canQuery" | "status" | "copy">): Shown {
+function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "canRetry" | "canQuery" | "canClose" | "status" | "copy">): Shown {
   const where = row.copy?.where ?? "操作记录与审批";
   if (row.status) return row.status;
   const access = row.record ? fundInvestigationAccess(row.record) : null;
@@ -98,15 +100,16 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   if (!receipt) return { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` };
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: row.expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE };
   // 过了 24 小时不能重试：有调查权限的给核查结案，没有的写清找谁。
-  const closure = access?.canSubmit ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
+  const canClose = row.canClose ?? !!access?.canSubmit;
+  const closure = canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
   const more = receiptExplain(receipt, where);
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", label: "已结案", line: "核查确认是后台拒绝，记录已解除。" };
-  if (receiptRejected(receipt)) return { ...rejectedStatus({ expired: row.expired, canRetry: row.canRetry, canClose: !!access?.canSubmit }), more };
+  if (receiptRejected(receipt)) return { ...rejectedStatus({ expired: row.expired, canRetry: row.canRetry, canClose }), more };
   // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine；记为失败过期时总有一句），说不了的沿用原句。
-  const step = closureLine(eCommandClosureOffer(outcome, row.expired), receipt, !!access?.canSubmit);
+  const step = closureLine(eCommandClosureOffer(outcome, row.expired), receipt, canClose);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? step!
     : row.canRetry ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
-  if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (!access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
+  if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (!canClose ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE) };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
@@ -161,7 +164,8 @@ function batchSettledText(batch: FundCommandBatch) {
   return batch.accepted.length ? `这批已有结果，记录已解除：${batch.accepted.length} 笔成功${groups ? `，${groups}` : ""}。` : `这批已有结果，记录已解除：没有一笔成功${groups ? `，${groups}` : ""}。`;
 }
 
-function settledText(item: FundSettled) {
+/** 查到结果、记录解除后的一句；页面用轻提示（toast）说时也用它。 */
+export function settledText(item: Pick<FundSettled, "status" | "proposal" | "batch">) {
   if (item.status === "CONFIRMED_REJECTED") return SETTLED_REJECTED;
   if (item.status === "CONFIRMED_NOT_EXECUTED") return "核查确认没有执行，记录已解除，可以重新发起。";
   // 核查确认的整批不看逐笔：受控结论不要求逐笔齐全，残缺的逐笔不当成这批的结果。

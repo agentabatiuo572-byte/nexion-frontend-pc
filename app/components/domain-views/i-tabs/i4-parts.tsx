@@ -10,6 +10,7 @@ import { useState, type ReactNode } from "react";
 import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store, Users, type LucideIcon } from "lucide-react";
 import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
 import { APP_FIELD_LIMIT, i4AppFieldIssue, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
 
@@ -25,7 +26,7 @@ export const LANGS: readonly { value: Lang; label: string }[] = [
 
 export const SECTION_INFO: Record<string, { name: string; where: string; icon: LucideIcon }> = {
   financials: { name: "财务数字", where: "App 页面不读这块，平台数据另有来源", icon: Coins },
-  leadership: { name: "核心团队", where: "信任中心「管理团队」，只列带有效链接的人", icon: Users },
+  leadership: { name: "管理团队", where: "信任中心「管理团队」，只列带有效链接的人", icon: Users },
   nexNarrative: { name: "UVT 介绍", where: "UVT 介绍页，和信任中心的托管、保修、账户安全说明", icon: Landmark },
   complianceBadges: { name: "合规徽章", where: "App 页面不读这块；公开时版本不完整会让整页读不出来", icon: BadgeCheck },
   auditsReserves: { name: "审计与储备", where: "信任中心「审计」和商品详情，有报告才出现", icon: FileSearch },
@@ -378,8 +379,8 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
 }
 
 /** 结果未知、待审批的原操作逐条列在页头下（R1）。现在的逻辑进不了这个状态，界面先备好，等代码 worker 接。 */
-/** kind：结果未知、已建单但状态没查到、已查到在等批准。note：这一行下面的一句说明。 */
-export type RecoveryRow = { key: string; kind: "unknown" | "submitted" | "pending"; name: string; change: ReactNode; submittedAt?: string; tag: ReactNode; actions: ReactNode; note?: ReactNode };
+/** kind：结果未知、查到结果但还没结案、已建单但状态没查到、已查到在等批准。note：这一行下面的一句说明。 */
+export type RecoveryRow = { key: string; kind: "unknown" | "open" | "submitted" | "pending"; name: string; change: ReactNode; submittedAt?: string; tag: ReactNode; actions: ReactNode; note?: ReactNode };
 export const RECOVERY_PLACEHOLDER: RecoveryRow[] = [];
 export function unknownTag() {
   return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；24 小时内也可以「按原请求重试」，系统认得出是同一次提交，不会建第二张。">结果未知</StatusTag>;
@@ -390,11 +391,13 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   if (!rows.length) return null;
   const pending = rows.filter((row) => row.kind === "pending").length;
   const submitted = rows.filter((row) => row.kind === "submitted").length;
-  const open = rows.length - pending - submitted;
-  const title = [open > 0 && `${open} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
+  const ended = rows.filter((row) => row.kind === "open").length;
+  const open = rows.length - pending - submitted - ended;
+  const title = [open > 0 && `${open} 项操作结果未知`, ended > 0 && `${ended} 项操作还没结案`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
   return (
-    <Notice tone={open + submitted > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
-      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；24 小时内也可以「按原请求重试」，系统认得出是同一次提交，过了 24 小时只能查询。</p>
+    <Notice tone={open + ended + submitted > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
+      <p>结果未知：{DIRECT_RECOVERY_INTRO}</p>
+      <p>提交发布、回滚、下架走审批：24 小时内重试不会建第二张审批单。</p>
       <p>申请过期后，按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
       <p>PDF 上传不能重发，只能查询核对。</p>
     </>} /></>}>

@@ -67,6 +67,11 @@ const canSendTo = (convo: SessionConvo, adminId: number) => convo.status !== "tr
   && convo.ownerAdminId === adminId;
 const conversationStateLabel = (status: SessionConvo["status"]) => status === "open" ? "进行中" : status === "transferred" ? "已转出 · 只读" : "已结束";
 const lostPermission = (cause: unknown) => cause != null && typeof cause === "object" && "status" in cause && (cause.status === 403 || cause.status === 404);
+/** 消息发送结果未知时的几句：和全站同一套说法（先查询原结果；按原请求重试不会重复发送）。 */
+const MESSAGE_UNKNOWN = "上条消息发送结果未知，先查询原结果；按原请求重试不会重复发送。";
+const MESSAGE_STILL_UNKNOWN = "原消息结果仍未知，记录继续保留，稍后再查询。";
+const MESSAGE_FAILED = "原消息发送失败，记录已解除；草稿还在，可以修改后重新发送。";
+
 const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientError
   && cause.status !== 404
   && isExplicitRejection(cause)
@@ -152,7 +157,8 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
   // B15 「客服已切换」: a centred divider naming the new handler and their role.
   if(message.kind==="AGENT_SWITCH")return <div className="m3s-divider" role="note"><span>{agentSwitchText(message.agentName,message.senderRole)} · <time>{messageTime(message.ts)}</time></span></div>;
   // System notices are not anyone's speech: a centred strip without bubble, avatar or receipt (M-11).
-  if(message.sourceSenderType==="SYSTEM")return <div className="m3s-system" role="note"><span>{(message).text}</span><time>{messageTime(message.ts)}</time></div>;
+  // 系统消息是会话记录里的内容（后端写入），和聊天气泡一样是数据，不是页面的说明。
+  if(message.sourceSenderType==="SYSTEM")return <div className="m3s-system" role="note" data-user-content=""><span>{(message).text}</span><time>{messageTime(message.ts)}</time></div>;
   if(message.sourceSenderType==="INTERNAL")return <div className="m3s-internal" role="note"><span className="m3s-internal-label">内部备注 · {message.agentName&&message.agentName!=="系统"?message.agentName:"客服"} · {messageTime(message.ts)}</span><span className="rd-pre">{(message).text}</span></div>;
   const mine=message.sender==="agent";
   return <div className="m3s-msg" data-side={mine?"agent":"customer"} data-new={newlyArrived?"":undefined}>
@@ -892,7 +898,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (!record || "readOnlyRecovery" in record || record.customerId !== requestedCustomerId || !record.key || !record.clientMessageId || !record.assignmentId || !record.body) return;
       setFirstPending(record);
       setDrafts((old) => ({ ...old, [`first:${requestedCustomerId}`]: record.body }));
-      setSendError("上条消息发送结果未知，请点「查询结果并重试」，不会重复发送。");
+      setSendError(MESSAGE_UNKNOWN);
     } catch { pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); }
   }, [adminId, requestedCustomerId, authEpoch, qualificationUnknown]);
   useEffect(() => {
@@ -906,7 +912,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setPending(saved);
       if (!requestedCustomerId) setSelectedId(convo.id);
       if (saved.kind === "TEXT") setDrafts((old) => ({ ...old, [convo.id]: saved.body }));
-      setSendError("上条消息发送结果未知，请点「查询结果并重试」，不会重复发送。");
+      setSendError(MESSAGE_UNKNOWN);
     } catch { pendingMessages.forget(pendingKey(adminId)); }
   }, [adminId, conversationsAvailable, authEpoch, visible, pending, requestedCustomerId, revokeCustomer, qualificationUnknown]);
   useEffect(() => { clearAttachment(); if (!pending && !firstPending) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
@@ -983,8 +989,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
 
   const select = (convo: SessionConvo) => {
     setMessageOpening(value => value + 1);
-    if (firstPending) { if (!busy) setSendError("首条消息发送结果未知，请先查询结果，再切换会话。"); return; }
-    clearAttachment(pending?.kind !== "IMAGE"); setContinuation(null); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息发送结果未知，请回原会话查询结果并重试。" : "");
+    if (firstPending) { if (!busy) setSendError("首条消息发送结果未知，先查询原结果，再切换会话。"); return; }
+    clearAttachment(pending?.kind !== "IMAGE"); setContinuation(null); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息发送结果未知，请回原会话查询原结果。" : "");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
 
@@ -1044,10 +1050,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       try {
         const result = await supportClient.command(record.key);
         if (identityRef.current !== identity) return;
-        if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError("原消息结果仍未知，请稍后再查；不会重新发送。"); return; }
+        if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
         pendingMessages.forget(slot, record.key);
         if (first) setFirstPending(null); else setPending(null);
-        if (result.status === "FAILED") { setSendError("消息发送失败。草稿已保留，可修改后重新发送。"); return; }
+        if (result.status === "FAILED") { setSendError(MESSAGE_FAILED); return; }
         const draftSlot = first ? `first:${first.customerId}` : pendingMessage!.conversationId;
         setDrafts(previous => ({ ...previous, [draftSlot]: previous[draftSlot] === record.body ? "" : previous[draftSlot] }));
         if (pendingMessage?.kind === "IMAGE") clearAttachment(false);
@@ -1068,12 +1074,15 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
               window.history.replaceState(null, "", url);
             }
           }
-          setSendError("原消息已发送。请刷新会话查看。");
+          setSendError("原消息已发送，记录已解除，不要再发一次。");
         } catch {
           if (identityRef.current === identity) setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。");
         }
       } catch (cause) {
-        if (identityRef.current === identity) setSendError(`原消息结果暂时查不到：${displayAdminError(cause)} 记录已保留，不会重新发送。`);
+        if (identityRef.current !== identity) return;
+        setSendError(cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND"
+          ? `没查到这条消息，记录继续保留，没有重新发送；${sendRetryExpired ? "已超过 24 小时，到操作记录与审批核对。" : "24 小时内可以按原请求重试，不会重复发送。"}`
+          : `查询没有成功：${displayAdminError(cause)} 记录继续保留，没有重新发送。`);
       } finally { if (identityRef.current === identity) setBusy(false); }
       return;
     }
@@ -1109,8 +1118,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             const result = await supportClient.startConversation({ customerId: record.customerId, openingText: record.body, intent: record.intent, clientMessageId: record.clientMessageId, expectedAssignmentId: record.assignmentId, expectedVersion: record.version, replyTargets: record.replyTargets }, record.key);
             conversationNo = result.conversationNo;
           } else {
-          if (recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError("发送结果仍未知，请稍后查询结果并重试。"); return; }
-          if (recovered.status === "FAILED") { pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null); setSendError("消息发送失败。草稿已保留，可修改后重新发送。"); return; }
+          if (recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
+          if (recovered.status === "FAILED") { pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null); setSendError(MESSAGE_FAILED); return; }
           const result = recovered.result;
           if (result && typeof result === "object" && "conversationNo" in result && typeof result.conversationNo === "string") conversationNo = result.conversationNo;
           }
@@ -1142,7 +1151,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             if (submitted && rejectedSupportWrite(cause)) {
               pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             }
-            setSendError(submitted && rejectedSupportWrite(cause) ? `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。` : "发送结果未知，请查询结果。");
+            setSendError(submitted && rejectedSupportWrite(cause) ? `本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。` : MESSAGE_UNKNOWN);
             await refreshChangedPeer(identity);
           } else if (submitted && busyHold) {
             // Someone else started talking first: lock the composer with their details and keep the draft.
@@ -1152,7 +1161,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
             else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
-          } else { if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "这条消息发送结果未知：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); } setSendError("发送结果未知，请查询结果。"); }
+          } else { if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "这条消息发送结果未知：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); } setSendError(MESSAGE_UNKNOWN); }
         }
       }
       finally { if (identityRef.current === identity) setBusy(false); }
@@ -1211,12 +1220,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           throw cause;
         });
         if (identityRef.current !== identity) return;
-        if (recovered && recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError("发送结果仍未知，请稍后再查。"); return; }
-        if (recovered?.status === "FAILED") { pendingMessages.forget(pendingKey(adminId)); setPending(null); setSendError("消息发送失败。草稿已保留，可修改后重新发送。"); return; }
+        if (recovered && recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
+        if (recovered?.status === "FAILED") { pendingMessages.forget(pendingKey(adminId)); setPending(null); setSendError(MESSAGE_FAILED); return; }
         if (!recovered && sendRetryExpired) { setSendError(RETRY_EXPIRED_TEXT); return; }
         if (!recovered) {
           if (!writable || currentProfileDetail?.assignmentId !== record.expectedAssignmentId) {
-            setSendError("没查到原消息；请先刷新会话、核对归属，再查询结果并重试。");
+            setSendError("没查到原消息；先刷新会话、核对归属，再按原请求重试。");
             return;
           }
           submitted = true; await supportClient.sendConversationReply(record.conversationId, input, record.key);
@@ -1234,7 +1243,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         if (submitted && rejectedSupportWrite(cause)) {
           pendingMessages.forget(pendingKey(adminId)); setPending(null);
         }
-        setSendError(submitted && rejectedSupportWrite(cause) ? "本次发送已被拒绝：这条已不是当前会话。原文还在；客户仍归你时，打开当前会话或发起会话会把它带过去。" : "发送结果未知，请查询结果。");
+        setSendError(submitted && rejectedSupportWrite(cause) ? "本次发送已被拒绝：这条已不是当前会话。原文还在；客户仍归你时，打开当前会话或发起会话会把它带过去。" : MESSAGE_UNKNOWN);
         await refreshChangedPeer(identity);
         return;
       }
@@ -1250,7 +1259,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         else setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
         return;
       }
-      if (identityRef.current === identity) { if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "这条消息发送结果未知：你对这个会话的权限变了。请回客户列表核对，不要重发。"); } setSendError("发送结果未知，请查询结果。"); }
+      if (identityRef.current === identity) { if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "这条消息发送结果未知：你对这个会话的权限变了。请回客户列表核对，不要重发。"); } setSendError(MESSAGE_UNKNOWN); }
     }
     finally { if (identityRef.current === identity) setBusy(false); }
     if (identityRef.current !== identity) return;
@@ -1690,7 +1699,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   </>;
 
   return <>
-    {holdEndRelease && <ReleaseModal label="结束会话" explain="先看这位客户是不是还在接待中再解除；重试被拒不等于原来那次没结束。确认后会重新读取这次接待的状态，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
+    {holdEndRelease && <ReleaseModal label="结束会话" explain="后台明确拒绝过这次结束，才可以解除；这不代表原来那次没结束。解除后会重新读取这次接待的状态，不进操作记录。" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
       const saved = sessionEndCommands.list().find(record => record.commandKey === holdEndRelease.commandKey && record.fingerprint === holdEndRelease.fingerprint && record.actorId === adminId && record.customerId === holdEndRelease.customerId);
       if (!saved?.rejection) { setHoldEndRelease(null); return; }
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
@@ -1889,7 +1898,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             {draft.trim() && <p className="m3s-aux">草稿已保留，恢复后可以继续发送。</p>}
           </>}
           {!busy && pending && selected?.id !== pending.conversationId && <Notice tone="warn" action={<Button size="sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</Button>}>另一条消息发送结果未知，请先回原会话处理。</Notice>}
-          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>{sendRetryExpired ? "查询原结果" : "查询结果并重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>重试</Button>}</>}>{sendRetryExpired ? RETRY_EXPIRED_TEXT : sendError || "上条消息发送结果未知，请查询结果。"}</Notice>}
+          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && !sendRetryExpired && <Button size="sm" disabled={busy} onClick={() => { if (pending) void send(pending.kind, pending, true); else void send("TEXT", undefined, true); }}>查询原结果</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>{sendRetryExpired ? "查询原结果" : "按原请求重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>按原请求重试</Button>}</>}>{sendError || (sendRetryExpired ? "超过 24 小时不能再重试，先查询原结果。" : MESSAGE_UNKNOWN)}</Notice>}
         </div>
       </div>
 

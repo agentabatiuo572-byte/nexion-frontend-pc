@@ -80,6 +80,9 @@ export function closureLine(offer: ClosureOffer, receipt: ECommandInvestigation 
   return undefined;
 }
 
+/** 查到了结果、记录还留着（还要重试或核查结案）的几档：标题里叫「还没结案」，不算结果未知。 */
+export const OPEN_RESULT_LABELS = ["后台拒绝", "已处理", "记为失败"];
+
 /** 资金动账的操作：被拒时单独提醒钱可能已经动过。 */
 const MONEY_SCOPE = /^(?:D2|E4)[_:]|^D3_RESERVE_INJECTION$|^F5_COMMISSION_(?:REVERSE|REISSUE)$/;
 
@@ -109,6 +112,20 @@ export function businessCodeOf(value: { receipt: ECommandInvestigation | null } 
 export function receiptCodeTech(receipt: ECommandInvestigation | null | undefined) {
   const code = businessCodeOf(receipt);
   return code === undefined ? "" : `业务码 ${code}`;
+}
+
+/** 查询结果里的原记录回执；没查过、查询失败时是 null。 */
+export function receiptOf(outcome: { receipt: ECommandInvestigation | null } | { error: string } | undefined) {
+  return outcome && "receipt" in outcome ? outcome.receipt : null;
+}
+
+/**
+ * 行上的「技术信息」：原请求编号（和查到的业务码），收在一个文字触发的气泡里。
+ * 「结不了案」「没有就把原请求编号交给技术同事」这两句指向它，行上没有展开详情的页面放在那句话后面。
+ */
+export function TechInfo({ commandKey, receipt }: { commandKey: string; receipt?: ECommandInvestigation | null }) {
+  const code = receiptCodeTech(receipt);
+  return <Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{commandKey}</span>{code && ` ｜ ${code}`}</>}>技术信息</Explain>;
 }
 
 /** 结案框里「系统记录」一行：按查到的原结果写，held 是记录现在的样子（例如「原修改还锁着」）。 */

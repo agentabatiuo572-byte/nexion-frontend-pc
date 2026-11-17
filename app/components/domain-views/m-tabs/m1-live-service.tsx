@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Clock3, ListChecks, MessageSquare, UserRoundPlus, Users } from "lucide-react";
-import { StatBand, Stat, Conclusion, InlineRetry, Drawer, Button, Table, Th, Tr, Td } from "@/app/components/rd";
+import { StatBand, Stat, Conclusion, InlineRetry, Drawer, Decision, Button, Table, Th, Tr, Td } from "@/app/components/rd";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import type { SessionConvo } from "./data";
 import type { MCtx } from "./types";
@@ -62,7 +62,7 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
       <Stat label="待分配（有留言）" value={dash(conversationsReady, facts.unassigned)} unit={conversationsReady ? "位" : undefined} icon={UserRoundPlus} href="/service/sessions?tab=unassigned" explain="有留言等回复、还没分配专属客服的客户；全部待分配客户在「待分配」页签。" />
       <Stat label="可接待专属客服" value={dash(agentsReady, facts.agents)} unit={agentsReady ? "位" : undefined} icon={Users} explain="名册中已启用且未停用的专属客服人数，不是空闲席位。" onOpen={agentsReady ? () => setRosterOpen(true) : undefined} openLabel="查看可接待专属客服名单" sub={agentsFailed ? <InlineRetry label="名单加载失败，重试" onRetry={() => void ctx.refreshContent().catch(() => ctx.toast("客服名单还是没有加载出来，请稍后重试。"))} /> : agentsDenied ? "没有查看客服名单的权限" : undefined} />
     </StatBand>
-    {rosterOpen && agentsReady && <Drawer open title="可接待专属客服" sub={`共 ${roster.rows.length} 位`} explain="名册中已启用且未停用的专属客服，不是空闲人数。" onClose={() => setRosterOpen(false)} footer={<Button type="button" onClick={() => setRosterOpen(false)}>返回工作台</Button>}>
+    {rosterOpen && agentsReady && <Drawer open title="可接待专属客服" sub={`共 ${roster.rows.length} 位`} explain="名册中已启用且未停用的专属客服，不是空闲人数。" onClose={() => setRosterOpen(false)} footer={<Decision others={<Button type="button" onClick={() => setRosterOpen(false)}>返回工作台</Button>} />}>
       {roster.rows.length ? <Table label="可接待专属客服名单"><thead><Tr><Th scope="col">专属客服</Th><Th scope="col" align="right">现在服务</Th></Tr></thead><tbody>{roster.rows.map(row => <Tr key={row.adminId}>
         <Td><span className="m1-live-roster-name"><SupportAvatar name={row.name} path={row.avatarAssetId ? advisorAvatarPath(row.adminId) : undefined} version={row.avatarVersion} size={24} /><span title={row.name}>{row.name}</span></span></Td>
         <Td align="right">{row.assignedUserCount == null ? "—" : `${row.assignedUserCount} 位客户`}</Td>

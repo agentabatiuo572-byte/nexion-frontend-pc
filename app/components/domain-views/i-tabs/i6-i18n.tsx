@@ -27,8 +27,9 @@ import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictVie
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundClosureModal } from "../fund-command-check";
-import { receiptFact } from "../recovery-panel";
+import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
+import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -1281,25 +1282,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const queryOrdinary = async (record: I6Command) => {
     setOrdinaryBusy(record.commandKey);
     try {
-      let receipt = null;
+      let outcome: FundInvestigationOutcome;
       try {
-        const next = await queryI6Receipt(record);
-        receipt = next;
-        setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next } }));
+        outcome = { receipt: await queryI6Receipt(record) };
       } catch (error) {
-        setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+        outcome = { error: displayAdminError(error) };
       }
-      if (eCommandSettled(receipt)) { await finishRecovery(record.commandKey); return; }
+      setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
+      const receipt = receiptOf(outcome);
+      if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await finishRecovery(record.commandKey); return; }
       const overview = await fetchI6LearningOverview();
       if (record.scope.startsWith("message:")) await actions.fetchI6MessageVersions(record.target);
       if (record.scope.startsWith("course:") && overview.courses.some(course => course.id === record.target)) await actions.fetchI7CourseVersions(record.target);
-      const message = record.scope.startsWith("message:") ? overview.messages.find((row) => row.messageKey === record.target) : undefined;
-      const course = record.scope.startsWith("course:") ? overview.courses.find((row) => row.id === record.target) : undefined;
-      const now = record.scope === "featured" ? `首页推荐现在是 ${overview.featuredCourseId || "—"}`
-        : record.scope === "rescan" ? `问题报告现在 ${count(Math.max(0, overview.stats.integrityIssues))} 处`
-          : message ? `${record.target} 现在 ${message.version} · ${statusLabel(message.status)}`
-            : course ? `${record.target} 现在 ${course.version} · ${(COURSE_STATUS[course.status] ?? { text: "状态未知" }).text}` : `${record.target || "原对象"} 现在读不到`;
-      toast(`已重新读取：${now}。从这里看不出原操作成没成，记录留着。`, "warn");
+      const shown = ordinaryStatus(record, outcome);
+      toast(`${shown.label}：${shown.line}`, "warn");
       await actions.reloadIContent();
     } catch (error) { toast(displayAdminError(error), "warn"); }
     finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
@@ -1317,10 +1313,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   // 课程操作写课程名，和同一列表里的审批行一致；文案操作写文案键（表格里也是它）。
   const courseOf = (record: I6Command) => record.scope.startsWith("course:") ? COURSES.find((course) => course.id === record.target) : undefined;
+  /** 文案和课程原操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
+  const ordinaryStatus = (record: I6Command, outcome: FundInvestigationOutcome | undefined) => {
+    const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canRetry: !isRetryExpired(record) && !i6RetryPermission(record),
+      canClose: canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") });
+    return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
+  };
+  const ordinaryOpen = ordinaryRecords.filter(record => OPEN_RESULT_LABELS.includes(ordinaryStatus(record, ordinaryOutcomes[record.commandKey]).label)).length;
   const ordinaryItems = ordinaryRecords.map((record) => {
     const expired = isRetryExpired(record);
+    const shown = ordinaryStatus(record, ordinaryOutcomes[record.commandKey]);
     return <li key={record.commandKey} role="status">
-      <StatusTag tone={expired ? "done" : "warn"}>{expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+      <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag>
       <span className="i6-pending-what">{record.label}{record.target ? <> · {courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>}</> : null}</span>
       <span className="i6-pending-change">{ordinaryChange(record)}</span>
       <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
@@ -1330,6 +1334,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : expired ? "已超过 24 小时，不能再重试，只能查询。" : i6RetryPermission(record)}
           onClick={() => void retryOrdinary(record)}>按原请求重试</Button>
       </span>
+      <span className="i6-pending-note">{shown.line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(ordinaryOutcomes[record.commandKey])} /></span>
     </li>;
   });
   const ordinaryClosure = closingOrdinary && <FundClosureModal label={`${closingOrdinary.label}${closingOrdinary.target ? ` · ${closingOrdinary.target}` : ""}`} createdAt={closingOrdinary.createdAt}
@@ -1340,13 +1345,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       const receipt = await queryI6Receipt(record, evidence);
       setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
       setClosingOrdinary(null); updateRecovery(value => value + 1);
-      if (eCommandSettled(receipt)) await finishRecovery(record.commandKey);
+      if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await finishRecovery(record.commandKey); }
+      else toast(CLOSURE_KEPT_TEXT, "warn");
     }} />;
-  const ordinaryExplain = "提交时没收到确定结果，可能已经生效。先「查询原结果」看现在的内容；24 小时内可以「按原请求重试」，系统认得出是同一次提交，不会重复执行；过了 24 小时只能查询。";
+  const ordinaryExplain = DIRECT_RECOVERY_INTRO;
   const recoveryMore = (total: number) => total > 3
     ? <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setRecoveryAll((open) => !open)}>{recoveryAll ? "只看前 3 条" : `显示全部 ${total} 条`}</Button></div> : null;
   const ordinaryRecovery = view === "i18n" && ordinaryItems.length > 0
-    ? <Panel title="结果未知的文案操作" icon={TriangleAlert} tone="warn" sub={`${ordinaryItems.length} 项 · 时间为${BJ}`} explain={ordinaryExplain}>
+    ? <Panel title={ordinaryOpen === ordinaryItems.length ? "还没结案的文案操作" : "结果未知的文案操作"} icon={TriangleAlert} tone="warn" sub={`${ordinaryItems.length} 项 · 时间为${BJ}`} explain={ordinaryExplain}>
       <ul className="i6-pending" aria-label="结果未知的文案操作">{recoveryAll ? ordinaryItems : ordinaryItems.slice(0, 3)}</ul>
       {recoveryMore(ordinaryItems.length)}
     </Panel> : null;

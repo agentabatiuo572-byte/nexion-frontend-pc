@@ -7,9 +7,14 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { CircleHelp, Smartphone } from "lucide-react";
-import { Change, DiffList, Explain, Fact, Facts, Notice, StatusTag, type DiffRow } from "@/app/components/rd";
+import { Change, DiffList, Explain, Fact, Facts, Notice, StatusTag, type DiffRow, type StateTone } from "@/app/components/rd";
+import { OPEN_RESULT_LABELS } from "../recovery-panel";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { h9CommandRejected } from "@/lib/admin/h9-command";
+import { canRetryH9Command, h9CommandRejected, type H9Command } from "@/lib/admin/h9-command";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
+import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { fundRecoveryStatus } from "../fund-command-check";
 import type { H9AppDisplay } from "@/lib/admin/h9-client";
 
 /** App 此刻实际显示的数（读 /public-stats/app-display）：读取中、读到、没读到。 */
@@ -143,8 +148,18 @@ export type H9RecoveryRow = {
   change: ReactNode;
   /** 提交时间（毫秒）。 */
   submittedAt: number;
+  /** 查询后这一行的标签和结论（共用 fundRecoveryStatus）；没有时是「结果未知」。 */
+  status?: { tone: StateTone; label: string; line: string; more?: string };
+  /** 结论句后面的「技术信息」。 */
+  tech?: ReactNode;
   actions: ReactNode;
 };
+
+/** 这一行怎么说：共用面板的标签和句子（没查过是「结果未知」或「已过期」）。查询失败的原因放标签的问号里。 */
+export function h9Status(record: H9Command, outcome: FundInvestigationOutcome | undefined, canWrite: boolean) {
+  const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canRetry: canRetryH9Command(record) && canWrite, canQuery: true, canClose: canInvestigateECommand("growth_h9_read") });
+  return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
+}
 
 /**
  * 结果未知的提醒：逐条写改的是哪一块、从多少到多少、什么时候提交的，按钮在每条的右边。
@@ -152,16 +167,18 @@ export type H9RecoveryRow = {
  */
 export function H9RecoveryNotice({ rows, explain }: { rows: readonly H9RecoveryRow[]; explain: ReactNode }) {
   if (rows.length === 0) return null;
+  const open = rows.every(row => row.status && OPEN_RESULT_LABELS.includes(row.status.label));
   return (
-    <Notice tone="warn" title={<>保存的结果未知<Explain label="结果未知怎么处理" content={explain} /></>}>
+    <Notice tone="warn" title={<>{open ? "保存还没结案" : "保存的结果未知"}<Explain label="结果未知怎么处理" content={explain} /></>}>
       <ul className="h9-recovery" aria-label="结果未知的保存">
         {rows.map((row) => (
           <li key={row.key}>
             <span className="h9-recovery-name">{row.name}</span>
             <span className="h9-recovery-change">{row.change}</span>
             <span className="h9-recovery-time">{businessStamp(row.submittedAt)} 提交</span>
-            <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>
+            {row.status ? <StatusTag tone={row.status.tone} explain={row.status.more}>{row.status.label}</StatusTag> : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}
             <span className="h9-recovery-actions">{row.actions}</span>
+            {row.status && <span className="h9-recovery-note" role="status">{row.status.line} {row.tech}</span>}
           </li>
         ))}
       </ul>

@@ -4,9 +4,11 @@
  * M4 知识库的展示件：语言名、「给谁看」、状态标签、App 里的样子、详情抽屉、发布和下架的确认框、结果未知列表。
  * 只管排版：读到的问答和写操作都由 m4-kb-sla.tsx 传进来，这里不发请求、不改请求内容。
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Bot, BookOpenText, CheckCircle2, CircleHelp, EyeOff, FilePen, Headset, Pencil, Smartphone, Trash2, Upload, Archive } from "lucide-react";
-import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav } from "@/app/components/rd";
+import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav, type StateTone } from "@/app/components/rd";
+import { OPEN_RESULT_LABELS } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { SupportFaq } from "./data";
@@ -196,29 +198,34 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
   );
 }
 
-export type M4PendingRow = { key: string; question: string; change: ReactNode; submittedAt: number; expired: boolean; actions: ReactNode };
+export type M4PendingRow = { key: string; question: string; change: ReactNode; submittedAt: number; expired: boolean;
+  /** 这一行的标签和结论（共用 fundRecoveryStatus 的叫法）；note 是结论句和技术信息。 */
+  status: { tone: StateTone; label: string; more?: string }; note: ReactNode; actions: ReactNode };
 
 /**
- * 结果未知的写操作逐条列出：改的是哪条、改成什么、什么时候提交的、现在能做什么。
- * 界面已备好，行要由代码 worker 按 R1 从本标签页保存的原请求拼出来（M4-B01）；现在没有来源，传空数组不显示。
+ * 结果未知的写操作逐条列出：改的是哪条、改成什么、什么时候提交的、查到什么、现在能做什么。
+ * 多条时默认露出三条，其余点开再看，首屏留给问答列表（提示不盖正事）。
  */
 export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
+  const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
+  const open = rows.filter((row) => OPEN_RESULT_LABELS.includes(row.status.label)).length;
+  const title = [rows.length - open > 0 && `${rows.length - open} 个操作结果未知`, open > 0 && `${open} 个操作还没结案`].filter(Boolean).join("，");
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。「查询原结果」只看现在的列表，证明不了原操作有没有执行，记录也不会因此消失。有结论前这条问答不能再改。" /></>}>
+    <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{DIRECT_RECOVERY_INTRO}</p><p>有结论前这条问答不能再改。</p></>} /></>}>
       <ul className="m4-pending" aria-label="结果未知的操作">
-        {rows.map((row) => (
+        {(all ? rows : rows.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="m4-pending-name">{row.question}</span>
             <span className="m4-pending-change">{row.change}</span>
             <span className="m4-pending-time">{businessStamp(row.submittedAt)} 提交</span>
-            <span className="m4-pending-state">{row.expired
-              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试，只能查询原结果。">已过期</StatusTag>
-              : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
+            <span className="m4-pending-state"><StatusTag tone={row.status.tone} explain={row.status.more}>{row.status.label}</StatusTag></span>
             <span className="m4-pending-actions">{row.actions}</span>
+            <span className="m4-pending-note" role="status">{row.note}</span>
           </li>
         ))}
       </ul>
+      {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `显示全部 ${rows.length} 条`}</Button>}
       <p className="m4-pending-zone">提交时间为{businessZone().label}</p>
     </Notice>
   );
