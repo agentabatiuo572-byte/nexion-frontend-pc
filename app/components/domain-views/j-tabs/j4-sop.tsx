@@ -1,4 +1,5 @@
 "use client";
+import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
  * J4 监管要求应急处理（应急控制页）。出事时按事先写好的应急预案一步步止损；平时维护预案、做演练。
@@ -400,9 +401,9 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     <FundRecoveryPanel rows={recoveryRows} settled={settled} onDismissSettled={(key) => setSettled((previous) => previous.filter((item) => item.key !== key))} />
     {/* 恢复核对只核本地持久事实；后端核 rollback_confirmed 才收未执行。恢复开关仍会动外部业务。 */}
     {closing && (closing.kind === "rollback" || closing.kind === "resume" && !eCommandCanRequestResumeRollback(closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null)
-      ? <FundClosureModal label={closing.label} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
+      ? <FundClosureModal label={closing.label} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(closingOutcome, isRetryExpired(closing.record))} facts={closureFacts}
         onClose={() => setClosing(null)} onSubmit={submitClosure} />
-      : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} known={closureKnown(closingOutcome)} facts={closureFacts}
+      : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(closingOutcome, isRetryExpired(closing.record))} facts={closureFacts}
         onClose={() => setClosing(null)} onSubmit={submitClosure} />)}
     {releasing && <ReleaseModal label={`${operationNames.execute} · ${contextName(releasing.sopProposal.context)}`}
       explain="原申请超过 24 小时，按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
