@@ -29,5 +29,5 @@ export function processedStatus({ expired, canRetry, canClose, legacy, receipt }
 }
 
 /** 修改框里查到「已处理」时的一句；后台拒绝的另说。 */
-export const PROCESSED_IN_DIALOG = "后台已处理这次请求，看不出成没成；点「按原请求重试」会返回当初的结果，不会重复执行。";
-export const REJECTED_IN_DIALOG = "后台当时拒绝了这次请求，不保证没有改动；点「按原请求重试」会返回当初的拒绝原因，不会重复执行。";
+export const PROCESSED_IN_DIALOG = "后台已处理这次请求，看不出成没成；点「按原请求重试」会给出当初的结果，不会重复执行。";
+export const REJECTED_IN_DIALOG = "后台当时拒绝了这次请求，不保证没有改动；点「按原请求重试」会给出当初的拒绝原因，不会重复执行。";
