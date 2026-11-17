@@ -2805,7 +2805,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRUST_SECTION_DATA_SOURCE_INVALID: "数据来源最多 500 字，且须为安全的纯文本，请检查后再提交。",
   TRUST_SECTION_BILINGUAL_CONFIRMATION_REQUIRED: "请核对中文、越南语、英语并确认关键内容一致。",
   TRUST_SECTION_TRILINGUAL_FIELDS_REQUIRED: "每个翻译字段族都需要完整且非空的中文、越南语、英语，请先补齐草稿。",
-  TRUST_SECTION_PUBLISHED_SNAPSHOT_INVALID: "六个信任版块的公开快照不完整，App 信任中心暂时不可用，请核对各块的发布状态和版本内容。",
+  TRUST_SECTION_PUBLISHED_SNAPSHOT_INVALID: "有公开的信任版块当前版不完整，App 信任中心暂时不可用，请核对公开版块的版本内容。",
   TRUST_SECTION_SANDBOX_RUN_ID_REQUIRED: "当前隔离环境缺少有效运行标识，请联系环境管理员核对。",
   TRUST_SECTION_FIELDS_SERIALIZATION_FAILED: "草稿字段未能生成保存数据，请保留原操作并核对结果。",
   TRUST_DOCUMENT_NOT_FOUND: "没有这类资料文件，请刷新页面。",

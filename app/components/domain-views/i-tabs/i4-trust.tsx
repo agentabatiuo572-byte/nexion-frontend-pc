@@ -39,7 +39,7 @@ import { I4Documents } from "./i4-documents";
 import { pendingI4DocumentCommands, queryI4DocumentCommand, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
 import {
   APP_FIELD_LIMIT, APP_SECTION_ORDER, DraftEditorBody, FieldList, I4RecoveryNotice, LegacyText, SECTION_INFO, SectionCard, SnapshotLine, snapshotBlanking, snapshotReasonText, type SnapshotState,
-  VersionCompare, appBlanking, changedKeys, isArchivedStatus, previewFields, isPublished, localeItems, operatorText, sectionName, timeText, versionProblems,
+  VersionCompare, appBlanking, changedKeys, isArchivedStatus, previewFields, isPublished, localeItems, operatorText, sectionName, timeText, unpublishedEffect, versionProblems,
   unknownTag, type Lang, type SectionCardModel, type RecoveryRow,
 } from "./i4-parts";
 
@@ -89,8 +89,6 @@ type DraftEditor = {
 
 const APPROVER = "另一位管理员";
 const PENDING_REASON = "有申请等另一位管理员处理，批准、驳回、撤回或过期后才能再改";
-/** 现在下架或回滚到不完整的版本，App 的信任中心整页打不开（决定 I4-PD01，后端待办 I4-BE-01）。 */
-const ARCHIVE_CONSEQUENCE = "现在下架任何一个版块，App 的信任中心整页不可用";
 const FINANCE_LABEL: Record<string, string> = { tvlOnChain: "链上资产总值", mrrValue: "月度收入", mrrDelta: "月度收入变化", activeAccountsValue: "活跃账户数", activeAccountsDelta: "活跃账户变化", devicesOnlineValue: "在线设备数", devicesOnlineDelta: "在线设备变化", payoutsProcessedValue: "累计处理付款", payoutsProcessedDelta: "付款金额变化", "footnote.zh": "中文数据说明", "footnote.vi": "越南语数据说明", "footnote.en": "英文数据说明" };
 
 export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | null }) {
@@ -322,17 +320,15 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const blankingOf = (key: string, version?: TrustSectionVersion) => snapshotBlanking(snapshot.view, key) ?? appBlanking(key, version?.operator ?? "", version?.fields ?? []);
   const snapshotSection = (key: string) => snapshot.view?.available && snapshot.view.sourceEnvironment !== "SANDBOX" ? snapshot.view.sections.find((row) => row.sectionKey === key) : undefined;
   const permissionText = (s: TrustSection) => isSensitiveTrustSection(s) ? "信任中心管理权限" : "标准发布权限";
-  /** 这一块让 App 信任中心打不开的原因（下架、当前版不完整）。 */
-  const sectionProblems = (s: TrustSection) => isArchivedStatus(liveTrustStatus(s)) ? ["已下架"] : !isPublished(s.status) ? [statusZh(s.status)] : versionProblems(currentVersionOf(s));
+  /** 这一块让 App 信任中心整页打不开的原因：只有公开的版块当前版不完整才算；下架、没发布的版块在 App 上只是收起（App test@0306001c，BUG-441）。 */
+  const sectionProblems = (s: TrustSection) => isArchivedStatus(liveTrustStatus(s)) || !isPublished(s.status) ? [] : versionProblems(currentVersionOf(s));
   const orderedSections = [...TRUST_SECTIONS].sort((left, right) => {
     const a = APP_SECTION_ORDER.indexOf(left.key as typeof APP_SECTION_ORDER[number]);
     const b = APP_SECTION_ORDER.indexOf(right.key as typeof APP_SECTION_ORDER[number]);
     return (a < 0 ? 99 : a) - (b < 0 ? 99 : b);
   });
-  const missingSections = APP_SECTION_ORDER.filter((key) => !TRUST_SECTIONS.some((s) => s.key === key));
   /** 除了这一块，别的版块已经让 App 打不开的原因（确认框里说「批准后 App 能不能打开」用）。 */
   const othersBroken = (key: string) => [
-    ...missingSections.map((item) => `缺${sectionName(item)}版块`),
     ...orderedSections.filter((s) => s.key !== key && sectionProblems(s).length).map((s) => `${sectionName(s.key)}${sectionProblems(s)[0]}`),
   ];
   const approvalTag = <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才执行，批准前用户看到的不变。`}>批准后生效</StatusTag>;
@@ -600,21 +596,20 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       title: `下架${sectionName(s.key)}`,
       detail: (
         <>
-          当前 <b>{s.v}</b> 生效中。{ARCHIVE_CONSEQUENCE}；版本正文保留，可以再恢复上线。
+          当前 <b>{s.v}</b> 生效中。批准后 App 上{unpublishedEffect(s.key)}；版本正文保留，可以再恢复上线。
         </>
       ),
       amplifies: false,
       effect: approvalTag,
-      confirmTone: "danger",
       confirmLabel: "提交下架审批",
-      statedBrief: { impact: `批准后${sectionName(s.key)}下架；版本正文保留，可以再恢复上线。`, check: "确认是对外内容出了问题非下不可，理由写清依据。" },
+      statedBrief: { impact: `批准后${sectionName(s.key)}下架，App 下次读取时这一块收起；版本正文保留，可以再恢复上线。`, check: "确认用户少看到这一块没问题，理由写清依据。" },
       facts: <div className="rd-stack">
         <Facts>
           <Fact k="版块">{sectionName(s.key)}</Fact>
           <Fact k="状态"><Change from={`公开中 ${s.v}`} to="已下架" /></Fact>
           {approverFacts(s)}
         </Facts>
-        <Notice tone="danger" title={`${ARCHIVE_CONSEQUENCE}。`}>App 要求六个版块都公开才显示信任中心，已提后端改成可以单独下架。</Notice>
+        <Notice tone={SECTION_INFO[s.key]?.where.startsWith("App 页面不读") ? "neutral" : "warn"} title="用户会少看到">{unpublishedEffect(s.key)}。App 下次读取时才变，已经打开的页面不会马上变。</Notice>
       </div>,
       run: async (reason) => {
         const def = findHighOp("i4_trust_section_manage")!;
@@ -850,7 +845,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
 
   // ---------- 首屏结论 ----------
   const allIssues = [
-    ...missingSections.map((key) => `缺${sectionName(key)}版块`),
     ...orderedSections.filter((s) => sectionProblems(s).length).map((s) => `${sectionName(s.key)}${sectionProblems(s)[0]}`),
   ];
   // 结论只写前两处，其余写个数；每一处在卡片上都有标记。
@@ -864,24 +858,27 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     pendingTrustSectionKeys.size > 0 && `${pendingTrustSectionKeys.size} 个版块等另一位批准`,
     draftSections.size > 0 && `${draftSections.size} 个版块有待发布的草稿`,
   ].filter(Boolean).join(" · ") || undefined;
-  const conclusionExplain = <><p>App 只在六个版块都公开、每块当前版都有说明和结构、中越英三语齐全、不超过 {APP_FIELD_LIMIT} 项内容时，才显示信任中心；有一块不满足，整页打不开。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以后端为准。</p></>;
+  const conclusionExplain = <><p>下架或没发布的版块在 App 上整块收起，别的照常显示；六块都没公开时，信任中心照常打开，公司资质、白皮书、平台运行数据和规则与资料还在。</p><p>公开的版块当前版要有说明和结构、中越英三语齐全、不超过 {APP_FIELD_LIMIT} 项内容；有一块不满足，App 信任中心整页读不出来。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以后端为准。</p></>;
+  // 有几块在公开：全公开、只公开一部分、一块都没公开，三种说法。
+  const hiddenCount = APP_SECTION_ORDER.length - publicCount;
+  const publicLead = hiddenCount === 0 ? "六个版块都在公开" : publicCount === 0 ? "六个版块都没公开，App 信任中心只显示公司资质、白皮书、平台运行数据和规则与资料" : `${publicCount} 个版块在公开，${hiddenCount} 个没公开、在 App 上收起`;
   const blankExplain = <><p>正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的核心团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
   const pendingText = pendingTrustSectionKeys.size > 0 ? `${pendingTrustSectionKeys.size} 个版块等另一位批准` : "";
   const draftText = draftSections.size > 0 ? `${draftSections.size} 个版块有待发布的草稿` : "";
   const conclusion = issues.length
     ? <Conclusion state="danger" icon={ShieldAlert} lead explain={conclusionExplain} explainTitle="怎么判断"
-      hint={[hint, "恢复上线或发布完整的版本后才能打开"].filter(Boolean).join(" · ")}>按后台的版本看，App 信任中心整页打不开：{issues.join("、")}</Conclusion>
+      hint={[hint, "回滚到完整的版本或发布新版后才能打开"].filter(Boolean).join(" · ")}>按后台的版本看，App 信任中心整页打不开：{issues.join("、")}</Conclusion>
     : blankedCount > 0
       ? <Conclusion state="warn" explain={blankExplain} explainTitle="为什么是空的" action={pendingTrustSectionKeys.size > 0 ? pendingLink : undefined}
           hint={[pendingText, draftText].filter(Boolean).join(" · ") || "没有待发布的改动"}>
-          六个版块都在公开，其中 <b>{blankedCount}</b> 个的文字公开时被清掉</Conclusion>
+          {publicLead}；其中 <b>{blankedCount}</b> 个的文字公开时被清掉</Conclusion>
       : pendingTrustSectionKeys.size > 0
         ? <Conclusion state="warn" explain={conclusionExplain} explainTitle="怎么判断" action={pendingLink} hint={draftText || "批准前用户看到的不变"}>
             <b>{pendingTrustSectionKeys.size}</b> 个版块的申请等另一位批准</Conclusion>
         : draftSections.size > 0
           ? <Conclusion state="neutral" icon={FilePen} explain={conclusionExplain} explainTitle="怎么判断" hint="草稿只在后台，提交发布并批准后才公开">
-              六个版块都在公开；<b>{draftSections.size}</b> 个版块有待发布的草稿</Conclusion>
-          : <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain} explainTitle="怎么判断">六个版块都在公开，没有待发布的改动</Conclusion>;
+              {publicLead}；<b>{draftSections.size}</b> 个版块有待发布的草稿</Conclusion>
+          : <Conclusion state={hiddenCount ? "neutral" : "ok"} icon={hiddenCount ? EyeOff : ShieldCheck} explain={conclusionExplain} explainTitle="怎么判断">{publicLead}；没有待发布的改动</Conclusion>;
 
   // ---------- 版块卡 ----------
   const sectionMenu = (s: TrustSection): MoreMenuItem[] => {
@@ -905,14 +902,14 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       key: s.key,
       index: index + 1,
       name: sectionName(s.key, trustDescriptionText(s.desc)),
-      status: isArchived ? { text: "已下架", tone: "danger" } : isPublished(s.status) ? { text: "公开中", tone: "ok" } : { text: statusZh(s.status), tone: "warn" },
+      status: isArchived ? { text: "已下架", tone: "neutral" } : isPublished(s.status) ? { text: "公开中", tone: "ok" } : { text: statusZh(s.status), tone: "neutral" },
       version: s.v,
       updatedAt: current?.updatedAt ? timeText(current.updatedAt) : undefined,
       operator: current ? operatorText(current.operator) : undefined,
       preview,
       blankedAll: blanking.all,
       appLabel: isArchived ? "下架前的内容" : blanking.all ? "后台存的内容" : "actual" in blanking ? "App 实际给出" : "预计 App 显示",
-      appHidden: isArchived ? "已下架，App 信任中心整页打不开。" : blanking.all,
+      appHidden: isArchived ? `已下架：${unpublishedEffect(s.key)}。` : !isPublished(s.status) ? `没公开：${unpublishedEffect(s.key)}。` : blanking.all,
       appTags: (() => {
         const row = snapshotSection(s.key);
         if (!row || blanking.all) return undefined;
@@ -971,7 +968,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const secPending = sec ? pendingTrustSectionKeys.has(sec.key) : false;
   const secProblems = sec ? sectionProblems(sec) : [];
   const detailPoints: JudgmentRow[] = sec ? [
-    { label: "用户现在看到", value: isArchivedStatus(liveTrustStatus(sec)) ? `已下架（${sec.v}），App 信任中心整页打不开` : isPublished(sec.status) ? `${sec.v} 公开中` : `${sec.v}（${statusZh(liveTrustStatus(sec))}）`, state: secProblems.length ? "danger" : undefined, reason: secProblems.length ? secProblems.join("；") : undefined },
+    { label: "用户现在看到", value: isArchivedStatus(liveTrustStatus(sec)) ? `已下架（${sec.v}），App 上这一块收起` : isPublished(sec.status) ? `${sec.v} 公开中` : `${sec.v}（${statusZh(liveTrustStatus(sec))}），App 上这一块收起`, state: secProblems.length ? "danger" : undefined, reason: secProblems.length ? secProblems.join("；") : undefined },
     { label: "App 实际给出", ...(() => {
       const view = snapshot.view, row = snapshotSection(sec.key), cleared = row?.fields.filter((field) => field.cleared).length ?? 0;
       if (!view) return { value: snapshot.error ? "没读到，按后台版本推断" : "正在读取…", reason: snapshot.error || undefined };
