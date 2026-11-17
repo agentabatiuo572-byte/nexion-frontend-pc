@@ -563,7 +563,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         <ConfigRow name="提示升级的月损失金额" value={`入门 ${pE("E.device.taskLock.s1")} · Pro ${pE("E.device.taskLock.pro")} · 机柜 ${pE("E.device.taskLock.rack")} USDT`}
           sub={<>{pendingTag(TASK_LOCK_KEYS)}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></>}
           what="原来设计成设备每月少赚超过这个金额时提示用户升级" when="已停用，不能再改"
-          effect="不影响派单、任务和收益。" />
+          note="不影响派单、任务和收益。" />
       </ConfigList>
     </Fold>}
     {manual}
