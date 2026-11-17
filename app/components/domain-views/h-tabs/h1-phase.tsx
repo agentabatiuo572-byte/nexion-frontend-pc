@@ -153,7 +153,7 @@ const DIALS = [
 ] as const;
 type Dial = typeof DIALS[number];
 /** B4-BE-05（48780d3e）：每日上限新保存要大于 0；以前存的 0 照常读出。 */
-const CAP_RANGE = "要大于 0、不超过 50,000 USD，最多六位小数";
+const CAP_RANGE = "要大于 0、不超过 50,000";
 const CAP_ZERO = "这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。";
 const capZero = (row: { dials: Record<string, unknown> }) => row.dials.binaryDailyCap != null && text(row.dials.binaryDailyCap) !== "—" && Number(row.dials.binaryDailyCap) === 0;
 const SECTIONS = [{
@@ -710,7 +710,7 @@ export default function H1Phase({ ctx,
         unit: dial.unit,
         options: ["否",
           "是"],
-        min: dial.key === "binaryDailyCap" ? 0.000001 : dial.min,
+        min: dial.min,
         max: dial.max,
         step: dial.key === "withdrawCooldownDays" ? 1 : 0.000001,
         maxDecimals: dial.key === "withdrawCooldownDays" ? 0 : 6,
