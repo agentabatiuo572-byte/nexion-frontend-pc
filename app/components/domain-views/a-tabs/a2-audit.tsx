@@ -1803,7 +1803,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <div className="rd-stack">
           {fund?.extra}
           {isRoleGrantsTicket(w)
-            ? <A2RoleGrantsChange review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
+            ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
             : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} />}
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
