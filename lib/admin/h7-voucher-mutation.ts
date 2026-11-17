@@ -1,5 +1,5 @@
 import { createA2CommandKey } from "./a2-client";
-import { growthRequest, parseH7Voucher, type H7Voucher } from "./h-client";
+import { growthRequest, parseH7Voucher, validateH7VoucherWrite, type H7Voucher } from "./h-client";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -50,6 +50,7 @@ export function requireH7Actor(adminId: number, write: boolean): AdminSession {
 }
 
 export function createH7VoucherMutation(session: AdminSession, context: H7DirectContext, voucher: H7Voucher, reason: string): H7DirectMutation {
+  if (context.kind !== "status") validateH7VoucherWrite(voucher);
   const status = context.kind === "status" ? context.voucher.status === "active" ? "paused" : "active" : undefined;
   const label = context.kind === "create" ? "新增" : context.kind === "update" ? "编辑" : status === "active" ? "投放" : "暂停";
   const operator = session.operator || session.username;

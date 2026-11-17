@@ -639,6 +639,7 @@ export type H7Voucher = {
   applicableSkus: string[]; audience: "new" | "all"; startAt: number; endAt: number; claimSurfaces: string[];
   popupEnabled: boolean; popupDelayMs: number; popupCooldownHours: number; popupMaxPerSession: number;
   popupCadenceEnabled: boolean; stackWithTrial: boolean; stackWithOthers: boolean; splittable: boolean;
+  splittableConfigurable?: boolean; splittableRetired?: boolean; splittableWriteBlockedReason?: string;
   issuanceLimit: number; version: number; issuedCount: number; availableCount: number;
   redeemedCount: number; revokedCount: number; batchCount: number; status: "active" | "paused";
   /** GET is authoritative. Write receipts deliberately do not project locks. */
@@ -694,6 +695,12 @@ export function parseH7Voucher(raw: unknown): H7Voucher {
     popupDelayMs: number("popupDelayMs", true, 0, 60000), popupCooldownHours: number("popupCooldownHours", true, 0, 720),
     popupMaxPerSession: number("popupMaxPerSession", true, 1, 10),
     stackWithTrial: boolean("stackWithTrial"), stackWithOthers: boolean("stackWithOthers"), splittable: boolean("splittable"),
+    splittableConfigurable: row.splittableConfigurable === undefined ? undefined : boolean("splittableConfigurable"),
+    splittableRetired: row.splittableRetired === undefined ? undefined : boolean("splittableRetired"),
+    splittableWriteBlockedReason: row.splittableWriteBlockedReason === undefined ? undefined : (() => {
+      if (typeof row.splittableWriteBlockedReason !== "string") throw new Error("H7_VOUCHER_RESPONSE_INVALID:splittableWriteBlockedReason");
+      return row.splittableWriteBlockedReason;
+    })(),
     pendingApproval,
   };
 }
@@ -715,7 +722,12 @@ export async function fetchH7Vouchers(): Promise<H7Overview> {
   return { vouchers, skus, stats };
 }
 
+export function validateH7VoucherWrite(voucher: { splittable?: boolean }) {
+  if (voucher.splittable === true) throw new Error("H7_VOUCHER_SPLITTABLE_RETIRED");
+}
+
 export async function createH7Voucher(voucher: Record<string, any>, reason: string) {
+  validateH7VoucherWrite(voucher);
   return growthRequest<Record<string, any>>(
     "/vouchers",
     { method: "POST", body: JSON.stringify({ ...voucher, reason, operator: currentAdminOperator() }) },
@@ -729,6 +741,7 @@ export async function updateH7Voucher(
   reason: string,
   expectedVersion: number,
 ) {
+  validateH7VoucherWrite(voucher);
   return growthRequest<Record<string, any>>(
     `/vouchers/${encodeURIComponent(id)}`,
     { method: "PATCH", body: JSON.stringify({ ...voucher, id, expectedVersion, reason, operator: currentAdminOperator() }) },
