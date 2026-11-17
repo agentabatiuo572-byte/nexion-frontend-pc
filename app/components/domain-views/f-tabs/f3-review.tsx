@@ -147,7 +147,7 @@ export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementA
           return (
             <Tr key={`${row.settlementNo}:${row.blockedAt}:${pager.startIndex + i}`} selected={row === current} onOpen={() => setCurrent(row)}>
               <Td><Cell num main={formatBusinessTimeCompact(row.blockedAt, "—")} /></Td>
-              <Td><Cell main={<span data-mono>{row.ownerUserId ?? "—"}</span>} sub={`结算日 ${row.settlementDate ?? "—"}`} /></Td>
+              <Td><Cell main={<span data-mono>{row.user ?? "—"}</span>} sub={`结算日 ${row.settlementDate ?? "—"}`} /></Td>
               <Td grow><Cell main={reasonShort(row.reason)} title={reasonText(row.reason)} /></Td>
               <Td><Cell main={mode ?? NONE} sub={row.settlementMode === "MANUAL" ? `批准人 ${who.approver}` : undefined} /></Td>
             </Tr>
@@ -172,7 +172,7 @@ export function F3BlockedAttempts({ attempts }: { attempts: F3BlockedSettlementA
       </Fold>
       {current && who
         ? <Drawer open onClose={() => setCurrent(null)} title="被拦下的结算" icon={Ban} tone="warn" nav={nav}
-            sub={<>邀请人 {current.ownerUserId ?? "—"} · 结算日 {current.settlementDate ?? "—"}</>}
+            sub={<>邀请人 {current.user ?? "—"} · 结算日 {current.settlementDate ?? "—"}</>}
             explain="被拦下不发钱、不写结算记录；问题处理好后同一天还能再结。名字是当时记下的。">
             <Facts>
               <Fact k="时间">{formatBusinessTimeCompact(current.blockedAt, "—")}（{businessZone().label}）</Fact>

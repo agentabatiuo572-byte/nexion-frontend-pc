@@ -693,6 +693,8 @@ export interface F3BlockedSettlementAttempt {
   settlementNo: string;
   blockedAt: string;
   ownerUserId: string | null;
+  /** Same server-owned user code as the settlement list; older responses may omit it. */
+  user?: string | null;
   settlementDate: string | null;
   reason: string | null;
   settlementMode: string | null;
