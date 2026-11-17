@@ -20,7 +20,7 @@ import { growthRequest } from "@/lib/admin/h-client";
 import { createH9Command, sendH9Command, type H9Command, type H9CommandDisplay } from "@/lib/admin/h9-command";
 import { h9BandRowErrors, h9MoneyPrecisionValid } from "@/lib/admin/h9-validation";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
+import { GLOBE_CENTERS, parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
 
 /** 算力分位档:tops = 算力档位,cumPct = 落在该档及以下的人口累计占比(%)。 */
 export interface H9PercentileBand {
@@ -80,10 +80,35 @@ export interface H9AppDisplay {
   homeDisplay: { enabled: boolean; startAt: number; serverNow: number; validUntil: number; sequence: number; onlineDevices: number; paidCents: number; paid: string } | null;
   registeredUsers: number | null;
   activeJobsBase: number | null;
-  activeJobsActual: null;
+  /** App on-grid count before the base; Sandbox counts task-catalog classes, not running jobs. */
+  activeJobsActual: number | null;
+  /** Absent on the old backend; explicit null means unavailable, never a base-only total. */
+  activeJobsDisplay?: number | null;
+  activeJobsSource?: "APP_HOME_ON_GRID" | "APP_HOME_SANDBOX_TASK_CATALOG" | null;
   globeDisplay: GlobeDisplayConfig | null;
-  centerNodes: null;
+  /** App display simulation supplied by the backend, not a physical node inventory. */
+  centerNodes: { id: typeof GLOBE_CENTERS[number]["id"]; onlineNodes: number | null }[] | null;
+  centerNodesSource?: "APP_DISPLAY_SIMULATION" | null;
+  centerNodesStep?: number | null;
   unavailable: { field: string; reason: string }[];
+}
+
+/** New-base preview only: backend PRD ae9783f7 uses App binary64 addition and safe integers.
+ * An unknown on-grid count cannot be replaced by zero; the admin has no personal fleet context.
+ * Current totals and center allocations must always use the server response, not this preview.
+ */
+export function previewH9ActiveJobs(display: H9AppDisplay, base: number | null) {
+  const value = display.activeJobsActual === null ? null : display.activeJobsActual + (base ?? 0);
+  return {
+    kind: "preview" as const,
+    capturedAt: display.capturedAt,
+    source: display.activeJobsSource,
+    value: value !== null && Number.isSafeInteger(value) ? value : null,
+    reason: value === null
+      ? display.unavailable.find(item => item.field === "activeJobsDisplay")?.reason
+        ?? display.unavailable.find(item => item.field === "activeJobsActual")?.reason ?? null
+      : Number.isSafeInteger(value) ? null : "APP_ACTIVE_JOBS_DISPLAY_NOT_SAFE_INTEGER",
+  };
 }
 
 /** 单个数值参数的运营面定义:中文标签 + 英文标识 + 合法域(逐字取自规格 FEAT-HOME02b ③)。 */
@@ -347,8 +372,7 @@ export async function fetchH9AppDisplay(signal?: AbortSignal): Promise<H9AppDisp
     && (row.source !== "sandbox:h9-public-stats" || row.sourceEnvironment !== "SANDBOX")) invalid("appDisplay.source");
   const text = (value: unknown, field: string) => typeof value === "string" && value.trim() ? value : invalid(`appDisplay.${field}`);
   const capturedAt = text(row.capturedAt, "capturedAt");
-  if (Number.isNaN(Date.parse(capturedAt)) || typeof row.available !== "boolean"
-    || row.activeJobsActual !== null || row.centerNodes !== null) invalid("appDisplay");
+  if (Number.isNaN(Date.parse(capturedAt)) || typeof row.available !== "boolean") invalid("appDisplay");
   let homeDisplay: H9AppDisplay["homeDisplay"] = null;
   if (row.homeDisplay !== null) {
     const batch = record(row.homeDisplay, "appDisplay.homeDisplay");
@@ -364,12 +388,36 @@ export async function fetchH9AppDisplay(signal?: AbortSignal): Promise<H9AppDisp
       paidCents: nonNegativeInteger(batch.paidCents, "appDisplay.homeDisplay.paidCents"), paid };
   }
   if (row.available !== (homeDisplay !== null) || !Array.isArray(row.unavailable)) invalid("appDisplay.available");
+  let centerNodes: H9AppDisplay["centerNodes"] = null;
+  if (row.centerNodes !== null) {
+    if (!Array.isArray(row.centerNodes) || row.centerNodes.length !== GLOBE_CENTERS.length) invalid("appDisplay.centerNodes");
+    const seen = new Set<string>();
+    centerNodes = row.centerNodes.map((value, index) => {
+      const center = record(value, `appDisplay.centerNodes.${index}`);
+      const id = GLOBE_CENTERS.find(item => item.id === center.id)?.id;
+      if (!id || seen.has(id)) invalid(`appDisplay.centerNodes.${index}.id`);
+      seen.add(id);
+      return { id, onlineNodes: center.onlineNodes === null ? null
+        : nonNegativeInteger(center.onlineNodes, `appDisplay.centerNodes.${index}.onlineNodes`) };
+    });
+  }
+  if (row.activeJobsSource !== undefined && row.activeJobsSource !== null
+    && row.activeJobsSource !== "APP_HOME_ON_GRID" && row.activeJobsSource !== "APP_HOME_SANDBOX_TASK_CATALOG") invalid("appDisplay.activeJobsSource");
+  if (row.centerNodesSource !== undefined && row.centerNodesSource !== null
+    && row.centerNodesSource !== "APP_DISPLAY_SIMULATION") invalid("appDisplay.centerNodesSource");
   return { source: row.source as H9AppDisplay["source"], sourceEnvironment: row.sourceEnvironment as H9AppDisplay["sourceEnvironment"],
     version: nonNegativeInteger(row.version, "appDisplay.version"), capturedAt, available: row.available,
     reason: row.reason === null ? null : text(row.reason, "reason"), homeDisplay,
     registeredUsers: row.registeredUsers === null ? null : nonNegativeInteger(row.registeredUsers, "appDisplay.registeredUsers"),
     activeJobsBase: row.activeJobsBase === null ? null : nonNegativeInteger(row.activeJobsBase, "appDisplay.activeJobsBase"),
-    activeJobsActual: null, centerNodes: null,
+    activeJobsActual: row.activeJobsActual === null ? null : nonNegativeInteger(row.activeJobsActual, "appDisplay.activeJobsActual"),
+    ...(row.activeJobsDisplay === undefined ? {} : { activeJobsDisplay: row.activeJobsDisplay === null ? null
+      : nonNegativeInteger(row.activeJobsDisplay, "appDisplay.activeJobsDisplay") }),
+    ...(row.activeJobsSource === undefined ? {} : { activeJobsSource: row.activeJobsSource as H9AppDisplay["activeJobsSource"] }),
+    centerNodes,
+    ...(row.centerNodesSource === undefined ? {} : { centerNodesSource: row.centerNodesSource as H9AppDisplay["centerNodesSource"] }),
+    ...(row.centerNodesStep === undefined ? {} : { centerNodesStep: row.centerNodesStep === null ? null
+      : nonNegativeInteger(row.centerNodesStep, "appDisplay.centerNodesStep") }),
     globeDisplay: row.globeDisplay === null ? null : parseGlobeDisplay(row.globeDisplay) ?? invalid("appDisplay.globeDisplay"),
     unavailable: row.unavailable.map((value, index) => {
       const item = record(value, `appDisplay.unavailable.${index}`);
