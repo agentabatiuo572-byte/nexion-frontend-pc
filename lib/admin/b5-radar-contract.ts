@@ -319,9 +319,8 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   } else {
     if (ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
-    const expectedRatio = authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt);
-    const legacyRatio = ratioReserveUsdt > 0 ? Math.round((ratioWithdraw24hUsdt / ratioReserveUsdt) * 10_000) / 10_000 : expectedRatio;
-    if (Math.abs(ratio24h - expectedRatio) > 0.00000001 && Math.abs(ratio24h - legacyRatio) > 0.00000001) invalid("bankrun.ratio24h");
+    // Legacy ratios rounded to four places; allow that half-unit plus J1's finer rounding.
+    close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), ratioReserveUsdt > 0 ? 0.000051 : 0.00000001, "bankrun.ratio24h");
     const expectedBankrunLight = ratio24h * 100 >= redPct ? "red" : ratio24h * 100 >= yellowPct ? "yellow" : "green";
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   }
