@@ -1448,7 +1448,7 @@ export type TrustSectionView = {
   highSensitivity: boolean;
 };
 
-export type FinancialFieldView = { key: string; value: string; delta: string | null };
+export type FinancialFieldView = { key: string; value: string; delta: string | null; label?: string | null };
 export type TrustSectionFieldView = { sectionKey: string; key: string; value: string };
 export type TrustSectionVersionView = {
   sectionKey: string;

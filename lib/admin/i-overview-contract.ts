@@ -245,7 +245,8 @@ function validateTrustDisclosure(moduleId: IModuleId, value: Record<string, unkn
     records(moduleId, value.trustSectionVersions).forEach(parseI4SectionVersion);
     if (!array(moduleId, value.pendingTrustSectionKeys).every(key => typeof key === "string")) fail(moduleId);
     for (const field of records(moduleId, value.financialFields)) {
-      if (typeof field.key !== "string" || typeof field.value !== "string" || field.delta != null && typeof field.delta !== "string") fail(moduleId);
+      if (typeof field.key !== "string" || typeof field.value !== "string" || field.delta != null && typeof field.delta !== "string"
+        || field.label != null && typeof field.label !== "string") fail(moduleId);
     }
     for (const field of records(moduleId, value.sectionFields)) {
       if (!["sectionKey", "key", "value"].every(key => typeof field[key] === "string")) fail(moduleId);
