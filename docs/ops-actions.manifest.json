@@ -76,7 +76,7 @@
     "J2": ["OPS-J-02", "OPS-J-07"],
     "J3": ["OPS-J-03", "OPS-J-08"],
     "J4": ["OPS-J-04", "OPS-J-05"],
-    "K1": ["OPS-K-01", "OPS-K-18"],
+    "K1": ["OPS-K-01", "OPS-K-01d", "OPS-K-18"],
     "K2": ["OPS-K-02"],
     "K3": ["OPS-K-03"],
     "K4": ["OPS-K-04", "OPS-K-19", "OPS-K-20"],
@@ -1867,13 +1867,13 @@
     {
       "id": "OPS-K-01d",
       "domain": "K",
-      "object": "K1 收益释放参数(SPEC-7)",
-      "action": "7 参数调整(理由必填 8-200 + 幂等命令号):正常释放槽/待审起点/冻结建议线(账号数)/观察窗口/在线证明时长/释放模式/首号绑定",
-      "status": "built",
+      "object": "K1 收益审核规则(K1-A09)",
+      "action": "审核起点/锁定起点：收紧直接保存，放宽按后端要求再次确认后提交审批",
+      "status": "pending",
       "view": "k-view.tsx",
-      "batch": "P0",
-      "note": "合并底账 ADMIN-MERGE-BASELINE-20260804 §二#5 恢复(主人 2026-08-06 拍板):与整簇冻结分开的放行细调。enum/boolean 下拉禁自由输入;范围限值 k-client 单源(读校验与弹窗共用);releaseParams 契约缺席时卡片 fail-closed 不给编辑入口;命令号走共享 pending store(scope 含参数键)。后端契约约束:①releaseParams 七键必须原子上线——灰度期整字段缺席(前端落 []),禁发部分数组(非精确七键会被前端判 K1_RESPONSE_INVALID 整页拒);②跨字段不变量「待审起点 ≤ 重复账号冻结线」由服务端校验,前端只管单键范围;③冻结线语义=建议(主人拍板 2026-08-06):达线仅生成人工冻结建议,收益自动落锁定桶只由超槽熔断触发,人工冻结簇后新增收益才锁。",
-      "restAction": "updateK1ReleaseParam"
+      "batch": "BUG-286",
+      "note": "仅两个有效阈值可调，pending≤freeze；manual_only固定展示、退役四项不建票。K/k1_release_param以release_param/key单目标锁，服务端绑定完整旧态，另一超管批准才生效。保存完整提案原请求及独立原键，POST后GET原键确认待审批；本人无全局A2读权也可查询终态，未知不换键、24小时后只查，过期权威查无经确认才解除。旧后端直接成功及收紧直写保留。逻辑已接，候选真实HTTP/隔离库与界面验收仍待协调人，不据类型/构建声明整体完成。",
+      "restActions": ["updateK1ReleaseParam", "k1_release_param", "fetchA2ProposalByKey"]
     },
     {
       "id": "OPS-K-01c",
@@ -3303,12 +3303,13 @@
     {
       "id": "OPS-K-18",
       "domain": "K",
-      "object": "K1 收益人工释放",
-      "action": "按释放条目执行人工放行并回读",
-      "status": "built",
+      "object": "K1 受保护收益(K1-A11)",
+      "action": "人工放行：后端明确要求审批后再次确认，另一超管批准才放行原收益",
+      "status": "pending",
       "view": "k-tabs/k1-multiaccount.tsx",
-      "batch": "done",
-      "restAction": "manualReleaseK1Entry"
+      "batch": "BUG-286",
+      "note": "K/k1_earnings_release仅传values.entryNo，目标earnings_release/entryNo；毛额/已追回/净额完整before由服务端绑定，PC只显示列表可读净额。未知不自动重发或转审批，保存完整原body/key，本人原键查询、待审批对象锁、终态重读收益列表与过期只查已接。批准只改变原entry状态，不由PC重发直放；既有账户组/冻结/钱包提现约束保留。候选真实HTTP/隔离库与界面验收待协调人。",
+      "restActions": ["manualReleaseK1Entry", "k1_earnings_release", "fetchA2ProposalByKey"]
     },
     {
       "id": "OPS-K-19",

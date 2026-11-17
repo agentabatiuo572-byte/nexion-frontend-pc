@@ -534,6 +534,8 @@ export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   "K1_IP_WHITELIST_UPSERTED": "添加 IP 允许名单",
   "K1_MULTI_ACCOUNT_PARAM_CHANGED": "调整风险判断标准",
   "K1_RELEASE_PARAM_UPDATED": "调整收益审核规则",
+  "k1_release_param": "放宽收益审核规则",
+  "k1_earnings_release": "人工放行收益",
   "K2_PARAM_CHANGED": "调整反套利参数",
   "K3_WITHDRAW_RULE_CONDITION_CHANGED": "调整提现规则条件",
   "K3_WITHDRAW_RULE_CREATED": "创建提现规则",
@@ -760,3 +762,19 @@ export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   "L_BI_REPORT_GENERATE": "生成分析报表",
   "L_BI_REPORT_RERUN": "重新生成分析报表",
 };
+
+/** K1's two active parameters use the same object names as the K1 rule rows. */
+export const K1_APPROVAL_PARAM_NAMES: Readonly<Record<string, string>> = {
+  duplicateAccountPendingFrom: "同组账号数达到多少起审核收益",
+  duplicateAccountFreezeFrom: "同组账号数达到多少起锁定收益",
+};
+
+/** Translate only the candidate's known summary tokens; preserve IDs and exact amounts. */
+export function k1ApprovalSummaryText(text: string, operationCode?: string) {
+  if (operationCode === "k1_release_param") return text.replace(/\b(duplicateAccountPendingFrom|duplicateAccountFreezeFrom)\b/g, key => K1_APPROVAL_PARAM_NAMES[key]);
+  if (operationCode !== "k1_earnings_release") return text;
+  const sources: Record<string, string> = { TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队奖励", REFERRAL: "邀请奖励", WELCOME: "新人奖励" };
+  return text.replace(/；来源 ([A-Za-z_]+)\//, (whole, code: string) => sources[code.toUpperCase()] ? `；来源 ${sources[code.toUpperCase()]}/` : whole)
+    .replace(/；(bonus_locked|pending_review) → withdrawable(?=；|$)/, (_, bucket: string) => `；${bucket === "bonus_locked" ? "锁定奖励" : "审核中"} → 可提现`)
+    .replace("该受保护 entry 的 bucket 改为 withdrawable", "这笔受保护收益的状态改为可提现");
+}
