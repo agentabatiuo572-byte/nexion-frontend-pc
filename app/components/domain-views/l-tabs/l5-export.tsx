@@ -332,7 +332,10 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         }
         // Keep the structured rejection's Chinese reason (including a replay
         // 403); retaining the original command does not turn it into success.
-        throw new OutcomeUnknownError(`${displayAdminError(error)} ${formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN")}`);
+        // The client's own unknown-result error already carries this sentence; do not show it twice.
+        const shown = displayAdminError(error);
+        const unknown = formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN");
+        throw new OutcomeUnknownError(shown === unknown ? unknown : `${shown} ${unknown}`);
       }
       refreshRequired.current = true;
       l5TaskCommands.forget(record.fingerprint, record.commandKey);
@@ -462,7 +465,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="申请人">{requester}</Fact>
         <Fact k="申请时间">{formatBusinessTimeCompact(t.requestedAt, "—")}（{businessZone().label}）</Fact>
         <Fact k="放行后谁能下载">有资金明细导出权限的管理员，含申请人<Explain label="谁能下载" content="下载要「财务资金明细导出」权限。你放行不需要这项权限；没有它，你自己下载不了。" /></Fact>
-        <Fact k="能下多久">每次下载的链接 24 小时内有效，过期再点「下载」<Explain label="任务保留多久" content="系统不会按时间自动删除任务和文件，但没有承诺固定的保存期限。要长期留存，下载后自己保存。" /></Fact>
+        <Fact k="能下多久">下载链接 24 小时内有效，过期可再下载<Explain label="任务保留多久" content="系统不会按时间自动删除任务和文件，但没有承诺固定的保存期限。要长期留存，下载后自己保存。" /></Fact>
         <Fact k="留什么记录">放行写进「{pageName(AUDIT_PAGE, "操作记录与审批")}」，每次下载也会记录</Fact>
         <Fact k="谁能放行">另一位有导出审批权限的管理员，不能是申请人</Fact>
       </Facts>
