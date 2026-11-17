@@ -7,6 +7,10 @@ import { buildM4FaqCommand, sendM4FaqCommand } from "@/lib/admin/m-client";
 import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
 import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { queryM4FaqCommand } from "@/lib/admin/m4-faq-command";
+import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
+import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundClosureModal } from "../fund-command-check";
+import { receiptFact } from "../recovery-panel";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
@@ -58,6 +62,8 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const actorId = useAdminAuth((state) => state.session?.adminId);
   const [needsRead, setNeedsRead] = useState(false);
   const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<MCommandRecord | null>(null);
   const [recovery, setRecovery] = useState<MCommandRecord | null>(null);
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
@@ -313,7 +319,15 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     }
   };
   const queryOriginal = async (record: MCommandRecord) => {
-    const result = await queryM4FaqCommand(record).catch(() => null);
+    let result = null;
+    try {
+      result = await queryM4FaqCommand(record);
+      if (actorId !== useAdminAuth.getState().session?.adminId) return;
+      setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+    } catch (error) {
+      if (actorId !== useAdminAuth.getState().session?.adminId) return;
+      setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
+    }
     if (actorId !== useAdminAuth.getState().session?.adminId) return;
     if (result?.settled) {
       mCommands.forget(record.fingerprint, record.commandKey); syncPending();
@@ -325,6 +339,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
     submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
       <Button size="sm" disabled={writePending} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending} onClick={() => setClosing(record)}>核查结案</Button>}
       {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
     </>,
   }));
@@ -365,6 +380,21 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         readOnly={knowledgeAvailable && !canWriteM4 ? "你只能查看；新建、编辑、发布、下架和删除问答需要知识库编辑权限" : undefined} />
 
       <M4PendingWrites rows={pendingRows} />
+      {closing && <FundClosureModal label={closing.faq?.row.question ?? "常见问答"} createdAt={closing.createdAt}
+        offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
+        facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
+        onClose={() => setClosing(null)} onSubmit={async evidence => {
+          const record = closing;
+          const result = await queryM4FaqCommand(record, evidence);
+          if (actorId !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+          setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+          setClosing(null);
+          if (result.settled) {
+            mCommands.forget(record.fingerprint, record.commandKey); syncPending();
+            closeWriteDialogs(); ctx.closeActionConfirm?.(); setNeedsRead(true);
+            await readCurrent();
+          }
+        }} />}
 
 
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
