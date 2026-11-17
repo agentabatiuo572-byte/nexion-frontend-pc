@@ -128,6 +128,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "目标价", text: "七天计划里每一天的价格；推进或固定到那一天时发布成现价。" },
       { name: "推进", text: "按排程切换到下一天并发布它的目标价；同一个 UTC 日期最多一次。" },
       { name: "目前不生效", text: "能保存、但公布价和兑换都不看的参数：上涨概率、波动幅度、价格来源、偏离告警阈值、初始成本价。" },
+      { name: "待审批", text: "这一项有申请在等批准，标签的问号里写单号、发起人和提交时间，到「操作记录与审批」按单号找。七天计划和现价仍可直接降低，提高和其他项要等这张单有结论。" },
     ],
     more: "G3 /finance-products/market。读接口 GET /api/admin/market/nex/curve 和 /curve/history，打开时读一次，点「刷新」重读，不自动刷新。写接口 PUT /nex/curve、PATCH /nex/curve/controls/{key}、PATCH /nex/overrides/{key}；提高目标价、上涨概率、现价和首次配置排程改为 POST /api/admin/platform/audit/operations 提交审批。开发环境以外，后端拒绝人工改上涨概率和直接改现价。",
   },

@@ -28,6 +28,7 @@ import {
   type G3HistoryPoint,
   type G3Overview,
   type G3ReadOverview,
+  type G3ObjectReadState,
   type G3OverrideKey,
 } from "@/lib/admin/g3-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -64,7 +65,7 @@ type G3ConfirmReq = {
 };
 
 /** Object states use the authoritative GET when present, plus saved unknown commands. */
-export type G3ObjectState = { kind: "unknown" | "approval" | "locked"; detail: string; verification: "current" | "last-observation"; observedAt: number };
+export type G3ObjectState = { kind: "unknown" | "approval" | "locked"; detail: ReactNode; verification: "current" | "last-observation"; observedAt: number };
 const TUNING_RULE = "开发环境以外，后端拒绝人工改上涨概率和直接改现价：直接保存、提交审批和批准都会被拒。";
 const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pumpProbability: "上涨概率", volatilityPct: "波动幅度" };
 const CONTROL_ORDER = ["pin", "schedule", "loop"];
@@ -170,6 +171,18 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
     detail: "每天按设定时间自动切换到下一天的价格。",
     tone: "",
   };
+}
+
+/** 后端读到的锁：哪张单、谁发起、什么时候；七天计划和现价降低不受锁限制（后端直接收紧绕过审批锁）。 */
+function lockDetail(state: G3ObjectReadState, key: string): ReactNode {
+  const ticket = state.pendingOperationId;
+  const lowerOk = key === "currentPrice" || /^weekly:D\d:(targetPrice|pumpProbability)$/.test(key);
+  return <>
+    <p>{state.pendingApproval ? "有一张申请在等另一位超级管理员批准，批准前不生效。" : "被一张审批锁住，单号没读到。"}</p>
+    {ticket && <p>审批单 <span data-mono="">{ticket}</span> · {state.pendingOperator ?? "发起人没读到"} · {state.pendingCreatedAt ? `${formatBusinessTimeCompact(state.pendingCreatedAt, "—")}（${businessZone().label}）提交` : "提交时间没读到"}</p>}
+    <p>{key.endsWith(":volatilityPct") ? "波动幅度照常可改。" : lowerOk ? "降低仍可直接保存；提高要等这张单批准、驳回或撤回。" : "批准、驳回或撤回后才能改。"}</p>
+    {ticket && <p>到「操作记录与审批」按单号找这张单。</p>}
+  </>;
 }
 
 function ObjectTag({ state }: { state?: G3ObjectState }) {
@@ -369,8 +382,7 @@ function G3MarketEditor() {
       if (commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key)) continue;
       if (!state.locked) delete OBJECT_STATES[key];
       else OBJECT_STATES[key] = { kind: state.pendingApproval ? "approval" : "locked",
-        detail: state.pendingOperationId ? `原审批单 ${state.pendingOperationId} 在等另一位超级管理员批准，批准前不生效。` : messageOf(new Error("OBJECT_LOCKED_BY_A2")),
-        verification: "current", observedAt: Date.now() };
+        detail: lockDetail(state, key), verification: "current", observedAt: Date.now() };
     }
   }
   const hasRecovery = (key: string) => commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key);
@@ -599,6 +611,11 @@ function G3MarketEditor() {
     : rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined;
   const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
     const code = overview ? g3MarketReadBlockedCode(overview, change, value, forceApproval) : undefined;
+    const ticket = (code === "OBJECT_ALREADY_PENDING" || code === "OBJECT_LOCKED_BY_A2") && overview
+      ? g3MarketObjectReadState(overview, g3MarketObjectKey(change))?.pendingOperationId : undefined;
+    if (ticket) return change.action === "curve-cell" || change.action === "current-price"
+      ? `审批单 ${ticket} 还在等批准：提高要等它批准、驳回或撤回；降低可以直接保存。`
+      : `审批单 ${ticket} 还在等批准，批准、驳回或撤回后才能改。`;
     return code === G3_ENVIRONMENT_FORBIDDEN ? G3_TUNING_FORBIDDEN : code ? messageOf(new Error(code)) : undefined;
   };
   const confirmationPanels = <>
@@ -713,7 +730,9 @@ function G3MarketEditor() {
   const rereadReason = rereadPending ? "原操作已完成，正在重新读取 UVT 价格；读取成功后再改" : undefined;
   const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason
     ?? (!key.startsWith("weekly:") && key !== "currentPrice" && g3MarketObjectReadState(overview, key)?.locked
-      ? messageOf(new Error("OBJECT_LOCKED_BY_A2")) : undefined));
+      ? g3MarketObjectReadState(overview, key)?.pendingOperationId
+        ? `审批单 ${g3MarketObjectReadState(overview, key)?.pendingOperationId} 还在等批准，批准、驳回或撤回后才能改。`
+        : messageOf(new Error("OBJECT_LOCKED_BY_A2")) : undefined));
   const paused = overview.overrides.paused;
   const pendingPause = commandRows.find(row => !row.ticketId && g3MarketObjectKey(row.change) === "paused");
   const pauseActionResumes = pendingPause ? pendingPause.value === "false" : paused;
