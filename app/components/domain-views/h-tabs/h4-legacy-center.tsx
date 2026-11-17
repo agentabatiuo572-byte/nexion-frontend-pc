@@ -1075,6 +1075,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const budgetSpent = budgetLeft !== null && (budgetLeft.startsWith("-") || /^0(\.0+)?$/.test(budgetLeft));
   // The editable overview contains active tiers only; null stock identifies historical usage.
   const tierUsage = new Map((wheelDailyUsage?.tiers ?? []).filter(row => row.dailyStock !== null).map((row) => [row.tierName, row.usedToday]));
+  // 后端把今天还被抽到、已不在奖池（退役或删除）的奖项追加在后面，库存为空：只读列出，次数算在今天的抽奖次数里。
+  const removedUsage = (wheelDailyUsage?.tiers ?? []).filter(row => row.dailyStock === null);
   const conclusion = wheelBroken
     ? <Conclusion state="danger" lead icon={CircleAlert} hint="先处理「等你处理」第一行。">App 转盘现在抽不了{gapCount > 0 ? `，还有 ${gapsByEvent.length} 个活动缺翻译` : ""}</Conclusion>
     : todos.length > 0 ? <Conclusion state="warn" lead icon={ListChecks}>有 {todos.length} 件事等你处理</Conclusion>
@@ -1091,7 +1093,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         explain={<><p>只算发真钱的档：每档「每次发放 × 概率」算到 6 位小数再相加，币种分开算。</p><p>这是按概率的估算，不计库存用完和改发安慰奖；实际发了多少看「今天已发真钱」。</p></>} />
       <Stat label="今天已发真钱" value={usedPayout === null ? "—" : amountText(usedPayout)} unit={usedPayout === null ? undefined : "USDT"} icon={Disc3} tone="role-2"
         sub={wheelDailyUsageError ? "今天的用量没读到" : !wheelDailyUsage ? "正在读取…" : <>抽奖 <span className="h4-num">{wheelDailyUsage.spinCount}</span> 次 · UTC <span className="h4-num">{wheelDailyUsage.serverDate.slice(5)}</span></>}
-        explain={<><p>转盘今天发出的 USDT 真钱奖合计，和每日预算比的就是这个数。抽奖次数含每日免费抽奖和签到加抽。</p><p>{USAGE_DAY}</p></>}
+        explain={<><p>转盘今天发出的 USDT 真钱奖合计，和每日预算比的就是这个数。抽奖次数含每日免费抽奖和签到加抽，也含今天已移出奖池的奖项被抽到的次数。</p><p>{USAGE_DAY}</p></>}
         onOpen={() => go("wheel", "h4l-guards")} openLabel="看预算和各档今天的用量" />
     </StatBand>
     {todos.length > 0 && <Panel title="等你处理" icon={ListChecks} tone="role-3" sub={`${todos.length} 件`}>
@@ -1136,7 +1138,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         </div>
         <div id="h4l-tiers">
           {tiers.length === 0 ? <BlockState state="empty" title="奖池里还没有奖项" detail="点「新建奖项」添加；至少 2 档才能抽。" /> : <Table label="转盘奖项">
-            <thead><tr><Th>奖项</Th><Th>奖品</Th><Th className="h4l-kind-col">类型</Th><Th align="right">每次发放</Th><Th align="right">概率</Th><Th align="right" className="h4l-per1k">每 1000 次约中</Th><Th align="right">今天已用 / 库存<Explain label="今天已用怎么算" content={<><p>每档今天实际发出的次数，改发的安慰奖算在安慰奖那一档。库存用完的档改发 UVT 安慰奖。</p><p>{USAGE_DAY}</p></>} /></Th><Th sticky="end">操作</Th></tr></thead>
+            <thead><tr><Th>奖项</Th><Th>奖品</Th><Th className="h4l-kind-col">类型</Th><Th align="right">每次发放</Th><Th align="right">概率</Th><Th align="right" className="h4l-per1k">每 1000 次约中</Th><Th align="right">今天已用 / 库存<Explain label="今天已用怎么算" content={<><p>每档今天实际发出的次数，改发的安慰奖算在安慰奖那一档。库存用完的档改发 UVT 安慰奖。已移出奖池的奖项今天抽到的次数列在表下方。</p><p>{USAGE_DAY}</p></>} /></Th><Th sticky="end">操作</Th></tr></thead>
             <tbody>{tiers.map((tier) => {
               const name = legacyName(tier.reward);
               const kindKey = text(tier.kind, "").toLowerCase();
@@ -1171,6 +1173,17 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           </Table>}
           <p className="h4l-note">「每 1000 次约中」按概率估算，不计库存用完和改发安慰奖<Explain label="改发安慰奖是什么" content="每次抽奖先按概率落档；这一档今天库存用完，或是真钱奖而开关关着、覆盖率不够、今天预算不够时，改发排在最前、还有库存的那一档不发真钱的 UVT。" /></p>
         </div>
+        {removedUsage.length > 0 && <div className="h4l-awards"><Fold inset title="已移出奖池的奖项"
+          summary={<><span className="h4-num">{removedUsage.length}</span> 个 · 今天抽到 <span className="h4-num">{removedUsage.reduce((sum, row) => sum + row.usedToday, 0)}</span> 次</>}
+          explain={<><p>已退役或删除的奖项不在上面的表里，只能查看。今天移出前被抽到的次数算在今天的抽奖次数里，名称是抽奖时记下的。</p><p>{USAGE_DAY}</p></>}>
+          <Table label="已移出奖池的奖项">
+            <thead><tr><Th>奖项</Th><Th align="right">今天已用</Th></tr></thead>
+            <tbody>{removedUsage.map((row) => <Tr key={row.tierId}>
+              <Td><span data-mono="" className="h4l-nowrap">{row.tierName}</span></Td>
+              <Td align="right"><span className="h4l-nowrap"><b className="h4-num">{row.usedToday}</b> 次</span></Td>
+            </Tr>)}</tbody>
+          </Table>
+        </Fold></div>}
         {awards !== undefined && <div className="h4l-awards"><Fold inset title="今天实际发出"
           summary={!awards?.available ? "读不到" : awardRows.length === 0 ? "今天还没有人抽" : <>真钱 <span className="h4-num">{amountText(awardUsdt?.amount ?? "0")}</span> USDT · 发奖 <span className="h4-num">{awardRows.reduce((sum, [, row]) => sum + row.count, 0)}</span> 次</>}
           explain={<><p>转盘今天真正发给用户的奖励，按奖型分开，不同币种不相加。代金券只记张数，面额不算钱。</p><p>{awards?.spinDate ? `统计日 UTC ${awards.spinDate}，` : ""}{USAGE_DAY}</p></>}>
