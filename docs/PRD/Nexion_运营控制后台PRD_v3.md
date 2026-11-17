@@ -271,7 +271,7 @@
 |---|---|---|
 | W01 七天目标价 | PUT `/nex/curve` 完整 frames、expectedFrames；提高改走 G3 专用审批，携 curveRevision | 改计划不改现价；推进或固定到对应帧才发布。提高哪怕周峰不变仍审批，按改后周峰重估现有 UVT 负债。 |
 | W02 七天上涨概率 | 同 W01，字段 pumpProbability | 提高审批、降低直存；非 dev 环境均禁止。保存计划、推进复制到当前配置，但目前不影响公布价。 |
-| W03 七天波动幅度 | 同 PUT 七帧 CAS | 直接保存，推进复制配置；发布价格直接取目标价，不随机波动。 |
+| W03 七天波动幅度 | 同 PUT 七帧 CAS | 已停用（a18095cf）：实质修改返回 422 RETIRED_FEATURE；页面只读显示旧值，有原操作时只能查询或按原请求重试。推进仍把旧值抄进当天配置，发布价格直接取目标价，不随机波动。 |
 | W04 自动推进时间 | PATCH `/nex/curve/controls/schedule` 原 rawValue；首次走 initial-schedule 审批并携 scheduleRevision | 只配置排程、不当场改价；同一 UTC 日期最多推进一次。支持 `HH:mm ZoneId` 或后端 cron 格式，缺时区按 UTC。 |
 | W05 固定生效日 | PATCH controls/pin，原 expectedValue | 选择 D1–D7 立即按该帧发布现价，停止自动推进；选不固定只清 pin，不立即发布。拟发布价高于现价时重估覆盖率，现行规则不审批。 |
 | W06 D7 之后 | PATCH controls/loop，原 expectedValue | 保存不改现价；循环则 D7→D1，停在末值则后续推进仍用 D7，不等于 paused。 |
@@ -1076,7 +1076,7 @@ H7配置代金券模板，券只抵用户购买商品的USDT付款，不进入�
 | 新增 | POST `/api/admin/growth/vouchers`，完整定义、reason、operator；固定原Idempotency-Key | 保存模板，不自动发券；无B1覆盖率预检 |
 | 编辑 | PATCH `/api/admin/growth/vouchers/{id}`，完整定义、id、expectedVersion、reason、operator | 版本CAS；已发过任一未删除领取记录就不能改类型；其它定义改动会影响已领未用券之后的资格/抵扣 |
 | 暂停 | PATCH `/api/admin/growth/vouchers/{id}/status`，key=status、value=paused、expectedValue=原版本字符串、reason、operator | 停新领取，不收回已领券；有效期内按当前模板可用 |
-| 投放 | 同一status接口，value=active | 仍需满足日期、人群、库存、入口及未领条件；后端允许把已过期模板设active，不延长日期，过期券仍不可领用 |
+| 投放 | 同一status接口，value=active | 仍需满足日期、人群、库存、入口及未领条件；已过期的券不能投放（beb60458 起返回 409 H7_VOUCHER_EXPIRED，页面在发请求前拦下），投放按钮禁用并写「已过有效期，不能投放；先编辑有效期」；完整编辑里改成投放中后端仍允许（待后端定范围），页面不另加限制 |
 | 删除模板 | POST `/api/admin/platform/audit/operations`，command.op=h7_voucher_delete | 另一位管理员批准才softDelete模板、加版本；grant保留，已用订单不回算 |
 | 作废未使用 | 同提案接口，command.op=h7_voucher_revoke_available | 批准时把届时所有AVAILABLE且未删除的grant置REVOKED（含已过期未用），USED不变；不暂停/删除模板，之后仍可发券 |
 
