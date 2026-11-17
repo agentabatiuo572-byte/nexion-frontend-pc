@@ -385,7 +385,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       </Notice>}
       {module === "jobs" && jobsBaseSupported && <Notice tone="neutral" title={jobsPreview?.value != null ? `预览：保存后 App 约显示 ${count(jobsPreview.value)} 个` : "预览：估不出保存后 App 显示多少"}>
         {jobsPreview?.value != null
-          ? <>按 {formatBusinessTimeCompact(jobsPreview.capturedAt, "—")}（{businessZone().label}）取样的{jobsName} {count(appData!.activeJobsActual)}{nextValues.activeJobsBase == null ? "，不加基座" : ` + 新基座 ${count(nextValues.activeJobsBase)}`}估算；作业数一直在变，不是保证。</>
+          ? <>按 {formatBusinessTimeCompact(jobsPreview.capturedAt, "—")}（{businessZone().label}）取样的{jobsName} {count(appData!.activeJobsActual)} {nextValues.activeJobsBase == null ? "估算，不加基座" : "加新基座估算"}；作业数一直在变，不是保证。</>
           : !appData ? "这次没读到 App 显示的作业数。" : !jobsPreview ? "服务端还不给进行中作业数。" : `${JOBS_REASON[jobsPreview.reason ?? ""] ?? "服务端没给出原因"}。`}
       </Notice>}
       {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
@@ -707,7 +707,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
       <AppPreview where="App 赚取页 · 任务中心"
         explain={<><p>App 显示 = 进行中作业数 + 基座，全球网络页的进行中任务也是这个数。</p><p>正式环境的进行中作业数和 App 首页同一个来源，开了模拟任务时也算在内；测试环境是任务目录里的任务种类数，不是正在跑的任务。</p><p>进行中作业数读不到时，当天没收益的用户只看到基座，其他人看到不可用。</p></>}
-        status={appJobs === undefined ? undefined : jobsSandbox ? <><StatusTag tone="warn">测试环境</StatusTag>任务种类数，不是正在跑的任务</> : "正式环境 · 和 App 首页同一来源"}>
+        status={appJobs === undefined ? undefined : jobsSandbox ? <><StatusTag tone="warn">测试环境</StatusTag>这个数不是正在跑的任务</> : "正式环境 · 和 App 首页同一来源"}>
         <AppNumber label={appJobs != null ? "全球作业进行中 · App 显示" : "全球作业进行中"}
           value={appJobs != null ? count(appJobs) : appJobs === null ? "—" : jobs == null ? jobsName : <>{jobsName} + {count(jobs)}</>}
           unit={appJobs === null || appJobs === undefined && jobs == null ? undefined : "个"} empty={appJobs === null || appJobs === undefined && jobs == null}
@@ -801,7 +801,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       action={<Button size="sm" onClick={() => { setModule(issue.module); void load(issue.module); }}>刷新这一块</Button>}>
       这次没有保存。刷新读到最新值后再改，避免盖掉别人的设置。
     </Notice>}
-    {issue?.kind === "rejected" && !ctx.confirmOpen && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message} 这次没有保存，按原因改好后再保存。</Notice>}
+    {issue?.kind === "rejected" && !ctx.confirmOpen && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message}{/没有保存/.test(issue.message) ? "" : " 这次没有保存，按原因改好后再保存。"}</Notice>}
     {error && <Notice tone="danger" title="刷新没成功">{error} 页面上还是上次读到的值，已填写的内容保留，请重试。</Notice>}
     {!issue && !error && (unresolved
       ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存结果未知：先查询原结果，有结论前不能再保存</Conclusion>
