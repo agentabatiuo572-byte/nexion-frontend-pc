@@ -245,7 +245,7 @@ export function PlatformParamsRegistry() {
 
   const statusCell = (row: A5RegistryRow) => {
     if (row.canonicalKey === H5_RETIRED_KEY) return <StatusTag tone="done" icon={Ban}>已停用</StatusTag>;
-    if (row.canonicalKey === CONTINUITY_RETIRED_KEY) return <StatusTag tone="done" icon={Ban}>已退役</StatusTag>;
+    if (row.canonicalKey === CONTINUITY_RETIRED_KEY) return <StatusTag tone="done" icon={Ban}>已停用</StatusTag>;
     if (row.live && row.stale) return <StatusTag tone="warn">没读到实时值</StatusTag>;
     if (row.live) return <StatusTag tone="neutral" icon={Activity}>实时读取</StatusTag>;
     if (row.stale) return <StatusTag tone="warn">旧值已过期</StatusTag>;
@@ -373,8 +373,7 @@ export function PlatformParamsRegistry() {
                           { k: "已启用", v: "这条配置是启用状态、读得到；不代表业务已经在用它" },
                           { k: "实时读取", v: "每次打开这页时现查的系统健康指标，这页不会自己刷新" },
                           { k: "敏感信息", v: "只知道已配置，值已隐藏，不代表一定可用" },
-                          { k: "已停用", v: "H5 基础托管系数不再参与计算，值固定为 0" },
-                          { k: "已退役", v: "不再参与计算的旧参数，保留原值，只能查看" },
+                          { k: "已停用", v: "不再参与计算的旧参数，只能查看；H5 基础托管系数的值固定为 0" },
                         ]}>状态</Explain></Th>
                         <Th>最近修改<span className="a5-th-zone">{zone}</span></Th>
                         <Th>在哪改</Th>
