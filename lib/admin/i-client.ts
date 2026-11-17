@@ -1000,7 +1000,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const message = payload.message === "DISCLOSURE_JURISDICTION_CODE_EXISTS"
       ? "这个代码已有适用范围在用，请更换代码；如需改名，请编辑已有的适用范围。"
       : payload.message;
-    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`);
+    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`, isWrite ? "write" : "read");
     throw Object.assign(isWrite && unknown ? new OutcomeUnknownError(formatted) : new Error(formatted), { status: res.status, reasonCode: payload.message });
   }
   if (isWrite) uncertainCommandKeys.forget(commandFingerprint);

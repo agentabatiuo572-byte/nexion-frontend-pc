@@ -1349,7 +1349,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同操作人，不接受新输入（OP-94）。只有成功才解除。 */
   const retryPending = async (record: C2Pending) => {
-    if (isRetryExpired(record)) { notePending(record.fingerprint, `${RETRY_EXPIRED_TEXT}。`); return; }
+    if (isRetryExpired(record)) { notePending(record.fingerprint, `${RETRY_EXPIRED_TEXT}`); return; }
     if (!canRetry(record)) { notePending(record.fingerprint, `${RETRY_NO_PERMISSION}。`); return; }
     if (!c2Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
       notePending(record.fingerprint, "浏览器里查不到这条记录，本次没有发送。原记录继续保留，请到操作记录与审批核对。");
@@ -1504,7 +1504,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
           {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试只发原内容，不会重复执行。"}</p>,
+        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}` : "按原请求重试只发原内容，不会重复执行。"}</p>,
         tech: techRows(record),
       };
     }),

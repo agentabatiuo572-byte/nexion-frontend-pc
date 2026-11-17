@@ -632,7 +632,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
       );
     }
     throw Object.assign(new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
-      ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
+      ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read")), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
       httpStatus: response.status,
       apiCode: result?.code,

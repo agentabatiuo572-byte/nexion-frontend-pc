@@ -1027,7 +1027,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   /** 按原操作重试：同命令号、同内容、同操作人，不接受新输入（OP-94）。成功才解除；后端明确拒绝后才能人工解除。 */
   const retryPending = async (record: C3Pending) => {
     if (record.kind === "large") { notePending(record, LARGE_REQUEST_RETIRED); return; }
-    if (isRetryExpired(record)) { notePending(record, `${RETRY_EXPIRED_TEXT}。`); return; }
+    if (isRetryExpired(record)) { notePending(record, `${RETRY_EXPIRED_TEXT}`); return; }
     if (!canRetry(record)) { notePending(record, `${RETRY_NO_PERMISSION}。`); return; }
     if (!c3Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
       notePending(record, "浏览器里查不到这条记录，本次没有发送。原记录继续保留，请到操作记录与审批核对。");
@@ -1447,7 +1447,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </>,
         detail: <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试不会多建单，也不会重复入账。"}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}` : "按原请求重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
         </p>,
         tech: <p><Explain label="这次操作的技术信息" rows={[

@@ -632,7 +632,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     if (!pending || exporting || throttled() || retryBlocked) return;
     // retryBlocked 是上次渲染时算的：框开着跨过 24 小时再点，要用现在的时间再判断一次，过期就不发，原记录照旧留着（F06）。
     if (pending.expiresAt <= Date.now()) {
-      setDialogNotice({ tone: "warn", title: "不能再重试", text: `${RETRY_EXPIRED_TEXT}。` });
+      setDialogNotice({ tone: "warn", title: "不能再重试", text: `${RETRY_EXPIRED_TEXT}` });
       return;
     }
     if (!exportStore.isDurablyStored(pending.fingerprint, pending.commandKey)) {

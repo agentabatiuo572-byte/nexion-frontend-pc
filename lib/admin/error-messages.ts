@@ -3798,7 +3798,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
  */
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
-export function formatAdminApiError(message: string | null | undefined, fallback: string) {
+export function formatAdminApiError(message: string | null | undefined, fallback: string, operation: "read" | "write" = "write") {
   const raw = (message || fallback || "").trim();
   if (!raw) return "操作失败，请稍后重试。";
 
@@ -3823,11 +3823,11 @@ export function formatAdminApiError(message: string | null | undefined, fallback
   // 判据按「机器码以 _5xx 结尾」而非某个命名前缀——曾只认 _REQUEST_FAILED_5xx,换个命名
   // (BI_API_503 / TREASURY_API_502)就绕过分层,5xx 落到「请检查输入内容」冤枉运营。
   if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /^[A-Z][A-Z0-9_]*_503$/.test(raw)) {
-    return SERVICE_DOWN_WRITE;
+    return operation === "read" ? SERVICE_DOWN_READ : SERVICE_DOWN_WRITE;
   }
   // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
   if (/^[A-Z][A-Z0-9_]*_(502|504)$/.test(raw)) {
-    return GATEWAY_FAILED_WRITE;
+    return operation === "read" ? SERVICE_DOWN_READ : GATEWAY_FAILED_WRITE;
   }
   if (/^[A-Z][A-Z0-9_]*_5\d\d$/.test(raw)) {
     return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
@@ -3849,6 +3849,7 @@ export function formatAdminApiError(message: string | null | undefined, fallback
 }
 
 const NEUTRAL_DISPLAY_FALLBACK = "操作失败，请稍后重试。";
+const SERVICE_DOWN_READ = "服务暂时不可用，请稍后重试；持续失败请联系值班人员。";
 const SERVICE_DOWN_WRITE = "服务暂时不可用，结果未知，可能已经生效；先核对原操作，不要重复提交。一直查不清请联系值班人员。";
 const GATEWAY_FAILED_WRITE = "服务连接异常，结果未知，可能已经生效；保留已填内容，核对后再决定要不要重试。";
 const NETWORK_FAILED_WRITE = ADMIN_ERROR_MESSAGES.NETWORK_FAILURE;
@@ -3866,7 +3867,7 @@ const HAS_CJK_RE = /[一-鿿]/;
 /** 读取失败用这个：不说「结果未知」「不要重复提交」，这些话只给写操作（TX-14）。 */
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
-  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return "服务暂时不可用，请稍后重试；持续失败请联系值班人员。";
+  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) return SERVICE_DOWN_READ;
   // 通用兜底「操作失败」对读取不贴切（ISSUES 773）：读取只说没读到。
   if (shown === NEUTRAL_DISPLAY_FALLBACK) return "没有读到数据，请稍后重试；一直读不到请联系值班人员。";
   // 读接口断网只是没读到，不是「结果未知」（visual-1 第 15 条）：按 l-client 给的错误类型认，不看句子。

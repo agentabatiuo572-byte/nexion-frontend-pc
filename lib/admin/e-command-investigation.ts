@@ -375,7 +375,7 @@ async function request(path: string, body?: object): Promise<unknown> {
   const envelope = raw as { code?: unknown; message?: unknown; data?: unknown };
   if (!response.ok || envelope.code !== 0) {
     const code = typeof envelope.message === "string" ? envelope.message : "";
-    throw Object.assign(new Error(formatAdminApiError(code, "INVESTIGATION_RECEIPT_UNREADABLE")), {
+    throw Object.assign(new Error(formatAdminApiError(code, "INVESTIGATION_RECEIPT_UNREADABLE", body ? "write" : "read")), {
       status: response.ok && typeof envelope.code === "number" ? envelope.code : response.status, backendMessage: code,
     });
   }
