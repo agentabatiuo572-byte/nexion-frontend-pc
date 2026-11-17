@@ -68,8 +68,8 @@ const WHO: Record<string, { who: string; per: string; icon: typeof Gift }> = {
 const APPROVER = "另一位超级管理员";
 const SETTLE_APPROVER = "另一位管理员";
 const MODE_HELP: Record<string, string> = {
-  risk_bucket: "命中待复核风险的新人先不发；K2「拦截新人礼」、账户或账户组被标记、冻结的也不发。",
-  direct: "只跳过待复核风险这一层；K2「拦截新人礼」、账户或账户组被标记、冻结的照样不发。",
+  risk_bucket: "命中待复核风险的新人先不发；被「异常套利与刷量排查」拦截新人礼的、账户或账户组被标记或冻结的也不发。",
+  direct: "只跳过待复核风险这一层；被「异常套利与刷量排查」拦截新人礼的、账户或账户组被标记或冻结的照样不发。",
 };
 
 /** 指定新人的结算条件（e6d5bdca 资格读取）：一句结论 + 批准后会怎样。读到的空值写未知，不推断。 */
@@ -752,7 +752,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           explain="生效时间起注册、已开钱包、还没结算、也没被风控拦下的新人，有没有邀请人都算。奖励停用时照样统计，但不能结算。" />
         <Stat icon={ShieldAlert} tone="role-3" label="被风控拦下" value={countText(data.blockedByK2)} unit="位"
           explain={<>
-            <p>生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：K2「拦截新人礼」、账户或账户组被标记、冻结的。</p>
+            <p>生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：被「异常套利与刷量排查」拦截新人礼的，账户或账户组被标记、冻结的。</p>
             <p>发放方式是「先过风险检查再发」时，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
           </>} />
         <Stat icon={Check} tone="role-3" label="已结算" value={countText(data.settled)} unit="位"
