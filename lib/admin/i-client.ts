@@ -1,7 +1,7 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
+import { I2_RETIRED_TEMPLATE_CTAS, parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -426,6 +426,14 @@ async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?:
 
 export async function fetchI1CopyOverview(): Promise<CopyAbOverview> {
   return parseIOverview("I1", await apiRequest("/copy-ab/overview")) as CopyAbOverview;
+}
+
+function i2TemplateWriteBody(body: Record<string, unknown>, reason: string): string {
+  if (I2_RETIRED_TEMPLATE_CTAS.has(String(body.cta ?? "").trim())) {
+    throw Object.assign(new Error(formatAdminApiError("NOVA_TEMPLATE_CTA_UNSUPPORTED", "CONTENT_API_422")),
+      { status: 422, reasonCode: "NOVA_TEMPLATE_CTA_UNSUPPORTED" });
+  }
+  return JSON.stringify(withReason(body, reason));
 }
 
 export async function fetchI2NovaOverview(): Promise<NovaOverview> {
@@ -1762,8 +1770,8 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2NovaChannel: (key, body, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI2NovaChannelStatus: (key, enabled, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ enabled }, reason)) }).then(() => undefined),
   deleteI2NovaChannel: (key, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI2Template: (channel, body, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: i2TemplateWriteBody(body, reason) }).then(() => undefined),
+  updateI2Template: (channel, body, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: i2TemplateWriteBody(body, reason) }).then(() => undefined),
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   updateI2Distribution: (items, expectedItems, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items, expectedItems }, reason)) }).then(() => undefined),

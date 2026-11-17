@@ -1,6 +1,8 @@
 import { parseI6Overview } from "./i6-learning-contract";
 import { parseI4SectionVersion } from "./i4-trust-contract";
 
+export const I2_RETIRED_TEMPLATE_CTAS = new Set(["/devices", "/support", "/me/weekly"]);
+
 type IModuleId = "I1" | "I2" | "I3" | "I4" | "I5" | "I6";
 
 const ARRAY_KEYS: Record<IModuleId, readonly string[]> = {
@@ -271,7 +273,12 @@ export function parseIOverview(moduleId: string, input: unknown): unknown {
   for (const key of ARRAY_KEYS[scopedModule]) array(scopedModule, value[key]);
 
   if (scopedModule === "I1") validateI1(scopedModule, value);
-  if (scopedModule === "I2") validateI2(scopedModule, value);
+  if (scopedModule === "I2") {
+    validateI2(scopedModule, value);
+    // Filter only the writable catalog. Historical template values stay readable.
+    return { ...value, templateCtaOptions: (value.templateCtaOptions as { value: string; label: string }[])
+      .filter(option => !I2_RETIRED_TEMPLATE_CTAS.has(option.value.trim())) };
+  }
   if (scopedModule === "I3") validateI3(scopedModule, value);
   if (scopedModule === "I4" || scopedModule === "I5") validateTrustDisclosure(scopedModule, value);
   return input;
