@@ -378,6 +378,40 @@ export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"):
 
 export type H3WeeklyRegionMapping = { callingCode: string; zoneId: string };
 export type H3WeeklyRegionActivation = { effectiveFrom: string; lastLegacyInstanceKey: string };
+export type H3WeeklyAllocationState = "ACTIVE" | "UNASSIGNED" | "HEADER_MISSING" | "HEADER_INVALID" | "FUTURE_ASSIGNMENT" | "EXPIRED_ASSIGNMENT";
+export type H3AssignedWeeklyWindow = {
+  callingCode: string | null;
+  callingCodeKnown: boolean;
+  mappingVersion: number | null;
+  instanceKey: string | null;
+  assignedWeekStart: string | null;
+  calendarVersion: string | null;
+  timeZone: string | null;
+  frozenWeekStart: string | null;
+  assignedFrom: string | null;
+  assignedUntil: string | null;
+  state: H3WeeklyAllocationState;
+  users: number;
+  boundaryShape: "UNDETERMINED" | "LEGACY_FROZEN" | "STANDARD_WEEK_BOUNDARIES" | "NONSTANDARD_WEEK_BOUNDARIES";
+};
+export type H3ActualWeeklyAssignments = {
+  readAvailable: true;
+  asOf: string;
+  source: "LATEST_ACCOUNT_ASSIGNMENT_JOIN_FROZEN_WEEKLY_DEFINITION";
+  scope: "ACTIVE_NON_SANDBOX_ACCOUNTS";
+  callingCodeSource: "ASSIGNMENT_SNAPSHOT";
+  storageTimeZone: "Asia/Shanghai";
+  scopeUsers: number;
+  knownCurrentAssignedUsers: number;
+  allocationStateCounts: Partial<Record<H3WeeklyAllocationState, number>>;
+  unknownCallingCodeUsers: number;
+  currentWindowsSourceComplete: boolean;
+  currentWindowCoverageComplete: boolean;
+  currentWindows: H3AssignedWeeklyWindow[];
+  otherAllocationStates: H3AssignedWeeklyWindow[];
+  transitionCauseAvailable: false;
+  transitionCauseReason: "EXPLICIT_TRANSITION_CAUSE_NOT_STORED";
+};
 export type H3WeeklyRegionPolicy = {
   revision: number;
   defaultZoneId: "Asia/Ho_Chi_Minh";
@@ -387,6 +421,7 @@ export type H3WeeklyRegionPolicy = {
   activation: "NEXT_ACCOUNT_WEEK";
   source: "DEFAULT" | "PUBLISHED";
   nextActivation: H3WeeklyRegionActivation | null;
+  actualAssignments?: H3ActualWeeklyAssignments;
 };
 
 export function validateH3WeeklyRegionMappings(mappings: H3WeeklyRegionMapping[]): string | null {
@@ -417,6 +452,38 @@ export function parseH3WeeklyRegionPolicy(value: unknown): H3WeeklyRegionPolicy 
       || (row.nextActivation !== null && (!row.nextActivation || !activationValid(row.nextActivation)))
       || (row.revision > 0 && row.nextActivation !== null)) {
     throw new Error("每周任务地区规则暂不可用，请刷新后重试。");
+  }
+  if (row.actualAssignments !== undefined) {
+    const invalid = () => { throw new Error(formatAdminApiError("H3_ACTUAL_ASSIGNMENTS_RESPONSE_INVALID", "H3_ACTUAL_ASSIGNMENTS_RESPONSE_INVALID")); };
+    const object = (value: unknown): Record<string, unknown> => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+      return value as Record<string, unknown>;
+    };
+    const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    const states = ["ACTIVE", "UNASSIGNED", "HEADER_MISSING", "HEADER_INVALID", "FUTURE_ASSIGNMENT", "EXPIRED_ASSIGNMENT"];
+    const actual = object(row.actualAssignments);
+    if (actual.readAvailable !== true || !absolute(actual.asOf)
+      || actual.source !== "LATEST_ACCOUNT_ASSIGNMENT_JOIN_FROZEN_WEEKLY_DEFINITION"
+      || actual.scope !== "ACTIVE_NON_SANDBOX_ACCOUNTS" || actual.callingCodeSource !== "ASSIGNMENT_SNAPSHOT"
+      || actual.storageTimeZone !== "Asia/Shanghai"
+      || ![actual.scopeUsers, actual.knownCurrentAssignedUsers, actual.unknownCallingCodeUsers].every(count)
+      || typeof actual.currentWindowsSourceComplete !== "boolean" || typeof actual.currentWindowCoverageComplete !== "boolean"
+      || actual.transitionCauseAvailable !== false || actual.transitionCauseReason !== "EXPLICIT_TRANSITION_CAUSE_NOT_STORED"
+      || Object.entries(object(actual.allocationStateCounts)).some(([state, users]) => !states.includes(state) || !count(users))) invalid();
+    for (const key of ["currentWindows", "otherAllocationStates"]) {
+      const windows = actual[key];
+      if (!Array.isArray(windows)) return invalid();
+      for (const value of windows) {
+        const window = object(value);
+        if ([window.callingCode, window.instanceKey, window.calendarVersion, window.timeZone].some(cell => cell !== null && typeof cell !== "string")
+          || typeof window.callingCodeKnown !== "boolean" || window.mappingVersion !== null && !count(window.mappingVersion)
+          || [window.assignedWeekStart, window.frozenWeekStart].some(cell => cell !== null && !(typeof cell === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cell)))
+          || [window.assignedFrom, window.assignedUntil].some(cell => cell !== null && !absolute(cell))
+          || !states.includes(window.state as string) || !count(window.users)
+          || (key === "currentWindows") !== (window.state === "ACTIVE")
+          || !["UNDETERMINED", "LEGACY_FROZEN", "STANDARD_WEEK_BOUNDARIES", "NONSTANDARD_WEEK_BOUNDARIES"].includes(window.boundaryShape as string)) invalid();
+      }
+    }
   }
   return row;
 }

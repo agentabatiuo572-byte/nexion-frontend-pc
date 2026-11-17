@@ -712,7 +712,7 @@ function G3MarketEditor() {
   // 原操作重试成功后在重读：新修改先不可用，带着原因；还有原记录的那一项照样能打开。
   const rereadReason = rereadPending ? "原操作已完成，正在重新读取 UVT 价格；读取成功后再改" : undefined;
   const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason
-    ?? (!key.startsWith("weekly:") && key !== "currentPrice" && g3MarketObjectReadState(overview, key)?.locked
+    ?? (g3MarketObjectReadState(overview, key)?.locked
       ? messageOf(new Error("OBJECT_LOCKED_BY_A2")) : undefined));
   const paused = overview.overrides.paused;
   const pendingPause = commandRows.find(row => !row.ticketId && g3MarketObjectKey(row.change) === "paused");
