@@ -1,3 +1,4 @@
+import { f4Decimal } from "./f4-money";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { formatAdminApiError, displayAdminReadError, guardedFetch } from "@/lib/admin/error-messages";
@@ -251,7 +252,15 @@ export async function fetchE3Snapshot(): Promise<E3Snapshot> {
   };
 }
 
+/** 05304806: validate only the submitted field, preserving historical reads. */
+export function validateE3TradeinDeviceLimit(key: string, value: string) {
+  if (!["E.tradein.maxDevicesPerOrder", "tradeinMaxDevicesPerOrder", "maxDevicesPerOrder"].includes(key)) return;
+  const decimal = f4Decimal(value.trim().replace(/[%,]/g, ""));
+  if (decimal === null || !/^1(?:\.0*)?$/.test(decimal)) throw new Error("E3_TRADEIN_SINGLE_DEVICE_ONLY");
+}
+
 export async function updateE3Param(key: string, value: string, reason: string, operator: string) {
+  validateE3TradeinDeviceLimit(key, value);
   const overview = await e3Request<BackendE3Overview>("/e3/config", {
     method: "PATCH",
     body: JSON.stringify({ key: toBackendKey(key), value: toBackendValue(key, value), reason, operator }),
@@ -261,6 +270,7 @@ export async function updateE3Param(key: string, value: string, reason: string, 
 }
 
 export async function updateE3Params(values: Record<string, string>, reason: string, operator: string) {
+  for (const [key, value] of Object.entries(values)) validateE3TradeinDeviceLimit(key, value);
   let latest: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) {
     latest = await updateE3Param(key, value, reason, operator);

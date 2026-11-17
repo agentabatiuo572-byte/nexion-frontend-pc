@@ -2864,6 +2864,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H3_MISSION_NO_CHANGE: "任务内容与原值相同，本次没有修改；请核对要改的内容。",
   H3_MISSION_VERIFIED_COMPLETION_UNAVAILABLE: "这条任务还没有可信的完成验证，不能启用；请先核实真实业务事件。",
   H3_MISSION_RETIRED: "质押类每周任务已下线，不能再启用；改名称、奖励和归档照常。",
+  E3_TRADEIN_SINGLE_DEVICE_ONLY: "每单置换只支持一台源设备，最多抵扣台数只能设为 1。",
   EVENT_CODE_UNSUPPORTED: "这个活动编号不受支持，不能新建；请使用后端支持的内置活动编号。",
   H3_DAY_ONE_WINDOW_RETIRED: "首日任务时长说明已退役，不能再修改；实际全额奖励时限仍为 24 小时。",
   H3_DAY_ONE_STAKING_MISSION_REFUSED: "这个编号是质押类任务，新手任务不能建；请换一个不是质押的任务。",
