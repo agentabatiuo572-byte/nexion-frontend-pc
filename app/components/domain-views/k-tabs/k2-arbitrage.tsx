@@ -495,7 +495,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     }
     if (retained && (isRetryExpired(retained) || retained.proposed)) throw new Error(RETRY_EXPIRED_TEXT);
     const commandKey = retained?.commandKey ?? newK1CommandKey();
-    commandAttempt.remember(scope, commandKey, { operation });
+    if (!retained) commandAttempt.remember(scope, commandKey, { operation });
     if (!commandAttempt.isDurablyStored(scope, commandKey)) {
       if (!retained) commandAttempt.forget(scope, commandKey);
       throw new Error(retained
@@ -559,7 +559,13 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     const retained = attempt.retained;
     return {
       getPendingReason: () => originalFor(attempt)?.operation?.reason,
-      getPendingBusinessValue: () => originalFor(attempt)?.operation?.businessValue,
+      getPendingBusinessValue: () => {
+        const operation = originalFor(attempt)?.operation;
+        const value = operation?.businessValue;
+        // Only the editable draft drops a retired scope. Replay still uses the saved request.
+        return operation?.target === "welcomeGiftAnomalyThreshold" && value && ["手机号", "设备"].includes(value.scope)
+          ? { ...value, scope: "" } : value;
+      },
       blockedReason: retained && isRetryExpired(retained) && !retained.operation?.proposal ? RETRY_EXPIRED_TEXT : undefined,
       ...(retained?.operation?.proposal ? { inlineApproval: {
         resolve: () => undefined,
