@@ -42,8 +42,9 @@ export function isExplicitRejection(error: unknown): boolean {
   const value = error as { status?: unknown; reasonCode?: unknown; backendMessage?: unknown; unknownOutcome?: unknown; f4PayoutCoverageRefusal?: unknown };
   if (value.unknownOutcome === true) return false;
   const code = typeof value.reasonCode === "string" ? value.reasonCode : typeof value.backendMessage === "string" ? value.backendMessage : "";
-  // E3-BE-06: retired config keys are rejected before direct-command replay.
-  // This refuses today's retry, not the original write; retain it for lookup.
+  // 763729e6 restores only three single-key hint receipts. Older backends and
+  // other retired/batch keys still reject before replay; this code alone cannot
+  // establish the original outcome. Keep the record available for lookup.
   if (code === "E3_CONFIG_KEY_RETIRED") return false;
   // These receipts exist, but their original actor cannot be verified. The
   // refusal to replay them does not establish whether the original write ran.
