@@ -69,7 +69,7 @@ const RULE_COPY: Record<string, { unit?: string; what: string; effect: string; f
   p15: { unit: "%", what: "签到时基础奖励抽中 1.5 倍的机会", effect: "批准后之后的签到按新概率抽；已经签到的不变。调高会让用户平均多拿 UVT。" },
   p2: { unit: "%", what: "签到时基础奖励抽中 2 倍的机会", effect: "批准后之后的签到按新概率抽；已经签到的不变。调高会让用户平均多拿 UVT。" },
   luckyMultiplierMax: { fixed: "2×", what: "抽倍率最高一档是 2 倍", effect: "固定值，后台不能改。" },
-  revive: { fixed: "1 张", what: "断签后恢复连签，每次用 1 张补救卡", effect: "固定值，后台不能改；App 也按一次用 1 张处理。" },
+  revive: { unit: "张", what: "原来设计的每次补签用几张补救卡", effect: "不影响补签：用户补签每次扣 1 张补救卡。" },
   interval: { what: "原来设计的签到检查间隔", effect: "不影响签到：每天按日期签一次。" },
   broken: { unit: "小时", what: "原来设计的断签判定时长", effect: "不影响签到：按日期判断，昨天没签今天从第 1 天算。" },
   brokenHours: { unit: "小时", what: "原来设计的断签判定时长", effect: "不影响签到：按日期判断，昨天没签今天从第 1 天算。" },
