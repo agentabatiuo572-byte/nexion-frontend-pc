@@ -79,7 +79,7 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
     || scope.startsWith("A3_FEATURE_FLAG:") || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(scope)
     || /^(?:D2|D3|E4|H2|K1|J1|I5|C2)(?:[_:])/.test(scope) || scope.startsWith("GROWTH:H2:"));
   const conclusions: ECommandEvidence["conclusion"][] = [];
-  const byReceipt = receipt.originalStatus === "SUCCEEDED" && (receipt.businessCode == null || receipt.businessCode === 0);
+  const byReceipt = receipt.originalStatus === "SUCCEEDED" && (receipt.businessCode === 0 || receipt.businessCode === null || receipt.businessCode === undefined && scope.startsWith("J4_PLAYBOOK_RESUME:"));
   if (eCommandCanConcludeRejected(receipt)) conclusions.push("REJECTED");
   if (byReceipt || audit) conclusions.push("SUCCEEDED");
   // These I5 codes are candidates only: provenNotExecuted must also match the exact stored message.
@@ -88,6 +88,11 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
   if (local && (receipt.businessCode == null && receipt.originalStatus !== "SUCCEEDED" || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
   if (receipt.originalStatus === "UNKNOWN") conclusions.push("STILL_UNKNOWN");
   return { conclusions, ...(conclusions.includes("SUCCEEDED") ? { success: byReceipt ? "receipt" as const : "audit" as const } : {}) };
+}
+
+/** The recovery row's last lookup, including a failed lookup, uses the same request rules. */
+export function eCommandClosureOffer(outcome: { receipt: ECommandInvestigation | null } | { error: string } | undefined, expired: boolean): ECommandClosureOffer {
+  return eCommandClosureRequests(outcome && "receipt" in outcome ? outcome.receipt : null, expired);
 }
 
 /** Compatibility helpers: these only permit requesting server-owned rollback proof. */
