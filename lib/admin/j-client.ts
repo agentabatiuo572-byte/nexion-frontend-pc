@@ -569,7 +569,7 @@ async function contentApiRequest<T>(path: string): Promise<T> {
   try {
     payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   } catch {
-    throw new Error(`内容接口返回了无法识别的内容（HTTP ${res.status}），请稍后重试。`);
+    throw new Error(`读到的内容无法识别（HTTP ${res.status}），请稍后重试。`);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
