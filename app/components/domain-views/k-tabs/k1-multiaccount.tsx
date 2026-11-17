@@ -19,7 +19,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
-import { checkK1ApprovalTicket, isK1ApprovalState, k1ReleaseParamProposal, type K1ApprovalState } from "@/lib/admin/k1-risk-approval";
+import { checkK1ApprovalTicket, isK1ApprovalState, k1EarningsReleaseProposal, k1ReleaseParamProposal, type K1ApprovalState } from "@/lib/admin/k1-risk-approval";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-multiaccount";
@@ -527,6 +527,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [readingLatest, setReadingLatest] = useState(false);
   const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | "release" | "note" | null>(null);
   const draftSubmitLock = useRef(false);
+  const releaseConfirmRevision = useRef(0);
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "positioning" | "found" | "not-found" | "error">("idle");
   const focusPageLoad = useRef(false);
   const overview = ctx.risk.multiAccount;
@@ -534,12 +535,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const refreshProtectedEntries = useCallback(async () => {
     setProtectedEntriesLoading(true);
     try {
-      setProtectedEntries(await ctx.actions.fetchK1ProtectedEntries());
+      const entries = await ctx.actions.fetchK1ProtectedEntries();
+      setProtectedEntries(entries);
       setProtectedEntriesError(null);
       setEarningsReadAt(businessStamp(Date.now()));
+      return entries;
     } catch (error) {
       setProtectedEntries([]);
       setProtectedEntriesError(readFailureText(error));
+      return null;
     } finally {
       setProtectedEntriesLoading(false);
     }
@@ -772,6 +776,18 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (ticket.status === "pending") {
       retainApproval({ ...record, approval: { ...approval, acknowledged: true, pendingTicketId: ticket.id } });
       ctx.toast("已提交审批，等另一位超级管理员批准。", "success");
+      if (record.kind === "entry") {
+        const entries = await refreshProtectedEntries();
+        const latest = entries?.find(entry => entry.entryNo === record.target);
+        const observed = approval.observedEntry!;
+        const note = !entries ? "已查到原审批单待审批，但收益列表读取失败，请刷新后核对。"
+          : !latest ? "这笔收益已不在当前保护收益列表，原审批单仍待审批；请到操作记录与审批核对。"
+            : latest.amount !== observed.amount || latest.asset !== observed.asset || latest.sourceType !== observed.sourceType
+              || latest.sourceRef !== observed.sourceRef || latest.bucket !== observed.bucket
+              ? "这笔收益的来源、状态或净额已变化，原审批单仍待审批；请到操作记录与审批结束原单后重新核对。" : "";
+        if (note) setPendingNotes(current => ({ ...current, [record.fingerprint]: note }));
+        return ticket;
+      }
       // An unsuccessful checker attempt leaves the ticket pending. Read the current
       // version to expose changed rules; do not pretend that it rejected the ticket.
       try {
@@ -784,7 +800,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     } else {
       pendingCommands.forget(record.fingerprint, record.commandKey);
       syncPending();
-      await reloadAfter(`原审批单${PROPOSAL_STATUS[ticket.status]}，已读取最新规则。`, `原审批单${PROPOSAL_STATUS[ticket.status]}，但最新规则读取失败，请刷新后核对。`);
+      if (record.kind === "entry") {
+        const entries = await refreshProtectedEntries();
+        ctx.toast(`原审批单${PROPOSAL_STATUS[ticket.status]}，${entries ? "已重读收益列表。" : "但收益列表读取失败，请刷新后核对。"}`, entries ? "success" : "warn");
+      } else await reloadAfter(`原审批单${PROPOSAL_STATUS[ticket.status]}，已读取最新规则。`, `原审批单${PROPOSAL_STATUS[ticket.status]}，但最新规则读取失败，请刷新后核对。`);
     }
     return ticket;
   };
@@ -822,6 +841,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       if (rejected) {
         pendingCommands.forget(original.fingerprint, original.commandKey);
         syncPending();
+        if (original.kind === "entry" && (error.backendMessage === "K1_EARNINGS_RELEASE_STALE"
+          || error.backendMessage === "K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED")) await refreshProtectedEntries();
         throw cause;
       }
       ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
@@ -950,6 +971,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       await runRecord(record, true);
     } catch (cause) {
+      if (record.approval) {
+        // A failed preliminary GET is not a verdict on the original POST.
+        if (!pendingCommands.list().some(item => item.commandKey === record.commandKey)) ctx.toast(`原操作被拒绝，记录已解除：${errorText(cause)}`, "warn");
+        else setPendingNotes(current => ({ ...current, [record.fingerprint]: `查询或重试没有成功：${errorText(cause)} 原请求继续保留。` }));
+        return;
+      }
       if (isExplicitRejection(cause)) { ctx.toast(`原操作被拒绝，记录已解除：${errorText(cause)}`, "warn"); return; }
       setPendingNotes((current) => ({ ...current, [record.fingerprint]: `重试被拒绝：${errorText(cause)} 这说明不了原操作的结果，原操作继续保留。` }));
       if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, record.commandKey]);
@@ -1216,17 +1243,20 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setReleaseDraft({ param: p, value: K1_RELEASE_PARAM_LIMITS[p.key] ? "" : p.value, reason: "" });
   };
 
-  const releaseProtectedEntry = (entry: K1ProtectedEntry) => {
+  const releaseProtectedEntry = (entry: K1ProtectedEntry, approvalRequired = false, initialReason?: string) => {
     ctx.openActionConfirm({ briefKind: "funds",
+      formKey: ++releaseConfirmRevision.current,
+      initialReason,
       action: `人工放行收益 · ${entry.entryNo}`,
       title: "人工放行收益",
       detail: "",
       amplifies: true,
       confirmTone: "danger",
-      statedBrief: { impact: "立即解除这笔收益的待审或锁定状态，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
+      statedBrief: { impact: approvalRequired ? "另一位超级管理员批准后才生效。批准前不执行。" : "立即解除这笔收益的待审或锁定状态，记入操作记录。", check: "核对用户、金额和所属账户组。提交时会先检查兑付覆盖率。" },
       coverageLead: "这笔钱放行后不再锁住",
-      effect: <>{IMMEDIATE_EFFECT}<IrreversibleTag /></>,
-      confirmLabel: "立即放行",
+      effect: approvalRequired ? RELEASE_APPROVAL_EFFECT : <>{IMMEDIATE_EFFECT}<IrreversibleTag /></>,
+      confirmLabel: approvalRequired ? "提交审批" : "立即放行",
+      blockedReason: approvalRequired && !canProposeRelease ? "这个账号没有发起这项审批的权限" : undefined,
       reasonPlaceholder: RISK_REASON_PLACEHOLDER,
       facts: <Facts>
         <Fact k="金额" lead tone="role-1" unit={nexGridBrandText(entry.asset)}>{amountText(entry.amount)}</Fact>
@@ -1239,7 +1269,23 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       </Facts>,
       reasonMin: 8,
       reasonMax: 200,
-      run: (reason) => runRecord({ kind: "entry", target: entry.entryNo, label: `人工放行收益 · ${entry.entryNo}`, operator, reason }),
+      run: async (reason) => {
+        const record: K1PendingExtra = { kind: "entry", target: entry.entryNo, label: `人工放行收益 · ${entry.entryNo}`, operator, reason };
+        if (approvalRequired) {
+          const actor = useAdminAuth.getState().session;
+          record.approval = { request: k1EarningsReleaseProposal(entry.entryNo, reason, operator, roleLabel(actor?.role ?? "")),
+            observedEntry: { amount: entry.amount, asset: entry.asset, sourceType: entry.sourceType, sourceRef: entry.sourceRef, bucket: entry.bucket } };
+        }
+        try { await runRecord(record); }
+        catch (cause) {
+          if (!approvalRequired && cause instanceof K1RequestError && cause.reasonCode === "K1_EARNINGS_RELEASE_APPROVAL_REQUIRED" && isExplicitRejection(cause)) {
+            // Unknown direct results never reach this branch or create a proposal.
+            releaseProtectedEntry(entry, true, reason);
+            return;
+          }
+          throw cause;
+        }
+      },
     });
   };
 
@@ -1567,7 +1613,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const registration = record.kind === "registration-param";
           const outcome = investigationResults[record.commandKey];
           return { key: record.fingerprint, title: record.label, record, outcome, createdAt: record.createdAt, expired, canRetry: !blocked,
-            ...(record.approval?.pendingTicketId ? { status: { tone: "progress" as const, label: "待审批", line: "已提交审批，等另一位超级管理员批准。" } } : {}),
+            ...(record.approval ? { canQuery: canProposeRelease, ...(record.approval.pendingTicketId
+              ? { status: { tone: "progress" as const, label: "待审批", line: "已提交审批，等另一位超级管理员批准。" } }
+              : record.approval.acknowledged ? { status: { tone: "warn" as const, label: "结果未知", line: "申请已建单，审批状态暂未查到，请查询原审批单。" } } : {}) } : {}),
             actions: <>
               {(record.approval || record.kind === "cluster" && canQueryProposal) && !fundInvestigationAccess(record).canRead
                 ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原结果"}</Button>

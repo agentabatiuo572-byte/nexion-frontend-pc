@@ -6,6 +6,8 @@ export type K1ApprovalState = {
   /** A successful POST is historical evidence, never the current ticket status. */
   acknowledged?: boolean;
   pendingTicketId?: string;
+  /** Readable net amount/source only, never the server's trusted approval snapshot. */
+  observedEntry?: { amount: number; asset: string; sourceType: string; sourceRef: string; bucket: string };
 };
 
 export function k1ReleaseParamProposal(key: string, value: string, expectedVersion: number, reason: string, operator: string, operatorRole: string): K1ApprovalRequest {
@@ -17,6 +19,15 @@ export function k1ReleaseParamProposal(key: string, value: string, expectedVersi
   };
 }
 
+export function k1EarningsReleaseProposal(entryNo: string, reason: string, operator: string, operatorRole: string): K1ApprovalRequest {
+  return {
+    action: "人工放行收益", obj: entryNo, beforeValue: "", afterValue: "", operator, operatorRole,
+    type: "fund", amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: "K1",
+    command: { domain: "K", op: "k1_earnings_release", params: { values: { entryNo } } },
+    target: { domain: "K", type: "earnings_release", id: entryNo },
+  };
+}
+
 /** The session journal is the unknown-input boundary. Originals are never rebuilt for replay. */
 export function isK1ApprovalState(value: unknown, original: { kind?: string; target?: string; value?: string; version?: number; reason?: string; operator?: string }): value is K1ApprovalState {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -25,6 +36,14 @@ export function isK1ApprovalState(value: unknown, original: { kind?: string; tar
   if (!request || typeof request !== "object" || Array.isArray(request) || typeof request.operatorRole !== "string"
     || state.acknowledged !== undefined && typeof state.acknowledged !== "boolean"
     || state.pendingTicketId !== undefined && (typeof state.pendingTicketId !== "string" || !state.pendingTicketId || state.acknowledged !== true)) return false;
+  if (original.kind === "entry") {
+    const observed = state.observedEntry;
+    if (typeof original.target !== "string" || !original.target || original.target !== original.target.trim() || original.target.length > 64
+      || !observed || typeof observed !== "object" || Array.isArray(observed) || !Number.isFinite(observed.amount) || observed.amount <= 0
+      || ![observed.asset, observed.sourceType, observed.sourceRef].every(field => typeof field === "string" && field.length > 0)
+      || !["pending_review", "bonus_locked"].includes(observed.bucket)) return false;
+    return JSON.stringify(request) === JSON.stringify(k1EarningsReleaseProposal(original.target, original.reason!, original.operator!, request.operatorRole));
+  }
   if (original.kind !== "release-param" || !["duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"].includes(original.target!)
     || typeof original.value !== "string" || !Number.isSafeInteger(original.version) || original.version! < 0) return false;
   return JSON.stringify(request) === JSON.stringify(k1ReleaseParamProposal(original.target!, original.value, original.version!, original.reason!, original.operator!, request.operatorRole));

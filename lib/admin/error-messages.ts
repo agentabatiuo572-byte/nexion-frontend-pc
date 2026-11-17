@@ -1480,6 +1480,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K1_WHITELIST_DISABLE_NOT_VISIBLE: "允许名单移除后未能读到结果；请先到操作记录核对，保留原记录。",
   EARNINGS_MANUAL_RELEASE_REQUEST_INVALID: "人工放行缺少收益记录号、操作标识或有效理由；请关闭后从收益记录重新发起，并填写至少 8 字的理由。",
   K1_EARNINGS_RELEASE_APPROVAL_REQUIRED: "人工放行这笔收益需要另一位超级管理员批准后才生效。",
+  K1_EARNINGS_RELEASE_ENTRY_REQUIRED: "缺少这笔受保护收益的记录号，请刷新收益列表后重新核对。",
   K1_EARNINGS_RELEASE_STALE: "这笔收益的来源、状态或净额已变化，本次没有放行；请刷新收益记录后重新核对。",
   K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED: "这笔收益已不满足受保护收益的放行条件，不能放行；请刷新收益记录核对。",
   EARNINGS_RELEASE_ENTRY_NOT_PROTECTED: "这笔收益已不在待审核或锁定状态，不能再次放行；请刷新收益记录核对。",
