@@ -4,9 +4,10 @@
  * F4 奖励池、名额与排行榜（改版）三块共用的写法：金额、人数、时间、业务时区、「结果未知」逐条提醒。
  * 只管显示，不算业务口径：金额按接口原值写（千分位、去掉补的末尾 0、至少两位小数、不舍入），空值写「—」。
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
-import { Explain, Notice, StatusTag } from "@/app/components/rd";
+import { Button, Explain, Notice, StatusTag } from "@/app/components/rd";
+import { useFreshFirst } from "../recovery-panel";
 import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact, parseBusinessTime, type BusinessZone } from "@/lib/admin/business-time";
 import { f4Decimal } from "@/lib/admin/f4-money";
 
@@ -129,6 +130,8 @@ export type F4RecoveryRow = {
   tag: ReactNode;
   /** 在等批准（不是结果未知、也没过期）。标题按这个分开说。 */
   pending?: boolean;
+  /** 已过 24 小时：收起时排在前面，不藏进「展开全部」。 */
+  expired?: boolean;
   actions?: ReactNode;
   /** 最近一次查询原结果查到了什么，写在这一行下面。 */
   line?: { tone: "warn" | "danger"; text: string };
@@ -144,13 +147,17 @@ export function unknownTag(kind: "direct" | "approval") {
 /**
  * 页面最上方的「结果未知」逐条提醒（全站-结果未知叫法）：改的是什么、改成什么、什么时候提交的、现在什么状态、按钮。
  * 行由页面用本机保存的原记录拼好传进来；按钮调用已有的恢复入口，不在这里发请求。没有行时不显示。
+ * 和资金页的面板一样默认露三条、其余「展开全部」：刚发出的排最前，再是查询失败和过期的，等批准的放最后。
  */
 export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
+  const [all, setAll] = useState(false);
+  const rank = (row: F4RecoveryRow) => row.line?.tone === "danger" ? 0 : row.pending ? 2 : row.expired ? 0 : 1;
+  const { ordered, box } = useFreshFirst([...rows].sort((a, b) => rank(a) - rank(b)).map((row) => ({ ...row, createdAt: row.submittedAt })));
   if (!rows.length) return null;
   return (
-    <Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；申请过期、按原单号又查不到单时，可以确认后解除。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原请求重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；申请过期、按原单号又查不到单时，可以确认后解除。" /></>}>
       <ul className="f4-recovery" aria-label="还没有结论的原操作">
-        {rows.map((row) => (
+        {(all ? ordered : ordered.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="f4-recovery-name">{row.name}</span>
             <span className="f4-recovery-change">{row.change}</span>
@@ -161,7 +168,8 @@ export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
           </li>
         ))}
       </ul>
+      {rows.length > 3 && <div className="fund-rows-foot"><Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `展开全部 ${rows.length} 条`}</Button></div>}
       <p className="f4-recovery-zone">提交时间为{zoneNote()}</p>
-    </Notice>
+    </Notice></div>
   );
 }
