@@ -77,10 +77,7 @@ export function H3OperatingFold({ stats, open, onOpenChange }: { stats: H3Stats;
   return (
     <div id="h3-operating-stats">
       <Fold title="经营统计" icon={Coins} tone="role-1" summary={summary} open={open} onOpenChange={onOpenChange}
-        explain={<>
-          <p>只算真实用户，不含测试账号。领取率按已到完成期限的新用户累计算；本周从周一 00:00{weekZone ? `（${weekZone}）` : ""}算起。</p>
-          <p>正在做月度挑战的人数后端没有统计，这里不显示数。</p>
-        </>}>
+        explain={<p>只算真实用户，不含测试账号。领取率按已到完成期限的新用户累计算；本周从周一 00:00{weekZone ? `（${weekZone}）` : ""}算起。</p>}>
         <Table label="经营统计">
           <thead><tr><Th>统计</Th><Th align="right">数</Th><Th>算的是什么</Th><Th>时间范围</Th></tr></thead>
           <tbody>
