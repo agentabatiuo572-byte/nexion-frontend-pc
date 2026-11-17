@@ -136,7 +136,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     more: "G3 /finance-products/market。读接口 GET /api/admin/market/nex/curve 和 /curve/history，打开时读一次，点「刷新」重读，不自动刷新。写接口 PUT /nex/curve、PATCH /nex/curve/controls/{key}、PATCH /nex/overrides/{key}；提高目标价、上涨概率、现价和首次配置排程改为 POST /api/admin/platform/audit/operations 提交审批。开发环境以外，后端拒绝人工改上涨概率和直接改现价。",
   },
   K3: {
-    keep: ["草稿与停用规则不算覆盖。", "放行复核"],
+    keep: ["草稿与停用规则不算覆盖。", "放行复核", "同一类没归档的规则不能用相同的优先级。"],
     purpose: "维护提现检查条件和命中后的处置。",
     tasks: [
       { title: "补齐需要的检查", steps: ["先看四类覆盖卡和缺项结论", "新建规则，核对条件、命中处置、优先级并填写理由", "保存为草稿后，再从规则行启用"] },
@@ -145,7 +145,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     ],
     terms: [
       { name: "四类检查", text: "金额、速度、新账户、地址信誉；每类可以有多条已启用规则，草稿与停用规则不算覆盖。" },
-      { name: "优先级", text: "一笔命中多条时按最重的处置算：冻结最重，其次转人工、延迟；一样重时数字大的优先，最后按规则号定。同一类没归档的规则不能用相同的优先级。" },
+      { name: "优先级", text: "同一笔命中多条、处置一样重时，数字大的优先，再按规则号定。同一类没归档的规则不能用相同的优先级。" },
       { name: "放行", text: "只表示这里的规则没拦下；提现审核时风险评分、小额免审、强审门槛、合规和资金检查照常要过，不等于马上打款。" },
       { name: "两种分布", text: "历史分布按每条规则的命中记录累计，一笔可能计多条；模拟分布按这一次评估的样本，每笔只按最后结论计一次。" },
       { name: "结果未知", text: "原内容和理由留在本标签页。先查询原结果，24 小时内可以按原请求重试；读到相同的值也证明不了原操作成功。" },
