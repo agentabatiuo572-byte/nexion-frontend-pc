@@ -1180,6 +1180,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   /** Preflight only facts the overview proves; missing legacy counters leave the decision to the server. */
   const adoptionErrorCode = (exp: ExpRow): string | undefined => {
     if (!["concluded", "stopped"].includes(exp.state)) return "INVALID_STATE_TRANSITION";
+    const copy = findCopy(exp.copyKey);
+    if (copy?.draftVersion?.trim() && !["published", "draft-saved"].includes(copy.status.trim().toLowerCase())) return "COPY_ADOPT_DRAFT_PENDING";
     if (exp.variants.length < 2) return "COPY_EXPERIMENT_WINNER_NOT_UNIQUE";
     if (exp.variants.some((variant) => variant.impressions === undefined || variant.conversions === undefined)) return;
     if (exp.variants.every((variant) => variant.impressions === 0)) return "COPY_EXPERIMENT_NO_EXPOSURE";
