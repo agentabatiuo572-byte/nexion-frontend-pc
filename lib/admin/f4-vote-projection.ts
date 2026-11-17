@@ -6,6 +6,7 @@ export type F4VoteProjection = {
     period: "CURRENT_WEEK"; eligibleCount: number; ranksAvailability: "CURRENT_ELIGIBILITY_ESTIMATE";
     ranks: { rank: string; eligibleCount: number; votesPerMember: number; totalVotes: string }[];
   };
+  /** Availability means a readable audit aggregate, not a validated settlement. */
   settled: { available: false; reason: "NO_SETTLEMENT_AUDIT" } | VoteValue & {
     period: "SETTLED_WEEK"; weekKey: string; settledUsers: number; ranks: null; ranksAvailability: "PER_RANK_NOT_RECORDED";
   };
@@ -61,8 +62,11 @@ export function readF4VoteProjection(value: unknown): F4VoteProjection {
   } else {
     if (settled.available !== true || settled.period !== "SETTLED_WEEK"
       || settled.ranks !== null || settled.ranksAvailability !== "PER_RANK_NOT_RECORDED") invalid();
+    const settledUsers = settled.settledUsers;
+    // db970a77: preserve the signed audit integer; current eligibility counts stay nonnegative.
+    if (typeof settledUsers !== "number" || !Number.isSafeInteger(settledUsers)) invalid();
     actual = { ...voteValue(settled), period: "SETTLED_WEEK", weekKey: text(settled.weekKey),
-      settledUsers: count(settled.settledUsers), ranks: null, ranksAvailability: "PER_RANK_NOT_RECORDED" };
+      settledUsers, ranks: null, ranksAvailability: "PER_RANK_NOT_RECORDED" };
   }
   return { domain: "F4", estimate: current, settled: actual, sources: root.sources.map(text) };
 }
