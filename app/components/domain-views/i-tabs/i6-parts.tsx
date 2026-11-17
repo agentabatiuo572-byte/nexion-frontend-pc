@@ -10,6 +10,7 @@ import { BookOpen, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type Lu
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, Notice, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { i6Amount } from "@/lib/admin/i6-amount";
+import { i6HasCopyText } from "@/lib/admin/i6-copy-quality";
 
 export type Lang = "zh" | "vi" | "en";
 export const LANGS: readonly { key: Lang; label: string; short: string }[] = [
@@ -147,9 +148,9 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
 /** 和共用表单 localized-copy 的校验一致：三语都要填，原有的变量三语都要带上。 */
 export function copyFormMissing(placeholders: readonly string[], state: Record<Lang, string>): Missing[] {
   const missing: Missing[] = [];
-  if (!state.zh?.trim()) missing.push({ key: "zh", text: "中文", need: true });
-  if (!state.en?.trim()) missing.push({ key: "en", text: "英语", need: true });
-  if (!state.vi?.trim()) missing.push({ key: "vi", text: "越南语", need: true });
+  if (!i6HasCopyText(state.zh)) missing.push({ key: "zh", text: "中文", need: true });
+  if (!i6HasCopyText(state.en)) missing.push({ key: "en", text: "英语", need: true });
+  if (!i6HasCopyText(state.vi)) missing.push({ key: "vi", text: "越南语", need: true });
   placeholders.forEach((ph) => {
     if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push({ key: `ph:${ph}`, text: `变量 ${ph}` });
   });

@@ -18,7 +18,7 @@ import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
+import { i6CopyQualityIssues, i6HasCopyText } from "@/lib/admin/i6-copy-quality";
 import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, releaseExpiredI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -87,7 +87,7 @@ const issueName = (issue: { code: string; kind: string }) => ISSUE_NAME[issue.co
 const approvalValue = (value: string) => (value.replace(/\bNEX\b/g, "UVT").replace(/ · published · /g, " 在线 · ").replace(/ · draft · /g, " 草稿 · ").replace(/ · ready · /g, " 草稿 · ").replace(/ · archived · /g, " 已下架 · "));
 const msgStatus = (status?: string) => MSG_STATUS[status ?? ""] ?? { text: "状态未知", tone: "warn" as StateTone };
 const langValue = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">, lang: Lang) => message[lang] ?? "";
-const missingLangs = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">) => LANGS.filter((item) => !langValue(message, item.key).trim());
+const missingLangs = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">) => LANGS.filter((item) => !i6HasCopyText(langValue(message, item.key)));
 const count = (value: number) => value.toLocaleString("en-US");
 
 function readTab(allowed: readonly TabKey[]): TabKey {
@@ -153,7 +153,7 @@ export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null
 
 function messagePublication(message?: I18nMessagePairView) {
   const missingLocales = message
-    ? ([["中文", message.zh], ["英文", message.en], ["越南语", message.vi]] as const).filter(([, value]) => !value.trim()).map(([label]) => label)
+    ? ([["中文", message.zh], ["英文", message.en], ["越南语", message.vi]] as const).filter(([, value]) => !i6HasCopyText(value)).map(([label]) => label)
     : [];
   const messageVariables = message
     ? [message.zh, message.en, message.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
@@ -1460,7 +1460,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   /* ============ App 文案 ============ */
   if (view === "i18n") {
     const total = MESSAGES.length;
-    const filledOf = (lang: Lang) => MESSAGES.filter((message) => langValue(message, lang).trim()).length;
+    const filledOf = (lang: Lang) => MESSAGES.filter((message) => i6HasCopyText(langValue(message, lang))).length;
     const missingAny = MESSAGES.filter((message) => missingLangs(message).length > 0);
     const drafts = MESSAGES.filter((message) => message.status === "draft");
     const archived = MESSAGES.filter((message) => message.status === "archived");
@@ -1473,7 +1473,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       if (query && ![message.messageKey, message.namespace, message.zh, message.vi, message.en].some((value) => (value ?? "").toLowerCase().includes(query))) return false;
       if (msgScope === "missing" && missingLangs(message).length === 0) return false;
       if (msgScope !== "all" && msgScope !== "missing" && message.status !== msgScope) return false;
-      if (msgLang && langValue(message, msgLang).trim()) return false;
+      if (msgLang && i6HasCopyText(langValue(message, msgLang))) return false;
       if (msgNs && message.namespace !== msgNs) return false;
       return true;
     });
@@ -1493,7 +1493,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const openMessage = (key: string) => { setSelectedMessageKey(key); setCompareVersion(""); setCopyEditor(null); setMessageDrawer(true); };
     const nsRows = NAMESPACES.map((n) => {
       const rows = MESSAGES.filter((message) => message.namespace === n.ns);
-      return { ...n, rows: rows.length, missing: LANGS.map((item) => ({ ...item, n: rows.filter((message) => !langValue(message, item.key).trim()).length })) };
+      return { ...n, rows: rows.length, missing: LANGS.map((item) => ({ ...item, n: rows.filter((message) => !i6HasCopyText(langValue(message, item.key))).length })) };
     });
     const missingByLang = LANGS.map((item) => ({ ...item, n: total - filledOf(item.key) }));
     const worstNs = [...nsRows].map((n) => ({ ns: n.ns, n: n.missing.reduce((sum, item) => sum + item.n, 0) })).filter((n) => n.n > 0).sort((a, b) => b.n - a.n);
@@ -1619,7 +1619,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </span></Td>
                   {LANGS.map((item) => {
                     const text = langValue(message, item.key);
-                    return <Td key={item.key}>{text.trim() ? <Cell main={text} title={text} /> : <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</Td>;
+                    return <Td key={item.key}>{i6HasCopyText(text) ? <Cell main={text} title={text} /> : <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</Td>;
                   })}
                   <Td><Cell main={<StatusTag tone={msgStatus(message.status).tone} icon={message.status === "draft" ? FilePen : undefined}>{msgStatus(message.status).text}</StatusTag>} sub={message.version} /></Td>
                 </Tr>;
@@ -1698,9 +1698,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <section className="i6-langs" aria-label="三种语言">
             {LANGS.map((item) => {
               const text = langValue(sm, item.key);
-              return <div key={item.key} className="i6-lang" data-missing={text.trim() ? undefined : ""}>
-                <div className="i6-lang-head"><span>{item.label}</span>{!text.trim() && <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</div>
-                <p className="i6-lang-text">{text.trim() ? text : `还没有${item.label}`}</p>
+              return <div key={item.key} className="i6-lang" data-missing={i6HasCopyText(text) ? undefined : ""}>
+                <div className="i6-lang-head"><span>{item.label}</span>{!i6HasCopyText(text) && <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</div>
+                <p className="i6-lang-text">{i6HasCopyText(text) ? text : `还没有${item.label}`}</p>
               </div>;
             })}
           </section>
@@ -1739,9 +1739,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           {LANGS.map((item) => {
             const value = copyEditor[item.key];
             const missingVars = (sm.placeholders ?? []).filter((ph) => !value.includes(ph));
-            const error = copyEditor.tried ? (!value.trim() ? `请填${item.label}` : missingVars.length ? `缺变量 ${missingVars.join("、")}` : undefined) : undefined;
+            const error = copyEditor.tried ? (!i6HasCopyText(value) ? `请填${item.label}` : missingVars.length ? `缺变量 ${missingVars.join("、")}` : undefined) : undefined;
             return <Field key={item.key} label={item.label} required hint={sm.placeholders.length ? `要带上 ${sm.placeholders.join("、")}` : undefined} error={error}
-              help={langValue(sm, item.key).trim() && langValue(sm, item.key) !== value ? <>现在：{langValue(sm, item.key)}</> : undefined}>
+              help={i6HasCopyText(langValue(sm, item.key)) && langValue(sm, item.key) !== value ? <>现在：{langValue(sm, item.key)}</> : undefined}>
               <Textarea rows={3} value={value} onChange={(event) => setCopyEditor({ ...copyEditor, [item.key]: event.target.value })} />
             </Field>;
           })}
