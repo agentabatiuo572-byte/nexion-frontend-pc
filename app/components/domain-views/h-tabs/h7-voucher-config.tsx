@@ -333,7 +333,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <Fact k="代金券">{v.name}</Fact>
           <Fact k="状态"><Change from={v.status === "active" ? "投放中" : "已暂停"} to={next === "active" ? "投放中" : "已暂停"} /></Fact>
           <Fact k="有效期" tone={next === "active" && voucherPhase(v, Date.now()) === "expired" ? "warn" : undefined}>{next === "active" && voucherPhase(v, Date.now()) === "expired"
-            ? `${periodText(v)}，已过期，不能投放；要继续发，先编辑有效期` : periodText(v)}</Fact>
+            ? `${periodText(v)}，已过期，不能投放；先编辑有效期` : periodText(v)}</Fact>
           <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
         </Facts>
       ),
@@ -538,7 +538,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
   const rowActions = (v: OpsVoucher, size: "sm" | "md" = "sm") => canWrite && <>
     <Button size={size} icon={<Pencil size={14} aria-hidden />} disabledReason={blockNew(v.id)} onClick={() => openEdit(v)}>编辑</Button>
-    <Button size={size} icon={v.status === "active" ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />} aria-label={`${v.status === "active" ? "暂停" : "投放"} ${v.name}`} disabledReason={blockNew(v.id) ?? (v.status !== "active" && voucherPhase(v, now) === "expired" ? "已过有效期，不能投放；要继续发，先编辑有效期" : undefined)} onClick={() => openToggle(v)}>{v.status === "active" ? "暂停" : "投放"}</Button>
+    <Button size={size} icon={v.status === "active" ? <Pause size={14} aria-hidden /> : <Play size={14} aria-hidden />} aria-label={`${v.status === "active" ? "暂停" : "投放"} ${v.name}`} disabledReason={blockNew(v.id) ?? (v.status !== "active" && voucherPhase(v, now) === "expired" ? "已过有效期，不能投放；先编辑有效期" : undefined)} onClick={() => openToggle(v)}>{v.status === "active" ? "暂停" : "投放"}</Button>
   </>;
 
   const conclusion = list.length === 0
