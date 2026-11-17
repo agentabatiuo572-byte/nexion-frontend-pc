@@ -164,7 +164,7 @@ interface BackendF3Metric {
   configKey?: string | null;
 }
 
-interface BackendF3Settlement {
+interface BackendF3Settlement extends Partial<F3SettlementReview> {
   trackARaw?: string | null;
   trackBRaw?: string | null;
   matchAmountRaw?: string | null;
@@ -223,6 +223,7 @@ interface BackendF3Overview extends F3RawAmounts {
   metrics?: BackendF3Metric[] | null;
   formula?: BackendF3Formula | null;
   settlements?: BackendF3Settlement[] | null;
+  blockedAttempts?: F3BlockedSettlementAttempt[];
   maxTrackGmv?: number | string | null;
   participantCount?: number | string | null;
   blockedCount?: number | string | null;
@@ -676,7 +677,31 @@ export interface F3Metric {
   configKey: string;
 }
 
-export interface F3Settlement {
+export interface F3SettlementReview {
+  settlementNo: string | null;
+  residualTrackARaw: string | null;
+  residualTrackBRaw: string | null;
+  residualAmountUsdt: string | null;
+  residualPolicy: string | null;
+  settlementMode: string | null;
+  proposerName: string | null;
+  approverName: string | null;
+  a2OperationId: string | null;
+}
+
+export interface F3BlockedSettlementAttempt {
+  settlementNo: string;
+  blockedAt: string;
+  ownerUserId: string | null;
+  settlementDate: string | null;
+  reason: string | null;
+  settlementMode: string | null;
+  a2OperationId: string | null;
+  proposerName: string | null;
+  approverName: string | null;
+}
+
+export interface F3Settlement extends F3SettlementReview {
   aRaw?: string | null;
   bRaw?: string | null;
   matchRaw?: string | null;
@@ -757,6 +782,8 @@ export interface F3BinaryOverview extends F3RawAmounts {
   metrics: F3Metric[];
   formula: F3Formula;
   settlements: F3Settlement[];
+  /** null means the backend does not provide this read, distinct from no blocked attempts. */
+  blockedAttempts: F3BlockedSettlementAttempt[] | null;
   maxTrackGmv: number;
   participantCount: number;
   blockedCount: number;
@@ -1477,6 +1504,15 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     };
   });
   const settlements = (data?.settlements ?? []).map((item) => ({
+    settlementNo: item.settlementNo ?? null,
+    residualTrackARaw: item.residualTrackARaw ?? null,
+    residualTrackBRaw: item.residualTrackBRaw ?? null,
+    residualAmountUsdt: item.residualAmountUsdt ?? null,
+    residualPolicy: item.residualPolicy ?? null,
+    settlementMode: item.settlementMode ?? null,
+    proposerName: item.proposerName ?? null,
+    approverName: item.approverName ?? null,
+    a2OperationId: item.a2OperationId ?? null,
     ownerUserId: toNumber(item.ownerUserId),
     user: asText(item.user, "usr_unknown"),
     settlementDate: asText(item.settlementDate, ""),
@@ -1509,6 +1545,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       settlePeriod: asText(formula.settlePeriod),
     },
     settlements,
+    blockedAttempts: data?.blockedAttempts ?? null,
     maxTrackGmv: toNumber(data?.maxTrackGmv, Math.max(1, ...settlements.flatMap((row) => [row.a, row.b]))),
     participantCount: toNumber(data?.participantCount),
     blockedCount: toNumber(data?.blockedCount),
@@ -1942,7 +1979,7 @@ async function f1Request<T>(
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
-      result = JSON.parse(raw.replace(/("(?:h1BinaryDailyCap|monthlyMatchedUsdRaw|dailyMatchUsdRaw|maxDailyCapUsdRaw|maxTrackGmvRaw|residualPoolUsdRaw|trackARaw|trackBRaw|matchAmountRaw|todayPaidRaw)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:h1BinaryDailyCap|monthlyMatchedUsdRaw|dailyMatchUsdRaw|maxDailyCapUsdRaw|maxTrackGmvRaw|residualPoolUsdRaw|trackARaw|trackBRaw|matchAmountRaw|todayPaidRaw|residualTrackARaw|residualTrackBRaw|residualAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
     } else if (path.startsWith("/commissions") && !isWrite) {
       const raw = await response.text();
