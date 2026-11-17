@@ -20,8 +20,8 @@ import {
   fetchH9AppDisplay,
   fetchH9PublicStats,
   prepareH9PublicStats,
+  previewH9ActiveJobs,
   updateH9PublicStats,
-  type H9AppDisplay,
   type H9EditableValues,
   type H9FieldDef,
   type H9PercentileBand,
@@ -45,7 +45,7 @@ import type { HCtx } from "./types";
 import { H9DeviceRank } from "./h9-device-rank";
 import { H9GlobeDisplay } from "./h9-globe-display";
 import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
-import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
+import { AppNumber, AppPreview, AuditFoot, type AppDisplayRead, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
 import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -123,11 +123,17 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
 }
 
 
-type AppDisplayRead = { state: "loading" } | { state: "ready"; data: H9AppDisplay } | { state: "error"; message: string };
 const APP_PAID_NOTE = "服务端给的是金额本身，没有写币种；App 上显示为 $，这里不另加。";
 const APP_DISPLAY_REASON: Record<string, string> = {
   HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "服务端这一刻没有可用的展示数据",
   HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页展示数据",
+};
+/** 进行中作业数读不到的原因（GrowthPublicStatsService.appDisplay 的 unavailable，ae9783f7）。 */
+const JOBS_REASON: Record<string, string> = {
+  APP_FLEET_REALIZED_TODAY_CONTEXT_REQUIRED: "首页作业数没读到；当天没收益的用户只看到基座，其他人看到不可用",
+  APP_HOME_ON_GRID_UNAVAILABLE: "首页作业数没读到",
+  APP_HOME_SANDBOX_RUN_ID_REQUIRED: "测试环境的运行批次无效，读不到任务种类数",
+  APP_ACTIVE_JOBS_DISPLAY_NOT_SAFE_INTEGER: "加上基座后超出 App 能显示的范围",
 };
 /** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。 */
 function centsAmount(cents: number) {
@@ -174,6 +180,9 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       .catch((cause) => { if (!controller.signal.aborted) setAppDisplay({ state: "error", message: formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_DATA_LOAD_FAILED") }); });
     return () => controller.abort();
   }, [readAt]);
+  const appData = appDisplay.state === "ready" ? appDisplay.data : null;
+  /** 正式环境是 App 首页同一来源的进行中作业数；测试环境是任务目录的种类数，不是正在跑的任务。 */
+  const jobsName = appData?.sourceEnvironment === "SANDBOX" ? "任务种类数" : "进行中作业数";
   const currentVersion = useRef(data?.version);
   currentVersion.current = data?.version;
   const drafts = editor?.drafts ?? null;
@@ -359,9 +368,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         : `暂停后 App 首页的两个数停住不再增加，${currentChanged ? "停在你填的新当前值" : "停在 App 上现在的数"}；再开启从那里接着涨。`
       : module === "home" ? `保存后按新参数生成 App 首页的展示数字，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}；增长开关不变。`
         : module === "network" ? (memberModels?.resets ? "保存后 App 网络脉搏的注册人数从新基数、在保存时刻重新开始推算。" : "保存后 App 网络脉搏的注册人数按新的月增长率、从原推算起点重算整段。")
-          : module === "jobs" ? `保存后 App 赚取页任务中心和全球网络页显示${nextValues.activeJobsBase == null ? "真实进行中作业数，不加基座" : `真实进行中作业数 + ${count(nextValues.activeJobsBase)}`}。`
+          : module === "jobs" ? `保存后 App 赚取页任务中心和全球网络页显示${nextValues.activeJobsBase == null ? `${jobsName}，不加基座` : `${jobsName} + ${count(nextValues.activeJobsBase)}`}。`
             : "这组参数 App 正式页面不读，保存后只改变这页的历史估算。";
     const homeCompare = (module === "home" || toggled) && stepsChanged;
+    // 改基座的预览：按这次取样的进行中作业数加新基座估一个数；作业数读不到就不出数（previewH9ActiveJobs）。
+    const jobsPreview = module === "jobs" && appData?.activeJobsDisplay !== undefined ? previewH9ActiveJobs(appData!, nextValues.activeJobsBase ?? null) : null;
     const facts = <ConfirmFacts rows={rows} facts={<>
         <Fact k="改的是">{label}</Fact>
         <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
@@ -371,6 +382,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       </>}>
       {fleetChanged && impact && <Notice tone="neutral" title="历史估算会跟着变">
         日金额估算从 {usd(impact.current.daily)} USD 变成 {usd(usdProduct(nextValues.fleetDevices, data.publishedDailyUsdPerDevice))} USD（每台每日 {usd(data.publishedDailyUsdPerDevice)} USD 不变）。这是内部估算，不是实付，App 不显示。
+      </Notice>}
+      {module === "jobs" && jobsBaseSupported && <Notice tone="neutral" title={jobsPreview?.value != null ? `预览：保存后 App 约显示 ${count(jobsPreview.value)} 个` : "预览：估不出保存后 App 显示多少"}>
+        {jobsPreview?.value != null
+          ? <>按 {formatBusinessTimeCompact(jobsPreview.capturedAt, "—")}（{businessZone().label}）取样的{jobsName} {count(appData!.activeJobsActual)}{nextValues.activeJobsBase == null ? "，不加基座" : ` + 新基座 ${count(nextValues.activeJobsBase)}`}估算；作业数一直在变，不是保证。</>
+          : !appData ? "这次没读到 App 显示的作业数。" : !jobsPreview ? "服务端还不给进行中作业数。" : `${JOBS_REASON[jobsPreview.reason ?? ""] ?? "服务端没给出原因"}。`}
       </Notice>}
       {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
       {homeCompare && <div className="h9-confirm-chart">
@@ -508,7 +524,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       readOnly={!canWrite ? "你只能查看；修改要有这页的修改权限。" : undefined} />
   );
 
-  const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} rankUnknown={!!rankPending} module={module} onSelect={setModule} ids={ids} readAt={readAt} />;
+  const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} rankUnknown={!!rankPending} module={module} onSelect={setModule} ids={ids} readAt={readAt}
+    appJobs={appData?.activeJobsDisplay} jobsName={jobsName} />;
   const rankPanel = <div key="rank" hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
 
   if (!data || !drafts) {
@@ -573,7 +590,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   </Notice>;
 
   // 首页：App 显示的数读得到就放大写它、设定值退到下面；增长推算只算增加量。
-  const display = appDisplay.state === "ready" ? appDisplay.data : null;
+  const display = appData;
   const shown = display?.homeDisplay ?? null;
   const appMembers = display?.registeredUsers ?? null;
   const homeDraftValid = HOME_KEYS.every((key) => !fieldErrors[key]);
@@ -680,18 +697,28 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </Panel>
   </div>;
 
-  // 全球作业基座。
+  // 全球作业基座：App 显示的数由服务端按 App 同一算法给出，页面不重算（ae9783f7）。
   const jobs = values.activeJobsBase;
   const appJobs = display?.activeJobsDisplay;
-  const jobsUnavailable = display?.unavailable.find(item => item.field === "activeJobsDisplay")?.reason;
+  const jobsActual = display?.activeJobsActual ?? null;
+  const jobsReason = display?.unavailable.find(item => item.field === "activeJobsDisplay")?.reason;
+  const jobsSandbox = display?.sourceEnvironment === "SANDBOX";
   const jobsModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "jobs"} {...ids.panel("jobs")}>
     <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
       <AppPreview where="App 赚取页 · 任务中心"
-        explain="真实进行中作业数这页读不到。真实数读不到时，只有当天两种币的已实现收益都确为 0，App 才只显示基座；否则显示不可用。全球网络页的进行中任务也是这个数。"
-        status="真实进行中作业数这页读不到">
-        <AppNumber label="全球作业进行中" value={appJobs === undefined ? jobs == null ? "真实数" : <>真实数 + {count(jobs)}</> : count(appJobs)} unit="个" empty={appJobs === undefined ? jobs == null : appJobs === null}
-          sub={appJobs === null && jobsUnavailable ? formatAdminApiError(jobsUnavailable, "H9_DATA_LOAD_FAILED") : jobs == null ? "基座未发布，只显示真实进行中作业数" : jobs === 0 ? "发布了 0，显示的就是真实数" : undefined} />
+        explain={<><p>App 显示 = 进行中作业数 + 基座，全球网络页的进行中任务也是这个数。</p><p>正式环境的进行中作业数和 App 首页同一个来源，开了模拟任务时也算在内；测试环境是任务目录里的任务种类数，不是正在跑的任务。</p><p>进行中作业数读不到时，当天没收益的用户只看到基座，其他人看到不可用。</p></>}
+        status={appJobs === undefined ? undefined : jobsSandbox ? <><StatusTag tone="warn">测试环境</StatusTag>任务种类数，不是正在跑的任务</> : "正式环境 · 和 App 首页同一来源"}>
+        <AppNumber label={appJobs != null ? "全球作业进行中 · App 显示" : "全球作业进行中"}
+          value={appJobs != null ? count(appJobs) : appJobs === null ? "—" : jobs == null ? jobsName : <>{jobsName} + {count(jobs)}</>}
+          unit={appJobs === null || appJobs === undefined && jobs == null ? undefined : "个"} empty={appJobs === null || appJobs === undefined && jobs == null}
+          sub={appJobs != null ? `${jobsName} ${count(jobsActual)}${jobs == null ? "，基座未发布" : ` + 基座 ${count(jobs)}`}`
+            : appJobs === null ? JOBS_REASON[jobsReason ?? ""] ?? "服务端没给出原因"
+              : jobs == null ? "基座未发布" : jobs === 0 ? "基座是 0，App 显示的就是进行中作业数" : undefined} />
       </AppPreview>
+      {appDisplay.state === "loading" ? <p className="h9-chart-note">正在读取 App 显示的数…</p>
+        : appDisplay.state === "error" ? <p className="h9-chart-note">App 显示的数没读到，上面是算法<Explain label="失败原因" content={appDisplay.message} /></p>
+          : appJobs === undefined ? <p className="h9-chart-note">服务端还不给 App 显示的作业数，上面是算法</p>
+            : <p className="h9-chart-note">{appJobs === null ? "App 显示的数读不到" : "App 显示的数"} · 取样 {formatBusinessTimeCompact(appDisplay.data.capturedAt, "—")}（{businessZone().label}）</p>}
     </Panel>
     <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}>
       {conflictNotice}
@@ -770,11 +797,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   return <div className="h9-page">
     {header}
     {recoveryNotice}
-    {issue?.kind === "conflict" && <Notice tone="warn" title={`保存没成功：${moduleLabel(issue.module)}所在的主配置已被别人改过`}
+    {issue?.kind === "conflict" && !ctx.confirmOpen && <Notice tone="warn" title={`保存没成功：${moduleLabel(issue.module)}所在的主配置已被别人改过`}
       action={<Button size="sm" onClick={() => { setModule(issue.module); void load(issue.module); }}>刷新这一块</Button>}>
       这次没有保存。刷新读到最新值后再改，避免盖掉别人的设置。
     </Notice>}
-    {issue?.kind === "rejected" && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message} 这次没有保存，按原因改好后再保存。</Notice>}
+    {issue?.kind === "rejected" && !ctx.confirmOpen && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message} 这次没有保存，按原因改好后再保存。</Notice>}
     {error && <Notice tone="danger" title="刷新没成功">{error} 页面上还是上次读到的值，已填写的内容保留，请重试。</Notice>}
     {!issue && !error && (unresolved
       ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存结果未知：先查询原结果，有结论前不能再保存</Conclusion>
@@ -786,7 +813,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     {networkModule}
     {jobsModule}
     <div hidden={module !== "globe"} {...ids.panel("globe")}>
-      <H9GlobeDisplay ctx={ctx} data={data} refreshing={loading} blocked={!!error || saving || !!pending || saveError?.kind === "conflict"} ready={ready} onPending={syncPending} onIssue={onGlobeIssue} onSaved={next => {
+      <H9GlobeDisplay ctx={ctx} data={data} appDisplay={appDisplay} refreshing={loading} blocked={!!error || saving || !!pending || saveError?.kind === "conflict"} ready={ready} onPending={syncPending} onIssue={onGlobeIssue} onSaved={next => {
         setData(next); setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key))); setSaveError(null); setReadAt(Date.now());
       }} onRefresh={() => load("globe")} />
     </div>

@@ -10,6 +10,10 @@ import { CircleHelp, Smartphone } from "lucide-react";
 import { Change, DiffList, Explain, Fact, Facts, Notice, StatusTag, type DiffRow } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { h9CommandRejected } from "@/lib/admin/h9-command";
+import type { H9AppDisplay } from "@/lib/admin/h9-client";
+
+/** App 此刻实际显示的数（读 /public-stats/app-display）：读取中、读到、没读到。 */
+export type AppDisplayRead = { state: "loading" } | { state: "ready"; data: H9AppDisplay } | { state: "error"; message: string };
 
 /** 整数、个数：千分位，原值有小数就照写，不舍入。 */
 export function count(value: number | null | undefined): string {

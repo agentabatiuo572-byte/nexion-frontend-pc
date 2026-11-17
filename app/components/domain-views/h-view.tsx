@@ -55,6 +55,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: HCtx = {
     toast: setToast,
     openActionConfirm: (req) => { openConfirm.current = req; setActionConfirm(req); },
+    confirmOpen: !!mc,
     openConfirm: setCf,
     closeConfirm: (req) => setCf(current => !req || current === req ? null : current),
     can,
