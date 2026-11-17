@@ -1421,7 +1421,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   );
 
   /* ── 投递与死信 ── */
-  const redriveBlocked = !canRedriveH3Dead ? "你只能查询；重新排队要有事件修改和操作审批的写权限" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined;
+  const redriveBlocked = !canRedriveH3Dead ? "重新排队要有事件修改和操作审批的写权限" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined;
   const redrivePreviewBlocked = canReadOutbox || canRedriveH3Dead
     ? loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined
     : "当前账号不能查询或重新排队任务事件";
