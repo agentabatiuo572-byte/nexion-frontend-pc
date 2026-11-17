@@ -10,6 +10,19 @@ export type H3PendingApproval = {
   proposedValue: string | null;
 };
 
+export type H3PendingMissionCreation = {
+  action: string | null;
+  ticketId: string | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+  missionCode: string | null;
+  missionName: string | null;
+  missionType: string | null;
+  rewardPoints: number | null;
+  category: string | null;
+  actionRoute: string | null;
+};
+
 export type H3Task = Record<string, any> & { contentState?: "UNKNOWN" | "DRAFT" | "OPENED"; pendingApproval?: H3PendingApproval | null };
 
 export interface H3TaskContract extends Record<string, any> {
@@ -85,6 +98,7 @@ export type H3Model = {
   dayOneEligibilityHours: string;
   dayOneTriReward: string;
   pendingApprovals?: Record<string, H3PendingApproval | null>;
+  pendingMissionCreations?: H3PendingMissionCreation[];
   dayOneTasks: H3Task[];
   dayOneStates: Array<{ st: string; label: string; tone: string }>;
   weeklyTier1: H3Task[];
@@ -124,6 +138,15 @@ export function parseH3Model(value: unknown): H3Model {
       .some(key => pending[key] !== null && typeof pending[key] !== "string")) throw new Error("H3_RESPONSE_INVALID");
   };
   if (row.pendingApprovals !== undefined) Object.values(object(row.pendingApprovals)).forEach(pendingApproval);
+  if (row.pendingMissionCreations !== undefined) {
+    if (!Array.isArray(row.pendingMissionCreations)) throw new Error("H3_RESPONSE_INVALID");
+    for (const value of row.pendingMissionCreations) {
+      const pending = object(value);
+      if (["action", "ticketId", "submittedBy", "submittedAt", "missionCode", "missionName", "missionType", "category", "actionRoute"]
+        .some(key => pending[key] !== null && typeof pending[key] !== "string")
+        || pending.rewardPoints !== null && (!Number.isInteger(pending.rewardPoints) || pending.rewardPoints < 0 || pending.rewardPoints > 2147483647)) throw new Error("H3_RESPONSE_INVALID");
+    }
+  }
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "promoBanner", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
   const banner = row.promoBanner;

@@ -139,10 +139,13 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   const pendingTargets = () => [...new Set([
     ...pendingApprovals().filter(t => t.status === "pending"
       && ["h3_quest_config", "h3_mission_create"].includes(t.operationCode ?? "")
-      && !(t.operationCode === "h3_quest_config" && model?.pendingApprovals !== undefined && t.obj in model.pendingApprovals)).map(t => t.obj),
+      && !(t.operationCode === "h3_quest_config" && model?.pendingApprovals !== undefined && t.obj in model.pendingApprovals)
+      && !(t.operationCode === "h3_mission_create" && model?.pendingMissionCreations !== undefined)).map(t => t.obj),
     ...Object.entries(model?.pendingApprovals ?? {}).filter(([, approval]) => approval?.ticketId != null).map(([key]) => key),
+    ...(model?.pendingMissionCreations ?? []).flatMap(approval => approval.ticketId != null && approval.missionCode != null ? [approval.missionCode] : []),
   ])];
-  const blocked = (target: string) => !!record(target) || model?.pendingApprovals?.[target] != null || pendingTargets().includes(target);
+  const blocked = (target: string) => !!record(target) || model?.pendingApprovals?.[target] != null
+    || model?.pendingMissionCreations?.some(approval => approval.missionCode === target) === true || pendingTargets().includes(target);
   const send = async (r: H3PendingCommand, recovering: boolean) => {
     requireActor(true, r.store === "region");
     if (isRetryExpired(r)) throw new Error(RETRY_EXPIRED_TEXT);
