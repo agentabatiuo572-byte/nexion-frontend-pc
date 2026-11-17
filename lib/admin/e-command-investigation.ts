@@ -70,6 +70,7 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
   // RBAC, permission registration and resume have no accepted success-audit branch.
   const audit = !rbac && !scope.startsWith("J4_PLAYBOOK_RESUME:") && (scope === "A2_COMMAND" || scope === "L_BI_REPORT_CREATE"
     || scope.startsWith("L_BI_REPORT_ACTION_") || /^(?:E2_POOL_|E5_DEVICE_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|I7_COURSE_|M4_SUPPORT_FAQ_|I4_TRUST_SECTION_)/.test(scope)
+    || scope === "J4_PLAYBOOK_CREATE" || /^J4_PLAYBOOK_(?:UPDATE|DRILL|EXECUTE|CANCEL|ROLLBACK):/.test(scope)
     || scope === "E6_PHONE_RISK_SETTINGS" || scope === "J3_ALERT_CONFIG" || j2 || h9 || a3Param
     || /^GROWTH:H[14]:/.test(scope) || /^A4_(?:PARAM:|EVENT_LIFECYCLE:|H3_OUTBOX_REDRIVE:|EVENT_RETENTION_RUN$)/.test(scope)
     || scope === "I4_TRUST_DOCUMENT" || /^(?:D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(scope)
