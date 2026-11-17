@@ -89,7 +89,8 @@ export type H3Model = {
 };
 
 /** d9e2038f: match the writer's normalized key without changing historical values. */
-export function h3QuestConfigWriteRefusal(key: string): "H3_DAY_ONE_WINDOW_RETIRED" | undefined {
+export function h3QuestConfigWriteRefusal(key: string): "H3_DAY_ONE_WINDOW_RETIRED" | "RETIRED_FEATURE" | undefined {
+  if (/^promoBanner\.(baseReward|multiplier|countdownDays|countdownHours|targetDevice|targetDaily|status)$/.test(key)) return "RETIRED_FEATURE";
   return key.replace(/H3\.|H4\.|event\./g, "") === "dayOne.windowMs" ? "H3_DAY_ONE_WINDOW_RETIRED" : undefined;
 }
 
@@ -106,6 +107,10 @@ export function parseH3Model(value: unknown): H3Model {
   };
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "promoBanner", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
+  const banner = row.promoBanner;
+  if (["promoBannerConfigurable", "promoBannerRetired", "promoBannerRetiredReason"].some(key => banner[key] !== undefined)
+    && (banner.promoBannerConfigurable !== false || banner.promoBannerRetired !== true
+      || banner.promoBannerRetiredReason !== "RETIRED_FEATURE")) throw new Error("H3_RESPONSE_INVALID");
   if (row.dayOneWindowConfig !== undefined) {
     const config = object(row.dayOneWindowConfig);
     if (config.key !== "dayOne.windowMs" || config.readOnly !== true || config.retired !== true || config.valueKind !== "DISPLAY_TEXT_ONLY") throw new Error("H3_RESPONSE_INVALID");
