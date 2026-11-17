@@ -254,12 +254,18 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
 }
 
 /** Message and course receipts use their own exact read domain; current-state readback is only an observation. */
+export async function queryI6Receipt(saved: I6Command, evidence?: FundCommandEvidence) {
+  const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  return queryIContentCommand(command, command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read", evidence);
+}
+
 export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvidence) {
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   let receipt: FundCommandInvestigation | null = null;
   try {
-    receipt = await queryIContentCommand(command, command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read", evidence);
+    receipt = await queryI6Receipt(command, evidence);
     if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
   } catch { /* Auxiliary receipt errors must not stop the existing current-content reads. */ }
   const overview = parseI6Overview(await apiRequest("/i18n-learning/overview"));
@@ -312,12 +318,18 @@ export function pendingI4DraftCommands(): I4DraftCommand[] {
   return uncertainCommandKeys.list().flatMap(row => { const value = readI4DraftCommand(row); return value ? [value] : []; });
 }
 
+export async function queryI4DraftReceipt(saved: I4DraftCommand, evidence?: FundCommandEvidence) {
+  const command = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  return queryIContentCommand(command, "content_i4_read", evidence);
+}
+
 export async function queryI4DraftCommand(saved: I4DraftCommand, evidence?: FundCommandEvidence) {
   const command = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   let receipt: FundCommandInvestigation | null = null;
   try {
-    receipt = await queryIContentCommand(command, "content_i4_read", evidence);
+    receipt = await queryI4DraftReceipt(command, evidence);
     if (fundCommandSettled(receipt)) return { settled: true as const, receipt };
   } catch { /* Auxiliary receipt failures leave the existing overview read available. */ }
   return { settled: false as const, receipt, overview: await fetchI4TrustOverview() };

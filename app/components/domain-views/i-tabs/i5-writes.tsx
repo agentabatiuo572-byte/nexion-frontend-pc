@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { KeepText, Button, Explain, Modal, Notice, ReleaseModal } from "@/app/components/rd";
+import { KeepText, Button, Explain, Fact, Modal, Notice, ReleaseModal } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -28,6 +28,11 @@ import { updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/a
 import { usePropose } from "@/lib/admin/use-propose";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ICtx } from "./types";
+import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECommandEvidence } from "@/lib/admin/e-command-investigation";
+import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
+import { FundClosureModal } from "../fund-command-check";
+import { receiptFact } from "../recovery-panel";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
 type ContentCall =
@@ -48,6 +53,23 @@ export type I5Op =
 export type I5Write = { target: string; label: string; op: I5Op };
 /** 保存明确拒绝的状态与原因；旧 rejected 布尔值不能证明原重试得到结论。 */
 type I5Pending = PendingMutationRecord & I5Write & { rejection?: { status: number; reasonCode?: string; backendMessage?: string } };
+
+/** The saved call identifies the original HTTP route; the server supplies its scope and hash. */
+function i5OriginalRoute(record: I5Pending): OriginalCommandRoute | undefined {
+  if (record.op.kind === "a2") return { originalMethod: "POST", originalPath: "/api/admin/platform/audit/operations", readAuthority: "content_i5_read" };
+  if (record.op.kind !== "content") return undefined;
+  const { call } = record.op;
+  const base = "/api/admin/content/trust-disclosure/disclosures";
+  switch (call.fn) {
+    case "createI5Jurisdiction": return { originalMethod: "POST", originalPath: `${base}/jurisdictions`, readAuthority: "content_i5_read" };
+    case "updateI5Jurisdiction": return { originalMethod: "PATCH", originalPath: `${base}/jurisdictions/${encodeURIComponent(call.args[0])}`, readAuthority: "content_i5_read" };
+    case "createI5DisclosureVersion": return { originalMethod: "POST", originalPath: `${base}/${encodeURIComponent(call.args[0])}/versions`, readAuthority: "content_i5_read" };
+    case "updateI5DisclosureVersion": case "deleteI5DisclosureVersion": return {
+      originalMethod: call.fn === "deleteI5DisclosureVersion" ? "DELETE" : "PATCH",
+      originalPath: `${base}/${encodeURIComponent(call.args[0])}/versions/${encodeURIComponent(call.args[1])}`, readAuthority: "content_i5_read",
+    };
+  }
+}
 
 const pendingWrites = createPendingMutationStore<I5Pending>({
   storageKey: "nexion-admin-i5-disclosure-commands-v1",
@@ -276,6 +298,8 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [recovering, setRecovering] = useState("");
   const [releasing, setReleasing] = useState<I5Pending | null>(null);
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<I5Pending | null>(null);
   const sync = useCallback(() => setPending(pendingWrites.list()), []);
   useEffect(() => sync(), [sync]);
 
@@ -359,12 +383,44 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     }
   };
 
+  const queryInvestigation = async (saved: I5Pending, evidence?: ECommandEvidence) => {
+    const record = pendingWrites.list().find(row => row.commandKey === saved.commandKey);
+    const route = record && i5OriginalRoute(record);
+    if (!record || !route) throw new Error("INVESTIGATION_ORIGINAL_LOCATOR_INVALID");
+    const receipt = await queryOriginalCommand(record, route, String(record.commandOwnerId), evidence);
+    setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
+    return receipt;
+  };
+  const queryContent = async (record: I5Pending) => {
+    setRecovering(record.commandKey);
+    try {
+      const receipt = await queryInvestigation(record);
+      if (eCommandSettled(receipt)) {
+        pendingWrites.forget(record.fingerprint, record.commandKey); sync();
+        await onSettled(record);
+      }
+    } catch (cause) {
+      setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
+      note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
+    } finally { setRecovering(""); }
+  };
+
   /** 按命令号查原提案。查到就有了结果，可以解除；查不到说明不了没提交，继续保留（OP-95）。 */
   const check = async (record: I5Pending) => {
     setRecovering(record.commandKey);
     try {
       const original = await fetchA2ProposalByKey(record.commandKey);
       if (!original) {
+        try {
+          const receipt = await queryInvestigation(record);
+          if (eCommandSettled(receipt)) {
+            pendingWrites.forget(record.fingerprint, record.commandKey); sync();
+            await onSettled(record);
+            return;
+          }
+        } catch (cause) {
+          setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
+        }
         note(record, "没查到原审批单，结果仍未知，记录继续保留。");
         return;
       }
@@ -404,6 +460,8 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} action={<>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原结果</Button>}
+        {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原结果</Button>}
+        {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>查询原结果</Button>}
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
@@ -416,9 +474,21 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     );
   });
 
-  const releaseModal = releasing && (
-    <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />
-  );
+  const releaseModal = <>
+    {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
+      offer={eCommandClosureOffer(outcomes[closing.commandKey], closing.expiresAt <= Date.now())}
+      facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
+      onClose={() => setClosing(null)} onSubmit={async evidence => {
+        const record = closing;
+        const receipt = await queryInvestigation(record, evidence);
+        setClosing(null);
+        if (eCommandSettled(receipt)) {
+          pendingWrites.forget(record.fingerprint, record.commandKey); sync();
+          await onSettled(record);
+        }
+      }} />}
+    {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />}
+  </>;
 
   const lockedTargets = new Set(pending.map((record) => record.target));
   return { send, notices, releaseModal, isLocked: (target: string) => lockedTargets.has(target), unconfirmed: (match: (target: string) => boolean) => pending.filter((record) => match(record.target)).length };
