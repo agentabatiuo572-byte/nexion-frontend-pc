@@ -20,9 +20,9 @@ export type H5Model = {
   coverage: { coverageRatio: string | null; redlinePct: string | null; reliable: boolean; redlineBreached: boolean };
 };
 
-/** 2c900ce6: retired keys are rejected before creating a new direct write or proposal. */
+/** 2c900ce6/40490584: retired keys are rejected before creating a new direct write or proposal. */
 export function h5RuleWriteRefusal(key: string): "RETIRED_FEATURE" | undefined {
-  return key === "interval" ? "RETIRED_FEATURE" : undefined;
+  return ["interval", "brokenHours", "broken", "reviveCards", "saver"].includes(key) ? "RETIRED_FEATURE" : undefined;
 }
 
 function object(value: unknown): Record<string, unknown> {
