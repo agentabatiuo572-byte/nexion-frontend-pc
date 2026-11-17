@@ -321,7 +321,6 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const submitRestore = async (g: Pick<JGate, "key" | "name" | "amplifies">, reason?: string) => {
     if (!session || !canResume) throw new Error("当前账号没有发起恢复审批的权限。");
-    if (restoreApprovals.some((row) => row.obj === g.key)) throw new Error("这项恢复申请待审批，请核对原审批。");
     const slot = `${session.adminId}:${g.key}`;
     const previous = restoreAttempts.list().find((record) => record.fingerprint === slot);
     if (!previous && UNAVAILABLE_GATES[g.key]) throw new Error(UNAVAILABLE_GATES[g.key].detail);
@@ -364,6 +363,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         }
       }
       if (!ticket) {
+        // 同对象的待批单只拦建单，不能挡住按原请求键查自己的旧单。
+        if (restoreApprovals.some((row) => row.obj === g.key)) throw new Error("这项恢复申请待审批，请核对原审批。");
         if (useAdminAuth.getState().session?.adminId !== session.adminId) {
           throw new A2OutcomeUncertainError("登录账号变了，请用原账号查询恢复申请。", key);
         }
@@ -372,7 +373,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       if (ticket.operationCode !== "j1_gate_resume" || ticket.obj !== g.key) {
         throw new A2OutcomeUncertainError("没能确认恢复申请的结果，请到操作记录与审批核对。", key);
       }
-      setRestoreApprovals((rows) => [...rows.filter((row) => row.obj !== g.key), ...(ticket.status === "pending" ? [ticket] : [])]);
+      setRestoreApprovals((rows) => [...rows.filter((row) => row.id !== ticket.id), ...(ticket.status === "pending" ? [ticket] : [])]);
       restoreAttempts.forget(slot, key);
       toast(ticket.status === "pending"
         ? `${operatorCopyText(g.name)}恢复申请 ${ticket.id} 待审批，业务仍已关停；另一位超级管理员批准后生效`
