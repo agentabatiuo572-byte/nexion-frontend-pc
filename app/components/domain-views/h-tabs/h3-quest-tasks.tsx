@@ -38,6 +38,7 @@ import {
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
 import { H3RegionPanel, REGION_APPROVER, useH3RegionPolicy } from "./h3-region-policy";
+import { H3OperatingFold, H3OperatingStat, hasH3OperatingStats } from "./h3-operating-stats";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 
@@ -146,6 +147,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [readAt, setReadAt] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("dayOne");
   const [detail, setDetail] = useState<{ list: ListKey; code: string } | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [creating, setCreating] = useState<{ type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2" } | null>(null);
   const tabIds = useTabIds();
 
@@ -1018,14 +1020,18 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       <Stat tone="role-4" icon={Sparkles} label="任务加成（运营阶段设置）" value={h1Value ?? "—"} unit={h1Value ? "倍" : undefined}
         sub={currentPhase ? `现在是 ${currentPhase} · 只读` : "当前阶段没读到"} href={canPhase ? "/growth/phase" : undefined} openLabel="去运营阶段设置"
         explain="新手任务和每周任务的奖励都乘它，在「运营阶段设置」改。新手任务在用户注册时、每周任务在发布时定下倍数，之后改不影响已发出的。" />
-      <Stat tone="role-other" icon={History} label="经营统计" value="—"
+      {hasH3OperatingStats(model.h3Stats) ? <H3OperatingStat stats={model.h3Stats} onOpen={() => {
+        setStatsOpen(true);
+        requestAnimationFrame(() => document.getElementById("h3-operating-stats")?.scrollIntoView({ block: "nearest" }));
+      }} /> : <Stat tone="role-other" icon={History} label="经营统计" value="—"
         sub="领取率 · 本周完成和发放 · 月度人数"
         explain={<>
           <p>新手任务奖励领取率（全额、宽限）、本周完成（一档、二档）、本周发放 UVT、正在做月度挑战的人数：后端现在只给任务定义的数量，这几项没有数。</p>
           <p>显示「—」，不是 0，也不代表没有人。已提后端补统计。</p>
-        </>} />
+        </>} />}
     </StatBand>
   );
+  const operatingStats = hasH3OperatingStats(model.h3Stats) && <H3OperatingFold stats={model.h3Stats} open={statsOpen} onOpenChange={setStatsOpen} />;
 
   const attentionList = attention.length > 0 && (
     <ul className="h3-todo" aria-label="要处理的事">
@@ -1501,6 +1507,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   // ----- 数据口径（第三层） -----
   const monitor = model.taskMonitor ?? [];
+  // 11ea3732 起同一个数改按完成时间数；旧后端没有口径字段时仍是新建记录数，表头跟着返回的口径走。
+  const completedBasis = model.taskContracts.some((contract) => contract.fieldSemantics?.sample24h === "TIMESTAMPED_COMPLETED_MISSION_INSTANCES");
   const contracts = (
     <Fold title="数据口径（只读）" icon={Route} tone="role-other" summary={`任务定义 ${monitor.length} 类 · 新手任务 ${dayOne.length} 条`}
       explain="给核对报表的同事看：任务定义的数量，以及新手任务的完成记录口径。这些不是完成人数或发奖数。">
@@ -1509,25 +1517,29 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         {monitor.length === 0
           ? <p className="h3-empty-line">后端没有返回，不能据此判断有 0 个。</p>
           : <dl className="h3-monitor">{monitor.map((item) => <div key={item.label}><dt>{TYPE_LABEL[item.label] ?? operatorCopyText(item.label)}</dt><dd>{operatorCopyText(item.note).replace(/\s*来自\s*nx_\w+/, "")}</dd></div>)}</dl>}
-        <div className="h3-sub-head"><h3>新手任务的完成记录口径</h3><Explain label="口径怎么算" content={<>
+        <div className="h3-sub-head"><h3>新手任务的完成记录口径</h3><Explain label="口径怎么算" content={completedBasis ? <>
+          <p>「过去 24 小时完成」：过去 24 小时里做完的任务记录（含待领取、已领取），一条只算一次，不是人数。</p>
+          <p>「新建记录的异常占比」：过去 24 小时新建的记录里失败、异常、被拒的占比，和完成的不是同一批；算到 1 位小数，没有记录时是「—」。</p>
+          <p>转化和留存是默认设置，后端没有实际归因的数，不能当成已计入的结果。</p>
+        </> : <>
           <p>「过去一天新建的任务记录」是过去 24 小时新建的用户任务记录数，不管做没做完，不是完成数。</p>
           <p>「异常占比」是同一段时间里失败、异常、被拒的记录占比，后端算到 1 位小数；没有记录时是「—」。</p>
-          <p>记录事件实际是任务编号；转化、留存几项是后端写死的值，不能据此认定发奖和报表数字一致。</p>
+          <p>转化和留存是默认设置，不能据此认定发奖和报表数字一致。</p>
         </>} /></div>
         {dayOne.length === 0
           ? <p className="h3-empty-line">还没有新手任务。</p>
           : <Table label="新手任务的完成记录口径">
-            <thead><tr><Th>任务</Th><Th>记录事件</Th><Th align="right">过去一天新建的任务记录</Th><Th align="right">异常占比</Th><Th>其他口径</Th></tr></thead>
+            <thead><tr><Th>任务</Th><Th>任务编号</Th><Th align="right">{completedBasis ? "过去 24 小时完成" : "过去一天新建的任务记录"}</Th><Th align="right">{completedBasis ? "新建记录的异常占比" : "异常占比"}</Th><Th>转化和留存（默认设置）</Th></tr></thead>
             <tbody>
               {dayOne.map((task, index) => {
                 const contract = contractForTask(task, model.taskContracts);
                 const sample = contract.completed24h === undefined ? contract.sample24h : contract.completed24h;
                 return <Tr key={`${text(task.id, String(index))}-${text(contract.taskKey, String(index))}`}>
-                  <Td><Cell main={nameOf(task)} title={`${nameOf(task)} · ${text(contract.taskKey, "—")}`} sub={<span data-mono="">{text(contract.taskKey, "—")}</span>} /></Td>
+                  <Td><Cell main={nameOf(task)} title={`${nameOf(task)} · ${text(contract.taskKey, "—")}`} /></Td>
                   <Td><Cell main={<span data-mono="">{text(contract.missionCode ?? contract.serverEvent, "—")}</span>} /></Td>
                   <Td align="right"><Cell num main={sample == null || sample === "" ? "—" : numericValue(sample).toLocaleString("en-US")} /></Td>
                   <Td align="right"><Cell num main={text(contract.anomalyPct, "—")} /></Td>
-                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} main={`${boolValue(contract.b3Default === undefined ? contract.b3 : contract.b3Default) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnlyDefault === undefined ? contract.retentionOnly : contract.retentionOnlyDefault) ? "仅留存" : "不只算留存"}`}
+                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} main={`默认：${boolValue(contract.b3Default === undefined ? contract.b3 : contract.b3Default) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnlyDefault === undefined ? contract.retentionOnly : contract.retentionOnlyDefault) ? "仅留存" : "不只算留存"}`}
                     sub={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} /></Td>
                 </Tr>;
               })}
@@ -1559,6 +1571,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {conclusion}
       {attentionList}
       {stats}
+      {operatingStats}
       <PageTabs label="任务类型" value={tab} onChange={(next) => { setTab(next); setDetail(null); }} ids={tabIds} items={tabItems} />
       {tab === "dayOne" && dayOneTab}
       {tab === "weekly" && weeklyTab}
