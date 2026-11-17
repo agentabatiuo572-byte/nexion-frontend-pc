@@ -97,8 +97,10 @@ export function receiptFact(receipt: ECommandInvestigation | null | undefined, h
  * 后端退回的几种情况（AdminCommandInvestigationService.investigate）：已有结果却选「仍未知」；证明不了没执行却选「未执行」；
  * 原回包不是带业务码的拒绝却选「后台拒绝」；选「已执行」但原回包和成功记录都证明不了。
  * audit：「已执行」时填了成功记录编号；canAudit：框里有这一栏但没填。
+ * rollback：调用方给的结论里有「未执行」（回滚核查，见 ClosureOffer）；stillUnknown：框里还能改选「仍未知」。
  */
-export function closureConflict(conclusion: ECommandEvidence["conclusion"], { audit, canAudit }: { audit: boolean; canAudit: boolean }) {
+export function closureConflict(conclusion: ECommandEvidence["conclusion"], { audit, canAudit, rollback, stillUnknown }: { audit: boolean; canAudit: boolean; rollback?: boolean; stillUnknown?: boolean }) {
+  if (conclusion === "NOT_EXECUTED" && rollback) return `没有结案：${ROLLBACK_REFUSED}${stillUnknown ? "可以改选「仍未知」，只留一条核查记录。" : "请到操作记录与审批核对。"}`;
   const why = conclusion === "SUCCEEDED" ? audit ? "成功记录编号对不上这次操作，记录继续保留。核对编号后再提交。"
     : canAudit ? "没有成功记录编号，证明不了已执行，记录继续保留。填上编号后再提交。" : "后台的处理记录证明不了已执行，记录继续保留。重新查询原结果后再处理。"
     : conclusion === "REJECTED" ? "后台的记录不支持「后台拒绝」，记录继续保留。重新查询原结果，按查到的结论再结案。"
@@ -119,6 +121,23 @@ export const CLOSURE_PLACEHOLDER_BY: Partial<Record<ECommandEvidence["conclusion
   SUCCEEDED: "写明核对了什么、在哪看到的，例如：操作记录里 10:42 这次操作的成功记录",
 };
 export const CLOSURE_ACK = "我已核对依据，知道提交后不能撤销或改结论";
+
+/**
+ * 调用方直接给的结论列表，替代 closureKnown 推出的组合（A6、A7 回滚核查，J4 恢复核对等同类能力）。
+ * success：「已执行」凭什么——receipt 原回包（不填编号）、audit 成功记录编号。
+ * 「未执行」在这类范围只在后台核实整次修改已回滚时才收；回执看不出有没有回滚，收不收提交了才知道。
+ */
+export type ClosureOffer = { conclusions: ECommandEvidence["conclusion"][]; success?: "receipt" | "audit" };
+const ROLLBACK_REFUSED = "后台没有核实到这次修改已整个回滚，记录继续保留。";
+export const ROLLBACK_HELP = "收了记录解除，可以重新发起；不收时记录保留。";
+/** 按调用方给的结论写结案框顶上那句；有「未执行」时不说成一定能结。 */
+export function offerNotice(offer: ClosureOffer) {
+  const has = (value: ECommandEvidence["conclusion"]) => offer.conclusions.includes(value);
+  if (has("NOT_EXECUTED")) return `后台核实这次修改已整个回滚，才会按「未执行」结案；收不收提交后才知道。${has("STILL_UNKNOWN") ? "也可以选「仍未知」，只留一条核查记录。" : ""}`;
+  if (has("REJECTED")) return "后台当时拒绝了这次操作，可以按「后台拒绝」结案。";
+  if (has("SUCCEEDED")) return offer.success === "audit" ? "成功记录对得上才解除，对不上会退回，记录保留。" : "后台按这次操作自己的处理记录核对：对得上才解除，对不上会退回，记录保留。";
+  return has("STILL_UNKNOWN") ? "后台没有能对上的结论，现在只能记为「仍未知」。" : "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把原请求编号交给技术同事核对。";
+}
 
 /** 核查确认是后台拒绝之后的一句：记录解除了，但不等于没执行，也不能重发原来那一次。 */
 export const SETTLED_REJECTED = "核查确认是后台拒绝，记录已解除；不等于没有执行，要重做请按现在的状态重新发起。";

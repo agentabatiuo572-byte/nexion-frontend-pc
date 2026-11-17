@@ -5,7 +5,7 @@ import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, Irrevers
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, SETTLED_REJECTED, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 export { closureKnown, closureConflict } from "./recovery-panel";
 
@@ -50,6 +50,10 @@ export type FundRecoveryRow = {
 };
 
 type Shown = { tone: StateTone; label: string; line: string; more?: string };
+/** 24 小时内重试原请求：后台对还在执行的返回「处理中」、对结果未知的返回「结果未知」，都不会再执行一次，也拿不到新结果。 */
+export const PROCESSING_LINE = "过一会儿再查询；现在重试不会重复执行，也拿不到新结果。";
+export const UNKNOWN_LINE = "系统也没有结果，重试也拿不到新结果；请按证据核查结案。";
+export const FAILED_EXPIRED_LINE = "有这次的成功记录才能结案；没有就把原请求编号交给技术同事。";
 const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
 /** 原请求是提交到「操作记录与审批」的申请：批准前什么都不生效，结果未知时只能说「可能已经提交」。 */
@@ -92,16 +96,17 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
     : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
   const receipt = outcome.receipt;
   if (!receipt) return { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` };
-  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: row.expired ? "稍后再查，执行完才有结论。" : "稍后再查，执行完之前不要重试。" };
+  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: row.expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE };
   // 过了 24 小时不能重试：有调查权限的给核查结案，没有的写清找谁。
   const closure = access?.canSubmit ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
   const more = receiptExplain(receipt, where);
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", label: "已结案", line: "核查确认是后台拒绝，记录已解除。" };
   if (receiptRejected(receipt)) return { ...rejectedStatus({ expired: row.expired, canRetry: row.canRetry, canClose: !!access?.canSubmit }), more };
-  if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? `系统记录这次失败了；${closure}`
+  // 记为失败的结案框只收「已执行」加成功记录编号（closureKnown 的 audit），不让人以为点进去就能了结。
+  if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? access?.canSubmit ? FAILED_EXPIRED_LINE : "有这次的成功记录时，请有调查权限的超级管理员核查结案。"
     : row.canRetry ? "系统记录这次失败了；按原请求重试会用原内容重新执行一次。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
   if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: !access?.canSubmit ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
-    : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
+    : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
     : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
@@ -215,24 +220,27 @@ export function FundCheckButtons({ record, outcome, expired, busy, checking, onC
 }
 
 /** 结案框里能选的结论：查到的原结果决定（见 closureKnown）；后端给不出的不列。 */
-type Closable = "SUCCEEDED" | "STILL_UNKNOWN" | "REJECTED";
-const CHOICE_LABEL: Record<Closable, string> = { REJECTED: "后台拒绝", SUCCEEDED: "已执行", STILL_UNKNOWN: "仍未知" };
+type Closable = "SUCCEEDED" | "STILL_UNKNOWN" | "REJECTED" | "NOT_EXECUTED";
+const CHOICE_LABEL: Record<Closable, string> = { REJECTED: "后台拒绝", SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
 
 /**
  * 核查结案：没有确定结果时只能按证据确认「已执行」，或留下「仍未知」的核查记录；
  * 查到后台拒绝的，可以按「后台拒绝」结案（后端只看原记录自己的回包，不要编号）。后端决定证据够不够。
  */
-export function FundClosureModal({ label, createdAt, facts, known, onClose, onSubmit }: {
+export function FundClosureModal({ label, createdAt, facts, known, offer, onClose, onSubmit }: {
   label: string;
   createdAt: number;
   facts?: ReactNode;
   /** 查到已处理完或记为失败（closureKnown）：后端不收「仍未知」，按查到的原结果给结论。 */
   known?: boolean | ClosureBasis;
+  /** 调用方直接给结论列表时用它，known 不再起作用（见 ClosureOffer）。 */
+  offer?: ClosureOffer;
   onClose: () => void;
   onSubmit: (evidence: FundCommandEvidence) => Promise<void>;
 }) {
-  const basis: ClosureBasis | undefined = known === true ? { rejected: false, success: "audit" } : known || undefined;
-  const choices: Closable[] = basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : [])] : ["SUCCEEDED", "STILL_UNKNOWN"];
+  const basis: ClosureBasis | undefined = offer ? undefined : known === true ? { rejected: false, success: "audit" } : known || undefined;
+  const choices: Closable[] = offer ? offer.conclusions
+    : basis ? [...(basis.rejected ? ["REJECTED" as const] : []), ...(basis.success !== "never" ? ["SUCCEEDED" as const] : [])] : ["SUCCEEDED", "STILL_UNKNOWN"];
   const fixed = choices.length === 1 ? choices[0] : undefined;
   const [conclusion, setConclusion] = useState<Closable | "">(fixed ?? "");
   const [reference, setReference] = useState("");
@@ -243,16 +251,16 @@ export function FundClosureModal({ label, createdAt, facts, known, onClose, onSu
   const [error, setError] = useState("");
   const length = reference.trim().length;
   // 原回包本身能证明做成的（receipt），后端不看编号；只有要靠成功记录的才填。
-  const needsAudit = conclusion === "SUCCEEDED" && basis?.success !== "receipt";
+  const needsAudit = conclusion === "SUCCEEDED" && (offer ? offer.success === "audit" : basis?.success !== "receipt");
   const auditValid = !auditId.trim() || /^[1-9]\d{0,17}$/.test(auditId.trim());
   const block = !choices.length ? "这条现在结不了案" : !conclusion ? "请选择核查结论" : !length ? "请写明核查依据" : length > 512 ? "核查依据最多 512 字"
     : needsAudit && !auditId.trim() ? "选「已执行」要填成功记录编号" : needsAudit && !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
-  const notice = !basis ? "系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。这类操作现在不能按「没有执行」结案。"
+  const notice = offer ? offerNotice(offer) : !basis ? "系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。这类操作现在不能按「没有执行」结案。"
     : !choices.length ? "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把原请求编号交给技术同事核对。"
     : basis.rejected ? choices.length > 1 ? "后台当时拒绝了这次操作，按「后台拒绝」结案即可解除。操作记录里确有这次的成功记录时，才选「已执行」。" : "后台当时拒绝了这次操作，可以按「后台拒绝」结案。"
     : basis.success === "receipt" ? "后台按这次操作自己的处理记录核对：对得上才解除，对不上会退回，记录保留。"
     : "成功记录对得上才解除，对不上会退回，记录保留。操作记录里没有这次成功记录的，现在结不了案。";
-  const help = conclusion === "REJECTED" ? REJECTED_HELP : conclusion === "STILL_UNKNOWN" ? "只留下这次核查记录，继续锁着，之后可以再核查。"
+  const help = conclusion === "REJECTED" ? REJECTED_HELP : conclusion === "NOT_EXECUTED" ? ROLLBACK_HELP : conclusion === "STILL_UNKNOWN" ? "只留下这次核查记录，继续锁着，之后可以再核查。"
     : conclusion === "SUCCEEDED" && !fixed ? "操作记录里有这次请求的成功记录时选。确认后解除，不会再执行。" : undefined;
   return <Modal title="核查结案" icon={SearchCheck} tone="danger" sub={<IrreversibleTag>确认后不能撤销</IrreversibleTag>} busy={busy} dirty={!fixed && !!conclusion || !!reference || !!auditId} onClose={onClose}
     footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabledReason={block} onClick={async () => {
@@ -263,7 +271,8 @@ export function FundClosureModal({ label, createdAt, facts, known, onClose, onSu
         await onSubmit({ conclusion, evidenceReference: reference.trim(), ...(needsAudit && auditId.trim() ? { evidenceAuditId: Number(auditId.trim()) } : {}) });
       } catch (failure) {
         const shown = displayAdminError(failure);
-        setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT ? closureConflict(conclusion, { audit: needsAudit && !!auditId.trim(), canAudit: needsAudit }) : `结案没有提交成功：${shown} 原记录不变，可以修改后再提交。`);
+        // 其余退回码的中文都已写明原因和记录保留（error-messages），和设备结案框一样原样显示。
+        setError(shown === ADMIN_ERROR_MESSAGES.INVESTIGATION_KNOWN_RESULT_CONFLICT ? closureConflict(conclusion, { audit: needsAudit && !!auditId.trim(), canAudit: needsAudit, rollback: !!offer?.conclusions.includes("NOT_EXECUTED"), stillUnknown: !!offer?.conclusions.includes("STILL_UNKNOWN") }) : shown);
       }
       finally { setBusy(false); }
     }}>提交核查结论</Button></>}>
@@ -272,17 +281,17 @@ export function FundClosureModal({ label, createdAt, facts, known, onClose, onSu
         <Fact k="原操作">{label}</Fact>
         {facts}
         <Fact k="首次提交">{closureTime(createdAt)}</Fact>
-        {fixed && basis && <Fact k="核查结论">{CHOICE_LABEL[fixed]}</Fact>}
+        {fixed && (basis || offer) && <Fact k="核查结论">{CHOICE_LABEL[fixed]}</Fact>}
       </Facts>
       <Notice tone="warn">{notice}</Notice>
-      {fixed && basis ? help && <p className="rd-note">{help}</p>
+      {fixed && (basis || offer) ? help && <p className="rd-note">{help}</p>
         : choices.length > 1 && <Field label="核查结论" required error={touched && !conclusion ? "请选择核查结论" : undefined} help={help}>
           <Segments label="核查结论" value={conclusion} onChange={value => setConclusion(value as Closable)} items={choices.map(value => ({ value, label: CHOICE_LABEL[value] }))} />
         </Field>}
       {choices.length > 0 && <Field label="核查依据" required hint="最多 512 字" error={touched && (!length || length > 512) ? length ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
         <Textarea rows={3} maxLength={512} count={`${length}/512`} disabled={busy} placeholder={conclusion ? CLOSURE_PLACEHOLDER_BY[conclusion] ?? CLOSURE_PLACEHOLDER : CLOSURE_PLACEHOLDER} value={reference} onChange={event => setReference(event.target.value)} />
       </Field>}
-      {needsAudit && <Field label="成功记录编号" required help={basis ? "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。" : "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。没有这个编号，系统只会记为「仍未知」。"} error={touched && (!auditId.trim() || !auditValid) ? auditId.trim() ? "成功记录编号须为正整数" : "选「已执行」要填成功记录编号" : undefined}>
+      {needsAudit && <Field label="成功记录编号" required help={basis || offer ? "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。" : "到「操作记录与审批」找这次请求成功的那条记录，填它的编号。没有这个编号，系统只会记为「仍未知」。"} error={touched && (!auditId.trim() || !auditValid) ? auditId.trim() ? "成功记录编号须为正整数" : "选「已执行」要填成功记录编号" : undefined}>
         <Input aria-label="成功记录编号" className="fund-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
       {choices.length > 0 && <Check label={CLOSURE_ACK} checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />}
