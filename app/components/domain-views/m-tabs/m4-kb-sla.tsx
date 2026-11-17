@@ -321,9 +321,10 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const queryOriginal = async (record: MCommandRecord) => {
     let result = null;
     try {
-      result = await queryM4FaqCommand(record);
+      const next = await queryM4FaqCommand(record);
+      result = next;
       if (actorId !== useAdminAuth.getState().session?.adminId) return;
-      setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: result.receipt } }));
+      setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: next.receipt } }));
     } catch (error) {
       if (actorId !== useAdminAuth.getState().session?.adminId) return;
       setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(error) } }));
