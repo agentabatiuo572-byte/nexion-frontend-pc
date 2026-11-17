@@ -148,14 +148,14 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       record: row.commandOrigin ? row : undefined,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
-      hint: "先读取现在的值核对；按原请求重试不会重复执行。",
-      blocked: !canRetryPurchasePayment(row) ? RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
+      hint: row.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原请求重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原请求重试不会重复执行。",
+      blocked: !canRetryPurchasePayment(row) ? row.commandOrigin ? "已超过 10 分钟，不能再重试，先查询原结果" : RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {
         if (isPolicy) {
           const current = await fetchPurchasePaymentPolicy();
           if (owns()) { setPolicy(current); if (!changed) setDraft(current.channels.map(item => ({ ...item }))); }
-          return `读到：手续费现在是第 ${current.version} 版。那次修改是否生效，请到操作记录确认。记录继续保留。`;
+          return `读到：手续费现在是第 ${current.version} 版。那次修改是否生效，${row.commandOrigin ? "以查询原结果为准" : "请到操作记录与审批确认"}。记录继续保留。`;
         }
         const current = await fetchPurchasePaymentRecord(row.scope);
         if (owns()) setSelected(current.intentNo);

@@ -1110,17 +1110,20 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           </section>
           {sec.key === "financials" && FINANCIALS_FIELDS.length > 0 && (
             <Fold inset title="财务指标" summary={`${FINANCIALS_FIELDS.length} 项 · 运营填写的说明文字`}
-              explain="这些是运营写的展示文字，不是真实财务统计，页面不计算。「环比」一列现在存的是这一项的名称，不是环比数，原样显示。">
+              explain="这些是运营写的展示文字，不是真实财务统计，页面不计算。指标名称是这一项自己存的名称，没存时写默认的中文名。">
               <Table label="财务指标">
-                <thead><tr><Th>指标</Th><Th>内容</Th><Th>环比（原样）</Th></tr></thead>
+                <thead><tr><Th>指标</Th><Th>内容</Th></tr></thead>
                 <tbody>
-                  {FINANCIALS_FIELDS.map((f) => (
-                    <Tr key={f.k}>
-                      <Td><Cell main={FINANCE_LABEL[f.k] ?? f.k} /></Td>
-                      <Td><span data-user-content="">{nexGridBrandText(f.v)}</span></Td>
-                      <Td>{f.delta ? <span data-user-content="">{f.delta}</span> : <span className="rd-weak">—</span>}</Td>
-                    </Tr>
-                  ))}
+                  {FINANCIALS_FIELDS.map((f) => {
+                    const fallback = FINANCE_LABEL[f.k] ?? f.k;
+                    // 名称是运营存的文字，原样显示；没存（空或缺）时用默认中文名，默认名和存的不同就写在下面。
+                    return (
+                      <Tr key={f.k}>
+                        <Td><Cell main={f.delta ? <span data-user-content="">{f.delta}</span> : fallback} sub={f.delta && f.delta !== fallback ? fallback : undefined} /></Td>
+                        <Td><span data-user-content="">{nexGridBrandText(f.v)}</span></Td>
+                      </Tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             </Fold>

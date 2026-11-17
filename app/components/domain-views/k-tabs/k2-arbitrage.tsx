@@ -3,7 +3,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, CircleSlash, Clock3, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash, Clock3, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
   Notice, PageHeader, Panel, RatioBar, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds,
@@ -325,16 +325,17 @@ const columnText = (row: K2Row, column: Column) => {
 };
 const USER_NO = /^U\d{8,19}$/;
 
-/** 风险等级 0–5：2 级可疑，3 级判定异常，4、5 级高危。已处置的退成灰色，颜色留给要处理的行。 */
-function levelInfo(level: number): { text: string; word: string; tone: "danger" | "warn" | "neutral"; icon: LucideIcon } {
-  const word = level >= 4 ? "高危" : level === 3 ? "判定异常" : level === 2 ? "可疑" : "观察";
-  const tone = level >= 3 ? "danger" : level === 2 ? "warn" : "neutral";
-  return { text: `${level} 级 · ${word}`, word, tone, icon: level >= 3 ? ShieldAlert : level === 2 ? AlertTriangle : Eye };
+/**
+ * 风险等级由每一类检测按自己的规则给出（见 VIEW_UI 的 levelRule），后端没有跨类统一的逐级名称（K2-BE-01），
+ * 所以只写「N 级」、不起名字，也不按级数分颜色：待处置的一律提醒色，已处置的退成灰色。
+ */
+function levelInfo(level: number): { text: string; tone: "warn"; icon: LucideIcon } {
+  return { text: `${level} 级`, tone: "warn", icon: AlertTriangle };
 }
-/** 窄表格里只留「N 级」，等级的含义在列头的提示图标里。 */
+/** 这一级在这一类里怎么来，在列头的提示图标里。 */
 function LevelTag({ level, settled }: { level: number; settled?: boolean }) {
   const info = levelInfo(level);
-  return <StatusTag tone={settled ? "done" : info.tone} icon={info.icon}>{level} 级<span className="k2-level-word"> · {info.word}</span></StatusTag>;
+  return <StatusTag tone={settled ? "done" : info.tone} icon={info.icon}>{info.text}</StatusTag>;
 }
 
 /** 待处置的排前面，同样待处置时等级高的在前，其余保持后端顺序。 */
@@ -612,7 +613,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
         <Fact k={ui?.subject ?? "对象"}>{cell(r, 0)}</Fact>
         <Fact k="命中类别">{ui?.name ?? r.viewKey}</Fact>
         {evidence && <Fact k={evidence.label}>{columnText(r, evidence)}</Fact>}
-        <Fact k="风险等级" tone={levelInfo(r.level).tone === "neutral" ? undefined : levelInfo(r.level).tone}>{levelInfo(r.level).text}</Fact>
+        <Fact k="风险等级" tone={levelInfo(r.level).tone}>{levelInfo(r.level).text}</Fact>
         {r.clusterId && (r.clusterId === cell(r, 0)
           ? <Fact k="账户组状态">{CLUSTER_STATUS_LABELS[r.clusterStatus ?? ""] ?? "状态未知"}</Fact>
           : <Fact k="账户组">{r.clusterId}{r.clusterStatus ? `（${CLUSTER_STATUS_LABELS[r.clusterStatus] ?? r.clusterStatus}）` : ""}</Fact>)}
@@ -697,7 +698,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
           <Fact k="账户组">{r.clusterId || "—"}</Fact>
           <Fact k="账户组状态"><Change from={CLUSTER_STATUS_LABELS[r.clusterStatus ?? ""] ?? "—"} to="已冻结" /></Fact>
           {cell(r, 0) !== r.clusterId && <Fact k="命中对象">{cell(r, 0)}</Fact>}
-          <Fact k="风险等级" tone={levelInfo(r.level).tone === "neutral" ? undefined : levelInfo(r.level).tone}>{levelInfo(r.level).text}</Fact>
+          <Fact k="风险等级" tone={levelInfo(r.level).tone}>{levelInfo(r.level).text}</Fact>
           <Fact k="谁来批">另一位管理员（需有冻结和审批权限）</Fact>
         </Facts>
       ),
@@ -909,11 +910,10 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     const pendingRows = view.rows.filter((row) => !row.disposition && !awaitingApproval(row));
     const maxPending = pendingRows.reduce((max, row) => Math.max(max, row.level), -1);
     const maxLevel = view.rows.reduce((max, row) => Math.max(max, row.level), -1);
-    return { view, ui: viewUi(view), total: view.rows.length, pending: pendingRows.length, awaiting, maxPending, maxLevel, high: pendingRows.filter((row) => row.level >= 4).length };
+    return { view, ui: viewUi(view), total: view.rows.length, pending: pendingRows.length, awaiting, maxPending, maxLevel };
   });
   const totalRows = summaries.reduce((sum, item) => sum + item.total, 0);
   const totalPending = summaries.reduce((sum, item) => sum + item.pending, 0);
-  const totalHigh = summaries.reduce((sum, item) => sum + item.high, 0);
   const totalAwaiting = summaries.reduce((sum, item) => sum + item.awaiting, 0);
   const awaitingText = totalAwaiting > 0 ? `另有 ${totalAwaiting} 条已提交冻结审批，等另一位管理员批准。` : "";
   // 先处理哪一类：待处置里等级最高的，一样高时待处置多的。
@@ -935,13 +935,13 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   const conclusionExplain = (
     <>
       <p>按命中记录计数，不按用户合并；同一账户可能在几类里各有一条。</p>
-      <p>风险等级 0–5 级：2 级可疑，3 级判定异常，4、5 级高危。全部命中里 3 级及以上 {stat("loopConfirmed")} 条、2 级 {stat("loopWarn")} 条（含已处置）。</p>
+      <p>等级由每一类检测按自己的规则给出，各类的同一级含义不同，规则见各类表头的问号。全部命中里 3 级及以上 {stat("loopConfirmed")} 条、2 级 {stat("loopWarn")} 条（含已处置）。</p>
       <p>系统约每分钟检测一次，打开本页时也会检测。</p>
     </>
   );
   const conclusion = totalPending > 0
     ? <Conclusion state="warn" lead explain={conclusionExplain} hint={`${awaitingText}${urgent ? `先看「${urgent.ui.name}」：表里待处置的排在前面，等级高的在上。` : ""}`}>
-        有 <b>{totalPending}</b> 条命中待处置{totalHigh > 0 ? `，其中 ${totalHigh} 条为 4 级以上高危` : ""}
+        有 <b>{totalPending}</b> 条命中待处置
       </Conclusion>
     : totalRows > 0
       ? <Conclusion state="neutral" explain={conclusionExplain} hint={awaitingText || undefined}>{totalAwaiting > 0 ? `没有待处置的命中，${totalAwaiting} 条在等冻结审批，共 ${totalRows} 条` : `命中都已处置，共 ${totalRows} 条`}</Conclusion>
@@ -1027,7 +1027,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
               <tr>
                 <Th>{ui.subject}</Th>
                 {ui.columns.map((column) => <Th key={column.label} align={column.num ? "right" : undefined}>{column.label}{column.explain && <Explain label={`${column.label}的说明`} content={column.explain} />}</Th>)}
-                <Th>风险等级<Explain label="风险等级的说明" content={<><p>0–5 级：2 级可疑，3 级判定异常，4、5 级高危。</p><p>{ui.levelRule}</p></>} /></Th>
+                <Th>风险等级<Explain label="风险等级的说明" content={<><p>{ui.levelRule}</p><p>只在这一类里比较，别的类同一级含义不同。</p></>} /></Th>
                 <Th align="right" sticky="end">处置</Th>
               </tr>
             </thead>

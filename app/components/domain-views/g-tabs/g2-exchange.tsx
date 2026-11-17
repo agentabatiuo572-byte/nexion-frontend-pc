@@ -274,8 +274,8 @@ function G2ExchangePage() {
   const readGeneration = useRef(0);
   // Missing/invalid configuration disables execution; an absent fact stays unknown.
   const switchUnavailableReason = overview?.emergencySwitch?.exchange.unavailableReason;
-  const switchBlockedReason = switchUnavailableReason === "MISSING" ? "兑换开关没有设置，后端按关处理"
-    : switchUnavailableReason === "INVALID" ? "兑换开关设置有误，后端按关处理" : undefined;
+  const switchBlockedReason = switchUnavailableReason === "MISSING" ? "兑换开关没有设置，兑换现在是停的"
+    : switchUnavailableReason === "INVALID" ? "兑换开关设置有误，兑换现在是停的" : undefined;
   const exchangeExecutionBlocked = overview?.swap.emergencyPaused === true || switchBlockedReason !== undefined;
   const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending, exchangeExecutionBlocked });
   latest.current = { overview, loading, busyKey, readFailed, rereadPending, exchangeExecutionBlocked };
@@ -950,7 +950,7 @@ function G2ExchangePage() {
           ? `按列表估算：最早 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT。列表里停用、测试账户的单也算进去了，以处理结果为准`
           : `列表只显示最近 ${fmtCount(queue.length)} 单，算不出这一批的金额；处理结果里逐单列出`}</Fact>
         <Fact k="每一单">依次检查兑换开关、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
-        {swap.emergencyPaused === true && <Fact k="现在" tone="warn">兑换已暂停，后端会拒绝这一批</Fact>}
+        {swap.emergencyPaused === true && <Fact k="现在" tone="warn">兑换已暂停，这一批会被拒绝</Fact>}
       </Facts>;
     },
     statedBrief: { impact: "符合条件的排队单马上成交、记账；处理结果逐单列出。", check: "核对处理数量，理由写清依据或工单号。" },
@@ -992,10 +992,10 @@ function G2ExchangePage() {
     ? <Conclusion state="warn" icon={ShieldAlert}
         hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开。{disclosureHint}</>}
         explain={<>
-          <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况后端一律按关处理。</p>
+          <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况兑换一律按关闭处理。</p>
           <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
           {disclosureExplain}
-        </>}>{switchUnread === "missing" ? "兑换开关没有设置，后端按关处理" : "兑换开关设置有误，后端按关处理"}</Conclusion>
+        </>}>{switchUnread === "missing" ? "兑换开关没有设置，兑换现在是停的" : "兑换开关设置有误，兑换现在是停的"}</Conclusion>
     : swap.emergencyPaused
     ? <Conclusion state="warn" icon={PauseCircle}
         hint={<>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}{disclosureHint}</>}
@@ -1063,7 +1063,7 @@ function G2ExchangePage() {
       setRecoveryError(null);
       setRecoveryKey(ownPendingBatch.commandKey);
     }}>核对原处理</Button>
-    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? (swap.emergencyPaused === true ? "兑换已暂停，后端会拒绝这一批" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
+    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? (swap.emergencyPaused === true ? "兑换已暂停，这一批会被拒绝" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
 
   const batchItems = batchResult ? [
     ...batchResult.completed.map((row) => ({ ...row, kind: "completed" as const })),
@@ -1083,9 +1083,9 @@ function G2ExchangePage() {
         <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle}
           tone={switchUnread === "absent" ? "neutral" : switchUnread || swap.emergencyPaused ? "warn" : "ok"}
           value={switchUnread === "absent" ? "—" : switchUnread === "missing" ? "没有设置" : switchUnread === "invalid" ? "设置有误" : !swap.emergencyPaused ? "开着" : "已暂停"}
-          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "后端按关处理" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
-          explain={switchUnread === "absent" ? "后端这次没给兑换开关的状态，到「紧急停用开关」看。"
-            : switchUnread ? "「紧急停用开关」里的兑换开关读不出开或关，后端按关处理。"
+          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "按关闭处理" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
+          explain={switchUnread === "absent" ? "这次没读到兑换开关的状态，到「紧急停用开关」看。"
+            : switchUnread ? "「紧急停用开关」里的兑换开关读不出开或关，兑换按关闭处理。"
             : "和「紧急停用开关」里的兑换开关是同一个。"} />
         <Stat label="排队中" icon={ListOrdered} tone={stats.queueDepth > 0 ? "warn" : "role-3"}
           value={fmtCount(stats.queueDepth)} unit="单"

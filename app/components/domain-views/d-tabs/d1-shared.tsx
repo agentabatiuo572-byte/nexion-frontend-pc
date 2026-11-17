@@ -124,6 +124,20 @@ const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
   || (typeof error === "object" && error !== null && (error as { unknownOutcome?: unknown }).unknownOutcome === true);
 
 /**
+ * 面板问号里的说明：带原请求出处的记录先查询原结果、过了时限核查结案；
+ * 没有出处的（升级前留下的、这类操作查不了的）只能读现在的值参考，不能据此认定原操作的结果。
+ */
+function recoveryExplain(items: readonly D1PendingItem[]) {
+  const queryable = items.some(item => item.record);
+  const legacy = items.some(item => !item.record);
+  return <>
+    <p>这些操作发出后没收到明确结果，可能已经生效。有结果前，相关对象不能再操作。</p>
+    {queryable && <p>先查询原结果；按原请求重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
+    {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原请求重试，或到操作记录与审批核对。</p>}
+  </>;
+}
+
+/**
  * 结果未知的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
  * 后端不按命令号去重的操作只读回事实，不给重试或解除，记录保留到关标签页（决定 03）。解除只清本地记录，不发请求（OP-153）。
  */
@@ -189,7 +203,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
     <>
       <FundRecoveryPanel rows={[]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(row => row.key !== key))} />
       <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理"
-        explain="这些操作发出后没收到明确结果，可能已经生效。先读取现在的值核对；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
+        explain={recoveryExplain(items)}
         foot={auditLinks.length ? auditLinks : undefined}
         items={items.map((item): RecoveryItem => {
           const hint = item.retry ? item.blocked ?? item.hint : item.hint;
@@ -199,7 +213,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={status?.tone ?? (refused ? "danger" : "warn")}>{status?.label ?? (refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知")}</StatusTag>,
-            line: status?.line ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，先读取现在的值核对。" : item.blocked ? `${item.blocked}。` : "可能已经生效，先读取现在的值核对。" : "可能已经生效，这项只能读取现在的值核对。"),
+            line: status?.line ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
             note: notes[item.key],
             actions: <>
               {item.record && <FundCheckButtons record={item.record} outcome={outcomes[item.key]} expired={expired} busy={disabled || !!running} checking={running === item.key}
