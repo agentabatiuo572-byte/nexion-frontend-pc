@@ -255,6 +255,7 @@ interface BackendF4QuotaRow {
   unlockMode?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
+  monthlyQuota?: string | null;
   tight?: boolean | string | null;
 }
 
@@ -788,6 +789,7 @@ export interface F4QuotaRow {
   criteriaKnown: boolean;
   current: number;
   cap: number;
+  monthlyQuota?: string | null;
   tight: boolean;
 }
 
@@ -1623,6 +1625,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     criteriaKnown: quotaCriteriaKnown(row),
     current: toNumber(row.current),
     cap: toNumber(row.cap),
+    monthlyQuota: row.monthlyQuota,
     tight: toBoolean(row.tight),
   }));
   const ambassadorBands = (data?.ambassadorBands ?? []).map((row) => ({
@@ -1925,7 +1928,7 @@ async function f1Request<T>(
       result = JSON.parse(raw.replace(/("(?:poolUsd|perVoteUsd|totalVotes)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else if (path === "/leadership-pool" && !isWrite) {
       const raw = await response.text();
-      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct|monthlyQuota)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
     } else if (/^\/rates(?:\?|$)/.test(path) && !isWrite) {
       const raw = await response.text();

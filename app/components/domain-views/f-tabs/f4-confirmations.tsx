@@ -178,8 +178,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config",
     name: `${quota.name} 月额度调整`, op: "param",
     paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
-    expectedVersion: quota.cap,
-    edit: { kind: "number", current: String(quota.cap), unit: "台" },
+    expectedVersion: quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? undefined : Number(quota.monthlyQuota),
+    edit: { kind: "number", current: quota.monthlyQuota === undefined ? String(quota.cap) : quota.monthlyQuota ?? "", unit: "台" },
     title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。新额度不能低于本月已用。",
@@ -190,7 +190,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
       { key: "code", label: "额度编号", value: <span data-mono>{quota.quotaCode || quota.id}</span> },
     ]} />,
-    detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.cap}。如果别人刚改过，会提示你刷新后再改。`,
+    detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"}。如果别人刚改过，会提示你刷新后再改。`,
   };
       break;
     }

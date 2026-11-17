@@ -327,6 +327,8 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
     const item = record(value, "F4", `quotaRows[${index}]`);
     positiveInteger(item.id, "F4", `quotaRows[${index}].id`);
     for (const key of ["current", "cap"]) nonNegativeInteger(item[key], "F4", `quotaRows[${index}].${key}`);
+    if (item.monthlyQuota !== undefined && item.monthlyQuota !== null
+      && (typeof item.monthlyQuota !== "string" || !/^\d+$/.test(item.monthlyQuota) || !Number.isSafeInteger(Number(item.monthlyQuota)))) invalid("F4", `quotaRows[${index}].monthlyQuota`);
   });
   array(row, "quotaUsages", "F4").forEach((value, index) => {
     const item = record(value, "F4", `quotaUsages[${index}]`);
