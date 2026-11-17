@@ -55,16 +55,14 @@ export function g3MarketObjectReadState(overview: G3ReadOverview, key: string) {
 }
 
 /** New requests only: original-key recovery must still reach the authoritative writer. */
-export function g3MarketReadBlockedCode(overview: G3ReadOverview, change: G3MarketChange, value?: string, forceApproval = false) {
+export function g3MarketReadBlockedCode(overview: G3ReadOverview, change: G3MarketChange, value?: string, _forceApproval = false) {
   const environment = overview.environmentWriteState?.entries.find(entry => change.action === "curve-cell"
     ? entry.operation === "g3_curve_update" && entry.field === change.field && (value === undefined || Number(value) !== Number(change.current))
     : change.action === "current-price" && entry.operation === "g3_override" && entry.overrideKey === "currentPrice");
   if (environment?.environmentDisabled) return environment.reasonCode ?? G3_ENVIRONMENT_FORBIDDEN;
   const state = g3MarketObjectReadState(overview, g3MarketObjectKey(change));
   if (!state?.locked) return undefined;
-  // Weekly/current-price direct tightening deliberately bypasses the A2 lock in the backend.
-  if ((change.action === "curve-cell" || change.action === "current-price")
-    && !(forceApproval || value !== undefined && g3MarketRequiresApproval(change, value))) return undefined;
+  // df26b572: new weekly/current-price writes also check the canonical lock, including tightening.
   return state.pendingApproval ? "OBJECT_ALREADY_PENDING" : "OBJECT_LOCKED_BY_A2";
 }
 
