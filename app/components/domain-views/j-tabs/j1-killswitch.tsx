@@ -20,8 +20,9 @@ import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messa
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { fProposalEndText } from "../f-tabs/f-release";
+import { compareEditDecimals } from "../design-kit";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
+import { EmergencyOutcomeUncertainError, UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -222,7 +223,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         return actions.toggleJ1KillSwitch(command.gate, false, reason, command.context, key);
       case "batch": return actions.emergencyDisableJ1(command.keys, reason, undefined, command.context, key);
       case "sla": return actions.updateJ1Sla(command.id, command.value, command.expected, reason, key);
-      case "rule": return actions.updateJ1AutoRule(command.id, command.value, command.expected, reason, key);
+      case "rule": return actions.updateJ1AutoRule(command.id, command.value, command.expected, reason, key).then((savedValue) => {
+        if (compareEditDecimals(savedValue, command.value) !== 0) throw new EmergencyOutcomeUncertainError();
+      });
       case "backfill": return actions.confirmJ1AutoTrigger(command.gate, command.incidentId, command.decision, reason, key);
     }
   };
