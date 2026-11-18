@@ -968,7 +968,7 @@ function G2ExchangePage() {
           ? <Fact k="显示在哪">App {appLanguage}界面；App 和 H5 现在还不显示</Fact>
           : <><Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact><Fact k="显示在哪">这页排队单的详情；App 和 H5 现在还不显示</Fact></>}
       </Facts>,
-      statedBrief: { impact: "改的是排队单上写的预计时间，不改处理顺序，也不会让单子自动成交。", check: "核对新值；理由写清依据或工单号。" },
+      statedBrief: { impact: `改的是${appLanguage ? `App ${appLanguage}界面` : "排队单上"}写的预计时间，不改处理顺序，也不会让单子自动成交。`, check: "核对新值；理由写清依据或工单号。" },
       edit: key === "queueEtaHours"
         ? { kind: "number", current, displayCurrent: current ? undefined : "未设置", currentLabel: original ? "提交时" : undefined, disallowCurrent: true,
             initialValue: original?.input.value, min: 1, max: 999, step: 1, maxDecimals: 0, unit: "小时", hint: "1–999 的整数",
@@ -999,7 +999,9 @@ function G2ExchangePage() {
   const clearEta = (key: EtaKey) => {
     const path = `/exchange/params/${key}`;
     const name = ETA[key].name;
-    const current = etaRaw(latest.current.overview?.queueEstimate, key);
+    const estimate = latest.current.overview?.queueEstimate;
+    const current = etaRaw(estimate, key);
+    const hoursNow = etaRaw(estimate, "queueEtaHours");
     const cap: G2Cap = { key, name, sub: "", value: current, displayValue: current, note: "", loosen: false };
     const appLanguage = ETA_APP_LANGUAGE[key];
     const after = appLanguage
@@ -1008,16 +1010,16 @@ function G2ExchangePage() {
     openActionConfirm({ briefKind: "config",
       action: `清空排队预计 · ${name}`,
       title: `清空${name}`,
-      detail: <>清空后{after}。</>,
+      detail: <>{ETA[key].what}。</>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认清空",
       facts: <Facts>
         <Fact k="改的是">{name}</Fact>
-        <Fact k="现在">{key === "queueEtaHours" ? paramValueText(key, current) : current}</Fact>
+        <Fact k="现在">{key === "queueEtaHours" ? paramValueText(key, current) : etaHoursValid(hoursNow) ? etaSentence(current, hoursNow) : current}</Fact>
         <Fact k="清空后" tone="danger">{after}</Fact>
         <Fact k="什么时候生效">确认后立即生效，不用审批</Fact>
       </Facts>,
-      statedBrief: { impact: `清空后${after}；不改处理顺序。`, check: "理由写清为什么清空，或写工单号。" },
+      statedBrief: { impact: "只清空这一项，不改兑换的处理顺序。", check: "理由写清为什么清空，或写工单号。" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
       run: async (reason) => {
         const view = latest.current;
@@ -1231,10 +1233,10 @@ function G2ExchangePage() {
         </span>}
         action={allowed(capAuthority(key)) || direct ? (describedBy) => (
           <span className="rd-row-actions">
-            <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
-              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
             {!direct && raw && allowed(capAuthority(key)) && <Button size="sm" variant="ghost" aria-label={`清空${name}`}
               disabledReason={busyReason ?? newWriteBlockedReason} onClick={() => clearEta(key)}>清空</Button>}
+            <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
+              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
           </span>
         ) : undefined} />
     );
