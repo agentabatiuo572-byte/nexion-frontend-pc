@@ -832,7 +832,7 @@ const reviewOperation = (w: { operationCode?: string; action: string }) =>
 const G_PARAM_NAMES: Record<string, string> = {
   userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
   apy: "参考年奖励率", lockDays: "锁仓期限", nurture: "好友升级奖励倍率", lottery: "创世节点抽奖券", penalty: "提前解锁扣款", presets: "锁定金额快捷选项",
-  supply: "节点总量", price: "系列当前价", dividend: "每日收益比例", royalty: "转让手续费", divBase: "收益计算基数",
+  supply: "节点总量", price: "系列当前价（分红计价）", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "收益计算基数",
   airdropPct: "空投占比", emissionCurve: "收益发放曲线", airdropLockDays: "早期持有人奖励锁仓期",
 };
 // 空值（比如 divBase 合法为空）读进来时末尾的空格已被去掉，等号后面直接结束，写成「= 空」；新单的参数名已是中文，同样补「空」。
