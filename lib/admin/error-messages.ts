@@ -3189,6 +3189,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_BLOCK_COUNTRIES_REQUIRED: "应急封锁至少需要选择一个国家或地区。",
   GEO_EMERGENCY_BLOCK_CONFLICT: "目标中包含已封禁或被其他操作锁定的国家，整批未执行，请刷新后重新选择。",
   TAMPER_WINDOW_INVALID: "统计窗口无效，请选择 24 小时、7 天或 30 天。",
+  TAMPER_ALERT_THRESHOLD_INVALID: "告警阈值暂不可用，请联系值班人员核对。",
   TAMPER_THRESHOLD_RANGE_1_100: "高频告警阈值必须是 1-100 之间的整数。",
   TAMPER_ALERT_CONFIG_CONFLICT: "告警配置已被其他管理员修改，本次未覆盖，请刷新后重试。",
   TAMPER_ALERT_CONFIG_EXPECTED_STATE_REQUIRED: "缺少告警配置的页面初始状态，请刷新后重试。",

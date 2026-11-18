@@ -26,7 +26,7 @@ import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
 import { CommandClosureModal, } from "../e-tabs/e-command-check";
 import { PROCESSED_IN_DIALOG, REJECTED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
-import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
+import type { J3PendingCommand, TamperAccount, TamperAlertConfig, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -60,7 +60,7 @@ const PATH_NAMES: Record<string, string> = {
   charge_fail_rate: "扣款成功率篡改",
 };
 
-const num = (value: number) => value.toLocaleString("en-US");
+const num = (value: number | null) => value?.toLocaleString("en-US") ?? "—";
 
 function j3ErrorText(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "操作失败，请刷新页面后重试。";
@@ -140,6 +140,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const canFreezeC2 = reach("/users/actions", "user_c2_read") && authorities.includes("user_c2_account_freeze");
   const data = emergency.tamper;
   const alert = data?.alertConfig;
+  const alertUnavailable = alert?.threshold === null ? j3ErrorText(new Error(alert.unknownReason)) : undefined;
   const window = data?.window ?? "24h";
   const hasData = data?.hasData ?? false;
   const [configOpen, setConfigOpen] = useState<null | { original: SavedConfig | null }>(null);
@@ -166,7 +167,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     return () => clearTimeout(timer);
   }, [saved?.expiresAt, syncSaved]);
   useEffect(() => {
-    if (configOpen && !configOpen.original && (ctx.contentLoading || ctx.contentError || !alert || accountLoading)) setConfigOpen(null);
+    if (configOpen && !configOpen.original && (ctx.contentLoading || ctx.contentError || alert?.threshold == null || accountLoading)) setConfigOpen(null);
   }, [configOpen, ctx.contentLoading, ctx.contentError, alert, accountLoading]);
 
   const abandonPendingReport = () => {
@@ -174,7 +175,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     toast("已放弃这份报表；下次导出会重新生成。", "info");
   };
   const downloadReport = () => {
-    if ((!hasData && !retryableReport) || exporting) return;
+    if ((!retryableReport && (!hasData || alertUnavailable)) || exporting) return;
     if (retryableReport) {
       try {
         downloadJ3ReportFile(retryableReport);
@@ -264,17 +265,18 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     }
     void actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
-      if (now) toast(`现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。`, "info");
+      if (now?.threshold === null) toast(j3ErrorText(new Error(now.unknownReason)), "info");
+      else if (now) toast(`现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。`, "info");
     }).catch(() => undefined);
   };
   const closeConfig = () => { setConfigOpen(null); syncSaved(); };
   const configBlocked = saved ? j3ErrorText(new Error("J3_ORIGINAL_CONFIG_PENDING"))
-    : ctx.contentLoading || ctx.contentError || accountLoading ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : undefined;
+    : ctx.contentLoading || ctx.contentError || accountLoading ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : alertUnavailable;
 
   const exportDisabledReason = exporting ? undefined
     : retryableReport ? undefined
       : !data ? "数据还没读到，读到后才能导出"
-        : !hasData ? `${WINDOW_TEXT[window]}没有拦截记录，不用导出空报表` : undefined;
+        : alertUnavailable ?? (!hasData ? `${WINDOW_TEXT[window]}没有拦截记录，不用导出空报表` : undefined);
 
   const header = (
     <PageHeader pageId="J3" title="篡改防御监控"
@@ -288,7 +290,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         )}
         {canConfigure && alert && (
           <Button icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={configBlocked}
-            onClick={() => { if (readSavedConfig()) syncSaved(); else setConfigOpen({ original: null }); }}>修改告警设置</Button>
+            onClick={() => { if (readSavedConfig()) syncSaved(); else if (alert.threshold !== null) setConfigOpen({ original: null }); }}>修改告警设置</Button>
         )}
       </>}
       meta={<span className="rd-toolbar">
@@ -374,8 +376,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     </Notice>
   );
 
-  const modal = configOpen && (configOpen.original?.command || alert) && (
-    <J3ConfigModal ctx={ctx} original={configOpen.original} onClose={closeConfig}
+  const configContext = configOpen?.original?.command?.tamper.context ?? (alert?.threshold != null ? alert : null);
+  const modal = configOpen && configContext && (
+    <J3ConfigModal ctx={ctx} original={configOpen.original} context={configContext} onClose={closeConfig}
       onOutcome={(pending, result) => recordOutcome(pending, result, configOpen.original ? savedTitle(configOpen.original) : "修改告警设置")}
       onPending={() => { const next = readSavedConfig(); setSaved(next); if (next?.command) setConfigOpen({ original: next }); }} />
   );
@@ -428,7 +431,8 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
   const totalPath = TAMPER_PATHS.reduce((s, p) => s + p.ct, 0);
   const total7d = TAMPER_TREND["7d"].pts.reduce((s, p) => s + p, 0);
   const accountPager = data.accountPage;
-  const accountTotal = Number(data.stats.highFrequencyAccounts ?? accountPager.total ?? TAMPER_ACCTS.length);
+  const accountTotal = accountPager.total === null ? null : Number(data.stats.highFrequencyAccounts ?? accountPager.total);
+  const alertUnavailable = data.alertConfig.threshold === null ? j3ErrorText(new Error(data.alertConfig.unknownReason)) : undefined;
   const statNumber = (...keys: string[]) => {
     for (const key of keys) {
       const raw = data.stats[key];
@@ -441,7 +445,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
   const deltaPrevPct = statNumber("deltaPrevPct");
   const alertThreshold = data.alertConfig.effectiveThreshold;
   const loadAccountPage = (nextPage: number) => {
-    if (accountLoading) return;
+    if (accountLoading || accountPager.pages === null) return;
     const targetPage = Math.max(1, Math.min(nextPage, Math.max(1, accountPager.pages)));
     if (targetPage === accountPager.page) return;
     setAccountLoading(true);
@@ -472,7 +476,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
     : `比${PREVIOUS_SPAN[win]} ${deltaPrevPct > 0 ? "+" : ""}${deltaPrevPct}%`;
   const conclusionExplain = <>
     <p>拦截次数是{W}里系统已经处理完的拦截事件之和，只统计已登记的 {data.coverage.registeredCount} 类入口；还没处理完的事件不算在内。</p>
-    <p>账户达到告警阈值：{W}内被拦次数 ≥ {num(alertThreshold)} 次（每 24 小时 {data.alertConfig.threshold} 次 × {win === "24h" ? 1 : win === "7d" ? 7 : 30}）。</p>
+    <p>{alertUnavailable ?? `账户达到告警阈值：${W}内被拦次数 ≥ ${num(alertThreshold)} 次（每 24 小时 ${data.alertConfig.threshold} 次 × ${win === "24h" ? 1 : win === "7d" ? 7 : 30}）。`}</p>
   </>;
 
   const userRef = (code: string) => {
@@ -483,14 +487,14 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
   };
 
   return <>
-    {accountTotal > 0
+    {accountTotal !== null && accountTotal > 0
       ? <Conclusion state="warn" lead icon={TriangleAlert} explain={conclusionExplain}
           hint="逐个去账户操作或多账户排查处理；本页不冻结账户。"
           action={<Button size="sm" onClick={scrollToAccounts}>查看这些账户</Button>}>
           {W}有 <b>{num(accountTotal)}</b> 个账户达到告警阈值
         </Conclusion>
       : totalPath > 0
-        ? <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{W}有拦截，没有账户达到告警阈值</Conclusion>
+        ? <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{alertUnavailable ?? `${W}有拦截，没有账户达到告警阈值`}</Conclusion>
         : <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{W}没有拦截记录</Conclusion>}
 
     {!coverageComplete && (
@@ -510,7 +514,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
         explain={`和紧挨着的${PREVIOUS_SPAN[win]}比。前一段为 0 而这段有拦截时没法算百分比。`} />
       <Stat tone="role-2" icon={CalendarDays} label="近 7 天拦截" value={num(total7d)} unit="次" sub={`日均约 ${num(Math.round(total7d / 7))} 次`}
         explain="固定看近 7 天，不随时间范围变。日均是 7 天合计除以 7 后四舍五入。" />
-      <Stat tone="role-4" icon={Gauge} label="告警阈值" value={String(data.alertConfig.threshold)} unit="次 / 24 小时"
+      <Stat tone="role-4" icon={Gauge} label="告警阈值" value={data.alertConfig.threshold?.toString() ?? "—"} unit="次 / 24 小时"
         sub={`风险评分：${feedText(data.alertConfig.feedK4)}`}
         explain={<>
           <p>一个账户 24 小时内被拦到这个次数就进告警名单；看 7 天、30 天时门槛按 7 倍、30 倍算。</p>
@@ -574,7 +578,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
           </thead>
           <tbody>
             {TAMPER_ACCTS.length === 0
-              ? <TableMessage columns={5} role="status">{W}没有账户达到告警阈值。</TableMessage>
+              ? <TableMessage columns={5} role="status">{alertUnavailable ?? `${W}没有账户达到告警阈值。`}</TableMessage>
               : TAMPER_ACCTS.map((a) => (
                 <J3AccountRow key={a.userCode} account={a} feedK4={data.alertConfig.feedK4} zone={zone} userRef={userRef} pathName={pathName}
                   canViewK1={canViewK1} canFreezeC2={canFreezeC2} />
@@ -652,9 +656,9 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
 }
 
 /** Recovery facts and requests come only from the submission-time record, including after a failed overview read. */
-function J3ConfigModal({ ctx, original, onClose, onPending, onOutcome }: { ctx: JCtx; original: SavedConfig | null; onClose: () => void; onPending: () => void;
+function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }: { ctx: JCtx; original: SavedConfig | null; context: TamperAlertConfig; onClose: () => void; onPending: () => void;
   onOutcome: (pending: J3PendingCommand, outcome: FundInvestigationOutcome) => void }) {
-  const [current] = useState(() => original?.command?.tamper.context ?? ctx.emergency.tamper!.alertConfig);
+  const [current] = useState(context);
   const sevenDayAlertAccounts = current.sevenDayAlertAccounts;
   const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? current.threshold));
   const threshold = Number(thresholdText);
@@ -684,7 +688,7 @@ function J3ConfigModal({ ctx, original, onClose, onPending, onOutcome }: { ctx: 
       ctx.toast(RETRY_EXPIRED_TEXT, "warn");
       return;
     }
-    if (!pending && (readSavedConfig() || ctx.contentLoading || ctx.contentError || !ctx.emergency.tamper)) {
+    if (!pending && (readSavedConfig() || ctx.contentLoading || ctx.contentError || ctx.emergency.tamper?.alertConfig.threshold == null)) {
       ctx.toast(j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")), "warn");
       return;
     }
@@ -740,7 +744,9 @@ function J3ConfigModal({ ctx, original, onClose, onPending, onOutcome }: { ctx: 
     }
     void ctx.actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
-      setReadBack(<>{found && <>{found}<br /></>}{now ? `现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。` : "没读到告警设置，请稍后再查。"}</>);
+      const currentText = now?.threshold === null ? j3ErrorText(new Error(now.unknownReason))
+        : now ? `现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。` : "没读到告警设置，请稍后再查。";
+      setReadBack(<>{found && <>{found}<br /></>}{currentText}</>);
     }).catch((error) => setReadBack(`${found ? `${found} ` : ""}读取失败 · ${j3ErrorText(error)}`));
   };
 
