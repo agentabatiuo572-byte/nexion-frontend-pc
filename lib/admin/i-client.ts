@@ -1301,6 +1301,15 @@ export type NovaOverview = {
   runtimeSourceOptions: NovaOptionView[];
   sources: string[];
   channelRuntimeSources?: { channel: string; eventNames: string[]; targeted: boolean }[];
+  pushDelivery?: {
+    from: string;
+    to: string;
+    days: number;
+    eventName: string;
+    sourceAggregate: string;
+    basis: string;
+    channels: { channel: string; pushSentCount: number }[];
+  } | null;
 };
 
 export type NotificationCampaignStats = {

@@ -149,6 +149,16 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
         || !array(moduleId, source.eventNames).every((name) => typeof name === "string")) fail(moduleId);
     }
   }
+  if (value.pushDelivery != null) {
+    const delivery = record(moduleId, value.pushDelivery);
+    for (const key of ["from", "to", "eventName", "sourceAggregate", "basis"]) {
+      if (typeof delivery[key] !== "string") fail(moduleId);
+    }
+    if (!Number.isSafeInteger(delivery.days) || Number(delivery.days) <= 0) fail(moduleId);
+    for (const row of records(moduleId, delivery.channels)) {
+      if (typeof row.channel !== "string" || !Number.isSafeInteger(row.pushSentCount) || Number(row.pushSentCount) < 0) fail(moduleId);
+    }
+  }
 }
 
 function validateNovaEvent(event: Record<string, unknown>) {
