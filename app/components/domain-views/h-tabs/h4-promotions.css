@@ -372,3 +372,9 @@
 .h4-page .footerbar .h4-conflict-hint { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
 .h4-dialog-body .h4-compare-table[data-promotion] thead th:first-child, .h4-dialog-body .h4-compare-table[data-promotion] tbody th { width: 24%; }
 .h4l-locale-rows .h4l-locale-edit { margin-bottom: -6px; }  /* 被审批锁住时换成灰按钮：字和左边的值对齐，不把这一行撑高 */
+/* 退款政策详情：「实际怎么处理」和「政策原文（存档）」分两段，各一个小标题和一句说明。 */
+.h4-policy-part { display: flex; flex-direction: column; gap: var(--rd-space-2); }
+.h4-policy-part > header { display: flex; flex-direction: column; gap: 2px; }
+.h4-policy-part h3 { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.h4-policy-part > header p { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h4-tech { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--rd-text-aux); color: var(--rd-text-2); overflow-wrap: anywhere; }
