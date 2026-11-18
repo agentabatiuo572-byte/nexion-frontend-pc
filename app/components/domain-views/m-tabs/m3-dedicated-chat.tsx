@@ -1829,14 +1829,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       line: entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey) ? "已不归你接待，只能查询结果" : "原记录不全，只能查询结果",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
       actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原结果</Button> })),
-    ...(busy ? [] : otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer)).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
+    ...otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
       object: customerLabel(originalCustomer(entry.locator)), tag: null, line: entry.first ? "首次联系，打开后查询或重试" : "打开原会话后查询或重试",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
-      actions: <Button size="sm" onClick={() => openOtherSend(entry)}>打开会话</Button> })),
+      actions: <Button size="sm" disabled={busy} onClick={() => openOtherSend(entry)}>打开会话</Button> })),
   ];
   const lengthHint = composerMode === "write" && !pending && !firstPending ? supportLengthHint(draft) : null;
   // 原文另存了一份时，没发出和原因并进那块原文里说，不再单独出一条红色提示。
-  const failedPrefix = failedCopy ? [MESSAGE_FAILED, MESSAGE_FAILED_UNCHECKED].find(text => sendError.startsWith(text)) : undefined;
+  const failedPrefix = failedCopy && sendFeedback?.commandKey === failedCopy.commandKey ? [MESSAGE_FAILED, MESSAGE_FAILED_UNCHECKED].find(text => sendError.startsWith(text)) : undefined;
   const keptReason = failedPrefix ? sendError.slice(failedPrefix.length) || " " : "";
   const failedNotice = keptReason ? "" : sendError;
   // 分段一行放两个，其余进「更多」（DP-14）：待回复、待分配这类要处理的排在前面。

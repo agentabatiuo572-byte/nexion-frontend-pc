@@ -146,7 +146,8 @@
 .m3s-original > span { display: block; margin-bottom: 2px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m3s-original > p { margin: 0; color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* 收件箱上方的「发送结果未知」面板：栏窄，每条两行，第一行客户和按钮，第二行一句结论。 */
-.m3s-pending { flex: none; margin: var(--rd-space-2) var(--rd-space-2) 0; }
+/* 展开全部时面板在自己框里滚，最多占收件箱四成高，下面的会话列表始终露出来。 */
+.m3s-pending { flex: none; max-height: 40%; overflow-y: auto; margin: var(--rd-space-2) var(--rd-space-2) 0; }
 .m3s-pending .rd-notice { padding-left: var(--rd-space-3); padding-right: var(--rd-space-3); }
 .m3s-pending .fund-row-line { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
 .m3s-pending .fund-row-text { grid-column: 1 / -1; grid-row: 2; padding-left: 18px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
