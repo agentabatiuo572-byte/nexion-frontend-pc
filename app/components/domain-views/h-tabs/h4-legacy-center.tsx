@@ -1077,6 +1077,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     return null;
   };
   const contentEvent = contentId ? events.find((event) => event.id === contentId) : undefined;
+  const contentRule = contentEvent ? ruleOf(contentEvent.id) : undefined;
+  const requiresEnglish = contentEvent?.state === "upcoming"
+    || (contentRule !== undefined && !contentRule.enabled && !contentRule.rulesLocked && contentRule.supported !== false);
   const usedPayout = wheelDailyUsage?.realPayoutUsdt == null ? null : String(wheelDailyUsage.realPayoutUsdt);
   const budgetText = budget ? budgetNumber(text(budget.value, "")) : "";
   const budgetLeft = usedPayout !== null && budgetText ? decimalMinus(budgetText, usedPayout) : null;
@@ -1242,7 +1245,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="三语内容与 App 上的样子" sub={contentEvent?.id}
       explain="改一格保存一格，下次读取 App 就用新内容，不用发布。中文和越南语的名称、说明、奖项名都填齐，活动才能开放；英文没填时 App 用原文。">
-      {contentEvent && <EventPreview canEdit={canModuleWrite} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
+      {contentEvent && <EventPreview canEdit={canModuleWrite} requiresEnglish={requiresEnglish} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}
         onEdit={(field, locale) => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName))} />}

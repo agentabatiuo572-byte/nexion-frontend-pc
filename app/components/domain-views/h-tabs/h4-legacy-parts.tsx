@@ -167,33 +167,36 @@ export function EventCard({ event, zh, gaps, rule, pending, primary, menu, onCon
   );
 }
 
-export function EventPreview({ names, original, onEdit, canEdit, lockedReason }: {
+export function EventPreview({ names, original, onEdit, canEdit, requiresEnglish, lockedReason }: {
   names: Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>;
   original: Record<"name" | "description" | "rewardName", string>;
   onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => void;
   canEdit: boolean;
+  requiresEnglish: boolean;
   /** 活动被审批锁住时的原因：入口照常显示，灰着并写原因，和活动卡上的其他入口一样。 */
   lockedReason?: string;
 }) {
   const [locale, setLocale] = useState<LocaleCode>("zh");
   const gaps = eventLocalizedContentGaps(names);
+  const requiredGaps = gaps.filter(gap => gap.locale !== "en" || requiresEnglish);
   const shown = (field: "name" | "description" | "rewardName") => names[locale][field] || names.en[field] || original[field];
   const fallback = (["name", "description", "rewardName"] as const).some((field) => !names[locale][field]);
   return (
     <div className="h4-dialog-body h4l-content">
       <Segments label="内容语言" value={locale} onChange={setLocale} items={LOCALES.map((code) => ({
         value: code,
-        label: gaps.some(gap => gap.locale === code) ? `${LOCALE_NAME[code]} · 缺失` : LOCALE_NAME[code],
-        tone: gaps.some(gap => gap.locale === code) ? "warn" as const : undefined,
+        label: requiredGaps.some(gap => gap.locale === code) ? `${LOCALE_NAME[code]} · 缺失` : LOCALE_NAME[code],
+        tone: requiredGaps.some(gap => gap.locale === code) ? "warn" as const : undefined,
       }))} />
       <ul className="h4l-locale-rows" aria-label={`${LOCALE_NAME[locale]}内容`}>
         {(["name", "description", "rewardName"] as const).map((field) => {
           const value = names[locale][field];
           const old = legacyName(value);
-          const missing = gaps.some(gap => gap.locale === locale && gap.field === field);
+          const blank = gaps.some(gap => gap.locale === locale && gap.field === field);
+          const missing = blank && (locale !== "en" || requiresEnglish);
           return <li key={field}>
             <span className="h4l-locale-key">{FIELD_NAME[field]}</span>
-            <span className="h4l-locale-value" data-empty={missing ? "" : undefined}>{missing ? "未填写，开放前必须补齐" : old.text}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
+            <span className="h4l-locale-value" data-empty={blank ? "" : undefined}>{!blank ? old.text : missing ? "未填写，开放前必须补齐" : `未填写，App 显示原文：${original[field] || "—"}`}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
             {canEdit && (lockedReason
               ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
               : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
