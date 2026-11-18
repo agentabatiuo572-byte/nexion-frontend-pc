@@ -232,7 +232,6 @@ export async function updatePlatformExperienceConfig(
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(body),
     });
-    commandAttempts.forget(slot);
     const saved = normalize(response);
     if (submittedInterfaceLanguages && saved.interfaceLanguages?.join() !== submittedInterfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
@@ -244,6 +243,7 @@ export async function updatePlatformExperienceConfig(
       || saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.zh)) {
       throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
     }
+    commandAttempts.forget(slot);
     if (saved.operatingLanguages) requiredContentLanguages = Promise.resolve(saved.operatingLanguages);
     return saved;
   } catch (cause) {
