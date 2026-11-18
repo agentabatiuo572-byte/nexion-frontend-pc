@@ -11,7 +11,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, EyeOff, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Receipt, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
@@ -1825,6 +1825,30 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const F = lang === "zh" ? "Zh" : lang === "vi" ? "Vi" : "En";
     return !!(c[`title${F}` as "titleZh"]?.trim() && c[`body${F}` as "bodyZh"]?.trim());
   };
+  /**
+   * App 给英语、越南语用户读课时的取法：越南语缺的格用英文；标题、正文、每道题的题干和
+   * 至少两个、和中文一样多的选项都读得到才显示，读不到整门课不显示。中文缺格也用英文。
+   */
+  const appCopy = (c: Course, lang: Lang) => {
+    const pick = (own: string | undefined, en: string) => lang !== "en" && own?.trim() ? own : en;
+    const own = lang === "zh" ? { title: c.titleZh, body: c.bodyZh } : lang === "vi" ? { title: c.titleVi, body: c.bodyVi } : { title: c.titleEn, body: c.bodyEn };
+    return { title: pick(own.title, c.titleEn), body: pick(own.body, c.bodyEn), english: lang !== "en" && (!own.title?.trim() || !own.body?.trim()) };
+  };
+  const appHidden = (c: Course): Lang[] => liveStatus(c) !== "published" ? [] : (["en", "vi"] as const).filter(lang => {
+    const copy = appCopy(c, lang);
+    if (!copy.title.trim() || !copy.body.trim()) return true;
+    return c.quizQuestions.some(q => {
+      const options = lang === "vi" && q.optionsVi?.length ? q.optionsVi : q.optionsEn;
+      return !(lang === "vi" && q.questionVi?.trim() ? q.questionVi : q.questionEn).trim()
+        || options.length < 2 || options.length !== q.optionsZh.length || options.some(option => !option.trim());
+    });
+  });
+  const hiddenTag = (c: Course) => {
+    const hidden = appHidden(c);
+    if (!hidden.length) return null;
+    const who = hidden.map(lang => lang === "en" ? "英语" : "越南语").join("、");
+    return <StatusTag tone="warn" icon={EyeOff} explain={`后台是在线，但 App 上${who}用户看不到这门课：这种语言的标题、正文或测验题不全（越南语缺的用英文的）。在「详情与版本」建新版本草稿，补齐后发布。`}>{who}用户看不到</StatusTag>;
+  };
 
   return <>
     <Conclusion state={conclusion.state} icon={conclusion.state === "ok" ? BadgeCheck : conclusion.state === "warn" ? TriangleAlert : GraduationCap} hint={conclusion.hint}>{conclusion.text}</Conclusion>
@@ -1866,6 +1890,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     <span className="i6-course-tags">
                       <StatusTag tone={status.tone} icon={status.text === "草稿" ? FilePen : undefined}>{status.text}</StatusTag>
                       {liveFeatured() === c.id && <StatusTag tone="progress" icon={Star}>首页推荐</StatusTag>}
+                      {hiddenTag(c)}
                       {approval && <StatusTag tone="progress">等另一位批准</StatusTag>}
                       {unknown && <StatusTag tone={unknown.receiptKnown ? "neutral" : "warn"}>{unknown.receiptKnown ? "已提交，状态未查到" : "结果未知"}</StatusTag>}
                     </span>
@@ -1927,17 +1952,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 items={LANGS.map((item) => ({ value: item.key, label: item.label, missing: !langDone(versionCourse, item.key) }))} /></div>
               <Facts>
                 <Fact k="标题">{(versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"] || "—")}</Fact>
-                <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}</Fact>
+                <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}{hiddenTag(versionCourse)}</Fact>
                 <Fact k="学完发" unit={versionCourse.rewardRaw === null ? undefined : "UVT/人"}>{versionCourse.rewardRaw === null ? NO_REWARD : uvtText(versionCourse.rewardRaw)}</Fact>
                 <Fact k="分类">{categoryLabel(versionCourse.cat)}</Fact>
                 <Fact k="形式和难度">{FORMAT_LABEL[versionCourse.format] ?? versionCourse.format} · {LEVEL_LABEL[versionCourse.level] ?? versionCourse.level}</Fact>
                 <Fact k="预计时长">{durationText(versionCourse.duration)}</Fact>
               </Facts>
             </div>
-            <AppCoursePreview lang={courseLang} title={versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"]}
-              body={versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"]} category={versionCourse.cat} format={versionCourse.format}
-              level={versionCourse.level} duration={versionCourse.duration} reward={versionCourse.rewardRaw ?? ""} quizCount={versionCourse.quizQuestions.length}
-              passScore={String(versionCourse.passScore ?? "")} retries={String(versionCourse.retryLimit ?? "")} caption="App 里大致的样子；线上课程显示已发布的内容" />
+            {(() => {
+              // 线上课程按 App 的取法画：缺格用英文，读不全的语言整门不显示。草稿照存的稿画，缺的画成缺稿。
+              const online = liveStatus(versionCourse) === "published";
+              const copy = online ? appCopy(versionCourse, courseLang) : null;
+              const hidden = online && courseLang !== "zh" && appHidden(versionCourse).includes(courseLang);
+              return <AppCoursePreview lang={courseLang} title={copy ? copy.title : versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"]}
+                body={copy ? copy.body : versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"]} category={versionCourse.cat} format={versionCourse.format}
+                level={versionCourse.level} duration={versionCourse.duration} reward={versionCourse.rewardRaw ?? ""} quizCount={versionCourse.quizQuestions.length}
+                passScore={String(versionCourse.passScore ?? "")} retries={String(versionCourse.retryLimit ?? "")}
+                hidden={hidden ? "标题、正文或测验题不全，课程列表里没有它" : undefined}
+                caption={copy?.english && !hidden ? "这种语言没填的部分，App 显示英文" : "App 里大致的样子；线上课程显示已发布的内容"} />;
+            })()}
           </div>}
           {courseTab === "quiz" && <div className="rd-stack">
             <Facts>

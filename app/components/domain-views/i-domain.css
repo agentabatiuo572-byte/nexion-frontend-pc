@@ -638,6 +638,8 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i6-phone-body { margin: 0; font-size: var(--rd-text-aux); line-height: 20px; color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .i6-phone-quiz { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .i6-phone-caption { font-size: var(--rd-text-aux); color: var(--rd-text-3); text-align: center; }
+.i6-phone-hidden { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; gap: var(--rd-space-2); padding: var(--rd-space-4); text-align: center; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.i6-phone-hidden b { color: var(--rd-warn); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
 .i6-phone-quiz > span { white-space: nowrap; }
 .i6-phone-quiz > span + span::before { content: "·"; margin-right: var(--rd-space-2); color: var(--rd-text-3); }
 .i6-course-detail { display: flex; flex-direction: column; gap: var(--rd-space-4); }
