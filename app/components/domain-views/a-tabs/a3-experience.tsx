@@ -6,6 +6,7 @@
  * 新加的只有界面：分区、每块旁边的「App 上的样子」、保存前的确认框；推荐渠道只填进表单，保存了才生效。
  * App 的拼法照 App share.ts：链接 = 分享基础链接 + 邀请码；外链模板里 {link}、{text} 各换第一个，编码后代入。
  */
+import { blankCopiedContentLanguage, englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CircleOff, Download, FilePen, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
@@ -45,6 +46,11 @@ const SAMPLE_CODE = "AB12CD";
 const operatingNames = (value: readonly string[]) => INTERFACE_LANGUAGES.filter((language) => value.includes(language.code)).sort((a, b) => a.code === "en" ? -1 : b.code === "en" ? 1 : 0).map((language) => language.zhName).join("、");
 
 /** 版本冲突后：你留着的修改和刚读到的最新值逐项对照（现在 = 最新值，改后 = 你填的）。 */
+function projectedReleaseNotes(config: PlatformExperienceConfig, required = config.operatingLanguages ?? OPERATING_LANGUAGE_CODES) {
+  const notes = config.appDownload.releaseNotes;
+  return { ...notes, zh: blankCopiedContentLanguage(required, "zh", { text: notes.en }, { text: notes.zh }).text };
+}
+
 function draftVsLatest(draft: PlatformExperienceConfig, latest: PlatformExperienceConfig): DiffRow[] {
   const rows: DiffRow[] = [];
   const add = (key: string, label: string, before: string | null | undefined, after: string | null | undefined) => {
@@ -97,6 +103,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const [previewKey, setPreviewKey] = useState("");
   const [readReady, setReadReady] = useState(false);
   const conflictDraft = useRef(false);
+  const chineseNotesEdited = useRef(false);
   const original = commands.find("experience");
   const savedForm = original?.original.kind === "experience" ? original.original : null;
   const config = confirmOpen && savedForm ? savedForm.config : loadedForm?.config ?? null;
@@ -112,6 +119,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     if (!conflictDraft.current) setError(null);
     try {
       const next = await fetchPlatformExperienceConfig();
+      if (!conflictDraft.current) chineseNotesEdited.current = false;
       setLoadedForm(current => ({
         config: conflictDraft.current && current ? {
           ...current.config,
@@ -121,7 +129,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
             ? null : current.config.interfaceLanguages ?? next.interfaceLanguages,
           operatingLanguages: next.operatingLanguages === undefined ? undefined
             : changedOperatingLanguages(current.config.operatingLanguages, current.baseline.operatingLanguages) ?? next.operatingLanguages,
-        } : next,
+        } : { ...next, appDownload: { ...next.appDownload, releaseNotes: projectedReleaseNotes(next) } },
         baseline: next,
       }));
       setReadReady(true); return next;
@@ -147,7 +155,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     const parts: string[] = [];
     if (config.baseUrl !== baseline.baseUrl) parts.push("分享基础链接");
     if (JSON.stringify(config.channels) !== JSON.stringify(baseline.channels)) parts.push("分享渠道");
-    if (JSON.stringify(config.appDownload) !== JSON.stringify(baseline.appDownload)) parts.push("官方应用下载");
+    if (JSON.stringify(config.appDownload) !== JSON.stringify({ ...baseline.appDownload, releaseNotes: projectedReleaseNotes(baseline) })) parts.push("官方应用下载");
     if (JSON.stringify(config.interfaceLanguages) !== JSON.stringify(baseline.interfaceLanguages)) parts.push("界面语言");
     if (changedOperatingLanguages(config.operatingLanguages, baseline.operatingLanguages)) parts.push("发布必填语言");
     return parts;
@@ -170,7 +178,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     try {
       const record = original ?? commands.capture({ original: { kind: "experience", config, baseline: baseline! },
         path: "/api/admin/platform/config/experience", method: "PUT",
-        body: JSON.stringify(platformExperienceBody(config, reason, session?.operator ?? session?.username ?? "",
+        body: JSON.stringify(await platformExperienceBody(config, reason, session?.operator ?? session?.username ?? "",
           changedOperatingLanguages(config.operatingLanguages, baseline?.operatingLanguages))),
         reason: reason.trim(), name: "App 分享与下载", change: `v${config.version} → v${config.version + 1} · ${changed.join("、")}` });
       await commands.send(record, Boolean(original));
@@ -209,7 +217,16 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const requiredNow: readonly string[] = operating ?? (operating === null ? ["en"] : OPERATING_LANGUAGE_CODES);
   const unreadable = { interface: baseline?.interfaceLanguages === null, operating: baseline?.operatingLanguages === null };
   const blockedList = languages === null ? "先重新勾选「App 里可选」的语言" : operating === null ? "先重新勾选「发布时必填」的语言" : undefined;
-  const reselect = (key: "interfaceLanguages" | "operatingLanguages", on: boolean) => setConfig(key === "interfaceLanguages" ? { ...config, interfaceLanguages: on ? ["en"] : null } : { ...config, operatingLanguages: on ? ["en"] : null });
+  const setOperating = (operatingLanguages: PlatformExperienceConfig["operatingLanguages"]) => {
+    const releaseNotes = !chineseNotesEdited.current && baseline
+      ? { ...config.appDownload.releaseNotes, zh: projectedReleaseNotes(baseline, operatingLanguages ?? OPERATING_LANGUAGE_CODES).zh }
+      : config.appDownload.releaseNotes;
+    setConfig({ ...config, operatingLanguages, appDownload: { ...config.appDownload, releaseNotes } });
+  };
+  const reselect = (key: "interfaceLanguages" | "operatingLanguages", on: boolean) => {
+    if (key === "interfaceLanguages") setConfig({ ...config, interfaceLanguages: on ? ["en"] : null });
+    else setOperating(on ? ["en"] : null);
+  };
   const operatingChanged = changed.includes("发布必填语言");
   const onlyOperating = operatingChanged && changed.length === 1;
   const h3 = reach("/growth/quest", "growth_h3_read");
@@ -307,8 +324,9 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
             <Field label="Android 下载链接" help="可不填；HTTPS，不能带锚点">
               {(control) => <Input {...control} aria-label="Android 官方下载链接" value={config.appDownload.androidUrl} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ androidUrl: event.target.value })} />}
             </Field>
-            <Field label="更新说明（中文）" required={!unavailable}>
-              {(control) => <Textarea {...control} aria-label="中文发布说明" rows={2} value={config.appDownload.releaseNotes.zh} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ releaseNotes: { ...config.appDownload.releaseNotes, zh: event.target.value } })} />}
+            <Field label="更新说明（中文）" required={!unavailable && requiredNow.includes("zh")}
+              help={!unavailable && requiredNow.includes("zh") && isEnglishCopy({ text: config.appDownload.releaseNotes.en }, { text: config.appDownload.releaseNotes.zh }) ? englishCopyHint("zh") : undefined}>
+              {(control) => <Textarea {...control} aria-label="中文发布说明" rows={2} value={config.appDownload.releaseNotes.zh} disabled={fieldsLocked || unavailable} onChange={(event) => { chineseNotesEdited.current = true; patchDownload({ releaseNotes: { ...config.appDownload.releaseNotes, zh: event.target.value } }); }} />}
             </Field>
             <Field label="更新说明（英文）" required={!unavailable}>
               {(control) => <Textarea {...control} aria-label="英文发布说明" rows={2} value={config.appDownload.releaseNotes.en} disabled={fieldsLocked || unavailable} onChange={(event) => patchDownload({ releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } })} />}
@@ -320,7 +338,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
           ? <div className="a3-download" data-empty=""><b>暂不提供官方安装包</b><span>用户看到下载暂不可用，没有可点的链接</span></div>
           : <div className="a3-download">
             <b>UVEL {config.appDownload.version || "—"}</b>
-            <span className="a3-preview-text">{config.appDownload.releaseNotes.zh || "—"}</span>
+            <span className="a3-preview-text">{config.appDownload.releaseNotes.zh || config.appDownload.releaseNotes.en || "—"}</span>
             <span className="a3-preview-link">{config.appDownload.officialUrl || "官方安装页还没填"}</span>
             <span className="a3-preview-sub">iOS {config.appDownload.iosUrl ? "有直链" : "没有直链"} · Android {config.appDownload.androidUrl ? "有直链" : "没有直链"}</span>
           </div>)}
@@ -366,7 +384,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
                     ? <Check label={<><span className="rd-sr-only">{language.zhName} 发布时必填</span>{operatingCode === "en" && <span className="rd-note">始终必填</span>}</>} aria-label={`${language.zhName} 发布必填`}
                       checked={requiredNow.includes(operatingCode)}
                       disabled={fieldsLocked || operatingCode === "en" || !operating}
-                      onChange={(event) => operating && setConfig({ ...config, operatingLanguages: OPERATING_LANGUAGE_CODES.filter((code) => code === operatingCode ? event.target.checked : operating.includes(code)) })} />
+                      onChange={(event) => operating && setOperating(OPERATING_LANGUAGE_CODES.filter((code) => code === operatingCode ? event.target.checked : operating.includes(code)))} />
                     : <span className="rd-note">暂不支持<Explain label={`${language.zhName}为什么不能设为必填`} content="不能设为必填。App 在这种语言下显示英文。" /></span>}</Td>
                 </Tr>;
               })}

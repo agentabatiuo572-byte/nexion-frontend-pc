@@ -5,7 +5,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
 import { displayAdminError } from '@/lib/admin/error-messages';
 import { fetchA2ReasonPolicy } from '@/lib/admin/a2-client';
-import { PromotionApiError, promotionFieldLabel, acknowledgePromotionCommand, pendingPromotionCommands, promotionCommand, recoverPromotionCommand, type PromotionCommandIntent } from '@/lib/admin/promotion-client';
+import { PromotionApiError, promotionFieldLabel, acknowledgePromotionCommand, pendingPromotionCommands, promotionCommand, recoverPromotionCommand, verifyPromotionLocalizedReceipt, type PromotionCommandIntent } from '@/lib/admin/promotion-client';
 import type { CommandReceipt, DraftRewardSpec, LocalizedText, RewardDisclosure, RewardSpec } from '@/lib/admin/promotion-types';
 import { BusinessFormBlock } from '../design-kit';
 import { Check } from 'lucide-react';
@@ -157,10 +157,11 @@ export function Dialog({ title, children, onClose, footer, wide = false, drawer 
     return <Modal title={title} sub={sub} tone={danger ? 'danger' : 'neutral'} wide={wide} onClose={onClose} footer={foot}><div className="h4-dialog-body">{children}</div></Modal>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
-export function ConfirmCommand({ title, intent, body, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, conflictReview, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote, extraAction }: {
+export function ConfirmCommand({ title, intent, body, prepareBody, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, conflictReview, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote, extraAction }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
+    prepareBody?: (body: Record<string, unknown> & { reason: string }) => Promise<Record<string, unknown>>;
     children?: ReactNode;
     onClose: () => void;
     onSettled?: () => void;
@@ -214,7 +215,9 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
     const visibleNote = record ? note : '';
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
     const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
-        const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
+        const result = record?.receipt || await promotionCommand(record && retry ? record
+            : { ...intent, body: prepareBody ? await prepareBody(payload) : payload }, retry);
+        await verifyPromotionLocalizedReceipt(result);
         // A normal success callback can close its own dialog; that is not a dismissed original.
         let notifyOriginal = !!record || !active.current;
         await onSuccess(result, () => {
@@ -262,6 +265,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
         if (result.status === 'SUCCEEDED') {
+            await verifyPromotionLocalizedReceipt(result);
             await onSuccess(result, () => active.current);
             window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
             acknowledgePromotionCommand(result);

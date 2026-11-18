@@ -27,6 +27,7 @@ export interface EventRuleView extends H4AppRewardPresentation {
   supported?: boolean;
   rewardCopyOnly?: boolean;
 }
+export type EventRuleReadback = EventRuleView;
 export type EventRuleChange = Pick<EventRuleView, "enabled" | "startsAt" | "endsAt" | "rules">;
 export interface EventVoucherOption { id: string; name: string; percent: number; status: "active" | "paused"; }
 export function parseEventRule(value: unknown): EventRuleView {

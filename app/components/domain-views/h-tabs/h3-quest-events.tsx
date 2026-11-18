@@ -2,13 +2,14 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
-import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { fetchA2Overview } from "@/lib/admin/a2-client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
+  type H4EventCapabilities,
   fetchH3WeeklyRegionPolicy,
   h3WeeklyRegionPolicyParams,
   validateH3WeeklyRegionMappings,
@@ -20,7 +21,6 @@ import {
   updateH4LocalizedContent,
   updateH4EventFeatured,
   updateH4EventReward,
-  previewH4EventReward,
   updateH4EventStatus,
   createH3Mission,
   editH3Mission,
@@ -45,21 +45,24 @@ import {
   createH4WheelGuard,
   updateH4WheelGuard,
 } from "@/lib/admin/h-client";
-import { useAdminAuth } from "@/lib/store/admin-auth";
-import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, retireH4PointsTier, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import type { HCtx } from "./types";
-import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
+import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
+import type { EventRuleReadback } from "@/lib/admin/event-rules-client";
+import { eventRuleMissingLabel } from "@/lib/admin/event-rule-form";
 import H4EventRules from "./h4-event-rules";
+type EventRuleSnapshot = { rule: EventRuleReadback; contentRevision: number };
 import H4GenesisRaffle from "./h4-genesis-raffle";
 
 type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
 
 type QuestTask = Record<string, any>;
-type QuestEvent = {
+type QuestEvent = H4EventCapabilities & {
   id: string;
   name: string;
   kind?: string;
@@ -135,14 +138,8 @@ const LOCALE_LABEL: Record<"en" | "zh" | "vi", string> = {
   vi: "越南语",
 };
 
-const LOCALIZED_FIELD_LABEL: Record<"name" | "description" | "rewardName", string> = {
-  name: "标题",
-  description: "活动说明",
-  rewardName: "奖项名称",
-};
-
 const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
-const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
+type EventContentField = "name" | "description" | "rewardName";
 
 const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
 const TASK_CATEGORY_LABELS: Record<string, string> = {
@@ -240,51 +237,6 @@ function wheelRewardText(value: unknown) {
 }
 
 const wheelPointsTier = (tier: Record<string, unknown>) => text(tier.kind).toLowerCase() === "points";
-// App 抽奖只认这三种奖型（AppGrowthWheelService.REWARD_KINDS），有一档不合格整池校验失败。
-const WHEEL_APP_KINDS = ["uvt", "usdt", "coupon"];
-const wheelLegacyNexTier = (tier: Record<string, unknown>) => text(tier.kind).toLowerCase() === "nex";
-const H4_APPROVAL_OPS = new Set(["h4_legacy_event_reward_update", "h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_probabilities_update", "h4_wheel_tier_delete"]);
-
-/** 走审批的修改在框里常显怎么生效：哪种方向要批、谁来批、批准前什么不变。 */
-function H4ApprovalFact({ amplify, direct, object }: { amplify: string; direct: string; object: string }) {
-  return <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-    <b>怎么生效</b> · {amplify}要提交审批单，另一位有审批批准权限的超级管理员批准后才执行，批准前{object}不变；{direct}确认后立即保存。是否要审批以提交时系统核对为准。
-  </div>;
-}
-
-/** 原操作写成一句「做什么 · 对哪一项」，不露命令号和对象键。 */
-function hiCommandSubject(record: HIRewardCommand, eventName: (id: string) => string) {
-  const payload = record.payload;
-  if (payload.kind === "retire") return `退役积分奖项 · ${payload.tierName}`;
-  const values = payload.input.command.params.values as Record<string, unknown>;
-  if (payload.input.command.op === "h4_legacy_event_reward_update") return `${payload.input.action} · ${eventName(String(values.eventCode))} · 改成 ${String(values.value)}`;
-  if (payload.input.command.op === "h4_wheel_probabilities_update") return `${payload.input.action} · 转盘全部奖项`;
-  return `${payload.input.action} · ${String(values.tierName ?? "转盘奖池")}`;
-}
-
-// A2's decimal parser requires a leading digit and no plus sign; keep every entered digit.
-function h4ProposalDecimal(value: string | undefined, field: string) {
-  const raw = value?.trim();
-  if (!raw) throw new Error(`请填写${field}`);
-  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) {
-    throw new Error(`${field}请填写普通十进制数字，不支持科学计数法`);
-  }
-  return raw.replace(/^\+/, "").replace(/^(-?)\./, (_match, sign: string) => `${sign}0.`).replace(/\.$/, "");
-}
-
-// Mirrors OpsGrowthService.increasesUvtFallback, including the backend's ordered comfort pool.
-function increasesUvtFallback(tiers: Array<Record<string, any>>, changed: Record<string, any>, directlyDrawn: boolean) {
-  let afterChanged = false;
-  for (const tier of tiers) {
-    if (boolValue(tier.real) || text(tier.kind).toLowerCase() !== "uvt") continue;
-    if (tier === changed) { afterChanged = true; continue; }
-    const higher = (directlyDrawn || afterChanged) && numericValue(tier.amount) > numericValue(changed.amount);
-    if (higher && (directlyDrawn || tiers.some(draw => draw !== changed && draw !== tier && numericValue(draw.prob) > 0
-      && (boolValue(draw.real) || numericValue(draw.dailyStock) > 0)))) return true;
-    if (numericValue(tier.dailyStock) <= 0) return false;
-  }
-  return false;
-}
 
 function cleanPhaseKey(value: string) {
   return value.replace(/\s*当前\s*/g, "").trim();
@@ -483,33 +435,20 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
   const [, pendingDeleteChanged] = useState(0);
   const [model, setModel] = useState<H3Model | null>(null);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
+  const [eventRuleSnapshot, setEventRuleSnapshot] = useState<EventRuleSnapshot[]>([]);
+  const [eventContentRevision, setEventContentRevision] = useState(0);
+  const [onlyMissingCopy, setOnlyMissingCopy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const moduleLabel = section === "events" ? "活动中心" : "用户任务";
-  const canReadA2 = ctx.can("platform_a2_read");
-  // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
-  const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
-  const [lookupKey, setLookupKey] = useState("");
-  const reloadH4Approvals = async () => {
-    if (section !== "events" || !canReadA2) return;
-    try {
-      const overview = await fetchA2Overview();
-      setH4Approvals(overview.operationQueue.filter(row => {
-        const op = REVIEW_OPERATION_BY_ACTION[row.action];
-        return row.status === "pending" && H4_APPROVAL_OPS.has(op)
-          && (!row.operationCode || row.operationCode === op)
-          && (op === "h4_legacy_event_reward_update" ? !!row.obj : row.obj === "ACTIVE_POOL");
-      }));
-    } catch {
-      setH4Approvals("error");
-    }
-  };
-  useEffect(() => { void reloadH4Approvals(); }, [section, canReadA2]);
 
   const reload = async () => {
     setLoading(true);
     try {
-      setModel((await fetchH3QuestEvents(section)) as H3Model);
+      const [next, languages] = await Promise.all([fetchH3QuestEvents(section), getRequiredContentLanguages()]);
+      setRequiredLanguages(languages);
+      setModel(next as H3Model);
       setError(null);
     } catch (err) {
       setError(displayAdminError(err));
@@ -557,7 +496,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     } catch (error) {
       if (isH3BindingOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("保存结果未知，页面已刷新。请核对后用相同理由重试", "warn");
+        toast("保存结果暂未确认，页面已刷新。请核对后用相同理由重试");
       }
       throw error;
     }
@@ -569,7 +508,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     } catch (error) {
       if (isH3MissionOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("任务保存结果未知，页面已刷新。请核对后重试", "warn");
+        toast("任务保存结果暂未确认，页面已刷新。请核对后重试");
       }
       throw error;
     }
@@ -588,11 +527,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     toast(`${label} 已更新`);
   };
 
-  const openSimpleConfig = (key: string, label: string, current: string, amplifies = false, facts?: ReactNode) => {
+  const openSimpleConfig = (key: string, label: string, current: string, amplifies = false) => {
     openActionConfirm({ briefKind: "config",
       action: label,
       detail: <>当前值 <b>{current}</b>。保存后马上生效。</>,
-      facts,
       amplifies,
       edit: { kind: "text", current },
       run: async (reason, value) => {
@@ -622,79 +560,49 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
-  const proposeH4 = async (scope: string, op: string, values: Record<string, unknown>, before: string, after: string,
-    reason: string, form?: Record<string, string>, editValue?: string) => {
-    const session = useAdminAuth.getState().session;
-    if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
-    const result = await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, op, values, before, after, reason) }, form, editValue);
-    if (result.kind !== "proposal") throw new Error("原退役操作已有结果，请刷新奖池核对后再修改。");
-    await reloadH4Approvals();
-    toast("已提交，等待审批后执行");
-  };
-
-  const wheelCommandBlocks = (op: string, tierName?: string) => {
-    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
-    if (!pending) return false;
-    const original = pending.payload;
-    if (original.kind === "proposal" && original.input.command.op === op
-      && (!tierName || (original.input.command.params.values as Record<string, unknown>).tierName === tierName)) return false;
-    const label = original.kind === "proposal" ? `${original.input.action} · ${String((original.input.command.params.values as Record<string, unknown>).tierName ?? original.input.obj)}`
-      : `积分退役 · ${original.tierName}`;
-    toast(`原操作「${label}」结果未知，请先查询原结果。`);
-    return true;
-  };
-
-  const resumeH4Wheel = async () => {
-    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
-    if (!pending) return false;
-    const result = await submitHIRewardCommand(HI_WHEEL_SCOPE, pending.payload);
-    await reloadH4Approvals();
-    if (result.kind === "retire") { apply(result.overview); toast("原退役操作已完成，积分奖项已退役。请用合法奖型把概率补足到 100%"); }
-    else toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-    return true;
-  };
-
   const openEventReward = (event: QuestEvent) => {
     const current = text(event.reward);
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
-      detail: <>当前奖励 <b>{current}</b>。填写新奖励后确认。</>,
-      facts: <H4ApprovalFact amplify="活动启用且在发奖时间内时，换成别的资产或提高数量" direct="其他修改" object="活动奖励" />,
+      detail: <>当前奖励 <b>{current}</b>。确认后更新活动奖励。</>,
       amplifies: true,
-      getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
-      edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue },
+      edit: { kind: "text", current },
       run: async (reason, value) => {
-        const scope = hiEventScope(event.id);
-        const pending = pendingHIRewardCommand(scope);
-        if (pending?.payload.kind === "proposal") {
-          const result = await submitHIRewardCommand(scope, pending.payload);
-          await reloadH4Approvals();
-          toast(result.kind === "proposal" && result.ticket.status === "pending"
-            ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-          return;
-        }
         if (!value) return;
-        const preview = await previewH4EventReward(event.id, value, current, reason);
-        if (preview.approvalRequired) {
-          await proposeH4(scope, "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue: current },
-            preview.current, preview.proposed, reason, undefined, value);
-          return;
-        }
         apply(await updateH4EventReward(event.id, value, current, reason));
         toast(`${event.name} 奖励已更新`);
       },
     });
   };
 
-  const localizedValue = (
+  const rawLocalizedValue = (
     entity: "mission" | "event", code: string,
-    field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi",
-  ) => text(model?.contentLocales?.[entity]?.[code]?.[locale]?.[field], "");
+    field: EventContentField, locale: OperatingLanguageCode, source = model,
+  ) => text(source?.contentLocales?.[entity]?.[code]?.[locale]?.[field], "");
 
-  const eventLocalizedGaps = (eventCode: string) =>
-    EVENT_CONTENT_LOCALES.flatMap((locale) => EVENT_CONTENT_FIELDS
-      .filter((field) => !localizedValue("event", eventCode, field, locale).trim())
-      .map((field) => ({ eventCode, field, locale })));
+  const eventFields = (code: string, locale: OperatingLanguageCode) => {
+    const read = (field: EventContentField) => rawLocalizedValue("event", code, field, locale);
+    return { name: read("name"), description: read("description"), rewardName: read("rewardName") };
+  };
+
+  const eventContentCell = (event: QuestEvent, rule: EventRuleReadback | undefined, field: EventContentField, locale: OperatingLanguageCode, languages = requiredLanguages) => {
+    const english = eventFields(event.id, "en"), localized = eventFields(event.id, locale);
+    const key = `localized.${locale}.${field}`;
+    const readiness = event.copyReadiness;
+    const missing = languages.includes(locale) && (readiness?.missing.includes(key) ?? false);
+    const incomplete = readiness?.incomplete.includes(key) ?? false;
+    const optional = !missing && !languages.includes(locale);
+    const { appUsesAuthoredRewardName, appRewardNames } = rule ?? event;
+    const required = missing || (!optional && (field !== "rewardName" || appUsesAuthoredRewardName));
+    const followsEnglish = optional && (["name", "description", "rewardName"] as const).every(key => {
+      const value = localized[key].trim();
+      return !value || value === english[key].trim();
+    });
+    const fallsBack = !!readiness && followsEnglish && !incomplete && !!english[field].trim()
+      && (field !== "rewardName" || (appUsesAuthoredRewardName && appRewardNames?.[locale] === english.rewardName));
+    const rewardFromPreview = field === "rewardName" && !fallsBack;
+    return { optional, required, current: followsEnglish ? "" : localized[field], stored: localized[field], fallsBack, rewardFromPreview, missing, incomplete };
+  };
 
   const openEventStatus = (event: QuestEvent) => {
     openConfirm({ briefKind: "config",
@@ -706,11 +614,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
-        if (value === "ongoing") {
-          const missing = eventLocalizedGaps(event.id);
-          if (missing.length) throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", { missing }));
-        }
         apply(await updateH4EventStatus(event.id, value, event.state, reason));
+        setEventContentRevision(revision => revision + 1);
         toast(`${event.name} 状态已更新`);
       },
     });
@@ -733,7 +638,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string) => {
     openActionConfirm({ briefKind: "config",
       action: `新建任务 · ${subject}`,
-      detail: <>新建一条{subject}，新建后先是停用状态。请先在下方「任务完成条件」里绑定完成条件，再启用。</>,
+      detail: <>新建一条{subject}，新建后先是停用状态。启用前要在下方「任务完成条件」里绑定完成条件，并在「App 运营内容」补齐英文和运营区域语言的任务名称。</>,
       amplifies: true,
       businessForm: { kind: "mission-create", subject },
       run: async (reason, _v, bv) => {
@@ -749,30 +654,92 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           category: String(bv.category || "").trim(),
           actionRoute: String(bv.actionRoute || "").trim(),
         }, reason));
-        toast(`任务「${missionName}」已新建（停用中，绑定完成条件后再启用）`);
+        toast(`任务「${missionName}」已新建（停用中，绑定完成条件并补齐名称后再启用）`);
       },
     });
   };
 
 
-  const openLocalizedContent = (
-    entity: "mission" | "event", code: string,
-    field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi", source: string,
+  const saveEventLocalizedCell = async (
+    code: string, field: EventContentField, locale: OperatingLanguageCode, original: string,
+    operator: string, submitted: string, reason: string,
   ) => {
-    const expectedValue = model?.contentLocales?.[entity]?.[code]?.[locale]?.[field];
-    const current = text(expectedValue, "");
+    if (currentAdminOperator() !== operator) throw new Error("登录身份已变化，请重新打开活动配置。");
+    const next = await updateH4LocalizedContent(code, field, locale, submitted, original || "__MISSING__", reason) as H3Model;
+    apply(next);
+    setEventContentRevision(revision => revision + 1);
+    if (rawLocalizedValue("event", code, field, locale, next).trim() !== submitted) throw new Error("提交值与读回不一致，请核对已保存的文案。");
+  };
+
+  const openLocalizedContent = async (
+    entity: "mission" | "event", code: string,
+    field: EventContentField, locale: OperatingLanguageCode, source: string, event?: QuestEvent, rule?: EventRuleReadback,
+  ) => {
+    const languages = await getRequiredContentLanguages();
+    const cell = event ? eventContentCell(event, rule, field, locale, languages) : undefined;
+    const current = cell?.stored ?? rawLocalizedValue(entity, code, field, locale);
+    const optional = cell?.optional ?? !languages.includes(locale);
+    const displayed = cell?.current ?? current;
+    const operator = currentAdminOperator();
+    const clearable = entity === "event" && optional && event?.deleteState === "draft"
+      && displayed.trim() !== "";
+    const requiredEventCopy = "活动发布前须填写此语言的必填文案。";
+    const computedRewardName = field === "rewardName" && !!event && !(rule ?? event).appUsesAuthoredRewardName;
+    const fieldLabels: Record<EventContentField, string> = { name: "名称", description: "说明", rewardName: "奖名" };
+    const languageLabel = LOCALE_LABEL[locale];
+    const filledSiblings = event && cell?.incomplete
+      ? (["name", "description", "rewardName"] as const).filter((sibling) => {
+        if (sibling === field) return false;
+        const value = rawLocalizedValue("event", code, sibling, locale).trim();
+        return value !== "" && value !== rawLocalizedValue("event", code, sibling, "en").trim();
+      }).map((sibling) => fieldLabels[sibling])
+      : [];
+    const hint = cell?.missing ? requiredEventCopy
+      : computedRewardName ? "App 奖励名以奖项预览为准，由服务端按实际奖励生成；这里的奖名供后台维护，不一定显示在 App。"
+      : clearable ? `选填。清空输入框后确认，会删除这一格译文；如果这是这门语言最后一格真译，其余跟随英文的副本也会一起清空。取消不保存。${cell?.rewardFromPreview ? "App 实际显示值见奖项预览。" : ""}`
+      : cell?.incomplete ? (filledSiblings.length
+        ? `${languageLabel}已填了${filledSiblings.join("、")}，${fieldLabels[field]}也要填；不提供${languageLabel}就把${languageLabel}${filledSiblings.join("、")}也清空。`
+        : `${languageLabel}已填了一部分，这一格也要填；不提供${languageLabel}就把同一活动的${languageLabel}文案全部清空。`)
+      : cell?.fallsBack ? "选填，不填时 App 显示英文。"
+      : cell?.required ? requiredEventCopy
+      : cell?.rewardFromPreview ? "选填。App 实际显示值见奖项预览。"
+      : optional ? "选填。"
+      : "任务启用前须补齐英文和运营区域语言的名称。";
+    const subject = event
+      ? (rawLocalizedValue("event", code, "name", "zh").trim() || rawLocalizedValue("event", code, "name", "en").trim() || code)
+      : taskTitleText(source);
     openActionConfirm({ briefKind: "config",
-      action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: entity === "event"
-        ? <>这里填写 {locale.toUpperCase()} 文案。活动发布前须补齐英文、中文和越南语的名称、说明和奖励名。</>
-        : <>这里填写 {locale.toUpperCase()} 文案；不填时 App 显示原文，不会自动翻译。</>,
-      edit: { kind: "text", current },
+      action: `编辑${languageLabel}${entity === "event" ? fieldLabels[field] : "任务名称"} · ${subject}`,
+      detail: hint,
+      content: <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 9, background: "var(--surface-2)", fontSize: 12.5, lineHeight: 1.6 }}>
+        <div>当前：{displayed.trim() ? displayed : cell?.fallsBack ? "未填（App 显示英文）" : cell?.rewardFromPreview ? "未填（App 用奖项预览里的名称）" : "未填"}</div>
+        <div className="tiny" style={{ marginTop: 4, color: "var(--ink-3)" }}>{hint}</div>
+      </div>,
+      edit: { kind: "text", current: displayed, initialValue: clearable ? displayed : undefined, emptyOption: clearable ? "清空已存副本" : undefined, disallowCurrent: clearable },
       run: async (reason, value) => {
-        if (!value) return;
-        apply(await (entity === "event"
-          ? updateH4LocalizedContent(code, field, locale, value, expectedValue, reason)
-          : updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason)));
+        if (value === undefined) return;
+        if (entity === "event") {
+          const submitted = value.trim();
+          if (!submitted && !clearable) return;
+          await saveEventLocalizedCell(code, field, locale, current, operator, submitted, reason);
+        } else apply(await updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason));
         toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+      },
+    });
+  };
+
+  const openClearEventCopy = (event: QuestEvent, field: EventContentField, locale: OperatingLanguageCode, source: string, stored: string) => {
+    const operator = currentAdminOperator();
+    openConfirm({ briefKind: "config",
+      action: `清空已存副本 · ${LOCALE_LABEL[locale]} · ${source}`,
+      detail: <>这一格存的是英文副本「{stored}」。清空后，这个活动的{LOCALE_LABEL[locale]}改为跟随英文显示{field === "rewardName" && !(rulesByEvent.get(event.id) ?? event).appUsesAuthoredRewardName ? "（奖名仍以奖项预览为准）" : ""}，同一语言的其余英文副本一起清空。</>,
+      reasonPlaceholder: `例如：${LOCALE_LABEL[locale]}改为跟随英文`,
+      chips: [["记入操作记录", "done"]],
+      reason: true,
+      okLabel: "清空副本",
+      run: async (reason) => {
+        await saveEventLocalizedCell(event.id, field, locale, stored, operator, "", reason);
+        toast(`${source} ${locale.toUpperCase()} 副本已清空`);
       },
     });
   };
@@ -849,18 +816,25 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
-  const openMissionStatus = (task: QuestTask, label: string, monthly = false) => {
+  const openMissionStatus = async (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     const targetStatus = status === "active" ? "paused" : "active";
+    const languages = targetStatus === "active" && taskKind === "MISSION" ? await getRequiredContentLanguages() : [];
     openConfirm({ briefKind: "config",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
-      action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
-      detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。</>,
+      action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${taskTitleText(label)}`,
+      detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。{targetStatus === "active" && taskKind === "MISSION" ? "启用前会检查英文和运营区域语言的任务名称是否已填。" : ""}</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
+        if (targetStatus === "active" && taskKind === "MISSION") {
+          const latest = await fetchH3QuestEvents("tasks") as H3Model;
+          apply(latest);
+          const missing = languages.filter(locale => !rawLocalizedValue("mission", taskCode, "name", locale, latest).trim());
+          if (missing.length) throw new Error(`请先在上方「App 运营内容」填写这个任务的${missing.map(locale => LOCALE_LABEL[locale]).join("、")}名称，再启用。`);
+        }
         await applyMissionMutation(transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
         toast(`任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}`);
       },
@@ -992,12 +966,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openCreateBinding = () => {
     if (bindingMissionOptions.length === 0) {
-      toast("没有可以绑定的任务，请先新建任务，绑定完成条件后再启用");
+      toast("没有可以绑定的任务，请先新建任务，绑定完成条件并补齐名称后再启用");
       return;
     }
     openActionConfirm({ briefKind: "config",
       action: "新增任务完成条件",
-      detail: <>选择「用户做了什么」和对应的任务。用户做了这件事，任务就算完成。新任务要先绑定再启用。</>,
+      detail: <>选择「用户做了什么」和对应的任务。用户做了这件事，任务就算完成。新任务要先绑定、补齐名称再启用。</>,
       businessForm: {
         kind: "multi-field",
         title: "新增完成条件",
@@ -1101,6 +1075,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (!ctx.can("growth_h4_write")) throw new Error("你没有删除活动的权限。");
     try {
       apply(await deleteH4QuestEvent(eventId, expectedVersion, reason));
+      setEventContentRevision(revision => revision + 1);
       toast("活动已删除，历史参与、奖励与操作记录保留");
     } finally { pendingDeleteChanged(value => value + 1); }
   };
@@ -1138,50 +1113,32 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.id || !payload.name) return;
         apply(await createH4QuestEvent(payload, reason));
+        setEventContentRevision(revision => revision + 1);
         toast(`活动「${payload.name}」已新建`);
       },
     });
   };
 
   const openCreateWheelTier = () => {
-    if (wheelCommandBlocks("h4_wheel_tier_create")) return;
     openActionConfirm({ briefKind: "config",
       action: "新建转盘奖项",
       detail: <>新建一个转盘奖项。概率填 0–100，所有奖项加起来要等于 100%。发真钱的奖项，覆盖率低于红线时无法保存。</>,
-      facts: <H4ApprovalFact amplify="新建 UVT 奖项，或概率大于 0 的 USDT、代金券奖项，" direct="概率为 0 的 USDT、代金券奖项" object="奖池" />,
       amplifies: true,
-      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
-      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
       businessForm: { kind: "wheel-tier-config", subject: "新档位" },
       run: async (reason, _v, bv) => {
-        if (await resumeH4Wheel()) return;
         if (!bv) return;
-        const probabilityPct = h4ProposalDecimal(bv.probabilityPct, "中奖概率（%）");
-        const rewardAmount = h4ProposalDecimal(bv.rewardAmount, "实际发放数量");
-        const dailyStock = Number(h4ProposalDecimal(bv.dailyStock, "每日总数量（0 为不限）"));
-        if (Number(probabilityPct) < 0 || Number(probabilityPct) > 100) throw new Error("中奖概率须在 0–100% 之间");
-        if (Number(rewardAmount) <= 0) throw new Error("实际发放数量须大于 0");
-        if (!Number.isInteger(dailyStock) || dailyStock < 0 || dailyStock > 1000000) throw new Error("每日总数量须为 0–1000000 的整数（0 为不限）");
         const payload = {
           tierName: String(bv.tierName || "").trim(),
           rewardName: String(bv.rewardName || "").trim(),
-          probabilityPct,
+          probabilityPct: Number(bv.probabilityPct) || 0,
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "uvt",
-          rewardAmount,
+          rewardAmount: Number(bv.rewardAmount) || 0,
           voucherId: String(bv.voucherId || "").trim() || null,
-          dailyStock,
+          dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
         };
         if (!payload.tierName || !payload.rewardName) return;
-        const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
-        const amplifies = payload.rewardKind === "uvt" || (["usdt", "coupon"].includes(payload.rewardKind)
-          && Math.floor(Number(payload.probabilityPct) * 10000 + 0.5) > 0);
-        if (amplifies) {
-          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_create", { ...payload, expectedSignature },
-            JSON.stringify(model?.wheelTiers ?? []), JSON.stringify(payload), reason, bv);
-          return;
-        }
-        apply(await createH4WheelTier(payload, expectedSignature, reason));
+        apply(await createH4WheelTier(payload, text(model?.wheelSignature, "__EMPTY__"), reason));
         toast(`奖项「${payload.tierName}」已新建`);
       },
     });
@@ -1233,18 +1190,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openWheelProbabilities = () => {
-    if (wheelCommandBlocks("h4_wheel_probabilities_update")) return;
     const tiers = model?.wheelTiers ?? [];
     const fixed = tiers.filter(wheelPointsTier);
     const probabilityText = (tier: Record<string, unknown>, values: Record<string, string>) =>
-      wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)] ?? "";
+      wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)];
     openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
-      facts: <H4ApprovalFact amplify="只要调高了任一 UVT、USDT 或代金券奖项的概率（降低别的奖项不能抵消），就" direct="不调高这三类奖项概率的修改" object="奖池" />,
       amplifies: true,
-      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
-      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         title: "转盘奖项概率",
@@ -1271,25 +1224,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         })),
       },
       run: async (reason, _value, businessValue) => {
-        if (await resumeH4Wheel()) return;
         if (!businessValue) return;
-        const decimalProbabilities = Object.fromEntries(tiers.map((tier) => [
+        const probabilities = Object.fromEntries(tiers.map((tier) => [
           text(tier.tier),
-          h4ProposalDecimal(probabilityText(tier, businessValue), `${text(tier.tier)} 的中奖概率（%）`),
+          Number(probabilityText(tier, businessValue)),
         ]));
-        const probabilities = Object.fromEntries(Object.entries(decimalProbabilities).map(([tier, value]) => [tier, Number(value)]));
         const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
         if (Math.round(total * 10000) !== 1000000) {
           throw new Error("所有奖项的概率加起来要等于 100%");
-        }
-        const amplifies = tiers.some(tier => ["uvt", "usdt", "coupon"].includes(text(tier.kind).toLowerCase())
-          && probabilities[text(tier.tier)] > numericValue(tier.prob));
-        if (amplifies) {
-          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_probabilities_update", {
-            probabilities: decimalProbabilities,
-            expectedSignature: text(model?.wheelSignature, "__EMPTY__"),
-          }, JSON.stringify(tiers), JSON.stringify(probabilities), reason, businessValue);
-          return;
         }
         apply(await updateH4WheelProbabilities(
           probabilities,
@@ -1337,14 +1279,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openEditWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
-    if (wheelCommandBlocks("h4_wheel_tier_update", tierName)) return;
     openActionConfirm({ briefKind: "config",
       action: `编辑转盘奖项 · ${tierName}`,
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
-      facts: <H4ApprovalFact amplify="换奖型、提高发放数量、放宽每日库存，或收紧 UVT 库存使安慰奖变多，" direct="改名称和其他收紧的修改" object="奖池" />,
       amplifies: true,
-      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
-      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         title: `奖项设置 · ${tierName}`,
@@ -1359,38 +1297,17 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         ],
       },
       run: async (reason, _value, bv) => {
-        if (await resumeH4Wheel()) return;
         if (!bv) return;
-        const rewardAmount = h4ProposalDecimal(bv.rewardAmount, "每次发放数量");
-        const dailyStock = Number(h4ProposalDecimal(bv.dailyStock, "每日库存（0 为不限）"));
-        if (!Number.isInteger(dailyStock) || dailyStock < 0 || dailyStock > 1000000) throw new Error("每日库存须为 0–1000000 的整数（0 为不限）");
-        const payload = {
+        apply(await updateH4WheelTier(tierName, {
           tierName,
           rewardName: String(bv.rewardName || "").trim(),
           probabilityPct: numericValue(tier.prob),
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "uvt",
-          rewardAmount,
+          rewardAmount: Number(bv.rewardAmount),
           voucherId: bv.rewardKind === "coupon" ? String(bv.voucherId || "").trim() || null : null,
-          dailyStock,
-        };
-        const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
-        const sameKind = payload.rewardKind.toLowerCase() === text(tier.kind).toLowerCase();
-        const previousStock = numericValue(tier.dailyStock);
-        const increasesAmount = Number(payload.rewardAmount) > (sameKind ? numericValue(tier.amount) : 0);
-        const increasesStock = previousStock > 0 && (payload.dailyStock === 0 || payload.dailyStock > previousStock);
-        const reducesUvtStock = sameKind && payload.rewardKind === "uvt" && payload.dailyStock > 0
-          && (previousStock === 0 || payload.dailyStock < previousStock);
-        const amplifies = ["uvt", "usdt", "coupon"].includes(payload.rewardKind)
-          && (increasesAmount || increasesStock || (reducesUvtStock
-            && increasesUvtFallback(model?.wheelTiers ?? [], tier, numericValue(tier.prob) > 0)));
-        if (amplifies) {
-          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_update", { ...payload,
-            probabilityPct: String(numericValue(tier.prob)), expectedSignature },
-            JSON.stringify(tier), JSON.stringify(payload), reason, bv);
-          return;
-        }
-        apply(await updateH4WheelTier(tierName, payload, expectedSignature, reason));
+          dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
+        }, text(model?.wheelSignature, "__EMPTY__"), reason));
         toast(`奖项「${tierName}」已更新`);
       },
     });
@@ -1398,25 +1315,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openDeleteWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
-    if (wheelCommandBlocks("h4_wheel_tier_delete", tierName)) return;
     const probability = numericValue(tier.prob);
     openActionConfirm({ briefKind: "record",
       action: `删除转盘奖项 · ${tierName}`,
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
         : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
-      facts: probability === 0 ? <H4ApprovalFact amplify="删除后 UVT 安慰奖会变多时，" direct="其他删除" object="奖池" /> : undefined,
-      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
       run: async (reason) => {
-        if (await resumeH4Wheel()) return;
         if (probability !== 0) throw new Error("删除前请先把概率调成 0%");
-        const amplifies = !boolValue(tier.real) && text(tier.kind).toLowerCase() === "uvt"
-          && increasesUvtFallback(model?.wheelTiers ?? [], tier, false);
-        if (amplifies) {
-          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_delete", { tierName, expectedSignature: text(model?.wheelSignature, "__EMPTY__") },
-            JSON.stringify(tier), "删除档位", reason);
-          return;
-        }
         apply(await deleteH4WheelTier(
           tierName,
           text(model?.wheelSignature, "__EMPTY__"),
@@ -1427,138 +1333,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
-  const openRetirePointsTier = (tier: Record<string, any>) => {
-    const tierName = text(tier.tier);
-    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
-    if (pending && !(pending.payload.kind === "retire" && pending.payload.tierName === tierName) && wheelCommandBlocks("__retire__")) return;
-    const probability = numericValue(tier.prob);
-    const otherInvalid = (model?.wheelTiers ?? []).filter((row) => text(row.tier) !== tierName && !WHEEL_APP_KINDS.includes(text(row.kind).toLowerCase()));
-    openActionConfirm({ briefKind: "record",
-      action: `退役积分奖项 · ${tierName}`,
-      detail: <>停用积分奖项 <b>{tierName}</b>，并从奖池移除。</>,
-      statedBrief: {
-        impact: "这一档停用并从奖池移除，历史记录保留；不会换成别的奖品，也不会自动补概率。",
-        check: "核对奖项名称和概率；退役后用合法奖型把概率补足到 100% 才能抽奖。",
-      },
-      facts: <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-        <b>退役哪一档</b> · {tierName}（{wheelRewardText(tier.reward)}，概率 {percentText(tier.prob)}%）<br />
-        <b>为什么</b> · 后端已不支持积分奖型。奖池里只要还有这一档，App 抽奖会整池校验失败，用户抽不了。<br />
-        <b>不可撤销</b> · 退役后不能恢复这一档；后端也不再接受新建积分奖项。<br />
-        <b>退役之后</b> · 奖池概率合计少 {percentText(probability)}%。要在「改奖池 / 概率」里用 UVT、USDT 或代金券奖项补足到 100%，App 才能抽奖；调高概率要提交审批单。
-        {otherInvalid.length > 0 && <><br /><b style={{ color: "var(--warning)" }}>还要等后端</b> · {otherInvalid.map((row) => text(row.tier)).join("、")} 的奖型是后端不认的旧名，这一步不处理，修好前 App 仍抽不了。</>}
-      </div>,
-      confirmLabel: "确认退役",
-      confirmTone: "danger",
-      reasonPlaceholder: "例如：积分奖型已下线，按工单停用这一档",
-      getPendingReason: () => {
-        const original = pendingHIRewardCommand(HI_WHEEL_SCOPE);
-        return original?.payload.kind === "retire" ? original.payload.input.reason : undefined;
-      },
-      run: async (reason) => {
-        if (await resumeH4Wheel()) return;
-        const result = await retireH4PointsTier(tierName, text(model?.wheelSignature, "__EMPTY__"), reason);
-        if (result.kind === "retire") apply(result.overview);
-        toast(`积分奖项「${tierName}」已退役。请用合法奖型把概率补足到 100%`);
-      },
-    });
-  };
-
-  // 超过 24 小时的原操作只查原审批单、不重发：查询直接做，不经确认框（共用确认框带锁定理由时按钮固定写「重试原操作」）。
-  const lookupExpiredHICommand = async (record: HIRewardCommand) => {
-    setLookupKey(record.commandKey);
-    try {
-      if (record.scope === HI_WHEEL_SCOPE) {
-        await resumeH4Wheel();
-        return;
-      }
-      const result = await submitHIRewardCommand(record.scope, record.payload);
-      toast(result.kind === "proposal" && result.ticket.status === "pending"
-        ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-      void reloadH4Approvals();
-    } catch (error) {
-      toast(displayAdminError(error), "warn");
-    } finally {
-      setLookupKey("");
-    }
-  };
-
-  const openResumeHICommand = (record: HIRewardCommand, subject: string) => {
-    const expired = isRetryExpired(record);
-    openActionConfirm({ briefKind: "record",
-      action: `核对原操作 · ${subject}`,
-      detail: expired
-        ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</>
-        : <>先查原审批单；查不到才按原请求重发，不会重复执行。理由沿用原操作。</>,
-      confirmLabel: expired ? "查询原审批单" : "核对原操作",
-      getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
-      run: async () => {
-        if (record.scope === HI_WHEEL_SCOPE) {
-          await resumeH4Wheel();
-          return;
-        }
-        const result = await submitHIRewardCommand(record.scope, record.payload);
-        toast(result.kind === "proposal" && result.ticket.status === "pending"
-          ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-        void reloadH4Approvals();
-      },
-    });
-  };
-
-  const eventName = (id: string) => {
-    const zh = text(model?.contentLocales?.event?.[id]?.zh?.name, "");
-    return zh || text((model?.events ?? []).find((event) => event.id === id)?.name, id);
-  };
-  const hiRecords = section === "events" ? pendingHIRewardCommands().filter((record) => record.scope.startsWith("H/")) : [];
-  const h4Pending = Array.isArray(h4Approvals) ? h4Approvals : [];
-  const hiRecovery = (
-    (hiRecords.length > 0 || h4Pending.length > 0 || h4Approvals === "error") && (
-        <section className="l-card" aria-label="审批中和待核对的修改">
-          <div className="l-h">
-            <span className="ttl">审批中和待核对的修改</span>
-            <span className="sub">· 旧活动奖励和抽奖转盘</span>
-            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadH4Approvals()}>刷新审批进度</button></div>}
-          </div>
-          <div className="l-b" style={{ display: "grid", gap: 8 }}>
-            {hiRecords.map((record) => {
-              const subject = hiCommandSubject(record, eventName);
-              const expired = isRetryExpired(record);
-              const retire = record.payload.kind === "retire";
-              return <div className={`htint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{subject}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未知"}</span><br />
-                  {expired
-                    ? retire ? "不能再按原请求重试，也查不到原结果。请刷新奖池，核对这一档是否已经退役；原记录继续保留。" : "不能再按原请求重发，只能查询原审批单。"
-                    : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求重发，不会重复执行。"
-                      : "没收到系统回复，不知道审批单建没建成。核对时先查原审批单，查不到才按原请求重发，不会重复建单。"}
-                </span>
-                {!(expired && retire) && <button className="l-btn sm mc" disabled={!(record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite) || !!lookupKey}
-                  onClick={() => expired ? void lookupExpiredHICommand(record) : openResumeHICommand(record, subject)}>{expired ? lookupKey === record.commandKey ? "查询中…" : "查询原审批单" : "核对原操作"}</button>}
-                {expired && retire && <button className="l-btn sm" onClick={() => void reload()}>刷新奖池</button>}
-              </div>;
-            })}
-            {h4Pending.map((row) => {
-              const subject = REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update" ? `${row.action} · ${eventName(row.obj)}` : `${row.action} · 抽奖转盘`;
-              return <div className="htint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{subject}</b> <span className="bdg warn">待审批</span><br />
-                  另一位有审批批准权限的超级管理员批准前，{REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update" ? "活动奖励" : "转盘奖池"}不变；这期间同一对象的其他修改会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
-                </span>
-                <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
-              </div>;
-            })}
-            {h4Approvals === "error" && <div className="htint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
-          </div>
-        </section>
-      )
-  );
-
   if (loading) {
-    return <>{hiRecovery}<section className="l-card"><div className="l-b">{moduleLabel}数据加载中…</div></section></>;
+    return <section className="l-card"><div className="l-b">{moduleLabel}数据加载中…</div></section>;
   }
 
   if (error || !model) {
     return (
-      <>{hiRecovery}<section className="l-card">
+      <section className="l-card">
         <div className="l-h"><span className="ttl">{moduleLabel}数据加载失败</span></div>
         <div className="l-b">
           <div>{error ?? "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
@@ -1566,7 +1347,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             重试加载
           </button>
         </div>
-      </section></>
+      </section>
     );
   }
 
@@ -1584,8 +1365,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const promoBanner = model.promoBanner ?? {};
   const wheelProbabilitySum = (model.wheelTiers ?? []).reduce((sum, tier) => sum + numericValue(tier.prob), 0);
   const wheelProbabilityOk = Math.abs(wheelProbabilitySum - 100) < 0.001;
-  const wheelPointsTiers = (model.wheelTiers ?? []).filter(wheelPointsTier);
-  const wheelNexTiers = (model.wheelTiers ?? []).filter(wheelLegacyNexTier);
+  const events = model.events ?? [];
   const localizedRows = section === "tasks"
     ? [
         ...[...model.dayOneTasks, ...model.weeklyTier1, ...model.weeklyTier2].map((task) => ({
@@ -1593,13 +1373,30 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           readOnly: task.status === "archived",
         })),
       ]
-    : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false }));
+    : events.map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false, event }));
 
-  const localizedGaps = (model.events ?? []).flatMap((event) => eventLocalizedGaps(event.id));
+  const currentEventCodes = new Set(events.map(event => event.id));
+  const currentRuleSnapshots = eventRuleSnapshot.filter(({ rule }) => currentEventCodes.has(rule.eventCode));
+  const eventRules = currentRuleSnapshots.map(({ rule }) => rule);
+  const rulesByEvent = new Map((ctx.can("growth_h4_read") ? currentRuleSnapshots : [])
+    .filter(({ contentRevision }) => contentRevision === eventContentRevision)
+    .map(({ rule }) => [rule.eventCode, rule]));
+  const unconfirmedEventCodes = events.filter(event => !event.copyReadiness).map(event => event.id);
+  const localizedMissing = events.flatMap(event => event.copyReadiness?.missing
+    .map(key => `${event.id} ${eventRuleMissingLabel(key)}`) ?? []);
+  const localizedIncomplete = events.flatMap(event => event.copyReadiness?.incomplete
+    .map(key => `${event.id} ${eventRuleMissingLabel(key)}`) ?? []);
+  const summarize = (items: string[]) => items.slice(0, 6).join(" · ") + (items.length > 6 ? ` 等 ${items.length} 项` : "");
+  const localizedNotice = [
+    localizedMissing.length && `${localizedMissing.length} 项必填文案未填，开启或设为「进行中」前须补齐；已开启的活动请尽快补齐。`,
+    localizedIncomplete.length && `选填译文未填齐 ${localizedIncomplete.length} 项：同一语言填了一部分，要么填齐，要么全部清空。`,
+    unconfirmedEventCodes.length && `${unconfirmedEventCodes.length} 个活动的文案就绪尚未确认：${summarize(unconfirmedEventCodes)}。`,
+  ].filter(Boolean);
+  const cellStatusStyle = (tone: "dim" | "danger" | "warning") => ({ background: "transparent", border: 0, padding: 0, cursor: "pointer", fontSize: 12, color: tone === "danger" ? "var(--danger)" : tone === "warning" ? "var(--warning)" : "var(--ink-3)", textAlign: "left" as const });
+  const cellValueStyle = { background: "transparent", border: 0, padding: 0, cursor: "pointer", fontSize: 12.5, color: "var(--ink)", textAlign: "left" as const };
 
   return (
     <>
-      {hiRecovery}
       {section === "tasks" ? (
         <div className="f-stats">
           <div className="f-stat">
@@ -1649,49 +1446,81 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">App 运营内容（三语）</span>
+          <span className="ttl">App 运营内容</span>
           <span className="sub">{section === "events"
-            ? "· 活动发布前须补齐英文、简体中文和越南语的名称、说明和奖励名"
-            : "· 英语 / 简体中文 / 越南语；没填的显示原文，不自动翻译"}</span>
+            ? "· 活动名称和说明须填写英文及运营区域语言；奖名只有转盘活动和没有规则的非现金旧活动需要填写，其他活动 App 用奖项预览里的名称"
+            : "· 首日和每周任务启用前须补齐英文和运营区域语言的名称；停用不检查"}</span>
         </div>
-        {localizedGaps.length > 0 && (
-          <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
-            有 {localizedGaps.length} 项翻译没填，相关活动不能设为「进行中」：
-            {localizedGaps.slice(0, 6).map((gap) => `${gap.eventCode} ${LOCALE_LABEL[gap.locale]} ${LOCALIZED_FIELD_LABEL[gap.field]}`).join(" · ")}
-            {localizedGaps.length > 6 ? ` 等 ${localizedGaps.length} 项` : ""}
+        {section === "events" && localizedNotice.length > 0 && (
+          <div role="status" style={{ margin: "0 12px 10px", padding: "10px 14px", borderRadius: 9, background: "var(--warning-soft)", color: "var(--ink-2)", fontSize: 12.5, lineHeight: 1.6, display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div>{localizedNotice.map(line => <div key={line}>{line}</div>)}</div>
+            {(localizedMissing.length > 0 || localizedIncomplete.length > 0) && (
+              <label className="row" style={{ gap: 6, fontSize: 12, whiteSpace: "nowrap", cursor: "pointer" }}>
+                <input type="checkbox" checked={onlyMissingCopy} onChange={(event) => setOnlyMissingCopy(event.target.checked)} />只看缺失和未填齐
+              </label>
+            )}
           </div>
         )}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 740 }}>
-            <thead><tr><th>内容</th><th>内容预览</th><th>英文</th><th>中文</th><th>越南语</th></tr></thead>
+            <thead><tr><th>内容</th><th>内容预览</th>{EVENT_CONTENT_LOCALES.map(language => <th key={language}>{LOCALE_LABEL[language]}{requiredLanguages.includes(language) ? " *" : "（选填）"}</th>)}</tr></thead>
             <tbody>{localizedRows.flatMap((item) => {
-              const rows: Array<{ field: "name" | "description" | "rewardName"; source: string; label: string }> = [
+              const rows: Array<{ field: EventContentField; source: string; label: string; preview?: string }> = [
                 { field: "name", source: item.label, label: item.code },
               ];
-              if (item.entity === "event") {
+              const event = item.entity === "event" ? item.event : undefined;
+              const rule = event ? rulesByEvent.get(event.id) : undefined;
+              if (event) {
+                const rewardNames = (rule ?? event).appRewardNames;
+                const rewardLabels = EVENT_CONTENT_LOCALES.flatMap(locale => {
+                  const label = rewardNames?.[locale];
+                  return label ? [`${LOCALE_LABEL[locale]} ${label}`] : [];
+                });
                 rows.push(
-                  { field: "description", source: text((model.events ?? []).find((event) => event.id === item.code)?.description), label: `${item.code} · 活动说明` },
-                  { field: "rewardName", source: text((model.events ?? []).find((event) => event.id === item.code)?.rewardName), label: `${item.code} · 奖项名称` },
+                  { field: "description", source: text(event.description), label: `${item.code} · 活动说明` },
+                  { field: "rewardName", source: text(event.rewardName), label: `${item.code} · 奖项名称`, preview: rewardLabels.length ? `App 显示的奖励：${rewardLabels.join(" · ")}` : "App 奖励标签未提供" },
                 );
               }
-              return rows.map((row) => (
+              const visibleRows = section === "events" && onlyMissingCopy && event
+                ? rows.filter((row) => EVENT_CONTENT_LOCALES.some((language) => { const cell = eventContentCell(event, rule, row.field, language); return cell.missing || cell.incomplete; }))
+                : rows;
+              return visibleRows.map((row) => (
                 <tr key={`${item.entity}:${item.code}:${row.field}`}>
                   <td className="mono">{row.label}</td>
-                  <td>{taskTitleText(row.source)}</td>
+                  <td>{row.preview ?? taskTitleText(row.source)}</td>
                   {EVENT_CONTENT_LOCALES.map((language) => {
-                    const current = localizedValue(item.entity, item.code, row.field, language);
+                    const cell = event ? eventContentCell(event, rule, row.field, language) : undefined;
+                    const current = cell?.current ?? rawLocalizedValue(item.entity, item.code, row.field, language);
                     if (item.readOnly) {
                       return <td key={language}><span title="任务已归档，译文只读">{current || "未填写"}</span></td>;
                     }
-                    const missing = item.entity === "event" && !current.trim();
+                    const missing = cell?.missing, incomplete = cell?.incomplete;
+                    const missionRequired = !event && requiredLanguages.includes(language);
+                    const statusText = missing ? `缺${LOCALE_LABEL[language]} · 填写`
+                      : incomplete ? "未填齐 · 补齐"
+                      : event && !event.copyReadiness ? "未确认"
+                      : cell?.fallsBack ? "未填 · App 显示英文"
+                      : cell?.rewardFromPreview ? "未填 · 用奖项预览"
+                      : missionRequired ? "未填 · 启用前必填"
+                      : "未填";
                     return (
                       <td key={language}>
-                        <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
+                        <button disabled={!canModuleWrite || !item.code}
+                          style={current && !missing && !incomplete ? cellValueStyle : cellStatusStyle(missing ? "danger" : incomplete || missionRequired ? "warning" : "dim")}
                           aria-label={`${missing ? "填写（上线前必须补齐）" : current ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
-                          onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source)}>
-                          {missing ? "缺失" : current || "填写"}
+                          onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event, rule)}>
+                          {current && !missing && !incomplete ? current : statusText}
                         </button>
-                        {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="活动设为「进行中」前必须补齐这个语言">缺</span>}
+                        {language !== "en" && requiredLanguages.includes(language) && current.trim() !== "" && (event
+                          ? isEnglishCopy(eventFields(event.id, "en"), eventFields(event.id, language))
+                          : isEnglishCopy({ name: rawLocalizedValue(item.entity, item.code, "name", "en") }, { name: current })) && (
+                          <div className="tiny" style={{ color: "var(--warning)", marginTop: 2 }}>{englishCopyHint(language)}</div>
+                        )}
+                        {event && cell && cell.optional && event.deleteState === "draft" && !cell.current && cell.stored.trim() !== "" && (
+                          <button className="l-btn sm" style={{ marginLeft: 8 }} disabled={!canModuleWrite}
+                            aria-label={`清空已存副本 ${row.label} ${LOCALE_LABEL[language]}`}
+                            onClick={() => openClearEventCopy(event, row.field, language, row.label, cell.stored)}>清空副本</button>
+                        )}
                       </td>
                     );
                   })}
@@ -1713,6 +1542,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">首日任务</span>
             <span className="sub">· 新用户转化最关键的一环 · 用户开始做任务时就锁定任务和奖励，之后的修改只影响还没开始的用户</span>
             <div className="r">
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>
+                调整
+              </button>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>
                 调整奖励
               </button>
@@ -1722,10 +1554,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row">
               <span className="k">
-                任务时长说明文字
-                <small>已停用，不能再改；只是展示文字，不改变倒计时。</small>
+                任务时长
+                <small>已开始的用户按各自开始时间计算，修改不影响他们。</small>
               </span>
               <span className="v">{text(model.dayOneWindow)}</span>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>调整</button>
             </div>
             <div className="p-row">
               <span className="k">
@@ -1801,7 +1634,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">每周任务（两档奖励 + 周冠军展示文字）</span>
+            <span className="ttl">每周任务（两档 + 周冠军）</span>
             <span className="sub">· 按注册手机号区号的时区，每周一 00:00 开始新一周 · 没设置的区号用越南时间</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")} disabled={!canModuleWrite}>+ 新建一档</button>
@@ -1894,10 +1727,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
             <div className="htint cyan" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
               <span style={{ flex: 1 }}>
-                <b>周冠军展示文字</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 只是 App 上显示的说明，系统不会按这段文字给周冠军发奖
+                <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 本周累计 UVT 最多的用户额外奖励
               </span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军展示文字", text(model.weeklyChampionBonus), false,
-                <div style={{ fontSize: 12.5, lineHeight: 1.7 }}><b>只改显示</b> · 这段文字只在 App 的每周任务里展示，系统不会按它给周冠军发奖。保存后马上生效。</div>)} disabled={!canModuleWrite}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)} disabled={!canModuleWrite}>调整</button>
             </div>
 
             <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px", color: "var(--ink-2)" }}>
@@ -1928,7 +1760,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card" data-proof="h3-event-binding">
         <div className="l-h">
           <span className="ttl">任务完成条件</span>
-          <span className="sub">· 用户做了某件事 → 对应任务算完成。新任务要先绑定再启用</span>
+          <span className="sub">· 用户做了某件事 → 对应任务算完成。新任务要先绑定、补齐名称再启用</span>
           <div className="r"><button className="l-btn sm mc" onClick={openCreateBinding} disabled={!canModuleWrite}>+ 新增绑定</button></div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -2140,14 +1972,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       {section === "events" && (
         <>
       {pendingH4EventDeletes().map(record => <div className="l-card" key={record.commandKey} role="status">
-        删除「{record.eventId}」的结果未知；填写的理由：{record.reason}。
+        删除「{record.eventId}」的结果暂未确认；填写的理由：{record.reason}。
         <button className="l-btn sm" disabled={!canModuleWrite} onClick={() => openActionConfirm({ briefKind: "record",
           action: `查看删除结果 · ${record.eventId}`,
           detail: <>查看上次删除是否成功，不会重复删除。</>,
           run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
         })}>查看结果</button>
       </div>)}
-      <H4EventRules ctx={ctx} />
+      <H4EventRules ctx={ctx} eventContent={model.contentLocales?.event} contentRefresh={eventContentRevision}
+        onRowsChange={(rows) => setEventRuleSnapshot((rows ?? []).map(rule => ({ rule, contentRevision: eventContentRevision })))} />
       <H4GenesisRaffle ctx={ctx} />
       <div className="two-col">
         <section className="l-card">
@@ -2176,24 +2009,19 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   const [label, tone] = lifecycle === "draft" ? ["草稿", "dim"] : EVENT_LABEL[lifecycle] ?? stateTone.get(event.state) ?? ["状态未知", "dim"];
                   const ended = lifecycle === "ended";
                   const wheelEvent = text(event.kind).toLowerCase() === "wheel";
-                  const zhName = localizedValue("event", event.id, "name", "zh");
-                  const zhDescription = localizedValue("event", event.id, "description", "zh");
-                  const zhRewardName = localizedValue("event", event.id, "rewardName", "zh");
+                  const listCopy = (field: EventContentField) => rawLocalizedValue("event", event.id, field, "zh").trim() || rawLocalizedValue("event", event.id, field, "en").trim();
+                  const zhName = listCopy("name");
+                  const zhDescription = listCopy("description");
+                  const zhRewardName = listCopy("rewardName");
                   return (
                     <tr key={event.id}>
                       <td style={{ color: "var(--ink)" }}>
-                        <div style={{ fontWeight: 600 }}>{zhName || "中文标题未配置"}</div>
-                        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "中文说明未配置"}</div>
+                        <div style={{ fontWeight: 600 }}>{zhName || <>{event.id}<span style={{ fontWeight: 400, color: "var(--warning)" }}> · 英文名称未填</span></>}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "说明未填写"}</div>
                       </td>
                       <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
-                      <td className="num" title="第一行是后端记录的奖励；用活动规则发奖的活动，实际发放以活动规则为准。「App 显示名」是给用户看的文字，不会自动跟着改。">
-                        {/* 第一行是后端记录的奖励（reward_name）：旧活动换资产后它会变；有活动规则的活动实际发放在规则里。中文奖项名是给用户看的文字。 */}
-                        {text(event.reward) ? <div>{text(event.reward)}</div> : null}
-                        {zhRewardName
-                          ? zhRewardName !== text(event.reward) && <div style={{ fontSize: 12, color: text(event.reward) ? "var(--ink-3)" : undefined }}>{text(event.reward) ? `App 显示名：${zhRewardName}` : zhRewardName}</div>
-                          : <div style={{ fontSize: 12, color: "var(--ink-3)" }}>中文奖项未配置</div>}
-                      </td>
+                      <td className="num">{zhRewardName || "—"}</td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {wheelEvent ? (
@@ -2259,16 +2087,6 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            {(wheelPointsTiers.length > 0 || wheelNexTiers.length > 0 || !wheelProbabilityOk) && (
-              <div className="htint warn" role="status" style={{ margin: "6px 0 10px", fontSize: 12 }}>
-                <b>App 抽奖现在用不了</b> · App 每次抽奖前检查整个奖池：只认 UVT、USDT、代金券三种奖型，概率合计要正好 100%。有一档不合格，整个转盘都会报错。
-                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                  {wheelPointsTiers.length > 0 && <li>积分奖项 {wheelPointsTiers.map((tier) => text(tier.tier)).join("、")}：后端已不支持积分奖型，点该行的「退役」停用（不可撤销）。退役后概率合计会少掉这一档，要在「改奖池 / 概率」里用 UVT、USDT 或代金券补足到 100%；调高概率要提交审批单。</li>}
-                  {wheelNexTiers.length > 0 && <li id="h4-wheel-nex-note">{wheelNexTiers.map((tier) => text(tier.tier)).join("、")}：奖型存成了旧名 nex，后端只认 uvt。这是后端数据问题，已提给后端修（单号 BUG-426）。修好前这里不提供改名，这几档的「编辑」也先关着：编辑保存会把奖型改成 UVT。</li>}
-                  {!wheelProbabilityOk && <li>现在概率合计 {Number(wheelProbabilitySum.toFixed(4))}%，要在「改奖池 / 概率」里用 UVT、USDT 或代金券奖项补足到 100%；调高概率要提交审批单。</li>}
-                </ul>
-              </div>
-            )}
             <div className="wheel-row" style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-4)" }}>
               <span>奖项</span>
               <span>奖品</span>
@@ -2283,12 +2101,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{text(tier.tier)}</span>
                   <span className="mono">{wheelRewardText(tier.reward)}</span>
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
-                  <span>{wheelPointsTier(tier) ? <span className="bdg warn" title="后端已不支持积分奖型，需退役">积分奖型</span>
-                    : wheelLegacyNexTier(tier) ? <span className="bdg warn" title="奖型存成了旧名 nex，后端只认 uvt，等后端修数据">旧奖型 nex</span>
-                    : real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({uvt:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",coupon:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
-                  <span style={{ display: "flex", gap: 6, justifyContent: "flex-end", minWidth: 100 }}>
-                    {wheelPointsTier(tier) ? <button className="l-btn sm" style={{ color: "var(--danger)", borderColor: "var(--danger-border)" }} aria-label={`退役 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openRetirePointsTier(tier)} disabled={!canWheelWrite}>退役</button> : <>
-                      <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite || wheelLegacyNexTier(tier)} aria-describedby={wheelLegacyNexTier(tier) ? "h4-wheel-nex-note" : undefined} title={wheelLegacyNexTier(tier) ? "这一档的奖型是旧名 nex，编辑保存会把它改成 UVT；等后端修正数据（BUG-426）后再编辑" : undefined}>编辑</button>
+                  <span>{real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({nex:"UVT奖励",uvt:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",coupon:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
+                  <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    {wheelPointsTier(tier) ? <span className="bdg dim">历史积分 · 只读</span> : <>
+                      <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
                       <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
                     </>}
                   </span>

@@ -17,6 +17,8 @@ import { PaginationExemptionList, type BusinessFormSpec, type BusinessFormValue 
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
+import { mapSingleContentText } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
@@ -115,7 +117,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   const start = Number(phaseMin.replace("P", ""));
   const end = Number(phaseMax.replace("P", ""));
   return {
-    mode: "structured",
+    mode: "structured" as const,
     tiers: Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`),
     locales: language === "all" ? [] : [language],
     registrationDaysMin: registrationDaysGt + 1,
@@ -136,6 +138,11 @@ function audienceTargetFields(target?: AudienceTarget | null) {
 
 const textsOf = (row?: { zh?: string; en?: string; vi?: string }): Texts | null => row ? { zh: row.zh ?? "", vi: row.vi ?? "", en: row.en ?? "" } : null;
 const textsOfForm = (form: BusinessFormValue): Texts => ({ zh: form.zh ?? "", vi: form.vi ?? "", en: form.en ?? "" });
+async function submittedCopyText(form: BusinessFormValue) {
+  const texts = mapSingleContentText(textsOfForm(form), await getRequiredContentLanguages(), "submit");
+  if (Object.values(texts).some(text => !text.trim())) throw new Error("COPY_FIELDS_REQUIRED");
+  return texts;
+}
 /** 后端给的是累计数的字符串；读不成整数就当没有。 */
 const countOf = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.trim()) : null);
 /** 后端记的「操作人 / 动作」摘要，动作写成中文；认不出的原样显示。 */
@@ -558,7 +565,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   });
 
   // 编辑文案 —— 先在抽屉里填，存草稿或发布再进操作确认。
-  const editCopy = (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  const editCopy = async (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
     const editableVersion = targetVersion
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
@@ -589,6 +597,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       placeholders: requiredPlaceholders(editableVersion?.zh, editableVersion?.en, editableVersion?.vi),
       saveModeChoice: true,
     };
+    setRequiredLanguages(await getRequiredContentLanguages());
     setCopyDetail(null);
     setVersionDetail(null);
     setEditor({ kind: "edit", spec, copy: c, base: editableVersion, forceNew });
@@ -617,9 +626,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       </Facts>,
       content: <>
         {!draft && crowdNotice(form.copyPosition, c.key)}
-        <CompareTexts beforeLabel={live ? `线上 ${c.version}` : `已下架 ${c.version}`} afterLabel={draft ? `草稿 ${target}` : `发布后 ${target}`} before={textsOf(current)} after={textsOfForm(form)} />
+        <CompareTexts beforeLabel={live ? `线上 ${c.version}` : `已下架 ${c.version}`} afterLabel={draft ? `草稿 ${target}` : `发布后 ${target}`} before={textsOf(current)} after={mapSingleContentText(textsOfForm(form), requiredLanguages, "submit")} />
       </>,
-      run: (reason) => {
+      run: async (reason) => {
         const payload = {
           version: form?.version || editableVersion?.v,
           surface: form?.surface || editableVersion?.surface || c.surface,
@@ -632,9 +641,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           registrationDaysGt: Number(form?.registrationDaysGt || 0),
           trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
           versionNote: form?.versionNote || "后台编辑文案",
-          zh: form?.zh || editableVersion?.zh || "",
-          en: form?.en || editableVersion?.en || "",
-          vi: form?.vi || editableVersion?.vi || "",
+          ...await submittedCopyText(form),
           expectedRevision: c.revision,
         };
         const done = (result: unknown) => { if (result !== false) setEditor(null); return result; };
@@ -647,11 +654,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     });
   };
 
-  const createCopy = (preset?: { surface: string; copyPosition: string }) => {
+  const createCopy = async (preset?: { surface: string; copyPosition: string }) => {
     if (ACTIVE_VERSION_OPTIONS.length === 0) {
       toast("请先在文案版本列表中新增或启用文案版本");
       return;
     }
+    setRequiredLanguages(await getRequiredContentLanguages());
     setEditor({ kind: "create", spec: {
       kind: "copy-create",
       modules: COPY_MODULE_OPTIONS,
@@ -679,9 +687,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     </Facts>,
     content: <>
       {crowdNotice(form.copyPosition, "")}
-      <div className="rd-impact"><div className="rd-impact-title">发布的内容</div><LangBlocks texts={textsOfForm(form)} /></div>
+      <div className="rd-impact"><div className="rd-impact-title">发布的内容</div><LangBlocks texts={mapSingleContentText(textsOfForm(form), requiredLanguages, "submit")} /></div>
     </>,
-    run: (reason) => {
+    run: async (reason) => {
       if (!form?.copyKey?.trim()) return false;
       const copyKey = form.copyKey.trim();
       return runBackend(actions.createI1Copy({
@@ -699,9 +707,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         registrationDaysGt: Number(form?.registrationDaysGt || 0),
         trafficSplit: form.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "50",
         versionNote: form.versionNote || "新增文案初始内容",
-        zh: form.zh || "",
-        en: form.en || "",
-        vi: form.vi || "",
+        ...await submittedCopyText(form),
       }, reason), `文案 ${copyKey} 已新增 · 初始内容已发布`).then((result) => { if (result !== false) setEditor(null); return result; });
     },
   });
@@ -1652,7 +1658,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       {copyDrawer}
       {versionDrawer}
       {editor?.kind === "edit" && (
-        <CopyEditorDrawer spec={editor.spec}
+        <CopyEditorDrawer spec={editor.spec} requiredLanguages={requiredLanguages}
           title={editor.spec.version ? "编辑草稿" : editor.forceNew ? "新增版本" : "编辑文案"}
           sub={<>{editor.copy.desc} · <span data-mono="">{editor.copy.key}</span></>}
           basedOn={<Fact k="基于">{editor.base ? `${editor.base.v} · ${versionStatus(editor.base.st).text}` : editor.copy.version}</Fact>}
@@ -1663,7 +1669,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           onSubmit={(form, mode) => submitCopyEdit(editor.copy, editor.base, { ...form, saveMode: mode }, mode)} />
       )}
       {editor?.kind === "create" && (
-        <CopyEditorDrawer spec={editor.spec} title="新增文案" stale={editorStale} publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, form.copyKey ?? "")} onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
+        <CopyEditorDrawer spec={editor.spec} requiredLanguages={requiredLanguages} title="新增文案" stale={editorStale} publishBlockedReason={(form) => publishBlockedReason(form.copyPosition, form.copyKey ?? "")} onClose={() => setEditor(null)} onSubmit={(form) => submitCreateCopy(form)} />
       )}
       {creatingExperiment && (
         <ExperimentDrawer copies={EXPERIMENT_COPY_OPTIONS} versionText={(copyKey, version) => findVersion(copyKey, version)?.zh}

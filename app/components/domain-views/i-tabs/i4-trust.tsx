@@ -1,4 +1,6 @@
 "use client";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
+import { localizedTrustSectionField, mapTrustSectionLanguageFields, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { useReach } from "@/lib/nav/use-reach";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -28,7 +30,7 @@ import { pendingI4DraftCommands, queryI4DraftReceipt, retryI4DraftCommand, i4Dra
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
-import { i4AppFieldIssue, i4DraftMatchesPublishedFields, i4DraftOmittedTranslations, i4FieldValueIssue, i4HasEnglishFields, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
+import { i4AppFieldIssue, i4DraftMatchesPublishedFields, i4DraftOmittedTranslations, i4FieldValueIssue, i4HasEnglishFields, i4OmittedTranslations } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
@@ -44,7 +46,7 @@ import { I4Documents } from "./i4-documents";
 import { pendingI4DocumentCommands, queryI4DocumentCommand, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
 import {
   APP_FIELD_LIMIT, APP_SECTION_ORDER, DraftEditorBody, FieldList, I4RecoveryNotice, LegacyText, SECTION_INFO, SectionCard, SnapshotLine, snapshotBlanking, snapshotReasonText, type SnapshotState,
-  VersionCompare, appBlanking, changedKeys, isArchivedStatus, previewFields, isPublished, localeItems, operatorText, sectionName, timeText, unpublishedEffect, versionProblems,
+  VersionCompare, appBlanking, changedKeys, isArchivedStatus, previewFields, isPublished, localeItems, operatorText, sectionName, timeText, unpublishedEffect, TRUST_MISSING_ENGLISH, versionProblems,
   unknownTag, type Lang, type SectionCardModel, type RecoveryRow,
 } from "./i4-parts";
 
@@ -105,6 +107,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const canPublishStandard = !!session?.authorities.includes("content_i4_publish_standard");
   const canPublishSensitive = !!session?.authorities.includes("content_i4_trust_section_manage");
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [draftEditor, setDraftEditor] = useState<DraftEditor | null>(null);
   const [detailLang, setDetailLang] = useState<Lang>("zh");
   const [readAt, setReadAt] = useState("");
@@ -347,7 +350,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   };
 
   // ---------- I4 信任版块动作 ----------
-  const createSectionDraft = (s: TrustSection) => {
+  const createSectionDraft = async (s: TrustSection) => {
     const blocked = newSectionReason(s.key);
     if (blocked) { toast(blocked); return; }
     const fields = currentSectionFields(s);
@@ -355,6 +358,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       toast("现在公开的版本没有内容模板，不能新建草稿");
       return;
     }
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
     setEditorCommandKey(null);
     setDraftEditor({
       mode: "create",
@@ -363,11 +368,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       description: s.desc,
       structure: s.struct,
       reason: "日常维护信任版块草稿",
-      fields, expectedSectionVersion: s.v, expectedSectionStatus: s.status, published: currentVersionOf(s),
+      fields: mapTrustSectionLanguageFields(fields, required, "load"), expectedSectionVersion: s.v, expectedSectionStatus: s.status, published: currentVersionOf(s),
     });
   };
 
-  const editSectionDraft = (draft: TrustSectionVersion) => {
+  const editSectionDraft = async (draft: TrustSectionVersion) => {
     const section = TRUST_SECTIONS.find((item) => item.key === draft.sectionKey);
     const blocked = newSectionReason(draft.sectionKey);
     if (blocked) { toast(blocked); return; }
@@ -376,6 +381,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       toast("草稿的内容模板已过期，删掉后基于现在公开的版本新建");
       return;
     }
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
     setEditorCommandKey(null);
     setDraftEditor({
       mode: "edit",
@@ -385,7 +392,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       structure: draft.structure,
       revision: draft.revision,
       reason: "日常维护信任版块草稿",
-      fields: draft.fields, expectedSectionVersion: section!.v, expectedSectionStatus: section!.status, published: currentVersionOf(section!),
+      fields: mapTrustSectionLanguageFields(draft.fields, required, "load"), expectedSectionVersion: section!.v, expectedSectionStatus: section!.status, published: currentVersionOf(section!),
     });
   };
 
@@ -407,27 +414,40 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
       || !draftEditor.structure.trim() || !draftEditor.reason.trim() || draftEditor.fields.length === 0
       || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim()
-        || (!isOptionalTrustLinkField(field.key) && !field.value.trim()))) {
+        || (!localizedTrustSectionField(field.key) && !isOptionalTrustLinkField(field.key) && !field.value.trim()))) {
       toast("请填完版本、说明、结构、内容和保存说明");
       return;
     }
-    const fields = draftEditor.fields.map(field => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() }));
-    const fieldIssue = i4FieldValueIssue(fields);
-    if (fieldIssue) { toast(fieldIssue); return; }
-    // The App contract applies at publication; drafts retain the backend authoring contract.
-    const existingDraft = draftEditor.mode === "edit" ? TRUST_SECTION_VERSIONS.find(row => row.sectionKey === draftEditor.sectionKey && row.version === draftEditor.version) : undefined;
-    if (i4DraftOmittedTranslations(currentSectionFields(sectionSnapshot), existingDraft?.fields ?? [], fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
-    const payload = {
-      version: draftEditor.version,
-      description: draftEditor.description.trim(),
-      structure: draftEditor.structure.trim(),
-      fields,
-      expectedSectionVersion: draftEditor.expectedSectionVersion,
-      expectedSectionStatus: draftEditor.expectedSectionStatus,
-      ...(draftEditor.mode === "edit" ? { expectedRevision: draftEditor.revision ?? 0 } : {}),
-    };
     inFlight.current = true; setSavingDraft(true);
     try {
+      const required = await getRequiredContentLanguages();
+      setRequiredLanguages(required);
+      const fields = mapTrustSectionLanguageFields(draftEditor.fields.map(field => ({
+        key: field.key.trim(), label: field.label.trim(), value: field.value.trim(),
+      })), required, "submit");
+      const authored = draftEditor.fields.flatMap(field => {
+        const localized = localizedTrustSectionField(field.key);
+        return localized && field.value.trim() ? [localized.language] : [];
+      });
+      if (fields.some(field => localizedTrustSectionField(field.key))
+        && !validateTrustSectionTrilingualFields(fields, [...required, ...authored]).valid) {
+        toast("请补齐英文和运营区域语言的字段；选填语言已填写的，请填完整或全部留空");
+        return;
+      }
+      const fieldIssue = i4FieldValueIssue(fields);
+      if (fieldIssue) { toast(fieldIssue); return; }
+      // The App contract applies at publication; drafts retain the backend authoring contract.
+      const existingDraft = draftEditor.mode === "edit" ? TRUST_SECTION_VERSIONS.find(row => row.sectionKey === draftEditor.sectionKey && row.version === draftEditor.version) : undefined;
+      if (i4DraftOmittedTranslations(currentSectionFields(sectionSnapshot), existingDraft?.fields ?? [], fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
+      const payload = {
+        version: draftEditor.version,
+        description: draftEditor.description.trim(),
+        structure: draftEditor.structure.trim(),
+        fields,
+        expectedSectionVersion: draftEditor.expectedSectionVersion,
+        expectedSectionStatus: draftEditor.expectedSectionStatus,
+        ...(draftEditor.mode === "edit" ? { expectedRevision: draftEditor.revision ?? 0 } : {}),
+      };
       await runBackend(() => draftEditor.mode === "create"
         ? actions.createI4TrustSectionDraft(draftEditor.sectionKey, payload, draftEditor.reason.trim(), draftEditor.published)
         : actions.updateI4TrustSectionDraft(draftEditor.sectionKey, draftEditor.version, payload, draftEditor.reason.trim(), draftEditor.published), `${draftEditor.sectionKey} ${draftEditor.version} 草稿已保存`, draftEditor.sectionKey,
@@ -453,7 +473,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   }, draft.sectionKey, original);
 
   const pubSection = (s: TrustSection, draft: TrustSectionVersion, original?: I4SectionCommand) => {
-    const trilingualCheck = i4TrilingualFields(draft.fields);
+    const hasEnglish = i4HasEnglishFields(draft.fields);
     const problems = versionProblems(draft);
     return openTrustConfirm({ briefKind: "content",
       action: <>发布信任版块 · {s.key} {draft.version}</>,
@@ -471,11 +491,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}从 ${s.v} 换成 ${draft.version}；批准前不变。`, check: "逐项核对三种语言和关键数字，理由写清依据。" },
       facts: <div className="rd-stack">
         <Facts><Fact k="版块">{sectionName(s.key)}</Fact><Fact k="版本"><Change from={`${s.v}（现在公开）`} to={draft.version} /></Fact>{approverFacts(s)}</Facts>
-        <VersionCompare beforeLabel={`现在公开的 ${s.v}`} afterLabel={`批准后公开的 ${draft.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={draft.fields} problems={problems.filter((item) => item !== "中越英三语不全")}
+        <VersionCompare beforeLabel={`现在公开的 ${s.v}`} afterLabel={`批准后公开的 ${draft.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={draft.fields} problems={problems.filter((item) => item !== TRUST_MISSING_ENGLISH)}
           afterBlanked={blankingOf(s.key, draft).all ? `提醒：${blankingOf(s.key, draft).all}` : undefined} />
         {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
       </div>,
-      blockedReason: i4AppFieldIssue(draft.fields) ?? (trilingualCheck.valid ? undefined : `中越英三语不完整：${trilingualCheck.missing.join("、")}，先编辑草稿补齐`),
+      blockedReason: i4AppFieldIssue(draft.fields) ?? (hasEnglish ? undefined : TRUST_MISSING_ENGLISH),
       businessForm: {
         kind: "multi-field",
         fields: [
@@ -484,9 +504,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         ],
       },
       run: async (reason, _value, form) => {
-        const trilingual = i4TrilingualFields(draft.fields);
-        if (!trilingual.valid) {
-          toast(`中越英三语不完整：${trilingual.missing.join("、")}`);
+        if (!i4HasEnglishFields(draft.fields)) {
+          toast(TRUST_MISSING_ENGLISH);
           return false;
         }
         const def = findHighOp("i4_trust_section_manage")!;
@@ -562,7 +581,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           </Facts>
           {target && <VersionCompare beforeLabel={`现在的 ${s.v}`} afterLabel={`批准后公开的 ${target.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={target.fields} problems={problems}
             afterBlanked={blankingOf(s.key, target).all ? `提醒：${blankingOf(s.key, target).all}` : undefined} />}
-          {target && problems.length === 0 && i4TrilingualFields(target.fields).valid && <p className="rd-note">所选版本完整：有说明和结构，中越英三语齐全，不超过 {APP_FIELD_LIMIT} 项内容。</p>}
+          {target && problems.length === 0 && i4HasEnglishFields(target.fields) && <p className="rd-note">所选版本完整：有说明和结构，英文齐全，不超过 {APP_FIELD_LIMIT} 项内容。</p>}
           {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
         </div>;
       },
@@ -895,7 +914,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     pendingTrustSectionKeys.size > 0 && `${pendingTrustSectionKeys.size} 个版块等另一位批准`,
     draftSections.size > 0 && `${draftSections.size} 个版块有待发布的草稿`,
   ].filter(Boolean).join(" · ") || undefined;
-  const conclusionExplain = <><p>下架或没发布的版块在 App 上整块收起，别的照常显示；六块都没公开时，信任中心照常打开，公司资质、白皮书、平台运行数据和规则与资料还在。</p><p>公开的版块当前版要有说明和结构、中越英三语齐全、不超过 {APP_FIELD_LIMIT} 项内容；有一块不满足，App 信任中心整页读不出来。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以保存时的检查为准。</p></>;
+  const conclusionExplain = <><p>下架或没发布的版块在 App 上整块收起，别的照常显示；六块都没公开时，信任中心照常打开，公司资质、白皮书、平台运行数据和规则与资料还在。</p><p>公开的版块当前版要有说明和结构、英文齐全、不超过 {APP_FIELD_LIMIT} 项内容；有一块不满足，App 信任中心整页读不出来。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以保存时的检查为准。</p></>;
   // 有几块在公开：全公开、只公开一部分、一块都没公开，三种说法。
   const hiddenCount = APP_SECTION_ORDER.length - publicCount;
   const publicLead = hiddenCount === 0 ? "六个版块都在公开" : publicCount === 0 ? "六个版块都没公开，App 信任中心只显示公司资质、白皮书、平台运行数据和规则与资料" : `${publicCount} 个版块在公开，${hiddenCount} 个没公开、在 App 上收起`;
@@ -1036,7 +1055,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     !draftEditor.description.trim() && "版块说明",
     !draftEditor.structure.trim() && "内容结构",
     !draftEditor.reason.trim() && "保存说明",
-    draftEditor.fields.some((field) => !field.label.trim() || (!isOptionalTrustLinkField(field.key) && !field.value.trim())) && "空着的内容项",
+    mapTrustSectionLanguageFields(draftEditor.fields, requiredLanguages, "submit").some((field) => !field.label.trim() || (!isOptionalTrustLinkField(field.key) && !field.value.trim())) && "空着的内容项",
   ].filter(Boolean) as string[] : [];
 
   return (
@@ -1177,7 +1196,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (draftCommands.find(row => row.commandKey === editorCommandKey && isRetryExpired(row)) ? RETRY_EXPIRED_TEXT : i4DraftPermission()) : draftEditor ? newSectionReason(draftEditor.sectionKey) : undefined} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原请求重试" : "保存草稿"}</Button>} />}>
         {draftEditor && <>
           <div className="i4-doc-effect"><StatusTag tone="neutral" filled explain="保存草稿直接写，不走审批；用户看到的内容不变，提交发布并批准后才公开。">不改公开内容</StatusTag></div>
-          <DraftEditorBody editor={draftEditor} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}
+          <DraftEditorBody editor={draftEditor} requiredLanguages={requiredLanguages} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}
             published={draftEditor.published?.fields ?? (editorSection ? currentSectionFields(editorSection) : [])} publishedVersion={draftEditor.published?.version ?? draftEditor.expectedSectionVersion}
             blanked={appBlanking(draftEditor.sectionKey, "", draftEditor.fields)} />
         </>}

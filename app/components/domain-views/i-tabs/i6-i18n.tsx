@@ -1,4 +1,6 @@
 "use client";
+import { englishCopyHint, isEnglishCopy, mapSingleContentText } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, INTERFACE_LANGUAGES, type InterfaceLanguageCode, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -13,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, EyeOff, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
-import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Receipt, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
+import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Receipt, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningQuizQuestionView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -34,7 +36,7 @@ import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-t
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
-import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
+import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, courseFormMissing, mapCourseLanguages, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
 /** 查到原审批单时说结论：还在等批准，或已有结果、执行情况到操作记录看。 */
 const ticketText = (ticket: A2OperationRow) => ({
@@ -64,7 +66,9 @@ type Course = {
   level: "Beginner" | "Intermediate" | "Advanced";
   reward: number; featured: boolean; duration: string; v: string; status: string; body: string;
   titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
-  quizQuestions: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
+  titleTranslations?: LearningCourseView["titleTranslations"];
+  bodyTranslations?: LearningCourseView["bodyTranslations"];
+  quizQuestions: (LearningQuizQuestionView & { questionVi?: string; optionsVi?: string[] })[];
   passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string; revision: number;
   /** 后端原值，显示时不经 Number 丢精度。 */
   rewardRaw: string | null;
@@ -82,13 +86,14 @@ const VERSION_STATUS: Record<string, { text: string; tone: StateTone }> = {
   DRAFT: { text: "草稿", tone: "neutral" }, PUBLISHED: { text: "线上版本", tone: "ok" }, SUPERSEDED: { text: "历史版本", tone: "done" },
 };
 /** 后端问题类别的原名（「缺少英文镜像」）写成人话，原名进问号。 */
-const ISSUE_NAME: Record<string, string> = { "missing-zh": "缺中文", "missing-en": "缺英语", "missing-vi": "缺越南语", placeholder: "三语变量不一致", "placeholder-text": "占位文字没换掉", "retired-brand": "用了退役品牌名" };
+const ISSUE_NAME: Record<string, string> = { "missing-zh": "缺中文", "missing-en": "缺英语", "missing-vi": "缺越南语", placeholder: "变量不一致", "placeholder-text": "占位文字没换掉", "retired-brand": "用了退役品牌名" };
 const issueName = (issue: { code: string; kind: string }) => ISSUE_NAME[issue.code] ?? issue.kind;
 /** 审批单前后值原文「v1 · published · 25 UVT」写成「v1 在线 · 25 UVT」。 */
 const approvalValue = (value: string) => (value.replace(/\bNEX\b/g, "UVT").replace(/ · published · /g, " 在线 · ").replace(/ · draft · /g, " 草稿 · ").replace(/ · ready · /g, " 草稿 · ").replace(/ · archived · /g, " 已下架 · "));
 const msgStatus = (status?: string) => MSG_STATUS[status ?? ""] ?? { text: "状态未知", tone: "warn" as StateTone };
 const langValue = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">, lang: Lang) => message[lang] ?? "";
-const missingLangs = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">) => LANGS.filter((item) => !i6HasCopyText(langValue(message, item.key)));
+const missingLangs = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">, required: readonly OperatingLanguageCode[]) =>
+  LANGS.filter((item) => required.includes(item.key) && !i6HasCopyText(langValue(message, item.key)));
 const count = (value: number) => value.toLocaleString("en-US");
 
 function readTab(allowed: readonly TabKey[]): TabKey {
@@ -152,21 +157,31 @@ export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null
   );
 }
 
+async function submittedMessageText(placeholders: readonly string[], form: Pick<CopyEditor, "zh" | "en" | "vi">) {
+  const required = await getRequiredContentLanguages();
+  const missing = copyFormMissing(placeholders, form, required);
+  if (missing.length) throw new Error(blockedText(missing));
+  return mapSingleContentText(form, required, "submit");
+}
+
 function messagePublication(message?: I18nMessagePairView) {
   const missingLocales = message
     ? ([["中文", message.zh], ["英文", message.en], ["越南语", message.vi]] as const).filter(([, value]) => !i6HasCopyText(value)).map(([label]) => label)
     : [];
-  const messageVariables = message
-    ? [message.zh, message.en, message.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
+  const hasEnglish = !!message && i6HasCopyText(message.en);
+  const baseCopies = message ? [message.en, message.zh, message.vi].filter(i6HasCopyText) : [];
+  const messageVariables = message && hasEnglish
+    ? [...baseCopies, ...Object.values(message.translations ?? {}).filter(i6HasCopyText)]
+      .map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
     : [];
   const variablesMatch = new Set(messageVariables).size === 1;
   const qualityIssues = message ? i6CopyQualityIssues(message.zh, message.en, message.vi) : [];
   const publicationIssues = [
     ...missingLocales.map((locale) => `缺少${locale}文案`),
-    ...(missingLocales.length === 0 && !variablesMatch ? ["三语变量不一致"] : []),
+    ...(new Set(messageVariables.slice(0, baseCopies.length)).size > 1 ? ["已填写文案的变量不一致"] : []),
     ...qualityIssues,
   ];
-  return { missingLocales, messageVariables, variablesMatch, qualityIssues, publicationIssues };
+  return { missingLocales, hasEnglish, messageVariables, variablesMatch, qualityIssues, publicationIssues };
 }
 
 function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
@@ -280,6 +295,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseTab, setCourseTab] = useState<"content" | "quiz" | "versions">("content");
   const [courseLang, setCourseLang] = useState<Lang>("en");
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
+  const readRequiredLanguages = async () => {
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
+    return required;
+  };
   const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   versionsRead.current = courseVersions;
@@ -442,6 +464,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     bodyZh: c.bodyZh || c.body,
     bodyEn: c.bodyEn || "",
     bodyVi: c.bodyVi || "",
+    titleTranslations: c.titleTranslations, bodyTranslations: c.bodyTranslations,
     quizQuestions: c.quizQuestions.map(question => ({ ...question, questionVi: question.questionVi ?? undefined, optionsVi: question.optionsVi ?? undefined })),
     passScore: c.passScore ?? undefined,
     retryLimit: c.retryLimit ?? undefined,
@@ -547,30 +570,28 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       facts: <div className="rd-stack">
         <Facts><Fact k="文案键">{selectedMessage.messageKey}</Fact><Fact k="基于">{selectedMessage.version} · {statusLabel(selectedMessage.status)}</Fact></Facts>
         <CompareRows beforeLabel={`现在 ${selectedMessage.version}`} afterLabel="保存后的草稿"
-          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: form[item.key] }))} />
+          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: mapSingleContentText(form, requiredLanguages, "submit")[item.key] }))} />
       </div>,
       amplifies: false,
-      run: (reason) => {
+      run: async (reason) => {
         const messageKey = selectedMessage.messageKey;
         setSelectedMessageKey(messageKey);
         return runBackend(actions.saveI6LocalizedDraft(messageKey, {
-          zh: form?.zh || "",
-          en: form?.en || "",
-          vi: form?.vi || "",
+          ...await submittedMessageText(selectedMessage.placeholders, form),
           expectedVersion: selectedMessage.version,
         }, reason), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`).then(() => setCopyEditor(null));
       },
     });
 
   const pubKey = (message = selectedMessage) => {
-    const { missingLocales, messageVariables, variablesMatch, qualityIssues, publicationIssues } = messagePublication(message);
+    const { missingLocales, hasEnglish, messageVariables, variablesMatch, qualityIssues, publicationIssues } = messagePublication(message);
     confirmI6(`message:${message?.messageKey ?? ""}`, { briefKind: "content",
       action: <>发布词条 · {message?.messageKey ?? "未选择"} {message?.version ?? ""}</>,
       title: "发布文案",
       detail: (
         <>
           发布前检查：<b>中越英三语{missingLocales.length === 0 ? "完整" : `待补齐（${missingLocales.join("、")}）`}</b>；
-          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐三语）" : variablesMatch ? `一致（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
+          <b>变量{!hasEnglish ? "尚未检查（请先补齐必填语言）" : variablesMatch ? `一致（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
           <b>占位文字与旧品牌{qualityIssues.length === 0 ? "检查通过" : `检查未通过：${qualityIssues.join("、")}`}</b>。
           系统提交时仍会核对发布条件。
         </>
@@ -655,17 +676,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       facts: selectedMessage && <div className="rd-stack">
         <Facts><Fact k="问题">{issueName(issue)} · {count(issue.cnt)} 处</Fact><Fact k="修哪一条">{selectedMessage.messageKey}</Fact></Facts>
         <CompareRows beforeLabel={`现在 ${selectedMessage.version}`} afterLabel="修复后的草稿"
-          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: form[item.key] }))} />
+          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: mapSingleContentText(form, requiredLanguages, "submit")[item.key] }))} />
       </div>,
       amplifies: false,
-      run: (reason) => {
+      run: async (reason) => {
         if (!selectedMessage) return false;
         const messageKey = selectedMessage.messageKey;
         return runBackend(actions.fixI6Integrity(issue.code, {
-          messageKey,
-          zh: form?.zh || "",
-          en: form?.en || "",
-          vi: form?.vi || "",
+          messageKey, ...await submittedMessageText(selectedMessage.placeholders, form),
         }, reason), (result) => {
           const repairedCount = result.repairedCount
             ?? Number(issue.samples.includes(messageKey) && !result.samples.includes(messageKey));
@@ -894,8 +912,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
 
   /** 课程草稿的确认框：编辑在抽屉里填完，这里只填理由。 */
+  const submittedCourse = async (spec: CourseSpec, form: CourseForm, expectedRevision?: number) => {
+    const required = await readRequiredLanguages();
+    const completed = mapCourseLanguages(form, required, "submit");
+    const missing = courseFormMissing(spec, completed);
+    if (missing.length) throw new Error(blockedText(missing));
+    const payload = coursePayload(completed, expectedRevision);
+    if (spec.mode === "create") return { ...payload, completionCondition: undefined, rewardEvent: undefined };
+    return payload;
+  };
   const courseDraftFacts = (form: CourseForm, extra?: ReactNode) => <Facts>
-    <Fact k="课程">{nexGridBrandText(form.titleZh || "—")}</Fact>
+    <Fact k="课程">{nexGridBrandText(form.titleZh || form.titleEn || "—")}</Fact>
     {extra}
     {form.reward?.trim() ? <Fact k="学完发" lead unit="UVT/人">{uvtText(form.reward)}</Fact> : <Fact k="学完发" lead>{NO_REWARD}</Fact>}
     <Fact k="测验">{form.quizCount} 题 · {form.passScore} 分及格 · 可重试 {form.retries} 次</Fact>
@@ -905,26 +932,30 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     mode, rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max, categories: courseCategories, formats: data?.formats, levels: data?.levels, current,
   });
 
-  const newCrs = () => setCourseEditor({ spec: courseSpec("create"), title: "新建课程", sub: "存成草稿，用户看不到",
-    save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
-      action: <>新建课程(存为草稿)</>,
-      title: "保存新课程草稿",
-      detail: (
-        <>
-          课程标识、分类、形式、难度、奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）和三语标题、正文、测验一起存成草稿；草稿用户看不到，发布另外操作。
-        </>
-      ),
-      effect: draftEffect,
-      confirmLabel: "保存草稿",
-      statedBrief: { impact: "存成 v1 草稿，用户看不到；发布另外操作。", check: "课程标识建好后不能改。" },
-      facts: courseDraftFacts(form, <Fact k="课程标识">{form.slug}</Fact>),
-      amplifies: false,
-      run: (reason) => {
-        const id = form.slug?.trim() || "new";
-        return runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建").then(() => setCourseEditor(null));
-      },
-    }),
-  });
+  const newCrs = async () => {
+    await readRequiredLanguages();
+    const spec = courseSpec("create");
+    setCourseEditor({ spec, title: "新建课程", sub: "存成草稿，用户看不到",
+      save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
+        action: <>新建课程(存为草稿)</>,
+        title: "保存新课程草稿",
+        detail: (
+          <>
+            课程标识、分类、形式、难度、奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）和三语标题、正文、测验一起存成草稿；草稿用户看不到，发布另外操作。
+          </>
+        ),
+        effect: draftEffect,
+        confirmLabel: "保存草稿",
+        statedBrief: { impact: "存成 v1 草稿，用户看不到；发布另外操作。", check: "课程标识建好后不能改。" },
+        facts: courseDraftFacts(form, <Fact k="课程标识">{form.slug}</Fact>),
+        amplifies: false,
+        run: async (reason) => {
+          const id = form.slug?.trim() || "new";
+          return runBackend(actions.createI6Course(id, await submittedCourse(spec, form), reason), "课程草稿已创建").then(() => setCourseEditor(null));
+        },
+      }),
+    });
+  };
 
   const editCrsState = (c: Course): CourseEditorState => ({ courseId: c.id, spec: courseSpec("edit", {
     slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.rewardRaw,
@@ -941,9 +972,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     statedBrief: { impact: "更新这门课的草稿，用户看不到。", check: "三种语言和测验核对过。" },
     facts: courseDraftFacts(form, <Fact k="版本">{c.v}</Fact>),
     amplifies: false,
-    run: (reason) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => setCourseEditor(null)),
+    run: async (reason) => runBackend(actions.updateI7CourseDraft(c.id, await submittedCourse(courseSpec("edit"), form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => setCourseEditor(null)),
   }) });
-  const editCrs = (c: Course) => setCourseEditor(editCrsState(c));
+  const editCrs = async (c: Course) => { await readRequiredLanguages(); setCourseEditor(editCrsState(c)); };
 
   const deleteCrs = (c: Course) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
@@ -980,6 +1011,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     catch (error) { toast(displayAdminError(error), "error"); return; }
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
+    await readRequiredLanguages();
     setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
       save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
         action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
@@ -990,8 +1022,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         statedBrief: { impact: `存成 ${form.version} 草稿；线上 ${c.v} 和用户进度都不变。`, check: "一门课同时只能有一个版本草稿。" },
         facts: courseDraftFacts(form, <Fact k="版本"><Change from={`${c.v}（线上）`} to={`${form.version}（草稿）`} /></Fact>),
         amplifies: false,
-        run: (reason) => runBackend(
-          actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => setCourseEditor(null)),
+        run: async (reason) => runBackend(
+          actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => setCourseEditor(null)),
       }),
     });
   };
@@ -1001,17 +1033,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
       title: "保存版本草稿",
-      detail: <>三语正文和测验都要填完整；别人刚改过时，会先让你核对再保存。</>,
+      detail: <>英文和运营区域语言的正文与测验须填写完整。别人刚改过时，会先让你核对再保存。</>,
       effect: draftEffect,
       confirmLabel: "保存草稿",
       statedBrief: { impact: `更新 ${row.version} 草稿；线上版本不变。`, check: "三种语言和测验核对过。" },
       facts: courseDraftFacts(form, <Fact k="版本">{row.version}（草稿）</Fact>),
       amplifies: false,
-      run: (reason) => runBackend(
-        actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => setCourseEditor(null)),
+      run: async (reason) => runBackend(
+        actions.updateI7CourseVersion(c.id, row.version, await submittedCourse(courseSpec("version-edit"), form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => setCourseEditor(null)),
     }),
   });
-  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => setCourseEditor(editCourseVersionState(c, row));
+  const editCourseVersion = async (c: Course, row: LearningCourseVersionView) => { await readRequiredLanguages(); setCourseEditor(editCourseVersionState(c, row)); };
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
@@ -1467,7 +1499,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   if (view === "i18n") {
     const total = MESSAGES.length;
     const filledOf = (lang: Lang) => MESSAGES.filter((message) => i6HasCopyText(langValue(message, lang))).length;
-    const missingAny = MESSAGES.filter((message) => missingLangs(message).length > 0);
+    const missingAny = MESSAGES.filter((message) => missingLangs(message, requiredLanguages).length > 0);
     const drafts = MESSAGES.filter((message) => message.status === "draft");
     const archived = MESSAGES.filter((message) => message.status === "archived");
     const published = MESSAGES.filter((message) => message.status === "published");
@@ -1477,9 +1509,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const query = messageSearch.trim().toLowerCase();
     const filteredMessages = MESSAGES.filter((message) => {
       if (query && ![message.messageKey, message.namespace, message.zh, message.vi, message.en].some((value) => (value ?? "").toLowerCase().includes(query))) return false;
-      if (msgScope === "missing" && missingLangs(message).length === 0) return false;
+      if (msgScope === "missing" && missingLangs(message, requiredLanguages).length === 0) return false;
       if (msgScope !== "all" && msgScope !== "missing" && message.status !== msgScope) return false;
-      if (msgLang && i6HasCopyText(langValue(message, msgLang))) return false;
+      if (msgLang && (!requiredLanguages.includes(msgLang) || i6HasCopyText(langValue(message, msgLang)))) return false;
       if (msgNs && message.namespace !== msgNs) return false;
       return true;
     });
@@ -1499,7 +1531,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const openMessage = (key: string) => { setSelectedMessageKey(key); setCompareVersion(""); setCopyEditor(null); setMessageDrawer(true); };
     const nsRows = NAMESPACES.map((n) => {
       const rows = MESSAGES.filter((message) => message.namespace === n.ns);
-      return { ...n, rows: rows.length, missing: LANGS.map((item) => ({ ...item, n: rows.filter((message) => !i6HasCopyText(langValue(message, item.key))).length })) };
+      return { ...n, rows: rows.length, missing: LANGS.map((item) => ({ ...item, n: requiredLanguages.includes(item.key) ? rows.filter((message) => !i6HasCopyText(langValue(message, item.key))).length : 0 })) };
     });
     const missingByLang = LANGS.map((item) => ({ ...item, n: total - filledOf(item.key) }));
     const worstNs = [...nsRows].map((n) => ({ ns: n.ns, n: n.missing.reduce((sum, item) => sum + item.n, 0) })).filter((n) => n.n > 0).sort((a, b) => b.n - a.n);
@@ -1508,7 +1540,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       drafts.length > 0 && `${count(drafts.length)} 条草稿没发布`,
       liveIntegrity > 0 && `完整性检查有 ${count(liveIntegrity)} 处问题`,
     ].filter(Boolean) as string[];
-    const missingLangText = missingByLang.filter((item) => item.n > 0).map((item) => item.label).join("、");
+    const missingLangText = missingByLang.filter((item) => requiredLanguages.includes(item.key) && item.n > 0).map((item) => item.label).join("、");
     const whereText = worstNs.length === 0 ? "" : worstNs.length === 1 ? `缺的都在「${nsLabel(worstNs[0].ns)}」` : `缺得最多的是「${nsLabel(worstNs[0].ns)}」`;
 
     /* ---- 文案详情抽屉 ---- */
@@ -1517,9 +1549,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const keyPath = sm ? sm.messageKey.split(".").slice(1).join(" › ") : "";
     const smIssues = sm ? openIssues.filter((issue) => issue.cnt > 0 && issue.samples.includes(sm.messageKey)) : [];
     const compareTarget = messageVersions.find((row) => row.version === compareVersion);
-    const editorMissing = copyEditor && sm ? copyFormMissing(sm.placeholders ?? [], copyEditor) : [];
+    const editorMissing = copyEditor && sm ? copyFormMissing(sm.placeholders ?? [], copyEditor, requiredLanguages) : [];
     const editorBlocked = blockedText(editorMissing);
-    const startEdit = (mode: CopyEditor["mode"], issue?: IntegrityIssue) => sm && setCopyEditor({ mode, issue, zh: sm.zh, vi: sm.vi, en: sm.en, tried: false });
+    const startEdit = async (mode: CopyEditor["mode"], issue?: IntegrityIssue) => {
+      if (!sm) return;
+      const required = await readRequiredLanguages();
+      setCopyEditor({ mode, issue, ...mapSingleContentText(sm, required, "edit"), tried: false });
+    };
     const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
       : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案；App 拉到新文案包后改用自带文字" : "—";
     const judgment: JudgmentRow[] = sm ? [
@@ -1545,7 +1581,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <Conclusion state={conclusionParts.length ? "warn" : "ok"} icon={conclusionParts.length ? TriangleAlert : BadgeCheck}
         hint={conclusionParts.length ? (missingLangText && whereText ? `${whereText}，缺${missingLangText}` : whereText || undefined) : undefined}
         explain="缺翻译按每条文案现在的内容算，草稿也算；完整性问题是上次检查存下的报告。">
-        {conclusionParts.length ? conclusionParts.join("，") : `${count(total)} 条文案三种语言都齐了，没有待发布的草稿`}
+        {conclusionParts.length ? conclusionParts.join("，") : `${count(total)} 条文案必填语言完整，没有待发布的草稿`}
       </Conclusion>
       {conflictUi}
       {ordinaryRecovery}
@@ -1560,7 +1596,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <RatioBar quiet label={`${item.label}填了多少`} value={total - item.n} total={total} tone={item.n > 0 ? "warn" : "ok"}
                 state={total === 0 ? "empty" : undefined} emptyText="没有文案" valueText={`${item.label}填了 ${total - item.n} 条，共 ${total} 条`} />
               <span className="i6-cov-num">{total ? `${Math.floor((total - item.n) * 100 / total)}%` : "—"}</span>
-              {item.n > 0
+              {!requiredLanguages.includes(item.key) ? <span className="i6-cov-ok">选填</span> : item.n > 0
                 ? <button type="button" className="i6-cov-miss" onClick={() => showList({ lang: item.key })} aria-label={`看缺${item.label}的 ${item.n} 条`}>缺 {count(item.n)} 条</button>
                 : <span className="i6-cov-ok">齐了</span>}
             </div>)}
@@ -1578,7 +1614,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               const miss = n.missing.filter((item) => item.n > 0);
               return <button key={n.ns} type="button" role="listitem" className="i6-ns" onClick={() => showList({ ns: n.ns })} aria-label={`看「${nsLabel(n.ns)}」的 ${n.keys} 条文案`}>
                 <span className="i6-ns-name">{nsLabel(n.ns)}<small>{n.ns} · {count(n.keys)} 条{!["-", "—", ""].includes(n.variants) && ` · 进行中变体 ${n.variants}`}{!["-", "—", ""].includes(n.lastChange) && ` · 最近改动 ${n.lastChange}`}</small></span>
-                <span className="i6-ns-miss">{miss.length ? miss.map((item) => <StatusTag key={item.key} tone="warn" icon={TriangleAlert}>缺{item.short} {count(item.n)}</StatusTag>) : <StatusTag tone="ok">三语齐</StatusTag>}</span>
+                <span className="i6-ns-miss">{miss.length ? miss.map((item) => <StatusTag key={item.key} tone="warn" icon={TriangleAlert}>缺{item.short} {count(item.n)}</StatusTag>) : <StatusTag tone="ok">必填语言完整</StatusTag>}</span>
                 <span className="i6-ns-cov">
                   <RatioBar compact quiet label={`${nsLabel(n.ns)}可上线比例`} value={n.coverage} total={100} tone="role-2" valueText={`可上线 ${n.coverage}%`} />
                   <span className="i6-ns-pct">可上线 {n.coverage}%</span>
@@ -1625,7 +1661,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </span></Td>
                   {LANGS.map((item) => {
                     const text = langValue(message, item.key);
-                    return <Td key={item.key}>{i6HasCopyText(text) ? <Cell main={text} title={text} /> : <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</Td>;
+                    return <Td key={item.key}>{i6HasCopyText(text) ? <Cell main={text} title={text} /> : requiredLanguages.includes(item.key) ? <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag> : "—"}</Td>;
                   })}
                   <Td><Cell main={<StatusTag tone={msgStatus(message.status).tone} icon={message.status === "draft" ? FilePen : undefined}>{msgStatus(message.status).text}</StatusTag>} sub={message.version} /></Td>
                 </Tr>;
@@ -1744,10 +1780,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           {i1 && <Notice tone="warn">这条文案来自页面文案对比测试：那边发布时会直接盖掉这里没发布的草稿。</Notice>}
           {LANGS.map((item) => {
             const value = copyEditor[item.key];
+            const required = requiredLanguages.includes(item.key);
             const missingVars = (sm.placeholders ?? []).filter((ph) => !value.includes(ph));
-            const error = copyEditor.tried ? (!i6HasCopyText(value) ? `请填${item.label}` : missingVars.length ? `缺变量 ${missingVars.join("、")}` : undefined) : undefined;
-            return <Field key={item.key} label={item.label} required hint={sm.placeholders.length ? `要带上 ${sm.placeholders.join("、")}` : undefined} error={error}
-              help={i6HasCopyText(langValue(sm, item.key)) && langValue(sm, item.key) !== value ? <>现在：{langValue(sm, item.key)}</> : undefined}>
+            const error = copyEditor.tried && (required || i6HasCopyText(value)) ? (!i6HasCopyText(value) ? `请填${item.label}` : missingVars.length ? `缺变量 ${missingVars.join("、")}` : undefined) : undefined;
+            const hint = item.key !== "en" && required && isEnglishCopy({ text: copyEditor.en }, { text: value }) ? englishCopyHint(item.key) : undefined;
+            return <Field key={item.key} label={item.label} required={required} hint={sm.placeholders.length ? `要带上 ${sm.placeholders.join("、")}` : undefined} error={error}
+              help={hint ?? (i6HasCopyText(langValue(sm, item.key)) && langValue(sm, item.key) !== value ? <>现在：{langValue(sm, item.key)}</> : undefined)}>
               <Textarea rows={3} value={value} onChange={(event) => setCopyEditor({ ...copyEditor, [item.key]: event.target.value })} />
             </Field>;
           })}
@@ -1783,19 +1821,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const own = lang === "zh" ? { title: c.titleZh, body: c.bodyZh } : lang === "vi" ? { title: c.titleVi, body: c.bodyVi } : { title: c.titleEn, body: c.bodyEn };
     return { title: pick(own.title, c.titleEn), body: pick(own.body, c.bodyEn), english: lang !== "en" && (!own.title?.trim() || !own.body?.trim()) };
   };
-  const appHidden = (c: Course): Lang[] => liveStatus(c) !== "published" ? [] : (["en", "vi"] as const).filter(lang => {
-    const copy = appCopy(c, lang);
-    if (!copy.title.trim() || !copy.body.trim()) return true;
-    return c.quizQuestions.some(q => {
-      const options = lang === "vi" && q.optionsVi?.length ? q.optionsVi : q.optionsEn;
-      return !(lang === "vi" && q.questionVi?.trim() ? q.questionVi : q.questionEn).trim()
-        || options.length < 2 || options.length !== q.optionsZh.length || options.some(option => !option.trim());
+  const appHidden = (c: Course): InterfaceLanguageCode[] => liveStatus(c) !== "published" ? [] : INTERFACE_LANGUAGES.map(item => item.code).filter(lang => {
+    if (lang === "zh") return false;
+    const hasText = (value: string | undefined) => /[^ \t\n\v\f\r\u001c-\u001f\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]/u.test(value ?? "");
+    const pick = (value: string | undefined, english: string) => hasText(value) ? value : english;
+    const title = lang === "en" ? c.titleEn : pick(lang === "vi" ? c.titleVi : c.titleTranslations?.[lang], c.titleEn);
+    const body = lang === "en" ? c.bodyEn : pick(lang === "vi" ? c.bodyVi : c.bodyTranslations?.[lang], c.bodyEn);
+    if (!hasText(title) || !hasText(body)) return true;
+    return c.quizQuestions.some(question => {
+      const translated = lang === "vi" ? question.optionsVi : lang === "en" ? undefined : question.optionTranslations?.[lang];
+      const options = translated?.length ? translated : question.optionsEn;
+      const prompt = lang === "vi" ? question.questionVi : lang === "en" ? undefined : question.questionTranslations?.[lang];
+      return !hasText(pick(prompt, question.questionEn)) || options.length < 2 || options.length !== question.optionsZh.length
+        || options.some(option => !hasText(option));
     });
   });
   const hiddenTag = (c: Course) => {
     const hidden = appHidden(c);
     if (!hidden.length) return null;
-    const who = hidden.map(lang => lang === "en" ? "英语" : "越南语").join("、");
+    const who = hidden.map(lang => INTERFACE_LANGUAGES.find(item => item.code === lang)?.zhName).join("、");
     return <StatusTag tone="warn" icon={EyeOff} explain={`后台是在线，但 App 上${who}用户看不到这门课：这种语言的标题、正文或测验题不全（越南语缺的用英文的）。在「详情与版本」建新版本草稿，补齐后发布。`}>{who}用户看不到</StatusTag>;
   };
   const hiddenCount = allCourses.filter(c => appHidden(c).length > 0).length;
@@ -2035,7 +2079,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </section>}
     </Drawer>
 
-    <CourseEditor open={!!courseEditor} spec={courseEditor?.spec ?? null} title={courseEditor?.title ?? ""} sub={courseEditor?.sub}
+    <CourseEditor open={!!courseEditor} requiredLanguages={requiredLanguages} spec={courseEditor?.spec ?? null} title={courseEditor?.title ?? ""} sub={courseEditor?.sub}
       onClose={() => setCourseEditor(null)} onSave={(form) => courseEditor?.save(form)} />
   </>;
 }

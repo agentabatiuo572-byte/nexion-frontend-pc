@@ -260,6 +260,12 @@ export function parseNotificationCampaign(input: unknown): unknown {
   if (!["phaseMin", "phaseMax", "language"].every((key) => typeof target[key] === "string")
     || typeof target.registrationDaysMin !== "number" || !Number.isInteger(target.registrationDaysMin)
     || target.registrationDaysMin < 0 || target.registrationDaysMin > 36500) fail("I3");
+  if (row.translations !== undefined && row.translations !== null) {
+    for (const translation of Object.values(record("I3", row.translations))) {
+      const copy = record("I3", translation);
+      if (typeof copy.title !== "string" || typeof copy.body !== "string" || typeof copy.ctaLabel !== "string") fail("I3");
+    }
+  }
   return input;
 }
 

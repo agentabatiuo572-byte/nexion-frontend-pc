@@ -1,5 +1,10 @@
 import type { DisclosureJurisdictionView, DisclosureVersionItemView } from "./i-client";
 
+export function hasStoredDisclosureEnglish(version: Pick<DisclosureVersionItemView, "languageScope" | "en" | "chapters">) {
+  return version.languageScope.split("+").includes("en") && !!version.en.trim() && version.chapters.length === 7
+    && version.chapters.every(chapter => /^0[1-7]$/.test(chapter.no) && chapter.en.trim() && chapter.enBody.trim());
+}
+
 /** Read-only diagnosis of the exact matrix reference; never choose a replacement publication. */
 export function disclosurePublicationIssue(
   mapping: Pick<DisclosureJurisdictionView, "code" | "version" | "status">,

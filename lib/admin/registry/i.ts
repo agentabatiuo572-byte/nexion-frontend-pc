@@ -23,7 +23,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/trust",
-    summary: "编辑 App 信任中心的 6 个版块：财务数据、团队、UVT 介绍、徽章、审计和外部链接。财务数据和 UVT 介绍发布时须注明数据来源，并核对中英越三语。",
+    summary: "编辑 App 信任中心的 6 个版块：财务数据、团队、UVT 介绍、徽章、审计和外部链接。财务数据和 UVT 介绍发布时须注明数据来源，并核对英文。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -33,7 +33,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/i18n",
-    summary: "管理多语言文案和课程：词条、课程、推荐位、发布状态和完成奖励。调高课程奖励需审批，并先通过兑付覆盖率检查。",
+    summary: "管理多语言文案和课程：词条、课程、推荐位、发布状态和完成奖励。带奖励的课程发布和回滚需审批，并先通过兑付覆盖率检查。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

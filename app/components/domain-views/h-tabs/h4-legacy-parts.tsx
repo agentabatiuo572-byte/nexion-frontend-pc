@@ -11,7 +11,8 @@ import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
-import { EVENT_CONTENT_LOCALES } from "@/lib/admin/event-rule-form";
+import { EVENT_CONTENT_LOCALES, type EventCopyReadiness } from "@/lib/admin/event-rule-form";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { amountText, formatTime } from "./h4-promotion-ui";
 
 // ===== 取值小工具：照旧页面原样 =====
@@ -79,9 +80,9 @@ export type LegacyEvent = H4EventCapabilities & {
 };
 
 /** 有效生命周期优先 deleteState，其次 state（H05）。 */
-export function lifecycleOf(event: LegacyEvent) {
+export function lifecycleOf(event: LegacyEvent, requiredLanguages: readonly LocaleCode[] = EVENT_CONTENT_LOCALES) {
   const lifecycle = event.deleteState || event.state;
-  if (lifecycle === "draft") return { key: "draft", label: "草稿", tone: "neutral" as const, explain: `还没开放过的活动。开放前要填齐${REQUIRED_TEXT}的${contentFieldsText(event.appUsesAuthoredRewardName)}。` };
+  if (lifecycle === "draft") return { key: "draft", label: "草稿", tone: "neutral" as const, explain: `还没开放过的活动。开放前要填齐${languageNames(requiredLanguages)}的${contentFieldsText(event.appUsesAuthoredRewardName)}。` };
   if (lifecycle === "upcoming") return { key: "upcoming", label: "预告", tone: "neutral" as const, explain: "已登记、还没开放：App 上用户还参加不了。" };
   if (lifecycle === "ongoing") return { key: "ongoing", label: "进行中", tone: "ok" as const, explain: "已对用户开放。结束后不能再开。" };
   if (lifecycle === "ended") return { key: "ended", label: "已结束", tone: "done" as const, explain: "已结束：不能再开放，这页也不再提供改奖励；已有的参与、奖励和操作记录保留。" };
@@ -119,10 +120,7 @@ export const LOCALE_NAME: Record<LocaleCode, string> = { zh: "中文", en: "英�
 export const FIELD_NAME: Record<"name" | "description" | "rewardName", string> = { name: "名称", description: "说明", rewardName: "奖项名" };
 type ContentField = "name" | "description" | "rewardName";
 const FIELDS: ContentField[] = ["name", "description", "rewardName"];
-const isRequired = (locale: LocaleCode) => (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale);
-/** 必填语言、选填语言的叫法，跟着必填清单变（如「英文、中文、越南语」或「英文」）。 */
-export const REQUIRED_TEXT = LOCALES.filter(isRequired).map(code => LOCALE_NAME[code]).join("、");
-export const OPTIONAL_TEXT = LOCALES.filter(code => !isRequired(code)).map(code => LOCALE_NAME[code]).join("、");
+export const languageNames = (languages: readonly LocaleCode[]) => LOCALES.filter(code => languages.includes(code)).map(code => LOCALE_NAME[code]).join("、");
 /** 开放前要填的几项：App 不用运营奖项名的活动（后端 appUsesAuthoredRewardName=false）不含奖项名；没有这项事实的旧数据照旧三项。 */
 export const contentFieldsText = (authored?: boolean) => authored === false ? "名称、说明" : "名称、说明、奖项名";
 
@@ -140,14 +138,15 @@ export function contentGaps(content?: Record<string, Record<string, unknown>>) {
  * 有玩法规则的活动，奖项名一行 App 用规则摘要（不提示）；
  * 已开放的活动不追补：英文以外的必填语言没填要补（用户正看着英文或原文），其余只轻提示（soft）。
  */
-export function gapWeight(gap: { locale: LocaleCode; field: ContentField }, requiresAll: boolean, rewardFromRule: boolean): "must" | "soft" | null {
-  if (requiresAll && isRequired(gap.locale)) return "must";
+export function gapWeight(gap: { locale: LocaleCode; field: ContentField }, requiresAll: boolean, rewardFromRule: boolean, requiredLanguages: readonly LocaleCode[]): "must" | "soft" | null {
+  if (requiresAll && requiredLanguages.includes(gap.locale)) return "must";
   if (gap.field === "rewardName" && rewardFromRule) return null;
-  return !requiresAll && isRequired(gap.locale) && gap.locale !== "en" ? "must" : "soft";
+  return !requiresAll && requiredLanguages.includes(gap.locale) && gap.locale !== "en" ? "must" : "soft";
 }
 
-export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule, pending, primary, menu, onContent }: {
+export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requiredLanguages, rule, pending, primary, menu, onContent }: {
   event: LegacyEvent;
+  requiredLanguages: readonly LocaleCode[];
   zh: { name: string; description: string; rewardName: string };
   /** 中文没填时卡片显示英文那一份（带「英文」标记）。 */
   en: { name: string; description: string; rewardName: string };
@@ -163,7 +162,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   menu: MoreMenuItem[];
   onContent: () => void;
 }) {
-  const life = lifecycleOf(event);
+  const life = lifecycleOf(event, requiredLanguages);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
   const reward = legacyName(event.reward);
   // 卡片先显示中文；中文没填用英文那一份并标出来；名称、说明中英文都没填时显示原文（App 中文也显示它）并标出来；都没有才写「未配置」。
@@ -219,7 +218,9 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   );
 }
 
-export function EventPreview({ names, original, onEdit, canEdit, requiresAll, opened, rewardFromRule, authored, appNames, lockedReason }: {
+export function EventPreview({ names, original, onEdit, canEdit, requiresAll, opened, rewardFromRule, authored, appNames, copyReadiness, requiredLanguages, lockedReason }: {
+  copyReadiness?: EventCopyReadiness;
+  requiredLanguages: readonly LocaleCode[];
   names: Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>;
   original: Record<"name" | "description" | "rewardName", string>;
   onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => void;
@@ -242,11 +243,17 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   const gaps = contentGaps(names).filter(gap => gap.field !== "rewardName" || authored !== false);
   const legacyRule = rewardFromRule && authored === undefined;
   const hiddenReward = authored === false;
-  const weightOf = (code: LocaleCode, field: "name" | "description" | "rewardName") => {
+  const weightOf = (code: LocaleCode, field: ContentField) => {
+    const path = `localized.${code}.${field}`;
+    if (copyReadiness?.missing.includes(path) || copyReadiness?.incomplete.includes(path)) return "must";
     const gap = gaps.find(row => row.locale === code && row.field === field);
-    return gap ? gapWeight(gap, requiresAll, legacyRule) : null;
+    if (!gap) return null;
+    return copyReadiness ? "soft" : gapWeight(gap, requiresAll, legacyRule, requiredLanguages);
   };
-  const marks = (code: LocaleCode) => gaps.filter(gap => gap.locale === code).map(gap => gapWeight(gap, requiresAll, legacyRule));
+  const marks = (code: LocaleCode) => FIELDS.map(field => weightOf(code, field));
+  const optionalText = languageNames(LOCALES.filter(code => !requiredLanguages.includes(code)));
+  const englishHint = locale !== "en" && requiredLanguages.includes(locale) && isEnglishCopy(names.en, names[locale])
+    ? englishCopyHint(locale) : undefined;
   const shown = (field: "name" | "description" | "rewardName") => names[locale][field] || names.en[field] || original[field];
   // 有玩法规则的活动：这种语言填了奖项名就显示它，没填显示规则摘要（不借用英文）。只用于没有后端奖励文字的旧数据。
   const ruleReward = legacyRule && !names[locale].rewardName;
@@ -284,7 +291,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
       <aside className="h4l-preview" aria-label="App 上的样子">
         <span className="h4l-preview-title"><Smartphone size={14} aria-hidden />App 上的样子
           <Explain label="这个预览怎么来的" content={<><p>按现在保存的{LOCALE_NAME[locale]}内容示意活动卡上的文字，不是 App 截图{appReward ? "；奖励一行是 App 实际显示的文字" : ""}。</p>
-            <p>{requiresAll ? `${REQUIRED_TEXT}的${contentFieldsText(authored)}填齐，才能开放活动、开启玩法。${OPTIONAL_TEXT ? `${OPTIONAL_TEXT}可以不填，没填时 App 显示英文。` : ""}` : "已开放的活动照常进行：没填的格 App 先用英文，再用原文，不自动翻译。"}</p>
+            <p>{englishHint ?? (requiresAll ? `${languageNames(requiredLanguages)}的${contentFieldsText(authored)}填齐，才能开放活动、开启玩法。${optionalText ? `${optionalText}可以不填，没填时 App 显示英文。` : ""}` : "已开放的活动照常进行：没填的格 App 先用英文，再用原文，不自动翻译。")}</p>
             {legacyRule && <p>有玩法规则的活动，每种语言填了奖项名就显示它，没填显示系统按规则写的摘要，不借用英文。</p>}
             {hiddenReward && <p>奖励一行由系统按实际发放写，不用这里填的奖项名。</p>}
             {authored === true && <p>奖励一行显示这里填的奖项名；这种语言没填时先用英文，再用原文。</p>}</>} />

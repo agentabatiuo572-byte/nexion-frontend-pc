@@ -376,19 +376,22 @@ export type H4EventCapabilities = H4AppRewardPresentation & {
   copyReadiness?: EventCopyReadiness;
 };
 
-export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
-  if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
-  markH4Read("overview", false);
-  const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
-  if (Array.isArray(result.events)) {
-    for (const event of result.events) {
+export function validateH4OverviewEvents(events: unknown) {
+  if (!Array.isArray(events)) throw new Error("活动规则读取失败，请刷新后重试。");
+    for (const event of events) {
       if (!event || typeof event !== "object" || Array.isArray(event)
         || [event.supported, event.rewardCopyOnly].some(value => value !== undefined && value !== null && typeof value !== "boolean")
         || event.hasRule !== undefined && typeof event.hasRule !== "boolean"
         || event.copyReadiness !== undefined && !validEventCopyReadiness(event.copyReadiness)
         || !validH4AppRewardPresentation(event)) throw new Error("活动规则读取失败，请刷新后重试。");
     }
-  }
+}
+
+export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
+  if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
+  markH4Read("overview", false);
+  const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
+  validateH4OverviewEvents(result.events);
   Object.assign(result, readH4Statistics(result));
   markH4Read("overview", true);
   return result;

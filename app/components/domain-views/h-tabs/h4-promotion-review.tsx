@@ -1,14 +1,15 @@
 "use client";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FileClock, GitCompare, History, ListChecks, Radio, Send, Settings2, ShieldCheck, Wallet } from 'lucide-react';
 import { BlockState, Button as RdButton, IrreversibleTag, Panel, StatusTag, Steps, Table as RdTable, Td, Th, Timeline, Tr } from '@/app/components/rd';
 import { BudgetBar, TimeWindow, VersionLine } from './h4-promotion-board';
 import { H4SampleAccountSelect } from './h4-sample-account-select';
-import { PromotionApiError, promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
+import { PROMOTION_RECEIPT_ADVANCED, PromotionApiError, acknowledgePromotionCommand, promotionCommand, promotionRead, promotionVersions, verifyPromotionLocalizedReceipt } from '@/lib/admin/promotion-client';
 import { PromotionRecheck } from './h4-promotion-conflict';
 import { promotionDraftChanges } from '@/lib/admin/promotion-conflict';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
-import { limitText, promotionDraftForRequest } from '@/lib/admin/promotion-form';
+import { limitText, PROMOTION_LANGUAGE_LABELS, promotionPublicMissing, promotionPublicText } from '@/lib/admin/promotion-form';
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from '@/lib/admin/business-time';
 import { PromotionBannerPreview } from './h4-promotion-banner';
 import { Button, Card, ConfirmCommand, Dialog, Field, Loading, Notice, ReadError, Stats, Summary, Table, Tag, amountText, formatTime, labelState, rewardText, promotionAssetText, text, zoneLabel } from './h4-promotion-ui';
@@ -54,11 +55,13 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
     displayZone?: string;
 }) {
     const [activity, setActivity] = useState(requestedActivity);
+    const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+    useEffect(() => { if (review) void getRequiredContentLanguages().then(setRequiredLanguages); }, [review]);
     const [history, setHistory] = useState<{data: VersionPage | null; error: unknown; loading: boolean}>({data: null, error: null, loading: true});
-    const historyScope = `${activity.activityId}:${activity.revision}:${activity.current?.revision}`;
+    const historyScope = `${activity.activityId}:${activity.revision}:${activity.current?.version}:${activity.current?.revision}`;
     const requestedHistoryScope = useRef('');
     const readVersions = async (target = activity) => {
-        const scope = `${target.activityId}:${target.revision}:${target.current?.revision}`;
+        const scope = `${target.activityId}:${target.revision}:${target.current?.version}:${target.current?.revision}`;
         requestedHistoryScope.current = scope;
         setHistory(previous => ({...previous, error: null, loading: true}));
         try {
@@ -73,7 +76,7 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
         if (requestedHistoryScope.current !== historyScope) void readVersions().catch(() => undefined);
     }, [historyScope]);
     const versions = {...history, reload: () => { void readVersions().catch(() => undefined); }};
-    const [action, setAction] = useState<string | null>(null), [simulation, setSimulation] = useState<AdminSimulation | null>(null), [simOpen, setSimOpen] = useState(false), [reservations, setReservations] = useState(false);
+    const [action, setAction] = useState<string | null>(null), [simulationResult, setSimulation] = useState<{ scope: string; result: AdminSimulation } | null>(null), [simOpen, setSimOpen] = useState(false), [reservations, setReservations] = useState(false);
     const [deletedError, setDeletedError] = useState<PromotionApiError | null>(null);
     const [conflict, setConflict] = useState<{ action: string; opened: Promotion; latest: Promotion | null; view: ReactNode; contentChanged: boolean; error: PromotionApiError } | null>(null);
     const recheck = conflict?.action === action && !!conflict?.latest && conflict.contentChanged;
@@ -90,7 +93,43 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
         if (baseline && (requestedActivity.activityId !== baseline.activityId || requestedActivity.revision !== baseline.revision
             || requestedActivity.current?.version !== baseline.current?.version || requestedActivity.current?.revision !== baseline.current?.revision)) setConflict(null);
     }, [requestedActivity, action]);
-    const current = activity.current, active = versions.data?.items.find(v => v.version === activity.activeVersion), candidate = current || versions.data?.items.find(v => v.version === activity.draftVersion);
+    const current = activity.current;
+    const active = versions.data?.items.find(v => v.version === activity.activeVersion);
+    const candidateHistory = versions.data?.items.filter(v => v.activityId === activity.activityId && v.version === activity.draftVersion)
+        .reduce<Version | undefined>((latest, item) => !latest || item.revision > latest.revision ? item : latest, undefined);
+    const currentCandidate = current?.activityId === activity.activityId && current.version === activity.draftVersion ? current : undefined;
+    const latestCandidate = currentCandidate && (!candidateHistory || currentCandidate.revision >= candidateHistory.revision) ? currentCandidate : candidateHistory;
+    const candidate = latestCandidate?.state === 'PUBLISHED' ? undefined : latestCandidate;
+    const candidateScope = candidate ? `${candidate.activityId}:${candidate.version}:${candidate.revision}:${candidate.contentHash}` : '';
+    const simulation = simulationResult?.scope === candidateScope ? simulationResult.result : undefined;
+    const missingPublic = promotionPublicMissing(candidate?.draft, requiredLanguages, true);
+    const missingStored = promotionPublicMissing(candidate?.draft, OPERATING_LANGUAGE_CODES);
+    const publicLanguageReason = (missing: readonly OperatingLanguageCode[]) =>
+        `请补齐${missing.map(locale => PROMOTION_LANGUAGE_LABELS[locale]).join('、')}的展示标题和活动规则。选填语言请整组留空或填齐。`;
+    const prepareReview = async (body: Record<string, unknown> & { reason: string }) => {
+        if (!candidate) throw new Error('请刷新并核对当前候选草稿。');
+        if (action !== 'submit') {
+            if (missingStored.length) throw new Error(publicLanguageReason(missingStored));
+            return body;
+        }
+        const required = await getRequiredContentLanguages();
+        setRequiredLanguages(required);
+        const missing = promotionPublicMissing(candidate.draft, required, true);
+        if (missing.length) throw new Error(publicLanguageReason(missing));
+        if (!can('growth_promotion_edit') || !missingStored.length) return body;
+        const receipt = await promotionCommand({
+            operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${encodeURIComponent(activity.activityId)}/draft`, method: 'PUT',
+            body: { expectedVersion: candidate.version, expectedRevision: candidate.revision,
+                draft: promotionPublicText(candidate.draft, required, 'submit'), reason: body.reason },
+        });
+        const { saved, advanced } = await verifyPromotionLocalizedReceipt(receipt);
+        if (!saved?.current) throw new Error('尚未读到已补齐语言的候选草稿，请核查原操作。');
+        acknowledgePromotionCommand(receipt);
+        setActivity(saved);
+        onReload(saved);
+        if (advanced) throw new Error(PROMOTION_RECEIPT_ADVANCED);
+        return { ...body, expectedRevision: saved.current.revision };
+    };
     const blockers = candidate?.policyResolutionErrors || [], impact = activity.impact;
     const missingRanks=[candidate?.draft.buyerAudience,candidate?.draft.inviterAudience].some(a=>a?.rankIds?.some(id=>!catalog.ranks.some(r=>r.id===id)));
     const cannotPublish=blockers.length>0||missingRanks;
@@ -168,18 +207,27 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
             <Panel title="审核与发布记录" icon={History} tone="role-other">{versions.data ? <Timeline label="审核与发布记录" entries={versions.data.items.map(v => ({ id: String(v.version), at: v.publishedAt || v.approvedAt || '—', actor: v.publishedBy || v.approvedBy || '—', action: `v${v.version} · ${labelState(v.state)}`, detail: <>审核：{v.approvedAt ? <Stamp at={v.approvedAt}/> : '尚未批准'} · 发布：{v.publishedAt ? <Stamp at={v.publishedAt}/> : '尚未发布'}</>, tone: v.state === 'PENDING_APPROVAL' ? 'warn' as const : undefined }))}/> : <Loading/>}{versions.data?.hasMore && <Notice title="历史版本较多">当前显示首 100 个版本；最新候选使用活动详情返回。</Notice>}</Panel>
         </div>
         <aside className="h4-review-side">
-            <Panel title="发布前检查" icon={ShieldCheck} tone={blockers.length || missingRanks ? 'warn' : 'role-other'}>{missingRanks&&<Notice title="原指定等级当前不可用" kind="warn">等级目录无法确认原选择。请返回参与资格重新核对；不限等级活动不受空目录限制。</Notice>}<Notice title={blockers.length ? '仍有配置或政策阻断' : '提交时将重新核验'} kind={blockers.length ? 'warn' : ''}>权益、资金、叠加、追回和权限必须来自当前可执行的批准政策。</Notice><Summary rows={[['候选状态', candidate ? labelState(candidate.state) : '无候选'], ['政策检查', blockers.length ? `${blockers.length} 项待处理` : '以最新提交校验为准'], ['当前有效版本', activity.activeVersion ? `v${activity.activeVersion} 继续执行` : '尚未发布'], ['公开语言', candidate?.draft.title?.zh && candidate.draft.title.en && candidate.draft.title.vi ? '三种标题均已填写' : '仍有语言缺失']]}/>{blockers.length > 0 && <p className="h4-lede">请返回配置，核对缺失或已撤销的政策引用。</p>}</Panel>
+            <Panel title="发布前检查" icon={ShieldCheck} tone={blockers.length || missingRanks ? 'warn' : 'role-other'}>{missingRanks&&<Notice title="原指定等级当前不可用" kind="warn">等级目录无法确认原选择。请返回参与资格重新核对；不限等级活动不受空目录限制。</Notice>}<Notice title={blockers.length ? '仍有配置或政策阻断' : '提交时将重新核验'} kind={blockers.length ? 'warn' : ''}>权益、资金、叠加、追回和权限必须来自当前可执行的批准政策。</Notice><Summary rows={[['候选状态', candidate ? labelState(candidate.state) : '无候选'], ['政策检查', blockers.length ? `${blockers.length} 项待处理` : '以最新提交校验为准'], ['当前有效版本', activity.activeVersion ? `v${activity.activeVersion} 继续执行` : '尚未发布'], ['公开语言', !candidate ? '—' : (candidate.state === 'DRAFT' ? missingPublic : missingStored).length ? '仍有语言缺失' : '必填语言完整' ]]}/>{blockers.length > 0 && <p className="h4-lede">请返回配置，核对缺失或已撤销的政策引用。</p>}</Panel>
             <Panel title="当前可用操作" icon={Send} tone="role-other" explain="审核与发布须分别操作，由两个人做：审核人不能是做过这个活动的人，发布人不能是审核人。版本冲突时请核对刷新后的候选并重新确认；结果未知时先查询原结果。">
                 <Steps label="候选版本走到哪" items={[{ label: '草稿', state: candidate?.state === 'DRAFT' ? 'current' : candidate ? 'done' : 'todo' }, { label: '待审核', state: candidate?.state === 'PENDING_APPROVAL' ? 'current' : candidate?.state === 'APPROVED' ? 'done' : 'todo' }, { label: '待发布', state: candidate?.state === 'APPROVED' ? 'current' : 'todo' }, { label: '已发布', state: 'todo' }]}/>
-                <div className="h4-row h4-review-actions">{candidate?.state === 'DRAFT' && button('submit', cannotPublish ? '还有政策或等级阻断，先处理' : false)}{candidate?.state === 'PENDING_APPROVAL' && <>{button('withdraw')}{button('reject')}{button('approve', cannotPublish ? '还有政策或等级阻断，先处理' : false)}</>}{candidate?.state === 'APPROVED' && <>{button('withdraw')}{button('publish', cannotPublish ? '还有政策或等级阻断，先处理' : false)}</>}</div>
+                <div className="h4-row h4-review-actions">{candidate?.state === 'DRAFT' && button('submit', cannotPublish ? '还有政策或等级阻断，先处理' : missingPublic.length ? publicLanguageReason(missingPublic) : false)}{candidate?.state === 'PENDING_APPROVAL' && <>{button('withdraw')}{button('reject')}{button('approve', cannotPublish ? '还有政策或等级阻断，先处理' : missingStored.length ? publicLanguageReason(missingStored) : false)}</>}{candidate?.state === 'APPROVED' && <>{button('withdraw')}{button('publish', cannotPublish ? '还有政策或等级阻断，先处理' : missingStored.length ? publicLanguageReason(missingStored) : false)}</>}</div>
                 <RdButton variant="ghost" onClick={onBack}>查看双版本</RdButton>
                 <RdButton variant="ghost" onClick={onBack}>返回活动详情</RdButton>
             </Panel>
         </aside>
     </div>}
     {!!versions.error && <ReadError target="活动历史版本" error={versions.error} retry={versions.reload}/>}
-    {action && <ConfirmCommand conflictReview={conflictReview} onVersionConflict={error => { if (error.reasonCode === 'PROMOTION_RESOURCE_NOT_FOUND') setDeletedError(error); else setConflict({ action, opened: activity, latest: null, view: null, contentChanged: false, error }); }} onReload={reloadForConfirmation} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate && activity.draftVersion === candidate.version && !['ENDED', 'ARCHIVED'].includes(activity.state) && ({ submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] }[action] ?? []).includes(candidate.state)) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state)) && (action !== 'archive' || activity.state === 'ENDED' && !impact.unpaidOrders && !impact.unfulfilledRewards) && (action !== 'draft-versions' || !activity.draftVersion && !['ENDED', 'ARCHIVED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={confirmLabel(action, recheck)} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(action === 'copies' ? { expectedSourceVersion: activity.draftVersion ?? activity.activeVersion, expectedSourceRevision: current?.revision } : {}), ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async (result, isCurrent) => { if (action === 'copies') await onCopyCreated(result, isCurrent); else { await onRefresh(); versions.reload(); if (action === 'submit') setSimulation(null); } if (isCurrent()) setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
-    {simOpen && candidate && <SimulationDialog activity={activity} version={candidate} catalog={catalog} can={can} onClose={() => setSimOpen(false)} onResult={s => { setSimulation(s); setSimOpen(false); }}/>}
+    {action && <ConfirmCommand prepareBody={["submit", "approve", "publish"].includes(action) ? prepareReview : undefined} conflictReview={conflictReview} onVersionConflict={error => { if (error.reasonCode === 'PROMOTION_RESOURCE_NOT_FOUND') setDeletedError(error); else setConflict({ action, opened: activity, latest: null, view: null, contentChanged: false, error }); }} onReload={reloadForConfirmation} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate && activity.draftVersion === candidate.version && !['ENDED', 'ARCHIVED'].includes(activity.state) && ({ submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] }[action] ?? []).includes(candidate.state)) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state)) && (action !== 'archive' || activity.state === 'ENDED' && !impact.unpaidOrders && !impact.unfulfilledRewards) && (action !== 'draft-versions' || !activity.draftVersion && !['ENDED', 'ARCHIVED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={confirmLabel(action, recheck)} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(action === 'copies' ? { expectedSourceVersion: activity.draftVersion ?? activity.activeVersion, expectedSourceRevision: current?.revision } : {}), ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async (result, isCurrent) => { if (action === 'copies') await onCopyCreated(result, isCurrent); else { await onRefresh(); versions.reload(); if (action === 'submit') setSimulation(null); } if (isCurrent()) setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
+    {simOpen && candidate && <SimulationDialog key={candidateScope} activity={activity} version={candidate} catalog={catalog} can={can} onClose={() => setSimOpen(false)} onResult={async result => {
+        const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(candidate.activityId)}`);
+        const checked = latest.current;
+        if (result.activityId !== candidate.activityId || result.version !== candidate.version || result.configHash !== candidate.contentHash
+            || latest.activityId !== candidate.activityId || latest.draftVersion !== candidate.version || checked?.version !== candidate.version
+            || checked.revision !== candidate.revision || checked.contentHash !== candidate.contentHash) {
+            setSimulation(null); setSimOpen(false); onCandidateConflict(); return;
+        }
+        setSimulation({ scope: candidateScope, result }); setSimOpen(false);
+    }}/>}
     {reservations && <Dialog title="原订单预留" wide onClose={() => setReservations(false)} sub={`${impact.reservedOrders.length} 单 · 关闭不释放订单`}><Table headers={['订单', '锁定版本', '原付款截止', '预留奖励']} rows={impact.reservedOrders.map(r => [<span className="h4-mono">{r.orderNo}</span>, `v${r.version}`, formatTime(r.payBy, zone), r.reservedRewards])}/>{!impact.reservedOrders.length && <BlockState state="empty" title="没有在途预留"/>}</Dialog>}
   </>;
 }
@@ -259,12 +307,12 @@ function SimulationDialog({ activity, version, catalog, can, onClose, onResult }
     catalog: Catalog;
     can: (v: string) => boolean;
     onClose: () => void;
-    onResult: (s: AdminSimulation) => void;
+    onResult: (s: AdminSimulation) => Promise<void>;
 }) {
     const [items, setItems] = useState<Item[]>([]), [sample, setSample] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
     const failedRead = useRef<{target: string; retry: () => Promise<void>} | null>(null);
     const run = async () => { setBusy(true); setError(null); try {
-        onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: promotionDraftForRequest(version.draft), items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
+        await onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: version.draft, items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
     }
     catch (e) {
         failedRead.current = {target: '只读购买试算', retry: run};

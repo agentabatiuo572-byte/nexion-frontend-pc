@@ -18,7 +18,7 @@ import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } f
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import type { IContentActions } from "@/lib/admin/i-client";
+import { checkDisclosureDraftReadback, DisclosureReadbackPending, type IContentActions } from "@/lib/admin/i-client";
 import type { ToastKind } from "@/lib/store/ui";
 import { saveLegalTermsDraft, transitionLegalTerms, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -53,7 +53,7 @@ export type I5Op =
 /** target 是这条操作锁住的对象：`jur:CN`、`gate`、`legal:en:GLOBAL`、`privacy`。 */
 export type I5Write = { target: string; label: string; op: I5Op };
 /** 保存明确拒绝的状态与原因；旧 rejected 布尔值不能证明原重试得到结论。 */
-type I5Pending = PendingMutationRecord & I5Write & { rejection?: { status: number; reasonCode?: string; backendMessage?: string } };
+type I5Pending = PendingMutationRecord & I5Write & { readback?: DisclosureReadbackPending["readback"]; rejection?: { status: number; reasonCode?: string; backendMessage?: string } };
 
 /** The saved call identifies the original HTTP route; the server supplies its scope and hash. */
 function i5OriginalRoute(record: I5Pending): OriginalCommandRoute | undefined {
@@ -317,9 +317,10 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     } catch (cause) {
       const unknown = isA2OutcomeUncertainError(cause) || isOutcomeUnknownError(cause);
       if (!unknown && !retained) pendingWrites.forget(scope);
+      if (cause instanceof DisclosureReadbackPending) pendingWrites.remember(scope, key, { ...write, readback: cause.readback });
       sync();
       if (!unknown) throw cause;
-      toast("结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
+      toast(cause instanceof DisclosureReadbackPending ? cause.message : "结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
       await onSettled(write);
       return "unknown";
     }
@@ -344,7 +345,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
 
   /** 只发存下的原操作：同命令号、同内容（OP-94）。过期不发，记录留着。 */
   const retry = async (record: I5Pending) => {
-    if (record.expiresAt <= Date.now()) return;
+    if (record.readback || record.expiresAt <= Date.now()) return;
     if (!pendingWrites.isDurablyStored(record.fingerprint, record.commandKey)) {
       note(record, "这次操作的记录没存住，不能再重试，请到操作记录与审批核对。");
       return;
@@ -396,6 +397,16 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   const queryContent = async (record: I5Pending) => {
     setRecovering(record.commandKey);
     try {
+      if (record.readback && record.op.kind === "content") {
+        const call = record.op.call;
+        const body = call.fn === "createI5DisclosureVersion" ? call.args[1] : call.fn === "updateI5DisclosureVersion" ? call.args[2] : undefined;
+        await checkDisclosureDraftReadback(record.readback, body);
+        pendingWrites.forget(record.fingerprint, record.commandKey);
+        sync();
+        await onSettled(record);
+        toast("原操作已完成，请核对最新内容", "success");
+        return;
+      }
       const receipt = await queryInvestigation(record);
       if (eCommandSettled(receipt)) {
         toast(settledText({ status: receipt!.originalStatus }), "success");
@@ -468,6 +479,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
   const statusOf = (record: I5Pending, expired: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
     const outcome = outcomes[record.commandKey];
+    if (record.readback) return { tone: "warn", label: "已保存", line: new DisclosureReadbackPending(record.readback).message };
     // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
     if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: "重试被明确拒绝；核对原因后可以解除。" };
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
@@ -486,10 +498,10 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原结果</Button>}
         {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
+        {!expired && !record.readback && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
-      detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{!expired && recoveryText(record.op, canQuery)}</p>,
+      detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{!expired && !record.readback && recoveryText(record.op, canQuery)}</p>,
       tech: <p className="fund-row-tech"><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p> };
   });
   const open = pending.filter((record) => OPEN_RESULT_LABELS.includes(statusOf(record, record.expiresAt <= Date.now()).label)).length;

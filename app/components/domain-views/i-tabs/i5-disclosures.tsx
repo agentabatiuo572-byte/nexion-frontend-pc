@@ -7,13 +7,15 @@
  * 披露和条款的读取权限独立：页签按权限给，一边读不到不影响另一边。
  * 内容账号没有提交审批的权限（EX-17），审批类入口按真实权限隐藏，不留一点就 403 的按钮。
  */
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { Copy, FilePen, FileText, Globe2, History, ListChecks, MapPinned, Plus, RefreshCw, ShieldAlert, ShieldCheck, Users } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, Fold, IconButton, Input, InlineMeter, InlineRetry, IrreversibleTag, JudgmentPoints, LocaleTabs, Modal, MoreMenu, Notice, PageHeader, PageTabs, Panel, RecordList, Select, Stat, StatBand, StatusTag, Steps, Table, TableMessage, Td, Textarea, Th, Tr, type JudgmentRow, type StateTone, useTabIds } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
+import { disclosurePublicationIssue, hasStoredDisclosureEnglish } from "@/lib/admin/disclosure-publication-diagnostic";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { DisclosureChapterView, DisclosureJurisdictionOption, DisclosureJurisdictionView, DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { fetchLegalTermsAdmin } from "@/lib/admin/legal-terms-client";
@@ -47,6 +49,31 @@ type Editor = {
   /** 「读取最新」后的最新内容，编辑器把没改过的字段换成它（OP-97）。 */
   rebase?: Editor;
 };
+
+function disclosureLanguageGroup(editor: Editor, language: Lang) {
+  return {
+    text: editor[language],
+    titles: editor.chapters.map(chapter => chapter[language]),
+    bodies: editor.chapters.map(chapter => chapter[`${language}Body`]),
+  };
+}
+
+function mapDisclosureLanguages(editor: Editor, required: readonly OperatingLanguageCode[], mode: "edit" | "submit"): Editor {
+  const map = mode === "edit" ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  const en = disclosureLanguageGroup(editor, "en");
+  const zh = map(required, "zh", en, disclosureLanguageGroup(editor, "zh"));
+  const vi = map(required, "vi", en, disclosureLanguageGroup(editor, "vi"));
+  return {
+    ...editor, zh: zh.text, vi: vi.text,
+    chapters: editor.chapters.map((chapter, index) => ({
+      ...chapter, zh: zh.titles[index], zhBody: zh.bodies[index], vi: vi.titles[index], viBody: vi.bodies[index],
+    })),
+  };
+}
+
+function disclosureLanguageMissing(editor: Editor, language: Lang) {
+  return !editor[language].trim() || editor.chapters.some(chapter => !chapter[language].trim() || !chapter[`${language}Body`].trim());
+}
 
 const TAB_LABEL: Record<TabKey, string> = { disclosure: "风险披露", legal: "法律条款", privacy: "隐私政策" };
 const READING = "正在读取最新数据，读完再操作";
@@ -222,6 +249,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [detailKey, setDetailKey] = useState<string | null>(null);
   const [detailLang, setDetailLang] = useState<Lang>("zh");
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rebaseWanted, setRebaseWanted] = useState(false);
   const editorSwitch = useRef<EditorSwitch | null>(null);
@@ -273,7 +301,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const isActive = (code: string) => activeCatalog.some((item) => item.code === code);
   const regionOption = (item: DisclosureJurisdictionOption) => ({ value: item.code, label: `${item.code} · ${item.name}` });
   const publishedVersionsByJurisdiction = versions.reduce<Record<string, string[]>>((map, row) => {
-    if (!["published", "superseded"].includes(row.status.toLowerCase())) return map;
+    if (!["published", "superseded"].includes(row.status.toLowerCase()) || !hasStoredDisclosureEnglish(row)) return map;
     const list = map[row.jurisdiction] ?? [];
     if (!list.includes(row.version)) map[row.jurisdiction] = [...list, row.version].sort(compareVersionsDesc);
     return map;
@@ -393,13 +421,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       : mappableOptions.length === 0 ? "没配置的适用范围还没有已发布版本，先新建并发布版本" : undefined);
 
   const configMatrix = (current?: DisclosureJurisdictionView, targetVersion?: string) => {
-    const mappableRows = versions.filter((row) => (current ? row.jurisdiction === current.code : mappableOptions.some((item) => item.value === row.jurisdiction)) && ["published", "superseded"].includes(row.status.toLowerCase()));
+    const mappableRows = versions.filter((row) => (current ? row.jurisdiction === current.code : mappableOptions.some((item) => item.value === row.jurisdiction)) && ["published", "superseded"].includes(row.status.toLowerCase()) && hasStoredDisclosureEnglish(row));
     const spec: BusinessFormSpec = {
       kind: "disclosure-matrix",
       mode: current ? "edit" : "create",
       jurisdictionCode: current?.code,
       jurisdictionName: current?.name,
-      version: targetVersion ?? current?.version,
+      version: targetVersion ?? (current && publishedVersionsByJurisdiction[current.code]?.includes(current.version) ? current.version : undefined),
       countryCodes: current?.countryCodes ?? [],
       // 已选的在前，其余按代码排（VS-105）。
       countryOptions: [...(data?.countryOptions ?? [])].sort((left, right) => Number(current?.countryCodes.includes(right.code)) - Number(current?.countryCodes.includes(left.code)) || left.code.localeCompare(right.code)).map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` })),
@@ -427,6 +455,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         if (!jurisdictionCode) return false;
         const countryCodes = (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean);
         const version = form?.version || "";
+        if (!publishedVersionsByJurisdiction[jurisdictionCode]?.includes(version)) throw new Error("DISCLOSURE_EN_REQUIRED_FOR_SCOPE");
         const def = findHighOp("i5_matrix_configure")!;
         const snapshot = jurisdictions.find((item) => item.code === jurisdictionCode);
         await submit(`jur:${jurisdictionCode}`, {
@@ -488,10 +517,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const newVersionBlocked = blocked() ?? (!firstRegion ? "暂无启用的适用范围，请先在适用范围目录新增或启用" : !nextVersionFor(firstRegion) ? "暂时拿不到新版本号，请刷新后再新建" : undefined);
   const openNewVersion = () => {
     const base = versions.find((row) => row.jurisdiction === firstRegion && row.status.toLowerCase() === "published");
-    leaveEditor(() => {
-      setDetailKey(null);
-      setEditor(editorFrom(base, firstRegion, nextVersionFor(firstRegion), "create"));
-    });
+    leaveEditor(() => { void openEditor(base, firstRegion, nextVersionFor(firstRegion), "create"); });
+  };
+  const openEditor = async (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: Editor["mode"]) => {
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
+    setDetailKey(null);
+    setEditor(mapDisclosureLanguages(editorFrom(snapshot, jurisdiction, version, mode, mode === "edit" ? snapshot : undefined), required, "edit"));
   };
   const loadRegionBase = async (jurisdiction: string): Promise<Editor> => {
     const current = jurisdictions.find((row) => row.code === jurisdiction)?.version ?? "";
@@ -503,7 +535,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         toast("适用范围加载失败，请刷新后重试", "error");
       }
     }
-    return editorFrom(snapshot, jurisdiction, nextVersionFor(jurisdiction), "create");
+    return mapDisclosureLanguages(editorFrom(snapshot, jurisdiction, nextVersionFor(jurisdiction), "create"), requiredLanguages, "edit");
   };
 
   /** 「读取最新」：重读后把最新内容交给编辑器，自己改过的字段留着（OP-97）。 */
@@ -514,20 +546,11 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     setRebaseWanted(false);
     setEditor((current) => {
       const row = current?.editing && versions.find((item) => versionKey(item) === versionKey(current.editing!));
-      return current && row ? { ...current, rebase: { ...editorFrom(row, row.jurisdiction, row.version, "edit", row) } } : current;
+      return current && row ? { ...current, rebase: mapDisclosureLanguages(editorFrom(row, row.jurisdiction, row.version, "edit", row), requiredLanguages, "edit") } : current;
     });
   });
   const saveEditor = (form: Editor, after?: () => void) => {
     const { editing, jurisdiction, version } = form;
-    const payload = {
-      jurisdiction,
-      languageScope: form.languageScope,
-      effectiveDate: form.effectiveDate,
-      requiresReack: true,
-      zh: form.zh.trim(), vi: form.vi.trim(), en: form.en.trim(),
-      chapters: form.chapters.map(({ no, zh, vi, en, zhBody, viBody, enBody }) => ({ no, zhTitle: zh, viTitle: vi, enTitle: en, zhBody, viBody, enBody })),
-      ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
-    };
     openActionConfirm(withConflict(ctx, { briefKind: "config",
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       title: editing ? "编辑披露草稿" : "新建披露版本",
@@ -539,6 +562,19 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       facts: <Facts><Fact k="适用范围">{jurisdiction} · {nameOf(jurisdiction)}</Fact><Fact k="版本">{version}</Fact><Fact k="语言">{languageText(form.languageScope)}</Fact><Fact k="生效日期">{form.effectiveDate}{form.effectiveDate < businessDay() ? "（早于今天）" : ""}</Fact>{!editing && !form.narrowedFrom && sameDisclosure(form, editorFrom(versions.find((row) => row.jurisdiction === jurisdiction && row.status.toLowerCase() === "published"), jurisdiction, version, "create")) && <Fact k="内容" tone="warn">和当前已发布版本相同</Fact>}</Facts>,
       reasonPlaceholder: "例如：监管要求更新第 3 章",
       run: async (reason) => {
+        const required = await getRequiredContentLanguages();
+        setRequiredLanguages(required);
+        const completed = mapDisclosureLanguages(form, required, "submit");
+        if (OPERATING_LANGUAGE_CODES.some(language => disclosureLanguageMissing(completed, language))) throw new Error("DISCLOSURE_CHAPTER_FIELDS_REQUIRED");
+        const payload = {
+          jurisdiction,
+          languageScope: form.languageScope,
+          effectiveDate: form.effectiveDate,
+          requiresReack: true,
+          zh: completed.zh.trim(), vi: completed.vi.trim(), en: completed.en.trim(),
+          chapters: completed.chapters.map(({ no, zh, vi, en, zhBody, viBody, enBody }) => ({ no, zhTitle: zh, viTitle: vi, enTitle: en, zhBody, viBody, enBody })),
+          ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
+        };
         const result = await writes.send(editing
           ? { target: `jur:${jurisdiction}`, label: `编辑披露草稿 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "updateI5DisclosureVersion", args: [jurisdiction, version, payload, reason] } } }
           : { target: `jur:${jurisdiction}`, label: `新建披露版本 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "createI5DisclosureVersion", args: [jurisdiction, payload, reason] } } });
@@ -594,6 +630,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         ],
       },
       run: async (reason) => {
+        if (!hasStoredDisclosureEnglish(row)) throw new Error("DISCLOSURE_EN_REQUIRED_FOR_SCOPE");
         const def = findHighOp("i5_disclosure_publish")!;
         await submit(`jur:${row.jurisdiction}`, {
           action: `发布披露新版 · ${row.jurisdiction}`, obj: row.jurisdiction, before: current?.version ?? j?.version ?? "无生效版", after: row.version, amplifies: false, gateLabel: def.gateLabel, reason,
@@ -674,14 +711,14 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const hasToken = (row: DisclosureVersionItemView) => row.revision != null && Boolean(row.contentHash);
   const publishBlocked = (row: DisclosureVersionItemView) => regionBlocked(row.jurisdiction)
     ?? (!hasToken(row) ? "版本信息不完整，请刷新"
-      : row.chapters.length !== 7 || row.chapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim() || !chapter.en.trim() || !chapter.enBody.trim()) || !row.zh.trim() || !row.vi.trim() || !row.en.trim() || !row.languageScope?.split("+").includes("en") ? "中文、越南语、英语正文与七章内容必填，先编辑版本"
+      : !hasStoredDisclosureEnglish(row) ? "缺英文"
         : !isActive(row.jurisdiction) ? "须先启用适用范围" : undefined);
   const editBlocked = (row: DisclosureVersionItemView) => regionBlocked(row.jurisdiction) ?? (!hasToken(row) ? "版本信息不完整，请刷新" : undefined);
   const catalogStatus = (code: string) => catalog.find((item) => item.code === code)?.status.toLowerCase() ?? "";
   const draftActions = (row: DisclosureVersionItemView) => {
     const canEdit = canDraft && catalogStatus(row.jurisdiction) !== "archived";
     const items = [
-      ...(canEdit ? [{ key: "edit", label: "编辑版本", disabledReason: editBlocked(row), onSelect: () => leaveEditor(() => { setDetailKey(null); setEditor(editorFrom(row, row.jurisdiction, row.version, "edit", row)); }) }] : []),
+      ...(canEdit ? [{ key: "edit", label: "编辑版本", disabledReason: editBlocked(row), onSelect: () => leaveEditor(() => { void openEditor(row, row.jurisdiction, row.version, "edit"); }) }] : []),
       ...(canDraft ? [{ key: "delete", label: "删除草稿", danger: true, disabledReason: editBlocked(row), onSelect: () => leaveEditor(() => deleteDraft(row)) }] : []),
     ];
     return <span className="rd-row-actions">
@@ -874,7 +911,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       nav={{ hasPrev: detailIndex > 0, hasNext: detailIndex >= 0 && detailIndex < versions.length - 1, onPrev: () => setDetailKey(versionKey(versions[detailIndex - 1])), onNext: () => setDetailKey(versionKey(versions[detailIndex + 1])) }}
       footer={detail && detail.status.toLowerCase() === "draft" && (canDraft || canPublish) ? <Decision
         danger={canDraft ? <Button variant="danger-outline" disabledReason={editBlocked(detail)} onClick={() => deleteDraft(detail)}>删除草稿</Button> : undefined}
-        others={canDraft && catalogStatus(detail.jurisdiction) !== "archived" ? <Button disabledReason={editBlocked(detail)} onClick={() => leaveEditor(() => { setDetailKey(null); setEditor(editorFrom(detail, detail.jurisdiction, detail.version, "edit", detail)); })}>编辑版本</Button> : undefined}
+        others={canDraft && catalogStatus(detail.jurisdiction) !== "archived" ? <Button disabledReason={editBlocked(detail)} onClick={() => leaveEditor(() => { void openEditor(detail, detail.jurisdiction, detail.version, "edit"); })}>编辑版本</Button> : undefined}
         primary={canPublish ? <Button variant="primary" disabledReason={publishBlocked(detail)} onClick={() => publishVersion(detail)}>发布</Button> : undefined} /> : undefined}>
       {detail && <>
         <Steps label="披露版本进度" items={versionSteps(detail, jurisdictions.find((item) => item.code === detail.jurisdiction))} />
@@ -903,7 +940,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </>}
     </Drawer>
 
-    {editor && <VersionEditor key={`${editor.mode}|${editor.editing ? versionKey(editor.editing) : ""}`} initial={editor} switcher={editorSwitch} regions={editor.mode === "edit" ? catalog.filter((item) => item.code === editor.jurisdiction).map(regionOption) : activeCatalog.map(regionOption)} languageScopes={data.languageScopes?.length ? data.languageScopes : DEFAULT_LANGUAGE_SCOPES} loadRegionBase={loadRegionBase} onSave={saveEditor} onClose={closeEditor} blockedFor={(code) => regionBlocked(code)} />}
+    {editor && <VersionEditor key={`${editor.mode}|${editor.editing ? versionKey(editor.editing) : ""}`} initial={editor} requiredLanguages={requiredLanguages} switcher={editorSwitch} regions={editor.mode === "edit" ? catalog.filter((item) => item.code === editor.jurisdiction).map(regionOption) : activeCatalog.map(regionOption)} languageScopes={data.languageScopes?.length ? data.languageScopes : DEFAULT_LANGUAGE_SCOPES} loadRegionBase={loadRegionBase} onSave={saveEditor} onClose={closeEditor} blockedFor={(code) => regionBlocked(code)} />}
   </>;
 }
 
@@ -978,8 +1015,9 @@ function PublishDiff({ current, target }: { current?: DisclosureVersionItemView;
 }
 
 /** 新建和编辑披露版本：抽屉里按语言切换，切语言不动别的语言（CP-64）。理由在保存时的确认框里填（OP-24）。 */
-function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionBase, onSave, onClose, blockedFor }: {
+function VersionEditor({ initial, requiredLanguages, switcher, regions, languageScopes, loadRegionBase, onSave, onClose, blockedFor }: {
   initial: Editor;
+  requiredLanguages: readonly OperatingLanguageCode[];
   switcher: RefObject<EditorSwitch | null>;
   regions: readonly { value: string; label: string }[];
   languageScopes: readonly string[];
@@ -1012,7 +1050,11 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
     if (path[0] === "chapters") return path[1] ? `第 ${path[1]} 章${path[2]?.endsWith("Body") ? "正文" : path[2] ? "标题" : ""}` : "七章内容";
     return { languageScope: "语言范围", effectiveDate: "生效日期", zh: "中文版本正文", vi: "越南语版本正文", en: "英语版本正文" }[path[0]] ?? null;
   };
-  const langMissing = (code: Lang) => !form[code].trim() || form.chapters.some((chapter) => !chapter[code].trim() || !chapter[`${code}Body`].trim());
+  const completed = mapDisclosureLanguages(form, requiredLanguages, "submit");
+  const langMissing = (code: Lang) => disclosureLanguageMissing(completed, code);
+  const required = requiredLanguages.includes(lang);
+  const copyHint = lang !== "en" && required && isEnglishCopy(disclosureLanguageGroup(form, "en"), disclosureLanguageGroup(form, lang))
+    ? englishCopyHint(lang) : undefined;
   const missing = [
     !form.effectiveDate && "生效日期",
     langMissing("zh") && "中文内容",
@@ -1050,13 +1092,13 @@ function VersionEditor({ initial, switcher, regions, languageScopes, loadRegionB
           { value: "vi", label: "越南语", missing: langMissing("vi") },
           { value: "en", label: "英语", missing: langMissing("en") },
         ]} />
-        <Field label="版本正文" required>{(control) => <Textarea {...control} aria-label={`${langName}版本正文`} rows={4} value={form[lang]} onChange={(event) => setForm((current) => ({ ...current, [lang]: event.target.value }))} />}</Field>
+        <Field label="版本正文" required={required} help={copyHint}>{(control) => <Textarea {...control} aria-label={`${langName}版本正文`} rows={4} value={form[lang]} onChange={(event) => setForm((current) => ({ ...current, [lang]: event.target.value }))} />}</Field>
         <h3 className="rd-form-group-title">章节 · {form.chapters.length} 章</h3>
         {form.chapters.map((chapter, index) => (
           <Fold key={`${chapter.no}|${lang}`} inset title={`第 ${chapter.no} 章${chapter[lang] ? ` · ${chapter[lang]}` : "（未填标题）"}`} summary={chapter[`${lang}Body`] ? `${chapter[`${lang}Body`].length} 字` : "未填写"} defaultOpen={!chapter[lang].trim() || !chapter[`${lang}Body`].trim()}>
             <div className="rd-form-stack">
-              <Field label="标题" required>{(control) => <Input {...control} aria-label={`第 ${chapter.no} 章${langName}标题`} value={chapter[lang]} onChange={(event) => setChapter(index, { [lang]: event.target.value })} />}</Field>
-              <Field label="正文" required>{(control) => <Textarea {...control} aria-label={`第 ${chapter.no} 章${langName}正文`} rows={3} value={chapter[`${lang}Body`]} onChange={(event) => setChapter(index, { [`${lang}Body`]: event.target.value })} />}</Field>
+              <Field label="标题" required={required}>{(control) => <Input {...control} aria-label={`第 ${chapter.no} 章${langName}标题`} value={chapter[lang]} onChange={(event) => setChapter(index, { [lang]: event.target.value })} />}</Field>
+              <Field label="正文" required={required}>{(control) => <Textarea {...control} aria-label={`第 ${chapter.no} 章${langName}正文`} rows={3} value={chapter[`${lang}Body`]} onChange={(event) => setChapter(index, { [`${lang}Body`]: event.target.value })} />}</Field>
             </div>
           </Fold>
         ))}

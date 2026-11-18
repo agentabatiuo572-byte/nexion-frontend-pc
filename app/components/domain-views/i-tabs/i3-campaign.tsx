@@ -8,6 +8,8 @@
  * 统一来源:后端 /content/campaigns/overview;空库时以后端初始化结果为准。
  * critical 档锁定 = 不渲染调整按钮。amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
  */
+import { englishCopyHint, isEnglishCopy, mapContentTitleBody, type LocalizedTitleBody } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
@@ -157,6 +159,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [form, setForm] = useState<NewForm>(FORM_INIT);
   const [formBase, setFormBase] = useState<NewForm>(FORM_INIT);
   const [leaving, setLeaving] = useState(false);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [formLang, setFormLang] = useState<Lang>("zh");
   const [estimatedAudience, setEstimatedAudience] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
@@ -383,22 +386,23 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     setScheduleVerified(false);
   };
 
-  const openNew = () => { if (lockReason("create")) return; setDrawerPendingKey(null); setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true); };
+  const openNew = async () => {
+    if (lockReason("create")) return;
+    setRequiredLanguages(await getRequiredContentLanguages());
+    setDrawerPendingKey(null); setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true);
+  };
 
-  const editDraft = (c: CampaignRow) => {
+  const editDraft = async (c: CampaignRow) => {
     if (lockReason(c.id)) return;
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
     setDrawerPendingKey(null);
     const zh = splitNotificationBody(c.bodyZh);
     const vi = splitNotificationBody(c.bodyVi);
     const en = splitNotificationBody(c.bodyEn);
     const next: NewForm = {
       name: c.name,
-      titleZh: zh.title,
-      titleVi: vi.title,
-      titleEn: en.title,
-      bodyZh: zh.body,
-      bodyVi: vi.body,
-      bodyEn: en.body,
+      ...mapContentTitleBody({ titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body, titleEn: en.title, bodyEn: en.body }, required, "edit"),
       kind: c.kind || "system",
       ctaHref: c.ctaHref || "",
       tier: c.tier,
@@ -655,48 +659,53 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       toast("请填写 通知活动名称");
       return;
     }
-    if (!form.titleZh.trim() || !form.titleVi.trim() || !form.bodyZh.trim() || !form.bodyVi.trim()) {
-      toast("请完整填写中文和越南语标题与正文");
-      return;
-    }
-    // Match delivery's split-before-trim contract as well as the existing authoring limit.
-    const textTooLong = form.name.trim().length > 160 || (["zh", "vi", "en"] as const).some(language => {
-      const title = form[TITLE_KEY[language]].trim(), body = form[BODY_KEY[language]].trim();
-      if (title.length > SAVE_TITLE_MAX || body.length > SAVE_BODY_MAX) return true;
-      const combined = title + "\n" + body, newline = combined.indexOf("\n");
-      const deliveredTitle = combined.slice(0, newline).trim() || (language === "en" ? "UVEL notification" : form.name.trim());
-      return chars(deliveredTitle).length > TITLE_SENT || chars(combined.slice(newline + 1).trim()).length > BODY_SENT;
-    });
-    if (textTooLong) { toast(formatAdminApiError("NOTIFICATION_CAMPAIGN_TEXT_TOO_LONG", "CONTENT_API_422")); return; }
-    const minIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMin) ?? -1;
-    const maxIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMax) ?? -1;
-    if (minIndex < 0 || maxIndex < 0 || minIndex > maxIndex) {
-      toast("P 阶段范围不正确");
-      return;
-    }
-    const selectedCta = DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref);
-    const payload = {
-      name: trimmedName,
-      titleZh: form.titleZh.trim(),
-      titleVi: form.titleVi.trim(),
-      titleEn: form.titleEn.trim(),
-      bodyZh: form.bodyZh.trim(),
-      bodyVi: form.bodyVi.trim(),
-      bodyEn: form.bodyEn.trim(),
-      kind: form.kind,
-      ctaHref: form.ctaHref,
-      ctaLabel: selectedCta?.label ?? "",
-      tier: form.tier,
-      audienceTarget: targetFromForm(form),
-      budget: form.budget.trim() || null,
-    };
     const id = editing?.id ?? `CMP-N-${slug(trimmedName)}`;
-    const originalForm = AUDIENCE_CATALOG && DELIVERY_CATALOG ? { audienceCatalog: AUDIENCE_CATALOG, deliveryCatalog: DELIVERY_CATALOG, estimatedAudience, estimatedAt } : undefined;
-    const task = editing
-      ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑通知草稿 ${editing.id}`, { ...editing, status: editing.st }, originalForm)
-      : actions.createI3Campaign(payload, `新建通知草稿 ${id}`, originalForm);
     setSubmitting(true);
     try {
+      const required = await getRequiredContentLanguages();
+      setRequiredLanguages(required);
+      const copy = mapContentTitleBody({
+        titleEn: form.titleEn.trim(), bodyEn: form.bodyEn.trim(), titleZh: form.titleZh.trim(), bodyZh: form.bodyZh.trim(),
+        titleVi: form.titleVi.trim(), bodyVi: form.bodyVi.trim(),
+      }, required, "submit");
+      const missing = OPERATING_LANGUAGE_CODES.flatMap(lang => campaignCopyMissing(copy, lang));
+      if (missing.length) { toast(`缺：${missing.join("；")}。`); return; }
+      // Match delivery's split-before-trim contract as well as the existing authoring limit.
+      const textTooLong = form.name.trim().length > 160 || (["zh", "vi", "en"] as const).some(language => {
+        const title = copy[TITLE_KEY[language]].trim(), body = copy[BODY_KEY[language]].trim();
+        if (title.length > SAVE_TITLE_MAX || body.length > SAVE_BODY_MAX) return true;
+        const combined = title + "\n" + body, newline = combined.indexOf("\n");
+        const deliveredTitle = combined.slice(0, newline).trim() || (language === "en" ? "UVEL notification" : form.name.trim());
+        return chars(deliveredTitle).length > TITLE_SENT || chars(combined.slice(newline + 1).trim()).length > BODY_SENT;
+      });
+      if (textTooLong) { toast(formatAdminApiError("NOTIFICATION_CAMPAIGN_TEXT_TOO_LONG", "CONTENT_API_422")); return; }
+      const minIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMin) ?? -1;
+      const maxIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMax) ?? -1;
+      if (minIndex < 0 || maxIndex < 0 || minIndex > maxIndex) {
+        toast("P 阶段范围不正确");
+        return;
+      }
+      const ctaLabel = CTA_LABELS_EN[form.ctaHref];
+      if (form.ctaHref && !ctaLabel) {
+        toast("这个跳转页面没有可用的按钮文案，请重新选择点击后跳转的页面。");
+        return;
+      }
+      const englishOverride = editing?.translations?.en;
+      const payload = {
+        name: trimmedName,
+        ...copy,
+        kind: form.kind,
+        ctaHref: form.ctaHref,
+        ...(ctaLabel ? { ctaLabel } : {}),
+        ...(englishOverride?.ctaLabel ? { translations: { ...editing?.translations, en: { ...englishOverride, ctaLabel: ctaLabel ?? "" } } } : {}),
+        tier: form.tier,
+        audienceTarget: targetFromForm(form),
+        budget: form.budget.trim() || null,
+      };
+      const originalForm = AUDIENCE_CATALOG && DELIVERY_CATALOG ? { audienceCatalog: AUDIENCE_CATALOG, deliveryCatalog: DELIVERY_CATALOG, estimatedAudience, estimatedAt } : undefined;
+      const task = editing
+        ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑通知草稿 ${editing.id}`, { ...editing, status: editing.st }, originalForm)
+        : actions.createI3Campaign(payload, `新建通知草稿 ${id}`, originalForm);
       if (await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${trimmedName}`)) {
         setNewOpen(false);
         setEditing(null);
@@ -1095,6 +1104,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           form={form}
           setForm={setForm}
           lang={formLang}
+          requiredLanguages={requiredLanguages}
           setLang={setFormLang}
           submitting={submitting}
           frozen={!!drawerPendingKey}
@@ -1242,6 +1252,7 @@ type FormProps = {
   form: NewForm;
   setForm: (next: NewForm) => void;
   lang: Lang;
+  requiredLanguages: readonly OperatingLanguageCode[];
   setLang: (next: Lang) => void;
   submitting: boolean;
   frozen: boolean;
@@ -1257,8 +1268,17 @@ type FormProps = {
   onClose: () => void;
 };
 
+const CTA_LABELS_EN: Readonly<Partial<Record<string, string>>> = {
+  "/pages/me/wallet-repurchase": "Reinvest",
+  "/pages/team/team": "Team",
+  "/pages/market/market": "Market",
+  "/pages/genesis/marketplace": "Genesis",
+};
 const TITLE_KEY: Record<Lang, "titleZh" | "titleVi" | "titleEn"> = { zh: "titleZh", vi: "titleVi", en: "titleEn" };
 const BODY_KEY: Record<Lang, "bodyZh" | "bodyVi" | "bodyEn"> = { zh: "bodyZh", vi: "bodyVi", en: "bodyEn" };
+const campaignCopyMissing = (copy: LocalizedTitleBody, lang: Lang) =>
+  [!copy[TITLE_KEY[lang]].trim() && `${LANG_NAME[lang]}标题`, !copy[BODY_KEY[lang]].trim() && `${LANG_NAME[lang]}正文`].filter(Boolean);
+
 const I3_TICKET = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 const I3_ACTION: Record<I3Command["action"], string> = { create: "新建通知", draft: "编辑通知草稿", schedule: "排期发送", "send-now": "立即发送通知", cancel: "取消排期", delete: "删除通知草稿" };
 const SAVE_TITLE_MAX = 160;
@@ -1267,24 +1287,22 @@ const SAVE_BODY_MAX = 4000;
 const budgetPlacesOver = (value: string) => /^\s*-?\d*\.\d*[1-9]\d*\s*$/.test(value) && (value.trim().split(".")[1] ?? "").replace(/0+$/, "").length > 2;
 
 /** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
-function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
+function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLanguages, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
   const set = (key: keyof NewForm, value: string) => { if (!frozen) setForm({ ...form, [key]: value }); };
   const title = form[TITLE_KEY[lang]];
   const body = form[BODY_KEY[lang]];
   const titleLen = chars(title.trim()).length;
   const bodyLen = chars(body.trim()).length;
-  const required = lang !== "en";
+  const required = requiredLanguages.includes(lang);
+  const copy = mapContentTitleBody(form, requiredLanguages, "submit");
   const missing = [
     !form.name.trim() && "名称",
-    !form.titleZh.trim() && "中文标题",
-    !form.bodyZh.trim() && "中文正文",
-    !form.titleVi.trim() && "越南语标题",
-    !form.bodyVi.trim() && "越南语正文",
+    ...OPERATING_LANGUAGE_CODES.flatMap(locale => campaignCopyMissing(copy, locale)),
   ].filter(Boolean) as string[];
-  const langMissing = (l: Lang) => l !== "en" && (!form[TITLE_KEY[l]].trim() || !form[BODY_KEY[l]].trim());
-  const over = (["zh", "vi", "en"] as Lang[]).filter((l) => chars(form[TITLE_KEY[l]].trim()).length > TITLE_SENT || chars(form[BODY_KEY[l]].trim()).length > BODY_SENT);
+  const langMissing = (locale: Lang) => campaignCopyMissing(copy, locale).length > 0;
+  const over = OPERATING_LANGUAGE_CODES.filter(locale => chars(copy[TITLE_KEY[locale]].trim()).length > TITLE_SENT || chars(copy[BODY_KEY[locale]].trim()).length > BODY_SENT);
   const selectedCta = deliveryCatalog?.ctaRoutes.find((option) => option.value === form.ctaHref);
-  const enEmpty = !form.titleEn.trim() && !form.bodyEn.trim();
+  const copied = lang !== "en" && required && isEnglishCopy({ title: form.titleEn, body: form.bodyEn }, { title, body });
   const blocked = mutationBlocked || (!audienceCatalog && !frozen ? "受众目录没读到，不能保存；刷新页面后再试" : estimating && !frozen ? "正在估算人数，估完再保存" : undefined);
   // 字数按字算（表情算 1 个）；保存上限 160 另按长度算，表情多的标题会先碰到它。
   const lengthHelp = (len: number, sent: number, raw: string, saveMax: number) => len > sent
@@ -1328,13 +1346,13 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
               <LocaleTabs label="内容语言" value={lang} onChange={setLang} items={[
                 { value: "zh", label: "中文", missing: langMissing("zh") },
                 { value: "vi", label: "越南语", missing: langMissing("vi") },
-                { value: "en", label: enEmpty ? "英语（选填）" : "英语" },
+                { value: "en", label: "英语", missing: langMissing("en") },
               ]} />
             </div>
             <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, title.trim(), SAVE_TITLE_MAX) ? undefined : `${titleLen}/${TITLE_SENT} 字`} error={lengthHelp(titleLen, TITLE_SENT, title.trim(), SAVE_TITLE_MAX)}>
               {(control) => <Input {...control} disabled={frozen} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
-            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX) ? undefined : lang === "en" && enEmpty ? "不填时英语用户收到系统默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。"} error={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX)}>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX) ? undefined : copied ? englishCopyHint(lang) : !required ? "没带 * 的中文、越南语选填：标题和正文都不填时 App 显示英文；填了其中一项，另一项也要填。" : "{name} 这类占位符三种语言要一致。"} error={lengthHelp(bodyLen, BODY_SENT, body.trim(), SAVE_BODY_MAX)}>
               {(control) => <Textarea {...control} disabled={frozen} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
@@ -1394,8 +1412,8 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             <h3 className="i3-sub-title">App 里的样子</h3>
             <span className="i3-weak">{LANG_NAME[lang]}</span>
           </div>
-          <NotificationPreview lang={lang} title={title.trim()} body={body.trim()} ctaLabel={selectedCta?.value ? selectedCta.label : ""} tier={form.tier} kindLabel={kindLabel(form.kind)}
-            missing={lang === "en" && enEmpty} fallback="英语没填：英语用户收到系统默认的英文；其他语言有译文用译文，没有也用默认英文。" />
+          <NotificationPreview lang={lang} title={copy[TITLE_KEY[lang]].trim()} body={copy[BODY_KEY[lang]].trim()} ctaLabel={selectedCta?.value ? CTA_LABELS_EN[selectedCta.value] ?? "" : ""} tier={form.tier} kindLabel={kindLabel(form.kind)}
+            missing={langMissing(lang)} />
           <p className="i3-weak">示意图，实际样式以 App 为准。</p>
         </aside>
       </div>

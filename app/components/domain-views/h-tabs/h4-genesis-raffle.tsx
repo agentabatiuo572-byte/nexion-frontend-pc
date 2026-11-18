@@ -1,12 +1,14 @@
 "use client";
 
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
 import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -29,6 +31,7 @@ const prizeText = (prize: RafflePrize) => prize.rewardType === "DEVICE" ? `设�
 const seats = (prizes: RafflePrize[]) => prizes.reduce((sum, prize) => sum + prize.quantity, 0);
 
 export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted }: { ctx: HCtx; onApprovalCompleted?: () => Promise<void>; onRowsChange?: (rows: AdminRaffle[] | null) => void }) {
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
@@ -59,7 +62,12 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
     window.addEventListener("admin-h4-readback", readback);
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
-  const choose = (row: AdminRaffle | null) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? raffleLocalizedDraft({ id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) }, required, "edit") : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const openRaffle = async (row: AdminRaffle | null) => {
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
+    choose(row, required);
+  };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
   const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean; reason: string }) => {
@@ -68,20 +76,20 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
     setReadFailed(false);
     if (!savedDraft || !write || !rebased && saving || (previous && (previous.status === "PROCESSING" || previous.status === "DRAWN" || (previous.status === "OPEN" && previous.totalEntries > 0)))) return;
-    const invalid = raffleDraftError(savedDraft); if (invalid) { setError(invalid); return; }
+    const invalid = raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
     const closing = !nextEnabled && previous?.status === "OPEN";
     const readVersion = h4ReadVersion("raffles");
     let originalKey: string | undefined;
-    ctx.openActionConfirm({ initialReason: rebased?.reason, getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, amplifies: nextEnabled,
+    ctx.openActionConfirm({ initialReason: rebased?.reason, getPendingReason: () => h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
       title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
       effect: opening ? effectApproval("这一期") : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
         <Facts>
-          <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact>
+          <Fact k="这一期">{savedDraft.titleZh || savedDraft.titleEn || "—"} · {savedDraft.id}</Fact>
           <Fact k="报名开始 → 开奖（北京时间）">{formatTime(savedDraft.startsAt, "Asia/Shanghai")} → {formatTime(savedDraft.drawAt, "Asia/Shanghai")}</Fact>
-          <Fact k="奖项">{savedDraft.prizes.length} 项 · 共 {seats(savedDraft.prizes)} 个名额：{savedDraft.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</Fact>
+          <Fact k="奖项">{savedDraft.prizes.length} 项 · 共 {seats(savedDraft.prizes)} 个名额：{savedDraft.prizes.map((prize) => `${prize.nameZh || prize.nameEn || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</Fact>
           {opening && <Fact k="开放后">用户可以用创世抽奖券报名；到开奖时间系统自动开奖、按奖项发奖</Fact>}
           {nextEnabled && <Fact k="之后能不能改">还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定，也不能再关闭</Fact>}
           {closing && <Fact k="关闭后">回到草稿，用户不能再报名；改好后可以再申请开放</Fact>}
@@ -103,15 +111,24 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
           if (!original) assertH4Fresh("raffles", readVersion);
-          const result = original ? await retryH4Command(original) : await saveAdminRaffle(savedDraft, previous?.revision ?? null, nextEnabled, reason, opening);
+          let result;
+          if (original) result = await retryH4Command(original);
+          else {
+            const required = await getRequiredContentLanguages();
+            setRequiredLanguages(required);
+            const problem = raffleDraftError(savedDraft, required);
+            if (problem) throw new Error(problem);
+            const submitted = raffleLocalizedDraft(savedDraft, required, "submit");
+            result = await saveAdminRaffle(submitted, previous?.revision ?? null, nextEnabled, reason, opening);
+          }
           await complete(result);
         } catch (cause) {
           // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
           if (cause instanceof HApprovalRequired) {
             ctx.openActionConfirm(null);
-            ctx.openConfirm(hApprovalReconfirm(cause, { action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, title: "保存抽奖配置", reason,
+            ctx.openConfirm(hApprovalReconfirm(cause, { action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, title: "保存抽奖配置", reason,
               completed: complete, hasPending: () => !!h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`),
-              onUnknown: () => { ctx.closeConfirm?.(); setDraft(null); setBase(null); }, approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact> }));
+              onUnknown: () => { ctx.closeConfirm?.(); setDraft(null); setBase(null); }, approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || savedDraft.titleEn || "—"} · {savedDraft.id}</Fact> }));
             return;
           }
           if (own === generation.current) setError(displayAdminError(cause));
@@ -178,7 +195,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   // 对比表按奖项分组：最新的顺序，然后是你新加的、两边都没有了的；增删过的奖项整项比一行。
   const prizeIds = [...new Set([...(base?.prizes.map(prize => prize.id) ?? []), ...(draft?.prizes.map(prize => prize.id) ?? []),
     ...(review?.fields.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)).map(field => String(field.opened)).filter(id => id !== "undefined") ?? [])])];
-  const prizeSummary = (prize: RafflePrize | undefined) => prize ? `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}` : "没有这一项";
+  const prizeSummary = (prize: RafflePrize | undefined) => prize ? `${prize.nameZh || prize.nameEn || "未命名"} ${prizeText(prize)} × ${prize.quantity}` : "没有这一项";
   const marks = (id: string) => [
     structureChanges.latest.added.includes(id) && "别人新加", structureChanges.latest.removed.includes(id) && "别人删了",
     structureChanges.mine.added.includes(id) && "你新加的", structureChanges.mine.removed.includes(id) && "你删了",
@@ -246,7 +263,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
   return <Panel id="h4l-raffle" title="创世抽奖" icon={Trophy} tone="role-4" sub={loading ? undefined : `最近 ${rows.length} 期`}
     explain={<><p>用户用创世抽奖券报名，到开奖时间系统自动开奖、发奖；这里没有人工开奖或补发。</p><p>从草稿开放报名要另一位超级管理员批准。还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定。只显示最近 50 期。</p></>}
-    actions={<><Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void load()}>刷新</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!write ? "没有修改创世抽奖的权限" : loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => choose(null)}>新建一期</Button></>}>
+    actions={<><Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void load()}>刷新</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!write ? "没有修改创世抽奖的权限" : loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void openRaffle(null)}>新建一期</Button></>}>
     {loading ? <BlockState state="loading" title="正在加载抽奖设置" />
       : !rows.length && error && !draft ? <BlockState state="error" title="创世抽奖没有读到" detail={error} onRetry={() => void load()} />
       : !rows.length ? <BlockState state="empty" title="暂无抽奖轮次" detail="点右上角「新建一期」。" />
@@ -256,15 +273,15 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
           <span className="h4l-draw-dot" aria-hidden />
           <div className="h4l-draw-body">
             <header className="h4-card-head">
-              <div className="h4-card-title"><h3>{row.titleZh || "中文名称未配置"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.id}>{row.id}</span></span></div>
-              <span className="h4l-tags"><StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag><Button size="sm" disabledReason={saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => choose(row)}>{row.status === "DRAFT" || (row.status === "OPEN" && row.totalEntries === 0) ? "查看和修改" : "查看"}</Button></span>
+              <div className="h4-card-title"><h3>{row.titleZh || row.titleEn || "中文名称未配置"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.id}>{row.id}</span></span></div>
+              <span className="h4l-tags"><StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag><Button size="sm" disabledReason={saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void openRaffle(row)}>{row.status === "DRAFT" || (row.status === "OPEN" && row.totalEntries === 0) ? "查看和修改" : "查看"}</Button></span>
             </header>
-            <Steps label={`${row.titleZh || row.id} 走到哪`} items={["草稿", "开放报名", "开奖处理中", "已开奖"].map((label, index) => ({ label, state: index < status.step ? "done" as const : index === status.step ? "current" as const : "todo" as const }))} />
+            <Steps label={`${row.titleZh || row.titleEn || row.id} 走到哪`} items={["草稿", "开放报名", "开奖处理中", "已开奖"].map((label, index) => ({ label, state: index < status.step ? "done" as const : index === status.step ? "current" as const : "todo" as const }))} />
             <dl className="h4l-facts">
               <div><dt>报名开始</dt><dd className="h4-num">{formatTime(row.startsAt, "Asia/Shanghai")}</dd></div>
               <div><dt>开奖</dt><dd className="h4-num">{formatTime(row.drawAt, "Asia/Shanghai")}</dd></div>
               <div><dt><Ticket size={14} aria-hidden />已报名</dt><dd><span><b className="h4-num">{row.totalEntries}</b> 票</span><small>按报名用掉的抽奖券数，不是人数</small></dd></div>
-              <div><dt><Trophy size={14} aria-hidden />奖项</dt><dd>{row.prizes.length ? <><span><b className="h4-num">{seats(row.prizes)}</b> 个名额</span><small>{row.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</small></> : <span className="h4-dim">还没配奖项</span>}</dd></div>
+              <div><dt><Trophy size={14} aria-hidden />奖项</dt><dd>{row.prizes.length ? <><span><b className="h4-num">{seats(row.prizes)}</b> 个名额</span><small>{row.prizes.map((prize) => `${prize.nameZh || prize.nameEn || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</small></> : <span className="h4-dim">还没配奖项</span>}</dd></div>
             </dl>
           </div>
         </li>;
@@ -291,12 +308,20 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
         <fieldset disabled={locked} className="h4-fieldset">
           <div className="rd-form-grid" data-cols="2" data-dense="">
             <Field label="本期编号" help={base ? "建好后不能改" : "1–64 位字母、数字、_ 或 -"}><Input value={draft.id} disabled={!!base} onChange={event => setDraft({ ...draft, id: event.target.value })} /></Field>
-            {(["Zh", "En", "Vi"] as const).map((lang, index) => <Field key={lang} label={`抽奖名称 · ${["中文", "英文", "越南语"][index]}`}><Input value={draft[`title${lang}`]} onChange={event => setDraft({ ...draft, [`title${lang}`]: event.target.value })} /></Field>)}
+            {(["zh", "en", "vi"] as const).map(locale => {
+              const { label, suffix } = RAFFLE_LANGUAGES[locale];
+              const required = requiredLanguages.includes(locale);
+              const copied = locale !== "en" && required && isEnglishCopy(
+                { title: draft.titleEn, names: draft.prizes.map(prize => prize.nameEn) },
+                { title: draft[`title${suffix}`], names: draft.prizes.map(prize => prize[`name${suffix}`]) },
+              );
+              return <Field key={locale} label={`抽奖名称 · ${label}`} required={required} help={copied ? englishCopyHint(locale) : undefined}><Input value={draft[`title${suffix}`]} onChange={event => setDraft({ ...draft, [`title${suffix}`]: event.target.value })} /></Field>;
+            })}
             {(["startsAt", "drawAt"] as const).map((key, index) => <Field key={key} label={`${index ? "开奖时间" : "报名开始"}（UTC）`} help={draft[key] && Number.isFinite(Date.parse(draft[key])) ? `北京时间 ${formatTime(draft[key], "Asia/Shanghai")}` : "未配置"}><Input type="datetime-local" step={1} value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : "" })} /></Field>)}
           </div>
           <ol className="h4l-prizes" aria-label="奖项">
             {draft.prizes.map((prize, index) => <li key={prize.id} className="h4l-prize">
-              <header><b>奖项 {index + 1}{prize.nameZh.trim() ? ` · ${prize.nameZh.trim()}` : ""}</b><span className="h4-dim">{prizeText(prize)} × {prize.quantity}</span><Button size="sm" variant="danger-outline" icon={<Trash2 size={13} aria-hidden />} disabled={formLocked || locked} onClick={() => setDraft({ ...draft, prizes: draft.prizes.filter(item => item.id !== prize.id) })}>移除</Button></header>
+              <header><b>奖项 {index + 1}{(prize.nameZh.trim() || prize.nameEn.trim()) ? ` · ${prize.nameZh.trim() || prize.nameEn.trim()}` : ""}</b><span className="h4-dim">{prizeText(prize)} × {prize.quantity}</span><Button size="sm" variant="danger-outline" icon={<Trash2 size={13} aria-hidden />} disabled={formLocked || locked} onClick={() => setDraft({ ...draft, prizes: draft.prizes.filter(item => item.id !== prize.id) })}>移除</Button></header>
               <div className="rd-form-grid" data-cols="2" data-dense="">
                 {(["Zh", "En", "Vi"] as const).map((lang, i) => <Field key={lang} label={`奖项名称 · ${["中文", "英文", "越南语"][i]}`}><Input value={prize[`name${lang}`]} onChange={event => prizePatch(prize.id, { [`name${lang}`]: event.target.value })} /></Field>)}
                 <Field label="奖励类型"><Select aria-label="奖励类型" disabled={formLocked || locked} value={prize.rewardType} onChange={v => prizePatch(prize.id, { rewardType: v as RafflePrize["rewardType"], ...(v === "DEVICE" ? { amount: 1 } : {}) })} options={[{ value: "UVT", label: "UVT" }, { value: "USDT", label: "USDT" }, { value: "DEVICE", label: "设备" }]} /></Field>
