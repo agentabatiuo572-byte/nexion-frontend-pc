@@ -30,6 +30,8 @@ interface BackendA3KillSwitch {
   up?: boolean | null;
   lastChange?: string | null;
   chain?: string | null;
+  blockedRegionCount?: number | null;
+  limitedRegionCount?: number | null;
 }
 
 interface BackendA3SystemHealth {
@@ -82,6 +84,8 @@ export interface A3KillSwitch {
   up: boolean;
   lastChange: string;
   chain: string;
+  blockedRegionCount?: number;
+  limitedRegionCount?: number;
 }
 
 export interface A3SystemHealth {
@@ -193,6 +197,8 @@ function normalizeGate(row: BackendA3KillSwitch): A3KillSwitch {
     up: normalizeGateUp(row),
     lastChange: asText(row.lastChange, "—"),
     chain: asText(row.chain, "system / config"),
+    blockedRegionCount: row.blockedRegionCount == null ? undefined : requiredNumber(row.blockedRegionCount),
+    limitedRegionCount: row.limitedRegionCount == null ? undefined : requiredNumber(row.limitedRegionCount),
   };
 }
 

@@ -92,14 +92,19 @@ function healthLabel(row: A3SystemHealth): { text: string; tone: StateTone; icon
   return { text: "严重异常", tone: "danger" };
 }
 
-/** J1 的开关 enabled 是业务开着，disabled 是被紧急停用；地区限制行的状态是后端给的一句话。 */
+/** J1 的开关使用业务状态，地区限制优先使用结构化计数。 */
 function gateLabel(gate: A3KillSwitch): { text: string; tone: StateTone; icon?: LucideIcon } {
   if (gate.status === "enabled") return { text: "开放", tone: "ok" };
   if (gate.status === "disabled") return { text: "已关停", tone: "warn", icon: Ban };
   if (gate.status === "加载失败") return { text: "读取失败", tone: "danger" };
-  /* 地区限制行后端写「N 个地区禁止访问 · M 个地区限流」，和 J2 页的叫法统一成封锁、受限。 */
-  const geo = /^(\d+) 个地区禁止访问 · (\d+) 个地区限流$/.exec(gate.status);
-  if (geo) return { text: `封锁 ${geo[1]} 个 · 受限 ${geo[2]} 个`, tone: "warn", icon: Ban };
+  const legacyCounts = gate.blockedRegionCount === undefined || gate.limitedRegionCount === undefined
+    ? /^(\d+) 个地区禁止访问 · (\d+) 个地区限流$/.exec(gate.status)
+    : null;
+  const blocked = legacyCounts?.[1] ?? gate.blockedRegionCount;
+  const limited = legacyCounts?.[2] ?? gate.limitedRegionCount;
+  if (blocked !== undefined && limited !== undefined && (blocked || limited)) {
+    return { text: `封锁 ${blocked} 个 · 受限 ${limited} 个`, tone: "warn", icon: Ban };
+  }
   return { text: gate.status || "—", tone: gate.up ? "ok" : "warn", icon: gate.up ? undefined : Ban };
 }
 
