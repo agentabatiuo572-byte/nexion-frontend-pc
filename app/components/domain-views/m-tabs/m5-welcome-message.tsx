@@ -124,8 +124,17 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
     }
     setSaving(true); setError(""); setSaved(false);
     try {
-      const value = await supportWelcomeMessageClient.update(command.payload, command.commandKey);
+      let value = await supportWelcomeMessageClient.update(command.payload, command.commandKey);
       if (actor !== actorStamp()) return;
+      if (retry) {
+        try {
+          value = await supportWelcomeMessageClient.read();
+        } catch {
+          if (actor === actorStamp()) setError("暂时查不到上次保存的结果，输入已保留。");
+          return;
+        }
+        if (actor !== actorStamp()) return;
+      }
       welcomeCommands.forget(command.fingerprint, command.commandKey);
       setCurrent(value); setDraft(welcomeDraft(value.texts, requiredLanguages)); setReason(""); setConfirm(false); setRetry(null); setLatest(null); setSaved(true);
     } catch (cause) {
