@@ -116,6 +116,12 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
   const stats = record(moduleId, value.stats);
   for (const key of ["todayDelivered", "weeklySocial", "ctr"]) if (typeof stats[key] !== "string") fail(moduleId);
   for (const key of ["ctrTarget", "onlineChannels", "totalChannels"]) if (typeof stats[key] !== "number" || !Number.isInteger(stats[key])) fail(moduleId);
+  for (const key of ["socialNotificationRecordsToday", "recentSocialEventsCumulativeDispatchCount"]) {
+    const count = stats[key];
+    if (count !== undefined && (!Number.isSafeInteger(count) || Number(count) < 0)) fail(moduleId);
+  }
+  if (stats.channelStoredCtrAveragePercent != null && typeof stats.channelStoredCtrAveragePercent !== "string") fail(moduleId);
+
   for (const channel of records(moduleId, value.channels)) {
     if (!["key", "name", "trigger", "tick", "cooldown", "phaseKeyed"].every((key) => typeof channel[key] === "string")
       || typeof channel.ctr !== "number" || !Number.isFinite(channel.ctr) || typeof channel.enabled !== "boolean") fail(moduleId);

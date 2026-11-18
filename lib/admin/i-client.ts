@@ -1175,6 +1175,9 @@ export type NovaStats = {
   onlineChannels: number;
   totalChannels: number;
   weeklySocial: string;
+  socialNotificationRecordsToday?: number;
+  channelStoredCtrAveragePercent?: string | null;
+  recentSocialEventsCumulativeDispatchCount?: number;
 };
 
 export type NovaChannelView = {
