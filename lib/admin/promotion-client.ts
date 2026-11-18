@@ -1,7 +1,9 @@
 import { guardedFetch, formatAdminApiError } from './error-messages.ts';
 import { outcomeStaysUnknown } from "./outcome-classification.ts";
 import { createPendingMutationStore, type PendingMutationRecord } from './pending-mutation-store.ts';
-import type { CommandReceipt, VersionPage } from './promotion-types.ts';
+import type { CommandReceipt, Draft, LocalizedText, Policy, PolicyContent, Promotion, VersionPage } from './promotion-types.ts';
+import { PROMOTION_POLICY_TEXT_FIELDS } from './promotion-form.ts';
+import { OPERATING_LANGUAGE_CODES } from './platform-experience-client.ts';
 
 export interface PromotionCommandIntent { operation: string; targetId: string; path: string; method: 'POST' | 'PUT'; body: unknown }
 export interface PendingPromotion extends PendingMutationRecord, PromotionCommandIntent { recoveryState?: string; receipt?: CommandReceipt }
@@ -12,6 +14,32 @@ export const acknowledgePromotionCommand = (receipt: CommandReceipt) => {
   if(record)pending.forget(record.fingerprint);
   if(typeof window!=='undefined'&&typeof window.dispatchEvent==='function')window.dispatchEvent(new Event('admin-promotion-pending-changed'));
 };
+
+export async function verifyPromotionLocalizedReceipt(receipt: CommandReceipt): Promise<Promotion | undefined> {
+  if (receipt.operation !== 'saveDraft' && receipt.operation !== 'createPolicy') return;
+  const mismatch = '操作已提交，尚未读到与提交内容匹配的版本，请核查原操作。';
+  const record = pending.list().find(item => item.commandKey === receipt.idempotencyKey);
+  if (!record) throw new Error(mismatch);
+  if (receipt.operation === 'saveDraft') {
+    const { draft } = record.body as { draft: Draft };
+    const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(receipt.targetId)}`);
+    const version = saved.current;
+    if (!version || receipt.resource?.id !== `${saved.activityId}:${version.version}` || version.revision !== receipt.resource.revision
+      || OPERATING_LANGUAGE_CODES.some(locale =>
+        (version.draft.title?.[locale] ?? '').trim() !== (draft.title?.[locale] ?? '').trim()
+        || (version.draft.terms?.[locale] ?? '').trim() !== (draft.terms?.[locale] ?? '').trim())) throw new Error(mismatch);
+    return saved;
+  }
+  const { content } = record.body as { content: PolicyContent };
+  if (!(content.kind in PROMOTION_POLICY_TEXT_FIELDS)) return;
+  const field = PROMOTION_POLICY_TEXT_FIELDS[content.kind as keyof typeof PROMOTION_POLICY_TEXT_FIELDS];
+  const [policyId, version] = receipt.resource?.id.split(':') ?? [];
+  if (receipt.resource?.type !== 'POLICY' || !policyId || !version) throw new Error(mismatch);
+  const saved = await promotionRead<Policy>(`/promotion-policies/${encodeURIComponent(policyId)}/versions/${encodeURIComponent(version)}`);
+  const expected = (content as unknown as Record<string, LocalizedText>)[field];
+  const actual = (saved.content as unknown as Record<string, LocalizedText>)[field];
+  if (!actual || saved.revision !== receipt.resource.revision || OPERATING_LANGUAGE_CODES.some(locale => actual[locale].trim() !== expected[locale].trim())) throw new Error(mismatch);
+}
 export class PromotionApiError extends Error {
   status: number;
   apiCode: number | undefined;
