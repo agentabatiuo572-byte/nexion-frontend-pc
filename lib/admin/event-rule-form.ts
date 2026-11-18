@@ -1,5 +1,27 @@
 import type { EventRuleView } from "./event-rules-client";
 
+const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
+const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
+
+export type EventLocalizedContent = Record<string, Record<string, unknown>>;
+
+export function eventLocalizedContentGaps(content?: EventLocalizedContent) {
+  return EVENT_CONTENT_LOCALES.flatMap(locale => EVENT_CONTENT_FIELDS.filter(field => {
+    const value = content?.[locale]?.[field];
+    return typeof value !== "string" || !value.trim();
+  }).map(field => ({ locale, field })));
+}
+
+export function eventRuleReadiness(
+  row: Pick<EventRuleView, "enabled" | "eventCode" | "readiness">,
+  content?: Record<string, EventLocalizedContent>,
+) {
+  if (row.enabled || !content) return row.readiness;
+  const localized = eventLocalizedContentGaps(content[row.eventCode]).map(({ locale, field }) => `localized.${locale}.${field}`);
+  const missing = [...new Set([...row.readiness.missing, ...localized])];
+  return { ready: row.readiness.ready && missing.length === 0, missing };
+}
+
 export interface EventRuleField { key: string; label: string; type?: "text" | "regions" | "weekdays" | "voucher"; integer?: boolean; }
 export const EVENT_KIND_LABELS: Record<string, string> = { discount: "限时特惠", seasonal: "季节活动", referral: "推荐有奖", onboarding: "新用户冲刺", regional: "区域 PK", boost: "加成活动", wheel: "幸运转盘" };
 export const EVENT_RULE_FIELDS: Record<string, EventRuleField[]> = {

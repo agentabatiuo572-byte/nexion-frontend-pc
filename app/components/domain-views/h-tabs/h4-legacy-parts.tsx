@@ -11,6 +11,7 @@ import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
+import { eventLocalizedContentGaps } from "@/lib/admin/event-rule-form";
 import { amountText, formatTime } from "./h4-promotion-ui";
 
 // ===== 取值小工具：照旧页面原样 =====
@@ -119,7 +120,7 @@ export const FIELD_NAME: Record<"name" | "description" | "rewardName", string> =
 export function EventCard({ event, zh, gaps, rule, pending, primary, menu, onContent }: {
   event: LegacyEvent;
   zh: { name: string; description: string; rewardName: string };
-  /** 中文、越南语缺了几项。 */
+  /** 三语内容缺了几项。 */
   gaps: number;
   rule?: { enabled: boolean; ready: boolean; startsAt: string | null; endsAt: string | null } | null;
   pending?: ReactNode;
@@ -175,23 +176,24 @@ export function EventPreview({ names, original, onEdit, canEdit, lockedReason }:
   lockedReason?: string;
 }) {
   const [locale, setLocale] = useState<LocaleCode>("zh");
+  const gaps = eventLocalizedContentGaps(names);
   const shown = (field: "name" | "description" | "rewardName") => names[locale][field] || names.en[field] || original[field];
   const fallback = (["name", "description", "rewardName"] as const).some((field) => !names[locale][field]);
   return (
     <div className="h4-dialog-body h4l-content">
       <Segments label="内容语言" value={locale} onChange={setLocale} items={LOCALES.map((code) => ({
         value: code,
-        label: code !== "en" && (["name", "description", "rewardName"] as const).some((field) => !names[code][field]) ? `${LOCALE_NAME[code]} · 缺失` : LOCALE_NAME[code],
-        tone: code !== "en" && (["name", "description", "rewardName"] as const).some((field) => !names[code][field]) ? "warn" as const : undefined,
+        label: gaps.some(gap => gap.locale === code) ? `${LOCALE_NAME[code]} · 缺失` : LOCALE_NAME[code],
+        tone: gaps.some(gap => gap.locale === code) ? "warn" as const : undefined,
       }))} />
       <ul className="h4l-locale-rows" aria-label={`${LOCALE_NAME[locale]}内容`}>
         {(["name", "description", "rewardName"] as const).map((field) => {
           const value = names[locale][field];
           const old = legacyName(value);
-          const missing = !value && locale !== "en";
+          const missing = gaps.some(gap => gap.locale === locale && gap.field === field);
           return <li key={field}>
             <span className="h4l-locale-key">{FIELD_NAME[field]}</span>
-            <span className="h4l-locale-value" data-empty={value ? undefined : ""}>{value ? old.text : missing ? "未填写，开放前必须补齐" : `未填写，App 显示原文：${original[field] || "—"}`}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
+            <span className="h4l-locale-value" data-empty={missing ? "" : undefined}>{missing ? "未填写，开放前必须补齐" : old.text}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
             {canEdit && (lockedReason
               ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
               : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}

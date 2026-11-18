@@ -36,9 +36,10 @@ import type { H4Statistics } from "@/lib/admin/h4-statistics";
 import { fetchH4WheelDailyUsage, type H4WheelDailyUsage } from "@/lib/admin/h4-daily-usage";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
+import { eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
@@ -280,6 +281,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [stale, setStale] = useState<string | null>(null);
   const [releasing, setReleasing] = useState<H4Command | null>(null);
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
+  const [contentRefresh, setContentRefresh] = useState(0);
   const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
   const localizedDraft = useRef<{ code: string; field: string; locale: LocaleCode; value: string; reason: string } | null>(null);
@@ -380,8 +382,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     });
   };
 
-  const missingFor = (event: LegacyEvent) => (["zh", "vi"] as const).flatMap((locale) =>
-    (["name", "description", "rewardName"] as const).filter((field) => !localizedValue(event.id, field, locale)).map((field) => `${LOCALE_NAME[locale]}${FIELD_NAME[field]}`));
+  const eventContent = model?.contentLocales?.event ?? {};
+  const missingFor = (event: LegacyEvent) => eventLocalizedContentGaps(eventContent[event.id]);
 
   /** 旧页面一个「上架 / 下架」框里选新状态；这里拆成「开放」「结束」两个入口，提交的状态值和旧框选中的一样。 */
   const openEventStatus = (event: LegacyEvent, value: "ongoing" | "ended") => {
@@ -402,13 +404,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
           {opening && <ApprovalFact amplify="没有玩法规则又有正奖励的活动" object="活动" />}
         </Facts>
-        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，开放会被拒绝`}>{missing.join("、")}。先在卡片底部的「三语内容」里补齐。</Notice>}
+        {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，开放会被拒绝`}>{missing.map(({ locale, field }) => `${LOCALE_NAME[locale]}${FIELD_NAME[field]}`).join("、")}。先在卡片底部的「三语内容」里补齐。</Notice>}
       </>,
       reason: true,
       okLabel: opening ? "开放活动" : "结束活动",
       confirmTone: opening ? undefined : "danger",
       reasonPlaceholder: opening ? "例如：活动素材已就绪，按排期开放" : "例如：活动到期，按排期结束",
       run: async (reason) => {
+        if (opening && missing.length) throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", { missing }));
         if (await apply(await updateH4EventStatus(event.id, value, event.state, reason))) toast(`${event.name} 状态已更新`);
       },
     });
@@ -455,7 +458,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         localizedDraft.current = { code, field, locale, value, reason };
         const result = await updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason);
         localizedDraft.current = null;
-        if (await apply(result)) toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+        if (await apply(result)) {
+          setContentRefresh(current => current + 1);
+          toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+        }
       },
     });
   };
@@ -1022,8 +1028,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const pointsTiers = tiers.filter(wheelPointsTier);
   const wheelBroken = pointsTiers.length > 0 || !probabilityOk;
   const legacyTierNames = tiers.filter((tier) => legacyName(tier.reward).legacy);
-  const gapsByEvent = events.map((event) => ({ event, missing: missingFor(event) })).filter((row) => row.missing.length > 0);
+  const gapsByEvent = events.filter(event => event.state === "upcoming")
+    .map(event => ({ event, missing: missingFor(event) })).filter(row => row.missing.length > 0);
   const gapCount = gapsByEvent.reduce((sum, row) => sum + row.missing.length, 0);
+  const gapLanguages = [...new Set(gapsByEvent.flatMap(row => row.missing.map(({ locale }) => LOCALE_NAME[locale])))].join("、");
   const ruleOf = (id: string) => rules?.find((rule) => rule.eventCode === id);
   const wheelPending = h4Pending.some((row) => row.obj === "ACTIVE_POOL");
   const eventPending = (id: string) => h4ApprovalPending(hiEventScope(id)) || h4ApprovalPending(`H/h4_event_rule/${id}`);
@@ -1041,7 +1049,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       sub: [pointsTiers.length ? `${pointsTiers.length} 档积分奖型要退役` : "", probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要正好 100%`].filter(Boolean).join("；"),
       onOpen: () => go("wheel", "h4l-wheel") }] : []),
     ...(gapCount > 0 ? [{ key: "locale", tag: <StatusTag tone="warn">翻译没填</StatusTag>, title: `${gapsByEvent.length} 个既有活动`,
-      sub: `${gapCount} 项中文、越南语内容没填，这些活动不能开放`, onOpen: () => go("events", "h4l-events") }] : []),
+      sub: `${gapCount} 项${gapLanguages}内容没填，这些活动不能开放`, onOpen: () => go("events", "h4l-events") }] : []),
     ...(legacyTierNames.length > 0 ? [{ key: "nex", tag: <StatusTag tone="warn">旧名称</StatusTag>, title: "转盘奖项名称",
       sub: `${legacyTierNames.map((tier) => text(tier.tier)).join("、")} 的名称还写着 NEX，要改成 UVT`, onOpen: () => go("wheel", "h4l-tiers") }] : []),
     ...(killState === false ? [{ key: "kill", tag: <StatusTag tone="warn">真钱奖已关</StatusTag>, title: "真钱奖发放开关",
@@ -1110,7 +1118,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           : <div className="h4-cards">{events.map((event) => <EventCard key={event.id} event={event}
             zh={{ name: localizedValue(event.id, "name", "zh"), description: localizedValue(event.id, "description", "zh"), rewardName: localizedValue(event.id, "rewardName", "zh") }}
             gaps={missingFor(event).length}
-            rule={rules ? (() => { const rule = ruleOf(event.id); return rule ? { enabled: rule.enabled, ready: rule.readiness.ready, startsAt: rule.startsAt, endsAt: rule.endsAt } : null; })() : null}
+            rule={rules ? (() => { const rule = ruleOf(event.id); return rule ? { enabled: rule.enabled, ready: eventRuleReadiness(rule, eventContent).ready, startsAt: rule.startsAt, endsAt: rule.endsAt } : null; })() : null}
             pending={eventPending(event.id) ? pendingTag(eventName(event.id)) : undefined}
             primary={eventPrimary(event)} menu={eventMenu(event)} onContent={() => setContentId(event.id)} />)}</div>}
         <p className="h4l-note">时间为北京时间</p>
@@ -1118,7 +1126,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
-      <H4EventRules ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
+      <H4EventRules ctx={ctx} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
       <H4GenesisRaffle ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRaffles} />
     </div>
 
