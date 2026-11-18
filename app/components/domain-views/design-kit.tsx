@@ -3773,11 +3773,14 @@ export type InlineOperationApproval = {
   resolve: (value: BusinessFormValue, editValue: string) => OperationApproval | undefined;
   renderForm?: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
   recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
+  recoverLabel?: string;
   retry?: () => Promise<void>;
   pending?: boolean;
   /** Saved direct commands can expose the existing query and retry actions together. */
   initialRecovery?: "lookup" | "retry";
   expired?: boolean;
+  /** Set only when the retained request has passed its retry deadline. */
+  expiredRequestRecovery?: "query" | "reload";
   disabledReason?: string;
   compareEdit?: { rangeLabel?: string };
   dialogClassName?: string;
@@ -3973,6 +3976,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
         setSubmitError(inlineApproval?.expired ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
+      } else if (inlineApproval?.recoverLabel) {
+        setSubmitError(null);
       }
     } catch (error) {
       setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
@@ -4001,6 +4006,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
+  const pendingReasonHelp = inlineApproval?.expiredRequestRecovery === "reload"
+    ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
+    : inlineApproval?.expiredRequestRecovery === "query"
+      ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
+      : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
@@ -4045,7 +4055,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
-            {submitting ? "查询中…" : "查询原结果"}
+            {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
         {!approvalOnlyLookup && (surface ? (
@@ -4221,7 +4231,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
         {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
-        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>{surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
+        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>
+          {pendingReasonHelp}
+        </div>}
         {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
           {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
           {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}
