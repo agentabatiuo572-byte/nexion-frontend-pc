@@ -57,7 +57,9 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
   onApprovalCompleted?: () => Promise<void>;
   onRowsChange?: (rows: EventRuleView[] | null) => void;
 }) {
-  const [rows, setRows] = useState<EventRuleView[]>([]), [selected, setSelected] = useState<EventRuleView | null>(null);
+  const [ruleRows, setRuleRows] = useState<EventRuleView[] | null>(null);
+  const rows = ruleRows ?? [];
+  const [selected, setSelected] = useState<EventRuleView | null>(null);
   const [draft, setDraft] = useState<EventRuleChange | null>(null), [regions, setRegions] = useState("");
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const [vouchers, setVouchers] = useState<EventVoucherOption[]>([]), [voucherLoading, setVoucherLoading] = useState(false), [voucherError, setVoucherError] = useState(""), [voucherRetry, setVoucherRetry] = useState(0);
@@ -66,6 +68,7 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
+  const previousOperator = useRef(operator);
   const choose = (row: EventRuleView) => { conflictReview.current = null; setStale(""); setMerged(0); setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
@@ -74,13 +77,22 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
   const load = async (preserve = false) => {
-    const own = ++generation.current; setLoading(true); setError(""); setReadFailed(false);
-    try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
+    const own = ++generation.current; setLoading(true); setError("");
+    try { const values = await fetchEventRules(); if (own === generation.current) { setRuleRows(values); setReadFailed(false); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
     catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); } return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
-  useEffect(() => { setSaving(false); setError(""); setRows([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator, contentRefresh]);
-  useEffect(() => { onRowsChange?.(loading || readFailed || !canRead ? null : rows); }, [rows, loading, canRead, readFailed]);
+  useEffect(() => {
+    if (!canRead || previousOperator.current !== operator) {
+      setRuleRows(null);
+      setReadFailed(false);
+    }
+    previousOperator.current = operator;
+    setSaving(false); setError(""); setSelected(null); setDraft(null);
+    if (canRead) void load(); else setLoading(false);
+    return () => { generation.current += 1; };
+  }, [canRead, operator, contentRefresh]);
+  useEffect(() => { onRowsChange?.(readFailed || !canRead ? null : ruleRows); }, [ruleRows, canRead, readFailed]);
   useEffect(() => {
     let alive = true; setVouchers([]); setVoucherError(""); setVoucherLoading(false);
     if (selected?.kind !== "seasonal" || !canRead || !canReadVouchers) return;
@@ -94,7 +106,7 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
     const changed = () => pendingChanged(v => v + 1);
     const readback = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (detail.rules) setRows(detail.rules);
+      if (detail.rules) setRuleRows(detail.rules);
       setReadFailed(Boolean(detail.ruleError));
       setSelected(null); setDraft(null); setError(detail.ruleError);
     };
