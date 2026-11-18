@@ -942,7 +942,7 @@ function G2ExchangePage() {
     openActionConfirm({ briefKind: "config",
       action: `调整排队预计 · ${name}`,
       title: original ? `${name} · 按原请求重试` : `调整${name}`,
-      detail: <>{ETA[key].what}。只是预计，不改处理顺序，单子仍要有人点「处理排队」才成交。</>,
+      detail: <>{ETA[key].what}。</>,
       effect: original
         ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
         : <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -959,7 +959,7 @@ function G2ExchangePage() {
             initialValue: original?.input.value, min: 1, max: 999, step: 1, maxDecimals: 0, unit: "小时", hint: "1–999 的整数",
             validate: value => etaHoursValid(value) ? undefined : "填 1–999 的整数，开头不要写 0", preview: shown }
         : { kind: "text", current, displayCurrent: current ? undefined : "未设置", currentLabel: original ? "提交时" : undefined, disallowCurrent: true,
-            initialValue: original?.input.value, hint: "写「预计」多久，不写具体几点；用 {hours} 代表小时数，例如：预计 {hours} 小时内处理",
+            initialValue: original?.input.value, hint: "写预计多久，不写具体几点；用 {hours} 代表小时数",
             validate: etaCopyIssue, preview: shown },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
       run: async (reason, value) => {
