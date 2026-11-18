@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from "react";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { privateMessageRecovery, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
-import { fetchMConversationDetail, parseMConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { fetchMConversationDetail } from "@/lib/admin/m-client";
 import { isSupportScopeDenial, supportClient, isDefiniteSupportRefusal, SupportClientError, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import type { SessionConvo, SessionMsg } from "./data";
 
 type Intent = "SERVICE" | "MAINTENANCE";
-export type Pending = { conversationId: string; customerId?: string; key: string; body: string; originalDraft?: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
-type FirstContact = { key: string; body: string; originalDraft?: string; intent: Intent; clientMessageId: string; customerId: string; assignmentId: string; version: number; replyTargets: Array<{ conversationNo: string; throughMessageId: number }> };
+export type Pending = { conversationId: string; customerId?: string; key: string; body: string; originalDraft?: string; draftSlot?: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
+type FirstContact = { key: string; body: string; originalDraft?: string; draftSlot?: string; intent: Intent; clientMessageId: string; customerId: string; assignmentId: string; version: number; replyTargets: Array<{ conversationNo: string; throughMessageId: number }> };
 
 let revision = 0;
 const listeners = new Set<() => void>();
@@ -21,11 +21,41 @@ function changed() {
   listeners.forEach(listener => listener());
 }
 function createMessageJournal<T extends PendingMutationRecord>(options: Parameters<typeof createPendingMutationStore<T>>[0]) {
-  const store = createPendingMutationStore<T>(options);
+  const primary = options.storageKey, alternate = primary + ":redacted";
+  let storageKey = primary;
+  if (typeof window !== "undefined") {
+    try { if (sessionStorage.getItem(primary) === null && sessionStorage.getItem(alternate) !== null) storageKey = alternate; }
+    catch { /* The shared store supports in-memory reads when storage is disabled. */ }
+  }
+  let store = createPendingMutationStore<T>({ ...options, storageKey });
   return {
-    ...store,
+    list: () => store.list(),
     remember(...args: Parameters<typeof store.remember>) { store.remember(...args); changed(); },
     forget(...args: Parameters<typeof store.forget>) { store.forget(...args); changed(); },
+    isDurablyStored: (slot: string, key: string) => store.isDurablyStored(slot, key),
+    redact(record: T, fingerprint: string, extra: NonNullable<Parameters<typeof store.remember>[2]>) {
+      store.remember(fingerprint, record.commandKey, extra);
+      changed();
+      try {
+        const table = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
+        const original = table[record.commandKey];
+        if (!original || original.commandOwnerId !== record.commandOwnerId) return false;
+        const replacement = { ...extra, fingerprint, commandKey: record.commandKey, createdAt: record.createdAt,
+          expiresAt: record.expiresAt, commandOwnerId: record.commandOwnerId };
+        if (original.fingerprint === fingerprint && Object.entries(extra).every(([k, v]) => original[k] === v)
+          && Object.keys(original).every(field => field in replacement)) return true;
+        table[record.commandKey] = replacement;
+        const bytes = JSON.stringify(table);
+        const destination = storageKey === primary ? alternate : primary;
+        // Preserve the other raw rows, including timeout commands and other submitters.
+        sessionStorage.setItem(destination, bytes);
+        if (sessionStorage.getItem(destination) !== bytes) return false;
+        sessionStorage.removeItem(storageKey);
+        storageKey = destination;
+        store = createPendingMutationStore<T>({ ...options, storageKey });
+        return true;
+      } catch { return false; }
+    },
   };
 }
 
@@ -47,12 +77,30 @@ export const dockCommands = createMessageJournal<DockCommandRecord>({
     && (record.readOnlyRecovery === undefined || typeof record.readOnlyRecovery === "boolean"),
 });
 // Closed commands with text displaced by a newer draft. These copies never lock or replay a send.
-interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string }
-export const failedDraftCopies = createMessageJournal<FailedDraftCopy>({
+interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string; source?: "dock" | "main"; legacySlot?: boolean; displaced?: boolean }
+const legacyDraftCopies = createMessageJournal<FailedDraftCopy>({
   storageKey: "nexion-m3-failed-draft-copies-v1", retainExpiredRecords: true,
   isValidRecord: row => typeof row.customerId === "string" && typeof row.assignmentId === "string"
     && (row.conversationId === undefined || typeof row.conversationId === "string") && typeof row.body === "string",
 });
+// Closed text stays in its original table until an editable copy can be saved.
+export const failedDraftCopies = {
+  list(): FailedDraftCopy[] {
+    const copies = legacyDraftCopies.list();
+    for (const source of ["dock", "main"] as const) {
+      for (const row of (source === "dock" ? dockCommands : pendingMessages).list()) {
+        const [kind, customerId, assignmentId, conversationId, legacy] = row.fingerprint.split("@");
+        if (kind !== `failed-${source}` && kind !== `saved-${source}` || !assignmentId) continue;
+        copies.push({ ...row, source, customerId, assignmentId, legacySlot: legacy === "legacy", displaced: kind === `saved-${source}`, conversationId: conversationId || undefined, body: row.payload });
+      }
+    }
+    return copies;
+  },
+  forget(slot: string, key: string) {
+    const store = /^(failed|saved)-dock@/.test(slot) ? dockCommands : /^(failed|saved)-main@/.test(slot) ? pendingMessages : legacyDraftCopies;
+    store.forget(slot, key);
+  },
+};
 export const SUPPORT_MESSAGE_MAX_LENGTH = 2000;
 /** 输入框下的字数提示（小窗和专属会话共用）：接近上限才出现，超了马上说，不等点发送。按发送时的算法数（去掉首尾空白）。 */
 export function supportLengthHint(draft: string) {
@@ -111,6 +159,12 @@ export function readSavedSends(adminId: number): SavedSend[] {
   });
   return [...main, ...dock];
 }
+export function identifySavedCustomer(adminId: number, key: string, conversationId: string, customerId: string) {
+  const entry = readSavedSends(adminId).find(item => item.row.commandKey === key && item.locator.conversationId === conversationId);
+  if (!entry || validCustomerId(entry.locator.customerId ?? null)) return;
+  if (entry.dock) dockCommands.remember(entry.row.fingerprint, key, { ...entry.dock, customerId });
+  else rememberPending(entry.row.fingerprint, key, { ...(entry.reply ?? entry.locator), customerId });
+}
 export const rememberPending = (slot: string, commandKey: string, value: object) => {
   pendingMessages.remember(slot, commandKey, { payload: JSON.stringify(value) });
   return pendingMessages.isDurablyStored(slot, commandKey);
@@ -139,51 +193,67 @@ export function refusedMessage(cause: unknown, firstSubmission: boolean) {
   );
 }
 
-function redactDockRecovery(record: DockCommandRecord, locator: MessageLocator) {
-  const payload = JSON.stringify(locator);
-  const extra = { payload, conversationNo: record.conversationNo, readOnlyRecovery: true as const, ...(locator.customerId ? { customerId: locator.customerId } : {}) };
-  dockCommands.remember(record.fingerprint, record.commandKey, extra);
-  try {
-    if (JSON.parse(sessionStorage.getItem("nexion-admin-m-dock-pending-v1") ?? "{}")[record.commandKey]?.payload !== payload) {
-      sessionStorage.removeItem("nexion-admin-m-dock-pending-v1");
-      dockCommands.remember(record.fingerprint, record.commandKey, extra);
-    }
-  } catch { /* The in-memory record is already redacted. */ }
-  return dockCommands.isDurablyStored(record.fingerprint, record.commandKey);
-}
-
 export const dockDraftKey = (adminId: number, customerId: string, conversationNo: string, assignmentId?: string | null) =>
   `nexion-m-dock-draft:${adminId}:${customerId}:${conversationNo}:${assignmentId ?? ""}`;
 export const sendJournal = (slot: string) => slot.startsWith("dock|") ? dockCommands : pendingMessages;
 
-// Called only after a definitive failure and verification of the original assignment.
-export function restoreFailedDraft(adminId: number, commandKey: string, customerId: string) {
+// Replace the replayable row atomically. Its compact payload contains only editable text.
+export function closeFailedDraft(adminId: number, commandKey: string, customerId?: string) {
   const entry = readSavedSends(adminId).find(item => item.row.commandKey === commandKey);
   const original = entry?.reply ?? entry?.first;
   if (!entry || !original || entry.reply?.kind === "IMAGE") return;
-  const { reply, first, dock } = entry;
-  const body = original.originalDraft ?? original.body;
-  const slot = reply?.conversationId ?? `first:${customerId}`;
+  let body = original.originalDraft ?? original.body;
+  const legacySlot = !entry.dock && !original.draftSlot;
+  if (legacySlot && original.originalDraft === undefined) {
+    try {
+      const drafts = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}");
+      const text = drafts[entry.reply?.conversationId ?? `first:${customerId}`];
+      if (typeof text === "string" && text.trim() === original.body) body = text;
+    } catch { /* The submitted text is still in the original journal. */ }
+  }
+  const slot = [entry.dock ? "failed-dock" : "failed-main", customerId, entry.first?.assignmentId ?? entry.reply!.expectedAssignmentId, entry.reply?.conversationId, legacySlot ? "legacy" : ""].join("@");
+  const stored = entry.dock ? dockCommands.redact(entry.dock, slot, { payload: body, conversationNo: entry.dock.conversationNo })
+    : pendingMessages.redact(entry.row, slot, { payload: body });
+  if (!stored) throw new Error("浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。");
+  return failedDraftCopies.list().find(copy => copy.commandKey === commandKey);
+}
+
+export function restoreFailedDraft(adminId: number, commandKey: string, detail: { customerId: string; assignmentId: string | null; agentAdminId: number | null }) {
+  const copy = failedDraftCopies.list().find(row => row.commandOwnerId === adminId && row.commandKey === commandKey);
+  if (!copy?.source || copy.displaced || copy.customerId && copy.customerId !== detail.customerId || detail.assignmentId !== copy.assignmentId || !detail.agentAdminId) return;
+  const { customerId, assignmentId, agentAdminId } = detail;
+  const { conversationId, body } = copy;
   try {
-    if (dock) {
-      const key = dockDraftKey(adminId, customerId, dock.conversationNo, dock.draftAssignmentId);
+    if (copy.source === "dock" && conversationId) {
+      const key = dockDraftKey(adminId, customerId, conversationId, assignmentId);
       const newer = sessionStorage.getItem(key);
-      if (!newer || newer === body) {
-        sessionStorage.setItem(key, body);
-        return true;
+      if (newer && newer !== body) {
+        dockCommands.remember(copy.fingerprint.replace("failed-", "saved-"), commandKey, { payload: body, conversationNo: conversationId });
+        return;
       }
+      sessionStorage.setItem(key, body);
+      window.dispatchEvent(new CustomEvent("dock-draft-restored", { detail: { key, body } }));
     } else {
       const key = `nexion-m3-drafts:${adminId}`;
+      const slot = scopedDraftSlot(conversationId ?? `first:${customerId}`, customerId, assignmentId, agentAdminId);
       const drafts = JSON.parse(sessionStorage.getItem(key) ?? "{}");
-      if (!drafts[slot] || drafts[slot] === body) {
-        sessionStorage.setItem(key, JSON.stringify({ ...drafts, [slot]: body }));
-        window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body } }));
-        return true;
+      const legacy = conversationId ?? `first:${customerId}`;
+      if (copy.legacySlot && !drafts[slot] && drafts[legacy]) {
+        drafts[slot] = drafts[legacy];
+        delete drafts[legacy];
+        sessionStorage.setItem(key, JSON.stringify(drafts));
+        window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body: drafts[slot], legacy } }));
       }
+      if (drafts[slot] && drafts[slot] !== body) {
+        pendingMessages.remember(copy.fingerprint.replace("failed-", "saved-"), commandKey, { payload: body });
+        return;
+      }
+      sessionStorage.setItem(key, JSON.stringify({ ...drafts, [slot]: body }));
+      window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body } }));
     }
-  } catch { /* Keep a read-only copy if the editable draft cannot be saved. */ }
-  failedDraftCopies.remember(slot, commandKey, { customerId, conversationId: reply?.conversationId,
-    assignmentId: first?.assignmentId ?? reply!.expectedAssignmentId, body });
+  } catch { return; } // The closed row remains available after a storage failure.
+  failedDraftCopies.forget(copy.fingerprint, commandKey);
+  return true;
 }
 
 // Undefined denotes an owned original whose customer cannot yet be proved.
@@ -196,8 +266,16 @@ export function blocksNewSend(customers: Set<string | undefined>, customerId: st
 
 type PrivateTarget = { conversationId?: string; customerId?: string; assignmentId?: string; ownerAdminId?: number | null };
 
-// Inspect only originals missing from a complete authorized snapshot. A new first
-// contact has no original thread: its customer detail is the authority in that case.
+export function scopedDraftSlot(slot: string, customerId: string, assignmentId: string, ownerAdminId: number) {
+  return [slot, customerId, assignmentId, ownerAdminId].join("@");
+}
+function draftTarget(key: string): PrivateTarget {
+  const [slot, customerId, assignmentId, owner] = key.split("@");
+  return { customerId: customerId || (slot.startsWith("first:") ? slot.slice(6) : undefined),
+    conversationId: slot.startsWith("first:") ? undefined : slot, assignmentId, ownerAdminId: owner ? Number(owner) : undefined };
+}
+
+// A supervisor can still see a transferred thread. Check the original assignment even on a snapshot hit.
 export async function revokedPrivateTargets(adminId: number, previous: SessionConvo[], snapshot: SessionConvo[], signal: AbortSignal) {
   const targets: PrivateTarget[] = failedDraftCopies.list().filter(row => row.commandOwnerId === adminId);
   for (const { reply, first } of readSavedSends(adminId)) {
@@ -206,168 +284,103 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
   }
   try {
     const drafts = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}");
-    for (const [slot, value] of Object.entries(drafts)) {
-      if (typeof value !== "string" || !value) continue;
-      targets.push(slot.startsWith("first:") ? { customerId: slot.slice(6) } : { conversationId: slot });
-    }
+    for (const [slot, value] of Object.entries(drafts)) if (value) targets.push(draftTarget(slot));
     const dockPrefix = `nexion-m-dock-draft:${adminId}:`;
+    const replyPrefix = `nexion-m3-reply-targets:${adminId}:`;
     for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith(replyPrefix)) targets.push(draftTarget(key.slice(replyPrefix.length)));
       if (!key.startsWith(dockPrefix)) continue;
       const [customerId, conversationId, assignmentId] = key.slice(dockPrefix.length).split(":");
       targets.push({ customerId, conversationId, assignmentId, ownerAdminId: adminId });
     }
-  } catch { /* Still verify the originals available from the in-memory journals. */ }
-
-  const missing = new Map<string, PrivateTarget>();
-  const addThread = (target: PrivateTarget, id: string) => {
-    if (snapshot.some(row => row.id === id)) return;
-    const old = previous.find(row => row.id === id);
-    const known = missing.get(id);
-    missing.set(id, { conversationId: id, customerId: known?.customerId || target.customerId || old?.customerId,
-      assignmentId: known?.assignmentId || target.assignmentId, ownerAdminId: known?.ownerAdminId ?? target.ownerAdminId ?? old?.ownerAdminId });
-  };
-  for (const target of targets) {
-    if (target.conversationId) addThread(target, target.conversationId);
-    else if (target.customerId) {
-      const threads = previous.filter(row => row.customerId === target.customerId);
-      for (const thread of threads) addThread(target, thread.id);
-      if (!threads.length && !snapshot.some(row => row.customerId === target.customerId)) {
-        const slot = `first:${target.customerId}`;
-        if (!missing.has(slot)) missing.set(slot, target);
-      }
-    }
-  }
+  } catch { /* Journal originals can still be checked when draft storage is unavailable. */ }
 
   const denied: PrivateTarget[] = [];
   const customers = new Map<string, ReturnType<typeof supportClient.customerDetail>>();
-  await Promise.all([...missing.values()].map(async target => {
-    let { customerId } = target;
-    const { conversationId } = target;
-    if (conversationId) {
+  const threads = new Map<string, ReturnType<typeof fetchMConversationDetail>>();
+  await Promise.all(targets.map(async target => {
+    const { conversationId, assignmentId } = target;
+    const prior = previous.find(row => row.id === conversationId);
+    const visible = snapshot.find(row => row.id === conversationId);
+    let customerId = target.customerId ?? prior?.customerId ?? visible?.customerId;
+    const owner = target.ownerAdminId ?? (assignmentId ? undefined : prior?.ownerAdminId);
+    if (visible && owner != null && visible.ownerAdminId != null && visible.ownerAdminId !== owner
+      && prior?.ownerAdminId === owner && prior.customerId === customerId) {
+      denied.push({ customerId, conversationId, assignmentId: assignmentId ?? "" });
+      return;
+    }
+    if (conversationId && !visible) {
       try {
-        const thread = await fetchMConversationDetail(conversationId, signal, false);
-        if (customerId && thread.customerId !== customerId) return;
-        customerId = thread.customerId;
-      } catch (error) {
-        if (isSupportScopeDenial(error)) {
-          denied.push({ conversationId, customerId });
-          return;
+        let request = threads.get(conversationId);
+        if (!request) threads.set(conversationId, request = fetchMConversationDetail(conversationId, signal, false));
+        const detail = await request;
+        if (customerId && detail.customerId !== customerId) return;
+        customerId = detail.customerId;
+      } catch (cause) {
+        if (isSupportScopeDenial(cause)) {
+          denied.push({ customerId, conversationId, assignmentId: assignmentId ?? "" });
+          if (!customerId) return;
         }
-        // A temporary thread failure still permits an independent customer check.
       }
     }
+    if (!customerId) return;
+    if (visible && !assignmentId && owner === visible.ownerAdminId) return;
     try {
-      if (!customerId) return;
       let request = customers.get(customerId);
-      if (!request) {
-        request = supportClient.customerDetail(customerId, signal);
-        customers.set(customerId, request);
-      }
+      if (!request) customers.set(customerId, request = supportClient.customerDetail(customerId, signal));
       const detail = await request;
       if (detail.customerId !== customerId) return;
-      if ((!target.assignmentId || detail.assignmentId === target.assignmentId)
-        && (target.ownerAdminId == null || detail.agentAdminId === target.ownerAdminId)) return;
+      if ((assignmentId && detail.assignmentId !== assignmentId) || (owner != null && detail.agentAdminId !== owner)) {
+        denied.push({ customerId, conversationId, assignmentId: assignmentId ?? "" });
+      }
     } catch (error) {
-      if (!isSupportScopeDenial(error)) return;
+      if (isSupportScopeDenial(error)) denied.push({ customerId, conversationId });
     }
-    denied.push({ conversationId, customerId });
   }));
   return denied;
 }
 
-export function redactCustomerSends(adminId: number, conversations: ConversationTarget[], customerId?: string, originalConversationId?: string, commandKey?: string) {
+export function redactCustomerSends(adminId: number, conversations: ConversationTarget[], customerId?: string, originalConversationId?: string, commandKey?: string, assignmentId?: string) {
   const entries = readSavedSends(adminId);
   customerId ??= originalConversationId ? conversations.find(row => row.id === originalConversationId)?.customerId
     ?? entries.find(entry => entry.locator.conversationId === originalConversationId)?.locator.customerId : undefined;
   const revokeAll = !customerId && !originalConversationId;
-  const clearFirst = !commandKey || !originalConversationId;
   const affected = commandKey ? [] : conversations.filter(convo => revokeAll || convo.customerId === customerId).map(convo => convo.id);
   if (originalConversationId) affected.push(originalConversationId);
   for (const copy of failedDraftCopies.list()) {
-    if (copy.commandOwnerId !== adminId || commandKey && copy.commandKey !== commandKey) continue;
-    if (revokeAll || copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
+    if (copy.commandOwnerId !== adminId || assignmentId !== undefined && copy.assignmentId !== assignmentId || commandKey && copy.commandKey !== commandKey) continue;
+    if (revokeAll || customerId && copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
       if (copy.conversationId && !affected.includes(copy.conversationId)) affected.push(copy.conversationId);
       failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
     }
   }
   let error = "";
-  for (const { row: record, locator, dock } of entries) {
+  for (const { row: record, locator, dock, reply, first } of entries) {
+    if (assignmentId !== undefined && assignmentId !== (reply?.expectedAssignmentId ?? first?.assignmentId ?? "")) continue;
     if (commandKey && record.commandKey !== commandKey) continue;
     const originalCustomer = originalCustomerId(locator, conversations);
     const matchesThread = locator.conversationId && affected.includes(locator.conversationId);
-    if (!revokeAll && !(customerId && originalCustomer === customerId) && !matchesThread && !(dock && !originalCustomer && customerId)) continue;
+    if (!revokeAll && !(customerId && originalCustomer === customerId) && !matchesThread) continue;
     if (locator.conversationId && !affected.includes(locator.conversationId)) affected.push(locator.conversationId);
     locator.customerId = originalCustomer ?? (locator.conversationId === originalConversationId ? customerId : undefined);
-    if (dock) {
-      if (!dock.readOnlyRecovery || dock.customerId !== locator.customerId) {
-        if (!redactDockRecovery(dock, locator)) error = "浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。";
-      }
-      continue;
-    }
-    try {
-      const slot = recoveryKey(adminId, record.commandKey);
-      if (record.fingerprint === slot && record.payload === JSON.stringify(locator)) continue;
-      rememberPending(slot, record.commandKey, locator);
-      // Retry the smaller persisted row without deleting unrelated messages or legacy timeout commands.
-      if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) {
-        const persisted = JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}");
-        const original = persisted[record.commandKey];
-        if (!original || original.commandKey !== record.commandKey) throw new Error("Private recovery row unavailable");
-        persisted[record.commandKey] = { ...original, fingerprint: slot, payload: JSON.stringify(locator) };
-        try { sessionStorage.setItem("nexion-admin-m3-private-pending-v1", JSON.stringify(persisted)); }
-        catch {
-          // If even a smaller replacement is refused, erase private bodies and retain timeout lineage only.
-          let durable = false;
-          try {
-            const timeouts: Record<string, StoredMessage> = {};
-            for (const [key, value] of Object.entries(persisted)) {
-              const row = value as StoredMessage;
-              if (!/^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint)) continue;
-              const saved = JSON.parse(row.payload) as { key: string; policy: unknown; operator: string; input?: { warnMinutes: number; closeMinutes: number; reason: string } };
-              parseMConversationTimeoutPolicy(saved.policy);
-              if (saved.key !== key || row.commandKey !== key || !Number.isFinite(row.createdAt) || !Number.isFinite(row.expiresAt) || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key) || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("Timeout recovery row invalid");
-              timeouts[key] = row;
-            }
-            const preserveTimeouts = () => {
-              const target = JSON.parse(sessionStorage.getItem("nexion-admin-m3-timeout-pending-v1") || "{}");
-              for (const [key, row] of Object.entries(timeouts)) {
-                if (target[key] && JSON.stringify(target[key]) !== JSON.stringify(row)) throw new Error("Timeout recovery row conflict");
-                target[key] = row;
-              }
-              if (Object.keys(timeouts).length) sessionStorage.setItem("nexion-admin-m3-timeout-pending-v1", JSON.stringify(target));
-              const stored = JSON.parse(sessionStorage.getItem("nexion-admin-m3-timeout-pending-v1") || "{}");
-              return Object.keys(timeouts).length > 0 && Object.entries(timeouts).every(([key, row]) => JSON.stringify(stored[key]) === JSON.stringify(row));
-            };
-            try { preserveTimeouts(); } catch { /* Retry after privacy erasure frees quota. */ }
-            sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-            durable = preserveTimeouts();
-          } catch {
-            // Invalid metadata or blocked migration must never retain revoked private bodies.
-            sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-          }
-          error = durable ? "原消息内容已清除。结果确认前请不要刷新或关闭页面。" : "原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。";
-          continue;
-        }
-        if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) throw new Error("Private recovery row not stored");
-      }
-      if (!pendingMessages.isDurablyStored(slot, record.commandKey)) error = "浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。";
-    } catch {
-      try {
-        sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-        error = "原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。";
-      } catch {
-        error = "这台电脑上的旧消息没清理掉，相关会话先关着；请检查浏览器的存储设置后重试。";
-      }
-    }
+    const ok = dock
+      ? dockCommands.redact(dock, dock.fingerprint, { payload: JSON.stringify(locator), conversationNo: dock.conversationNo, customerId: locator.customerId, readOnlyRecovery: true })
+      : pendingMessages.redact(record, recoveryKey(adminId, record.commandKey), { payload: JSON.stringify(locator) });
+    if (!ok) error = "这台电脑上的旧消息没清理掉，相关会话先关着；请检查浏览器的存储设置后重试。";
   }
+  const matchesDraft = (slot: string) => {
+    const target = draftTarget(slot);
+    return (revokeAll || Boolean(customerId && customerId === target.customerId) || Boolean(target.conversationId && affected.includes(target.conversationId)))
+      && (assignmentId === undefined || !target.assignmentId || target.assignmentId === assignmentId);
+  };
   try {
     const saved = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}") as Record<string, unknown>;
-    for (const key of Object.keys(saved)) if (affected.includes(key) || clearFirst && key === `first:${customerId}` || revokeAll) delete saved[key];
+    for (const key of Object.keys(saved)) if (matchesDraft(key)) delete saved[key];
     sessionStorage.setItem(`nexion-m3-drafts:${adminId}`, JSON.stringify(saved));
     for (const key of Object.keys(sessionStorage)) {
-      if (key.startsWith(`nexion-m-dock-draft:${adminId}:`) && (revokeAll || customerId && key.startsWith(`nexion-m-dock-draft:${adminId}:${customerId}:`) || affected.some(id => key.includes(`:${id}:`)))) sessionStorage.removeItem(key);
+      if (key.startsWith(`nexion-m-dock-draft:${adminId}:`) && (assignmentId === undefined || key.endsWith(`:${assignmentId}`) || key.endsWith(":")) && (revokeAll || customerId && key.startsWith(`nexion-m-dock-draft:${adminId}:${customerId}:`) || affected.some(id => key.includes(`:${id}:`)))) sessionStorage.removeItem(key);
     }
-    for (const key of Object.keys(sessionStorage)) if (key.startsWith(`nexion-m3-reply-targets:${adminId}:`) && (revokeAll || affected.some(id => key.endsWith(`:${id}`)) || clearFirst && key.endsWith(`:first:${customerId}`))) sessionStorage.removeItem(key);
+    for (const key of Object.keys(sessionStorage)) if (key.startsWith(`nexion-m3-reply-targets:${adminId}:`) && matchesDraft(key.slice(`nexion-m3-reply-targets:${adminId}:`.length))) sessionStorage.removeItem(key);
   } catch { error = "私聊记录清理失败，请退出当前账号后重新登录。"; }
-  return { affected, customerId, clearFirst, revokeAll, error };
+  return { affected, customerId, revokeAll, error, matchesDraft, assignmentId };
 }

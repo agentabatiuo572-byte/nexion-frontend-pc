@@ -19,7 +19,7 @@ import { SupportContentTools, type SelectedSupportContent } from "./support-cont
 import { blocksNewSend, parseConversations, pendingSendCustomers } from "./m-message-journal";
 import type { MCtx } from "./types";
 import "./m-support-workbench.css";
-type Stored = PendingMutationRecord & { actorId:number; payload:BulkContent; recipientIds?:string[]; batchId?:string; readOnlyRecovery?:boolean; action?:"cancel"|"retry"; mutation?:{expectedVersion:number;reason:string} };
+type Stored = PendingMutationRecord & { actorId:number; payload:BulkContent; recipientIds?:string[]; recipientAssignments?:Record<string,string>; batchId?:string; readOnlyRecovery?:boolean; action?:"cancel"|"retry"; mutation?:{expectedVersion:number;reason:string} };
 type PreviewIntent = { input: Parameters<typeof supportEnhancements.bulkPreview>[0]; advance: boolean };
 type UploadPending = PendingMutationRecord & { actorId: number; clientUploadId: string; hash: string; fileName: string; fileMime: string; assetExpiresAt?: number };
 const uploads = createPendingMutationStore<UploadPending>({ storageKey: "nexion-support-bulk-attachment-v1", retainExpiredRecords: true, isValidRecord: r => Number.isSafeInteger(r.actorId) && typeof r.clientUploadId === "string" && typeof r.hash === "string" && typeof r.fileName === "string" && typeof r.fileMime === "string" });
@@ -74,7 +74,41 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const imageSelection=useRef(0);
   const composerRef=useRef<HTMLTextAreaElement>(null);
   const fileRef=useRef<HTMLInputElement>(null);
-  useEffect(()=>{const handle=()=>{generation.current++;for(const record of commands.list())if(record.actorId===actorId)commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:true});try{sessionStorage.removeItem(`nexion-bulk-draft:${actorId}`);}catch{}setDraftOwner(0);setPending(null);stamp.current=`${scopeKey}:${generation.current}`;setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setText("");setChoice(null);setJob(null);setRecipients(null);onClose();};window.addEventListener("support-scope-invalidated",handle);return()=>window.removeEventListener("support-scope-invalidated",handle);},[actorId,epoch,onClose]);
+  useEffect(() => {
+    const handle = (event: Event) => {
+      const { customerId, conversationNo, cleared } = (event as CustomEvent<{ customerId?: string; conversationNo?: string; cleared?: { assignmentId?: string } }>).detail ?? {};
+      if (!customerId && conversationNo) return;
+      const assignmentId = cleared?.assignmentId;
+      if (assignmentId === "") return;
+      let activeRecordAffected = false;
+      for (const record of commands.list()) {
+        if (record.actorId !== actorId || customerId && record.recipientIds && !record.recipientIds.includes(customerId)) continue;
+        const original = customerId && record.recipientAssignments?.[customerId];
+        if (assignmentId && original && original !== assignmentId) continue;
+        commands.remember(record.fingerprint, record.commandKey, { ...record, readOnlyRecovery: true });
+        if (record.commandKey === pending?.commandKey) activeRecordAffected = true;
+      }
+      if (customerId) {
+        const frozen = selection?.customers.find(row => row.id === customerId);
+        const affected = selection ? frozen && (!assignmentId || frozen.expectedAssignmentId === assignmentId) : !pending && selected.has(customerId);
+        setRetry(value => value + 1);
+        setProfiles(old => { const next = { ...old }; delete next[customerId]; return next; });
+        setIdentities(old => { const next = { ...old }; delete next[customerId]; return next; });
+        if (!activeRecordAffected && !affected) return;
+      }
+      generation.current++;
+      stamp.current = `${scopeKey}:${generation.current}`;
+      try { sessionStorage.removeItem(`nexion-bulk-draft:${actorId}`); } catch { /* The editor is cleared below. */ }
+      setDraftOwner(0); setPending(null); setSelected(new Set()); setIdentities({}); setProfiles({});
+      setSelection(null); setQuery(null); setText(""); setChoice(null); setJob(null); setRecipients(null); onClose();
+    };
+    window.addEventListener("support-scope-invalidated", handle);
+    window.addEventListener("m3-assignment-invalidated", handle);
+    return () => {
+      window.removeEventListener("support-scope-invalidated", handle);
+      window.removeEventListener("m3-assignment-invalidated", handle);
+    };
+  }, [actorId, scopeKey, selected, selection, pending, onClose]);
   useEffect(()=>{if(scopeOwner===scopeKey)return;setScopeOwner(scopeKey);setPreviewIntent(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setJob(null);setRecipients(null);setJobs(null);setPending(null);setStep(1);setBusy(false);setUploading(false);setFilters({});setFilterDraft({});setPage(1);setChoice(null);setReason("");setAck(false);setUploadError("");imageSelection.current++;if(imageRef.current)URL.revokeObjectURL(imageRef.current.url);setImage(null);},[scopeKey]);
   useEffect(()=>{const old=commands.list().find(r=>r.actorId===actorId);if(old){setPending(old);setStep(3);setError(isRetryExpired(old)?RETRY_EXPIRED_TEXT:"原操作结果未知，请先查询原结果。");}},[scopeKey]);
   useEffect(()=>{if(!actorId)return;try{const saved=JSON.parse(sessionStorage.getItem(`nexion-bulk-draft:${actorId}`)??"{}");setText(typeof saved.text==="string"?saved.text:"");setIntent(saved.intent==="MAINTENANCE"?"MAINTENANCE":"SERVICE");}catch{setError("群发草稿暂不能恢复，请在本页核对。");}setDraftOwner(actorId);},[actorId,epoch]);
@@ -141,7 +175,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       setIdentities(old => ({ ...old, ...Object.fromEntries(next.customers.filter(c => c.userNo).map(c => [c.id, { nickname: c.nickname ?? "客户", userNo: c.userNo! }])) }));
       if (!intent.advance) { setSelected(old => new Set([...old, ...next.customers.map(c => c.id)])); return; }
       const excluded = next.excluded.map(row => blocked.includes(row.id) ? { ...row, reason: "PENDING_MESSAGE" }
-        : previous?.excluded.find(old => old.id === row.id) ?? row);
+        : row);
       setSelection({ ...next, excluded });
       if (!next.count) setStep(1);
       if (!next.count) { setError("所选客户均被排除，请核对名单。已保留选择，可逐项移除或清空。"); return; }
@@ -205,13 +239,13 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     if (!recover && !original && selection) {
       const locks = pendingCustomers();
       if (selection.customers.some(c => blocksNewSend(locks, c.id))) {
-        const excludedIds = selection.excluded.map(c => c.id);
-        await generatePreview({ input: { filters: { ...filters, keyword: undefined }, customerIds: [...selection.customers.map(c => c.id), ...excludedIds], excludedIds, selectionMode: "CROSS_PAGE" }, advance: true }, selection);
+        const customerIds = [...selection.customers, ...selection.excluded].map(c => c.id);
+        await generatePreview({ input: { filters: { ...filters, keyword: undefined }, customerIds, excludedIds: [], selectionMode: "CROSS_PAGE" }, advance: true }, selection);
         return;
       }
     }
-    const record=original??pending??(input?{fingerprint:`${actorId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload:input,recipientIds:selection?.customers.map(c=>c.id)}:null);if(!record)return;
-    commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");const saved=stamp.current;
+    const record=original??pending??(input?{fingerprint:`${actorId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload:input,recipientIds:selection?.customers.map(c=>c.id),recipientAssignments:selection && Object.fromEntries(selection.customers.map(c=>[c.id,c.expectedAssignmentId])) || undefined}:null);if(!record)return;
+    commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,recipientAssignments:record.recipientAssignments,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");const saved=stamp.current;
     let submitted=false;
     try{
       const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&e.status===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
