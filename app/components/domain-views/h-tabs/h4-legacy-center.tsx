@@ -1076,6 +1076,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const tiers = model.wheelTiers ?? [];
   const guards = model.wheelGuards ?? [];
   const h4Stats = model.h4Stats ?? {};
+  // 后端 75888a2d：算不出时 regionRestrictionCount 为空、regionRestrictionsAvailable=false，不按 0 写。
+  const regionRestricted = h4Stats.regionRestrictionsAvailable === true && typeof h4Stats.regionRestrictionCount === "number" ? h4Stats.regionRestrictionCount : null;
   const wheelEvUsdt = model.wheelEvByAsset === undefined ? model.wheelEvUsd : model.wheelEvByAsset?.USDT;
   const wheelEvOthers = Object.entries(model.wheelEvByAsset ?? {}).filter(([asset, value]) => asset !== "USDT" && value != null);
   const awards = model.wheelAwardsToday;
@@ -1159,7 +1161,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     {recovery}
     {conclusion}
     <StatBand label="既有活动与转盘的关键数">
-      <Stat label="进行中的既有活动" value={h4Stats.ongoing == null ? "—" : numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)}`} explain="按活动存的状态数「进行中」的个数（不看删除状态）。限地区的活动数：系统没有这项数据。紧急处理去「紧急停用开关」。" />
+      <Stat label="进行中的既有活动" value={h4Stats.ongoing == null ? "—" : numericValue(h4Stats.ongoing)} unit="个" icon={CircleDot} tone="role-3" sub={`主推：${text(h4Stats.featuredEv, "--") === "--" ? "—" : text(h4Stats.featuredEv)} · 限地区 ${regionRestricted == null ? "未知" : `${numericValue(regionRestricted)} 个`}`} explain={<><p>按活动存的状态数「进行中」的个数（不看删除状态）。</p><p>限地区：正在生效的玩法活动里，限了国家，或关联的促销只卖给部分市场的，一个活动只算一次。{regionRestricted == null ? "系统这次没算出来，不是 0。" : ""}紧急处理去「紧急停用开关」。</p></>} />
       <Stat label="可追踪活动参与" value={h4Stats.trackJoin == null ? "—" : numericValue(h4Stats.trackJoin)} unit="人次" icon={ListChecks} tone="role-3" sub={`达标 ${h4Stats.trackDone == null ? "—" : numericValue(h4Stats.trackDone)} · 已领 ${h4Stats.trackClaim == null ? "—" : numericValue(h4Stats.trackClaim)}`} explain="开了「统计效果」的活动的参与、达标、领取次数合计，不是转化率。" />
       <Stat label="每次抽奖估计发出" value={wheelEvUsdt == null ? "—" : amountText(wheelEvUsdt)} unit="USDT" icon={Coins} tone="role-1"
         sub={wheelEvOthers.length ? `另有 ${wheelEvOthers.map(([asset, value]) => `${amountText(value)} ${asset === "NEX" ? "UVT" : asset}`).join("、")}` : model.wheelEvByAsset && Object.keys(model.wheelEvByAsset).length === 0 ? "没有发真钱的档" : "按概率估算，不是实发"}
