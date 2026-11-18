@@ -174,7 +174,7 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
   if (!recovering && pending.some(r => record.kind === "settlement" ? r.kind === "settlement" : r.paramKey === record.paramKey)) throw new Error("H8_ORIGINAL_UNRESOLVED");
   if (recovering && record.kind !== "direct") {
     const current = await queryH8RewardCommand(record);
-    if (current) return current;
+    if (current) return { ticket: current, unchanged: false };
   }
   if (!canRetryH8RewardCommand(record)) throw new Error(RETRY_EXPIRED_TEXT);
   requireH8Actor(record.adminId, record.kind === "settlement" ? "settlement" : "param");
@@ -190,9 +190,10 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
         ? receipt.value === original.value : h8RewardParamValid(original.paramKey, receipt.value)
           && !h8RewardParamAmplifies(original.paramKey, receipt.value, original.value)
           && !h8RewardParamAmplifies(original.paramKey, original.value, receipt.value));
-      if (receipt?.key !== original.paramKey || receipt.status !== "UPDATED" || receipt.version !== original.overview.version + 1 || !valueMatches) throw new OutcomeUnknownError("H8_PARAM_RECEIPT_INVALID");
+      const versionDelta = receipt?.status === "UPDATED" ? 1 : receipt?.status === "UNCHANGED" ? 0 : undefined;
+      if (receipt?.key !== original.paramKey || versionDelta === undefined || receipt.version !== original.overview.version + versionDelta || !valueMatches) throw new OutcomeUnknownError("H8_PARAM_RECEIPT_INVALID");
       forget(record);
-      return null;
+      return { ticket: null, unchanged: receipt.status === "UNCHANGED" };
     }
     const receipt = await createA2OperationProposal(JSON.parse(original.body) as Proposal, record.commandKey, true);
     checkTicket(record, receipt);
@@ -211,7 +212,7 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
   remember(acknowledged, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
   const current = await queryH8RewardCommand(acknowledged);
   if (!current) throw new OutcomeUnknownError("H8_PROPOSAL_STATUS_UNREADABLE");
-  return current;
+  return { ticket: current, unchanged: false };
 }
 
 /** Only an expired proposal with an authoritative not-found result may be released after UI confirmation. */
