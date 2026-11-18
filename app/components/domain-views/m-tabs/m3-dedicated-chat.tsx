@@ -86,6 +86,8 @@ const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientE
   && cause.status !== 404
   && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
+const supportCustomerNotFound = (cause: unknown) => cause instanceof SupportClientError
+  && cause.status === 404 && cause.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND";
 const conversationPeerChanged = (cause: unknown) => cause instanceof SupportClientError
   && cause.status === 409 && cause.backendMessage === "CONVERSATION_PEER_CHANGED";
 
@@ -367,6 +369,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const [actionError, setActionError] = useState("");
   const [actionResult, setActionResult] = useState("");
   const [actionChecking, setActionChecking] = useState(false);
+  const checkingContinuation = useRef<string | null>(null);
   const [ticketLinks, setTicketLinks] = useState<Record<string, string>>({});
   const markedRef = useRef("");
   const identityRef = useRef("");
@@ -479,7 +482,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       setScreen("list");
     }
     setRestoredId(current => current === no ? "" : current);
-    ctx.invalidateScope(no, customerId, notice);
+    ctx.invalidateScope(no, customerId, notice ? { text: notice, page: "M3" } : undefined);
   }, [ctx.invalidateScope]);
   const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, (no, customerId, status) => {
     if (status === 401) ctx.invalidateScope(no, customerId);
@@ -1158,12 +1161,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       setProfileDetail({ ...detail, revision: snapshotRevision });
     }).catch((cause: unknown) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current) return;
-      if (lostPermission(cause)) {
+      if (checkingContinuation.current === selected.id && supportCustomerNotFound(cause)) {
+        leaveUnavailableConversation(selected.id, selected.customerId, CONTINUATION_REASSIGNED);
+      } else if (lostPermission(cause)) {
         ctx.invalidateScope(selected.id, String(selected.customerId));
       } else setProfileError(displayAdminError(cause));
     });
     return () => controller.abort();
-  }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, snapshotRevision, profileRetry, revokeCustomer, canReviewAll, adminId]);
+  }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, snapshotRevision, profileRetry, revokeCustomer, canReviewAll, adminId, leaveUnavailableConversation]);
 
   const select = (conversationNo: string, commandKey = "", source?: string) => {
     setChosenCommand(commandKey);
@@ -1647,6 +1652,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!canWriteM3 || !selected?.detailReady || !selected.customerId || actionChecking) return;
     const stamp = identityRef.current;
     const sourceKey = selected.id;
+    checkingContinuation.current = sourceKey;
     setActionChecking(true); setActionError("");
     try {
       const next = await resolveMConversationContinuation(sourceKey, adminId);
@@ -1663,7 +1669,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       setRequestedCustomerId(next.customerId);
       setScreen("chat");
     } catch (cause) {
-      if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND") {
+      if (supportCustomerNotFound(cause)) {
         if (mounted.current && useAdminAuth.getState().authEpoch === authEpoch) {
           leaveUnavailableConversation(sourceKey, selected.customerId, CONTINUATION_REASSIGNED);
         }
@@ -1674,7 +1680,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         await refreshChangedPeer(stamp);
         if (stamp === identityRef.current) setActionError(CONTINUATION_REASSIGNED);
       } else setActionError(displayAdminError(cause));
-    } finally { if (stamp === identityRef.current) setActionChecking(false); }
+    } finally {
+      if (checkingContinuation.current === sourceKey) checkingContinuation.current = null;
+      if (stamp === identityRef.current) setActionChecking(false);
+    }
   };
 
   const endPending = Boolean(holdEndCommand && holdEndCommand.customerId === holdCustomer);

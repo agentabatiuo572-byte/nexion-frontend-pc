@@ -39,7 +39,7 @@ import { useSupportInboxAlerts } from "@/lib/admin/support-alerts";
 import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
-import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
+import type { ConfirmReq, MCtx, ActionConfirmReq, SupportScopeNotice } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -108,6 +108,7 @@ const M3_SUMMARY = "和客户对话：先回待回复的，客户资料在右边
 
 /** 权限刷新可能重挂页面，操作结果由父页面保留（OP-132）。换账号不显示，整页刷新才清。 */
 let lastOperationNotice: { adminId?: number; text: string; tone: "danger" | "progress" | "warn" } | null = null;
+let lastM3ScopeNotice: { adminId?: number; text: string } | null = null;
 
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -122,6 +123,14 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
   const [operationNotice, setOperationNotice] = useState(lastOperationNotice);
+  const [m3ScopeNotice, setM3ScopeNotice] = useState(lastM3ScopeNotice);
+  useEffect(() => {
+    if (tab !== "M3") return;
+    return () => {
+      // The login recheck remounts M3 on the same path. Leaving M3 ends this notice.
+      if (window.location.pathname !== "/service/sessions") lastM3ScopeNotice = null;
+    };
+  }, [tab]);
   const [alertMinutes, setAlertMinutes] = useState(5);
   const supervisesSupport = Boolean(session?.supportReadModes?.some((mode) => mode === "MANAGED" || mode === "ALL")) || session?.role === "superadmin" || session?.role === "super";
   useEffect(() => {
@@ -206,7 +215,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     void reloadMContent();
   }, [authEpoch, reloadMContent]);
 
-  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string,
+  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: SupportScopeNotice, changedAssignmentKey?: string,
     knownThreads: Pick<SessionConvo, "id" | "customerId">[] = mDataRef.current?.conversations ?? [], assignmentId?: string) => {
     if (useAdminAuth.getState().session?.adminId !== session?.adminId) return;
     const actor = session?.adminId;
@@ -216,7 +225,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         ?? failedDraftCopies.list().find(copy => copy.commandKey === changedAssignmentKey)?.assignmentId;
       if (!assignmentId) return;
     }
-    if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
+    if (typeof notice === "string" && notice) {
+      lastOperationNotice = { adminId: actor, text: notice, tone: "danger" };
+      setOperationNotice(lastOperationNotice);
+    } else if (notice && typeof notice !== "string") {
+      lastM3ScopeNotice = { adminId: actor, text: notice.text };
+      setM3ScopeNotice(lastM3ScopeNotice);
+    }
     const cleared = session?.adminId ? redactCustomerSends(session.adminId, knownThreads, customerId, conversationNo, undefined, assignmentId) : undefined;
     customerId = cleared?.customerId ?? customerId;
     const affectedIds = cleared?.affected ?? [];
@@ -690,8 +705,19 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const shownOperationNotice = operationNotice?.adminId === session?.adminId ? operationNotice?.text : "";
   useSendJournalRevision();
   const hasM3Recovery = tab === "M3" && !safeMData && Boolean(session?.authorities.includes("service_m3_read") && readSavedSends(session.adminId).length);
-  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted || shownOperationNotice) ? <>
-    {shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button>}>{shownOperationNotice}</Notice>}
+  const shownM3ScopeNotice = m3ScopeNotice === lastM3ScopeNotice && m3ScopeNotice?.adminId === session?.adminId ? m3ScopeNotice?.text : "";
+  const m3NoticeText = shownM3ScopeNotice || shownOperationNotice;
+  const dismissM3Notice = () => {
+    if (shownM3ScopeNotice) {
+      lastM3ScopeNotice = null;
+      setM3ScopeNotice(null);
+    } else {
+      lastOperationNotice = null;
+      setOperationNotice(null);
+    }
+  };
+  const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted || m3NoticeText) ? <>
+    {m3NoticeText && <Notice tone={shownM3ScopeNotice ? "danger" : operationNotice?.tone ?? "danger"} action={<Button size="sm" onClick={dismissM3Notice}>知道了</Button>}>{m3NoticeText}</Notice>}
     {mError && <Notice tone="danger" action={<Button size="sm" onClick={() => void reloadMContent()}>重试</Button>}>客服中心暂时无法同步数据,请稍后重试。</Notice>}
     {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>当前账号的客服查看范围未读取，对客操作和管理入口已暂停。请刷新页面重新读取登录权限。</Notice>}
     {reconnectExhausted && <Notice tone="danger" action={<Button size="sm" onClick={retryConversationStream}>重新连接</Button>}>会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。</Notice>}
