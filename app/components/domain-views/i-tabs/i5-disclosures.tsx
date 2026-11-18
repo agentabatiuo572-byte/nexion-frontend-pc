@@ -1007,7 +1007,7 @@ type DisclosureChange = {
 };
 
 /** 发布核对的改动：总文和七章分开算，只比两边都有的语言，语言范围的变化在上面单独写（M13、BUG-473）。 */
-function disclosureChange(current: DisclosureVersionItemView | undefined, target: DisclosureVersionItemView): DisclosureChange {
+export function disclosureChange(current: DisclosureVersionItemView | undefined, target: DisclosureVersionItemView): DisclosureChange {
   const targetCodes = (target.languageScope ?? "").split("+");
   const currentCodes = (current?.languageScope ?? target.languageScope ?? "").split("+");
   const compared = LANGUAGES.filter(([code]) => targetCodes.includes(code) && currentCodes.includes(code));
@@ -1042,7 +1042,7 @@ function ChangedText({ before, after, side }: { before: string; after: string; s
 }
 
 /** 发布核对：总文和改过的章合成一个折叠，点开只放改过的语言，每段先写改后、再写现在；没改的总文和章收进另一个折叠。改几章框都一样高，打开时理由框在一屏里（DP-06）。 */
-function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
+export function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
   const change = disclosureChange(current, target);
   const shown = LANGUAGES.filter(([code]) => (target.languageScope ?? "").split("+").includes(code));
   const chapterOf = (no: string) => current?.chapters.find((chapter) => chapter.no === no);
