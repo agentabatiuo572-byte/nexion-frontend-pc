@@ -605,6 +605,8 @@ A3 托管**平台级横切配置**——feature flag 平台、**kill-switch conf
 4. **(d) 应用体验配置 · 界面语言(2026-11-18 修订)**:「应用体验配置」卡片(分享渠道、官方应用安装、首页新手任务与周促销开关回显)新增「界面语言」一节,按固定顺序列出 9 种界面语言:中文 `zh`、English `en`、Tiếng Việt `vi`、Bahasa Indonesia `id`、Bahasa Melayu `ms`、Filipino `fil`、Русский `ru`、Қазақ тілі `kk`、Oʻzbekcha `uz`;每行显示语言本身的写法、中文名和代码。只有英文 `en` 为基础语言,始终开启、不能取消;其余 8 种(包括中文与越南语)均可勾选开关。随卡片原有「保存」一起提交,沿用同一保存理由(8–200 字)、版本号和操作记录。改动在 App 与 H5 Lite 下次成功读取配置后生效,关闭的语言不再出现在用户语言列表中。后端从未保存过界面语言配置时,默认开启除中文外的 8 种(`en/vi/id/ms/fil/ru/kk/uz`),不覆盖运营已保存的配置。权限同卡片其他部分(`platform_a3_read` 查看 / `platform_a3_write` 修改)。
    - 后端 B26 上线前(读取结果不含 `interfaceLanguages`):该节只读,全部显示为开启,并提示「系统支持后，可以在这里开关界面语言，现在只能查看。」保存时不提交该字段,卡片其余保存行为不变。
    - 读取到的列表含未知代码、重复或缺少 `en` 时,整张卡片按数据异常处理(与其他字段相同):首次加载和点「刷新」都隐藏表单,只显示报错,之后刷新成功即恢复编辑;保存后返回的列表同样只要求包含 `en`,与提交的不一致时,提示「其他设置已保存，但界面语言没有按你的选择保存」,需刷新核对后重新保存。
+   - **运营区域语言**（发布必填，独立于界面语言开关）：英文 `en` 始终必选，中文 `zh`、越南语 `vi` 可选；其余六种语言本期不支持选为发布必填。配置值按 `en`、`zh`、`vi` 顺序保存，必含 `en`；从未保存时默认 `['en']`。设置沿用本卡片的读写权限、保存理由、版本和操作记录。
+   - **内容编辑规则**：勾选的运营区域语言必填、原样显示和校验；编辑器从只读接口按页面会话取值，读取失败时仍按三语 `['en','zh','vi']` 必填。未勾选的中文或越南语为选填：同一条内容的该语言字段全部为空时，提交各字段对应的英文（含选项数组及按章、按字段族组织的内容）；只填一部分时不补齐，沿用原有成对、占位符和长度等校验。打开编辑时，选填语言的字段去除首尾空白后与英文完全相同则显示为空；数组按对应位置比较。提示「选填，不填时 App 显示英文」。后端的三语内容校验不变，成功回执按实际提交的值（含补入的英文）核对。
 
 **③ 可控参数**
 
@@ -686,6 +688,7 @@ A3 托管**平台级横切配置**——feature flag 平台、**kill-switch conf
 **⑤ 接口**
 - `GET /api/admin/system/config` — 返回系统健康 `{ health:{ pipeline, ledger, ntp, endpoints } }`(server time 单源 / Idempotency-Key 为固定后端不变量,**不在本 endpoint 配置面**;feature flag / kill-switch 走各自 endpoint)。
 - `GET /api/admin/platform/config/experience` / `PUT /api/admin/platform/config/experience` — 应用体验配置(②(d))。PUT 携 `expectedVersion / baseUrl / channels / appDownload / reason / operator` 与 `Idempotency-Key`;GET 返回 `interfaceLanguages` 时 PUT 一并提交 `interfaceLanguages: string[]`(9 种代码的子集,必须包含 `en`,拒绝未知代码和重复,按固定顺序),与其他字段同一版本号、同一条操作记录;校验不通过返回 422 `PLATFORM_EXPERIENCE_LANGUAGES_INVALID`。后端从未保存过该字段时默认除中文外 8 种开启;改动在 App 与 H5 Lite 下次成功读取配置后生效。该字段由后端 B26(uvel-docs 交接 20)提供,App 公共接口 `GET /api/config/platform` 顶层下发同名字段。
+- 应用体验配置 GET/PUT 同时支持 `operatingLanguages: string[]`，不传则不改；缺少 `en`、重复或包含不支持的代码时返回 422 `PLATFORM_OPERATING_LANGUAGES_INVALID`。保存回执须与实际提交的运营区域语言一致。`GET /api/admin/platform/config/operating-languages` 只读返回 `{ operatingLanguages: [...] }`，任何已登录运营账号可读，不要求 `platform_a3_read`。
 - `GET /api/admin/feature-flags` / `PUT /api/admin/feature-flags` — feature flag 清单查询 / 切换(body 携 reason;服务端按 flag 分类校验执行角色资质;切换产 `admin.feature_flag_changed`)。
 - `GET /api/admin/killswitch` / `PUT /api/admin/killswitch`(**V1 临时**)— kill-switch 闸状态查询 / 切换 `{ key, enabled, activeCountries?, reason }`,geo-block 闸 `enabled = activeCountries.length > 0`(非纯 boolean,对齐 B5⑤)。**单一 endpoint 按 key 路由**:每次调用切换单一闸,**服务端按 key 与方向校验执行角色资质——功能闸熔断(→disabled)可为风控/财务/超管;功能闸恢复(→enabled)仅超管,且 server 前置 B1 覆盖率红线核验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`);geo-block 拒绝财务(返回 403),仅风控/超管可执行**;geo-block 不设独立 endpoint(经同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现)。**请求体须携 `Idempotency-Key`(server 24h dedup,防网络抖动重复熔断/恢复,§1.8 原则二.3)与 reason(缺失 400 `REASON_REQUIRED`);操作者经确认弹窗(A3-MD2~MD4)直接调用,写入与审计同事务,熔断动作另触发全运营账号广播**;切换产 `admin.killswitch_toggled`。**V4 落地后切换面迁移至 J1/J2 endpoint**,A3 `/killswitch` 标注「V1 临时,V4 转 J 域」。
 

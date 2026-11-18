@@ -31,6 +31,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "experience") {
     return "/api/admin/platform/config/experience";
   }
+  if (parts.length === 2 && parts[0] === "config" && parts[1] === "operating-languages") {
+    return "/api/admin/platform/config/operating-languages";
+  }
   // R-1: A3 业务时区 (GET for every console; PUT and POST cancel are super-admin only on the backend).
   if (parts.length === 1 && parts[0] === "business-calendar") {
     return "/api/admin/platform/business-calendar";
@@ -195,6 +198,9 @@ async function proxy(request: Request, context: RouteContext) {
 
   if (!targetPath) {
     return jsonError(404, "PLATFORM_ROUTE_NOT_FOUND");
+  }
+  if (targetPath === "/api/admin/platform/config/operating-languages" && request.method !== "GET") {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
   }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());

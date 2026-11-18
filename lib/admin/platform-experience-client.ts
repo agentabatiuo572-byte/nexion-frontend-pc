@@ -34,6 +34,8 @@ export const INTERFACE_LANGUAGES = [
   { code: "uz", nativeName: "Oʻzbekcha", zhName: "乌兹别克语", base: false },
 ] as const;
 export type InterfaceLanguageCode = typeof INTERFACE_LANGUAGES[number]["code"];
+export const OPERATING_LANGUAGE_CODES = ["en", "zh", "vi"] as const;
+export type OperatingLanguageCode = typeof OPERATING_LANGUAGE_CODES[number];
 
 export interface PlatformExperienceConfig {
   version: number;
@@ -44,6 +46,7 @@ export interface PlatformExperienceConfig {
   homeWeeklyPromoEnabled: boolean;
   /** Absent until the system supports switching interface languages; then it is never sent on save. */
   interfaceLanguages?: InterfaceLanguageCode[];
+  operatingLanguages?: OperatingLanguageCode[];
   ready: boolean;
   sources: string[];
   updatedAt?: string;
@@ -65,7 +68,9 @@ export function recommendedExperienceChannels(): ExperienceChannel[] {
 }
 
 interface ApiResult<T> { code: number; message?: string; data?: T; }
+const EXPERIENCE_CONFIG_PATH = "/api/admin/platform/config/experience";
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-platform-experience-commands-v1" });
+let requiredContentLanguages: Promise<readonly OperatingLanguageCode[]> | undefined;
 
 function strictUrl(value: unknown, required: boolean, allowHttp: boolean, allowFragment = false): string {
   const url = typeof value === "string" ? value.trim() : "";
@@ -94,6 +99,12 @@ function strictInterfaceLanguages(value: unknown): InterfaceLanguageCode[] {
   return INTERFACE_LANGUAGES.map((language) => language.code).filter((code) => value.includes(code));
 }
 
+function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): OperatingLanguageCode[] {
+  if (!Array.isArray(value) || new Set(value).size !== value.length || !value.includes("en")
+    || value.some((code) => !OPERATING_LANGUAGE_CODES.includes(code))) throw new Error(errorCode);
+  return OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code));
+}
+
 class PlatformExperienceRequestError extends Error {
   constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string) {
     super(message);
@@ -101,8 +112,8 @@ class PlatformExperienceRequestError extends Error {
   }
 }
 
-async function request<T>(init?: RequestInit): Promise<T> {
-  const response = await guardedFetch("/api/admin/platform/config/experience", { ...init, cache: "no-store" });
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await guardedFetch(path, { ...init, cache: "no-store" });
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!response.ok || !body || body.code !== 0) {
     const message = body?.message === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
@@ -161,12 +172,23 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     homeNewcomerTasksEnabled: root.homeNewcomerTasksEnabled,
     homeWeeklyPromoEnabled: root.homeWeeklyPromoEnabled,
     interfaceLanguages: root.interfaceLanguages === undefined ? undefined : strictInterfaceLanguages(root.interfaceLanguages),
+    operatingLanguages: root.operatingLanguages === undefined ? undefined : strictOperatingLanguages(root.operatingLanguages),
     ready: Boolean(root.ready), sources: Array.isArray(root.sources) ? root.sources.map(String) : [], updatedAt: typeof root.updatedAt === "string" ? root.updatedAt : undefined,
   };
 }
 
 export async function fetchPlatformExperienceConfig() {
-  return normalize(await request<unknown>());
+  return normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
+}
+
+export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]> {
+  const raw = await request<unknown>("/api/admin/platform/config/operating-languages");
+  if (!raw || typeof raw !== "object" || !("operatingLanguages" in raw)) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  return strictOperatingLanguages(raw.operatingLanguages);
+}
+
+export function getRequiredContentLanguages(): Promise<readonly OperatingLanguageCode[]> {
+  return requiredContentLanguages ??= fetchOperatingLanguages().catch(() => OPERATING_LANGUAGE_CODES);
 }
 
 export async function updatePlatformExperienceConfig(
@@ -188,11 +210,15 @@ export async function updatePlatformExperienceConfig(
   }
   const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload: config.appDownload, reason: reason.trim(), operator };
   if (config.interfaceLanguages) body.interfaceLanguages = config.interfaceLanguages;
+  const submittedOperatingLanguages = config.operatingLanguages === undefined
+    ? undefined
+    : strictOperatingLanguages(config.operatingLanguages, "PLATFORM_OPERATING_LANGUAGES_INVALID");
+  if (submittedOperatingLanguages) body.operatingLanguages = submittedOperatingLanguages;
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
   const idempotencyKey = commandAttempts.resolve(slot, fingerprint, () => `a3-experience-${crypto.randomUUID()}`);
   try {
-    const response = await request<unknown>({
+    const response = await request<unknown>(EXPERIENCE_CONFIG_PATH, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(body),
@@ -202,6 +228,10 @@ export async function updatePlatformExperienceConfig(
     if (config.interfaceLanguages && saved.interfaceLanguages?.join() !== config.interfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
     }
+    if (submittedOperatingLanguages && saved.operatingLanguages?.join() !== submittedOperatingLanguages.join()) {
+      throw new Error("PLATFORM_OPERATING_LANGUAGES_NOT_SAVED");
+    }
+    if (saved.operatingLanguages) requiredContentLanguages = Promise.resolve(saved.operatingLanguages);
     return saved;
   } catch (cause) {
     if (cause instanceof PlatformExperienceRequestError && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
