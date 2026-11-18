@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  * 完整性扫描 / 新建课程 / 编辑草稿 = 运营设定(仍需操作确认 + 留痕)→ openConfirm。
  */
 import { useEffect, useState } from "react";
-import type { I18nMessagePairView, I18nNamespaceView, LearningCourseVersionView } from "@/lib/admin/i-client";
+import { IContentReceiptError, type I18nMessagePairView, type I18nNamespaceView, type LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
 import { CONTENT_LANGUAGE_LABELS, Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -41,7 +41,7 @@ type Course = {
   reward: number; featured: boolean; duration: string; v: string; status: string; body: string;
   titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
   quizQuestions: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
-  passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string; revision: number;
+  passScore?: number; retryLimit?: number; completionCondition?: string | null; rewardEvent?: string | null; revision: number;
 };
 const COURSE_ICON_BY_CAT: Record<string, string> = {
   Basics: "🚀",
@@ -161,7 +161,8 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
         toast(typeof ok === "string" ? ok : ok(result));
       })
       .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
+        const message = displayAdminError(error);
+        toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
         throw error;
       });
   };
@@ -267,7 +268,6 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
         zh: selectedMessage.zh,
         en: selectedMessage.en,
         vi: selectedMessage.vi,
-        placeholders: selectedMessage.placeholders,
       },
       run: (reason, _v, form) => {
         const messageKey = selectedMessage.messageKey;
@@ -325,13 +325,20 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       amplifies: false,
       run: (reason) => runBackend(actions.rollbackI6LocalizedMessage(
         selectedMessage.messageKey,
-        target.version,
+        target,
         selectedMessage.version,
         reason,
       ), `${selectedMessage.messageKey} 已从 ${target.version} 恢复为新发布版本`),
     });
 
-  const fixIntegrity = async (issue: IntegrityIssue) =>
+  const fixIntegrity = async (issue: IntegrityIssue) => {
+    const target = selectedMessage && issue.samples.includes(selectedMessage.messageKey)
+      ? selectedMessage
+      : issue.samples.map((key) => MESSAGES.find((message) => message.messageKey === key)).find(Boolean);
+    if (!target) {
+      toast("这个问题没有可修复的已注册词条，请先重扫");
+      return;
+    }
     openActionConfirm({ briefKind: "config",
       action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
@@ -344,27 +351,21 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
         kind: "localized-copy",
         requiredLanguages: await getRequiredContentLanguages(),
         mode: "edit",
-        keyName: selectedMessage?.messageKey ?? "",
-        zh: selectedMessage?.zh ?? "",
-        en: selectedMessage?.en ?? "",
-        vi: selectedMessage?.vi ?? "",
-        placeholders: selectedMessage?.placeholders,
+        keyName: target.messageKey,
+        zh: target.zh,
+        en: target.en,
+        vi: target.vi,
       },
       run: (reason, _v, form) => {
-        if (!selectedMessage) return false;
-        const messageKey = selectedMessage.messageKey;
         return runBackend(actions.fixI6Integrity(issue.code, {
-          messageKey,
+          messageKey: target.messageKey,
           zh: form?.zh || "",
           en: form?.en || "",
           vi: form?.vi || "",
-        }, reason), (result) => {
-          const repairedCount = result.repairedCount
-            ?? Number(issue.samples.includes(messageKey) && !result.samples.includes(messageKey));
-          return `${issue.kind} ${repairedCount} 处已修复 · 待重扫确认`;
-        });
+        }, reason), (result) => `${issue.kind} ${result.repairedCount} 处已修复 · 待重扫确认`);
       },
     });
+  };
 
   /* ============ tutorial actions ============ */
   const pubCrs = (c: Course) =>
@@ -382,7 +383,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
           toast(`请先补齐课程：${missing.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}`);
           return false;
         }
-        return runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
+        return runBackend(actions.publishI6Course(c.id, c.v, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
       },
     });
 
@@ -428,11 +429,11 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       ),
       amplifies: false,
       run: (reason) => {
-        return runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
+        return runBackend(actions.archiveI6Course(c.id, c.v, reason), `${nexGridBrandText(c.title)} 已下架`);
       },
     });
 
-  const coursePayload = (form?: Record<string, string>, expectedRevision?: number) => {
+  const coursePayload = (form?: Record<string, string>, expectedRevision?: number, retiredOptions?: Pick<Course, "completionCondition" | "rewardEvent">) => {
     const quizCount = Number(form?.quizCount || 0);
     const quizQuestions = Array.from({ length: quizCount }, (_, questionIndex) => {
       const optionCount = Number(form?.[`quiz.${questionIndex}.optionCount`] || 0);
@@ -463,8 +464,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       quizQuestions,
       passScore: Number(form?.passScore),
       retryLimit: Number(form?.retries),
-      completionCondition: form?.completionCond || "quiz_passed",
-      rewardEvent: form?.rewardEvent || "quiz.passed",
+      ...retiredOptions,
       expectedRevision,
       version: form?.version || undefined,
     };
@@ -509,13 +509,13 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       formats: data?.formats,
       levels: data?.levels,
       current: {
-        slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.reward,
+        slug: c.id, version: c.v, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.reward,
         titleZh: c.titleZh, titleEn: c.titleEn, titleVi: c.titleVi, bodyZh: c.bodyZh, bodyEn: c.bodyEn, bodyVi: c.bodyVi,
         quizQuestions: c.quizQuestions, passScore: c.passScore, retryLimit: c.retryLimit,
         completionCondition: c.completionCondition, rewardEvent: c.rewardEvent,
       },
     },
-    run: (reason, _slug, form) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`),
+    run: (reason, _slug, form) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision, courseRetiredOptions(c)), reason), `${nexGridBrandText(c.title)} 草稿已更新`),
   });
 
   const deleteCrs = (c: Course) => openActionConfirm({ briefKind: "record",
@@ -525,7 +525,12 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
     run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${nexGridBrandText(c.title)} 草稿已删除`),
   });
 
-  const courseCurrent = (c: Course, version: string, payload?: Record<string, unknown>) => ({
+  const courseRetiredOptions = (c: Course, payload?: LearningCourseVersionView["payload"]) => ({
+    completionCondition: payload ? payload.completionCondition : c.completionCondition,
+    rewardEvent: payload ? payload.rewardEvent : c.rewardEvent,
+  });
+
+  const courseCurrent = (c: Course, version: string, payload?: LearningCourseVersionView["payload"]) => ({
     slug: c.id,
     version,
     category: String(payload?.category ?? c.cat),
@@ -537,8 +542,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
     bodyZh: String(payload?.bodyZh ?? c.bodyZh), bodyEn: String(payload?.bodyEn ?? c.bodyEn), bodyVi: String(payload?.bodyVi ?? c.bodyVi),
     quizQuestions: (Array.isArray(payload?.quizQuestions) ? payload.quizQuestions : c.quizQuestions) as Course["quizQuestions"],
     passScore: Number(payload?.passScore ?? c.passScore ?? 60), retryLimit: Number(payload?.retryLimit ?? c.retryLimit ?? 3),
-    completionCondition: String(payload?.completionCondition ?? c.completionCondition ?? "quiz_passed"),
-    rewardEvent: String(payload?.rewardEvent ?? c.rewardEvent ?? "quiz.passed"),
+    ...courseRetiredOptions(c, payload),
   });
 
   const newCourseVersion = async (c: Course) => {
@@ -555,7 +559,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
         current: courseCurrent(c, `v${maxVersion + 1}`),
       },
       run: (reason, _value, form) => runBackend(
-        actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`),
+        actions.createI7CourseVersion(c.id, coursePayload(form, undefined, courseRetiredOptions(c)), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`),
     });
   };
 
@@ -570,7 +574,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       current: courseCurrent(c, row.version, row.payload),
     },
     run: (reason, _value, form) => runBackend(
-      actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
+      actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision, courseRetiredOptions(c, row.payload)), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
   });
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "record",

@@ -14,6 +14,7 @@ import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { IContentReceiptError } from "@/lib/admin/i-client";
 import { getRequiredContentLanguages } from "@/lib/admin/platform-experience-client";
 
 const COPY_MODULES = ["home", "store", "earn", "me"] as const;
@@ -91,7 +92,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   const start = Number(phaseMin.replace("P", ""));
   const end = Number(phaseMax.replace("P", ""));
   return {
-    mode: "structured",
+    mode: "structured" as const,
     tiers: Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`),
     locales: language === "all" ? [] : [language],
     registrationDaysMin: registrationDaysGt + 1,
@@ -237,7 +238,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
       .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
+        const message = displayAdminError(error);
+        toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
         return false;
       });
   };
@@ -472,7 +474,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       return actions.deleteI1CopyDraft(copyKey, version, revision, reason)
         .then(() => actions.reloadIContent())
         .then(() => toast(`${copyKey} ${version} 草稿已删除`))
-        .catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; })
+        .catch((error) => {
+          const message = displayAdminError(error);
+          toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
+          return false;
+        })
         .finally(() => {
           deleteInFlightRef.current = false;
           setDeletingDraftKey(null);

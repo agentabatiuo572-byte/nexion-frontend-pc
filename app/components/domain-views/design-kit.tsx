@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, fillBlankContentLanguage, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -646,7 +646,7 @@ export type BusinessFormSpec =
       steps: { domain: string; action: string; ref: string; approve: boolean }[] }
   | { kind: "export-wizard"; mode?: "aggregate-only"; kpiStructuredRange?: boolean; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
-  | { kind: "localized-copy"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
+  | { kind: "localized-copy"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string }
   | { kind: "copy-edit"; requiredLanguages: readonly OperatingLanguageCode[]; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
   | { kind: "copy-create"; requiredLanguages: readonly OperatingLanguageCode[]; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
@@ -657,7 +657,7 @@ export type BusinessFormSpec =
   | { kind: "course-authoring"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit" | "version-create" | "version-edit"; rewardMin?: number; rewardMax?: number; categories?: string[]; formats?: string[]; levels?: string[]; durations?: string[];
       current?: { slug: string; version?: string; category: string; format: string; difficulty: string; duration: string; reward: number; titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
         quizQuestions?: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
-        passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string } }
+        passScore?: number; retryLimit?: number; completionCondition?: string | null; rewardEvent?: string | null } }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
@@ -1031,8 +1031,8 @@ function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       quizCount: String(questions.length),
       passScore: String(current?.passScore ?? 60),
       retries: String(current?.retryLimit ?? 3),
-      completionCond: current?.completionCondition ?? "quiz_passed",
-      rewardEvent: current?.rewardEvent ?? "quiz.passed",
+      completionCond: current?.completionCondition ?? "",
+      rewardEvent: current?.rewardEvent ?? "",
     };
     questions.forEach((question, questionIndex) => {
       const optionsZh = zh[`options.${questionIndex}`];
@@ -1301,7 +1301,16 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
   } else if (spec.kind === "localized-copy") {
     if (spec.mode === "create") needs("messageKey", "词条标识");
-    checkCopy(spec.placeholders);
+    const english = state.en?.trim() ?? "";
+    for (const language of activeLanguages) {
+      const label = `${CONTENT_LANGUAGE_LABELS[language]}文案`;
+      const copy = trimStoredContent(state[language] ?? "");
+      needs(language, label);
+      if (Array.from(copy).length > 1024) missing.push(`${label}最多 1024 字`);
+      if (language !== "en" && copy && english) {
+        checkPlaceholders([english, copy], `${label}的占位符须与英文一致`);
+      }
+    }
   } else if (spec.kind === "copy-edit") {
     needs("version", "文案版本");
     needs("surface", "投放模块");
@@ -1406,8 +1415,6 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const retries = Number(state.retries);
     if (!Number.isInteger(passScore) || passScore < 1 || passScore > 100) missing.push("通过分数 1-100");
     if (!Number.isInteger(retries) || retries < 0 || retries > 10) missing.push("重试次数 0-10");
-    needs("completionCond", "完成条件");
-    needs("rewardEvent", "何时发奖");
   } else if (spec.kind === "campaign-edit") {
     ["title", "body", "tier", "audience", "schedule", "budget"].forEach((key) => needs(key, key));
     if (!Number.isFinite(Number(state.budget)) || Number(state.budget) < 0) missing.push("预算数值");
@@ -2043,6 +2050,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "localized-copy" || spec.kind === "copy-edit" || spec.kind === "copy-create") {
     const isManagedCopy = spec.kind === "copy-edit" || spec.kind === "copy-create";
+    const placeholders = spec.kind === "localized-copy"
+      ? [...new Set(value.en?.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])]
+      : spec.placeholders ?? [];
     const modules = isManagedCopy ? (spec.modules ?? []) : [];
     const moduleLabels = Object.fromEntries(modules.map((item) => [item.value, item.label]));
     const positions = isManagedCopy
@@ -2101,8 +2111,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             {textArea("versionNote", "版本说明", "本次修改的原因和预期效果", 2)}
           </div>
         )}
-        {(spec.placeholders ?? []).length > 0 && (
-          <div className="tint tiny" style={{ marginTop: 10 }}>必须包含的占位符：{(spec.placeholders ?? []).map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < (spec.placeholders ?? []).length - 1 ? "、" : ""}</span>)}</div>
+        {placeholders.length > 0 && (
+          <div className="tint tiny" style={{ marginTop: 10 }}>必须包含的占位符：{placeholders.map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < placeholders.length - 1 ? "、" : ""}</span>)}</div>
         )}
       </div>
     );
