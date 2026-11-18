@@ -10,7 +10,7 @@ export function containsHan(value: string): boolean {
 
 export function appVisibleTextError(value: string | undefined, field: string): string | undefined {
   if (value && containsHan(value)) {
-    return `${field}会显示给 App 用户，不能包含中文，请填英文`;
+    return `${field}不能包含中文，请改成英文`;
   }
 }
 

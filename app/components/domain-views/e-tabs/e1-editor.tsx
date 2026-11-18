@@ -240,7 +240,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
       if (key === "power" && form.tier === "Share") {
-        e.form ??= "这个 Share 商品已存的功耗说明含中文，App 会显示它，但本表不提供 Share 功耗输入，请联系技术支持修改";
+        e.form ??= "这个共享份额商品已存的功耗说明含中文，本表改不了，请联系技术支持修改";
       } else {
         e[key] = error;
       }
