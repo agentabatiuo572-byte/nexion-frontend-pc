@@ -44,7 +44,7 @@ import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, dockCommands, dockDraftKey, redactDockRecovery, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { blocksNewSend, dockCommands, dockDraftKey, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -357,13 +357,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
     mLoadCoordinator.current.beginConversationSnapshot();
     liveSnapshotController.current?.abort();
-    const affectedIds = mDataRef.current?.conversations.filter((conversation) => conversation.id === conversationNo || customerId && conversation.customerId === customerId).map((conversation) => conversation.id) ?? [];
-    for (const record of dockCommands.list()) {
-      if (!record.fingerprint.startsWith(`dock|${session?.adminId}|`)) continue;
-      const target = record.customerId ?? mDataRef.current?.conversations.find((conversation) => conversation.id === record.conversationNo)?.customerId;
-      if (!conversationNo && !customerId || record.conversationNo === conversationNo || customerId && (!target || target === customerId)) redactDockRecovery(record);
-    }
-    window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId } }));
+    const cleared = session?.adminId ? redactCustomerSends(session.adminId, mDataRef.current?.conversations ?? [], customerId, conversationNo) : undefined;
+    customerId = cleared?.customerId ?? customerId;
+    const affectedIds = cleared?.affected ?? [];
+    if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
+    window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared } }));
     setMData((previous) => previous ? {
       ...previous,
       conversations: previous.conversations.filter((conversation) =>
