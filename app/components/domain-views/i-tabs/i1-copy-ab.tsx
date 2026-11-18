@@ -392,7 +392,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const nobodySeen = (data?.experiments ?? []).every((row) => row.variants.every((variant) => variant.impressions === 0));
   const highestVariantCvrText = highestVariantCvr === undefined
     ? String(I1_STATS.topLift).replace(/^\+/, "")
-    : highestVariantCvr === null || nobodySeen ? "—" : `${highestVariantCvr}%`;
+    : highestVariantCvr === null || nobodySeen ? "—" : `${highestVariantCvr.toFixed(2)}%`;
   const exactImpressions = data?.stats.cumulativeExperimentImpressions;
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
     key: row.key,

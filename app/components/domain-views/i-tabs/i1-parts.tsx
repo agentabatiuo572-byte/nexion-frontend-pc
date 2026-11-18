@@ -211,7 +211,7 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
           return (
             <section key={`${variant.name}-${variant.version}`} className="i1-variant" data-lead={lead ? "" : undefined} aria-label={`${variant.name} 组`}>
               <header className="i1-variant-head">
-                <span className="i1-variant-badge">{variant.name}</span>
+                <span className="i1-variant-badge" title={variant.name}>{variant.name.split(" · ")[0]}</span>
                 <span className="i1-variant-ver"><b data-mono="">{variant.version || "—"}</b>{variant.versionName ? ` · ${variant.versionName}` : ""}</span>
                 {lead && <StatusTag tone="ok" icon={Trophy} explain="按转化人数 ÷ 看到人数的原始数比较，转化率四舍五入后相同也能分出高低。">领先</StatusTag>}
               </header>
