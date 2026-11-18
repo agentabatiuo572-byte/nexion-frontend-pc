@@ -2193,7 +2193,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EVENT_REWARD_ASSET_INVALID: "活动奖励必须且只能包含一种资产：UVT 或 USDT。",
   EVENT_STATUS_TERMINAL: "已结束活动不能再改，不能重新上架；请新建活动版本。",
   EVENT_STATUS_TRANSITION_INVALID: "活动状态只能按“待开始→进行中/已结束”或“进行中→已结束”推进，不能回退。",
-  EVENT_LOCALIZED_CONTENT_INCOMPLETE: "该活动的目标语言内容未填全（中文与越南语的标题、活动说明、奖项名称），本次未发布为「进行中」；请先在上方三语表补齐缺失项。",
+  EVENT_LOCALIZED_CONTENT_INCOMPLETE: "请在「App 运营内容（三语）」补齐活动名称、说明和奖励名。发布前须填写英文、中文和越南语。",
   EVENT_WHEEL_SINGLETON: "系统只允许一个幸运转盘活动，请直接维护现有转盘及下方奖池。",
   EVENT_WHEEL_REWARD_MANAGED_BY_POOL: "幸运转盘的实际奖励由奖池档位统一管理，不能修改活动行的展示奖励。",
   WHEEL_GUARD_STALE: "转盘护栏已被其他操作员修改，请刷新后基于最新值重试。",
@@ -3843,9 +3843,41 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
  */
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
-export function formatAdminApiError(message: string | null | undefined, fallback: string, operation: "read" | "write" = "write") {
+function eventLocalizedMissingMessage(data: unknown): string | undefined {
+  if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
+
+  const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
+  const fieldLabels = { name: "名称", description: "说明", rewardName: "奖励名" };
+  const byLanguage = new Map<string, Set<string>>();
+  for (const item of data.missing) {
+    const key = typeof item === "string" ? item
+      : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
+        ? `localized.${item.locale}.${item.field}` : "";
+    const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
+    if (!match) continue;
+    const language = languageLabels[match[1] as keyof typeof languageLabels];
+    const fields = byLanguage.get(language) ?? new Set<string>();
+    fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
+    byLanguage.set(language, fields);
+  }
+  if (!byLanguage.size) return;
+  const labels = [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`);
+  return `请在「App 运营内容（三语）」填写${labels.join("、")}，补齐后再发布或开启活动。`;
+}
+
+export function formatAdminApiError(
+  message: string | null | undefined,
+  fallback: string,
+  operation: "read" | "write" = "write",
+  data?: unknown,
+) {
   const raw = (message || fallback || "").trim();
   if (!raw) return "操作失败，请稍后重试。";
+
+  if (raw === "EVENT_LOCALIZED_CONTENT_INCOMPLETE" || raw === "EVENT_RULE_INCOMPLETE") {
+    const localized = eventLocalizedMissingMessage(data);
+    if (localized) return localized;
+  }
 
   if (raw.startsWith("J4_EXECUTION_PARTIAL:")) {
     const executionId = raw.split(":")[1] || "未知";

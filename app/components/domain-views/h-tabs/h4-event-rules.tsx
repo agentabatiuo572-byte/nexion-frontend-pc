@@ -7,8 +7,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, CircleCheck, Lock, Settings2, Sparkles } from "lucide-react";
 import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
-import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRuleReadiness, eventRegionText, parseEventRegions, type EventLocalizedContent } from "@/lib/admin/event-rule-form";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
@@ -50,7 +50,13 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   }
 }
 
-export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }: { ctx: HCtx; onApprovalCompleted?: () => Promise<void>; onRowsChange?: (rows: EventRuleView[] | null) => void }) {
+export default function H4EventRules({ ctx, eventContent, contentRefresh, onRowsChange, onApprovalCompleted }: {
+  ctx: HCtx;
+  eventContent?: Record<string, EventLocalizedContent>;
+  contentRefresh?: number;
+  onApprovalCompleted?: () => Promise<void>;
+  onRowsChange?: (rows: EventRuleView[] | null) => void;
+}) {
   const [rows, setRows] = useState<EventRuleView[]>([]), [selected, setSelected] = useState<EventRuleView | null>(null);
   const [draft, setDraft] = useState<EventRuleChange | null>(null), [regions, setRegions] = useState("");
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
@@ -73,7 +79,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
     catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); } return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
-  useEffect(() => { setSaving(false); setError(""); setRows([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
+  useEffect(() => { setSaving(false); setError(""); setRows([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator, contentRefresh]);
   useEffect(() => { onRowsChange?.(loading || readFailed || !canRead ? null : rows); }, [rows, loading, canRead, readFailed]);
   useEffect(() => {
     let alive = true; setVouchers([]); setVoucherError(""); setVoucherLoading(false);
@@ -139,7 +145,13 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
         };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
-          if (!original) assertH4Fresh("rules", readVersion);
+          if (!original) {
+            assertH4Fresh("rules", readVersion);
+            if (firstOpen) {
+              const missing = eventRuleReadiness(base, eventContent).missing.filter(key => key.startsWith("localized."));
+              if (missing.length) throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing }));
+            }
+          }
           const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen);
           await complete(saved);
         } catch (cause) {
@@ -204,26 +216,27 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
   const stateTag = (row: EventRuleView) => ended(row) ? <StatusTag tone="done" explain="开放时间已过：参与条件和时间保持原配置。">已结束</StatusTag>
     : row.enabled ? <StatusTag tone="ok" icon={CircleCheck} explain="开着：到了开始时间、符合条件的用户能参加。玩法和时间已固定，只能关闭；关闭后不能再开。">已开启</StatusTag>
     : <StatusTag tone="neutral" explain={row.rulesLocked ? "开过又关了：不能再开。" : "还没开过：配好并就绪后可以申请开启。"}>{row.rulesLocked ? "已关闭 · 不能再开" : "已关闭"}</StatusTag>;
-  const missing = (row: EventRuleView) => [...new Set(row.readiness.missing.map(eventRuleMissingLabel))];
+  const missing = (keys: string[]) => [...new Set(keys.map(eventRuleMissingLabel))];
 
   const editor = selected && draft && (() => {
     const saved = savedUnread;
     const lockedForm = !canWrite || saving || saved || h4Blocked(`H/h4_event_rule/${selected.eventCode}`) || !!review;
     const showSaved = saved && (!error || readFailed);
-    const enableBlocked = !selected.readiness.ready ? `还没就绪：${missing(selected).join("、") || "参与条件与奖励配置"}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
+    const readiness = eventRuleReadiness(selected, eventContent);
+    const enableBlocked = !readiness.ready ? `还没就绪：${missing(readiness.missing).join("、") || "参与条件与奖励配置"}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
     return <div className="h4-dialog-body">
       {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
       {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新配置，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
       <fieldset disabled={lockedForm} className="h4-fieldset">
       <Facts>
         <Fact k="玩法">{PLAY_SENTENCE[playKey({ kind: selected.kind, rules: draft.rules })] ?? "—"}</Fact>
-        <Fact k="就绪" tone={selected.readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : selected.readiness.ready ? "配置已满足开启条件" : `待补齐：${missing(selected).join("、") || "参与条件与奖励配置"}`}</Fact>
+        <Fact k="就绪" tone={readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : readiness.ready ? "配置已满足开启条件" : `待补齐：${missing(readiness.missing).join("、") || "参与条件与奖励配置"}`}</Fact>
         <Fact k="改动范围">{selected.rulesLocked ? "玩法和时间已固定，只可关闭活动；关闭后不能重新开启" : "第一次开启后玩法和时间固定；关闭后不能重新开启"}</Fact>
       </Facts>
       <Field label="开放状态" explain={enableBlocked ? `不能选「开启」：${enableBlocked}。` : undefined}>
         <Segments label="开放状态" value={String(draft.enabled)} onChange={(v) => setDraft({ ...draft, enabled: v === "true" })} items={[
           { value: "false", label: "关闭", disabled: lockedForm },
-          { value: "true", label: "开启", disabled: lockedForm || !selected.readiness.ready || (selected.rulesLocked && !selected.enabled) },
+          { value: "true", label: "开启", disabled: lockedForm || !readiness.ready || (selected.rulesLocked && !selected.enabled) },
         ]} />
       </Field>
       <fieldset disabled={selected.rulesLocked} className="h4-fieldset">
@@ -280,7 +293,8 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
       : !rows.length ? <BlockState state="empty" title="暂无活动规则" />
       : <div className="h4-cards">{rows.map(row => {
         const supported = !!EVENT_KIND_LABELS[row.kind];
-        const lack = missing(row);
+        const readiness = eventRuleReadiness(row, eventContent);
+        const lack = missing(readiness.missing);
         return <article key={row.eventCode} className="h4-card h4l-play" aria-label={`${EVENT_KIND_LABELS[row.kind] ?? "其他活动"} · ${row.eventCode}`} data-dim={!supported || ended(row) ? "" : undefined}>
           <header className="h4-card-head">
             <div className="h4-card-title"><h3>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.eventCode}>{row.eventCode}</span></span></div>
@@ -292,7 +306,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
             <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{row.startsAt || row.endsAt ? <><span className="h4-num">{formatTime(row.startsAt, "Asia/Shanghai")}</span> → <span className="h4-num">{formatTime(row.endsAt, "Asia/Shanghai")}</span></> : <span className="h4-dim">尚未配置</span>}</dd></div>
           </dl>
           <footer className="h4-card-foot">
-            {ended(row) || row.enabled ? <span className="h4-dim">—</span> : row.readiness.ready
+            {ended(row) || row.enabled ? <span className="h4-dim">—</span> : readiness.ready
               ? <span className="h4l-ready"><CircleCheck size={14} aria-hidden />就绪，可以开启</span>
               : <span className="h4l-lack" title={lack.join("、")}><CircleAlert size={14} aria-hidden />缺 <b className="h4-num">{lack.length || 1}</b> 项：{lack.slice(0, 2).join("、") || "参与条件与奖励配置"}{lack.length > 2 ? " 等" : ""}</span>}
             <Button size="sm" icon={<Settings2 size={13} aria-hidden />} disabledReason={!supported ? "这类玩法已停用" : saving ? "正在保存" : selected ? "先关掉正在改的配置" : undefined} onClick={() => choose(row)}>配置</Button>

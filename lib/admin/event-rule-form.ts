@@ -1,5 +1,27 @@
 import type { EventRuleView } from "./event-rules-client";
 
+const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
+const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
+
+export type EventLocalizedContent = Record<string, Record<string, unknown>>;
+
+export function eventLocalizedContentGaps(content?: EventLocalizedContent) {
+  return EVENT_CONTENT_LOCALES.flatMap(locale => EVENT_CONTENT_FIELDS.filter(field => {
+    const value = content?.[locale]?.[field];
+    return typeof value !== "string" || !value.trim();
+  }).map(field => ({ locale, field })));
+}
+
+export function eventRuleReadiness(
+  row: Pick<EventRuleView, "enabled" | "eventCode" | "readiness">,
+  content?: Record<string, EventLocalizedContent>,
+) {
+  if (row.enabled || !content) return row.readiness;
+  const localized = eventLocalizedContentGaps(content[row.eventCode]).map(({ locale, field }) => `localized.${locale}.${field}`);
+  const missing = [...new Set([...row.readiness.missing, ...localized])];
+  return { ready: row.readiness.ready && missing.length === 0, missing };
+}
+
 export interface EventRuleField { key: string; label: string; type?: "text" | "regions" | "weekdays" | "voucher"; integer?: boolean; }
 export const EVENT_KIND_LABELS: Record<string, string> = { discount: "限时特惠", seasonal: "季节活动", referral: "推荐有奖", onboarding: "新用户冲刺", regional: "区域 PK", boost: "加成活动", wheel: "幸运转盘" };
 export const EVENT_RULE_FIELDS: Record<string, EventRuleField[]> = {
@@ -29,7 +51,11 @@ export function parseEventRegions(text: string) {
   });
 }
 export function eventRuleMissingLabel(key: string): string {
-  if (key.startsWith("localized.")) return `活动${key.includes(".zh.") ? "中文" : key.includes(".vi.") ? "越南语" : "三语"}文案（在活动内容区维护）`;
+  if (key.startsWith("localized.")) {
+    const locale = key.split(".")[1];
+    const label = locale === "en" ? "英文" : locale === "zh" ? "中文" : locale === "vi" ? "越南语" : "三语";
+    return `活动${label}文案（在活动内容区维护）`;
+  }
   const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
   if (voucherIssue) return voucherIssue;
   const field = Object.values(EVENT_RULE_FIELDS).flat().find(field => field.key === key);

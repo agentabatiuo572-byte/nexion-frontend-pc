@@ -48,7 +48,7 @@ import {
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, retireH4PointsTier, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import type { HCtx } from "./types";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
@@ -140,6 +140,9 @@ const LOCALIZED_FIELD_LABEL: Record<"name" | "description" | "rewardName", strin
   description: "活动说明",
   rewardName: "奖项名称",
 };
+
+const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
+const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
 
 const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
 const TASK_CATEGORY_LABELS: Record<string, string> = {
@@ -683,6 +686,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
+  const localizedValue = (
+    entity: "mission" | "event", code: string,
+    field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi",
+  ) => text(model?.contentLocales?.[entity]?.[code]?.[locale]?.[field], "");
+
+  const eventLocalizedGaps = (eventCode: string) =>
+    EVENT_CONTENT_LOCALES.flatMap((locale) => EVENT_CONTENT_FIELDS
+      .filter((field) => !localizedValue("event", eventCode, field, locale).trim())
+      .map((field) => ({ eventCode, field, locale })));
+
   const openEventStatus = (event: QuestEvent) => {
     openConfirm({ briefKind: "config",
       action: `活动状态 · ${event.name}`,
@@ -693,6 +706,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
+        if (value === "ongoing") {
+          const missing = eventLocalizedGaps(event.id);
+          if (missing.length) throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", { missing }));
+        }
         apply(await updateH4EventStatus(event.id, value, event.state, reason));
         toast(`${event.name} 状态已更新`);
       },
@@ -738,11 +755,6 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
 
-  const localizedValue = (
-    entity: "mission" | "event", code: string,
-    field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi",
-  ) => text(model?.contentLocales?.[entity]?.[code]?.[locale]?.[field], "");
-
   const openLocalizedContent = (
     entity: "mission" | "event", code: string,
     field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi", source: string,
@@ -750,7 +762,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = localizedValue(entity, code, field, locale);
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: <>这里填写 {locale.toUpperCase()} 文案；不填时 App 显示原文，不会自动翻译。</>,
+      detail: entity === "event"
+        ? <>这里填写 {locale.toUpperCase()} 文案。活动发布前须补齐英文、中文和越南语的名称、说明和奖励名。</>
+        : <>这里填写 {locale.toUpperCase()} 文案；不填时 App 显示原文，不会自动翻译。</>,
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
@@ -1580,20 +1594,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       ]
     : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false }));
 
-  /**
-   * 目标语言缺失清单。
-   *
-   * 从 PC 已经收到的 `contentLocales` 直接派生,不额外要后端下发一份 —— 同一份数据算两遍
-   * 就有两个真相。英文可回退事件原文,zh/vi 没有回退来源:缺了就是中文/越南语用户看到英文。
-   * 该清单同时用于表格标记与顶部阻断提示,并被后端「转入 ongoing 必须填全」的门对齐。
-   */
-  const localizedGaps = (model.events ?? []).flatMap((event) =>
-    (["zh", "vi"] as const).flatMap((locale) =>
-      (["name", "description", "rewardName"] as const)
-        .filter((field) => !text(model.contentLocales?.event?.[event.id]?.[locale]?.[field], ""))
-        .map((field) => ({ eventCode: event.id, locale, field })),
-    ),
-  );
+  const localizedGaps = (model.events ?? []).flatMap((event) => eventLocalizedGaps(event.id));
 
   return (
     <>
@@ -1648,10 +1649,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">App 运营内容（三语）</span>
-          <span className="sub">· 英语 / 简体中文 / 越南语；没填的显示原文，不自动翻译</span>
+          <span className="sub">{section === "events"
+            ? "· 活动发布前须补齐英文、简体中文和越南语的名称、说明和奖励名"
+            : "· 英语 / 简体中文 / 越南语；没填的显示原文，不自动翻译"}</span>
         </div>
-        {/* 缺失即阻断:事件转入「进行中」= 对用户发布,后端要求 zh/vi 填全。此前表格只把空值
-            显示成中性的「填写」按钮,运营看不出缺内容会挡住发布;中文 App 于是直接回退英文原文。 */}
         {localizedGaps.length > 0 && (
           <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
             有 {localizedGaps.length} 项翻译没填，相关活动不能设为「进行中」：
@@ -1676,19 +1677,18 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 <tr key={`${item.entity}:${item.code}:${row.field}`}>
                   <td className="mono">{row.label}</td>
                   <td>{taskTitleText(row.source)}</td>
-                  {(["en", "zh", "vi"] as const).map((language) => {
+                  {EVENT_CONTENT_LOCALES.map((language) => {
                     const current = localizedValue(item.entity, item.code, row.field, language);
                     if (item.readOnly) {
                       return <td key={language}><span title="任务已归档，译文只读">{current || "未填写"}</span></td>;
                     }
-                    // 目标语言缺失(zh/vi)是发布阻断项,不是可忽略的空值 —— 单独标出。
-                    const missing = !current && item.entity === "event" && language !== "en";
+                    const missing = item.entity === "event" && !current.trim();
                     return (
                       <td key={language}>
                         <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
-                          aria-label={`${current ? "编辑" : missing ? "填写（上线前必须补齐）" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
+                          aria-label={`${missing ? "填写（上线前必须补齐）" : current ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
                           onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source)}>
-                          {current || (missing ? "缺失" : "填写")}
+                          {missing ? "缺失" : current || "填写"}
                         </button>
                         {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="活动设为「进行中」前必须补齐这个语言">缺</span>}
                       </td>
