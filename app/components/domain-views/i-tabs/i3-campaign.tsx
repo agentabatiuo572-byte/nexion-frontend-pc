@@ -19,6 +19,8 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
 /** 每个 CAP 档位一个槽位:同档位改了值就铸新命令号并丢弃旧号(旧号可能已被后端消费,
  *  留着会让「改回原值」的新操作被当成重复提交吞掉)。落 sessionStorage,刷新后重试仍去重。 */
@@ -43,6 +45,12 @@ type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
 };
 type TierK = CampaignRow["tier"];
 const TIER_OPTS: TierK[] = ["critical", "high", "normal", "low"];
+const CTA_LABELS_EN: Readonly<Partial<Record<string, string>>> = {
+  "/pages/me/wallet-repurchase": "Reinvest",
+  "/pages/team/team": "Team",
+  "/pages/market/market": "Market",
+  "/pages/genesis/marketplace": "Genesis",
+};
 const I3_TIER_STATE: Record<TierK, [label: string, tone: string]> = {
   critical: ["紧急", "danger"],
   high: ["高", "warn"],
@@ -125,6 +133,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<CampaignRow | null>(null);
   const [form, setForm] = useState<NewForm>(FORM_INIT);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[] | null>(null);
   const [estimatedAudience, setEstimatedAudience] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [scheduleRow, setScheduleRow] = useState<CampaignRow | null>(null);
@@ -152,6 +161,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         return false;
       });
   };
+
+  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
 
   useEffect(() => {
     if (!newOpen) return;
@@ -192,10 +203,11 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     setScheduleVerified(false);
   };
 
-  const editDraft = (c: CampaignRow) => {
-    const zh = splitNotificationBody(c.bodyZh);
-    const vi = splitNotificationBody(c.bodyVi);
+  const editDraft = async (c: CampaignRow) => {
+    const required = requiredLanguages ?? await getRequiredContentLanguages();
     const en = splitNotificationBody(c.bodyEn);
+    const zh = blankCopiedContentLanguage(required, "zh", en, splitNotificationBody(c.bodyZh));
+    const vi = blankCopiedContentLanguage(required, "vi", en, splitNotificationBody(c.bodyVi));
     setEditing(c);
     setForm({
       name: c.name,
@@ -307,14 +319,26 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
   /* ---------- new campaign drawer 提交 ---------- */
   const submitNew = async () => {
-    if (submitting) return;
+    if (submitting || !requiredLanguages) return;
     const trimmedName = form.name.trim();
     if (!trimmedName) {
       toast("请填写 通知活动名称");
       return;
     }
-    if (!form.titleZh.trim() || !form.titleVi.trim() || !form.bodyZh.trim() || !form.bodyVi.trim()) {
-      toast("请完整填写中文和越南语标题与正文");
+    const en = { title: form.titleEn.trim(), body: form.bodyEn.trim() };
+    const zh = fillBlankContentLanguage(requiredLanguages, "zh", en, { title: form.titleZh.trim(), body: form.bodyZh.trim() });
+    const vi = fillBlankContentLanguage(requiredLanguages, "vi", en, { title: form.titleVi.trim(), body: form.bodyVi.trim() });
+    const submittedCopy = [en, zh, vi];
+    if (submittedCopy.some(({ title, body }) => !title || !body)) {
+      toast(displayAdminError("VALIDATION_FAILED"));
+      return;
+    }
+    if (submittedCopy.some(({ title, body }) => {
+      const delivered = splitNotificationBody(`${title}\n${body}`);
+      return title.length > 160 || body.length > 4000
+        || Array.from(delivered.title.trim()).length > 128 || Array.from(delivered.body.trim()).length > 512;
+    })) {
+      toast(displayAdminError("VALIDATION_FAILED"));
       return;
     }
     const minIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMin) ?? -1;
@@ -323,18 +347,24 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       toast("P 阶段范围不正确");
       return;
     }
-    const selectedCta = DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref);
+    const ctaLabel = CTA_LABELS_EN[form.ctaHref];
+    if (form.ctaHref && (!ctaLabel || ctaLabel.length > 64)) {
+      toast(displayAdminError("VALIDATION_FAILED"));
+      return;
+    }
+    const englishOverride = editing?.translations?.en;
     const payload = {
       name: trimmedName,
-      titleZh: form.titleZh.trim(),
-      titleVi: form.titleVi.trim(),
-      titleEn: form.titleEn.trim(),
-      bodyZh: form.bodyZh.trim(),
-      bodyVi: form.bodyVi.trim(),
-      bodyEn: form.bodyEn.trim(),
+      titleZh: zh.title,
+      titleVi: vi.title,
+      titleEn: en.title,
+      bodyZh: zh.body,
+      bodyVi: vi.body,
+      bodyEn: en.body,
       kind: form.kind,
       ctaHref: form.ctaHref,
-      ctaLabel: selectedCta?.label ?? "",
+      ...(ctaLabel ? { ctaLabel } : {}),
+      ...(englishOverride?.ctaLabel ? { translations: { ...editing?.translations, en: { ...englishOverride, ctaLabel: ctaLabel ?? "" } } } : {}),
       tier: form.tier,
       audienceTarget: targetFromForm(form),
       budget: Number(form.budget || 0),
@@ -606,7 +636,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               {" "}
               <button
                 className="l-btn sm primary"
-                disabled={!AUDIENCE_CATALOG || estimating || submitting}
+                disabled={!AUDIENCE_CATALOG || !requiredLanguages || estimating || submitting}
                 onClick={submitNew}
               >
                 {submitting ? "提交中…" : editing ? "保存修改" : "保存草稿"}
@@ -629,7 +659,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               )}
             </FormField>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-              <FormField label="中文标题" required>
+              <FormField label="中文标题" required={requiredLanguages?.includes("zh")}>
                 <input
                   value={form.titleZh}
                   onChange={(e) => setForm({ ...form, titleZh: e.target.value })}
@@ -637,7 +667,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={INPUT_STYLE}
                 />
               </FormField>
-              <FormField label="越南语标题" required>
+              <FormField label="越南语标题" required={requiredLanguages?.includes("vi")}>
                 <input
                   value={form.titleVi}
                   onChange={(e) => setForm({ ...form, titleVi: e.target.value })}
@@ -645,7 +675,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={INPUT_STYLE}
                 />
               </FormField>
-              <FormField label="英文标题（可选）">
+              <FormField label="英文标题（可选）" required>
                 <input
                   value={form.titleEn}
                   onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
@@ -653,7 +683,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={INPUT_STYLE}
                 />
               </FormField>
-              <FormField label="中文正文" required>
+              <FormField label="中文正文" required={requiredLanguages?.includes("zh")}>
                 <textarea
                   rows={4}
                   value={form.bodyZh}
@@ -662,7 +692,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>
-              <FormField label="越南语正文" required>
+              <FormField label="越南语正文" required={requiredLanguages?.includes("vi")}>
                 <textarea
                   rows={4}
                   value={form.bodyVi}
@@ -671,7 +701,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>
-              <FormField label="英文正文（可选）">
+              <FormField label="英文正文（可选）" required>
                 <textarea
                   rows={4}
                   value={form.bodyEn}

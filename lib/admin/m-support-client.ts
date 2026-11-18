@@ -614,6 +614,7 @@ export function readFirstAssignmentCommand(key: string, customerId: string, targ
 export type SupportWelcomeLanguage = "zh" | "en" | "vi";
 export type SupportWelcomeTexts = Record<SupportWelcomeLanguage, string>;
 export type SupportWelcomeMessage = { version: number; texts: SupportWelcomeTexts; updatedAt: string | null; updatedBy: string | null; reason: string | null };
+type SupportWelcomeUpdate = { expectedVersion: number; texts: SupportWelcomeTexts; reason: string };
 const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
   const row = object(value, "welcome");
   const texts = object(row.texts, "welcome.texts");
@@ -627,11 +628,19 @@ const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
     reason: row.reason === null ? null : nonempty(row.reason, "welcome.reason"),
   };
 };
+function savedWelcome(value: unknown, input: SupportWelcomeUpdate): SupportWelcomeMessage {
+  const saved = welcomeMessage(value);
+  if (saved.version !== input.expectedVersion + 1) malformed("welcome.version");
+  if (saved.texts.en !== input.texts.en || saved.texts.zh !== input.texts.zh || saved.texts.vi !== input.texts.vi) malformed("welcome.texts");
+  return saved;
+}
 /** B16: the one welcome copy every new user receives in their support conversation right after registration. */
 export const supportWelcomeMessageClient = {
   read: (signal?: AbortSignal) => request("/support-agents/welcome-message", welcomeMessage, { signal }),
-  update: (input: { expectedVersion: number; texts: SupportWelcomeTexts; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
-    request("/support-agents/welcome-message", welcomeMessage, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
+  update: (input: SupportWelcomeUpdate, idempotencyKey: string, signal?: AbortSignal) =>
+    request("/support-agents/welcome-message", (value) => savedWelcome(value, input), json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
+  command: (idempotencyKey: string, input: SupportWelcomeUpdate) =>
+    readManagementCommand(idempotencyKey, "SUPPORT_WELCOME", (value) => savedWelcome(value, input)),
 };
 
 export type SupportPersonalPhrase = { id: string; content: string };

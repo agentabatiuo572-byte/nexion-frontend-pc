@@ -3,23 +3,32 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchPlatformExperienceConfig,
+  getRequiredContentLanguages,
   INTERFACE_LANGUAGES,
   OPERATING_LANGUAGE_CODES,
   recommendedExperienceChannels,
   updatePlatformExperienceConfig,
+  type InterfaceLanguageCode,
+  type OperatingLanguageCode,
   type PlatformExperienceConfig,
 } from "@/lib/admin/platform-experience-client";
 import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 import { PublishedHowContentEditor } from "@/app/components/domain-views/published-how-content-editor";
+
+const ENGLISH_ONLY = ["en"] as const;
 
 export function PlatformExperienceConfig() {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
   const [config, setConfig] = useState<PlatformExperienceConfig | null>(null);
+  const [storedConfig, setStoredConfig] = useState<PlatformExperienceConfig | null>(null);
+  const [releaseNotesZhDraft, setReleaseNotesZhDraft] = useState<string>();
+  const [fallbackOperatingLanguages, setFallbackOperatingLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -29,13 +38,28 @@ export function PlatformExperienceConfig() {
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setLoading(true); setError(null); setSuccess(null);
-    try { setConfig(await fetchPlatformExperienceConfig()); }
+    try {
+      const loaded = await fetchPlatformExperienceConfig();
+      if (loaded.operatingLanguages === undefined) setFallbackOperatingLanguages(await getRequiredContentLanguages());
+      setStoredConfig(loaded); setConfig(loaded); setReleaseNotesZhDraft(undefined);
+    }
     catch (cause) { setConfig(null); setError(displayAdminError(cause)); }
     finally { setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh]);
 
   if (!canRead) return null;
+
+  const interfaceLanguages: readonly InterfaceLanguageCode[] | undefined = config?.interfaceLanguages === null ? ENGLISH_ONLY : config?.interfaceLanguages;
+  const operatingLanguages: readonly OperatingLanguageCode[] | undefined = config?.operatingLanguages === null ? ENGLISH_ONLY : config?.operatingLanguages;
+  const recoveryWarning = [
+    storedConfig?.interfaceLanguages === null ? "已保存的界面语言无法读取，请重新勾选后保存" : "",
+    storedConfig?.operatingLanguages === null ? "已保存的发布必填语言无法读取，请重新勾选后保存" : "",
+  ].filter(Boolean).join("。");
+  const storedNotes = storedConfig?.appDownload.releaseNotes;
+  const releaseNotesZh = releaseNotesZhDraft ?? (storedNotes
+    ? blankCopiedContentLanguage(operatingLanguages ?? fallbackOperatingLanguages, "zh", { text: storedNotes.en }, { text: storedNotes.zh }).text
+    : "");
 
   const patchChannel = (index: number, patch: Record<string, unknown>) => {
     if (!config) return;
@@ -48,8 +72,11 @@ export function PlatformExperienceConfig() {
     if (reason.trim().length < 8 || reason.trim().length > 200) { setError("保存理由必须为 8–200 字，请补充后再保存。"); return; }
     setSaving(true); setError(null);
     try {
-      const saved = await updatePlatformExperienceConfig(config, reason, session?.operator ?? session?.username ?? "");
-      setConfig(saved);
+      const saved = await updatePlatformExperienceConfig({
+        ...config,
+        appDownload: { ...config.appDownload, releaseNotes: { en: config.appDownload.releaseNotes.en, zh: releaseNotesZh } },
+      }, reason, session?.operator ?? session?.username ?? "");
+      setStoredConfig(saved); setConfig(saved); setReleaseNotesZhDraft(undefined);
       setReason("");
       setSuccess(`已保存，当前版本 v${saved.version}。`);
     } catch (cause) {
@@ -86,17 +113,17 @@ export function PlatformExperienceConfig() {
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>Android 官方下载链接（可选）</label><input aria-label="Android 官方下载链接" value={config.appDownload.androidUrl} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, androidUrl: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>版本</label><input aria-label="安装包版本" value={config.appDownload.version} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, version: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
         </div><div><label className="tiny">来源（仅允许官方）</label><select aria-label="安装包来源" value={config.appDownload.source} disabled={!canWrite} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, source: event.target.value as PlatformExperienceConfig["appDownload"]["source"] } })} style={{ width: "100%", marginTop: 4 }}><option value="official">官方渠道</option><option value="unavailable">暂不提供</option></select>
-          <label className="tiny" style={{ display: "block", marginTop: 8 }}>发布说明（中文 / 英文）</label><div className="row"><input aria-label="中文发布说明" value={config.appDownload.releaseNotes.zh} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, zh: event.target.value } } })} /><input aria-label="英文发布说明" value={config.appDownload.releaseNotes.en} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } } })} /></div>
+          <label className="tiny" style={{ display: "block", marginTop: 8 }}>发布说明（中文 / 英文）</label><div className="row"><input aria-label="中文发布说明" value={releaseNotesZh} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setReleaseNotesZhDraft(event.target.value)} /><input aria-label="英文发布说明" value={config.appDownload.releaseNotes.en} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } } })} /></div>
           {config.appDownload.source === "unavailable" && <div className="tiny" style={{ marginTop: 6 }}>当前暂不提供官方安装包；安装链接、版本和发布说明不生效。确定官方发布地址后再切换来源。</div>}
         </div></div>
         <h3 id="a3-languages" className="a3-experience-heading">界面语言</h3>
-        {config.interfaceLanguages
+        {interfaceLanguages
           ? <div className="tiny" style={{ marginBottom: 8 }}>英文始终开启。关闭后，用户在语言列表里看不到这种语言；正在使用它的用户依次改用自己选过的、账号里的或手机系统的已开启语言，都没有就用英文。App 下次读取配置后生效。</div>
           : <div className="atint" style={{ marginBottom: 8 }}>系统支持后，可以在这里开关界面语言，现在只能查看。</div>}
-        {config.operatingLanguages && <div className="tiny" style={{ marginBottom: 8 }}>「发布必填」是运营区域语言：后台发布活动、促销、披露、词条、课程、推送等内容时，勾上的语言必须填写；没勾的中文、越南语可以不填，保存时用英文补上，App 在该语言下显示英文。</div>}
-        <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th>{config.operatingLanguages && <th>发布必填</th>}</tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
-          const languages = config.interfaceLanguages;
-          const operating = config.operatingLanguages;
+        {operatingLanguages && <div className="tiny" style={{ marginBottom: 8 }}>「发布必填」是运营区域语言：后台发布活动、促销、披露、词条、课程、推送等内容时，勾上的语言必须填写；没勾的中文、越南语可以不填，保存时用英文补上，App 在该语言下显示英文。</div>}
+        <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th>{operatingLanguages && <th>发布必填</th>}</tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
+          const languages = interfaceLanguages;
+          const operating = operatingLanguages;
           const operatingCode = OPERATING_LANGUAGE_CODES.find((code) => code === language.code);
           return <tr key={language.code}>
             <td>{language.nativeName}{language.base && <span className="bdg dim" style={{ marginLeft: 8 }}>基础语言</span>}</td><td>{language.zhName}</td><td className="mono">{language.code}</td>
@@ -107,7 +134,7 @@ export function PlatformExperienceConfig() {
           </tr>;
         })}</tbody></table></div>
         {canWrite && <><label className="tiny" style={{ display: "block", marginTop: 12 }}>保存理由（8–200 字）</label><textarea aria-label="体验配置保存理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={200} rows={2} style={{ width: "100%", marginTop: 4 }} /><button className="l-btn mc" style={{ marginTop: 8 }} disabled={saving || loading} onClick={() => void save()}>{saving ? "保存中…" : "保存"}</button></>}
-        {error && <div role="alert" className="atint warn" style={{ marginTop: 8 }}>{error}</div>}
+        {(error || recoveryWarning) && <div role="alert" className="atint warn" style={{ marginTop: 8 }}>{error}{error && recoveryWarning && " "}{recoveryWarning}</div>}
         {success && <div role="status" className="atint" style={{ marginTop: 8 }}>{success}</div>}
       </>}
     </div>
