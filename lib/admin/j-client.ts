@@ -753,6 +753,19 @@ export type AutoRuleRow = {
     target: "withdraw" | "exchange";
     action: "autoDisable";
   };
+  tamperAdvisory?: {
+    metric: "tamperAccountEventCount";
+    comparator: ">=";
+    actualThreshold: number | null;
+    window: "24h";
+    scope: "PER_ACCOUNT";
+    target: "account";
+    action: "advisory";
+    classification: "TAMPER_ACCOUNT_MONITOR";
+    autoDisable: false;
+    available: boolean;
+    unknownReason: "TAMPER_ALERT_THRESHOLD_INVALID" | null;
+  };
 };
 
 export type KillSwitchStats = {
@@ -1274,6 +1287,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     }
     requiredText(row.configKey, `killSwitch.autoRules.${index}.configKey`);
     let autoDisableCondition: AutoRuleRow["autoDisableCondition"];
+    let tamperAdvisory: AutoRuleRow["tamperAdvisory"];
     const { action, metric, comparator, target } = row;
     if (action === "autoDisable") {
       const withdraw = id === "withdrawSurge" && metric === "bankRunRatioPct" && comparator === ">=" && target === "withdraw";
@@ -1281,10 +1295,21 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       if (!withdraw && !exchange) contractError(`killSwitch.autoRules.${index}.condition`);
       autoDisableCondition = { action, metric, comparator, target,
         actualThreshold: requiredNum(row.actualThreshold, `killSwitch.autoRules.${index}.actualThreshold`) };
+    } else if (action === "advisory") {
+      const { window, scope, classification, autoDisable } = row;
+      const available = requiredBool(row.available, `killSwitch.autoRules.${index}.available`);
+      const unknownReason = available ? null : "TAMPER_ALERT_THRESHOLD_INVALID";
+      if (id !== "tamperCluster" || metric !== "tamperAccountEventCount" || comparator !== ">=" || target !== "account"
+        || window !== "24h" || scope !== "PER_ACCOUNT" || classification !== "TAMPER_ACCOUNT_MONITOR" || autoDisable !== false
+        || row.unknownReason !== unknownReason || (!available && row.actualThreshold !== null)) {
+        contractError(`killSwitch.autoRules.${index}.advisory`);
+      }
+      const actualThreshold = available ? requiredNum(row.actualThreshold, `killSwitch.autoRules.${index}.actualThreshold`) : null;
+      tamperAdvisory = { action, metric, comparator, target, window, scope, classification, autoDisable, available, unknownReason, actualThreshold };
     } else if (action !== undefined) {
       contractError(`killSwitch.autoRules.${index}.action`);
     }
-    if (kind === "number" && !autoDisableCondition) {
+    if (kind === "number" && !autoDisableCondition && !tamperAdvisory) {
       requiredNum(threshold.replaceAll(",", ""), `killSwitch.autoRules.${index}.thr`);
     }
     return {
@@ -1302,6 +1327,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       refNote: str(row.refNote),
       refTitle: str(row.refTitle),
       autoDisableCondition,
+      tamperAdvisory,
     };
   });
   return {
