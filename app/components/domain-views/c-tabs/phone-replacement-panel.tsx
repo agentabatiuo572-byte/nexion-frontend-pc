@@ -5,7 +5,7 @@ import { BlockState, Button, Cell, Check, CheckGroup, Decision, Drawer, Fact, Fa
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { PhoneApiError, fetchPhoneOverview, fetchPhoneRequests, fetchPhoneHistory, fetchPhoneOperation, pendingPhoneCommands, pendingModelLockCommands, preparePhoneCommand, submitPhoneCommand, recoverPhoneCommand, type PendingPhoneCommand } from "@/lib/admin/phone-replacement-client";
+import { PhoneApiError, fetchPhoneOverview, fetchPhoneRequests, fetchPhoneHistory, fetchPhoneOperation, pendingPhoneCommands, modelLockCommandRecords, preparePhoneCommand, submitPhoneCommand, recoverPhoneCommand, type PendingPhoneCommand } from "@/lib/admin/phone-replacement-client";
 import { PHONE_GRANT, PHONE_REVOKE, phoneLabel, phoneCommandAllowed, record, type PhoneCommand, type PhoneOverview, type PhonePage, type PhoneRequest, type PhoneReceipt, type PhoneVerification } from "@/lib/admin/phone-replacement-contract";
 import { PhoneFacts, PhoneIdentifier, PhoneReceiptView, phoneTimeCompact as phoneTime } from "../phone-replacement-receipt";
 
@@ -257,6 +257,7 @@ function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights,
                 setBusy(false);
         }
     }
+    const modelRecords = modelLockCommandRecords(owner, userId);
     const blocked = busy || loading || denied || !!confirm || pendingRows.length > 0;
     const usableRequest = !!selection && selection.status === "PENDING" && !!overview && selection.expiresAt > overview.eligibility.serverNow;
     const activeGrant = overview?.eligibility.grant ?? overview?.pendingRequest?.grant;
@@ -269,7 +270,7 @@ function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights,
         {pendingRows.filter(row => phoneCommandAllowed(row.type, rights)).map(row => <Fold key={row.commandKey} title={phoneLabel(row.type)} summary={`${row.label ?? userLabel} · ${phoneTime(row.createdAt)}`}><Facts><Fact k="原确认对象">{row.target}</Fact><Fact k="原操作标识">{row.commandKey}</Fact><Fact k="恢复方式">{row.expiresAt <= Date.now() ? "已过 24 小时，保留记录，仅查询" : "只查询原操作，不重新提交"}</Fact></Facts><PhoneFacts time={phoneTime} value={row.body} /></Fold>)}
         {pendingRows.some(row => !phoneCommandAllowed(row.type, rights)) && <span>恢复原处置权限后查询，原记录继续保留。</span>}
       </Notice>}
-      {detail !== "models" && pendingModelLockCommands(owner, userId).length > 0 && <Notice tone="warn" title="机型锁解除结果未知" action={<Button size="sm" onClick={() => setDetail("models")}>查看原解除记录</Button>}>原解除记录已保留，请展开核对原解除结果。</Notice>}
+      {detail !== "models" && modelRecords.length > 0 && <Notice tone="warn" title={modelRecords.some(row => !row.rejection) ? "机型锁解除结果未知" : "机型锁解除已拒绝"} action={<Button size="sm" onClick={() => setDetail("models")}>查看原解除记录</Button>}>原解除记录已保留，请展开核对原解除结果。</Notice>}
       <Panel title="手机绑定与换机条件" icon={Smartphone} explain="处理更换手机设备的申请，与更改登录手机号分开统计。特批只放宽次数或间隔，仍由用户回 App 主动确认。" actions={<IconButton aria-label="刷新手机绑定与换机申请" disabled={busy || loading || !!confirm || denied} onClick={() => { void load(); void loadHistory(); }}><RefreshCw size={16} /></IconButton>}>
         {denied ? <BlockState state="denied" title="暂时无法查看此用户" detail="请重新选择用户或登录后再试。" /> : loading ? <BlockState state="loading" title="正在读取手机与申请状态" /> : !overview ? <BlockState state="error" title="手机信息未能加载" onRetry={() => void load()} retryLabel="刷新" /> : <>
           <div className="c5-phone-summary">

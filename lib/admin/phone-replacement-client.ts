@@ -1,4 +1,4 @@
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { guardedFetch, formatAdminApiError } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -32,7 +32,7 @@ async function request(path: string, body?: unknown, key?: string): Promise<unkn
         }
         const data = record(result) && record(result.data) ? result.data : null;
         const reason = typeof data?.reason === "string" && !/^[A-Z_\d:]+$/.test(data.reason) ? data.reason : null;
-        const code = record(result) ? String(result.message) : "";
+        const code = reasonCode;
         throw new PhoneApiError(reason ?? phoneLabels[code] ?? formatAdminApiError(code, response.status === 403 ? "当前权限或账号范围不允许访问，请返回选择其他账号。"
                 : response.status === 401 ? "管理会话已失效，请重新登录。" : "请求未完成，请刷新后核实当前状态。"), response.ok && record(result) && typeof result.code === "number" ? result.code : response.status, false, record(data?.fieldErrors) ? data.fieldErrors as Record<string, string> : {}, code);
     }
@@ -189,20 +189,11 @@ export async function fetchPhoneModelLocks(userId: string): Promise<PhoneModelLo
     if (!Array.isArray(value)) throw new PhoneApiError("机型锁数据异常，请刷新。", 502);
     return value.map(parseModelLock);
 }
-/**
- * The backend binds the key to actor, user, installation, revision, reason and environment.
- * Recovery must reuse the saved body; reading a new revision never changes the original request.
- */
-export async function releasePhoneModelLock(userId: string, lock: Pick<PhoneModelLock, "installationId" | "revision">,
-                                            reason: string, key: string): Promise<PhoneModelLock> {
-    return parseModelLock(await request(`${accountPath(userId)}/phone-model-locks/${segment(lock.installationId)}/release`,
-        { reason: reason.trim(), confirmed: true, expectedRevision: lock.revision }, key));
-}
-
 export interface PendingModelLockCommand extends PendingMutationRecord {
     owner: number; userId: string; installationId: string; label?: string; userNo?: string; lock: PhoneModelLock; returned?: boolean;
     receiptSupported?: true;
     rejection?: string;
+    rejectionCode?: string;
     path: string; body: { reason: string; confirmed: true; expectedRevision: number };
 }
 const modelCommands = createPendingMutationStore<PendingModelLockCommand>({
@@ -210,7 +201,8 @@ const modelCommands = createPendingMutationStore<PendingModelLockCommand>({
     isValidRecord: row => Number.isSafeInteger(row.owner) && typeof row.userId === "string"
         && typeof row.installationId === "string" && record(row.lock) && record(row.body) && typeof row.path === "string",
 });
-export function pendingModelLockCommands(owner: number, userId: string) { return modelCommands.list().filter(row => row.owner === owner && row.userId === userId); }
+export function modelLockCommandRecords(owner: number, userId: string) { return modelCommands.list().filter(row => row.owner === owner && row.userId === userId); }
+export function pendingModelLockCommands(owner: number, userId: string) { return modelLockCommandRecords(owner, userId).filter(row => !row.rejection); }
 export async function submitModelLockCommand(owner: number, userId: string, lock: PhoneModelLock, reason: string, context?: { label: string; userNo: string }) {
     if (pendingModelLockCommands(owner, userId).length) throw new Error("此用户有机型锁处置待核实，请先核对原解除结果。");
     const commandKey = createA2CommandKey("phone-model-lock"), fingerprint = `${owner}|${userId}|${lock.installationId}`;
@@ -219,25 +211,27 @@ export async function submitModelLockCommand(owner: number, userId: string, lock
         body: { reason: reason.trim(), confirmed: true as const, expectedRevision: lock.revision } };
     modelCommands.remember(fingerprint, commandKey, original);
     if (!modelCommands.isDurablyStored(fingerprint, commandKey)) { modelCommands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原请求，尚未提交解除。"); }
-    try {
-        const result = await releasePhoneModelLock(userId, lock, reason, commandKey);
-        if (result.installationId !== lock.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
-        modelCommands.remember(fingerprint, commandKey, { ...original, returned: true });
-        return result;
-    } catch (failure) { if (isExplicitRejection(failure)) modelCommands.forget(fingerprint, commandKey); throw failure; }
+    const result = await sendModelLockCommand({ ...original, fingerprint, commandKey });
+    modelCommands.remember(fingerprint, commandKey, { ...original, returned: true });
+    return result;
 }
 
 export async function retryModelLockCommand(row: PendingModelLockCommand): Promise<PhoneModelLock> {
-    if (!row.receiptSupported || row.expiresAt <= Date.now()) throw new Error("这条原记录不能重发，请查询原解除结果或读回核对。");
-    const original = { ...row, rejection: undefined };
-    modelCommands.remember(row.fingerprint, row.commandKey, original);
+    if (!row.receiptSupported || row.expiresAt <= Date.now() || row.returned || row.rejection) throw new Error("这条原记录不能重发，请查询原解除结果或读回核对。");
+    const result = await sendModelLockCommand(row);
+    modelCommands.forget(row.fingerprint, row.commandKey);
+    return result;
+}
+
+/** Both sends reuse the saved request, including its original revision. */
+async function sendModelLockCommand(row: Omit<PendingModelLockCommand, "createdAt" | "expiresAt">): Promise<PhoneModelLock> {
     try {
         const result = parseModelLock(await request(row.path, row.body, row.commandKey));
         if (result.installationId !== row.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
-        modelCommands.forget(row.fingerprint, row.commandKey);
         return result;
     } catch (failure) {
-        if (isExplicitRejection(failure)) modelCommands.remember(row.fingerprint, row.commandKey, { ...original, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
+        const rejectionCode = explicitRejectionCode(failure);
+        if (rejectionCode) modelCommands.remember(row.fingerprint, row.commandKey, { ...row, rejectionCode, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
         throw failure;
     }
 }
