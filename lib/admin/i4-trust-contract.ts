@@ -4,7 +4,20 @@ export type TrustField = { key: string; label: string; value: string };
 export const APP_FIELD_LIMIT = 80;
 export const APP_SECTION_ORDER = ["financials", "leadership", "nexNarrative", "complianceBadges", "auditsReserves", "listings"] as const;
 const APP_FIELD_KEY = /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/;
-const LANGUAGES = "zh|vi|en|id|ms|fil|ru|kk|uz";
+const LOCALIZED_FIELD = /^(.+?)([._-])(zh|vi|en|id|ms|fil|ru|kk|uz)$/i;
+const BASE_LOCALES = ["zh", "vi", "en"];
+// Only these shared text keys may become localized families in a saved draft.
+const LEGACY_LOCALIZABLE_FIELDS: Record<string, readonly string[]> = {
+  leadership: ["leader1Role", "leader1Previous"],
+  complianceBadges: ["badge1Label", "badge1Body"],
+  auditsReserves: ["document1Primary", "document1Secondary"],
+  listings: ["listing1State"],
+};
+
+function localizedField(key: string) {
+  const match = LOCALIZED_FIELD.exec(key.trim());
+  return match ? { family: match[1], prefix: match[1] + match[2], language: match[3].toLowerCase() } : undefined;
+}
 
 /** Canonical public status before language derivation; no withheld content values are returned. */
 export function parseI4PublishedSnapshot(value: unknown): TrustPublishedSnapshotView {
@@ -69,15 +82,87 @@ export function i4DraftOmittedTranslations(published: readonly TrustField[], dra
   });
 }
 
+/** Match the saved draft against its submitted fields and permitted localized copies. */
+export function i4DraftReceiptFieldsMatch(submitted: readonly TrustField[], saved: readonly TrustField[], template: readonly TrustField[] = []): boolean {
+  const sourceByFamily = new Map<string, TrustField>();
+  const suppliedLocales = new Set<string>();
+  for (const field of submitted) {
+    const locale = localizedField(field.key);
+    if (!locale || !field.value.trim()) continue;
+    suppliedLocales.add(locale.language);
+    if (locale.language === "en") sourceByFamily.set(locale.family, field);
+  }
+  const copiedFromEnglish = (field: TrustField, locale: ReturnType<typeof localizedField>) => {
+    if (!locale || (locale.language !== "zh" && locale.language !== "vi") || suppliedLocales.has(locale.language)) return undefined;
+    const source = sourceByFamily.get(locale.family);
+    return source?.value === field.value ? source : undefined;
+  };
+
+  if (!submitted.every((field, index) => {
+    const actual = saved[index];
+    return actual?.key === field.key && actual.label === field.label
+      && (actual.value === field.value || (!field.value.trim() && !!copiedFromEnglish(actual, localizedField(field.key))));
+  })) return false;
+
+  const seenKeys = new Set(submitted.map(field => field.key.toLowerCase()));
+  return saved.slice(submitted.length).every(field => {
+    const locale = localizedField(field.key);
+    const key = field.key.toLowerCase();
+    if (!locale || seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    if (!BASE_LOCALES.includes(locale.language)) {
+      return [...sourceByFamily.keys()].some(family => family.toLowerCase() === locale.family.toLowerCase());
+    }
+    const source = copiedFromEnglish(field, locale);
+    if (!source) return false;
+    const templateKey = template.find(candidate => {
+      const known = localizedField(candidate.key);
+      return known?.family === locale.family && known.language === locale.language;
+    })?.key.trim();
+    return field.key === (templateKey ?? source.key.slice(0, -2) + locale.language);
+  });
+}
+
+/** A normalized draft can add translations while keeping the published field template. */
+export function i4DraftMatchesPublishedFields(sectionKey: string, published: readonly TrustField[], draft: readonly TrustField[]): boolean {
+  if (!published.length) return false;
+  const expected = new Set(published.map(field => field.key.trim()));
+  const draftByKey = new Map(draft.map(field => [field.key.trim(), field]));
+  if (expected.size === draftByKey.size && [...expected].every(key => draftByKey.has(key))) return true;
+
+  for (const key of LEGACY_LOCALIZABLE_FIELDS[sectionKey] ?? []) {
+    if (expected.has(key) && !draftByKey.has(key) && draftByKey.get(`${key}.en`)?.value.trim()) {
+      expected.delete(key);
+      for (const language of BASE_LOCALES) expected.add(`${key}.${language}`);
+    }
+  }
+  const prefixByFamily = new Map<string, string>();
+  const templateLocales = new Set<string>();
+  for (const key of expected) {
+    const locale = localizedField(key);
+    if (!locale) continue;
+    if (!BASE_LOCALES.includes(locale.language)) { expected.delete(key); continue; }
+    if (locale.language === "en" || !prefixByFamily.has(locale.family)) prefixByFamily.set(locale.family, locale.prefix);
+    templateLocales.add(`${locale.family}.${locale.language}`);
+  }
+  return [...expected].every(key => draftByKey.has(key)) && [...draftByKey.keys()].every(key => {
+    if (expected.has(key)) return true;
+    const locale = localizedField(key);
+    if (!locale) return false;
+    const prefix = prefixByFamily.get(locale.family);
+    return prefix !== undefined && (!BASE_LOCALES.includes(locale.language)
+      || (!templateLocales.has(`${locale.family}.${locale.language}`) && key === prefix + locale.language));
+  });
+}
+
 function i4LocalizedFieldFamilies(fields: readonly Pick<TrustField, "key" | "value">[]) {
   const families = new Map<string, Set<string>>();
-  const localized = new RegExp(`^(.+?)[._-](${LANGUAGES})$`, "i");
   for (const field of fields) {
-    const match = localized.exec(field.key.trim());
-    if (!match) continue;
-    const family = match[1].toLowerCase();
+    const locale = localizedField(field.key);
+    if (!locale) continue;
+    const family = locale.family.toLowerCase();
     const languages = families.get(family) ?? new Set<string>();
-    if (field.value.trim()) languages.add(match[2].toLowerCase());
+    if (field.value.trim()) languages.add(locale.language);
     families.set(family, languages);
   }
   return families;

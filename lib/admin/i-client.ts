@@ -5,7 +5,7 @@ import { I2_RETIRED_TEMPLATE_CTAS, I_DATA_UNREADABLE, parseIOverview, parseNotif
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
+import { i4DraftReceiptFieldsMatch, parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
@@ -379,19 +379,10 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
   if (command.action !== "delete") {
     try {
       const row = parseI4SectionVersion(payload.data);
-      const submitted = command.input!.fields;
-      // New servers append retained locales after the supplied fields; older servers return only the supplied fields.
-      const retainedLocales = row.fields.slice(submitted.length).every(field => {
-        const locale = /^(.+?)[._-](id|ms|fil|ru|kk|uz)$/i.exec(field.key.trim());
-        return locale && row.fields.some(candidate => {
-          const english = /^(.+?)[._-]en$/i.exec(candidate.key.trim());
-          return english?.[1].toLowerCase() === locale[1].toLowerCase();
-        });
-      });
       valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
         && row.revision === (command.action === "create" ? 1 : command.input!.expectedRevision! + 1)
         && row.description === command.input!.description && row.structure === command.input!.structure
-        && JSON.stringify(row.fields.slice(0, submitted.length)) === JSON.stringify(submitted) && retainedLocales;
+        && i4DraftReceiptFieldsMatch(command.input!.fields, row.fields, command.snapshot?.fields);
     } catch { /* An unreadable success cannot resolve the original command. */ }
   }
   if (!valid) throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
@@ -916,14 +907,20 @@ function i1ReceiptMatches(command: I1Command, data: unknown) {
   if (family === "experiments") return typeof result.id === "string" && (key ? result.id === key : result.copyKey === input.copyKey)
     && result.state === (key ? ({ start: "running", stop: "concluded", discard: "discarded", adopt: "adopted" })[action as "start"] : "scheduled")
     && Array.isArray(result.variants) && result.variants.length >= 2;
-  if (family === "copies") return result.key === (key ?? input.copyKey)
-    && result.revision === (key ? Number(input.expectedRevision) + 1 : 1)
-    // 18308d7b preserves the copy's existing publication/archive state. Older
-    // receipts still carry draft-saved; neither state changes the draft proof.
-    && (action === "draft" ? result.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(String(result.status))
-      : method === "DELETE" ? result.draftVersion == null
-        : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
-          && result.status === (action === "archive" ? "archived" : "published"));
+  if (family === "copies") {
+    const expectedRevision = key ? Number(input.expectedRevision) : 0;
+    // Publishing edits to an existing draft saves it and then publishes it in one command.
+    const publishVersion = method === "POST" && action === "versions" && version === undefined;
+    const revisionMatches = result.revision === expectedRevision + 1
+      || (publishVersion && result.revision === expectedRevision + 2);
+    return result.key === (key ?? input.copyKey) && revisionMatches
+      // 18308d7b preserves the copy's existing publication/archive state. Older
+      // receipts still carry draft-saved; neither state changes the draft proof.
+      && (action === "draft" ? result.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(String(result.status))
+        : method === "DELETE" ? result.draftVersion == null
+          : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
+            && result.status === (action === "archive" ? "archived" : "published"));
+  }
   return false;
 }
 
@@ -1623,6 +1620,7 @@ export type I18nLearningOverview = {
   hardcodedFindings: I18nHardcodedFindingView[];
   focusMessage?: I18nMessagePairView | null;
   messages: I18nMessagePairView[];
+  publishedMessages?: Record<string, I18nMessagePairView>;
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
   featuredCourseId: string;
