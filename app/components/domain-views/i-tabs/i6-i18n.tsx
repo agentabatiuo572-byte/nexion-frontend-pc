@@ -279,7 +279,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [messageVersionsLoading, setMessageVersionsLoading] = useState(false);
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseTab, setCourseTab] = useState<"content" | "quiz" | "versions">("content");
-  const [courseLang, setCourseLang] = useState<Lang>("zh");
+  const [courseLang, setCourseLang] = useState<Lang>("en");
   const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   versionsRead.current = courseVersions;
@@ -1802,7 +1802,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         ? <Button size="sm" aria-label={`调整奖励 ${title}`} disabledReason={rewardApprovalBlocked} onClick={() => adjRwd(c)}>调奖励</Button>
         : null;
     return <>
-      {where === "card" && <Button size="sm" variant="ghost" aria-label={`版本管理 ${title}`} onClick={() => { setVersionCourseId(c.id); setCourseTab("content"); setCourseLang("zh"); }}>详情与版本</Button>}
+      {where === "card" && <Button size="sm" variant="ghost" aria-label={`版本管理 ${title}`} onClick={() => { setVersionCourseId(c.id); setCourseTab("content"); setCourseLang("en"); }}>详情与版本</Button>}
       <span className="i6-card-act">{primary}{more.length > 0 && <MoreMenu label={`${title} 更多操作`} items={more} />}</span>
     </>;
   };
