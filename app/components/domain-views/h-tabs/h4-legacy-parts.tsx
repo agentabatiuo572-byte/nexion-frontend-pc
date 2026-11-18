@@ -177,7 +177,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   const firstEn = ([["name", name], ["description", description], ["rewardName", rewardName]] as const).find(([, value]) => value?.en)?.[0];
   const enTag = (field: ContentField) => firstEn === field ? <> <StatusTag tone="neutral" icon={Languages} explain={field === "rewardName" && rewardFromRule && !appReward ? "中文没填，这里显示的是英文那一份；App 中文显示玩法规则摘要。" : field === "rewardName" && appReward ? "中文没填，App 中文显示英文那一份。" : "中文没填，这里显示的是英文那一份。"}>英文</StatusTag></> : null;
   const originalFields = ([["name", name], ["description", description]] as const).filter(([, value]) => value?.original).map(([field]) => field);
-  const originalTag = <StatusTag tone="neutral" icon={Smartphone} explain={`${originalFields.map(field => FIELD_NAME[field]).join("和")}的中文、英文都没填，这里显示的是原文；App 中文显示的也是原文。`}>原文</StatusTag>;
+  const originalTag = <StatusTag tone="neutral" icon={Smartphone} explain={`${originalFields.map(field => FIELD_NAME[field]).join("和")}的中文、英文都没填，这里显示的是原文；活动在 App 上出现后，中文也显示原文。`}>原文</StatusTag>;
   return (
     <article className="h4-card h4l-event" aria-label={name?.text || event.id} data-dim={life.key === "ended" ? "" : undefined}>
       <header className="h4-card-head">
