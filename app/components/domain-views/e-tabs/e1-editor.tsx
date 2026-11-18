@@ -38,6 +38,8 @@ const E1_APP_VISIBLE_FIELDS = [
   ["warranty", "质保期限"],
   ["specDocumentTitle", "资料名称"],
 ] as const;
+/** 交付设备认得的功耗写法（后端按这几种取瓦数，写成别的设备交付不了）。 */
+const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU rated)", "1,800 W (combined GPU rated)"];
 
 export function E1Editor({ request, gates, writable, currentSku, onClose, onReview, busy, toast, onMediaChange, writeBlockedReason }: {
   request: E1EditRequest | null; gates: E1GenerationGateData | null; writable: boolean; currentSku?: OpsSku;
@@ -263,7 +265,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] = error;
   }
-  const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: string; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
+  const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
   const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : !dirty || original && !changes.length ? "没有修改" : undefined;
@@ -346,7 +348,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">
           <div className="rd-form-grid">{field("gpu", "GPU 型号（单卡）", { placeholder: "RTX 4090", explain: APP_VISIBLE_TEXT_HINT })}{field("gpuCount", "GPU 数量", { number: true, min: 1, max: 1024, step: 1, help: "1～1024，须同时填写单卡型号" })}{field("vram", "显存")}
-            {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}，如 1,800 W`, explain: "只能用这几种写法：1800、1,800 W、1,800 W TDP、1,800 W (per-GPU rated)、1,800 W (combined GPU rated)，数值大于 0。写成别的，用户下单后设备会交付失败。" })}</>}
+            {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}，如 1,800 W`, explain: <>只能用下面几种写法，数值大于 0；写成别的，用户下单后设备会交付失败。<br />{E1_POWER_FORMATS.map((format, index) => <span key={format}>{index ? "、" : ""}<span className="rd-keep">{format}</span></span>)}</> })}</>}
             {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限", { hint: "最多128字", placeholder: "24 months", explain: APP_VISIBLE_TEXT_HINT })}
             {form.tier !== "Share" && <>{field("aiImageGenPerMin", "图像生成 张/分钟", { number: true, step: 1 })}{field("aiLlmTokensPerSec", "大模型推理（词元/秒）", { number: true, step: 1 })}{field("aiVideoMinPerHour", "每小时可渲染视频时长（分钟）", { number: true, step: 1 })}{field("aiFineTuneMins", "LoRA 微调（分钟）", { number: true, step: 1 })}</>}
           </div>

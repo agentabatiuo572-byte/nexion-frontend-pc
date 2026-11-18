@@ -2699,7 +2699,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
             />}
           </RdField>
-          {surface ? <RdField label="适用范围名称" required help={APP_VISIBLE_TEXT_HINT} error={appVisibleTextError(value.name, "适用范围名称")}>
+          {surface ? <RdField label="适用范围名称" required help={APP_VISIBLE_TEXT_HINT} error={appVisibleTextError(value.name, "名称")}>
             {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="State Bank of Vietnam" />}
           </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "State Bank of Vietnam")}
         </div>

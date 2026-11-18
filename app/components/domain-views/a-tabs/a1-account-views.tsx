@@ -422,7 +422,7 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
   const displayNameError = appVisibleTextError(displayName, "显示名");
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : displayNameError,
+    !displayName.trim() ? "显示名未填写" : displayNameError ? "显示名含中文" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     recoveryMode && role !== "super" ? "恢复期只能新建超级管理员" : "",
     !reason.trim() ? "操作理由未填写" : "",
@@ -540,7 +540,7 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
     || avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED");
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : displayNameError,
+    !displayName.trim() ? "显示名未填写" : displayNameError ? "显示名含中文" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     !changed ? "资料没有变化" : "",
     !reason.trim() ? "操作理由未填写" : "",
