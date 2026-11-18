@@ -542,7 +542,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       title: `${archived ? "恢复上线" : "回滚"}${sectionName(s.key)}`,
       detail: (
         <>
-          当前 <b>{s.v}</b>。请选择要恢复的历史版本，批准后对外换成它，权限要求和发布一样。内容超过 80 项、格式不对或缺英文的版本不能回滚。
+          当前 <b>{s.v}</b>。请选择要恢复的历史版本，批准后对外换成它，权限要求和发布一样。
         </>
       ),
       amplifies: false,
