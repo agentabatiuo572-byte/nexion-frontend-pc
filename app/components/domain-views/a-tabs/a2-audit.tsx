@@ -135,7 +135,9 @@ const HIST_TONE: Record<string, StateTone> = { pending: "warn", approved: "ok", 
 const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
 const RETIRED_OPERATION_COPY = "此操作已退役，不能批准或重新发起；保留原申请和历史记录，待审申请可按原权限驳回或撤回。";
 /** 后端给 coverageCheckOnApproval 的三类单：K1 解除误判、判定为正常；J1 紧急开关恢复；大使申请批准（另有一句）。低于红线时各自什么不变按类写（OpsAuditCenterService.toTicket）。 */
-const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
+const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时不执行，审批单继续待处理，原状态不变。";
+const K1_CLUSTER_COVERAGE_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
+const isK1ClusterTicket = (w: A2OperationRow) => ["k1_cluster_release", "k1_cluster_cleared"].includes(w.operationCode ?? "") || /^(?:解除误判|判定为正常)(?: · |$)/.test(w.action);
 const J1_RESTORE_COVERAGE_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，开关保持关闭，业务继续暂停。";
 /** J1 恢复单后端存的对象是开关代号（「恢复业务开关 · withdraw」）；显示成紧急停用开关页卡片上的名字（OpsKillSwitchService 的 GATE_SEEDS）。 */
 const J1_GATE_NAMES: Record<string, string> = { withdraw: "提现开关", staking: "质押开关", genesis: "创世节点开关", exchange: "兑换开关", trial: "试用开关" };
@@ -155,7 +157,7 @@ const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不
 function approvalCoverageCopy(w: A2OperationRow) {
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "批准时系统会重新核对材料、核验结论、认可金额和兑付覆盖率；有一项不满足就不执行，审批单继续待处理，申请和预算额度不变。"
-    : w.operationCode === "j1_gate_resume" ? J1_RESTORE_COVERAGE_COPY : COVERAGE_ON_APPROVAL_COPY;
+    : w.operationCode === "j1_gate_resume" ? J1_RESTORE_COVERAGE_COPY : isK1ClusterTicket(w) ? K1_CLUSTER_COVERAGE_COPY : COVERAGE_ON_APPROVAL_COPY;
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
@@ -180,7 +182,7 @@ function approvalExecutorLabel(w: A2OperationRow) {
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
     // 后端存的「门槛者」只是占位叫法（A2-BE-02）；只改显示，请求里带的值不动。
-    : w.roleGate === "超管" ? "超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
+    : w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
 }
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
@@ -820,6 +822,9 @@ const WHEEL_REVIEW_OPERATIONS = ["h4_wheel_tier_create", "h4_wheel_tier_update",
 const COURSE_REVIEW_OPERATIONS = ["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"];
 const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", ...COURSE_REVIEW_OPERATIONS, ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
 const G_PARAM_ACTION = /^(兑换参数调整|回购参数调整|调整创世参数) · ([A-Za-z]+)$/;
+/** G2、G4、G7 的参数审批单：对象是参数键，给运营看参数名，键收进技术信息。 */
+const isGParamTicket = (w: { operationCode?: string | null; action: string }) =>
+  ["g2_exchange_param", "g7_repurchase_param", "g4_genesis_param"].includes(w.operationCode ?? "") || G_PARAM_ACTION.test(w.action);
 const reviewOperation = (w: { operationCode?: string; action: string }) =>
   ["g2_exchange_param", "g7_repurchase_param", "g4_genesis_param"].includes(w.operationCode ?? "") || !w.operationCode && G_PARAM_ACTION.test(w.action)
     ? "g_param" : w.operationCode ?? REVIEW_OPERATION_BY_ACTION[w.action];
@@ -827,11 +832,13 @@ const reviewOperation = (w: { operationCode?: string; action: string }) =>
 const G_PARAM_NAMES: Record<string, string> = {
   userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
   apy: "参考年奖励率", lockDays: "锁仓期限", nurture: "好友升级奖励倍率", lottery: "创世节点抽奖券", penalty: "提前解锁扣款", presets: "锁定金额快捷选项",
-  supply: "节点总量", price: "一级购买单价", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "收益计算基数",
+  supply: "节点总量", price: "系列当前价", dividend: "每日收益比例", royalty: "转让手续费", divBase: "收益计算基数",
   airdropPct: "空投占比", emissionCurve: "收益发放曲线", airdropLockDays: "早期持有人奖励锁仓期",
 };
-// 空值（比如 divBase 合法为空）读进来时末尾的空格已被去掉，等号后面直接结束，写成「= 空」。
-const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) =( |$)/g, (whole, lead: string, key: string, tail: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} =${tail || " 空"}` : whole);
+// 空值（比如 divBase 合法为空）读进来时末尾的空格已被去掉，等号后面直接结束，写成「= 空」；新单的参数名已是中文，同样补「空」。
+// 新增应付后端写「确定新增应付 Δ 12 USDT」，写成「新增应付 12 USDT」。
+const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) =( |$)/g, (whole, lead: string, key: string, tail: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} =${tail || " 空"}` : whole)
+  .replace(/ =$/, " = 空").replace(/确定新增应付 Δ /g, "新增应付 ");
 /** H3 审批单对象的配置键写 H3 页上这一项的叫法（H3 页的设置名和改值框标题）。 */
 function h3ConfigName(key: string): string | undefined {
   if (key === "dayOne.triReward") return "新手任务奖励";
@@ -857,6 +864,7 @@ function h3ConfigValue(key: string | undefined, value: string) {
 
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
 function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null }) {
+  if (w.objDisplayName && isGParamTicket(w)) return w.objDisplayName;
   if (w.objDisplayName) return a2ObjectText(w);
   if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
   if (w.operationCode === "k1_earnings_release") return `收益记录 ${w.obj}`;
@@ -1832,6 +1840,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return <>{h3ConfigName(w.obj)}<Explain label="技术信息" content={`配置键 ${w.obj}`} /></>;
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
+    if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */
@@ -2484,7 +2493,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
+                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{shortCodes(name)} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : shortCodes(name)} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`}
                         sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
                       <Td grow><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
