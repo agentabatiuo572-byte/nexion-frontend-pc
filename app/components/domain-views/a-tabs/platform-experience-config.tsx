@@ -7,6 +7,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchPlatformExperienceConfig,
   INTERFACE_LANGUAGES,
+  OPERATING_LANGUAGE_CODES,
   recommendedExperienceChannels,
   updatePlatformExperienceConfig,
   type PlatformExperienceConfig,
@@ -92,11 +93,17 @@ export function PlatformExperienceConfig() {
         {config.interfaceLanguages
           ? <div className="tiny" style={{ marginBottom: 8 }}>英文始终开启。关闭后，用户在语言列表里看不到这种语言；正在使用它的用户依次改用自己选过的、账号里的或手机系统的已开启语言，都没有就用英文。App 下次读取配置后生效。</div>
           : <div className="atint" style={{ marginBottom: 8 }}>系统支持后，可以在这里开关界面语言，现在只能查看。</div>}
-        <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th></tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
+        {config.operatingLanguages && <div className="tiny" style={{ marginBottom: 8 }}>「发布必填」是运营区域语言：后台发布活动、促销、披露、词条、课程、推送等内容时，勾上的语言必须填写；没勾的中文、越南语可以不填，保存时用英文补上，App 在该语言下显示英文。</div>}
+        <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th>{config.operatingLanguages && <th>发布必填</th>}</tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
           const languages = config.interfaceLanguages;
+          const operating = config.operatingLanguages;
+          const operatingCode = OPERATING_LANGUAGE_CODES.find((code) => code === language.code);
           return <tr key={language.code}>
             <td>{language.nativeName}{language.base && <span className="bdg dim" style={{ marginLeft: 8 }}>基础语言</span>}</td><td>{language.zhName}</td><td className="mono">{language.code}</td>
             <td><input type="checkbox" aria-label={`${language.zhName} 开启`} checked={language.base || !languages || languages.includes(language.code)} disabled={!canWrite || language.base || !languages} onChange={(event) => languages && setConfig({ ...config, interfaceLanguages: INTERFACE_LANGUAGES.map((item) => item.code).filter((code) => code === language.code ? event.target.checked : languages.includes(code)) })} />{language.base && <span className="tiny" style={{ marginLeft: 6 }}>始终开启</span>}</td>
+            {operating && <td>{operatingCode
+              ? <><input type="checkbox" aria-label={`${language.zhName} 发布必填`} checked={operating.includes(operatingCode)} disabled={!canWrite || operatingCode === "en"} onChange={(event) => setConfig({ ...config, operatingLanguages: OPERATING_LANGUAGE_CODES.filter((code) => code === operatingCode ? event.target.checked : operating.includes(code)) })} />{operatingCode === "en" && <span className="tiny" style={{ marginLeft: 6 }}>始终必填</span>}</>
+              : <span className="tiny">暂不支持</span>}</td>}
           </tr>;
         })}</tbody></table></div>
         {canWrite && <><label className="tiny" style={{ display: "block", marginTop: 12 }}>保存理由（8–200 字）</label><textarea aria-label="体验配置保存理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={200} rows={2} style={{ width: "100%", marginTop: 4 }} /><button className="l-btn mc" style={{ marginTop: 8 }} disabled={saving || loading} onClick={() => void save()}>{saving ? "保存中…" : "保存"}</button></>}
