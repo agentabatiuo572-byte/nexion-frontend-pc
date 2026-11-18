@@ -472,8 +472,15 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     ), `${draft.sectionKey} ${draft.version} 草稿已删除`, draft.sectionKey, { sectionKey: draft.sectionKey, reason }),
   }, draft.sectionKey, original);
 
-  const pubSection = (s: TrustSection, draft: TrustSectionVersion, original?: I4SectionCommand) => {
-    const hasEnglish = i4HasEnglishFields(draft.fields);
+  const pubSection = async (s: TrustSection, draft: TrustSectionVersion, original?: I4SectionCommand) => {
+    const languages = original ? [] : await getRequiredContentLanguages();
+    const names = { en: "英文", zh: "中文", vi: "越南语" } as const;
+    const reviewContent = languages.length ? languages.map((language) => names[language]).join("、") : "内容";
+    const missing = localeItems(draft.fields).filter(({ value, missing }) => languages.includes(value) && missing);
+    const languageIssue = !i4HasEnglishFields(draft.fields) ? TRUST_MISSING_ENGLISH
+      : missing.length ? `缺${missing.map(({ value }) => names[value]).join("、")}` : undefined;
+    const contentIssue = i4AppFieldIssue(draft.fields) ?? languageIssue;
+    const reviewCheck = `逐项核对${reviewContent}和关键数字`;
     const problems = versionProblems(draft);
     return openTrustConfirm({ briefKind: "content",
       action: <>发布信任版块 · {s.key} {draft.version}</>,
@@ -481,40 +488,36 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       detail: (
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
-          另一位管理员批准后才换成新版本，App 下次读取时显示。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
+          另一位管理员批准后才换成新版本，App 下次读取时显示。<b>发布核对</b>须{reviewCheck}。
           {requiresDataSource(s) && <>财务数字 / UVT介绍必须填写可追溯的<b>财务/UVT 数据来源</b>。</>}
         </>
       ),
       amplifies: false,
       effect: approvalTag,
       confirmLabel: "提交审批",
-      statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}从 ${s.v} 换成 ${draft.version}；批准前不变。`, check: "逐项核对三种语言和关键数字，理由写清依据。" },
+      statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}从 ${s.v} 换成 ${draft.version}；批准前不变。`, check: `${reviewCheck}，理由写清依据。` },
       facts: <div className="rd-stack">
         <Facts><Fact k="版块">{sectionName(s.key)}</Fact><Fact k="版本"><Change from={`${s.v}（现在公开）`} to={draft.version} /></Fact>{approverFacts(s)}</Facts>
         <VersionCompare beforeLabel={`现在公开的 ${s.v}`} afterLabel={`批准后公开的 ${draft.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={draft.fields} problems={problems.filter((item) => item !== TRUST_MISSING_ENGLISH)}
           afterBlanked={blankingOf(s.key, draft).all ? `提醒：${blankingOf(s.key, draft).all}` : undefined} />
         {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
       </div>,
-      blockedReason: i4AppFieldIssue(draft.fields) ?? (hasEnglish ? undefined : TRUST_MISSING_ENGLISH),
+      blockedReason: contentIssue,
       businessForm: {
         kind: "multi-field",
         fields: [
           ...(requiresDataSource(s) ? [{ key: "dataSource", label: "财务/UVT 数据来源", inputKind: "text" as const, placeholder: "报表、账本快照或市场数据编号", required: true, wide: true, maxLength: 500, explain: "写清这些数字从哪来，最多 500 字。只是说明，不会替你核对数字。" }] : []),
-          { key: "bilingualConfirmed", label: "已逐项核对中、越、英三语，关键数字一致", inputKind: "checkbox" as const, required: true, wide: true },
+          { key: "bilingualConfirmed", label: `已逐项核对${reviewContent}，关键数字一致`, inputKind: "checkbox" as const, required: true, wide: true },
         ],
       },
       run: async (reason, _value, form) => {
-        if (!i4HasEnglishFields(draft.fields)) {
-          toast(TRUST_MISSING_ENGLISH);
-          return false;
-        }
+        if (contentIssue) throw new Error(contentIssue);
         const def = findHighOp("i4_trust_section_manage")!;
         const dataSource = form?.dataSource?.trim() || "";
         const bilingualConfirmed = form?.bilingualConfirmed === "true";
-        const fieldIssue = i4AppFieldIssue(draft.fields);
-        if (fieldIssue) throw new Error(fieldIssue);
         if (dataSource.length > 500) throw new Error("财务/UVT 数据来源最多 500 字。");
-        if (requiresDataSource(s) && !dataSource || !bilingualConfirmed) throw new Error("请完整填写数据来源和三语确认。");
+        if (requiresDataSource(s) && !dataSource) throw new Error("请填写财务/UVT 数据来源。");
+        if (!bilingualConfirmed) throw new Error(`请${reviewCheck}。`);
         if (i4OmittedTranslations(currentSectionFields(s), draft.fields)) throw new Error("这次发布会删掉已有译文，请先留着每一项内容再提交。");
         const fingerprint = JSON.stringify([
           "publish", s.key, s.v, s.status, draft.version, draft.revision,
@@ -856,7 +859,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         rows.push(...inGroup("版块", [conflictRow(`草稿 ${rejected.after ?? ""} 最近保存`, saved(snap?.target), saved(target)),
           conflictRow("版块说明", snap?.target?.description, target?.description), conflictRow("内容结构", snap?.target?.structure, target?.structure)]), ...fieldRows(snap?.target?.fields ?? [], target?.fields ?? []));
         if (!gone && latestData && target?.status.toLowerCase() !== "draft") gone = `${rejected.after ?? "这份草稿"} 已经不是草稿了，不能再提交发布。`;
-        note = "三语核对要重新勾。";
+        note = "内容核对要重新勾。";
       }
       const dataSource = String(rejected.request?.command.params.dataSourceStatement ?? "") || undefined;
       rebuild = !section ? undefined : rejected.action === "publish" ? target && (() => { carry({ dataSource }); pubSection(section, target); })
