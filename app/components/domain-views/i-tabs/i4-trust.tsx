@@ -1200,8 +1200,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         {draftEditor && <>
           <div className="i4-doc-effect"><StatusTag tone="neutral" filled explain="保存草稿直接写，不走审批；用户看到的内容不变，提交发布并批准后才公开。">不改公开内容</StatusTag></div>
           <DraftEditorBody editor={draftEditor} requiredLanguages={requiredLanguages} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}
-            published={draftEditor.published?.fields ?? (editorSection ? currentSectionFields(editorSection) : [])} publishedVersion={draftEditor.published?.version ?? draftEditor.expectedSectionVersion}
-            blanked={appBlanking(draftEditor.sectionKey, "", draftEditor.fields)} />
+            published={draftEditor.published?.fields ?? (editorSection ? currentSectionFields(editorSection) : [])} publishedVersion={draftEditor.published?.version ?? draftEditor.expectedSectionVersion} />
         </>}
       </Drawer>
     </>
