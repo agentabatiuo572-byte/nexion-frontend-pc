@@ -202,12 +202,14 @@ const PARAM: Record<string, {
     name: "超额度处置策略", short: "改成排队",
     loosen: "从拒绝改成排队",
     tighten: "从排队改成拒绝",
-    what: "超过个人或平台日额度的兑换，排队还是直接拒绝",
+    what: "超过个人或平台日额度的兑换，排队等运营处理还是直接拒绝",
     queue: "已经在排队的单不受影响，不会被转成拒绝或取消",
     future: "之后超额的兑换按新策略处理；改成排队后，用户发起时选了「超额时排队」才会排",
   },
 };
 const PARAM_ORDER = ["userDailyCap", "platformDailyCap", "fee", "feeMin", "queueMode"];
+/** 排队单的原因：系统给的是「排队等待次日处理」，不是排好的时间，这里不写固定时刻（G2-BE-05）。 */
+const queueReasonText = (order: { status: string; gateReason: string }) => order.status === "QUEUED" ? "超过日额度，排队等运营处理" : order.gateReason;
 
 function paramName(key: string, fallback?: string) {
   return PARAM[key]?.name ?? (fallback ? operatorCopyText(fallback) : key);
@@ -1013,7 +1015,7 @@ function G2ExchangePage() {
       ? <Conclusion state="warn" icon={ListOrdered}
           hint={<>{canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}{disclosureHint}</>}
           explain={<>
-            <p>排队数是所有还在排队的单，不限哪天创建。系统不会定时处理队列，单子上的「明天 00:00」是固定文字，不是排好的处理时间。</p>
+            <p>排队数是所有还在排队的单，不限哪天创建。系统不定时处理，由运营确认后处理，到账时间以实际处理为准。</p>
             {disclosureExplain}
           </>}>
           兑换开着，有 {fmtCount(stats.queueDepth)} 单在排队等处理</Conclusion>
@@ -1095,7 +1097,7 @@ function G2ExchangePage() {
         <Stat label="排队中" icon={ListOrdered} tone={stats.queueDepth > 0 ? "warn" : "role-3"}
           value={fmtCount(stats.queueDepth)} unit="单"
           sub={stats.queueDepth > queue.length ? `列表显示最近 ${fmtCount(queue.length)} 单` : stats.queueDepth > 0 ? `合计 ${fromMicros(queueTotalMicros)} USDT` : undefined}
-          explain="所有还在排队的单，不限哪天创建。排队的单不会自动成交，要在这页点「处理排队」。" />
+          explain="所有还在排队的单，不限哪天创建。排队的单不会自动成交，由运营在这页点「处理排队」，到账时间以实际处理为准。" />
         <Stat label="今日拦截" icon={Ban} tone="role-4" value={fmtCount(totalGate)} unit="次"
           sub={`个人 ${fmtCount(stats.gateUser)} · 平台 ${fmtCount(stats.gatePlatform)} · 地区 ${fmtCount(stats.gateGeo)}`}
           explain="今天创建、现在是三种拦截状态的兑换单数之和；按系统业务日算，不按你电脑的时区。" />
@@ -1107,7 +1109,7 @@ function G2ExchangePage() {
       <div className="rd-split" data-even="">
         <Panel title="今天的额度" icon={Gauge} tone="role-1"
           explain={<>
-            <p>看条：平台今天的额度用了多少、还剩多少。快满时，之后的兑换会按「超额度处置策略」排队或被拒。</p>
+            <p>看条：平台今天的额度用了多少、还剩多少。用完后，超出的兑换按「超额度处置策略」排队等运营处理，或直接拒绝。</p>
             <p>用量是今天已完成兑换的 USDT 金额（UVT 换 USDT 按到手金额），占比由系统算；放行每一笔时按系统记的已用量判断。</p>
           </>}>
           <div className="g2x-quota">
@@ -1158,7 +1160,7 @@ function G2ExchangePage() {
       <Panel title="排队中的兑换" icon={ListOrdered} tone="role-3" className="g2x-queue"
         sub={`${stats.queueDepth > queue.length ? `共 ${fmtCount(stats.queueDepth)} 单 · 列表显示最近 ${fmtCount(queue.length)} 单` : `共 ${fmtCount(stats.queueDepth)} 单`} · 时间为${businessZone().label}`}
         explain={<>
-          <p>超过个人或平台日额度、用户选了「超额时排队」的兑换在这里等。它们不会自动成交：点「处理排队」时，系统从最早排队的开始逐单检查。</p>
+          <p>超过个人或平台日额度、用户选了「超额时排队」的兑换在这里等运营处理，不会自动成交，到账时间以实际处理为准。点「处理排队」时，系统从最早排队的开始逐单检查。</p>
           <p>新排队的单已经从用户的来源币种里预占了金额，成交时不再扣；取消时退回预占的原币。没有预占记录的历史单成交时才扣、取消时不退。</p>
           <p>列表按排队时间从新到旧，最多显示 50 单，没有翻页。</p>
         </>}
@@ -1193,7 +1195,7 @@ function G2ExchangePage() {
                 <Td><ExchangeNo value={order.exchangeNo} /></Td>
                 <Td><Cell main={order.userNo} sub={operatorNicknameText(order.nickname)} title={`${order.userNo} · ${operatorNicknameText(order.nickname)}`} /></Td>
                 <Td align="right"><Cell num main={`${assetNum(order.toAmountText ?? order.toAmount, order.toAsset)} ${order.toAsset}`} sub={`${assetNum(order.fromAmountText ?? order.fromAmount, order.fromAsset)} ${order.fromAsset} 换`} /></Td>
-                <Td grow><Cell main={order.gateReason} title={order.gateReason} /></Td>
+                <Td grow><Cell main={queueReasonText(order)} title={queueReasonText(order)} /></Td>
                 <Td><Cell num main={timeText(order.createdAt)} /></Td>
               </Tr>
             ))}
@@ -1274,8 +1276,8 @@ function G2ExchangePage() {
             note="取消后之后不会再成交；有预占记录的退回原币，没有预占的历史单只取消。"
             danger={<Button variant="danger-outline" disabledReason={busyReason ?? (directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? undefined : newWriteBlockedReason)} aria-label="取消这笔兑换" onClick={() => cancelQueue(selectedQueue)}>取消这笔兑换</Button>} /> : undefined}>
           <JudgmentPoints rows={[
-            { label: "排队原因", value: selectedQueue.gateReason, state: "warn" },
-            { label: "系统标注", value: selectedQueue.etaLabel === "—" ? "—" : `${selectedQueue.etaLabel} 处理`, reason: "这是系统固定写的文字，不是排好的处理时间；目前要在这页点「处理排队」才会成交。" },
+            { label: "排队原因", value: queueReasonText(selectedQueue), state: "warn" },
+            { label: "预计处理", value: "等运营处理", reason: "没有排好的处理时间，由运营在这页点「处理排队」后成交，到账时间以实际处理为准。" },
             { label: "用户所在地区", value: selectedQueue.countryCode, reason: "处理排队时按这个国家判断地区封锁。" },
           ]} />
           <Facts>
@@ -1286,7 +1288,7 @@ function G2ExchangePage() {
             <Fact k="汇率">{selectedQueue.rate ? `1 UVT = ${quantity(selectedQueue.rate)} USDT` : "—"}</Fact>
             <Fact k="用户编码">{selectedQueue.userNo}</Fact>
             <Fact k="用户名">{operatorNicknameText(selectedQueue.nickname)}</Fact>
-            <Fact k="状态">{operatorCopyText(selectedQueue.statusLabel)}</Fact>
+            <Fact k="状态">{selectedQueue.status === "QUEUED" ? "排队中" : operatorCopyText(selectedQueue.statusLabel)}</Fact>
             <Fact k="排队时间">{timeText(selectedQueue.createdAt)}（{businessZone().label}）</Fact>
             <Fact k="最后更新">{timeText(selectedQueue.updatedAt)}（{businessZone().label}）</Fact>
           </Facts>
