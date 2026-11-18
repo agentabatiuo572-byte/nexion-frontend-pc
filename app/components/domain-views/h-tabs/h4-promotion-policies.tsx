@@ -2,12 +2,12 @@
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useState, type ReactNode } from 'react';
-import type { Catalog, NativeRef, Policy, PolicyContent, PolicyPage } from '@/lib/admin/promotion-types';
+import type { Catalog, NativeRef, Policy, PolicyContent, PolicyPage, RefundPolicyExecution } from '@/lib/admin/promotion-types';
 import { promotionRead } from '@/lib/admin/promotion-client';
 import { fetchA2Overview } from '@/lib/admin/a2-client';
 import { Button, ConfirmCommand, DeviceRightsSummary, Dialog, Field, Loading, Notice, ReadError, Summary, Table, Tag, formatTime, labelState, text, useRead } from './h4-promotion-ui';
 import { ScrollText } from 'lucide-react';
-import { BlockState, Check, Panel } from '@/app/components/rd';
+import { BlockState, Check, Fold, Panel, StatusTag } from '@/app/components/rd';
 const KINDS: Record<PolicyContent['kind'], string> = { FIRST_PURCHASE: '首购认定', DEVICE_AUDIENCE: '设备参与资格', DEVICE_RIGHTS: '赠品设备权益', ASSET: '奖励到账与可用条件', SETTLEMENT: '订单结算', STACKING: '优惠叠加', REFUND: '售后追回', QUOTE: '报价期限', AUTHORIZATION: '审核发布授权' };
 const FIXED: Record<PolicyContent['kind'], Record<string, unknown>> = { FIRST_PURCHASE: { executorCode: 'PROMOTION_FIRST_PURCHASE_V1' }, DEVICE_AUDIENCE: { executorCode: 'PROMOTION_DEVICE_AUDIENCE_V1', excludeExpired: true, excludePhoneAndTrial: true }, DEVICE_RIGHTS: { executorCode: 'COMMERCE_GIFT_FROM_PRODUCT_V1', taskEligibility: 'EXISTING_PRODUCT_RULES' }, ASSET: { executorCode: 'EXISTING_EARNINGS_RELEASE_V1', riskBucketRouting: true }, SETTLEMENT: { executorCode: 'EXISTING_ORDER_MATURITY_V1', requiresPaid: true, requiresNoRefundHold: true, requiresNoFreeze: true }, STACKING: { executorCode: 'PROMOTION_STACKING_V1', samePurchaseUnit: 'EXCLUSIVE' }, REFUND: { executorCode: 'PROMOTION_WALLET_REFUND_V1', principalChannel: 'WALLET', scope: 'WHOLE_ORDER', insufficientRecovery: 'MANUAL_REVIEW', negativeBalance: false, crossAssetDeduction: false }, QUOTE: { executorCode: 'PROMOTION_QUOTE_V1', payByRule: 'MIN_ORDER_DEADLINE_ACTIVITY_END' }, AUTHORIZATION: { executorCode: 'PROMOTION_AUTHORIZATION_V1', approvalCapability: 'growth_promotion_approve', publishCapability: 'growth_promotion_publish', scope: 'PROMOTION_ONLY' } };
 export default function PromotionPolicies({ catalog, can, onClose, onChanged, inline = false }: {
@@ -51,11 +51,45 @@ function PolicyCreate({ catalog, can, onClose, onDone }: {
     return <Dialog title="新建政策草稿" wide onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button kind="primary" disabled={!can('growth_promotion_policy_write') || audit.loading || !!audit.error || !evidence.length} onClick={() => setConfirm(true)}>保存前确认</Button></>}><Field label="政策类别"><select value={kind} onChange={e => { const next = e.target.value as PolicyContent['kind']; setKind(next); setContent({ kind: next, ...FIXED[next] }); }}>{Object.entries(KINDS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></Field><div className="grid2">{kind === 'FIRST_PURCHASE' && <>{choice('mode', ['FIRST_ELIGIBLE_ORDER', 'FIRST_ELIGIBLE_UNIT'])}{choice('restoreAfterRefund', ['true', 'false'], true)}</>}{kind === 'DEVICE_AUDIENCE' && <>{['sources', 'states'].map(key => <fieldset key={key} className="form-section"><legend>{FIELD_LABELS[key]}</legend>{(key === 'sources' ? ['ORDER', 'PROMOTION_GIFT'] : ['ACTIVE', 'ONLINE']).map(v => <label className="evidence-choice" key={v}><input type="checkbox" checked={(content[key] as string[] || []).includes(v)} onChange={e => patch(key, e.target.checked ? [...(content[key] as string[] || []), v] : (content[key] as string[] || []).filter(x => x !== v))}/>{VALUE_LABELS[v]}</label>)}</fieldset>)}</>}{kind === 'DEVICE_RIGHTS' && <>{sku}{native('productContract', 'E1_PRODUCT')}<Field key="taskEligibility" label={`${FIELD_LABELS.taskEligibility} *`}><Check label={VALUE_LABELS.EXISTING_PRODUCT_RULES} help="固定值，保存时总会带上" checked disabled onChange={() => undefined}/></Field>{localized('rightsDescription')}</>}{kind === 'ASSET' && <>{choice('asset', ['USDT', 'UVT'])}{native('nativeContract', 'EARNINGS_RELEASE')}{localized('availabilityDescription')}</>}{kind === 'SETTLEMENT' && native('nativeContract', 'ORDER_CONTRACT')}{kind === 'STACKING' && ['voucher', 'bundleDiscount', 'existingH8', 'existingReferral'].map(k => choice(k, ['ALLOW', 'DENY']))}{kind === 'REFUND' && <>{native('deviceRecoveryPolicy', 'ORDER_CONTRACT')}<Field label="损失责任归属 *"><input value={String(content.lossOwner || '')} onChange={e => patch('lossOwner', e.target.value)}/></Field>{localized('terms')}</>}{kind === 'QUOTE' && <Field label="报价有效期（秒） *"><input type="number" min={1} step={1} value={String(content.ttlSeconds || '')} onChange={e => patch('ttlSeconds', e.target.value ? Number(e.target.value) : undefined)}/></Field>}{kind === 'AUTHORIZATION' && <>{native('nativeContract', 'A2_POLICY')}{choice('separateMakerChecker', ['true', 'false'], true)}</>}</div><Notice title="执行规则">沿用已有资金分类、整单钱包退款和原业务协议；不允许负余额或跨币抵扣。具体内容在批准后才可用于活动。</Notice>{!!audit.error && <ReadError target="批准证据目录" error={audit.error} retry={audit.reload}/>} {!audit.loading && !evidence.length && <Notice title="没有可选择的批准证据" kind="warn">「操作记录与审批」里还没有可选的已批准操作或记录，有了再回来配置政策。</Notice>}</Dialog>;
 }
 
+// 退款政策的「实际怎么处理」：后端按现行做法给的规则说明（6f9a1a52），与这一版批准与否无关。
+// 认不出的取值写「读不出」，原值进技术信息。
+const EXECUTION_ROWS: Array<[keyof RefundPolicyExecution, string, Record<string, string>]> = [
+    ['basis', '什么时候处理', { WHOLE_ORDER_REFUND_CONFIRMED: '整单退款确认之后' }],
+    ['walletRecovery', '钱包奖励', { SAME_ASSET_AVAILABLE_BALANCE: '从同一币种的可用余额里追回' }],
+    ['deviceRecovery', '赠送的设备', { REVOKE_GIFT_DEVICE_CANCEL_OPEN_TASKS_KEEP_POSTED_EARNINGS: '收回设备，取消没做完的任务；已到账的收益不追' }],
+    ['insufficientRecovery', '追不回的部分', { PLATFORM_LOSS_AND_CLOSE: '记为平台损失，这笔直接结案' }],
+    ['terminalState', '结案后的状态', { REVERSED: '已冲正' }],
+    ['manualReviewAppliesTo', '转人工审阅', { APPROVED_CORRECTION: '只在批准的纠正追不回时' }],
+    ['unknownEvidence', '发放情况核不清', { ORIGINAL_REFUND_CHECKS: '按原来的退款核对处理' }],
+];
+function RefundExecution({ execution }: { execution: RefundPolicyExecution }) {
+    const unknown: string[] = [];
+    const rows: Array<[string, ReactNode]> = EXECUTION_ROWS.map(([key, label, known]) => {
+        const value = execution[key] as string;
+        if (known[value]) return [label, known[value]];
+        unknown.push(`${label}：${value}`);
+        return [label, <span className="h4-dim" key={key}>读不出</span>];
+    });
+    rows.splice(2, 0, ['余额不够时', `${execution.negativeBalance ? '会扣成负数' : '不扣成负数'}，${execution.crossAssetDeduction ? '会扣别的币种' : '也不扣别的币种'}`]);
+    return <section className="h4-policy-part" aria-label="整单退款实际怎么处理">
+        <header><h3>整单退款实际怎么处理</h3><p>系统现行做法，和这一版批准与否无关；每笔结果看奖励台账。</p></header>
+        <Summary rows={rows}/>
+        {unknown.length > 0 && <Fold inset title="技术信息" summary={`${unknown.length} 项读不出`}><ul className="h4-tech">{unknown.map(line => <li key={line}>{line}</li>)}</ul></Fold>}
+    </section>;
+}
 export function PromotionPolicyDetails({policy: selected, catalog}: {policy: Policy; catalog: Catalog}) {
     const contractTitle = (reference: NativeRef | null | undefined) => { const native = reference && catalog.nativeContracts.find(n => n.reference?.system === reference.system && n.reference.resourceId === reference.resourceId && n.reference.revision === reference.revision && n.reference.contentHash === reference.contentHash); return native ? (text(native.title)) : '未知'; };
-    return <><Summary rows={[['批准状态', <Tag value={selected.state} label={selected.state === 'APPROVED' ? '已批准' : undefined}/>], ['批准人', selected.approvedByAdmin?.displayName || selected.approvedByAdmin?.username || (selected.approvedBy ? `管理员编号 ${selected.approvedBy}` : selected.state === 'DRAFT' ? '尚未批准' : '没有记录批准人')], ['批准依据', selected.approvalRef || (selected.state === 'DRAFT' ? '尚未批准' : '没有记录')]]}/><Summary rows={Object.entries(selected.content).filter(([k]) => !['executorCode', 'kind', 'approvalCapability', 'publishCapability'].includes(k)).map(([key, value]) => [FIELD_LABELS[key] || '合同约束', <>{typeof value === 'object' && value !== null ? 'zh' in value ? text(value as {
+    const execution = selected.execution;
+    const content = <Summary rows={Object.entries(selected.content).filter(([k]) => !['executorCode', 'kind', 'approvalCapability', 'publishCapability'].includes(k)).map(([key, value]) => [FIELD_LABELS[key] || '合同约束', <>{typeof value === 'object' && value !== null ? 'zh' in value ? text(value as {
             zh: string;
-        }) : 'resourceId' in value ? contractTitle(value as NativeRef) : Array.isArray(value) ? value.map(v => VALUE_LABELS[String(v)] || nexGridBrandText(String(v))).join('、') : '已绑定' : typeof value === 'boolean' ? value ? '是' : '否' : VALUE_LABELS[String(value)] || nexGridBrandText(String(value))}</>] as [string, ReactNode])}/>{selected.content.kind === 'DEVICE_RIGHTS' && <><DeviceRightsSummary rights={selected.resolvedDeviceRights}/><Summary rows={[
+        }) : 'resourceId' in value ? contractTitle(value as NativeRef) : Array.isArray(value) ? value.map(v => VALUE_LABELS[String(v)] || nexGridBrandText(String(v))).join('、') : '已绑定' : typeof value === 'boolean' ? value ? '是' : '否' : VALUE_LABELS[String(value)] || nexGridBrandText(String(value))}{execution && key === 'insufficientRecovery' && <span className="h4-dim">（存档写法，实际见上）</span>}</>] as [string, ReactNode])}/>;
+    return <><Summary rows={[['批准状态', <Tag value={selected.state} label={selected.state === 'APPROVED' ? '已批准' : undefined}/>], ['批准人', selected.approvedByAdmin?.displayName || selected.approvedByAdmin?.username || (selected.approvedBy ? `管理员编号 ${selected.approvedBy}` : selected.state === 'DRAFT' ? '尚未批准' : '没有记录批准人')], ['批准依据', selected.approvalRef || (selected.state === 'DRAFT' ? '尚未批准' : '没有记录')]]}/>{execution ? <>
+        <RefundExecution execution={execution}/>
+        <section className="h4-policy-part" aria-label="政策原文">
+            <header><h3>政策原文 <StatusTag tone="neutral">存档</StatusTag></h3><p>这一版存下的原文，批准和引用都按它核对。</p></header>
+            {content}
+        </section>
+    </> : content}{selected.content.kind === 'DEVICE_RIGHTS' && <><DeviceRightsSummary rights={selected.resolvedDeviceRights}/><Summary rows={[
             ['任务参与依据', contractTitle(selected.resolvedDeviceRights?.taskRule)],
             ['收益执行依据', contractTitle(selected.resolvedDeviceRights?.earningsRule)]
         ]}/></>}</>;

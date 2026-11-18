@@ -678,7 +678,7 @@ flowchart LR
 | rewardType/amount/skuId/profileId | 不可变承诺/按类型 | 订单锁定快照 | 不在处置弹窗改金额、数量、SKU、profile |
 | state/attemptId/commandId | 服务端执行字段/是 | 服务端生成 | 次数与每次结果可查，业务去重键稳定 |
 | walletLedgerRef/deviceId/source | 回执/已发必有 | 未发为空 | DEVICE 必须真实设备且 source=PROMOTION_GIFT；币类有同源资金凭证 |
-| reversalRef/recoveryOutstanding/platformLoss | 冲正关联、未追回奖励与按资产划分的平台损失/售后时 | 系统生成 | 原发奖不能被删除或重写；REVERSED 显示「售后已结案」及每种资产的损失，不能因 refundHold 或有未追回额显示「售后处理中」 |
+| reversalRef/recoveryOutstanding/platformLoss | 冲正关联、未追回奖励与按资产划分的平台损失/售后时 | 系统生成 | 原发奖不能被删除或重写；REVERSED 显示「已冲正结案」及每种资产的损失（有平台损失时才说由平台承担；批准的纠正追全才结案，没有损失），不能因 refundHold 或有未追回额显示「售后处理中」 |
 | reason/evidenceRefs/expectedRevision | 处置输入/是 | 未配置 | 依据必须可访问且与订单/奖励关联；校验该义务的当前并发序号 |
 
 **④ 状态机与禁止动作**

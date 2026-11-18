@@ -1542,7 +1542,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const promoFold = (
     <Fold title="首页备用卡" icon={Megaphone} tone="role-other"
       summary={<span className="h3-retired-sum"><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>{promoStatus ? "以前存的值，仅供查看" : "没读到以前存的值"}</span>}
-      explain="这 7 项设置已停用，不能再改，也不能启用；这里只显示以前存的值。">
+      explain="这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。">
       <ConfigList label="首页备用卡以前存的值">
         <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"} />
         <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} />
@@ -1551,8 +1551,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           sub="基础奖励 × 展示倍率" what="按上面两项算，不是实际发的奖励。" />
         <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
         <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
-        <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
-          sub={promo.targetDailyAsset === "USDT" ? promo.targetDailyAsset : "没有币种"} />
+        {/* 币种：USDT 跟在金额后；后端给 null 或旧数据没有这项写「币种未知」；认不出的写「币种读不出」，原值放问号里。 */}
+        <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : promo.targetDailyAsset === "USDT" ? `${text(promo.targetDaily)} USDT` : text(promo.targetDaily)}
+          sub={decimalOf(promo.targetDaily) == null || promo.targetDailyAsset === "USDT" ? undefined : promo.targetDailyAsset == null ? "币种未知" : "币种读不出"}
+          note={decimalOf(promo.targetDaily) != null && promo.targetDailyAsset != null && promo.targetDailyAsset !== "USDT" ? `页面认不出这个币种，原值 ${promo.targetDailyAsset}` : undefined} />
       </ConfigList>
     </Fold>
   );
