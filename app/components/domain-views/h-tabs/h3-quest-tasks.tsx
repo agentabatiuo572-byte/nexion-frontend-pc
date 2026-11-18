@@ -1054,7 +1054,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const triLegacy = legacyAssetText(triRaw);
   const tri = parseTriReward(triLegacy.text);
   const eligibility = text(model.dayOneEligibilityHours, "");
-  const promo = model.promoBanner ?? {};
+  const promo = model.promoBanner;
   const promoStatus = text(promo.status, "");
   const regionPending = region.pending;
   // 后端读回的新建申请：读得出的按类型放进对应页签；读不出的（审批锁定）只在要处理的事里提一句。
@@ -1552,7 +1552,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
         <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
         <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
-          sub="没有币种" />
+          sub={promo.targetDailyAsset === "USDT" ? promo.targetDailyAsset : "没有币种"} />
       </ConfigList>
     </Fold>
   );

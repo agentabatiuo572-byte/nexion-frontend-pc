@@ -69,13 +69,28 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
     error.unknownOutcome = unknown; error.bodyUnreadable = body === null;
     throw error;
   }
-  // Only admin policy projections carry this optional identity. Older servers omit it.
+  // Older admin policy projections can omit the approver identity and refund execution facts.
   if ((!init?.method || init.method === 'GET') && (path === '/promotion-policies' || /^\/promotion-policies\/[^/]+\/versions\/[0-9]+$/.test(path))) {
-    const data = body.data as Record<string, unknown>;
-    const rows = path === '/promotion-policies' && Array.isArray(data.items) ? data.items : [data];
+    const isRecord = (value: unknown): value is Record<string, unknown> =>
+      value !== null && typeof value === 'object' && !Array.isArray(value);
+    const data: unknown = body.data;
+    const rows = path === '/promotion-policies' && isRecord(data) && Array.isArray(data.items) ? data.items : [data];
     for (const row of rows) {
-      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
-      const identity: unknown = (row as Record<string, unknown>).approvedByAdmin;
+      if (!isRecord(row)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
+      const { execution } = row;
+      if (execution !== undefined && (!isRecord(execution)
+        || typeof execution.basis !== 'string'
+        || typeof execution.walletRecovery !== 'string'
+        || typeof execution.deviceRecovery !== 'string'
+        || typeof execution.insufficientRecovery !== 'string'
+        || typeof execution.negativeBalance !== 'boolean'
+        || typeof execution.crossAssetDeduction !== 'boolean'
+        || typeof execution.terminalState !== 'string'
+        || typeof execution.manualReviewAppliesTo !== 'string'
+        || typeof execution.unknownEvidence !== 'string')) {
+        throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
+      }
+      const identity = row.approvedByAdmin;
       if (identity === undefined || identity === null) continue;
       if (typeof identity !== 'object' || Array.isArray(identity)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
       const admin = identity as Record<string, unknown>;
