@@ -31,7 +31,7 @@ import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-
 import { legacySupportDestination, supportEnhancements } from "@/lib/admin/m-support-enhancements";
 import { businessResultUnavailableText, RecoveryPanel, type RecoveryItem } from "../recovery-panel";
 import { m1CustomerCode } from "./m1-customer-code";
-import { scopedDraftSlot, supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
+import { scopedDraftSlot, identifySavedCustomer, supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
 export { validCustomerId } from "./m-message-journal";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
@@ -799,7 +799,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     customerId = cleared.customerId;
     if (cleared.error) setRecoveryError(cleared.error);
     if (!commandKey && !cleared.assignmentId && !assignmentChanged) setRevokedIds((old) => new Set([...old, ...affected]));
-    if (!commandKey) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
+    if (!commandKey && !cleared.assignmentId) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
     setDrafts((old) => {
       if (revokeAll) return {};
       const next = { ...old };
@@ -815,7 +815,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (revokeAll || affected.includes(selectedId) && !requestedCustomerId || customerId && (selected?.customerId === customerId || requestedCustomerId === customerId)) {
       sendAdminTyping(false); watchAdminConversation(null);
       setFirstDetail(null); setProfileDetail(null); setDetailError(""); setProfileError(""); setRequestedCustomerId(null); setSelectedId("");
-      clearAttachment(pending?.kind !== "IMAGE"); setMetaTarget(""); setScreen("list"); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); setArchiveIds(new Set());
+      clearAttachment(pending?.kind !== "IMAGE"); setMetaTarget(""); setScreen("list"); setContentChoice(null); if (revokeAll) setBulkOpen(false); setContactOpen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); setArchiveIds(new Set());
     }
   }, [all, originalCustomer, selectedId, selected?.customerId, requestedCustomerId, clearAttachment, adminId, authEpoch, pending?.kind, activeKey, qualificationUnknown]);
   useEffect(() => { setRecoveryError(""); }, [authEpoch]);
@@ -911,22 +911,15 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [adminId, authEpoch]);
   useEffect(() => {
     if (!conversationsAvailable || qualificationUnknown) return;
-    for (const { reply, row, dock } of savedSends) {
-      if (!reply) continue;
-      const original = visible.find(convo => convo.id === reply.conversationId);
+    for (const { locator, row } of savedSends) {
+      if (!locator.conversationId || validCustomerId(locator.customerId ?? null)) continue;
+      const original = visible.find(convo => convo.id === locator.conversationId);
       if (!original) continue;
-      // Keep legacy evidence addressable in its original slot. Remember the proven customer before a later transfer.
-      if (dock && !validCustomerId(dock.customerId ?? null)) {
-        dockCommands.remember(row.fingerprint, row.commandKey, { conversationNo: dock.conversationNo, payload: dock.payload, customerId: customerIdOf(original) });
-      } else if (row.fingerprint === pendingKey(adminId) && !validCustomerId(reply.customerId ?? null)) {
-        rememberPending(row.fingerprint, reply.key, { ...reply, customerId: customerIdOf(original) });
-      }
+      identifySavedCustomer(adminId, row.commandKey, original.id, customerIdOf(original));
     }
   }, [adminId, conversationsAvailable, qualificationUnknown, savedSends, visible]);
   const redactRecovery = useEffectEvent((customerId: string, conversationId: string | undefined, key: string) => {
-    if (readSavedSends(adminId).some(entry => entry.row.commandKey === key && (entry.reply || entry.first)) || failedCopies.some(copy => copy.commandKey === key)) {
-      revokeCustomer(customerId, true, conversationId, key);
-    }
+    ctx.invalidateScope(conversationId, customerId);
   });
   const scanRecovery = useEffectEvent((scope: string, signal: AbortSignal) => {
     const requests = new Map<string, Promise<SupportCustomerDetail>>();

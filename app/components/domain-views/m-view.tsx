@@ -44,7 +44,7 @@ import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { supportLengthHint, identifySavedCustomer, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -208,15 +208,31 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string,
     knownThreads: Pick<SessionConvo, "id" | "customerId">[] = mDataRef.current?.conversations ?? [], assignmentId?: string) => {
-    // A receipt for an already redacted assignment must not erase a later draft.
-    if (changedAssignmentKey && !readSavedSends(session?.adminId ?? 0).some(entry =>
-      entry.row.commandKey === changedAssignmentKey && (entry.reply || entry.first))
-      && !failedDraftCopies.list().some(copy => copy.commandKey === changedAssignmentKey && copy.commandOwnerId === session?.adminId)) return;
+    if (useAdminAuth.getState().session?.adminId !== session?.adminId) return;
+    const actor = session?.adminId;
+    if (changedAssignmentKey && actor) {
+      const entry = readSavedSends(actor).find(item => item.row.commandKey === changedAssignmentKey);
+      assignmentId = entry?.first?.assignmentId ?? entry?.reply?.expectedAssignmentId
+        ?? failedDraftCopies.list().find(copy => copy.commandKey === changedAssignmentKey)?.assignmentId;
+      if (!assignmentId) return;
+    }
     if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
     const cleared = session?.adminId ? redactCustomerSends(session.adminId, knownThreads, customerId, conversationNo, undefined, assignmentId) : undefined;
     customerId = cleared?.customerId ?? customerId;
     const affectedIds = cleared?.affected ?? [];
     if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
+    if (actor && customerId && !assignmentId) {
+      const customer = customerId;
+      for (const row of readSavedSends(actor)) {
+        const id = row.locator.conversationId;
+        if (!id || row.locator.customerId || knownThreads.some(thread => thread.id === id)) continue;
+        void fetchMConversationDetail(id, undefined, false).then(thread => {
+          if (!thread.customerId || useAdminAuth.getState().authEpoch !== authEpoch) return;
+          identifySavedCustomer(actor, row.row.commandKey, id, thread.customerId);
+          if (thread.customerId === customer) redactCustomerSends(actor, [thread], customer, id, row.row.commandKey, row.reply?.expectedAssignmentId);
+        }).catch(() => { /* No customer proof yet. Retain the original for the next snapshot. */ });
+      }
+    }
     if (assignmentId) {
       window.dispatchEvent(new CustomEvent("m3-assignment-invalidated", { detail: { conversationNo, customerId, changedAssignmentKey, cleared } }));
       return;
@@ -244,7 +260,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       if (session?.adminId) saveDockUi(session.adminId, next);
       return next;
     });
-  }, [reloadMContent, session?.adminId]);
+  }, [reloadMContent, session?.adminId, authEpoch]);
   const reconcileConversationSnapshot = useCallback(async (signal: AbortSignal) => {
     const generation = mLoadCoordinator.current.beginConversationSnapshot();
     const snapshotAuthEpoch = authEpoch;
@@ -1329,10 +1345,19 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
       const copy = (event as CustomEvent<{ key: string; body: string }>).detail;
       if (copy.key === draftKey) setDraft(copy.body);
     };
+    const assignmentChanged = (event: Event) => {
+      const target = (event as CustomEvent<{ customerId?: string; cleared: ReturnType<typeof redactCustomerSends> }>).detail;
+      if (target.customerId === conv?.customerId && target.cleared.assignmentId === assignmentId) {
+        identityGeneration.current++;
+        setDraftScope(null); setDraft(""); setDetailRetry(value => value + 1);
+      }
+    };
+    window.addEventListener("m3-assignment-invalidated", assignmentChanged);
     window.addEventListener("dock-draft-restored", restored);
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => {
       window.removeEventListener("dock-draft-restored", restored);
+      window.removeEventListener("m3-assignment-invalidated", assignmentChanged);
       identityGeneration.current++;
       window.removeEventListener("support-scope-invalidated", invalidate);
     };

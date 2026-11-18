@@ -298,10 +298,10 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     } catch (error) {
       if (actor !== actorStamp()) return;
       if (!acknowledged && isExplicitRejection(error)) { maintenanceCommands.forget(fingerprint, key); setMaintenancePending(null); setMaintenanceNeedsRefresh(true); setSaveError(errorText(error)); return; }
+      if (acknowledged && invalidateCustomerOnDenied(payload.customerId, error)) return;
       if (detailsGeneration.current === generation) {
         setNotice("操作结果未知，原内容和理由已保留，请查询原结果。");
         closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1);
-        invalidateCustomerOnDenied(payload.customerId, error);
       }
     } finally { setSaving(false); }
   };

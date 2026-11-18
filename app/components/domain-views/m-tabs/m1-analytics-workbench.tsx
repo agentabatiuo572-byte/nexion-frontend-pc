@@ -265,6 +265,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const pendingTabFocus = useRef<M1Tab | null>(null);
   const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState(""), [scopeDenied, setScopeDenied] = useState(false);
   const teamChanged = useRef(false);
+  const targetedRefresh = useRef(false);
   const [scopeRetry, setScopeRetry] = useState(0), [queryState, setQueryState] = useState(initialAnalyticsQuery("PERSONAL"));
   const [data, setData] = useState<SupportAnalyticsResponse | null>(null), [error, setError] = useState("");
   const [loading, setLoading] = useState(false), [retry, setRetry] = useState(0), [cancelled, setCancelled] = useState(false);
@@ -346,7 +347,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => controller.abort();
   }, [needsCalendar, scopeRetry, calendarRetry]);
   useEffect(() => {
-    const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; setScope(null); setScopeError(""); setScopeDenied(false); setData(null); setProfileId(null);
+    const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; if (!targetedRefresh.current) setScope(null); targetedRefresh.current = false; setScopeError(""); setScopeDenied(false); setData(null); setProfileId(null);
     (async () => {
       const agentId = analyticsEntryAgent(window.location.search);
       let query = analyticsWireQuery(initialAnalyticsQuery(entryReadMode), []);
@@ -403,11 +404,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
       } else setSection(current => personal === (current === "personal") || current === "stats" ? current : personal ? "personal" : "stats");
       setScope(next); setQueryState(restored);
-    }).catch(cause => { if (!controller.signal.aborted) { setScopeDenied(cause instanceof SupportClientError && cause.status === 403); setScopeError(analyticsErrorText(cause)); } });
+    }).catch(cause => { if (!controller.signal.aborted) { setScope(null); setScopeDenied(cause instanceof SupportClientError && cause.status === 403); setScopeError(analyticsErrorText(cause)); } });
     return () => controller.abort();
   }, [scopeRetry, entryReadMode]);
   useEffect(() => {
-    const invalidate = () => refreshScope(true);
+    const invalidate = (event: Event) => refreshScope(true, Boolean((event as CustomEvent<{ customerId?: string }>).detail?.customerId));
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => window.removeEventListener("support-scope-invalidated", invalidate);
   }, [queryState]);
@@ -434,13 +435,15 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => { controller.abort(); generation.current++; };
   }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, statisticsCalendar]);
   const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setFundMetric(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
-  function refreshScope(invalidated = false) {
+  function refreshScope(invalidated = false, targeted = false) {
+    targetedRefresh.current = targeted;
     setFundMetric(null);
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
     sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null);
     managementReturnQuery.current = invalidated ? changeAnalyticsQuery(queryState, { groupId: undefined, keyword: undefined }) : { ...queryState, pageNum: 1, expectedVersion: undefined };
     if (invalidated) setKeyword("");
-    setScope(null); setScopeError(""); setData(null); setProfileId(null); setError("");
+    if (!targeted) setScope(null);
+    setScopeError(""); setData(null); setProfileId(null); setError("");
     setScopeRetry(n => n + 1);
   }
   function reloadFirstPage() { change({}); setRetry(n => n + 1); }

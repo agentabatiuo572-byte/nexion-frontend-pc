@@ -129,6 +129,12 @@ export function readSavedSends(adminId: number): SavedSend[] {
   });
   return [...main, ...dock];
 }
+export function identifySavedCustomer(adminId: number, key: string, conversationId: string, customerId: string) {
+  const entry = readSavedSends(adminId).find(item => item.row.commandKey === key && item.locator.conversationId === conversationId);
+  if (!entry || validCustomerId(entry.locator.customerId ?? null)) return;
+  if (entry.dock) dockCommands.remember(entry.row.fingerprint, key, { ...entry.dock, customerId });
+  else rememberPending(entry.row.fingerprint, key, { ...(entry.reply ?? entry.locator), customerId });
+}
 export const rememberPending = (slot: string, commandKey: string, value: object) => {
   pendingMessages.remember(slot, commandKey, { payload: JSON.stringify(value) });
   return pendingMessages.isDurablyStored(slot, commandKey);
@@ -302,7 +308,7 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
   if (originalConversationId) affected.push(originalConversationId);
   for (const copy of failedDraftCopies.list()) {
     if (copy.commandOwnerId !== adminId || assignmentId && copy.assignmentId !== assignmentId || commandKey && copy.commandKey !== commandKey) continue;
-    if (revokeAll || copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
+    if (revokeAll || customerId && copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
       if (copy.conversationId && !affected.includes(copy.conversationId)) affected.push(copy.conversationId);
       failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
     }
@@ -313,7 +319,7 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
     if (commandKey && record.commandKey !== commandKey) continue;
     const originalCustomer = originalCustomerId(locator, conversations);
     const matchesThread = locator.conversationId && affected.includes(locator.conversationId);
-    if (!revokeAll && !(customerId && originalCustomer === customerId) && !matchesThread && !(dock && !originalCustomer && customerId)) continue;
+    if (!revokeAll && !(customerId && originalCustomer === customerId) && !matchesThread) continue;
     if (locator.conversationId && !affected.includes(locator.conversationId)) affected.push(locator.conversationId);
     locator.customerId = originalCustomer ?? (locator.conversationId === originalConversationId ? customerId : undefined);
     if (dock) {
