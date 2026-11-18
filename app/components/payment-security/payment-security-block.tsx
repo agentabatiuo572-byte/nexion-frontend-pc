@@ -27,13 +27,14 @@ function stateTag(record: PaymentSecurityRecord) {
   return <StatusTag tone={record.state === "RELEASED" ? "ok" : "done"}>{stateText(record)}</StatusTag>;
 }
 
-export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, onState }: {
+export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canRelease, retryMissingRelease, onState }: {
   port: PaymentSecurityPort;
   userLabel: string;
   /** 页面刷新时变，这一块跟着重读。 */
   reloadKey?: number;
   /** 有独立解除权限才给入口（OP-124）。能不能解除这一条还看后端 capability。 */
   canRelease: boolean;
+  retryMissingRelease?: boolean;
   onState?: (state: PaymentSecurityState, pending: boolean) => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
@@ -95,7 +96,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原结果</Button>} />}
         </div>
       </Fold>
-      {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
+      {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} retryMissingRelease={retryMissingRelease} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}
     </>
   );
 }

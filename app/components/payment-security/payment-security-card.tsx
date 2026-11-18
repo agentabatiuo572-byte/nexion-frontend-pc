@@ -74,7 +74,7 @@ export function PaymentSecurityCard({ port, userLabel, compact = false, recovery
   </section>;
 }
 
-export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction = false, recoveryActions = false, recoveryCommandKey, onClose }: { port: PaymentSecurityPort; recordId: string; userLabel: string; initialAction?: boolean; recoveryActions?: boolean; recoveryCommandKey?: string; onClose: () => void }) {
+export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction = false, recoveryActions = false, recoveryCommandKey, retryMissingRelease = false, onClose }: { port: PaymentSecurityPort; recordId: string; userLabel: string; initialAction?: boolean; recoveryActions?: boolean; recoveryCommandKey?: string; retryMissingRelease?: boolean; onClose: () => void }) {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch), owner = session?.adminId ?? 0;
   const [detail, setDetail] = useState<Detail | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false), [reason, setReason] = useState(""), [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false);
@@ -86,6 +86,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   const [reasonLeft, setReasonLeft] = useState(false);
   const [tab, setTab] = useState("info"), [receipt, setReceipt] = useState<PaymentReleaseReceipt | null>(null);
   const [pending, setPending] = useState(() => pendingPaymentRelease(owner, port.userId));
+  const [missingReleaseKey, setMissingReleaseKey] = useState("");
   const [viewedCommandKey, setViewedCommandKey] = useState(recoveryCommandKey);
   const [localRelease, setLocalRelease] = useState(false);
   const generation = useRef(0), live = useRef(true), mutation = useRef(false), started = useRef(false);
@@ -117,11 +118,14 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     {rejected.rejectionCode && <> · <span data-mono>{rejected.rejectionCode}</span></>}
   </>;
   const canRelease = !!record?.capabilities.releaseAllowed && mayRelease(session) && !pending && owner > 0;
+  const canRetryMissingRelease = retryMissingRelease && pending && pending.commandKey === missingReleaseKey
+    && pending.portKey === port.key && pending.recordId === recordId && isCompletePaymentRelease(pending)
+    && pending.expiresAt > Date.now() && mayRelease(session);
   const reasonValid = reasonRule.ok(reason) && reason.trim().length >= 8 && reason.trim().length <= 200;
   async function execute(queryOnly: boolean, replay = false) {
     if (mutation.current || replay && !mayRelease(session) || !queryOnly && !replay && (!record || !canRelease || !reasonValid || !confirmed)) return;
     if (!queryOnly && !replay) setViewedCommandKey(undefined);
-    mutation.current = true; setBusy(true); setError(""); setReceipt(null);
+    mutation.current = true; setBusy(true); setError(""); setReceipt(null); setMissingReleaseKey("");
     try {
       const next = queryOnly ? await queryPaymentRelease(owner, port) : replay ? await retryPaymentRelease(owner, port) : await submitPaymentRelease(owner, port, record!, reason.trim());
       if (!live.current) return;
@@ -132,6 +136,12 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
       if (rejected || next.status === "APPLIED") { await load(); setConfirmed(false); }
     } catch (failure) {
       if (!live.current) return;
+      if (queryOnly && retryMissingRelease && pending && failure instanceof PaymentPasswordApiError
+        && failure.status === 404 && failure.backendMessage === "PAYMENT_PASSWORD_COMMAND_NOT_FOUND") {
+        setMissingReleaseKey(pending.commandKey);
+        setError("没有查到原解除结果，原操作已保留。");
+        return;
+      }
       if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) clearInaccessibleDetail();
       setError(message(failure));
     } finally { mutation.current = false; if (live.current) { setBusy(false); const next = pendingPaymentRelease(owner, port.userId); setPending(next); if (next) setReviewing(false); window.dispatchEvent(new Event("nexion-payment-security-updated")); } }
@@ -148,7 +158,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     {/* 详情没读到又有待确认时，读取失败和待确认并成一条：标题说待确认，正文先说为什么读不到，重新加载贴在正文下面；同一句「原操作已保留」不说两遍。 */}
     {error && !(pending && !detail) && <Notice tone={pending ? "warn" : "danger"} action={<Button size="sm" disabled={busy} onClick={() => void load()}>重新加载详情</Button>}>{error}</Notice>}
     {pending && !detail && <Notice tone="warn" title="解除结果未知" actionBelow action={error ? <Button size="sm" disabled={busy} onClick={() => void load()}>重新加载详情</Button> : undefined}>{error ? <><p>{error}</p>{!error.includes("原操作已保留") && <p>原操作已保留，详情读取成功后可查询。</p>}</> : "原操作已保留，详情读取成功后可查询。"}</Notice>}
-    {original && detail && <Notice tone={original.rejection ? "danger" : "warn"} title={original.rejection ? rejectedReleaseTitle : "解除结果未知"} actionBelow action={<>{!original.rejection && <Button size="sm" disabledReason={original.portKey !== port.key ? "请回原操作入口查询" : undefined} loading={busy} onClick={() => void execute(true)}>查询本次结果</Button>}{recoveryActions && !original.rejection && original.portKey === port.key && isCompletePaymentRelease(original) && original.expiresAt > Date.now() && <Button size="sm" disabledReason={!mayRelease(session) ? "当前缺少原操作权限" : busy ? "正在处理原操作" : undefined} onClick={() => void execute(false, true)}>按原请求重试</Button>}{recoveryActions && original.portKey === port.key && original.rejection && <Button size="sm" variant="danger-outline" disabled={busy} onClick={() => setLocalRelease(true)}>解除原操作记录</Button>}</>}><span data-mono>{original.commandKey}</span> · <span className="rd-keep">{time(new Date(original.createdAt).toISOString())}</span>{!original.rejection && original.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}<Fold inset title="原解除操作" summary="对象、理由、版本与原请求编号"><RdFacts><RdFact k="原记录"><span data-mono>{original.recordId}</span></RdFact><RdFact k="原理由">{original.reason ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原版本">{original.expectedVersion ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原请求编号"><span data-mono>{original.commandKey}</span></RdFact></RdFacts></Fold>{rejectionDetail && <p>{rejectionDetail}</p>}</Notice>}
+    {original && detail && <Notice tone={original.rejection ? "danger" : "warn"} title={original.rejection ? rejectedReleaseTitle : "解除结果未知"} actionBelow action={<>{!original.rejection && <Button size="sm" disabledReason={original.portKey !== port.key ? "请回原操作入口查询" : undefined} loading={busy} onClick={() => void execute(true)}>查询本次结果</Button>}{(canRetryMissingRelease || recoveryActions && !original.rejection && original.portKey === port.key && isCompletePaymentRelease(original) && original.expiresAt > Date.now()) && <Button size="sm" disabledReason={!mayRelease(session) ? "当前缺少原操作权限" : busy ? "正在处理原操作" : undefined} onClick={() => void execute(false, true)}>按原请求重试</Button>}{recoveryActions && original.portKey === port.key && original.rejection && <Button size="sm" variant="danger-outline" disabled={busy} onClick={() => setLocalRelease(true)}>解除原操作记录</Button>}</>}><span data-mono>{original.commandKey}</span> · <span className="rd-keep">{time(new Date(original.createdAt).toISOString())}</span>{!original.rejection && original.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}<Fold inset title="原解除操作" summary="对象、理由、版本与原请求编号"><RdFacts><RdFact k="原记录"><span data-mono>{original.recordId}</span></RdFact><RdFact k="原理由">{original.reason ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原版本">{original.expectedVersion ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原请求编号"><span data-mono>{original.commandKey}</span></RdFact></RdFacts></Fold>{rejectionDetail && <p>{rejectionDetail}</p>}</Notice>}
     {localRelease && recoveryActions && rejected && original && <RdModal title="解除原操作记录" icon={ShieldAlert} busy={busy} onClose={() => setLocalRelease(false)} footer={<Decision others={<Button onClick={() => setLocalRelease(false)}>返回</Button>} danger={<Button variant="danger" onClick={() => { releaseRejectedPaymentRelease(owner, port, original.commandKey); setLocalRelease(false); setError(""); }}>确认解除</Button>} />}><ReleaseBody label={userLabel + " · 原支付密码解除"} explain={original.rejection} /></RdModal>}
     {receipt && receipt.status !== "REJECTED" && <Notice tone={receipt.status === "APPLIED" ? "ok" : "warn"} title={receipt.status === "APPLIED" ? "解除已确认，审计记录已核对" : "处理结果未知，请稍后再查询本次结果"}>{receipt.status === "APPLIED" && `${receipt.auditId} · ${receipt.changedBy} · ${time(receipt.changedAt)}`}</Notice>}
     {record && <>
@@ -174,7 +184,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
         ? <Notice tone={pending ? "warn" : "danger"} action={!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}>{error}</Notice>
         : <p className="ps-reason" role="alert">{error} {!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}</p>)}
       {pending && !detail && <div className="ps-pending" role="status"><p>解除结果未知。原操作已保留，详情读取成功后可查询。</p></div>}
-      {pending && original && detail && <div className="ps-pending" role="status">{surface ? !error && <Notice tone="warn">解除结果未知，请查询原结果，不要重复提交。</Notice> : <p>解除结果未知，请查询原结果，不要重复提交。</p>}{surface && <Fold inset title="原解除操作" summary="对象、理由、版本与原请求编号"><RdFacts><RdFact k="原记录"><span data-mono>{original.recordId}</span></RdFact><RdFact k="原理由">{original.reason ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原版本">{original.expectedVersion ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原请求编号"><span data-mono>{original.commandKey}</span></RdFact></RdFacts></Fold>}<PsButton disabled={busy || pending.portKey !== port.key} onClick={() => void execute(true)}>{busy ? "正在查询…" : "查询本次结果"}</PsButton>{pending.portKey !== port.key && <p className="ps-secondary">请回原操作入口查询。</p>}</div>}
+      {pending && original && detail && <div className="ps-pending" role="status">{surface ? !error && <Notice tone="warn">解除结果未知，请查询原结果，不要重复提交。</Notice> : <p>解除结果未知，请查询原结果，不要重复提交。</p>}{surface && <Fold inset title="原解除操作" summary="对象、理由、版本与原请求编号"><RdFacts><RdFact k="原记录"><span data-mono>{original.recordId}</span></RdFact><RdFact k="原理由">{original.reason ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原版本">{original.expectedVersion ?? "原记录没存这一项，只能查询原结果"}</RdFact><RdFact k="原请求编号"><span data-mono>{original.commandKey}</span></RdFact></RdFacts></Fold>}<PsButton disabled={busy || pending.portKey !== port.key} onClick={() => void execute(true)}>{busy ? "正在查询…" : "查询本次结果"}</PsButton>{canRetryMissingRelease && <PsButton disabled={busy} onClick={() => void execute(false, true)}>按原请求重试</PsButton>}{pending.portKey !== port.key && <p className="ps-secondary">请回原操作入口查询。</p>}</div>}
       {receipt?.status === "APPLIED" && <p role="status"><strong className="ps-released">解除已确认，审计记录已核对</strong><br /><span className="ps-secondary">{receipt.auditId} · {receipt.changedBy} · {time(receipt.changedAt)}</span></p>}
       {rejected && <p className="ps-reason" role="status">{rejectedReleaseTitle} · {rejectionDetail}<br /><span className="ps-secondary">{rejected.recordId} · 原版本 {rejected.expectedVersion ?? "未记录"} · {rejected.reason} · {rejected.commandKey}</span></p>}
       {(receipt?.status === "PENDING" || receipt?.status === "NOT_FOUND") && <p className="ps-secondary">处理结果未知，请稍后再查询本次结果。</p>}
