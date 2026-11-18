@@ -746,6 +746,13 @@ export type AutoRuleRow = {
   adjustable: boolean;
   refNote?: string;
   refTitle?: string;
+  autoDisableCondition?: {
+    metric: "bankRunRatioPct" | "reconciliationGapUsdt";
+    comparator: ">=" | ">";
+    actualThreshold: number;
+    target: "withdraw" | "exchange";
+    action: "autoDisable";
+  };
 };
 
 export type KillSwitchStats = {
@@ -1266,7 +1273,18 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       contractError(`killSwitch.autoRules.${index}.semantics`);
     }
     requiredText(row.configKey, `killSwitch.autoRules.${index}.configKey`);
-    if (kind === "number") {
+    let autoDisableCondition: AutoRuleRow["autoDisableCondition"];
+    const { action, metric, comparator, target } = row;
+    if (action === "autoDisable") {
+      const withdraw = id === "withdrawSurge" && metric === "bankRunRatioPct" && comparator === ">=" && target === "withdraw";
+      const exchange = id === "maturityGap" && metric === "reconciliationGapUsdt" && comparator === ">" && target === "exchange";
+      if (!withdraw && !exchange) contractError(`killSwitch.autoRules.${index}.condition`);
+      autoDisableCondition = { action, metric, comparator, target,
+        actualThreshold: requiredNum(row.actualThreshold, `killSwitch.autoRules.${index}.actualThreshold`) };
+    } else if (action !== undefined) {
+      contractError(`killSwitch.autoRules.${index}.action`);
+    }
+    if (kind === "number" && !autoDisableCondition) {
       requiredNum(threshold.replaceAll(",", ""), `killSwitch.autoRules.${index}.thr`);
     }
     return {
@@ -1283,6 +1301,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       adjustable,
       refNote: str(row.refNote),
       refTitle: str(row.refTitle),
+      autoDisableCondition,
     };
   });
   return {

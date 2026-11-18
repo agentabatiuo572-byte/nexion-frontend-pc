@@ -112,8 +112,14 @@ function unitText(value: string, unit: string) {
   return unit === "%" ? `${value}%` : `${value} ${unit}`;
 }
 
-function ruleValue(rule: AutoRuleRow) {
-  return rule.kind === "number" ? unitText(Number(rule.thr).toLocaleString(), rule.unit) : rule.thr;
+function ruleValue(rule: AutoRuleRow, previousThreshold?: string) {
+  if (previousThreshold === undefined && rule.autoDisableCondition) {
+    return signalText(rule.autoDisableCondition.actualThreshold, rule.unit);
+  }
+  const threshold = previousThreshold ?? rule.thr;
+  if (rule.kind !== "number") return threshold;
+  const numeric = Number(threshold);
+  return unitText(Number.isFinite(numeric) ? numeric.toLocaleString() : threshold, rule.unit);
 }
 
 /** 事件存下来的原值，只加千分位和单位，不舍入（TX-19、TX-20）。 */
@@ -668,7 +674,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       detail: "保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。",
       effect: IMMEDIATE,
       statedBrief: { impact: "阈值改小更容易自动关停，改大更不容易。", check: "核对新值和单位，理由写清依据或工单号。" },
-      facts: stale && changedByOther(ruleValue({ ...rule, thr: stale.was }), ruleValue(rule)),
+      facts: stale && changedByOther(ruleValue(rule, stale.was), ruleValue(rule)),
       confirmLabel: "确认调整，立即生效",
       edit: { kind: "number", current: rule.thr, initialValue: stale?.draft, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
         hint: "1–1,000,000,000 的整数",
