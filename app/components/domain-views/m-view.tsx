@@ -44,7 +44,7 @@ import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, failedDraftCopies, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { supportLengthHint, blocksNewSend, failedDraftCopies, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -677,7 +677,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const page = (
     <>
       {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
-      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
+      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">去专属会话处理</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
       {tab !== "M3" && tab !== "M4" && tab !== "M5" && mError && (
@@ -1239,6 +1239,13 @@ function dockRelWhen(ts: number): string {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
+/** 小窗被挡时的一句：为什么不能发、要去哪里。客户认不出的旧记录也挡，那时不说「这位客户」。 */
+const DOCK_BLOCKED = "上一条消息发送结果未知，确认前不能再发。";
+const DOCK_BLOCKED_OTHER = "有一条消息发送结果未知，确认前不能再发。";
+const DOCK_NOT_YOURS_SENT = "消息没有发出：这位客户已不归你接待，原文已清除。";
+/** 403/404 只说明现在不能接待，不一定是转走。 */
+const DOCK_NO_ACCESS_SENT = "消息没有发出：你已不能接待这位客户，原文已清除。";
+
 function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: MCtx["invalidateScope"] }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -1266,7 +1273,11 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const dockSlot = `dock|${currentAdminId}|${lastId}`;
   const draftKey = currentAdminId && conv?.customerId ? dockDraftKey(currentAdminId, conv.customerId, conv.id, conv.assignmentId) : "";
   const newSendBlocked = !!currentAdminId && !!conv?.customerId && blocksNewSend(pendingSendCustomers(currentAdminId, convos), conv.customerId);
-  const dockFeedback = sendError || (newSendBlocked && !sending ? "原消息发送结果未知，暂时不能再发。" : "");
+  // 只决定显示哪句：被挡的是不是这位客户自己的消息。
+  const blockedHere = newSendBlocked && pendingSendCustomers(currentAdminId!, convos).has(conv!.customerId);
+  const dockBlocked = newSendBlocked && !sending;
+  const dockError = dockBlocked && sendError === DOCK_BLOCKED ? "" : sendError;
+  const lengthHint = canWrite && !newSendBlocked ? supportLengthHint(draft) : null;
   const updateDraft = (value: string) => {
     setDraft(value);
     try {
@@ -1351,7 +1362,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
           ? [{ conversationNo: conv.id, throughMessageId: latest.id! }] : undefined,
       };
       dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId, originalDraft: draft !== text ? draft : undefined, draftAssignmentId: conv.assignmentId ?? undefined });
-      if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
+      if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
       updateDraft("");
       await supportClient.sendConversationReply(conv.id, input, key);
       if (!sameAccount()) return;
@@ -1364,7 +1375,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     } catch (error) {
       if (!sameAccount()) return;
       if (key && supportAssignmentChanged(error)) {
-        onScopeInvalidated(conv.id, conv.customerId, "消息没有发出：这个会话的权限变了，请到专属会话核对。", key);
+        onScopeInvalidated(conv.id, conv.customerId, DOCK_NOT_YOURS_SENT, key);
         dockCommands.forget(dockSlot, key);
         return;
       }
@@ -1375,9 +1386,9 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         dockCommands.forget(dockSlot, key);
       }
       if (scopeLost) {
-        onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。");
+        onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? DOCK_NO_ACCESS_SENT : "消息发送结果未知：你已不能接待这位客户，原文已清除，只能查询结果。");
       } else if (currentDock()) {
-        setSendError(rejected ? `本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。` : key ? "发送结果仍在确认，请稍后查询原命令。" : displayAdminError(error));
+        setSendError(rejected ? `没有发出，原文已放回输入框，可以改了再发。原因：${displayAdminError(error)}` : key ? DOCK_BLOCKED : displayAdminError(error));
       }
     } finally {
       if (generation === identityGeneration.current) { sendInFlight.current = false; setSending(false); }
@@ -1447,7 +1458,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
         {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
-      {dockFeedback && <div role="alert" className="m-dock-error">{dockFeedback}{newSendBlocked && <Link className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`}>到专属会话核对</Link>}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
+      {dockBlocked && <div role="status" className="m-dock-blocked"><span>{blockedHere ? DOCK_BLOCKED : DOCK_BLOCKED_OTHER}</span><Link className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`}>去专属会话处理</Link></div>}
+      {dockError && <div role="alert" className="m-dock-error">{dockError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
       {canWriteM3 && owned && conv.writeState?.canReply === false && <div role="status" className="m-dock-note">这不是客户当前的会话，不能在这里回复；到「专属会话」查看。</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>
@@ -1464,11 +1476,12 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
             e.preventDefault();
             void send();
           }}
-          placeholder="回车发送，Shift+回车换行"
+          placeholder={newSendBlocked ? "上一条消息确认前不能发" : "回车发送，Shift+回车换行"}
           style={{ maxHeight: 80 }}
         />
         <button type="button" className="btn btn-pri btn-sm" aria-label="发送会话回复" disabled={!canWrite || newSendBlocked || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
+      {lengthHint && <div className="m-dock-count" data-over={lengthHint.over ? "" : undefined} role={lengthHint.over ? "alert" : "status"}>{lengthHint.text}</div>}
     </div>
   );
 }

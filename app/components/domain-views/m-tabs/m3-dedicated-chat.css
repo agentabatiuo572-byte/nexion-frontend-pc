@@ -135,6 +135,23 @@
 .m3s-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--rd-space-2); align-items: end; }
 .m3s-input .rd-textarea { width: 100%; height: 68px; min-height: 68px; max-height: 150px; resize: vertical; }
 .m3s-input .rd-textarea:disabled { resize: none; }
+/* 字数提示：接近 2,000 字才出现，贴在输入框下右对齐；超了变红，点发送前就知道。 */
+.m3s-count { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); text-align: right; font-variant-numeric: tabular-nums; }
+.m3s-count[data-over] { color: var(--rd-danger); }
+/* 提示条标题后面的弱字：发出时间。 */
+.m3s-notice-meta { display: inline-block; white-space: nowrap; margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: normal; font-variant-numeric: tabular-nums; }
+/* 只读原文（首次联系、没发出的原文）：保留换行，最多露约六行，长的在框里滚，不和输入框混。 */
+.m3s-original { margin-top: var(--rd-space-2); padding: var(--rd-space-2) var(--rd-space-3); border-left: 3px solid var(--rd-line-strong); border-radius: var(--rd-radius-tag); background: var(--rd-panel); max-height: 132px; overflow-y: auto; }
+.m3s-original:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 1px; }
+.m3s-original > span { display: block; margin-bottom: 2px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m3s-original > p { margin: 0; color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 收件箱上方的「发送结果未知」面板：栏窄，每条两行，第一行客户和按钮，第二行一句结论。 */
+/* 展开全部时面板在自己框里滚，最多占收件箱四成高，下面的会话列表始终露出来。 */
+.m3s-pending { flex: none; max-height: 40%; overflow-y: auto; margin: var(--rd-space-2) var(--rd-space-2) 0; }
+.m3s-pending .rd-notice { padding-left: var(--rd-space-3); padding-right: var(--rd-space-3); }
+.m3s-pending .fund-row-line { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
+.m3s-pending .fund-row-text { grid-column: 1 / -1; grid-row: 2; padding-left: 18px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m3s-narrow-only { display: none !important; }
 .m3s-upload { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-2); padding: var(--rd-space-2); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .m3s-upload > img { width: 48px; height: 48px; object-fit: cover; border-radius: var(--rd-radius-tag); }
 .m3s-upload-text { flex: 1; min-width: 140px; display: flex; flex-direction: column; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
@@ -174,6 +191,7 @@
 @container mdom (max-width: 680px) {
   .m3s-stage { grid-template-columns: minmax(0, 1fr); }
   .m3s-back { display: inline-flex !important; }
+  .m3s-narrow-only { display: inline-flex !important; }
   .m3s-stage:not([data-screen="list"]) .m3s-inbox { display: none; }
   .m3s-stage[data-screen="list"] .m3s-chat { display: none; }
   .m3s-profile { width: 100%; }

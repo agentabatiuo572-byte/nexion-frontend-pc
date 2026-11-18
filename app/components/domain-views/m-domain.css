@@ -590,6 +590,12 @@
 .mdom .m-dock-meta { margin-top: 2px; font-size: var(--rd-text-aux); }
 
 .m-dock-error { padding: var(--rd-space-2) var(--rd-space-3); color: var(--danger); font-size: var(--rd-text-body); }
+/* 小窗被挡：和真正的错误分开，用警示底色，一句为什么加一个去处，输入框随之变灰。 */
+.m-dock-blocked { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--rd-space-2); padding: var(--rd-space-2) var(--rd-space-3); border-top: 1px solid color-mix(in srgb, var(--rd-warn) 30%, transparent); background: var(--rd-warn-bg); color: var(--rd-text); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m-dock-blocked .rd-link { white-space: nowrap; }
+/* 字数提示：接近 2,000 字才出现，超了变红。 */
+.m-dock-count { padding: 0 11px 8px; margin-top: -4px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); text-align: right; font-variant-numeric: tabular-nums; }
+.m-dock-count[data-over] { color: var(--rd-danger); }
 
 /* ============================ M4 知识库（改版页） ============================ */
 .m4-page .m4-health { display: contents; }

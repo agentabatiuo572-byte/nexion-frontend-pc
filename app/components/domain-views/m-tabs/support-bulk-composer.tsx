@@ -33,7 +33,7 @@ const conversationReasonText:Record<string,string>={
   CONVERSATION_NOT_WRITABLE:"原会话正在转接或不可发送，本次不发送。请查看原会话，确认有可发送会话后重新圈选。",
   SUPPORT_BULK_CONVERSATION_CHANGED:"客户会话已变化，本次不发送。请核对当前会话后重新圈选。",
 };
-const reasonText:Record<string,string>={...conversationReasonText,PENDING_MESSAGE:"原消息发送结果未知，暂时不能再发。",STOPPED:"不再维护",MAINTENANCE_STOPPED:"不再维护",NOT_CURRENT_CUSTOMER:"当前非本人客户",EXPLICITLY_EXCLUDED:"手动排除",FILTER_MISMATCH:"不符合筛选",ACTIVITY_UNKNOWN:"活动状态未知",LEVEL_UNKNOWN:"等级未知",MAINTENANCE_UNKNOWN:"维护状态未知",REGISTRATION_UNKNOWN:"注册时间未知",FINANCE_UNKNOWN:"资金来源未知",FINANCE_ERROR:"资金加载失败"};
+const reasonText:Record<string,string>={...conversationReasonText,PENDING_MESSAGE:"上条消息结果未知",STOPPED:"不再维护",MAINTENANCE_STOPPED:"不再维护",NOT_CURRENT_CUSTOMER:"当前非本人客户",EXPLICITLY_EXCLUDED:"手动排除",FILTER_MISMATCH:"不符合筛选",ACTIVITY_UNKNOWN:"活动状态未知",LEVEL_UNKNOWN:"等级未知",MAINTENANCE_UNKNOWN:"维护状态未知",REGISTRATION_UNKNOWN:"注册时间未知",FINANCE_UNKNOWN:"资金来源未知",FINANCE_ERROR:"资金加载失败"};
 const stateText:Record<string,string>={QUEUED:"等待执行",RUNNING:"正在执行",COMPLETED:"执行结束",CANCELLED:"已取消剩余",PENDING:"待处理",SENT:"已提交",FAILED:"失败",SKIPPED:"跳过"};
 // 日期框按业务时区算当天 0 点，全站时间口径一致。
 const dayStart=(v:string)=>v?new Date(Date.parse(v+"T00:00:00Z")-businessOffsetMinutes()*60000).toISOString():undefined;

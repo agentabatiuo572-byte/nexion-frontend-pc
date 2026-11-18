@@ -54,6 +54,15 @@ export const failedDraftCopies = createMessageJournal<FailedDraftCopy>({
     && (row.conversationId === undefined || typeof row.conversationId === "string") && typeof row.body === "string",
 });
 export const SUPPORT_MESSAGE_MAX_LENGTH = 2000;
+/** 输入框下的字数提示（小窗和专属会话共用）：接近上限才出现，超了马上说，不等点发送。按发送时的算法数（去掉首尾空白）。 */
+export function supportLengthHint(draft: string) {
+  const length = draft.trim().length;
+  if (length < SUPPORT_MESSAGE_MAX_LENGTH * 0.9) return null;
+  const over = length - SUPPORT_MESSAGE_MAX_LENGTH;
+  return over > 0
+    ? { over: true, text: `比上限 2,000 字多 ${over.toLocaleString("en-US")} 字，删减后才能发送` }
+    : { over: false, text: `${length.toLocaleString("en-US")} / 2,000 字` };
+}
 export type MessageLocator = Omit<PrivateMessageRecovery, "clientMessageId"> & { clientMessageId?: string };
 export type SavedSend = { row: StoredMessage; locator: MessageLocator; reply?: Pending; first?: FirstContact; dock?: DockCommandRecord; dockInput?: SupportMessageInput };
 
