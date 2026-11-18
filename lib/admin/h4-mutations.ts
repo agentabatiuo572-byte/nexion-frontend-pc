@@ -15,8 +15,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { promotionRead } from "./promotion-client";
 import type { Promotion, RewardAdmin } from "./promotion-types";
-import { checkFundCommand, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
-import { discoverECommand, investigateECommand } from "./e-command-investigation";
+import type { FundCommandOrigin } from "./fund-command-investigation";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Resource = "overview" | "rules" | "raffles";
@@ -200,11 +200,57 @@ function checkTicket(r: H4Command, ticket: A2OperationRow) {
   if (!("proposal" in r.request) || !ticket.mine || ticket.obj !== r.request.proposal.obj || ticket.operationCode !== r.request.proposal.command.op
     || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) throw new OutcomeUnknownError("H4_PROPOSAL_RESPONSE_INVALID");
 }
+
+// Each scope uses the target passed to OpsGrowthCommandBoundary by the original route.
+const H4_DIRECT_RECEIPTS: ReadonlyArray<readonly [Direct["method"], RegExp, string, ("id" | "guardKey" | "tierName")?]> = [
+  ["POST", /^\/quest-events\/events$/, "EVENT_CREATE", "id"],
+  ["DELETE", /^\/quest-events\/events\/([^/]+)$/, "EVENT_DELETE"],
+  ["PATCH", /^\/quest-events\/events\/([^/]+)\/content\/[^/]+\/[^/]+$/, "EVENT_LOCALIZED_CONTENT_UPDATE"],
+  ["PATCH", /^\/quest-events\/events\/([^/]+)\/reward$/, "EVENT_REWARD_UPDATE"],
+  ["PATCH", /^\/quest-events\/events\/([^/]+)\/status$/, "EVENT_STATUS_UPDATE"],
+  ["PATCH", /^\/quest-events\/events\/([^/]+)\/featured$/, "EVENT_FEATURED_UPDATE"],
+  ["PATCH", /^\/event-rules\/([^/]+)$/, "EVENT_RULE_UPDATE"],
+  ["POST", /^\/genesis-raffle$/, "GENESIS_RAFFLE_CREATE", "id"],
+  ["PATCH", /^\/genesis-raffle\/([^/]+)$/, "GENESIS_RAFFLE_UPDATE"],
+  ["POST", /^\/quest-events\/wheel-guards$/, "WHEEL_GUARD_CREATE", "guardKey"],
+  ["PATCH", /^\/quest-events\/wheel-guards\/([^/]+)$/, "WHEEL_GUARD_UPDATE"],
+  ["POST", /^\/quest-events\/wheel-tiers$/, "WHEEL_TIER_CREATE", "tierName"],
+  ["PATCH", /^\/quest-events\/wheel-tiers\/probabilities$/, "WHEEL_PROBABILITIES_UPDATE"],
+  ["PATCH", /^\/quest-events\/wheel-tiers\/([^/]+)$/, "WHEEL_TIER_UPDATE"],
+  ["DELETE", /^\/quest-events\/wheel-tiers\/([^/]+)$/, "WHEEL_TIER_DELETE"],
+  ["POST", /^\/quest-events\/wheel-tiers\/([^/]+)\/retire$/, "WHEEL_TIER_RETIRE"],
+];
+
+function h4DirectReceiptScope(request: Direct) {
+  for (const [method, path, operation, bodyTarget] of H4_DIRECT_RECEIPTS) {
+    if (method !== request.method) continue;
+    const match = path.exec(request.path);
+    if (!match) continue;
+    const target: unknown = bodyTarget ? JSON.parse(request.body)[bodyTarget] : match[1] ? decodeURIComponent(match[1]) : "ACTIVE_POOL";
+    if (typeof target !== "string" || !target) return undefined;
+    const trimmedTarget = target.replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");
+    return `GROWTH:H4:${operation}:${trimmedTarget}`.toUpperCase().replace(/[^A-Z0-9_.:-]/gu, "_");
+  }
+}
+
 export async function queryH4Command(r: H4Command): Promise<A2OperationRow | null | undefined> {
   requireActor(r.owner, false, r.scope);
   h4TicketObservations();
   if (!("proposal" in r.request)) {
-    try { await queryH4RetirementCommand(r); }
+    try {
+      const directScope = h4DirectReceiptScope(r.request);
+      if (!directScope) return undefined;
+      const state = await fetchDirectCommandReceipt(directScope, r.commandKey, r.owner);
+      const original = pendingH4Commands().find(row => row.commandKey === r.commandKey);
+      if (!original) return undefined;
+      if (state === "SUCCEEDED") {
+        markH4Read(resourceOf(original.scope), false);
+        retain({ ...original, acknowledged: true });
+      } else if (state === "REJECTED" || state === "NOT_EXECUTED") {
+        markH4Read(resourceOf(original.scope), false);
+        forget(original);
+      }
+    }
     catch { /* Keep the existing overview read available when the auxiliary receipt query fails. */ }
     return undefined;
   }
@@ -222,18 +268,6 @@ export async function queryH4Command(r: H4Command): Promise<A2OperationRow | nul
   return ticket;
 }
 
-export async function queryH4RetirementCommand(saved: H4Command, evidence?: FundCommandEvidence) {
-  const record = pendingH4Commands().find(row => row.commandKey === saved.commandKey);
-  if (!record) throw new Error("H4_ORIGINAL_RESOLVED");
-  if ("proposal" in record.request || record.request.method !== "POST" || !/^\/quest-events\/wheel-tiers\/[^/]+\/retire$/.test(record.request.path)) return null;
-  requireActor(record.owner, false, record.scope);
-  const locator = { commandKey: record.commandKey, originalMethod: record.request.method,
-    originalPath: `/api/admin/growth${record.request.path}`, originalAdminId: String(record.owner) };
-  const receipt = record.commandOrigin ? await checkFundCommand(record, evidence)
-    : evidence ? await investigateECommand(record, locator, evidence, "growth_h4_read") : await discoverECommand(locator);
-  if (fundCommandSettled(receipt)) { markH4Read(resourceOf(record.scope), false); forget(record); }
-  return receipt;
-}
 export async function releaseExpiredH4Proposal(r: H4Command) {
   if (!("proposal" in r.request) || !isRetryExpired(r) || await queryH4Command(r) !== null) throw new Error("H4_ORIGINAL_NOT_RELEASABLE");
   forget(r);
