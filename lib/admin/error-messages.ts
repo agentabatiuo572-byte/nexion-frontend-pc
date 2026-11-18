@@ -3847,7 +3847,7 @@ function eventLocalizedMissingMessage(data: unknown): string | undefined {
   if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
-  const fieldLabels = { name: "名称", description: "说明", rewardName: "奖励名" };
+  const fieldLabels = { name: "名称", description: "说明", rewardName: "奖项名" };
   const byLanguage = new Map<string, Set<string>>();
   for (const item of data.missing) {
     const key = typeof item === "string" ? item

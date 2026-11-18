@@ -144,9 +144,11 @@ export function gapWeight(gap: { locale: LocaleCode; field: ContentField }, requ
   return !requiresAll && isRequired(gap.locale) && gap.locale !== "en" ? "must" : "soft";
 }
 
-export function EventCard({ event, zh, gaps, softGaps, rewardFromRule, rule, pending, primary, menu, onContent }: {
+export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule, pending, primary, menu, onContent }: {
   event: LegacyEvent;
   zh: { name: string; description: string; rewardName: string };
+  /** 中文没填时卡片显示英文那一份（带「英文」标记）。 */
+  en: { name: string; description: string; rewardName: string };
   /** 必须补的有几项。 */
   gaps: number;
   /** 只需轻提示的没填的格：哪些语言。 */
@@ -162,11 +164,15 @@ export function EventCard({ event, zh, gaps, softGaps, rewardFromRule, rule, pen
   const life = lifecycleOf(event);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
   const reward = legacyName(event.reward);
+  // 卡片先显示中文；中文没填用英文那一份并标出来；都没有才写「未配置」。
+  const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false } : en[field] ? { text: en[field], en: true } : null;
+  const name = pick("name"), description = pick("description"), rewardName = pick("rewardName");
+  const enTag = <StatusTag tone="neutral" explain="中文没填，这里显示的是英文那一份。">英文</StatusTag>;
   return (
-    <article className="h4-card h4l-event" aria-label={zh.name || event.id} data-dim={life.key === "ended" ? "" : undefined}>
+    <article className="h4-card h4l-event" aria-label={name?.text || event.id} data-dim={life.key === "ended" ? "" : undefined}>
       <header className="h4-card-head">
         <div className="h4-card-title">
-          <h3 data-empty={zh.name ? undefined : ""}>{zh.name || "中文标题未配置"}</h3>
+          <h3 data-empty={name ? undefined : ""}>{name?.text ?? "名称未配置"}{name?.en && <> {enTag}</>}</h3>
           <span className="h4-card-meta"><span className="h4-card-kind">{KIND_LABEL(event.kind)}</span><span className="h4-mono" title={event.id}>{event.id}</span></span>
         </div>
         <span className="h4l-tags">
@@ -174,11 +180,11 @@ export function EventCard({ event, zh, gaps, softGaps, rewardFromRule, rule, pen
           <StatusTag tone={life.tone} explain={life.explain}>{life.label}</StatusTag>
         </span>
       </header>
-      <p className="h4l-desc" data-empty={zh.description ? undefined : ""}>{zh.description || "中文说明未配置"}</p>
+      <p className="h4l-desc" data-empty={description ? undefined : ""}>{description?.text ?? "说明未配置"}{description?.en && <> {enTag}</>}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
-          <small>{rewardFromRule ? "App 上按玩法规则显示" : zh.rewardName ? (zh.rewardName !== text(event.reward, "") ? `App 显示：${zh.rewardName}` : "App 显示同上") : "中文奖项名未配置"}</small>
+          <small>{rewardFromRule ? "App 上按玩法规则显示" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{rewardName.en && <> {enTag}</>}</> : "奖项名未配置"}</small>
         </dd></div>
         <div><dt><Flag size={14} aria-hidden />参与条件</dt><dd>{text(event.condition, "") ? <span className="h4l-clip" title={text(event.condition)} data-user-content="">{text(event.condition)}</span> : <span className="h4-dim">—</span>}{event.geo ? <small>地区 {event.geo}</small> : null}</dd></div>
         <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{!rule ? <span className="h4-dim">—</span>
@@ -194,7 +200,7 @@ export function EventCard({ event, zh, gaps, softGaps, rewardFromRule, rule, pen
             : softGaps.length > 0 ? <><Smartphone size={14} aria-hidden />{LOCALES.filter(code => softGaps.includes(code)).map(code => LOCALE_NAME[code]).join("、")}没填，App 显示英文</>
             : <><Smartphone size={14} aria-hidden />App 上的文字</>}
         </button>
-        <span className="h4-card-actions">{pending}{primary}<MoreMenu label={`${zh.name || event.id} 的更多操作`} items={menu} /></span>
+        <span className="h4-card-actions">{pending}{primary}<MoreMenu label={`${name?.text || event.id} 的更多操作`} items={menu} /></span>
       </footer>
     </article>
   );

@@ -424,7 +424,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       confirmTone: opening ? undefined : "danger",
       reasonPlaceholder: opening ? "例如：活动素材已就绪，按排期开放" : "例如：活动到期，按排期结束",
       run: async (reason) => {
-        if (opening && missing.length) throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", { missing }));
+        // 缺项清单和指路已在下面的提示里逐项列出，这里只给一句结论，不重复同一份清单。
+        if (opening && missing.length) throw new Error("没有开放：还有翻译没填，见下方提示。");
         if (await apply(await updateH4EventStatus(event.id, value, event.state, reason))) toast(`${event.name} 状态已更新`);
       },
     });
@@ -1143,6 +1144,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         </Notice>}
         {events.length === 0 ? <BlockState state="empty" title="还没有既有活动" detail="点右上角「新建既有活动」登记一个。" />
           : <div className="h4-cards">{events.map((event) => <EventCard key={event.id} event={event}
+            en={{ name: localizedValue(event.id, "name", "en"), description: localizedValue(event.id, "description", "en"), rewardName: localizedValue(event.id, "rewardName", "en") }}
             zh={{ name: localizedValue(event.id, "name", "zh"), description: localizedValue(event.id, "description", "zh"), rewardName: localizedValue(event.id, "rewardName", "zh") }}
             gaps={weighedGaps(event).must.length} softGaps={weighedGaps(event).soft} rewardFromRule={rewardFromRule(event)}
             rule={rules ? (() => { const rule = ruleOf(event.id); return rule ? { enabled: rule.enabled, ready: eventRuleReadiness(rule, eventContent).ready, startsAt: rule.startsAt, endsAt: rule.endsAt } : null; })() : null}
