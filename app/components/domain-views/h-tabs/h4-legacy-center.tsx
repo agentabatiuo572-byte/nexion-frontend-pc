@@ -360,8 +360,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : <>当前奖励 <b>{current}</b>。填写新奖励后确认。</>,
       facts: <>
         <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
-          ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{legacyName(event.appRewardNames.zh).text || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
-          : <>{event.appRewardNames && <Fact k="App 现在显示">{legacyName(event.appRewardNames.zh).text || "—"}</Fact>}<ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></>}</Facts>
+          ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">{event.appRewardNames ? <>显示「{event.appRewardNames.zh || "—"}」，按玩法规则写，不随这里改</> : "每种语言显示填的奖项名，没填的显示玩法规则摘要"}</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
+          : <>{event.appRewardNames && <Fact k="App 现在显示">{event.appRewardNames.zh || "—"}</Fact>}<ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></>}</Facts>
       </>,
       amplifies: !ruleBased,
       confirmLabel: "提交修改",
@@ -473,12 +473,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
-      detail: hidden ? <>App 不显示这一格{appName !== undefined ? <>，奖励一行显示「{legacyName(appName).text || "—"}」</> : null}。填不填都不影响开放。</>
+      detail: hidden ? <>App 不显示这一格{appName !== undefined ? <>，奖励一行显示「{appName || "—"}」</> : null}。填不填都不影响开放。</>
         : requiresAll ? (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale) ? <>{REQUIRED_TEXT}的{contentFieldsText(authored)}填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
         : fromRule ? <>已开放的活动照常进行；这一格空着时 App 显示玩法规则摘要。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact>
-        {hidden && <Fact k="App 上">不显示这一格{appName !== undefined ? <>，奖励一行显示「{legacyName(appName).text || "—"}」</> : null}</Fact>}
+        {hidden && <Fact k="App 上">不显示这一格{appName !== undefined ? <>，奖励一行显示「{appName || "—"}」</> : null}</Fact>}
         {fromRule && <><Fact k="App 上">{LOCALE_NAME[locale]}填了就显示，空着显示规则摘要</Fact><Fact k="发奖">按玩法规则，奖项名里写的数额不影响发多少</Fact></>}</Facts>,
       reasonPlaceholder: "例如：补齐上线前的翻译",
       edit: { kind: "text", current, initialValue: draft?.value },

@@ -168,8 +168,8 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   const reward = legacyName(event.reward);
   // 卡片先显示中文；中文没填用英文那一份并标出来；都没有才写「未配置」。
   const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false } : en[field] ? { text: en[field], en: true } : null;
-  // App 上的奖励文字有后端给的事实（appRewardNames）时照它写；旧数据没有时照旧按填的奖项名推。
-  const appReward = event.appRewardNames ? legacyName(event.appRewardNames.zh) : null;
+  // App 上的奖励文字有后端给的事实（appRewardNames）时原样照它写，不换旧名、不改格式；旧数据没有时照旧按填的奖项名推。
+  const appReward = event.appRewardNames ? { text: event.appRewardNames.zh } : null;
   const name = pick("name"), description = pick("description"), rewardName = event.appUsesAuthoredRewardName === false ? null : pick("rewardName");
   // 一张卡只标一次，标在第一处用了英文的地方。
   const firstEn = ([["name", name], ["description", description], ["rewardName", rewardName]] as const).find(([, value]) => value?.en)?.[0];
@@ -190,7 +190,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
-          <small>{appReward ? <>{!wheel && appReward.text === reward.text ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
+          <small>{appReward ? <>{!wheel && appReward.text === text(event.reward, "") ? "App 显示同上" : `App 显示：${appReward.text || "—"}`}{enTag("rewardName")}</>
             : rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>
         {/* 后端的 condition 就是活动说明的原文（同一列），中文界面不再把原文另列成「参与条件」；说明在上面，原文在「App 上的文字」里。 */}
@@ -246,7 +246,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   // 有玩法规则的活动：这种语言填了奖项名就显示它，没填显示规则摘要（不借用英文）。只用于没有后端奖励文字的旧数据。
   const ruleReward = legacyRule && !names[locale].rewardName;
   const fallback = (["name", "description", "rewardName"] as const).some((field) => !names[locale][field] && !(field === "rewardName" && (legacyRule || hiddenReward)));
-  const appReward = appNames ? legacyName(appNames[locale]) : null;
+  const appReward = appNames ? { text: appNames[locale] } : null;
   return (
     <div className="h4-dialog-body h4l-content">
       <Segments label="内容语言" value={locale} onChange={setLocale} items={LOCALES.map((code) => ({
