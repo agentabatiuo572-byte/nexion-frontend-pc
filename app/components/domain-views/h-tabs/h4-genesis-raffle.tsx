@@ -1,13 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
-export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
+const LANGUAGES = ["zh", "en", "vi"] as const;
+export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx; requiredLanguages: readonly OperatingLanguageCode[] }) {
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const generation = useRef(0), operator = currentAdminOperator();
@@ -19,13 +21,18 @@ export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
-  const choose = (row: AdminRaffle | null) => { setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null) => {
+    setBase(row);
+    const stored = row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes } : empty();
+    setDraft(write && row?.status === "DRAFT" ? raffleLocalizedDraft(stored, requiredLanguages, "edit") : stored);
+    setEnabled(row?.status === "OPEN"); setError("");
+  };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const save = () => {
     if (!draft || !write || saving || (base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0)))) return;
-    const invalid = raffleDraftError(draft); if (invalid) { setError(invalid); return; }
-    const savedDraft = draft, previous = base, nextEnabled = !!base && enabled;
-    ctx.openActionConfirm({ briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${draft.titleZh}`, amplifies: nextEnabled,
+    const invalid = raffleDraftError(draft, requiredLanguages); if (invalid) { setError(invalid); return; }
+    const savedDraft = raffleLocalizedDraft(draft, requiredLanguages, "submit"), previous = base, nextEnabled = !!base && enabled;
+    ctx.openActionConfirm({ briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, amplifies: nextEnabled,
       detail: <>本期共 {draft.prizes.reduce((sum, prize) => sum + prize.quantity, 0)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。奖项和时间在开启后固定。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开配置。");
@@ -52,11 +59,11 @@ export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
           <fieldset disabled={locked} style={{ border: 0, margin: 0, padding: 0 }}>
             <div className="grid g-2" style={{ gap: 12 }}>
               <label className="field"><span>本期编号</span><input value={draft.id} disabled={!!base} onChange={event => setDraft({ ...draft, id: event.target.value })}/></label>
-              {(["Zh", "En", "Vi"] as const).map((lang, index) => <label className="field" key={lang}><span>抽奖名称 · {["中文", "英文", "越南语"][index]}</span><input value={draft[`title${lang}`]} onChange={event => setDraft({ ...draft, [`title${lang}`]: event.target.value })}/></label>)}
+              {LANGUAGES.map(locale => { const { suffix, label } = RAFFLE_LANGUAGES[locale], required = requiredLanguages.includes(locale); return <label className="field" key={locale}><span>抽奖名称 · {label}{required ? " *" : " · 选填，不填时 App 显示英文"}</span><input value={draft[`title${suffix}`]} onChange={event => setDraft({ ...draft, [`title${suffix}`]: event.target.value })}/></label>; })}
               {(["startsAt", "drawAt"] as const).map((key, index) => <label className="field" key={key}><span>{index ? "开奖时间" : "报名开始"}（UTC）</span><input type="datetime-local" step={1} value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : "" })}/></label>)}
             </div>
             {draft.prizes.map((prize, index) => <section key={prize.id} style={{ marginTop: 14, padding: 12, border: "1px solid var(--line)", borderRadius: 10 }}><b>奖项 {index + 1}</b><div className="grid g-2" style={{ gap: 12, marginTop: 10 }}>
-              {(["Zh", "En", "Vi"] as const).map((lang, i) => <label className="field" key={lang}><span>奖项名称 · {["中文", "英文", "越南语"][i]}</span><input value={prize[`name${lang}`]} onChange={event => prizePatch(prize.id, { [`name${lang}`]: event.target.value })}/></label>)}
+              {LANGUAGES.map(locale => { const { suffix, label } = RAFFLE_LANGUAGES[locale], required = requiredLanguages.includes(locale); return <label className="field" key={locale}><span>奖项名称 · {label}{required ? " *" : " · 选填，不填时 App 显示英文"}</span><input value={prize[`name${suffix}`]} onChange={event => prizePatch(prize.id, { [`name${suffix}`]: event.target.value })}/></label>; })}
               <label className="field"><span>奖励类型</span><select value={prize.rewardType} onChange={event => prizePatch(prize.id, { rewardType: event.target.value as RafflePrize["rewardType"], ...(event.target.value === "DEVICE" ? { amount: 1 } : {}) })}><option value="UVT">UVT</option><option value="USDT">USDT</option><option value="DEVICE">设备</option></select></label>
               {prize.rewardType === "DEVICE" ? <label className="field"><span>设备商品编号</span><input value={prize.productNo ?? ""} onChange={event => prizePatch(prize.id, { productNo: event.target.value })}/><small>每个中奖名额发放一台。</small></label> : <label className="field"><span>每名奖励金额</span><input type="number" min="0.000001" step="any" value={prize.amount} onChange={event => prizePatch(prize.id, { amount: event.target.value })}/></label>}
               <label className="field"><span>中奖名额</span><input type="number" min={1} max={100} step={1} value={prize.quantity} onChange={event => prizePatch(prize.id, { quantity: Number(event.target.value) })}/></label>
