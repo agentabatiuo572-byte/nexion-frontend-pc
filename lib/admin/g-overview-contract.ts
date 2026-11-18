@@ -189,10 +189,11 @@ export function validateG2Order(module: string, value: unknown, path: string): v
     "createdAt"].forEach((key) => text(module, row[key], `${path}.${key}`));
   ["nickname", "countryCode", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
   // The mapper's CASE expressions emit SQL NULL outside their matching state.
-  ["gateType", "gateReason", "etaLabel"].forEach((key) => {
+  ["gateType", "gateReason"].forEach((key) => {
     if (!(key in row)) fail(module, `${path}.${key}`);
     if (row[key] !== null) text(module, row[key], `${path}.${key}`, true);
   });
+  if (row.etaLabel != null) text(module, row.etaLabel, `${path}.etaLabel`, true);
   ["fromAmount", "toAmount", "rate", "amountUsdt"].forEach((key) => numeric(module, row[key], `${path}.${key}`));
 }
 
@@ -224,6 +225,12 @@ export function assertG2OverviewContract<T>(value: T): T {
   });
   if (capKeys.size !== G2_CAP_KEYS.size) fail(module, "data.caps");
   array(module, root.queue, "data.queue").forEach((row, index) => validateG2Order(module, row, `data.queue[${index}]`));
+  if (root.queueEstimate != null) {
+    const path = "data.queueEstimate";
+    const estimate = record(module, root.queueEstimate, path);
+    if (estimate.hours != null) text(module, estimate.hours, `${path}.hours`, true);
+    if (estimate.copy != null) text(module, estimate.copy, `${path}.copy`, true);
+  }
   const gates = record(module, root.gateDetails, "data.gateDetails");
   G2_GATE_KEYS.forEach((key) => {
     const path = `data.gateDetails.${key}`;

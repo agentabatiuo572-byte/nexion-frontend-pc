@@ -129,7 +129,11 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
   const checkTicket = (original: PendingGParam, ticket: A2OperationRow) => {
     const action = page === "G2" ? "兑换参数调整" : page === "G4" ? "调整创世参数" : "回购参数调整";
     const dividend = page === "G4" && (original.request.obj === "dividend" || original.request.command.op === "g4_genesis_rerun_dividend");
-    if (!ticket.mine || ticket.obj !== original.request.obj || ticket.action !== (dividend ? "批准创世分红操作" : `${action} · ${ticket.obj}`)
+    const actionMatches = dividend ? ticket.action === "批准创世分红操作"
+      : ticket.action === `${action} · ${ticket.obj}`
+        || page === "G4" && ticket.operationCode === ops.G4 && !!ticket.objDisplayName
+          && ticket.action === `${action} · ${ticket.objDisplayName}`;
+    if (!ticket.mine || ticket.obj !== original.request.obj || !actionMatches
       || ticket.operationCode && ticket.operationCode !== original.request.command.op) {
       throw new Error("返回的审批单和原参数操作对不上，原请求继续保留，请核对原审批单。");
     }
