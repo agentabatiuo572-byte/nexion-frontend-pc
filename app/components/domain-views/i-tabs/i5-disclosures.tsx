@@ -249,6 +249,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [detailKey, setDetailKey] = useState<string | null>(null);
   const [detailLang, setDetailLang] = useState<Lang>("zh");
+  /** 「草稿和待审批」里一条发布审批的改动对照（BUG-473）。 */
+  const [reviewId, setReviewId] = useState<string | null>(null);
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rebaseWanted, setRebaseWanted] = useState(false);
@@ -322,6 +324,12 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const effectiveCount = jurisdictions.filter((j) => j.status.toLowerCase() === "published").length;
   const inApproval = (code: string) => queue.some((row) => row.obj === code);
   const gateInApproval = queue.some((row) => row.action.includes("受限动作"));
+  /** 待审批里的发布单：改后是提交时的版本号，按适用范围找到这份草稿和现在已发布的版本，给审批人看改动（BUG-473）。 */
+  const publishReview = (row: A2OperationRow) => {
+    if (!row.action.startsWith("发布披露新版")) return undefined;
+    const target = versions.find((item) => item.jurisdiction === row.obj && item.version === row.after);
+    return target && { target, current: versions.find((item) => item.jurisdiction === row.obj && item.status.toLowerCase() === "published") };
+  };
 
   /** 写入口不能点的原因：读取中、数据旧、结果未确认、审批中，按这个顺序（ST-32、OP-93）。 */
   const blocked = (target?: string, approvalBusy = false) => refreshing ? READING : errorText ? STALE : target && writes.isLocked(target) ? WRITE_LOCKED : approvalBusy ? IN_APPROVAL : undefined;
@@ -608,6 +616,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     const affected = row.affected ?? j?.affected ?? 0;
     const pendingAck = row.pendingAck ?? j?.pendingAck ?? Math.max(0, Math.round(affected * (100 - (j?.ackProgress ?? 0)) / 100));
     const scopeChanged = !!current && current.languageScope !== row.languageScope;
+    const change = disclosureChange(current, row);
     openActionConfirm({ briefKind: "config", ...approvalProps,
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       title: "发布披露草稿",
@@ -617,16 +626,16 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       confirmLabel: "提交发布审批",
       statedBrief: { impact: catalog.some((item) => item.code === row.jurisdiction && item.hasActiveMapping)
         ? "批准后用户还看当前版本；「调整生效版本」换成这版后，用户原来的确认失效，之后也能切回旧版本或归档生效设置。这个版本封存，不能再改或删除。"
-        : "批准后用户还读不到披露，「设置生效版本」选了这版才显示。这个版本封存，不能再改或删除。", check: `逐章核对${languageNames(row.languageScope)}内容，理由写清版本依据。` },
+        : "批准后用户还读不到披露，「设置生效版本」选了这版才显示。这个版本封存，不能再改或删除。", check: change.onlySummary ? "这次只改了总文，核对总文的新旧对照，理由写清版本依据。" : `核对总文和七章的${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
-        <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={activeGates.length ? `切换后没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限的操作，不确认也不影响使用。"} /></Fact></Facts>
+        <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={activeGates.length ? `切换后没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限的操作，不确认也不影响使用。"} /></Fact><Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{change.headline}</Fact></Facts>
         <PublishDiff current={current} target={row} />
       </>,
       businessForm: {
         kind: "multi-field",
         fields: [
           { key: "jurisdictionConfirmed", label: `确认发布的适用范围是 ${row.jurisdiction}`, inputKind: "checkbox", wide: true },
-          { key: "bilingualConfirmed", label: `已核对七章${languageNames(row.languageScope)}内容，与监管要求一致`, inputKind: "checkbox", wide: true },
+          { key: "bilingualConfirmed", label: `已核对总文和七章${languageNames(row.languageScope)}内容，与监管要求一致`, inputKind: "checkbox", wide: true },
         ],
       },
       run: async (reason) => {
@@ -680,6 +689,8 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const stats = data.stats;
   const jur = jurCode ? jurisdictions.find((item) => item.code === jurCode) ?? null : null;
   const detail = detailKey ? versions.find((row) => versionKey(row) === detailKey) ?? null : null;
+  const reviewRow = reviewId ? queue.find((row) => row.id === reviewId) : undefined;
+  const reviewing = reviewRow && publishReview(reviewRow);
   const detailIndex = detail ? versions.indexOf(detail) : -1;
   const jurIndex = jur ? jurisdictions.indexOf(jur) : -1;
   const regionHistory = jur ? versions.filter((row) => row.jurisdiction === jur.code) : [];
@@ -746,14 +757,14 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
                 <Td><Cell main={queueTitle(row.action)} sub={`${row.operator} · ${timeText(row.rawTs)}`} title={row.reason} /></Td>
                 <Td><StatusTag tone="warn" explain="已提交，还没批准。批准前用户看到的内容不变。">待审批</StatusTag></Td>
                 <Td><Change from={row.before} to={row.after} /></Td>
-                <Td align="right">{auditReachable ? <Link className="rd-link" href={`${auditHref}&object=${encodeURIComponent(row.obj)}`} prefetch={false}>查看审批</Link> : "—"}</Td>
+                <Td align="right"><span className="rd-row-actions">{publishReview(row) && <Button size="sm" onClick={() => setReviewId(row.id)}>看改动</Button>}{auditReachable ? <Link className="rd-link" href={`${auditHref}&object=${encodeURIComponent(row.obj)}`} prefetch={false}>查看审批</Link> : !publishReview(row) && "—"}</span></Td>
               </Tr>
             ))}
             {drafts.map((row) => (
               <Tr key={versionKey(row)} selected={detail === row} onOpen={() => openVersion(row)}>
                 <Td><Cell main={`${row.jurisdiction} ${row.version}`} sub={`${languageText(row.languageScope)} · ${timeText(row.updatedAt || row.effectiveDate)}`} /></Td>
                 <Td><StatusTag tone="neutral" explain="只有后台能看到，用户看不到。">草稿</StatusTag></Td>
-                <Td>{canPublish ? "核对七章后发布" : "等有审批提交权限的同事发布"}</Td>
+                <Td>{canPublish ? "核对改动后发布" : "等有审批提交权限的同事发布"}</Td>
                 <Td align="right">{draftActions(row)}</Td>
               </Tr>
             ))}
@@ -940,6 +951,13 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </>}
     </Drawer>
 
+    {reviewRow && reviewing && <Modal wide title="发布审批的改动" sub={`${reviewing.target.jurisdiction} · 提交人 ${reviewRow.operator}`} icon={ListChecks} onClose={() => setReviewId(null)}
+      footer={<>{auditReachable && <Link className="rd-link" href={`${auditHref}&object=${encodeURIComponent(reviewRow.obj)}`} prefetch={false}>到操作记录与审批处理</Link>}<Button onClick={() => setReviewId(null)}>关闭</Button></>}>
+      <div className="rd-stack">
+        <Facts><Fact k="适用范围">{reviewing.target.jurisdiction} · {nameOf(reviewing.target.jurisdiction)}</Fact><Fact k="版本"><Change from={reviewRow.before} to={reviewing.target.version} /></Fact><Fact k="改动" tone={disclosureChange(reviewing.current, reviewing.target).onlySummary ? "warn" : undefined}>{disclosureChange(reviewing.current, reviewing.target).headline}</Fact></Facts>
+        <PublishDiff current={reviewing.current} target={reviewing.target} />
+      </div>
+    </Modal>}
     {editor && <VersionEditor key={`${editor.mode}|${editor.editing ? versionKey(editor.editing) : ""}`} initial={editor} requiredLanguages={requiredLanguages} switcher={editorSwitch} regions={editor.mode === "edit" ? catalog.filter((item) => item.code === editor.jurisdiction).map(regionOption) : activeCatalog.map(regionOption)} languageScopes={data.languageScopes?.length ? data.languageScopes : DEFAULT_LANGUAGE_SCOPES} loadRegionBase={loadRegionBase} onSave={saveEditor} onClose={closeEditor} blockedFor={(code) => regionBlocked(code)} />}
   </>;
 }
@@ -979,33 +997,83 @@ const languageNames = (scope?: string) => {
 };
 const sameDisclosure = (left: Editor, right: Editor) => JSON.stringify([left.zh, left.vi, left.en, left.chapters]) === JSON.stringify([right.zh, right.vi, right.en, right.chapters]);
 
-/** 发布核对：只比两边都有的语言，语言范围的变化在上面单独写（M13）。改过的章合成一个折叠，点开只放改过的语言；改几章框都一样高，打开时理由框在一屏里（DP-06）。 */
-function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
+type DisclosureChange = {
+  /** 总文有改动的语言（只算两边都有的语言）。 */
+  summary: (typeof LANGUAGES)[number][];
+  chapters: { chapter: DisclosureChapterView; languages: (typeof LANGUAGES)[number][] }[];
+  same: DisclosureChapterView[];
+  onlySummary: boolean;
+  headline: string;
+};
+
+/** 发布核对的改动：总文和七章分开算，只比两边都有的语言，语言范围的变化在上面单独写（M13、BUG-473）。 */
+function disclosureChange(current: DisclosureVersionItemView | undefined, target: DisclosureVersionItemView): DisclosureChange {
   const targetCodes = (target.languageScope ?? "").split("+");
   const currentCodes = (current?.languageScope ?? target.languageScope ?? "").split("+");
   const compared = LANGUAGES.filter(([code]) => targetCodes.includes(code) && currentCodes.includes(code));
-  const shown = LANGUAGES.filter(([code]) => targetCodes.includes(code));
   const chapterOf = (no: string) => current?.chapters.find((chapter) => chapter.no === no);
-  const fieldChanged = (chapter: DisclosureChapterView, code: Lang) => {
+  const summary = compared.filter(([code]) => !current || current[code] !== target[code]);
+  const chapters = target.chapters.map((chapter) => {
     const before = chapterOf(chapter.no);
-    return !before || before[code] !== chapter[code] || before[`${code}Body`] !== chapter[`${code}Body`];
-  };
-  const changedLanguages = (chapter: DisclosureChapterView) => compared.filter(([code]) => fieldChanged(chapter, code));
-  const changed = target.chapters.filter((chapter) => changedLanguages(chapter).length > 0);
-  const same = target.chapters.filter((chapter) => !changed.includes(chapter));
+    return { chapter, languages: compared.filter(([code]) => !before || before[code] !== chapter[code] || before[`${code}Body`] !== chapter[`${code}Body`]) };
+  }).filter((item) => item.languages.length > 0);
+  const same = target.chapters.filter((chapter) => !chapters.some((item) => item.chapter === chapter));
+  const onlySummary = !!current && summary.length > 0 && chapters.length === 0;
+  const summaryNames = summary.map(([, name]) => name).join("、");
+  const headline = !current ? "这个适用范围第一次发布，没有旧版本可对照"
+    : onlySummary ? `这次只改了总文（${summaryNames}），七章没变`
+    : summary.length ? `总文（${summaryNames}）和 ${chapters.length} 章有改动`
+    : chapters.length ? `${chapters.length} 章有改动，总文没变`
+    : "和当前版本内容相同";
+  return { summary, chapters, same, onlySummary, headline };
+}
+
+/** 新旧两段只标中间改过的那一段：前后相同的字照常显示，改后的用 ins、原来的用 del，审批人一眼看到改了哪里。 */
+function ChangedText({ before, after, side }: { before: string; after: string; side: "after" | "before" }) {
+  const old = Array.from(before);
+  const next = Array.from(after);
+  let head = 0;
+  while (head < old.length && head < next.length && old[head] === next[head]) head += 1;
+  let tail = 0;
+  while (tail < old.length - head && tail < next.length - head && old[old.length - 1 - tail] === next[next.length - 1 - tail]) tail += 1;
+  const text = side === "after" ? next : old;
+  const middle = text.slice(head, text.length - tail).join("");
+  return <>{text.slice(0, head).join("")}{middle && (side === "after" ? <ins>{middle}</ins> : <del>{middle}</del>)}{text.slice(text.length - tail).join("")}</>;
+}
+
+/** 发布核对：总文和改过的章合成一个折叠，点开只放改过的语言，每段先写改后、再写现在；没改的总文和章收进另一个折叠。改几章框都一样高，打开时理由框在一屏里（DP-06）。 */
+function PublishDiff({ current, target }: { current?: DisclosureVersionItemView; target: DisclosureVersionItemView }) {
+  const change = disclosureChange(current, target);
+  const shown = LANGUAGES.filter(([code]) => (target.languageScope ?? "").split("+").includes(code));
+  const chapterOf = (no: string) => current?.chapters.find((chapter) => chapter.no === no);
+  // 第一次发布没有旧版本，折叠里是全部内容，不叫差异。
+  const parts = !current ? ["总文", `${target.chapters.length} 章`] : [change.summary.length > 0 && "总文", change.chapters.length > 0 && `第 ${change.chapters.map((item) => item.chapter.no).join("、")} 章`].filter(Boolean);
+  const summarySame = change.summary.length === 0;
   return <div data-business-form="disclosure-publish-review" className="rd-form-stack">
-    {changed.length > 0 && <Fold inset title="版本差异" summary={`共 ${changed.length} / ${target.chapters.length} 章发生变化`}>
+    {parts.length > 0 && <Fold inset title={current ? "版本差异" : "全部内容"} summary={parts.join("、")}>
       <div className="rd-doc">
-        {changed.flatMap((chapter) => changedLanguages(chapter).map(([code, name]) => <section key={`${chapter.no}-${code}`}>
-          <h3>第 {chapter.no} 章 · {name} · {chapter[code]}</h3>
-          <p>{chapter[`${code}Body`]}</p>
-          {chapterOf(chapter.no) && <p className="rd-weak">现在：{chapterOf(chapter.no)?.[code]} {chapterOf(chapter.no)?.[`${code}Body`]}</p>}
-        </section>))}
+        {change.summary.map(([code, name]) => <section key={`summary-${code}`}>
+          <h3>总文 · {name}</h3>
+          <p>{current && "改后："}{!target[code] ? "空" : current ? <ChangedText before={current[code]} after={target[code]} side="after" /> : target[code]}</p>
+          {current && <p className="rd-weak">现在：{current[code] ? <ChangedText before={current[code]} after={target[code]} side="before" /> : "空"}</p>}
+        </section>)}
+        {change.chapters.flatMap(({ chapter, languages }) => languages.map(([code, name]) => {
+          const before = chapterOf(chapter.no);
+          return <section key={`${chapter.no}-${code}`}>
+            <h3>第 {chapter.no} 章 · {name} · {chapter[code]}</h3>
+            <p>{before ? <>改后：<ChangedText before={before[`${code}Body`]} after={chapter[`${code}Body`]} side="after" /></> : chapter[`${code}Body`]}</p>
+            {before && <p className="rd-weak">现在：{before[code]} <ChangedText before={before[`${code}Body`]} after={chapter[`${code}Body`]} side="before" /></p>}
+          </section>;
+        }))}
       </div>
     </Fold>}
-    {same.length > 0 && <Fold inset title="无变化的章" summary={`${same.length} 章`}>
+    {(summarySame || change.same.length > 0) && <Fold inset title="无变化的内容" summary={[summarySame && "总文", change.same.length > 0 && `${change.same.length} 章`].filter(Boolean).join("、")}>
       <div className="rd-doc">
-        {same.map((chapter) => <section key={chapter.no}>
+        {summarySame && <section>
+          <h3>总文</h3>
+          {shown.map(([code, name]) => <p key={code}>{name}：{target[code] || "空"}</p>)}
+        </section>}
+        {change.same.map((chapter) => <section key={chapter.no}>
           <h3>第 {chapter.no} 章 · {chapter.zh}</h3>
           {shown.map(([code, name]) => <p key={code}>{name}：{chapter[code]} {chapter[`${code}Body`]}</p>)}
         </section>)}
