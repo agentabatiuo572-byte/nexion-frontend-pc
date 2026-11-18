@@ -534,7 +534,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RHYTHM_PHASE_PROGRESS_OUT_OF_RANGE: "本阶段进度须为 0–100 的整数。",
   MONTH_OUT_OF_RANGE: "这个月份已不在运营总长内，请读回核对原操作。",
   PHASE_CONTROL_KEY_INVALID: "这项阶段切换设置不存在，请刷新后重试。",
-  VALUE_REQUIRED: "请填写非空的新配置值。",
+  VALUE_REQUIRED: "新值为空或不符合填写要求，本次没有保存。",
   PHASE_OVERRIDE_ID_INVALID: "这条单独覆盖记录的编号格式不对，本次没有提交，请刷新后重新打开。",
   BOOLEAN_VALUE_INVALID: "覆盖撤销状态无效，请核对原操作。",
   COMPLIANCE_DIAL_INVALID: "加强合规审查只能选择否或是。",
