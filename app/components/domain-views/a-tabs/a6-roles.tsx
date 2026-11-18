@@ -946,6 +946,11 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
           <div><dt>备注</dt><dd data-empty={detail.remark ? undefined : ""}>{detail.remark || "—"}</dd></div>
         </dl>
 
+        {!!detail.legacyNonReadPermissionCodes?.length && <Notice tone="warn" title={`还存着 ${detail.legacyNonReadPermissionCodes.length} 项历史留下的修改权限`}>
+          <p>默认职责是只读；这几项是早期授权留下的，不是现行职责，现在仍然有效：{detail.legacyNonReadPermissionCodes.slice(0, 5).map((code) => permByCode.get(code)?.permissionName || code).join("、")}{detail.legacyNonReadPermissionCodes.length > 5 ? ` 等 ${detail.legacyNonReadPermissionCodes.length} 项` : ""}。</p>
+          <p>要收回，点下面「改权限和菜单」去掉，另一位管理员批准后生效；这页不会自动收回。</p>
+        </Notice>}
+
 
         {mismatch && <MismatchNotice mismatch={mismatch} menuById={menuById} />}
 

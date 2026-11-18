@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Ban, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Clock3, EyeOff, FolderTree, Hourglass, LayoutList, Minus, PanelLeft, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Ban, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Clock3, EyeOff, FolderTree, History, Hourglass, LayoutList, Minus, PanelLeft, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import {
   fetchA7MenusOverview,
   type A7MenuOverview,
@@ -553,6 +553,7 @@ function MenuRow({ node, depth, expanded, onToggle, selectedId, onPick, preview,
           {!isDomain && node.routePath && <span className="a7-route" title={node.routePath}>{node.routePath}</span>}
           <span className="a7-row-tags">
             {node.status !== 1 && <StatusTag tone="neutral" icon={Ban}>已停用</StatusTag>}
+            {node.legacyNavigationNode && <StatusTag tone="neutral" icon={History} explain="改版前留下的菜单节点，现在的左侧导航不用它。">老节点</StatusTag>}
             {node.status === 1 && !nav.shown && (!parent || parent.status === 1) && <StatusTag tone="warn" icon={EyeOff}>导航不显示</StatusTag>}
             {isDomain && <span className="a7-count">{node.children.length} 页{stoppedChildren ? ` · 停用 ${stoppedChildren}` : ""}</span>}
             <span className="a7-sort" title="排序">#{node.sortOrder}</span>
@@ -593,6 +594,10 @@ function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate,
           <span>{nav.shown ? "会出现在左侧导航里" : `不会出现在左侧导航里：${nav.reason}`}</span>
           <Explain label="左侧导航显示规则" content={<><p>按拥有全部菜单的账号算：菜单启用、上一级启用，而且是导航里登记过的页面、地址一模一样，才会显示。</p><p>其他账号还要角色勾了这个菜单。</p></>} />
         </div>
+        {node.legacyNavigationNode && <Notice tone="neutral" title="改版前留下的老节点">
+          <p>现在的左侧导航不用它。{node.roleBindingCount ? `还有 ${node.roleBindingCount} 个角色勾着它（含已停用的），` : ""}这页不会自动收回授权。</p>
+          <p>要清理，可以在这里停用（立即生效），或到「角色管理」把它从角色里去掉（要另一位管理员批准）。</p>
+        </Notice>}
         <dl className="a7-kv">
           {parent && <div><dt>上一级</dt><dd>{menuNameText(parent)} <span className="a7-code">{parent.menuCode}</span></dd></div>}
           <div><dt>页面地址<Explain label="页面地址" content={ROUTE_HELP} /></dt><dd data-empty={node.routePath ? undefined : ""}>{node.routePath ? <span data-mono>{node.routePath}</span> : "—"}</dd></div>
