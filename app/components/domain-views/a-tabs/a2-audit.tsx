@@ -197,13 +197,14 @@ function isG3Policy(w: Pick<A2OperationRow, "action" | "obj">) {
     || w.obj === "schedule" && w.action === "首次配置UVT自动推进";
 }
 
-function g3PolicyExecutionTiming(w: A2OperationRow) {
-  if (!isG3Policy(w)) return undefined;
-  try {
-    const review = JSON.parse(w.after) as Record<string, unknown>;
-    if (review && typeof review["生效时间"] === "string") return review["生效时间"];
-  } catch { /* Historical incomplete review text retains the G3 timing reminder. */ }
-  return "批准后按完整变更内容注明的时点生效，请先核对";
+function g3PolicyExecutionTiming(w: A2OperationRow, includeHistoricalReminder = false) {
+  // G3MarketApproval binds weekly/schedule to planned price changes and currentPrice to immediate publication.
+  if (w.obj !== "weekly" && w.obj !== "schedule") return undefined;
+  if (w.operationCode ? w.operationCode !== "g3_market_policy_change" : !isG3Policy(w)) return undefined;
+  const review = parseReview(w.after);
+  const timing = review?.kind === "object" ? review.value["生效时间"] : undefined;
+  if (typeof timing === "string" && timing.trim()) return timing;
+  if (includeHistoricalReminder) return "批准后按完整变更内容注明的时点生效，请先核对";
 }
 
 /**
@@ -1872,7 +1873,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const ticketFacts = (w: A2OperationRow, kind: "approve" | "reject", lead?: ReactNode) => {
     const amount = refundAmount(w);
     const name = kind === "approve" ? "退款金额" : "申请退款金额";
-    const timing = kind === "approve" ? g3PolicyExecutionTiming(w) ?? phoneScheduledAt(w) : undefined;
+    const timing = kind === "approve" ? g3PolicyExecutionTiming(w, true) ?? phoneScheduledAt(w) : undefined;
     const fund = fundTicket(w);
     const objectLead = fund?.kind === "f5Status" && fund.eventId || fund?.kind === "f4Settle" || fund?.kind === "f4Payout" && fund.period
       || fund?.kind === "fConfig" || fund?.kind === "f5Suspension" || fund?.kind === "f5Reissue" || fund?.kind === "f5Reverse" && fund.eventId;
@@ -2713,7 +2714,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const ticketIndex = shown ? qPageRows.findIndex((w) => w.id === shown.id) : -1;
   const prevTicket = ticketIndex > 0 ? qPageRows[ticketIndex - 1] : undefined;
   const nextTicket = ticketIndex >= 0 ? qPageRows[ticketIndex + 1] : undefined;
-  const shownTiming = shown ? g3PolicyExecutionTiming(shown) ?? phoneScheduledAt(shown) : undefined;
+  const shownTiming = shown ? g3PolicyExecutionTiming(shown, true) ?? phoneScheduledAt(shown) : undefined;
   const shownAmount = shown ? refundAmount(shown) : undefined;
   const shownCanApprove = shown ? canDecide(shown, "approve") : false;
   const shownF5Ids = shown ? f5RecordIds(fundTicket(shown)) : [];

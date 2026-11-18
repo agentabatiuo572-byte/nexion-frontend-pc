@@ -42,6 +42,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   const [forceApproval, setForceApproval] = useState(false);
   const [approvalBasis, setApprovalBasis] = useState<G3ReviewedChange>();
   const pending = pendingG3MarketCommand(session.adminId, requested);
+  const expired = !!pending && g3MarketCommandExpired(pending);
   const change = (pending?.change ?? approvalBasis ?? requested) as G3ReviewedChange;
   const schedule = change.action === "schedule";
   const initialSchedule = schedule && change.current === "";
@@ -174,14 +175,15 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     reasonMin={8}
     reasonMax={200}
     getPendingReason={() => pendingG3MarketCommand(session.adminId, requested)?.reason}
+    pendingRequestExpired={expired && pending?.request.kind === "approval"}
     completionCopy={directCopy}
     inlineApproval={{
       dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
       fieldLayout: "compact",
       pending: !!pending,
       initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
-      expired: !!pending && g3MarketCommandExpired(pending),
-      disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
+      expired,
+      disabledReason: expired && pending?.request.kind === "direct"
         ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项不能按原请求查询结果，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {
