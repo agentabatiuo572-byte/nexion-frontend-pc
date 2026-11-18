@@ -36,7 +36,8 @@ function readICommandOrigin(original: I1Original | undefined, method: string, pa
 }
 
 /** Original server bindings settle the saved command; reading today's content never does. */
-async function queryIContentCommand(command: PendingMutationRecord & { original?: I1Original }, authority: FundCommandOrigin["readAuthority"], evidence?: FundCommandEvidence) {
+async function queryIContentCommand(command: PendingMutationRecord & { original?: I1Original }, authority: FundCommandOrigin["readAuthority"],
+  evidence?: FundCommandEvidence, verifyReceipt?: (receipt: FundCommandInvestigation) => void) {
   const original = command.original;
   if (!original) return null;
   if (original.owner !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
@@ -44,6 +45,7 @@ async function queryIContentCommand(command: PendingMutationRecord & { original?
     originalPath: `/api/admin/content${original.path}`, originalAdminId: String(original.owner) };
   const receipt = original.commandOrigin ? await checkFundCommand({ ...command, commandOrigin: original.commandOrigin }, evidence)
     : evidence ? await investigateECommand(command, locator, evidence, authority) : await discoverECommand(locator);
+  if (receipt) verifyReceipt?.(receipt);
   if (fundCommandSettled(receipt)) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return receipt;
 }
@@ -90,6 +92,13 @@ export type I6Command = PendingMutationRecord & {
   input: Record<string, unknown>;
   snapshot?: I6CommandSnapshot;
 };
+
+function matchesI6Repair(command: I6Command, repair: { messageKey: string; version: string }) {
+  // Repair allocates under a lock without expectedVersion. A newer draft can intervene.
+  const previousVersion = Number(command.snapshot?.message?.version.slice(1));
+  return repair.messageKey === command.target
+    && (!Number.isSafeInteger(previousVersion) || Number(repair.version.slice(1)) > previousVersion);
+}
 
 /** Decode persisted originals once; replay always sends their saved bytes. Legacy fingerprints remain recoverable. */
 function readI6Command(row: IContentPending): I6Command | undefined {
@@ -212,13 +221,8 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
         && message.version === (["message-draft", "message-rollback"].includes(command.operation) ? next : expected);
     } else if (command.operation === "integrity-fix") {
       const issue = parseI6Issue(payload.data);
-      valid = issue.code === decodeURIComponent(command.original.path.split("/")[3]);
-      if (issue.messageKey !== undefined) {
-        // Repair allocates under a lock and has no expectedVersion. A newer draft can intervene.
-        const previousVersion = Number(command.snapshot?.message?.version.slice(1));
-        valid = valid && issue.messageKey === command.target
-          && (!Number.isSafeInteger(previousVersion) || Number(issue.version.slice(1)) > previousVersion);
-      }
+      valid = issue.code === decodeURIComponent(command.original.path.split("/")[3])
+        && (issue.messageKey === undefined || matchesI6Repair(command, issue));
     } else if (["course-delete", "version-delete"].includes(command.operation)) valid = payload.data === null;
     else if (["version-create", "version-draft"].includes(command.operation)) {
       const version = parseI6CourseVersion(payload.data);
@@ -273,7 +277,10 @@ async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6Co
 export async function queryI6Receipt(saved: I6Command, evidence?: FundCommandEvidence) {
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
-  return queryIContentCommand(command, command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read", evidence);
+  const authority = command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read";
+  return queryIContentCommand(command, authority, evidence, receipt => {
+    if (receipt.integrityRepair && !matchesI6Repair(command, receipt.integrityRepair)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  });
 }
 
 export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvidence) {

@@ -28,6 +28,7 @@ export type ECommandInvestigation = {
   businessState?: ECommandBusinessState;
   localTransactionRollbackConfirmed?: boolean;
   batch?: ECommandBatch | null;
+  integrityRepair?: { messageKey: string; version: string; repairedCount?: number | null } | null;
   investigation: {
     id: number; conclusion: "SUCCEEDED" | "NOT_EXECUTED" | "STILL_UNKNOWN" | "REJECTED";
     requestedConclusion: string; evidenceReference: string; evidenceType: string;
@@ -143,10 +144,11 @@ export function eCommandResult(receipt: ECommandInvestigation | null): ECommandR
     // A completed command whose reply carries no code is "processed", not "still unknown": the backend refuses STILL_UNKNOWN for it.
     if (receipt.businessState === "UNKNOWN") return receipt.businessCode !== null || receipt.originalStatus !== "SUCCEEDED" ? "UNRESOLVED"
       : successOnly ? "SUCCEEDED" : "BUSINESS_RESULT_UNAVAILABLE";
-    // These code-zero replies carry source/item results that the receipt does not project.
-    // OpsNovaService:188–231 may skip refused items; OpsI18nLearningService:215–223 may repair zero items.
+    // These code-zero replies need their original result details. An I6 repair can save a draft with zero repaired issues.
+    // OpsNovaService:188–231 may skip refused items.
     // OpsEmergencyControlService:1385–1398 also replays executions with skipped/rolled-back steps as code zero.
-    if (receipt.businessState === "SUCCEEDED" && (receipt.scope === "I2_NOVA_SOCIAL_SYNC" || receipt.scope.startsWith("I6_I18N_INTEGRITY_FIX:")
+    if (receipt.businessState === "SUCCEEDED" && (receipt.scope === "I2_NOVA_SOCIAL_SYNC"
+      || receipt.scope.startsWith("I6_I18N_INTEGRITY_FIX:") && !receipt.integrityRepair
       || receipt.scope.startsWith("J4_PLAYBOOK_EXECUTE:")))
       return "BUSINESS_RESULT_UNAVAILABLE";
     return receipt.businessState;
@@ -369,6 +371,15 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
       || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  }
+  if (row.integrityRepair != null) {
+    const repair = row.integrityRepair as Record<string, unknown>;
+    if (!row.scope.startsWith("I6_I18N_INTEGRITY_FIX:") || row.businessState !== "SUCCEEDED"
+      || typeof repair !== "object" || Array.isArray(repair)
+      || typeof repair.messageKey !== "string" || !repair.messageKey.trim()
+      || typeof repair.version !== "string" || !/^v[1-9]\d*$/.test(repair.version)
+      || repair.repairedCount != null && (!Number.isSafeInteger(repair.repairedCount) || Number(repair.repairedCount) < 0))
+      throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   }
   if (row.batch != null) {
     if (!/^D2_BATCH_(?:APPROVE|REJECT|DELAY|FREEZE)$/.test(row.scope) || typeof row.batch !== "object" || Array.isArray(row.batch)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
