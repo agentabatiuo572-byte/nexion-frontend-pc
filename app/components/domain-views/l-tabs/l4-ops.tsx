@@ -329,7 +329,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         <div>
           <p>按 <b>{periodLabel}</b> 加入的关系导出，行数以导出为准。</p>
           <p>用户编码部分隐藏，不含手机号、昵称。</p>
-          <p>下载链接 24 小时有效，导出留高风险操作记录。</p>
+          <p>下载链接 24 小时有效。</p>
         </div>
       ),
       effect: <StatusTag tone="warn" icon={LockKeyhole}>敏感导出 · 不经放行</StatusTag>,
@@ -337,7 +337,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         impact: `下载已经生成的这一份（报表号 ${original?.result?.reportId}），不重新生成；下载会留操作记录。`,
         check: "原来的时间段、追溯次数和理由不能改。",
       } : {
-        impact: "直接生成并下载，不经另一位管理员放行；会留一条高风险的操作记录。不改团队关系和奖励。",
+        impact: "直接生成并下载，不经另一位管理员放行，也不通知任何人。不改团队关系和奖励。",
         check: "核对时间段和追溯次数；文件在确认这一刻生成，以后下载还是这一份。",
       },
       facts: (
@@ -354,14 +354,14 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <Fact k="时间段">{periodLabel}加入的关系<Explain label="时间段怎么算" content="按关系建立的时间从现在往前算近 1、7 或 30 天，不跟运营阶段和自定义日期走；只能按日、周、月导出。" /></Fact>
           <Fact k="用户编码" tone="warn">部分隐藏<Explain label="隐藏到什么程度" content="编号 4 位以内整个写成 ***，更长的留前 2 位和后 2 位，中间写成 ***。不含手机号、昵称。" /></Fact>
           <Fact k="多少行">{downloadOnly ? `${count(original!.result!.rowCount)} 行（已生成）` : <>现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></>}</Fact>
-          <Fact k="记录">导出留一条高风险操作记录，下载也留记录</Fact>
+          <Fact k="记录">导出留两条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
           {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="系统现在这样数理由的长度（已报给技术同事修）：汉字算 9，字母和数字算 1。下面的计数就是这么数的，写的内容不会被截短。" /></Fact>}
           <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
         </Facts>
       ),
       confirmLabel: original?.result ? "只下载" : "确认导出并下载",
-      reasonPlaceholder: "写这份明细给谁、做什么用，例如：工单号、核对哪个团队",
+      reasonPlaceholder: "写导出用途，例如：工单号、核对哪个团队",
       reasonMin: 8,
       reasonMax: 200,
       measureReason: networkReasonLength,
@@ -475,7 +475,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       {ctx.canExportNetworkTree && (
         <span className="l4-pair" data-pair="">
           <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={() => requestNetworkTreeExport()}>导出团队关系明细</Button>
-          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「上级 · 成员」一行，一位成员可能有几行；用户编码部分隐藏，不含手机号、昵称；超过 100,000 行时不导出。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由；确认后直接下载到这台电脑，不经另一位管理员放行，留高风险操作记录。</p></>} />
+          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「上级 · 成员」一行，一位成员可能有几行；用户编码部分隐藏，不含手机号、昵称；超过 100,000 行时不导出。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由；确认后直接下载到这台电脑，不经另一位管理员放行，也不通知任何人，留两条高风险操作记录。</p></>} />
         </span>
       )}
       {ctx.canExport && !ctx.canExportNetworkTree && <span className="rd-toolbar-note">团队关系明细需要专门的导出权限</span>}
