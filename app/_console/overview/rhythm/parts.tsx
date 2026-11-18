@@ -213,11 +213,11 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
       sub={`${named(currentPhase)} · ${source ? operatorCopyText(source) : `第 ${data.rhythm.currentMonth} 个月`}`}
       explain={<>
         <p>按运营阶段设置当前月份的值，和上面选的查看方式、阶段、月份无关。要改到运营阶段设置去改，这页只能看。</p>
-        <p>这里不标「生效 / 未生效」：系统现在给的这项状态不准，已提给技术同事修正。</p>
+        <p>标「已停用」的那项系统不再执行；其余各项按「现在」的值执行，开关看开没开。</p>
       </>}>
       <p className="b4-panel-note">
         {last ? "已是最后一个月，后面没有要切换的参数。"
-          : changed ? <>下个月（第 {pivot.atMonth} 个月）有 <b>{changed}</b> 项会变；切换时间{pivot.daysLeft == null ? "还没有设置" : `还有 ${pivot.daysLeft} 天`}。</>
+          : changed ? <>第 {pivot.atMonth} 个月有 <b>{changed}</b> 项不同；{pivot.daysLeft == null ? "还没设切换时间，不会自动切" : `离切换还有 ${pivot.daysLeft} 天`}。</>
             : <>下个月（第 {pivot.atMonth} 个月）参数不变。</>}
         {filteredPhase && filteredPhase !== currentPhase && <span className="b4-muted"> 这里是当前阶段 {currentPhase} 的参数，不随上面选的 {filteredPhase} 变。</span>}
       </p>

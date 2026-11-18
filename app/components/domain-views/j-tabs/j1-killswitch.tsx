@@ -57,7 +57,13 @@ const AUTO_CONFIRM_DECISION_LABELS = {
   keep_disabled: "维持关停",
   recommend_restore: "建议超级管理员评估恢复",
 };
-const RULE_MODE_LABEL: Record<AutoRuleRow["mode"], string> = { automatic: "达到阈值自动关停", advisory: "只告警，人工判断后再关停", manual: "人工发起" };
+const RULE_MODE_LABEL: Record<AutoRuleRow["mode"], string> = { automatic: "满足条件自动关停", advisory: "只统计，不发通知、不自动关停", manual: "人工发起，提交即生效，不走审批" };
+/** 两条自动关停的边界不一样：提现是达到就关（等于也关），兑换是超过才关（等于不关）。 */
+function ruleModeText(rule: AutoRuleRow) {
+  const condition = rule.autoDisableCondition;
+  if (!condition) return RULE_MODE_LABEL[rule.mode];
+  return condition.comparator === ">=" ? "达到阈值就自动关停，正好等于也关" : "超过阈值才自动关停，正好等于不关";
+}
 /** 阈值在别的页设置，这里只引用（J1-S03）。 */
 const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-radar", tamperCluster: "/emergency/tamper" };
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
@@ -138,8 +144,10 @@ const plainRuleText = (text: string) => operatorCopyText(text).replace(/\bR\d(?:
 const RULE_TEXT: Record<string, (rule: AutoRuleRow) => string> = {
   withdrawSurge: (rule) => `24 小时提现申请额达到真实储备的 ${ruleValue(rule)}（挤兑红线）时，关停提现。`,
   maturityGap: (rule) => `钱包余额和账本余额相差超过 ${ruleValue(rule)} 时，关停兑换。`,
-  tamperCluster: (rule) => `单个账户 24 小时内被拦下的篡改请求达到 ${rule.tamperAdvisory ? rule.tamperAdvisory.actualThreshold ?? "—" : rule.thr} 次时告警。`,
-  regulatoryDirective: () => "监管点名或法务事件时，在这页手动关停，要写原因。",
+  tamperCluster: (rule) => rule.tamperAdvisory && rule.tamperAdvisory.actualThreshold === null
+    ? "阈值没读出来，「篡改防御监控」暂时统计不出达到阈值的账户，请联系值班人员核对设置。"
+    : `单个账户 24 小时内被拦下的篡改请求达到 ${rule.tamperAdvisory ? rule.tamperAdvisory.actualThreshold : rule.thr} 次，会列进「篡改防御监控」达到告警阈值的账户。`,
+  regulatoryDirective: () => "监管点名或法务事件时，在这页勾选业务一次关停：选触发依据、写监管事由，关创世节点还要写处置方案。",
 };
 
 function RuleCondition({ text }: { text: string }) {
@@ -557,11 +565,11 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       title: `申请恢复${name}`,
       amplifies: gate.amplifies,
       coverage: gate.coveragePrecheckRequired ? { coverageRatio: COV, redlinePct: RED } : undefined,
-      coverageCheck: "批准时重新检查兑付覆盖率，检查不通过仍保留待批工单，业务继续关停。",
+      coverageCheck: "提交时先查一次覆盖率和待补录，批准时再查一次；批准时不通过，工单保留，业务继续关停。",
       facts: <Facts>
         <Fact k="业务">{name}</Fact>
         {gate.key === "withdraw" && <Fact k="关停范围" tone="warn"><KeepText text={gateCopy(gate).desc} /></Fact>}
-        <Fact k="备付金检查"><KeepText text={gate.coveragePrecheckRequired ? "批准时重新检查覆盖率；不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"} /></Fact>
+        <Fact k="备付金检查"><KeepText text={gate.coveragePrecheckRequired ? "提交时和批准时各查一次覆盖率；批准时不通过则保留待批工单，业务继续关停" : "试用免查，不直接付钱"} /></Fact>
         <Fact k="谁来批准">另一位超级管理员，需有审批和恢复业务的权限</Fact>
       </Facts>,
       detail: "恢复申请排在应急审批队列最前。",
@@ -591,7 +599,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       title: `批量关停 ${targets.length} 项业务`,
       facts: <div className="rd-stack"><Facts>{targets.length === 1 ? <Fact k="关停业务">{names}</Fact> : <Fact k="关停业务" unit="项">{targets.length}</Fact>}<Fact k="状态变化"><Change from="在线" to="已关停" /></Fact>{targets.some((gate) => gate.key === "withdraw") && <Fact k="提现关停范围" tone="warn">{GATE_COPY.withdraw.desc}</Fact>}</Facts>
         {targets.length > 1 && <Fold inset title="本次关停业务" summary={`${targets.length} 项`}><RecordList label="本次关停业务" records={targets.map((gate) => ({ id: gate.key, value: operatorCopyText(gate.name), object: gateCopy(gate).cap }))} /></Fold>}</div>,
-      detail: "用于监管点名、法务事件等重大场景。每一项都记入操作记录。",
+      detail: "用于监管点名、法务事件等重大场景。提交即生效，不走审批；每项业务各记一条操作记录。",
       effect: IMMEDIATE,
       statedBrief: { impact: `已选的 ${targets.length} 项业务立即关停；有一项已关停或在等补录，整批都不关。恢复要逐项提交审批，由另一位超级管理员批准。`, check: "核对已选业务、触发依据和监管事由，理由写清依据或工单号。" },
       confirmTone: "danger",
@@ -902,9 +910,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                   const text = index !== 1 ? part : rule.id === "tamperCluster" ? `${rule.thr} ${rule.unit}` : rule.id === "maturityGap" ? ruleValue(rule) : part;
                   return index % 2 ? <b key={index}>{operatorCopyText(text)}</b> : <RuleCondition key={index} text={operatorCopyText(text)} />;
                 })}
-                when={`${RULE_MODE_LABEL[rule.mode]}${rule.adjustable ? "，保存后立即生效" : ""}`}
+                when={`${ruleModeText(rule)}${rule.adjustable ? "；保存后立即生效" : ""}`}
                 note={rule.refNote || undefined}
-                value={rule.id === "regulatoryDirective" ? "人工关停" : ruleValue(rule)}
+                value={rule.id === "regulatoryDirective" ? "人工关停" : rule.tamperAdvisory?.actualThreshold === null ? "读不出" : ruleValue(rule)}
                 action={rule.adjustable && canWrite
                   ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`rule:${rule.id}`)} onClick={() => adjRule(rule)}>调整</Button>
                   : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置</Link> : undefined} />

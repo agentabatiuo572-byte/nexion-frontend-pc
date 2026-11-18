@@ -36,7 +36,7 @@ import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from 
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
-  RETIRED_PLACEHOLDER, catalogName, channelName, cooldownSentence, durationText, hasRetiredPlaceholder, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
+  RETIRED_PLACEHOLDER, catalogName, channelName, cooldownSentence, durationText, hasRetiredPlaceholder, noticeCategory, readable, orderDist, placeholdersOf, previewText, tickSentence, channelTrigger,
 } from "./i2-parts";
 import { ChannelDrawer, DistDrawer, TemplateDrawer, UNREACHABLE_CTA, UNREACHABLE_TEXT, ctaLabel, type ChannelFormValue, type TemplateFormValue } from "./i2-forms";
 
@@ -263,6 +263,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const templatePager = useDataListPager(NOVA_TPLS, { initialPageSize: 7 });
   const CTA_OPTIONS = data?.templateCtaOptions ?? [];
   const RUNTIME_SOURCE_OPTIONS = data?.runtimeSourceOptions ?? [];
+  const RUNTIME_SOURCES = data?.channelRuntimeSources;
+  // 近 7 天每个频道发出的站内通知人次；旧数据没有这一项（null 或没给）。
+  const PUSH = data?.pushDelivery ?? undefined;
   const SOCIAL_DIST = data?.socialDistribution ?? [];
   const INITIAL_SOCIAL_EVENTS = data?.socialEvents ?? [];
   const SOCIAL_EVENT_TYPE_OPTIONS = data?.socialEventTypes ?? [];
@@ -803,6 +806,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [detailEvent, setDetailEvent] = useState<number | null>(null);
 
   const onlineCount = novas.filter((n) => n.on).length;
+  // 已删除的频道在这 7 天里发过的，后端也列出来。
+  const removedSent = (PUSH?.channels ?? []).filter((row) => !novas.some((n) => n.key === row.channel) && row.pushSentCount > 0);
   // 「不在频道里的推送」由服务端目录减去已有频道得出，不写死名单(#146)。
   const cadenceKeys = new Set(novas.map((n) => n.key));
   const offTableChannels = NOVA_EVENT_DRIVEN.filter((r) => !cadenceKeys.has(r.name));
@@ -897,11 +902,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     : <Conclusion state={problems ? "warn" : "ok"} icon={Radio}
       hint={noPublished.length > 0 ? "到「消息模板」给它们写好模板并发布。" : socialDry ? "到「真实动态素材」点「同步事件」取新素材。" : undefined}
       explain={<>
-        <p>在推＝频道已启用。启用只说明开关开着；真正发出还要有已发布模板、有素材、到了扫描时间、过了个人间隔，用户也要允许系统通知。</p>
+        <p>启用只说明开关开着；真正发出还要有已发布模板、有素材、到了扫描时间、过了个人间隔，用户也要允许系统通知。{PUSH ? "实际发了多少看各频道卡上的「近 7 天」。" : ""}</p>
         <p>紧急停用开关把五项业务全部关停时，所有频道都不发；读不到开关状态时也不发。只关停其中几项不影响推送。</p>
         <p>素材按最近读到的 20 条真实事件看，只对「真实动态」频道有意义；发送时每类查最近 100 条，读到的 20 条之外可能还有能用的。</p>
       </>}>
-      {`${onlineCount} 个频道在推，共 ${novas.length} 个`}
+      {`${onlineCount} 个频道已启用，共 ${novas.length} 个`}
       {noPublished.length > 0 && `；${noPublished.length} 个没有已发布的模板，启用不了`}
       {socialDry && "；最近读到的 20 条真实事件里没有有效的，可能发不出"}
       {distBad && `；事件概率合计 ${distTotal}%，不是 100%`}
@@ -927,10 +932,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const t = tplOf(n.key);
     const phase = PHASE_CHANNELS.has(n.key);
     const social = n.key === SOCIAL_CHANNEL;
+    const trigger = channelTrigger(n.key, n.trigger, n.name, RUNTIME_SOURCE_OPTIONS, RUNTIME_SOURCES);
+    const sent = PUSH?.channels.find((row) => row.channel === n.key)?.pushSentCount;
     const warn = st !== "published"
       ? <StatusTag tone="warn">{st === "missing" ? "没有模板，启用不了" : `模板是${TEMPLATE_STATE_TEXT[st] ?? st}，启用不了`}</StatusTag>
       : social && n.on && recentActive === 0 ? <StatusTag tone="warn" explain="只看了最近读到的 20 条；发送时每类查最近 100 条，可能还有能用的。">最近 20 条里没有有效事件</StatusTag>
-        : undefined;
+        : !social && trigger.unmatched ? <StatusTag tone="warn" explain="系统的业务事件里找不到这个频道的触发事件，不会按它发消息。上面写的是频道里存的说明。">没对上触发事件</StatusTag>
+          : undefined;
     const toggleBlocked = lockReason(`channel:${n.key}`) || (!n.on && st !== "published" ? "先给它发布模板才能启用" : undefined);
     const cardActions = canWriteI2 ? <>
       <Button size="sm" icon={n.on ? <PowerOff size={14} aria-hidden /> : <Power size={14} aria-hidden />} disabledReason={toggleBlocked} aria-label={`${n.on ? "停用" : "启用"} ${channelName(n.key, n.name)}`} onClick={() => toggleNova(n)}>{n.on ? "停用" : "启用"}</Button>
@@ -939,10 +947,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     </> : undefined;
     return (
       <ChannelCard key={n.key} name={channelName(n.key, n.name)} keyText={n.key} on={n.on}
-        source={social ? "提现到账等五类真实事件" : sourceText(n.trigger, n.name, RUNTIME_SOURCE_OPTIONS)}
+        sourceLabel={social ? "取材" : "触发"}
+        source={social ? "提现到账等真实事件" : trigger.when} audience={social ? undefined : trigger.audience}
         tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}
         template={t ? { name: t.name, version: t.v } : undefined} templateState={st} warn={warn}
-        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${dailySocialRecords} 条 · 累计 ${recentSocialDispatches} 次`}</dd></div> : undefined}
+        stats={PUSH ? <div><dt><Send size={14} aria-label="近 7 天发出" /></dt><dd>{`近 7 天发出 ${sent === undefined ? "—" : `${sent.toLocaleString()} 人次`}`}</dd></div>
+          : social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${dailySocialRecords} 条 · 累计 ${recentSocialDispatches} 次`}</dd></div> : undefined}
         ctr={Number.isFinite(n.ctr) ? `${n.ctr}%` : "—"}
         actions={cardActions} onTemplate={t ? () => setDetailTpl(t.ch) : undefined} />
     );
@@ -1000,10 +1010,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {stats}
 
       <Panel title="频道" icon={Radio} tone="role-2" sub={`${novas.length} 个 · 已启用 ${onlineCount} 个`}
-        explain="每张卡是一个频道：从哪类事情取材、多久找一次、同一个人隔多久才再收到一条。停用后不再生成新消息，已经发出的不撤回。">
+        explain={<>
+          <p>每张卡是一个频道：什么事情触发、发给谁、多久找一次、同一个人隔多久才再收到一条。停用后不再生成新消息，已经发出的不撤回。</p>
+          {PUSH && <p>{`近 7 天：${formatBusinessTimeCompact(PUSH.from, "—")} 到 ${formatBusinessTimeCompact(PUSH.to, "—")}（${businessZone().label}）这个频道发出的 App 内通知，发给一个人算 1 人次；不代表到了手机的系统推送。`}</p>}
+        </>}>
         {novas.length === 0
           ? <BlockState state="empty" title="新增的频道会显示在这里" detail={canWriteI2 ? "新增后先写好模板并发布，再启用。" : undefined} />
           : <div className="i2-channels">{channelCards}</div>}
+        {removedSent.length > 0 && <p className="i2-muted i2-removed-sent" title={removedSent.map((row) => `${catalogName(channelName(row.channel, ""))} ${row.pushSentCount.toLocaleString()} 人次`).join("、")}>
+          {`已删除或不在上面的 ${removedSent.length} 个频道，近 7 天共发出 ${removedSent.reduce((sum, row) => sum + row.pushSentCount, 0).toLocaleString()} 人次。`}
+        </p>}
         <Fold title="不在频道里的推送" inset summary={offTableChannels.length ? `${offTableChannels.length} 条 · 节奏由别处的设置决定` : "没有"}
           explain="市场行情和市场事件通知是两个独立频道，可以分别启停、设间隔。">
           {offTableChannels.length === 0
@@ -1243,7 +1259,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <ChannelDrawer editing={!!editNovaKey} form={form} setForm={setForm} cadenceError={cadenceError} sources={RUNTIME_SOURCE_OPTIONS}
           locked={drawerSubmitting || !!drawerPendingKey} saving={drawerSubmitting} retry={!!drawerPendingKey} error={drawerPendingKey ? null : drawerError}
           blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row && isRetryExpired(row) ? "已超过 24 小时，不能再重试，只能查询。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
-          fixedSource={editNovaKey && !form.runtimeSource ? (() => { const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey); return prev ? sourceText(prev.trigger, prev.name, drawerSource.current?.runtimeSourceOptions ?? []) : ""; })() : undefined}
+          fixedSource={editNovaKey && !form.runtimeSource ? (() => {
+            const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey);
+            if (!prev) return "";
+            if (prev.key === SOCIAL_CHANNEL) return "提现到账等真实事件";
+            const fixed = channelTrigger(prev.key, prev.trigger, prev.name, drawerSource.current?.runtimeSourceOptions ?? [], drawerSource.current?.channelRuntimeSources);
+            return fixed.audience ? `${fixed.when} · ${fixed.audience}` : fixed.when;
+          })() : undefined}
           onClose={closeDrawer} onSubmit={() => void submitDrawer()} />
       )}
       {tplDrawer && (

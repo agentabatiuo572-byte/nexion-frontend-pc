@@ -38,6 +38,38 @@ export function sourceText(trigger: string, name: string, options: readonly Nova
   return readable(trigger);
 }
 
+/** 触发事件的中文名：先用后端选项的叫法，再用事件目录和站内已有的叫法；没有现成叫法的不起名。 */
+const EVENT_NAME: Record<string, string> = {
+  "auth.register_completed": "注册完成",
+  "market.curve_advanced": "市场曲线推进",
+  "commission.paid": "团队奖励到账",
+  "referral.bound": "团队推荐关系绑定",
+  "staking.opened": "质押仓位创建",
+  "staking.claimed": "质押收益领取",
+  "staking.early_withdrawn": "质押提前退出",
+  "genesis.purchased": "创世节点购买",
+};
+const eventLabel = (event: string, options: readonly NovaOptionView[]) => {
+  const label = options.find((option) => option.value === `a4:${event}`)?.label.replace(/（广播）$/, "");
+  return label ? operatorCopyText(label) : EVENT_NAME[event];
+};
+export type ChannelRuntimeSource = { channel: string; eventNames: string[]; targeted: boolean };
+/**
+ * 业务频道什么时候发、发给谁。sources 没给（旧数据）时只写原来的取材说明；
+ * 事件都有中文名才按事件写，否则仍写频道存的说明。unmatched：业务事件目录里对不上这个频道。
+ */
+export function channelTrigger(key: string, trigger: string, name: string, options: readonly NovaOptionView[], sources?: readonly ChannelRuntimeSource[]) {
+  const stored = sourceText(trigger, name, options);
+  if (!sources) return { when: stored };
+  const source = sources.find((item) => item.channel === key);
+  if (!source) return { when: stored, unmatched: true };
+  const names = source.eventNames.map((event) => eventLabel(event, options));
+  const when = names.length > 0 && names.every(Boolean)
+    ? `${names.length > 1 ? `${names.slice(0, -1).join("、")}或${names.at(-1)}` : names[0]}时`
+    : stored;
+  return { when, audience: source.targeted ? "发给当事人" : "发给所有用户" };
+}
+
 /** 后端规则原文里的页面代号写成页面名，旧名称 NEX 写成 UVT 并标旧名（不让裸的 NEX 出现在首屏）。 */
 const PAGE_NAME: Record<string, string> = { E3: "「设备使用与升级置换」", H3: "「用户任务管理」", H4: "「活动中心」", H1: "「运营阶段设置」" };
 export function readable(text: string) {
@@ -82,11 +114,14 @@ export function TemplateTag({ state }: { state: TemplateState }) {
 }
 
 /** 一张频道卡。动作由页面传；没有写权限时不传。 */
-export function ChannelCard({ name, keyText, on, source, tick, cooldown, phase, template, templateState, warn, stats, ctr, actions, onTemplate }: {
+export function ChannelCard({ name, keyText, on, sourceLabel = "取材", source, audience, tick, cooldown, phase, template, templateState, warn, stats, ctr, actions, onTemplate }: {
   name: string;
   keyText: string;
   on: boolean;
+  /** 业务频道写「触发」，按素材抽的写「取材」。 */
+  sourceLabel?: string;
   source: string;
+  audience?: string;
   tick: string;
   cooldown: string;
   phase?: ReactNode;
@@ -104,12 +139,13 @@ export function ChannelCard({ name, keyText, on, source, tick, cooldown, phase, 
         <span className="i2-channel-icon" aria-hidden><Radio size={16} /></span>
         <span className="i2-channel-title">
           <b>{name}</b>
-          <span className="i2-channel-source" title={`取材：${source}`}>{`取材：${source}`}</span>
+          <span className="i2-channel-source" title={`${sourceLabel}：${source}`}>{`${sourceLabel}：${source}`}</span>
         </span>
         {on ? <StatusTag tone="ok">已启用</StatusTag> : <StatusTag tone="done">已停用</StatusTag>}
       </header>
       {warn && <div className="i2-channel-warn">{warn}</div>}
       <dl className="i2-channel-rows">
+        {audience && <div><dt><Users size={14} aria-label="发给谁" /></dt><dd>{audience}</dd></div>}
         <div><dt><Clock size={14} aria-label="扫描间隔" /></dt><dd>{tickSentence(tick)}</dd></div>
         <div><dt><UserRound size={14} aria-label="个人间隔" /></dt><dd>{cooldownSentence(cooldown)}{phase}</dd></div>
         <div><dt><FileText size={14} aria-label="模板" /></dt><dd className="i2-channel-tpl">

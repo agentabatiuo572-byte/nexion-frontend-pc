@@ -302,6 +302,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     <Panel title="界面语言" icon={Languages} tone="role-3" sub={languages ? `开启 ${onLanguages.length} 种，共 ${INTERFACE_LANGUAGES.length} 种` : "只能查看"}
       explain={<>
         <p>关闭后，用户在语言列表里看不到这种语言；正在用它的用户改用账号或手机系统的语言，都没开启时用英文。英文始终开启。</p>
+        <p>App 下次读到配置后才变；重新开启后，用户原来选的语言会恢复。</p>
         <p>印尼语、马来语、菲律宾语、俄语、哈萨克语、乌兹别克语开启后，App 的说明和文档内容目前仍按英文读取。</p>
       </>}>
       <div className="a3-with-preview">

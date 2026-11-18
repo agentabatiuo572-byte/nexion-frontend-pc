@@ -180,7 +180,7 @@ export default function RhythmPage() {
   const changes = data.nextPivot.changes.length;
   const hint = last
     ? "已是最后一个月，后面没有要切换的参数。"
-    : `下个月${nextPhase && nextPhase !== current ? `进入 ${nextPhase}` : `还在 ${current}`}，${changes ? `${changes} 项参数会变` : "参数不变"}。`;
+    : `切到第 ${data.nextPivot.atMonth} 个月后${nextPhase && nextPhase !== current ? `进入 ${nextPhase}` : `还在 ${current}`}，${changes ? `有 ${changes} 项参数不同` : "参数不变"}。`;
 
   const phaseOptions = [{ value: ALL, label: "全部阶段" }, ...data.filters.phaseOptions.map((phase) => ({ value: phase, label: phase === current ? `${phase}（当前阶段）` : phase }))];
   const monthValue = filters.month || String(data.filters.month);

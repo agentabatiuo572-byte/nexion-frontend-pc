@@ -307,6 +307,7 @@
 
 /* 频道卡：同排等高，操作行贴卡底；1440 三列，1024 两列。 */
 .i2-channels { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--rd-space-4); margin-bottom: var(--rd-space-4); }
+.i2-removed-sent { margin: calc(-1 * var(--rd-space-1)) 0 var(--rd-space-4); }
 .i2-channel { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); }
 .i2-channel[data-warn] { border-color: color-mix(in srgb, var(--rd-warn) 45%, var(--rd-line)); background: color-mix(in srgb, var(--rd-warn-bg) 55%, var(--rd-panel)); }
 .i2-channel-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: var(--rd-space-3); }
