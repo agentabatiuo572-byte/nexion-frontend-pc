@@ -125,13 +125,15 @@ function timeText(value: string) {
 }
 
 function capEditValue(cap: G2Cap) {
-  return cap.key === "queueMode" ? cap.displayValue : cap.value || cap.displayValue;
+  return cap.key === "queueMode" ? paramValueText(cap.key, cap.value, cap.displayValue) : cap.value || cap.displayValue;
 }
 
 function normalizeCapSubmitValue(cap: G2Cap, value: string | undefined) {
   if (!value) return "";
   if (cap.key !== "queueMode") return value;
-  return value === "拒绝" || value.toUpperCase() === "REJECT" ? "REJECT" : "QUEUE";
+  if (value === "拒绝" || value.toUpperCase() === "REJECT") return "REJECT";
+  if (value === "排队" || value.toUpperCase() === "QUEUE") return "QUEUE";
+  return "";
 }
 
 function requireBatchActor(adminId: number, write = true) {
@@ -657,7 +659,7 @@ function G2ExchangePage() {
     if (original === false) return;
     if (original) {
       const expected = original.request.command.params.expectedValue as string;
-      cap = { ...cap, value: expected, displayValue: cap.key === "queueMode" ? expected === "REJECT" ? "拒绝" : "排队" : expected };
+      cap = { ...cap, value: expected };
     }
     const isQueueMode = cap.key === "queueMode";
     const originalValue = originalDirect?.input.value ?? original?.request.command.params.value as string | undefined;
@@ -666,7 +668,10 @@ function G2ExchangePage() {
     const currentText = paramValueText(cap.key, cap.value, cap.displayValue);
     const loosens = (value?: string) => {
       if (!value) return undefined;
-      if (isQueueMode) return value !== cap.displayValue ? value === "排队" : undefined;
+      if (isQueueMode) {
+        const next = normalizeCapSubmitValue(cap, value);
+        return next && next !== cap.value ? next === "QUEUE" : undefined;
+      }
       const [next, now] = [value, capEditValue(cap)].map(raw => {
         const match = /^(\d+)(?:\.(\d+))?$/.exec(raw.trim());
         if (!match) return undefined;
@@ -722,7 +727,7 @@ function G2ExchangePage() {
         ? "提交审批时和批准时各检查一次：原值没被别人改过；把现在排队中、启用中的非测试账户的单按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都会被拒绝。"
         : "提交审批时和批准时各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: isQueueMode
-        ? { kind: "select", current: cap.displayValue, currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
+        ? { kind: "select", current: capEditValue(cap), currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
         : { kind: "number", current: capEditValue(cap), currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, min: 0,
             initialValue: originalValue,
             max: cap.key === "userDailyCap" ? 10000 : cap.key === "platformDailyCap" ? 10000000 : cap.key === "fee" ? 10 : cap.key === "feeMin" ? 5 : 1000000,

@@ -56,6 +56,7 @@ export function parseI6Message(value: unknown): I18nMessagePairView {
   const row = object(value);
   texts(row, ["messageKey", "namespace", "zh", "en", "vi", "status", "version"]);
   strings(row.placeholders);
+  if (row.translations !== undefined && !Object.values(object(row.translations)).every(text => typeof text === "string")) invalid();
   for (const key of ["versionCreatedAt", "versionUpdatedAt"]) if (row[key] !== undefined && typeof row[key] !== "string") invalid();
   return row as I18nMessagePairView;
 }

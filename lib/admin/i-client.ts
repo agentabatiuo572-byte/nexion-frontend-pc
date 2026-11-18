@@ -1573,6 +1573,7 @@ export type I18nMessagePairView = {
   status: string;
   version: string;
   placeholders: string[];
+  translations?: Record<string, string>;
   versionCreatedAt?: string;
   versionUpdatedAt?: string;
 };

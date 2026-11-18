@@ -370,8 +370,8 @@ function emergencyInputFingerprint(body: BodyInit | null | undefined) {
   }
 }
 
-class EmergencyOutcomeUncertainError extends Error {
-  constructor(message: string) {
+export class EmergencyOutcomeUncertainError extends Error {
+  constructor(message = "应急控制服务返回了无法确认的内容") {
     super(message);
     this.name = "EmergencyOutcomeUncertainError";
   }
@@ -387,6 +387,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
   const method = (init?.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
   const writeSlot = `${method} ${path}`;
+  const isJ1AutoRuleWrite = method === "PATCH" && path.startsWith("/kill-switches/auto-rules/");
   const isJ2Write = isWrite && isJ2WriteSlot(writeSlot);
   const isJ3Config = isWrite && writeSlot === J3_CONFIG_SLOT;
   const isJ4Write = isWrite && isJ4WriteSlot(writeSlot);
@@ -507,7 +508,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     const message = `应急控制服务返回了无法确认的内容（HTTP ${res.status}）`;
     throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试。`);
   }
-  if ((isJ4Write || path === "/sop/playbooks" || path.startsWith("/tamper/")) && (!payload || typeof payload !== "object" || Array.isArray(payload)
+  if ((isJ1AutoRuleWrite || isJ4Write || path === "/sop/playbooks" || path.startsWith("/tamper/")) && (!payload || typeof payload !== "object" || Array.isArray(payload)
     || typeof payload.code !== "number" || payload.message !== undefined && typeof payload.message !== "string")) {
     throw isWrite ? new EmergencyOutcomeUncertainError("应急控制服务返回了无法确认的内容") : new Error(path.startsWith("/sop/") ? "J4_RESPONSE_INVALID" : "J3_RESPONSE_INVALID");
   }
@@ -535,7 +536,8 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     throw Object.assign(new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原请求重试。" : error.message), { reasonCode: payload.message });
   }
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
-    || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message))))) {
+    || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message)
+      || isJ1AutoRuleWrite && (payload.code ?? res.status) >= 500)))) {
     // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知,让调用方看到「结果未确认」
     // 而不是「失败」——冠失败会诱导运营换渠道重做,而应急止血动作(kill-switch / 地域封锁)
     // 重复执行的代价极高。
@@ -548,7 +550,8 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
       useAdminAuth.getState().signOut();
     }
-    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status: res.status, reasonCode: payload.message });
+    const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;
+    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status, reasonCode: payload.message });
   }
   if (isJ4Write) {
     // A successful J4 response is a complete sopOverview, not an empty acknowledgement.
@@ -744,6 +747,7 @@ export type AutoRuleRow = {
   unit: string;
   mode: "automatic" | "advisory" | "manual";
   adjustable: boolean;
+  thresholdSource?: "DEFAULT" | "CONFIGURED";
   refNote?: string;
   refTitle?: string;
   autoDisableCondition?: {
@@ -1132,7 +1136,7 @@ export type JEmergencyActions = {
   toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string, context?: { triggerBasis?: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   emergencyDisableJ1: (keys: string[], reason: string, operator?: string, context?: { triggerBasis: string; regulatoryContext: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   updateJ1Sla: (paramKey: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
-  updateJ1AutoRule: (ruleId: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
+  updateJ1AutoRule: (ruleId: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<string>;
   confirmJ1AutoTrigger: (key: string, incidentId: string, decision: "keep_disabled" | "recommend_restore", reason: string, commandKey?: string) => Promise<void>;
   updateJ2Country: (countryCode: string, status: "blocked" | "limited" | "allowed", expectedStatus: "blocked" | "limited" | "allowed", triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
   replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
@@ -1295,7 +1299,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     tamperCluster: { kind: "number", mode: "advisory", adjustable: false },
     regulatoryDirective: { kind: "text", mode: "manual", adjustable: false },
   };
-  const autoRules = autoRuleRows.map((row, index) => {
+  const autoRules = autoRuleRows.map<AutoRuleRow>((row, index) => {
     const id = autoRuleIds[index];
     const expected = expectedRuleSemantics[id];
     const kind = requiredText(row.kind, `killSwitch.autoRules.${index}.kind`);
@@ -1304,6 +1308,10 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     const threshold = requiredText(row.thr, `killSwitch.autoRules.${index}.thr`);
     if (!expected || kind !== expected.kind || mode !== expected.mode || adjustable !== expected.adjustable) {
       contractError(`killSwitch.autoRules.${index}.semantics`);
+    }
+    const { thresholdSource } = row;
+    if (thresholdSource !== undefined && thresholdSource !== "DEFAULT" && thresholdSource !== "CONFIGURED") {
+      contractError(`killSwitch.autoRules.${index}.thresholdSource`);
     }
     requiredText(row.configKey, `killSwitch.autoRules.${index}.configKey`);
     let autoDisableCondition: AutoRuleRow["autoDisableCondition"];
@@ -1360,6 +1368,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       unit: str(row.unit),
       mode: expected.mode,
       adjustable,
+      thresholdSource,
       refNote: str(row.refNote),
       refTitle: str(row.refTitle),
       autoDisableCondition,
@@ -1890,7 +1899,16 @@ export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   toggleJ1KillSwitch: (key, enabled, reason, context, commandKey) => apiRequest(`/kill-switches/${encodeURIComponent(key)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ enabled: enabled ? "enabled" : "disabled", ...context }, reason)) }).then(() => undefined),
   emergencyDisableJ1: (keys, reason, operator, context, commandKey) => apiRequest("/kill-switches/emergency-disable", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ keys, ...context }, reason, operator)) }).then(() => undefined),
   updateJ1Sla: (paramKey, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
-  updateJ1AutoRule: (ruleId, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
+  updateJ1AutoRule: async (ruleId, value, expectedValue, reason, commandKey) => {
+    const response = await apiRequest<unknown>(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, {
+      method: "PATCH",
+      headers: commandKey ? { "Idempotency-Key": commandKey } : undefined,
+      body: JSON.stringify(withReason({ value, expectedValue }, reason)),
+    });
+    const updated = rec(rec(response).updated);
+    if (updated.ruleId !== ruleId || typeof updated.value !== "string") throw new EmergencyOutcomeUncertainError();
+    return updated.value;
+  },
   confirmJ1AutoTrigger: (key, incidentId, decision, reason, commandKey) => apiRequest(`/kill-switches/auto-confirmations/${encodeURIComponent(key)}`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ incidentId, decision }, reason)) }).then(() => undefined),
   updateJ2Country: (countryCode, status, expectedStatus, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/countries/${encodeURIComponent(countryCode)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, expectedStatus, triggerBasis }, reason)) }).then(() => undefined),
   replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey, context) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }, context).then(() => undefined),
