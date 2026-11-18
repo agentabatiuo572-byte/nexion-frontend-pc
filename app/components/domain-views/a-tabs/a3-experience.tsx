@@ -17,6 +17,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import {
+  changedOperatingLanguages,
   fetchPlatformExperienceConfig,
   INTERFACE_LANGUAGES,
   recommendedExperienceChannels,
@@ -81,8 +82,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const reach = useReach();
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
-  const [loadedConfig, setConfig] = useState<PlatformExperienceConfig | null>(null);
-  const [loadedBaseline, setBaseline] = useState<PlatformExperienceConfig | null>(null);
+  const [loadedForm, setLoadedForm] = useState<{ config: PlatformExperienceConfig; baseline: PlatformExperienceConfig } | null>(null);
+  const setConfig = (config: PlatformExperienceConfig) => setLoadedForm(current => current && { ...current, config });
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -94,8 +95,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const conflictDraft = useRef(false);
   const original = commands.find("experience");
   const savedForm = original?.original.kind === "experience" ? original.original : null;
-  const config = confirmOpen && savedForm ? savedForm.config : loadedConfig;
-  const baseline = confirmOpen && savedForm ? savedForm.baseline : loadedBaseline;
+  const config = confirmOpen && savedForm ? savedForm.config : loadedForm?.config ?? null;
+  const baseline = confirmOpen && savedForm ? savedForm.baseline : loadedForm?.baseline ?? null;
   useEffect(() => {
     if (recovery?.original.kind !== "experience") return;
     setReason(recovery.reason); if (!conflictDraft.current) setError(null); setConfirmOpen(true); onRecovered();
@@ -107,11 +108,20 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     if (!conflictDraft.current) setError(null);
     try {
       const next = await fetchPlatformExperienceConfig();
-      setConfig(draft => conflictDraft.current && draft ? { ...draft, version: next.version } : next);
-      setBaseline(next); setReadReady(true); return next;
+      setLoadedForm(current => ({
+        config: conflictDraft.current && current ? {
+          ...current.config,
+          version: next.version,
+          operatingLanguages: next.operatingLanguages && (
+            changedOperatingLanguages(current.config.operatingLanguages, current.baseline.operatingLanguages) ?? next.operatingLanguages
+          ),
+        } : next,
+        baseline: next,
+      }));
+      setReadReady(true); return next;
     }
     catch (cause) {
-      if (!conflictDraft.current) { setConfig(null); setBaseline(null); }
+      if (!conflictDraft.current) setLoadedForm(null);
       setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause));
       return null;
     }
@@ -152,7 +162,9 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     setSaving(true); setError(null);
     try {
       const record = original ?? commands.capture({ original: { kind: "experience", config, baseline: baseline! },
-        path: "/api/admin/platform/config/experience", method: "PUT", body: JSON.stringify(platformExperienceBody(config, reason, session?.operator ?? session?.username ?? "")),
+        path: "/api/admin/platform/config/experience", method: "PUT",
+        body: JSON.stringify(platformExperienceBody(config, reason, session?.operator ?? session?.username ?? "",
+          changedOperatingLanguages(config.operatingLanguages, baseline?.operatingLanguages))),
         reason: reason.trim(), name: "App 分享与下载", change: `v${config.version} → v${config.version + 1} · ${changed.join("、")}` });
       await commands.send(record, Boolean(original));
       conflictDraft.current = false;
