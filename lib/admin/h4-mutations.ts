@@ -5,6 +5,7 @@ import { saveH4UploadFile, readH4UploadFile, deleteH4UploadFile } from "./h4-upl
 import type { UploadedAsset } from "./media-client";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { growthRequest } from "./h-client";
+import { parseAdminRaffle } from "./genesis-raffle-client";
 import { h4CommandStores, type H4StoredCommand } from "./h4-command-store";
 import { findHighOp } from "./high-ops-registry";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -275,6 +276,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
           : request.path.includes("/content/") ? updated.key === `content.event.${target}.${parts[5]}.${parts[6]}` && updated.field === parts[5] && updated.locale === parts[6]
           : updated.eventId === target && (request.method === "POST" ? updated.action === "created" : updated.field === parts[4]));
       if (!valid) throw new OutcomeUnknownError("H4_RESPONSE_INVALID");
+      if (parts[1] === "genesis-raffle") parseAdminRaffle(result);
       }
     }
   } catch (error) {

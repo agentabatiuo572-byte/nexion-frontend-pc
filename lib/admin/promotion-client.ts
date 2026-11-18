@@ -4,7 +4,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-cl
 import { isExplicitRejection } from "./explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from './pending-mutation-store.ts';
-import type { CommandReceipt, VersionPage } from './promotion-types.ts';
+import type { CommandReceipt, PublishAction, VersionPage } from './promotion-types.ts';
 
 export interface PromotionCommandIntent { operation: string; targetId: string; path: string; method: 'POST' | 'PUT'; body: unknown }
 export interface PendingPromotion extends PendingMutationRecord, PromotionCommandIntent { owner?: number; recoveryState?: string; receipt?: CommandReceipt }
@@ -65,7 +65,9 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
   const unknown = response.headers.get('X-Nexion-Upstream-Outcome')?.toLowerCase() === 'unknown';
   if (!response.ok || body?.code !== 0 || body.data == null || unknown) {
     // Unreadable responses cannot prove whether a write committed.
-    const error = new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors, body?.message);
+    const field = /^PROMOTION_FIELD_INVALID:(\$\..+)$/.exec(body?.message ?? '')?.[1];
+    const fieldErrors = body?.data?.fieldErrors ?? (field ? [{ field, reason: 'PROMOTION_FIELD_INVALID' }] : undefined);
+    const error = new PromotionApiError(promotionErrorMessage(field ? 'PROMOTION_FIELD_INVALID' : body?.message,response.status), body ? response.status : 0, body?.code, fieldErrors, body?.message);
     error.unknownOutcome = unknown; error.bodyUnreadable = body === null;
     throw error;
   }
@@ -113,6 +115,14 @@ export async function promotionVersions(activityId:string):Promise<VersionPage> 
   }
 }
 function uncertain(): never { throw new PromotionApiError('结果未知，原操作记录和输入已保留，请先核查原结果。'); }
+function requireMatchingReceipt(result: CommandReceipt, intent: PromotionCommandIntent, key: string) {
+  if (result.operation !== intent.operation || result.targetId !== intent.targetId || result.idempotencyKey !== key) uncertain();
+  if (result.status === 'SUCCEEDED' && intent.operation === 'submitPromotion') {
+    const { version, expectedRevision } = intent.body as PublishAction;
+    if (result.resource?.type !== 'VERSION' || result.resource.id !== `${intent.targetId}:${version}`
+      || result.resource.revision !== expectedRevision + 1) uncertain();
+  }
+}
 export async function promotionCommand(intent: PromotionCommandIntent, retry = false): Promise<CommandReceipt> {
   const slot = fingerprint(intent);
   const actor = useAdminAuth.getState().session;
@@ -131,7 +141,7 @@ export async function promotionCommand(intent: PromotionCommandIntent, retry = f
   }
   try {
     const result = await promotionRead<CommandReceipt>(intent.path,undefined,{method:intent.method,headers:{'Idempotency-Key':key},body:JSON.stringify(intent.body)});
-    if (result.operation !== intent.operation || result.targetId !== intent.targetId || result.idempotencyKey !== key) uncertain();
+    requireMatchingReceipt(result, intent, key);
     if (result.status === 'SUCCEEDED') { remember(slot,key,{...intent,owner:actor.adminId,recoveryState:'SUCCEEDED',receipt:result}); completeH4Uploads(intent, result); return result; }
     if (result.status === 'FAILED') { forget(slot); throw new PromotionApiError('原操作已明确失败，请核对当前状态后重试。',409,409,[],'PROMOTION_COMMAND_FAILED'); }
     uncertain();
@@ -145,7 +155,7 @@ export async function promotionCommand(intent: PromotionCommandIntent, retry = f
 export async function recoverPromotionCommand(record: PendingPromotion): Promise<CommandReceipt> {
   if (!pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) throw new PromotionApiError('原操作已处理，请关闭后重新读取。');
   const result = await promotionRead<CommandReceipt>(`/promotion-commands/${encodeURIComponent(record.commandKey)}`,{operation:record.operation,targetId:record.targetId});
-  if (result.operation !== record.operation || result.targetId !== record.targetId || result.idempotencyKey !== record.commandKey) uncertain();
+  requireMatchingReceipt(result, record, record.commandKey);
   if (result.status === 'SUCCEEDED') completeH4Uploads(record, result);
   if (result.status === 'FAILED') forget(record.fingerprint);
   else remember(record.fingerprint,record.commandKey,{...record,recoveryState:result.status,...(result.status==='SUCCEEDED'?{receipt:result}:{})});
