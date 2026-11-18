@@ -434,7 +434,11 @@ export type DisclosureJurisdictionView = {
   pendingAck?: number;
   acked?: number;
 };
-export type DisclosureChapterView = { jurisdiction: string; version: string; no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string };
+export type DisclosureChapterView = {
+  jurisdiction: string; version: string; no: string;
+  zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string;
+  titleTranslations?: Record<string, string>; bodyTranslations?: Record<string, string>;
+};
 export type DisclosureVersionItemView = DisclosureDraftView & {
   chapters: DisclosureChapterView[];
   operator?: string;
@@ -474,6 +478,7 @@ export type DisclosureDraftView = {
   zh: string;
   vi: string;
   en: string;
+  translations?: Record<string, string>;
   status: string;
   revision?: number;
   contentHash?: string;

@@ -280,6 +280,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         kind: "copy-edit",
         requiredLanguages: await getRequiredContentLanguages(),
         keyName: c.key,
+        i18nKey: c.i18nKey,
         version: editingExistingDraft ? editableVersion?.v || "" : "",
         versionOptions: selectableVersions,
         surface: editableVersion?.surface || c.surface,

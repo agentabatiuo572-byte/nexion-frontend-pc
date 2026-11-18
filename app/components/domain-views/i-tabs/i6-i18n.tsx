@@ -19,6 +19,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
+import { isConversationSourceKey, requiredMessageLanguages } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OPERATING_LANGUAGE_CODES, getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
@@ -53,14 +54,6 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
 
 function messageVariables(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
   return languages.map((language) => [...new Set(message[language].match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"));
-}
-
-function isConversationSourceKey(messageKey: string): boolean {
-  return messageKey.startsWith("conversation.script.") || messageKey.startsWith("conversation.template.");
-}
-
-function requiredMessageLanguages(messageKey: string, required: readonly OperatingLanguageCode[]): readonly OperatingLanguageCode[] {
-  return isConversationSourceKey(messageKey) && !required.includes("zh") ? [...required, "zh"] : required;
 }
 
 function messageQualityIssues(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {

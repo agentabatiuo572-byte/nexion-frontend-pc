@@ -2,6 +2,14 @@ import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-clie
 
 type ContentLanguageValue = string | readonly string[];
 
+export function isConversationSourceKey(messageKey: string): boolean {
+  return messageKey.startsWith("conversation.script.") || messageKey.startsWith("conversation.template.");
+}
+
+export function requiredMessageLanguages(messageKey: string, required: readonly OperatingLanguageCode[]): readonly OperatingLanguageCode[] {
+  return isConversationSourceKey(messageKey) && !required.includes("zh") ? [...required, "zh"] : required;
+}
+
 export function fillBlankContentLanguage<Fields extends Record<string, ContentLanguageValue>>(
   requiredLanguages: readonly OperatingLanguageCode[],
   language: OperatingLanguageCode,

@@ -151,15 +151,21 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     return acc;
   }, {});
   const nextVersionFor = (jurisdiction: string) => data?.nextVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersion ?? "";
-  const chapterPayload = (form: Record<string, string> | undefined) => Array.from({ length: 7 }, (_, index) => ({
-    no: form?.[`chapter.${index}.no`] ?? String(index + 1).padStart(2, "0"),
-    zhTitle: form?.[`chapter.${index}.zhTitle`] ?? "",
-    viTitle: form?.[`chapter.${index}.viTitle`] ?? "",
-    enTitle: form?.[`chapter.${index}.enTitle`] ?? "",
-    zhBody: form?.[`chapter.${index}.zhBody`] ?? "",
-    viBody: form?.[`chapter.${index}.viBody`] ?? "",
-    enBody: form?.[`chapter.${index}.enBody`] ?? "",
-  }));
+  const chapterPayload = (form: Record<string, string> | undefined, source?: DisclosureVersionItemView) => Array.from({ length: 7 }, (_, index) => {
+    const no = form?.[`chapter.${index}.no`] ?? String(index + 1).padStart(2, "0");
+    const sourceChapter = source?.chapters.find((chapter) => chapter.no === no);
+    return {
+      no,
+      zhTitle: form?.[`chapter.${index}.zhTitle`] ?? "",
+      viTitle: form?.[`chapter.${index}.viTitle`] ?? "",
+      enTitle: form?.[`chapter.${index}.enTitle`] ?? "",
+      zhBody: form?.[`chapter.${index}.zhBody`] ?? "",
+      viBody: form?.[`chapter.${index}.viBody`] ?? "",
+      enBody: form?.[`chapter.${index}.enBody`] ?? "",
+      titleTranslations: sourceChapter?.titleTranslations,
+      bodyTranslations: sourceChapter?.bodyTranslations,
+    };
+  });
   const runBackend = async (task: Promise<void>, ok: string): Promise<boolean> => {
     try {
       await task;
@@ -499,6 +505,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     }
     const base = editing ?? I5_VERSION_ROWS.find((row) => row.jurisdiction === initialJurisdiction && row.status.toLowerCase() === "published");
     const requiredLanguages = await getRequiredContentLanguages();
+    const sources = new Map([[initialJurisdiction, editing ? undefined : base]]);
     openActionConfirm({ briefKind: "config",
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
@@ -514,15 +521,17 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const jurisdiction = form.jurisdiction;
         const nextVersion = nextVersionFor(jurisdiction);
         const currentVersion = JURISDICTIONS.find((row) => row.code === jurisdiction)?.v ?? "";
-        let snapshot = I5_VERSION_ROWS.find((row) => row.jurisdiction === jurisdiction && row.version === currentVersion);
-        if (!snapshot && currentVersion) {
+        let source = I5_VERSION_ROWS.find((row) => row.jurisdiction === jurisdiction && row.version === currentVersion);
+        if (!source && currentVersion) {
           try {
-            snapshot = await actions.fetchI5DisclosureVersion(jurisdiction, currentVersion);
+            source = await actions.fetchI5DisclosureVersion(jurisdiction, currentVersion);
           } catch {
             toast("适用地区加载失败，请刷新后重试");
+            return;
           }
         }
-        return disclosureFormSpec(snapshot, jurisdiction, nextVersion, "create", requiredLanguages);
+        sources.set(jurisdiction, source);
+        return disclosureFormSpec(source, jurisdiction, nextVersion, "create", requiredLanguages);
       },
       run: (reason, _v, form) => {
         const targetVersion = form?.version?.trim() || "";
@@ -534,6 +543,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           toast("缺少版本号、适用地区或正文，无法保存草稿");
           return false;
         }
+        const source = sources.get(jurisdiction);
         const payload = {
           jurisdiction,
           languageScope: form?.languageScope || DISCLOSURE_LANGUAGE_SCOPE,
@@ -542,7 +552,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           zh,
           vi,
           en,
-          chapters: chapterPayload(form),
+          translations: source?.translations,
+          chapters: chapterPayload(form, source),
           ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
         };
         const task = editing
