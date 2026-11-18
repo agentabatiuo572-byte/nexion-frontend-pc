@@ -1173,9 +1173,9 @@ function G2ExchangePage() {
         value={<span className="g2x-param">
           <span className="g2x-value">
             <span className={key === "queueEtaCopy" ? "g2x-eta-copy" : "g2x-value-num"} title={key === "queueEtaCopy" && raw ? valueText : undefined}>{valueText}</span>
-            {direct && (g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
           </span>
-          {!direct && etaFirstMissing === key
+          {direct ? <span className="g2x-dir">{g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct")}</span>
+            : etaFirstMissing === key
             ? <span className="g2x-dir"><StatusTag tone="warn" explain="两项都设好后才显示。">排队单上不显示</StatusTag></span>
             : <span className="g2x-dir">立即生效</span>}
         </span>}
