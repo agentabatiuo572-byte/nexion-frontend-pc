@@ -145,7 +145,7 @@ const RULE_TEXT: Record<string, (rule: AutoRuleRow) => string> = {
   withdrawSurge: (rule) => `24 小时提现申请额达到真实储备的 ${ruleValue(rule)}（挤兑红线）时，关停提现。`,
   maturityGap: (rule) => `钱包余额和账本余额相差超过 ${ruleValue(rule)} 时，关停兑换。`,
   tamperCluster: (rule) => rule.tamperAdvisory && rule.tamperAdvisory.actualThreshold === null
-    ? "阈值没读出来，「篡改防御监控」现在标不出达到阈值的账户；到那页核对设置。"
+    ? "阈值没读出来，「篡改防御监控」暂时统计不出达到阈值的账户，请联系值班人员核对设置。"
     : `单个账户 24 小时内被拦下的篡改请求达到 ${rule.tamperAdvisory ? rule.tamperAdvisory.actualThreshold : rule.thr} 次，会列进「篡改防御监控」达到告警阈值的账户。`,
   regulatoryDirective: () => "监管点名或法务事件时，在这页勾选业务一次关停：选触发依据、写监管事由，关创世节点还要写处置方案。",
 };
