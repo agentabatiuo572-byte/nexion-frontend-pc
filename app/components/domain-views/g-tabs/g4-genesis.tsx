@@ -52,6 +52,9 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { expiredTag, unknownTag } from "./g-recovery";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
 
+/** 系列当前价的名字：名称列窄时在括号前折行，不把「计价）」单独留在一行。 */
+const PRICE_NAME = <>系列当前价<span>（分红计价）</span></>;
+
 const OPERATOR = currentAdminOperator;
 
 function messageOf(error: unknown) {
@@ -738,7 +741,7 @@ function G4GenesisPage() {
       coverageLead: param.key === "supply" ? "调高节点总量要另一位超级管理员批准"
         : param.key === "price" ? "调高系列当前价会让现有持仓每天多发分红，要另一位超级管理员批准"
           : param.key === "dividend" ? "调高每日收益比例会让平台每天多付 USDT，要另一位超级管理员批准"
-            : param.key === "royalty" ? "调低转让手续费要另一位超级管理员批准"
+            : param.key === "royalty" ? "调低内部转售手续费要另一位超级管理员批准"
               : `改${name}要另一位超级管理员批准`,
       coverageCheck: param.key === "price" || param.key === "dividend"
         ? "提交和批准时各查一次。原值或系列被改过会被拒；把多出的每日分红算进应付款后，兑付覆盖率低于红线或算不准，也会被拒。"
@@ -746,6 +749,8 @@ function G4GenesisPage() {
       edit: {
         ...(numeric ? { kind: "number", ...bounds } : { kind: "text" }),
         current: currentRaw,
+        // 收益计算基数的英文公式在「现在」里按页面读法显示；比较和提交仍用原文。
+        displayCurrent: param.key === "divBase" && currentRaw && currentText !== currentRaw ? currentText : undefined,
         initialValue: original?.request.command.params.value as string | undefined,
         submitEditValue: needsDecision,
         unit: copy?.unit,
@@ -907,13 +912,13 @@ function G4GenesisPage() {
     openActionConfirm({ briefKind: "config", directObject: "series/initialize",
       action: "发布创世节点系列",
       title: "发布创世节点系列",
-      detail: <>总量和起始价格按价格档位自动计算。转让手续费和每日收益比例先设为 0，收益计算基数为空，之后再单独修改。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
+      detail: <>总量和起始价格按价格档位自动计算。内部转售手续费和每日收益比例先设为 0，收益计算基数为空，之后再单独修改。发布后市场仍是「暂未开放」，核对无误后再手动开放。</>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认发布",
       facts: <Facts>
         <Fact k="节点总量">{lastTo === undefined ? "按最后一档的截止" : `${fmtNumber(lastTo, 0)} 张（最后一档的截止）`}</Fact>
         <Fact k="起始价格">{firstPrice === undefined ? "按第一档的价格" : `${fmtNumber(firstPrice, 0)} USDT/张（第一档的价格）`}</Fact>
-        <Fact k="其他参数">转让手续费 0%、每日收益比例 0%（未配置，不发分红）、收益计算基数为空</Fact>
+        <Fact k="其他参数">内部转售手续费 0%、每日收益比例 0%（未配置，不发分红）、收益计算基数为空</Fact>
         <Fact k="市场">发布后仍是暂未开放，要单独恢复开放；不会自动开售</Fact>
         <Fact k="付不付钱">不付钱</Fact>
       </Facts>,
@@ -1172,13 +1177,16 @@ function G4GenesisPage() {
 
   const paramRow = (param: G4Param | undefined, options?: { dir?: string }) => {
     if (!param) return null;
+    const valueText = g4ParamValueText(param.key, param.value);
+    // 收益计算基数读成公式时在「×」后分两行，窄列里不把「节点」单独留在末行。
+    const cut = param.key === "divBase" ? valueText.indexOf(" × ") : -1;
     const copy = PARAM_COPY[param.key];
     const name = G4_PARAM_NAME[param.key] ?? operatorCopyText(param.name);
     const record = paramApproval.record(param.key);
     const recovery = record ? records.find((row) => row.commandKey === record.commandKey) : undefined;
     const dir = options?.dir ?? (copy ? copy.tighten ? `${copy.loosen}要批准` : "改动要批准" : undefined);
     return (
-      <ConfigRow key={param.key} name={name}
+      <ConfigRow key={param.key} name={param.key === "price" ? PRICE_NAME : name} explainLabel={name}
         what={copy?.what ?? operatorCopyText(param.sub)}
         when={copy ? copy.tighten ? `${copy.loosen}是放宽，提交审批，另一位超级管理员批准后生效；${copy.tighten}是收紧，确认后立即生效` : "值有任何变化都要提交审批，另一位超级管理员批准后写入" : undefined}
         effect={copy?.effect}
@@ -1188,7 +1196,7 @@ function G4GenesisPage() {
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g4x-param">
           <span className="g4x-value">
-            <span className="g4x-value-num">{g4ParamValueText(param.key, param.value)}</span>
+            <span className="g4x-value-num">{cut < 0 ? valueText : <span className="g4x-param">{valueText.slice(0, cut + 2)}<span>{valueText.slice(cut + 3)}</span></span>}</span>
             {recovery && g4RecoveryTag(recovery, false, param.key)}
             {!recovery && directRecord(`params/${encodeURIComponent(param.key)}`) && (g4DirectCommandExpired(directRecord(`params/${encodeURIComponent(param.key)}`)!) ? expiredTag("direct") : unknownTag("direct"))}
             {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={Lock} explain={lockedParams[param.key]}>审批锁定中</StatusTag>}
@@ -1310,7 +1318,7 @@ function G4GenesisPage() {
                   value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{tierPriceText}</span></span><span className="g4x-dir">按价格档位</span></span>} />
               )}
               {priceParam && overview.tierPrice.status !== "legacy" && (
-                <ConfigRow key="series-price" name="系列当前价"
+                <ConfigRow key="series-price" name={PRICE_NAME} explainLabel="系列当前价（分红计价）"
                   what="现有持仓每天的分红按这个价算"
                   when="有价格档位时这里不能改"
                   value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{priceParam.value ? g4ParamValueText("price", priceParam.value) : "—"}</span></span><span className="g4x-dir">分红按它算</span></span>} />
@@ -1512,7 +1520,7 @@ function NodeDrawer({ node, nodes, onSelect, onClose }: { node: G4Node; nodes: G
         <Fact k="用户编号">{node.userNo || "—"}</Fact>
       </Facts>
       <Table label="转让记录（按来源拼出）">
-        <thead><tr><Th>时间</Th><Th>事件</Th><Th>转让手续费</Th></tr></thead>
+        <thead><tr><Th>时间</Th><Th>事件</Th><Th>手续费</Th></tr></thead>
         <tbody>{node.transfers.map((transfer, i) => (
           <tr key={`${transfer.time}-${i}`}>
             <Td><Cell num main={transfer.time === "-" ? "—" : transfer.time} /></Td>

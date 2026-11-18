@@ -9,14 +9,15 @@ import { useState, type ReactNode } from "react";
 import { Button, Change } from "@/app/components/rd";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { divBaseFormulaText } from "@/lib/admin/operator-copy";
 import type { GParamRecovery, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 
 /** 九个参数在这页的固定叫法（和参数行、确认框标题一致）。 */
 export const G4_PARAM_NAME: Record<string, string> = {
   supply: "节点总量",
-  price: "系列当前价",
+  price: "系列当前价（分红计价）",
   dividend: "每日收益比例",
-  royalty: "转让手续费",
+  royalty: "内部转售手续费",
   airdropPct: "空投占比",
   emissionCurve: "收益发放曲线",
   airdropLockDays: "早期持有人奖励锁仓期",
@@ -49,6 +50,7 @@ export function g4ParamValueText(key: string, raw: string | undefined) {
   if (key === "dividend") return `${g4Plain(value)}% / 日`;
   if (key === "royalty" || key === "airdropPct") return `${g4Plain(value)}%`;
   if (key === "airdropLockDays") return `${value} 天`;
+  if (key === "divBase") return divBaseFormulaText(value);
   return value.replace("TGE 10% · halve every 6 months", "初始发放 10%，每 6 个月减半");
 }
 

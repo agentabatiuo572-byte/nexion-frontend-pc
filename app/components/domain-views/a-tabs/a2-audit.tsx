@@ -5,7 +5,7 @@ import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
-import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
@@ -584,6 +584,14 @@ function logActionShown(code: string) {
   return text === code && /^[A-Za-z][\w.:-]*$/.test(code) && /[_.:]|[a-z][A-Z]/.test(code) ? { text: "未识别的操作", raw: code } : { text };
 }
 
+/** 操作记录对象是配置键时，写对应页面上这一项的名字（G2 兑换参数各行；A3 界面语言表的两列）。A3 整组保存记在分享链接键上，只写类型「App 分享与下载」。 */
+const AUDIT_CONFIG_KEY_NAMES: Record<string, string> = {
+  "wallet.exchange.user_daily_cap_usdt": "单用户日额度", "wallet.exchange.platform_daily_cap_usdt": "平台日额度",
+  "wallet.exchange.fee_pct": "兑换手续费率", "wallet.exchange.fee_min_usdt": "最低手续费", "wallet.exchange.queue_mode": "超额度处置策略",
+  "wallet.exchange.queue_eta_hours": "预计处理时长", "wallet.exchange.queue_eta_copy": "预计说法",
+  "platform.experience.interface_languages": "界面语言 · App 里可选", "platform.experience.operating_languages": "界面语言 · 发布时必填",
+};
+
 /** 配置键、接口路径、页面编号、全大写或驼峰的代码：只给技术同事看，不当对象编号显示。 */
 const INTERNAL_OBJECT_ID = /^\/|^[A-Za-z][\w-]*(?:\.[\w-]+)+$|^[A-Z]+(?:_[A-Z0-9]+)*$|^[a-z0-9]+(?:_[a-z0-9]+)+$|^[a-z]+[A-Z]\w*$|^[A-M]\d{1,2}$/;
 
@@ -600,7 +608,7 @@ function logObject(l: A2AuditLogRow): { kind?: string; id?: string; raw?: string
   }
   const kind = AUDIT_RESOURCE_NAMES[type] ?? (h3ConfigName(rid) ? "用户任务设置" : undefined);
   const id = rid.replace(/^[A-Z][A-Z0-9_]*:(?=\S)/, "");
-  const named = h3ConfigName(id);
+  const named = h3ConfigName(id) ?? AUDIT_CONFIG_KEY_NAMES[id];
   const shownId = named ?? (!id || id === type || INTERNAL_OBJECT_ID.test(id) ? undefined : id);
   const hidden = !AUDIT_RESOURCE_NAMES[type] || shownId !== id;
   return { kind: shownId || kind ? kind : "未识别的对象", id: shownId, raw: hidden ? l.obj : undefined };
@@ -832,13 +840,13 @@ const reviewOperation = (w: { operationCode?: string; action: string }) =>
 const G_PARAM_NAMES: Record<string, string> = {
   userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
   apy: "参考年奖励率", lockDays: "锁仓期限", nurture: "好友升级奖励倍率", lottery: "创世节点抽奖券", penalty: "提前解锁扣款", presets: "锁定金额快捷选项",
-  supply: "节点总量", price: "系列当前价", dividend: "每日收益比例", royalty: "转让手续费", divBase: "收益计算基数",
+  supply: "节点总量", price: "系列当前价（分红计价）", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "收益计算基数",
   airdropPct: "空投占比", emissionCurve: "收益发放曲线", airdropLockDays: "早期持有人奖励锁仓期",
 };
 // 空值（比如 divBase 合法为空）读进来时末尾的空格已被去掉，等号后面直接结束，写成「= 空」；新单的参数名已是中文，同样补「空」。
 // 新增应付后端写「确定新增应付 Δ 12 USDT」，写成「新增应付 12 USDT」。
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) =( |$)/g, (whole, lead: string, key: string, tail: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} =${tail || " 空"}` : whole)
-  .replace(/ =$/, " = 空").replace(/确定新增应付 Δ /g, "新增应付 ");
+  .replace(/ =$/, " = 空").replace(/确定新增应付 Δ /g, "新增应付 ").replace(DIV_BASE_FORMULA, DIV_BASE_TEXT);
 /** H3 审批单对象的配置键写 H3 页上这一项的叫法（H3 页的设置名和改值框标题）。 */
 function h3ConfigName(key: string): string | undefined {
   if (key === "dayOne.triReward") return "新手任务奖励";
@@ -1840,7 +1848,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return <>{h3ConfigName(w.obj)}<Explain label="技术信息" content={`配置键 ${w.obj}`} /></>;
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
-    if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}`} /></>;
+    if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}${w.obj === "divBase" ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */
