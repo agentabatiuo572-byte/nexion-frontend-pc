@@ -100,9 +100,11 @@ function strictInterfaceLanguages(value: unknown): InterfaceLanguageCode[] {
 }
 
 function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): OperatingLanguageCode[] {
-  if (!Array.isArray(value) || new Set(value).size !== value.length || !value.includes("en")
-    || value.some((code) => !OPERATING_LANGUAGE_CODES.includes(code))) throw new Error(errorCode);
-  return OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code));
+  // B26: en is required and the list comes in contract order (en, zh, vi); another order is malformed, not equivalent.
+  const ordered = Array.isArray(value) ? OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code)) : [];
+  if (!Array.isArray(value) || !ordered.includes("en") || ordered.length !== value.length
+    || ordered.some((code, index) => value[index] !== code)) throw new Error(errorCode);
+  return ordered;
 }
 
 class PlatformExperienceRequestError extends Error {
