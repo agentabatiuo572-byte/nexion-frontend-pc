@@ -473,7 +473,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
-      detail: hidden ? <>App 不显示这一格{appName !== undefined ? <>，奖励一行显示「{appName || "—"}」</> : null}。填不填都不影响开放。</>
+      detail: hidden ? <>这一格只在这页登记，填不填都不影响开放活动、开启玩法。</>
         : requiresAll ? (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale) ? <>{REQUIRED_TEXT}的{contentFieldsText(authored)}填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
         : fromRule ? <>已开放的活动照常进行；这一格空着时 App 显示玩法规则摘要。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
