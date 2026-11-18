@@ -54,7 +54,7 @@ export function eventRuleMissingLabel(key: string): string {
   if (key.startsWith("localized.")) {
     const locale = key.split(".")[1];
     const label = locale === "en" ? "英文" : locale === "zh" ? "中文" : locale === "vi" ? "越南语" : "三语";
-    return `活动${label}文案（在活动内容区维护）`;
+    return `活动${label}文案（到「既有活动」页签补）`;
   }
   const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
   if (voucherIssue) return voucherIssue;
