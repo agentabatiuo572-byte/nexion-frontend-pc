@@ -6,7 +6,7 @@
  * 取值小工具照旧页面 h3-quest-events.tsx 原样搬过来（旧文件不动）。
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { CalendarRange, CircleAlert, Clock3, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
+import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
 import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
@@ -269,7 +269,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
           return <li key={field}>
             <span className="h4l-locale-key">{FIELD_NAME[field]}</span>
             <span className="h4l-locale-value" data-empty={!blank ? undefined : weight === "must" ? "" : "soft"}>{!blank ? old.text : blankText}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}
-              {hidden && <StatusTag tone="neutral" explain={`App 的奖励一行显示系统按实际发放写的文字${appReward ? `（${LOCALE_NAME[locale]}：${appReward.text || "—"}）` : ""}，这一格填了也不显示，开放和开启玩法都不要求填。`}>App 不显示</StatusTag>}</span>
+              {hidden && <StatusTag tone="neutral" icon={EyeOff} explain={`App 的奖励一行显示系统按实际发放写的文字${appReward ? `（${LOCALE_NAME[locale]}：${appReward.text || "—"}）` : ""}，这一格填了也不显示，开放和开启玩法都不要求填。`}>App 不显示</StatusTag>}</span>
             {canEdit && (lockedReason
               ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
               : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}
