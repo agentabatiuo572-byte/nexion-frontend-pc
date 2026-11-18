@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
-  type H4EventRewardPresentation,
+  type H4EventOverviewPresentation,
   fetchH3WeeklyRegionPolicy,
   h3WeeklyRegionPolicyParams,
   validateH3WeeklyRegionMappings,
@@ -60,7 +60,7 @@ type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
 
 type QuestTask = Record<string, any>;
-type QuestEvent = H4EventRewardPresentation & {
+type QuestEvent = H4EventOverviewPresentation & {
   id: string;
   name: string;
   kind?: string;
@@ -590,10 +590,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       return !value || value === english[key].trim();
     });
     const key = `localized.${locale}.${field}`;
-    const missing = rule?.readiness.missing.includes(key) ?? false;
-    const incomplete = rule?.readiness.incomplete?.includes(key) ?? false;
+    const readiness = event.copyReadiness;
+    const missing = readiness?.missing.includes(key) ?? false;
+    const incomplete = readiness?.incomplete.includes(key) ?? false;
     const rewardNames = rule?.appRewardNames ?? event.appRewardNames;
-    const fallsBack = !!rule && followsEnglish && !missing && !incomplete
+    const fallsBack = !!readiness && followsEnglish && !missing && !incomplete
       && (field === "rewardName" ? !!rewardNames.en && rewardNames[locale] === rewardNames.en : !!english[field].trim());
     return { optional, current: followsEnglish ? "" : localized[field], stored: localized[field], fallsBack, missing, incomplete };
   };
@@ -659,7 +660,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     operator: string, submitted: string, reason: string,
   ) => {
     if (currentAdminOperator() !== operator) throw new Error("登录身份已变化，请重新打开活动配置。");
-    const next = await updateH4LocalizedContent(code, field, locale, submitted, original.trim() ? original : "__MISSING__", reason) as H3Model;
+    const next = await updateH4LocalizedContent(code, field, locale, submitted, original || "__MISSING__", reason) as H3Model;
     apply(next);
     setEventContentRevision(revision => revision + 1);
     if (rawLocalizedValue("event", code, field, locale, next).trim() !== submitted) throw new Error("提交值与读回不一致，请核对已保存的文案。");
@@ -1318,6 +1319,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const promoBanner = model.promoBanner ?? {};
   const wheelProbabilitySum = (model.wheelTiers ?? []).reduce((sum, tier) => sum + numericValue(tier.prob), 0);
   const wheelProbabilityOk = Math.abs(wheelProbabilitySum - 100) < 0.001;
+  const events = model.events ?? [];
   const localizedRows = section === "tasks"
     ? [
         ...[...model.dayOneTasks, ...model.weeklyTier1, ...model.weeklyTier2].map((task) => ({
@@ -1325,17 +1327,17 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           readOnly: task.status === "archived",
         })),
       ]
-    : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false, event }));
+    : events.map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false, event }));
 
-  const currentEventCodes = new Set((model.events ?? []).map(event => event.id));
+  const currentEventCodes = new Set(events.map(event => event.id));
   const eventRules = (eventRuleSnapshot?.rows ?? []).filter(rule => currentEventCodes.has(rule.eventCode));
   const confirmedRules = eventRuleSnapshot?.contentRevision === eventContentRevision && ctx.can("growth_h4_read") ? eventRules : [];
   const rulesByEvent = new Map(confirmedRules.map(rule => [rule.eventCode, rule]));
-  const unconfirmedEventCodes = [...currentEventCodes].filter(code => !rulesByEvent.has(code));
-  const localizedMissing = confirmedRules.flatMap(rule => rule.readiness.missing.filter(key => key.startsWith("localized."))
-    .map(key => `${rule.eventCode} ${eventRuleMissingLabel(key)}`));
-  const localizedIncomplete = confirmedRules.flatMap(rule => (rule.readiness.incomplete ?? []).filter(key => key.startsWith("localized."))
-    .map(key => `${rule.eventCode} ${eventRuleMissingLabel(key)}`));
+  const unconfirmedEventCodes = events.filter(event => !event.copyReadiness).map(event => event.id);
+  const localizedMissing = events.flatMap(event => event.copyReadiness?.missing
+    .map(key => `${event.id} ${eventRuleMissingLabel(key)}`) ?? []);
+  const localizedIncomplete = events.flatMap(event => event.copyReadiness?.incomplete
+    .map(key => `${event.id} ${eventRuleMissingLabel(key)}`) ?? []);
   const summarize = (items: string[]) => items.slice(0, 6).join(" · ") + (items.length > 6 ? ` 等 ${items.length} 项` : "");
   const localizedNotice = [
     localizedMissing.length && `必填文案缺失（设为「进行中」前须补齐）：${summarize(localizedMissing)}`,
@@ -1441,7 +1443,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
                           aria-label={`${missing ? "填写（上线前必须补齐）" : current ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
                           onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event, rule)}>
-                          {missing ? "缺失" : incomplete ? "未填齐" : current || (event && !rule ? "未确认" : cell?.fallsBack ? "未填，App 显示英文" : "填写")}{required ? " *" : ""}
+                          {missing ? "缺失" : incomplete ? "未填齐" : current || (event && !event.copyReadiness ? "未确认" : cell?.fallsBack ? "未填，App 显示英文" : "填写")}{required ? " *" : ""}
                         </button>
                         {(missing || incomplete) && <span className="bdg warn" style={{ marginLeft: 6 }} title={missing ? "活动设为「进行中」前必须补齐这个语言" : "选填译文未填齐"}>{missing ? "缺" : "未齐"}</span>}
                       </td>

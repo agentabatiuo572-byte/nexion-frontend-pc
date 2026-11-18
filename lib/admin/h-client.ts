@@ -275,6 +275,10 @@ export interface H4EventRewardPresentation {
   appRewardNames: Record<"en" | "zh" | "vi", string>;
 }
 
+export interface H4EventOverviewPresentation extends H4EventRewardPresentation {
+  copyReadiness?: { missing: string[]; incomplete: string[] };
+}
+
 export function hasH4EventRewardPresentation(value: unknown): value is H4EventRewardPresentation {
   const row = value as Partial<H4EventRewardPresentation> | null;
   const names = row?.appRewardNames;
@@ -288,7 +292,14 @@ async function h4EventOverviewRequest(path: string, init?: RequestInit, idempote
   if (!Array.isArray(events) || !events.every(hasH4EventRewardPresentation)) {
     throw new Error("活动奖励展示读取失败，请刷新后重试。");
   }
-  return { ...result, events };
+  const rows: H4EventOverviewPresentation[] = events;
+  if (rows.some(({ copyReadiness }) => copyReadiness !== undefined && (
+    !copyReadiness || !Array.isArray(copyReadiness.missing) || copyReadiness.missing.some(key => typeof key !== "string")
+    || !Array.isArray(copyReadiness.incomplete) || copyReadiness.incomplete.some(key => typeof key !== "string")
+  ))) {
+    throw new Error("活动文案就绪读取失败，请刷新后重试。");
+  }
+  return { ...result, events: rows };
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
