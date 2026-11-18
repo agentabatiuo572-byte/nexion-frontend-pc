@@ -132,6 +132,7 @@ export function normalizeA8Permission(raw: unknown) {
   return {
     permissionCode: string(row.permissionCode, message),
     permissionName: optionalString(row.permissionName, message),
+    description: optionalString(row.description, message) || undefined,
     permType,
     menuId: row.menuId == null ? null : integer(row.menuId, message, 1),
     menuCodePath: string(row.menuCodePath, message),

@@ -228,8 +228,9 @@ export function assertG2OverviewContract<T>(value: T): T {
   if (root.queueEstimate != null) {
     const path = "data.queueEstimate";
     const estimate = record(module, root.queueEstimate, path);
-    if (estimate.hours != null) text(module, estimate.hours, `${path}.hours`, true);
-    if (estimate.copy != null) text(module, estimate.copy, `${path}.copy`, true);
+    for (const key of ["hours", "copy", "copyZh", "copyVi"]) {
+      if (estimate[key] != null) text(module, estimate[key], `${path}.${key}`, true);
+    }
   }
   const gates = record(module, root.gateDetails, "data.gateDetails");
   G2_GATE_KEYS.forEach((key) => {

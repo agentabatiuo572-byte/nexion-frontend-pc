@@ -1042,6 +1042,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_GROUP_TARGET_UNAVAILABLE: "目标专属客服所在组现在不能接收客户，请换一位。",
   SUPPORT_GROUP_FORBIDDEN: "不能把客户转给待分组的专属客服，请换一位。",
   SUPPORT_ASSIGNMENT_CHANGED: "客户专属客服归属已变化，本次未处理。请重新加载当前客户再核对。",
+  SUPPORT_RECEPTION_ASSIGNMENT_STALE: "接待状态与当前分配不一致，本次未处理。请重新加载当前客户再核对。",
   SUPPORT_EDIT_FORBIDDEN: "当前账号不能修改这位客户的标注，本次未保存。请由当前专属客服办理。",
   SUPPORT_WRITE_FORBIDDEN: "当前账号的会话写权限已失效，本次未执行。请到客服工作台核对权限和接待资格。",
   NOTE_ID_REQUIRED: "缺少要删除的备注编号，本次未删除。请重新打开原备注。",

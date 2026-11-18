@@ -1542,7 +1542,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const promoFold = (
     <Fold title="首页备用卡" icon={Megaphone} tone="role-other"
       summary={<span className="h3-retired-sum"><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>{promoStatus ? "以前存的值，仅供查看" : "没读到以前存的值"}</span>}
-      explain="这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。">
+      explain={promo.promoBannerConfigNote ?? "这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。"}>
       <ConfigList label="首页备用卡以前存的值">
         <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"} />
         <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} />
