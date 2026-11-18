@@ -59,7 +59,7 @@ const EXECUTION_ROWS: Array<[keyof RefundPolicyExecution, string, Record<string,
     ['deviceRecovery', '赠送的设备', { REVOKE_GIFT_DEVICE_CANCEL_OPEN_TASKS_KEEP_POSTED_EARNINGS: '收回设备，取消没做完的任务；已到账的收益不追' }],
     ['insufficientRecovery', '追不回的部分', { PLATFORM_LOSS_AND_CLOSE: '记为平台损失，这笔直接结案' }],
     ['terminalState', '结案后的状态', { REVERSED: '已冲正' }],
-    ['manualReviewAppliesTo', '人工审阅', { APPROVED_CORRECTION: '只用于批准的纠正' }],
+    ['manualReviewAppliesTo', '转人工审阅', { APPROVED_CORRECTION: '只在批准的纠正追不回时' }],
     ['unknownEvidence', '发放情况核不清', { ORIGINAL_REFUND_CHECKS: '按原来的退款核对处理' }],
 ];
 function RefundExecution({ execution }: { execution: RefundPolicyExecution }) {
