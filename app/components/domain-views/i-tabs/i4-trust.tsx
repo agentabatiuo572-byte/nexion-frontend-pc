@@ -28,7 +28,7 @@ import { pendingI4DraftCommands, queryI4DraftReceipt, retryI4DraftCommand, i4Dra
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
-import { i4AppFieldIssue, i4DraftOmittedTranslations, i4HasEnglishFields, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
+import { i4AppFieldIssue, i4DraftMatchesPublishedFields, i4DraftOmittedTranslations, i4HasEnglishFields, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
@@ -316,8 +316,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const canPublishTrustSection = (section: TrustSection) => isSensitiveTrustSection(section) ? canPublishSensitive : canPublishStandard;
   const currentSectionFields = (section: TrustSection) => TRUST_SECTION_VERSIONS
     .find((version) => version.sectionKey === section.key && version.version === section.v)?.fields ?? [];
-  const sameFieldSchema = (left: { key: string }[], right: { key: string }[]) =>
-    left.map((field) => field.key).sort().join("\u0000") === right.map((field) => field.key).sort().join("\u0000");
 
   const openSecDetail = (s: TrustSection) => { setSecKey(s.key); setDetailLang("zh"); };
 
@@ -374,7 +372,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const blocked = newSectionReason(draft.sectionKey);
     if (blocked) { toast(blocked); return; }
     const publishedFields = section ? currentSectionFields(section) : [];
-    if (publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
+    if (!i4DraftMatchesPublishedFields(draft.sectionKey, publishedFields, draft.fields)) {
       toast("草稿的内容模板已过期，删掉后基于现在公开的版本新建");
       return;
     }
@@ -811,7 +809,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const nowDraft = editorAtReject.mode === "edit" ? latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === editorAtReject.version) : undefined;
       if (!gone && latestData && editorAtReject.mode === "edit" && nowDraft?.status.toLowerCase() !== "draft") gone = `${editorAtReject.version} 已经不是草稿了（被删除或已发布）。`;
       const base = editorAtReject.mode === "edit" ? nowDraft?.fields ?? [] : nowCurrent?.fields ?? [];
-      const templateChanged = !!nowCurrent && !sameFieldSchema(nowCurrent.fields, editorAtReject.fields);
+      const templateChanged = !!nowCurrent && !i4DraftMatchesPublishedFields(key, nowCurrent.fields, editorAtReject.fields);
       rows = [...inGroup("版块", [{ label: "版块现在", left: state(nowSection), right: `基于 ${editorAtReject.expectedSectionVersion}`, changed: nowSection?.version !== editorAtReject.expectedSectionVersion || nowSection?.status !== editorAtReject.expectedSectionStatus },
         conflictRow("版本号", nowDraft?.version ?? nowCurrent?.version, editorAtReject.version),
         conflictRow("版块说明", nowDraft?.description ?? nowCurrent?.description, editorAtReject.description),

@@ -5,7 +5,7 @@ import { I2_RETIRED_TEMPLATE_CTAS, I_DATA_UNREADABLE, parseIOverview, parseNotif
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
+import { i4DraftReceiptFieldsMatch, parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
@@ -379,19 +379,10 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
   if (command.action !== "delete") {
     try {
       const row = parseI4SectionVersion(payload.data);
-      const submitted = command.input!.fields;
-      // New servers append retained locales after the supplied fields; older servers return only the supplied fields.
-      const retainedLocales = row.fields.slice(submitted.length).every(field => {
-        const locale = /^(.+?)[._-](id|ms|fil|ru|kk|uz)$/i.exec(field.key.trim());
-        return locale && row.fields.some(candidate => {
-          const english = /^(.+?)[._-]en$/i.exec(candidate.key.trim());
-          return english?.[1].toLowerCase() === locale[1].toLowerCase();
-        });
-      });
       valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
         && row.revision === (command.action === "create" ? 1 : command.input!.expectedRevision! + 1)
         && row.description === command.input!.description && row.structure === command.input!.structure
-        && JSON.stringify(row.fields.slice(0, submitted.length)) === JSON.stringify(submitted) && retainedLocales;
+        && i4DraftReceiptFieldsMatch(command.input!.fields, row.fields, command.snapshot?.fields);
     } catch { /* An unreadable success cannot resolve the original command. */ }
   }
   if (!valid) throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
