@@ -12,12 +12,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Coins, History, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, KeepText, Fold, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
-import { createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, type A2OperationRow } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isExplicitRejection, isFundCommandLookupRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
@@ -27,7 +27,6 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import {
   d6QuoteRate,
   DRequestError,
-  isDOutcomeUnknownError,
   loadD6FxQuote,
   parseD6ApprovalValues,
   preflightD6FxQuote,
@@ -240,7 +239,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   /**
    * 写操作只走这一条路（OP-92、OP-93）。新操作先存好再发；明确被拒丢号，留在确认框；
    * 结果未知保号，关框，清掉旧值，重读一次，转成页面上方的待确认。
-   * 重试的是保留下来的原操作时，被拒也证明不了原操作的结果，继续保留，只有成功才解除。
+   * 原号重试的明确拒绝交给恢复入口收尾。
    */
   const sendCommand = async (item: FxCommand, retry?: PendingFx) => {
     if (!retry && pendingFx.get(SCOPE)) throw new Error(LOCKED);
@@ -255,10 +254,10 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       if (item.proposal) ticket = await createA2OperationProposal(item.proposal, key, true);
       else await updateD6FxQuote(item.values, item.expectedVersion, item.reason, item.operator, key);
     } catch (cause) {
-      const unknown = isDOutcomeUnknownError(cause) || isA2OutcomeUncertainError(cause);
-      if (!unknown && !retry) pendingFx.forget(SCOPE, key);
+      const rejected = isExplicitRejection(cause);
+      if (rejected && !retry) pendingFx.forget(SCOPE, key);
       syncPending();
-      if (!unknown) throw cause;
+      if (rejected || isPermissionDenied(cause)) throw cause;
       loadEpoch.current += 1;
       setData(null);
       toast("保存结果未知，不要重新修改。先看页面上方的提示。", "warn");
@@ -270,6 +269,14 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     // 写回执不包含最近审批，原号重试还可能拿到旧快照，始终回读当前配置和审批。
     await load();
     toast(ticket ? `审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位超级管理员批准，当前买入价不变" : "已找回原单，请核对审批结果"}` : paramOf(item.param).done, "success");
+  };
+
+  const releaseRejected = (record: PendingFx, cause: unknown) => {
+    pendingFx.forget(record.fingerprint, record.commandKey);
+    syncPending();
+    setRetryRejected("");
+    setPendingNote("");
+    toast(retryRejectedReason(cause), "warn");
   };
 
   /** 按原操作重试：同命令号、同内容、同理由、同版本号，不接受新输入（OP-94）。 */
@@ -285,9 +292,10 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await sendCommand(record, record);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原操作的结论，可以再重试（OP-153）。
-      if (isExplicitRejection(cause)) setRetryRejected(retryRejectedReason(cause));
-      else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
+      if (isExplicitRejection(cause)) {
+        if (record.proposal) releaseRejected(record, cause);
+        else setRetryRejected(retryRejectedReason(cause));
+      } else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
     }
@@ -308,6 +316,10 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       }
       return receipt;
     } catch (cause) {
+      if (!evidence && isFundCommandLookupRejection(cause)) {
+        releaseRejected(record, cause);
+        return null;
+      }
       const error = displayAdminError(cause);
       // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
       if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
@@ -327,7 +339,8 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
     } catch (cause) {
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+      if (isFundCommandLookupRejection(cause)) releaseRejected(record, cause);
+      else setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
     } finally { setRetrying(false); }
   };
   const releasePending = (record: PendingFx) => {
@@ -349,7 +362,8 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await load();
       toast(`已找回原审批单 ${ticket.id}，请核对审批进度；当前值以本页回读为准`, "success");
     } catch (cause) {
-      setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
+      if (isFundCommandLookupRejection(cause)) releaseRejected(record, cause);
+      else setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
     } finally { setRetrying(false); }
   };
   /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */

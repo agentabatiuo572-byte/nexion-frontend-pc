@@ -7,7 +7,8 @@ import {
   isA2OutcomeUncertainError,
   type A2OperationRow,
 } from "./a2-client";
-import { isExplicitRejection } from "./explicit-rejection";
+import { isExplicitRejection, isFundCommandLookupRejection } from "./explicit-rejection";
+import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -359,6 +360,7 @@ export async function submitConfigApproval<T>(
   scope?: ApprovalScope,
 ) {
   const { domain, action, op, type } = commands[sourceDomain];
+  const withdrawalApproval = sourceDomain === "D5" || sourceDomain === "D7";
   const slot = approvalSlot(sourceDomain, session.adminId, scope);
   const lookupOnly = mode === true;
   const previous = pendingConfigApproval(sourceDomain, session.adminId, scope);
@@ -381,7 +383,7 @@ export async function submitConfigApproval<T>(
   const objectId = values && sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
     ? `${values.ownerUserId}:${values.settlementDate}`
     : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
-  const proposal = (sourceDomain === "D5" || sourceDomain === "D7") && previous?.withdrawalRequest ? previous.withdrawalRequest : sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
+  const proposal = withdrawalApproval && previous?.withdrawalRequest ? previous.withdrawalRequest : sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
     action, obj: objectId, beforeValue: "—", afterValue: "—",
     operator: session.operator || session.username, operatorRole: roleLabel(session.role),
     type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain,
@@ -390,7 +392,7 @@ export async function submitConfigApproval<T>(
   } : undefined;
   if (!previous) {
     attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}),
-      ...((sourceDomain === "D5" || sourceDomain === "D7") ? { withdrawalRequest: proposal,
+      ...(withdrawalApproval ? { withdrawalRequest: proposal,
         commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", sourceDomain === "D5" ? "finance_d5_read" : "finance_d7_read") } : {}) });
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
@@ -407,7 +409,8 @@ export async function submitConfigApproval<T>(
       try {
         // 只有 A2_PROPOSAL_NOT_FOUND 才算没有原单；OPERATION_RESULT_UNKNOWN 这类 404 说明不了，按查询失败保留原命令。
         ticket = await fetchA2ProposalByKey(key, true);
-      } catch {
+      } catch (cause) {
+        if (withdrawalApproval && isFundCommandLookupRejection(cause)) throw cause;
         throw new A2OutcomeUncertainError("暂时无法查询原审批单。", key);
       }
       canClearOnRejection = ticket === null;
@@ -429,9 +432,14 @@ export async function submitConfigApproval<T>(
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
       throw new A2OutcomeUncertainError("原请求还没有结果，请稍后查询。", key);
     }
-    // 查无原单后的恢复，只能由带原因码的明确拒绝解除；权限、限流等仍保留原记录。
-    // 首次新命令沿用原来的拒绝清理规则。
-    if (canClearOnRejection && (previous || sourceDomain === "G4" ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) attempts.forget(slot, key);
+    if (withdrawalApproval) {
+      if (isExplicitRejection(error)) attempts.forget(slot, key);
+      else if (!previous && !isA2OutcomeUncertainError(error) && !isPermissionDenied(error)) {
+        throw new A2OutcomeUncertainError("提交结果未知，请到操作记录里核对。", key);
+      }
+    } else if (canClearOnRejection && (previous || sourceDomain === "G4" ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) {
+      attempts.forget(slot, key);
+    }
     throw error;
   }
 

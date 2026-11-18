@@ -11,7 +11,8 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isExplicitRejection, isFundCommandLookupRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fmtConfigPct } from "@/lib/format";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -47,7 +48,6 @@ import {
   d5WithdrawalLimitsValues,
   DRequestError,
   fetchD5WithdrawalParams,
-  isDOutcomeUnknownError,
   updateD5WithdrawalLimits,
   D5_NETWORK_CONFIRM_FEE_DEFAULT,
   type D5OwnedChanges,
@@ -88,17 +88,6 @@ function rejectionCode(err: unknown) {
   if (err instanceof DRequestError) return String(err.code ?? "");
   if (err instanceof Error && "backendMessage" in err) return String((err as Error & { backendMessage?: unknown }).backendMessage ?? "");
   return "";
-}
-
-/**
- * 后端拒绝了这次请求：有 4xx 状态和拒绝码，新命令据此丢号（OP-93）。本地出错、读不懂、存不下、网络断开都说明不了结果，原命令留着。
- * 重试被拒后给不给「解除待确认」另按 isExplicitRejection，登录、权限、限流、IDEMPOTENCY_* 不算（OP-153）。
- */
-function backendRejected(err: unknown) {
-  if (isDOutcomeUnknownError(err) || isA2OutcomeUncertainError(err)) return false;
-  if (err instanceof DRequestError) return err.status >= 400 && err.status < 500 && err.code !== undefined;
-  const status = (err as { status?: unknown } | null)?.status;
-  return typeof status === "number" && status >= 400 && status < 500 && !!rejectionCode(err);
 }
 
 const NETWORKS = ["trc20", "bep20", "erc20"] as const;
@@ -698,11 +687,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return "done" as const;
     } catch (cause) {
       // 只有后端明确拒绝才丢号；读不懂、断开、本地出错都按结果未知留着（F03）。
-      const rejected = backendRejected(cause);
-      if (rejected && !retained) tightenCommands.forget(TIGHTEN_SCOPE);
+      const rejected = isExplicitRejection(cause);
+      if (rejected && !retained) tightenCommands.forget(TIGHTEN_SCOPE, key);
       syncPending();
-      if (!rejected) return "unknown" as const;
-      throw cause;
+      if (rejected || isPermissionDenied(cause)) throw cause;
+      return "unknown" as const;
     }
   };
 
@@ -802,11 +791,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     note(record.commandKey, "");
     setRecovering(record.commandKey);
     try {
-      const { label, changes, expectedVersion, reason, operator } = record;
-      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator }, true);
+      const { label, changes, expectedVersion, reason, operator, commandOrigin } = record;
+      const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin }, true);
       if (outcome === "unknown") note(record.commandKey, "重试结果仍未知，原操作继续保留，稍后再试。");
       else toast(`${record.label.replace(/^调整提现参数 · /, "")}已生效`, "success");
     } catch (cause) {
+      if (isPermissionDenied(cause)) announcePermissionDenied();
       // 后端明确拒绝了这次重试才给「解除待确认」；本地出错、登录、权限、限流不算（F03、OP-153）。
       if (isExplicitRejection(cause)) {
         note(record.commandKey, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
@@ -838,16 +828,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       void loadApprovals();
     } catch (cause) {
       syncPending();
-      const kept = !!(session && pendingConfigApproval("D5", session.adminId));
-      if (isA2OutcomeUncertainError(cause)) {
+      if (isExplicitRejection(cause)) {
+        toast(errorText(cause), "warn");
+      } else if (isA2OutcomeUncertainError(cause)) {
         // 原因写在括号里；只取中文说明，码不上屏。
         const detail = cause.message.match(/（([^（）]*[\u4e00-\u9fa5][^（）]*)）$/)?.[1];
         note(key, `${detail ? sentence(detail) : ""}结果还是未知，记录继续保留。`);
-      }
-      else if (!kept) toast(`重试被拒绝：${sentence(errorText(cause))}原申请记录已清除，可以重新发起。`, "warn");
-      else if (mode === "retry" && isExplicitRejection(cause)) {
-        note(key, `重试被拒绝：${sentence(errorText(cause))}这说明不了原操作的结果，原操作继续保留。`);
-        setRetryRejected((current) => [...current, key]);
       } else {
         note(key, `${mode === "retry" ? "重试" : "查询"}没有完成：${sentence(errorText(cause))}结果还是未知，记录继续保留。`);
       }
@@ -871,6 +857,12 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       }
       return receipt;
     } catch (cause) {
+      if (!evidence && session && isFundCommandLookupRejection(cause)) {
+        releaseConfigApproval("D5", session.adminId, record.commandKey);
+        syncPending();
+        toast(errorText(cause), "warn");
+        return null;
+      }
       const error = displayAdminError(cause);
       // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
       if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
@@ -899,7 +891,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
     } catch (cause) {
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+      if (isFundCommandLookupRejection(cause)) {
+        tightenCommands.forget(record.fingerprint, record.commandKey);
+        syncPending();
+        toast(errorText(cause), "warn");
+      } else setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
     } finally { setRecovering(""); }
   };
   const releasePending = (record: ReleaseTarget) => {
