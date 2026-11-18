@@ -2180,7 +2180,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   "reward is required": "请完整填写连签奖励后再提交。",
   "Earn milestone key is required": "缺少收益里程碑编号，本次未修改。请刷新档位。",
   EVENT_CONFIG_STALE: "活动已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
-  EVENT_ALREADY_EXISTS: "这个编号已经用过（删除的活动也算），本次未新建，请换一个编号。",
+  EVENT_ALREADY_EXISTS: "编号已用过（删除的活动也算），本次未新建，请换一个。",
   H4_EVENT_MUTEX_UNAVAILABLE: "当前暂时无法锁定活动配置，本次未修改。请稍后重试。",
   EVENT_FEATURED_REQUIRES_ONGOING: "只有进行中的活动才能设为主推，本次未生效。请核对活动状态后重试。",
   EVENT_RULE_NOT_FOUND: "该活动尚未配置玩法，请刷新活动列表后核对。",
