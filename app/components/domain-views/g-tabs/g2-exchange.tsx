@@ -39,7 +39,7 @@ import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   g2ExchangeCommandExpired, listG2ExchangeCommands, pendingG2ExchangeCommand,
-  queryG2ExchangeCommand, retryG2ExchangeCommand, G2OutcomeUnknownError,
+  queryG2ExchangeCommand, queryG2ExchangeParamReceipt, retryG2ExchangeCommand, G2OutcomeUnknownError,
   type G2PendingCommand,
 } from "@/lib/admin/g2-exchange-command";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
@@ -436,12 +436,27 @@ function G2ExchangePage() {
   }, [toast]);
 
   const readOriginalCommand = async (original: G2PendingCommand) => {
-    latest.current.readFailed = true;
-    latest.current.rereadPending = true;
-    setReadFailed(true);
-    setRereadPending(true);
+    const param = /^\/exchange\/params\/(\w+)$/.exec(original.path)?.[1];
     setError("");
     try {
+      if (param) {
+        const state = await queryG2ExchangeParamReceipt(original.adminId, original.commandKey);
+        if (state === "SUCCEEDED" || state === "REJECTED") {
+          setDirectCommands(records => records.filter(record => record.commandKey !== original.commandKey));
+          if (state === "SUCCEEDED") {
+            await reload(true);
+            toast(original.input.value === "" ? `${paramName(param)}已清空` : `${paramName(param)}已保存`);
+          } else {
+            setError(messageOf("IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED"));
+          }
+          return;
+        }
+      }
+      // 未决回执只保留原记录，沿用现有概览回读和提示。
+      latest.current.readFailed = true;
+      latest.current.rereadPending = true;
+      setReadFailed(true);
+      setRereadPending(true);
       const result = await queryG2ExchangeCommand(original.adminId, original.commandKey);
       readGeneration.current += 1;
       setLoading(false);
@@ -1215,7 +1230,7 @@ function G2ExchangePage() {
         </span>}
         action={canEdit || record || direct ? (describedBy) => (
           <Button size="sm" aria-describedby={describedBy} aria-label={record || direct ? `查询${name}的原结果` : `调整${name}`}
-            disabledReason={disabledReason} onClick={() => void adjCap(cap)}>{record || direct ? "查询原结果" : "调整"}</Button>
+            disabledReason={disabledReason} onClick={() => direct ? void readOriginalCommand(direct) : void adjCap(cap)}>{record || direct ? "查询原结果" : "调整"}</Button>
         ) : undefined} />
     );
   });
@@ -1254,7 +1269,7 @@ function G2ExchangePage() {
             {!direct && raw && allowed(capAuthority(key)) && <Button size="sm" variant="ghost" aria-label={`清空${name}`}
               disabledReason={busyReason ?? newWriteBlockedReason} onClick={() => clearEta(key)}>清空</Button>}
             <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
-              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
+              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => direct ? void readOriginalCommand(direct) : editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
           </span>
         ) : undefined} />
     );
