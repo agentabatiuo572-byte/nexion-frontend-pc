@@ -1042,7 +1042,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const active = all.filter((task) => taskStatusOf(task) === "active");
   const stuck = all.filter(activeUnbound);
   const codes = new Set(all.map(codeOf));
-  const orphans = bindings.filter((binding) => Number(binding.status) === 1 && !codes.has(binding.questCode));
+  const orphans = bindings.filter((binding) => binding.status === 1 && binding.targetInTaskCatalog !== true && !codes.has(binding.questCode));
   const h1 = model.phaseMultiplierReadonly ?? {};
   const currentPhase = cleanPhaseKey(text(h1.currentPhase, ""));
   const h1Value = decimalOf(h1.value);
@@ -1435,7 +1435,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               {bindings.map((binding) => {
                 const enabled = Number(binding.status) === 1;
                 const task = bindingTaskName(binding.questCode);
-                return <Tr key={binding.bindingCode} mark={enabled && !task ? "danger" : undefined}>
+                return <Tr key={binding.bindingCode} mark={enabled && !task && binding.targetInTaskCatalog !== true ? "danger" : undefined}>
                   <Td grow><Cell main={bindingEventText(binding)} title={`${binding.bindingCode} · ${producerText(binding.producer)} · ${binding.eventType}`} sub={<><span data-mono="">{binding.bindingCode}</span>{` · ${producerText(binding.producer)} · `}<span data-mono="">{binding.eventType}</span></>} /></Td>
                   <Td>{task
                     ? <Cell main={task} sub={<span data-mono="">{binding.questCode}</span>} />

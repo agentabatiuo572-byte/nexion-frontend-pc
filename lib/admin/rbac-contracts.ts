@@ -98,6 +98,7 @@ function normalizeA7Node(raw: unknown): Record<string, unknown> & { children: Re
     sortOrder: integer(node.sortOrder, message),
     status,
     version: string(node.version, message),
+    legacyNavigationNode: node.legacyNavigationNode === undefined ? undefined : flag(node.legacyNavigationNode, message),
     roleBindingCount: wrapper.roleBindingCount === undefined ? undefined : integer(wrapper.roleBindingCount, message),
     activePermissionCount: wrapper.activePermissionCount === undefined ? undefined : integer(wrapper.activePermissionCount, message),
     children: wrapper.children.map(normalizeA7Node),

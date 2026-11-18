@@ -230,6 +230,9 @@ export function parseH3Model(value: unknown): H3Model {
     strings(item, ["bindingCode", "producer", "eventType", "questCode", "userIdField"]);
     if (!Number.isSafeInteger(item.status) || !["ORDER", "REFERRAL", "LEARNING", "DEVICE", "COMMISSION", "SYSTEM"].includes(item.producer)
       || !["user_id", "inviter_user_id"].includes(item.userIdField)) throw new Error("H3_RESPONSE_INVALID");
+    const inCatalog = item.targetInTaskCatalog;
+    if (inCatalog === 0 || inCatalog === 1) item.targetInTaskCatalog = inCatalog === 1;
+    else if (inCatalog != null && typeof inCatalog !== "boolean") throw new Error("H3_RESPONSE_INVALID");
   }
   return row as H3Model;
 }

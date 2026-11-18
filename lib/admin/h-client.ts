@@ -1164,6 +1164,7 @@ export type H3QuestEventBinding = {
   questCode: string;
   userIdField: "user_id" | "inviter_user_id";
   status: number;
+  targetInTaskCatalog?: boolean | null;
 };
 
 export type H3QuestEventBindingCommand = {
