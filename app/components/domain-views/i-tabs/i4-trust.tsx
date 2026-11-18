@@ -16,7 +16,7 @@ import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-d
 import { useEffect, useState } from "react";
 import { DISCLOSURE_LANGUAGE_SCOPE, Drawer, OPTIONAL_CONTENT_HINT, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
-import type { DisclosureJurisdictionOption, DisclosureVersionItemView } from "@/lib/admin/i-client";
+import { IContentReceiptError, type DisclosureJurisdictionOption, type DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
@@ -67,6 +67,8 @@ type DraftEditor = {
   description: string;
   structure: string;
   revision?: number;
+  expectedSectionVersion: string;
+  expectedSectionStatus: string;
   reason: string;
   requiredLanguages: readonly OperatingLanguageCode[];
   fields: { key: string; label: string; value: string }[];
@@ -166,14 +168,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       bodyTranslations: sourceChapter?.bodyTranslations,
     };
   });
-  const runBackend = async (task: Promise<void>, ok: string): Promise<boolean> => {
+  const runBackend = async <T,>(task: Promise<T>, ok: string | ((result: T) => string)): Promise<boolean> => {
     try {
-      await task;
+      const result = await task;
       await actions.reloadIContent();
-      toast(ok);
+      toast(typeof ok === "string" ? ok : ok(result));
       return true;
     } catch (error) {
-      toast(`操作失败:${displayAdminError(error)}`);
+      const message = displayAdminError(error);
+      toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
       return false;
     }
   };
@@ -286,6 +289,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       version: "",
       description: s.desc,
       structure: s.struct,
+      expectedSectionVersion: s.v,
+      expectedSectionStatus: s.status,
       reason: "日常维护信任版块草稿",
       requiredLanguages,
       fields: mapTrustSectionLanguageFields(fields, requiredLanguages, "load"),
@@ -295,7 +300,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const editSectionDraft = async (draft: TrustSectionVersion) => {
     const section = TRUST_SECTIONS.find((item) => item.key === draft.sectionKey);
     const publishedFields = section ? currentSectionFields(section) : [];
-    if (publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
+    if (!section || publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
       toast("草稿字段模板已过期，请删除后基于当前发布版新建");
       return;
     }
@@ -307,6 +312,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       description: draft.description,
       structure: draft.structure,
       revision: draft.revision,
+      expectedSectionVersion: section.v,
+      expectedSectionStatus: section.status,
       reason: "日常维护信任版块草稿",
       requiredLanguages,
       fields: mapTrustSectionLanguageFields(draft.fields, requiredLanguages, "load"),
@@ -315,11 +322,6 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
 
   const saveSectionDraft = () => {
     if (!draftEditor) return;
-    const sectionSnapshot = TRUST_SECTIONS.find((item) => item.key === draftEditor.sectionKey);
-    if (!sectionSnapshot) {
-      toast("版块内容已被修改，请刷新后重试");
-      return;
-    }
     const fields = mapTrustSectionLanguageFields(draftEditor.fields, draftEditor.requiredLanguages, "submit");
     if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
       || !draftEditor.structure.trim() || !draftEditor.reason.trim() || fields.length === 0
@@ -336,8 +338,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       description: draftEditor.description.trim(),
       structure: draftEditor.structure.trim(),
       fields: fields.map((field) => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() })),
-      expectedSectionVersion: sectionSnapshot.v,
-      expectedSectionStatus: sectionSnapshot.status,
+      expectedSectionVersion: draftEditor.expectedSectionVersion,
+      expectedSectionStatus: draftEditor.expectedSectionStatus,
       ...(draftEditor.mode === "edit" ? { expectedRevision: draftEditor.revision ?? 0 } : {}),
     };
     const task = draftEditor.mode === "create"
@@ -559,7 +561,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const task = editing
           ? actions.updateI5DisclosureVersion(jurisdiction, targetVersion, payload, reason)
           : actions.createI5DisclosureVersion(jurisdiction, payload, reason);
-        return runBackend(task, "披露草稿已存 · 发布需风控操作确认");
+        return runBackend(task, (saved) => saved.version === targetVersion
+          ? "披露草稿已存 · 发布需风控操作确认"
+          : `披露草稿已存为 ${saved.version}（预览 ${targetVersion}）· 发布需风控操作确认`);
       },
     });
   };
