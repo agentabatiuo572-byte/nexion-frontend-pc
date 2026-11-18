@@ -17,7 +17,7 @@ import { PromotionRefundImpact } from "./promotion-refund-impact";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan } from "@/lib/admin/content-language-rules";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
@@ -607,7 +607,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     const [poolResult, labelResult] = await Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]);
     if (poolResult.status === "fulfilled") setDevicePools(poolResult.value);
     else { setDevicePools([]); setToast(displayAdminError(poolResult.reason)); }
-    if (labelResult.status === "fulfilled") { setHostingLabels(labelResult.value); setHostingLabelError(""); }
+    if (labelResult.status === "fulfilled") {
+      setHostingLabels(labelResult.value.filter(label => !containsHan(label)));
+      setHostingLabelError("");
+    }
     else setHostingLabelError(displayAdminError(labelResult.reason));
   }, [canReadE2, setToast]);
 
@@ -1363,7 +1366,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {taskDrawer && <Drawer title={editTaskId ? "编辑手机任务" : "新增手机任务"} sub="仅用于手机任务池 · 另一位管理员批准后生效" onClose={() => setTaskDrawer(false)}
         footer={<><Btn onClick={() => setTaskDrawer(false)}>取消</Btn><Btn variant="primary" disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>提交审批</Btn></>}>
         <div className="tp-dialog"><div className="tp-key-info">{editTaskId ? taskForm.n : "新任务将加入手机任务池"}</div>
-          <label className="col">任务名称<input className="fld" value={taskForm.n} onChange={event => setTaskForm({ ...taskForm, n: event.target.value })} /></label>
+          <label className="col">任务名称 · {APP_VISIBLE_TEXT_HINT}<input className="fld" value={taskForm.n} onChange={event => setTaskForm({ ...taskForm, n: event.target.value })} /></label>
           <div className="grid g-2" style={{ gap: 16 }}>
             <SkuFld label="固定时长（分钟）" type="number" min={1} max={1440} step={1} value={taskForm.durationMinutes} onChange={value => setTaskForm({ ...taskForm, durationMinutes: value })} />
             <SkuFld label="每任务奖励" value={taskForm.baseReward} onChange={value => setTaskForm({ ...taskForm, baseReward: value })} tip="最多 12 位整数、6 位小数。修改仍走 A2 双人审批和覆盖率检查。" />

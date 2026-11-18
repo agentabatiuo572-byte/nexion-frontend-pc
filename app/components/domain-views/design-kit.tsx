@@ -1658,6 +1658,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) missing.push("弹窗冷却须为 0-720 小时");
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
   } else if (spec.kind === "wheel-tier-config") {
+    needs("tierName", "奖项名称");
+    needs("rewardName", "奖励展示");
     const rewardNameError = appVisibleTextError(state.rewardName, "奖励展示");
     if (rewardNameError) missing.push(rewardNameError);
   } else if (spec.kind === "quest-event-config") {

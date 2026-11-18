@@ -86,19 +86,21 @@ export function joinGpu(model: string, count: string): string | undefined {
 }
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   const appVisibleFields = [
-    [f.name, "型号名称"],
-    [f.badge, "营销角标"],
-    [f.tagline, "商品标语"],
-    [f.gpu, "GPU 型号（单卡）"],
-    [f.tier === "Share" ? "" : f.power, "功耗 / 功率说明"],
-    [f.datacenter, "托管机房"],
-    [f.uptime, "在线率"],
-    [f.warranty, "质保期限"],
-    [f.specDocumentTitle, "资料名称"],
-  ];
-  for (const [value, field] of appVisibleFields) {
-    const error = appVisibleTextError(value, field);
-    if (error) return error;
+    ["name", "型号名称"],
+    ["badge", "营销角标"],
+    ["tagline", "商品标语"],
+    ["gpu", "GPU 型号（单卡）"],
+    ["power", "功耗 / 功率说明"],
+    ["datacenter", "托管机房"],
+    ["uptime", "在线率"],
+    ["warranty", "质保期限"],
+    ["specDocumentTitle", "资料名称"],
+  ] as const;
+  for (const [key, label] of appVisibleFields) {
+    const error = appVisibleTextError(f[key], label);
+    if (error) return key === "power" && f.tier === "Share"
+      ? "这个 Share 商品已存的功耗说明含中文，App 会显示它，但本表不提供 Share 功耗输入，请联系技术支持修改"
+      : error;
   }
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
   if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;

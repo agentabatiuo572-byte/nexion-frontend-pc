@@ -34,7 +34,7 @@ import {
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import type { ACtx } from "./types";
 import { AccountAvatarPicker } from "./account-avatar-picker";
 import { HDSelect } from "../m-tabs/hd-ui";
@@ -1209,7 +1209,7 @@ function NewAccountDrawer({
           )}
         </label>
         <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          显示名 *
+          显示名 * · {APP_VISIBLE_TEXT_HINT}
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
@@ -1504,7 +1504,7 @@ function EditAccountDrawer({
           )}
         </label>
         <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          显示名 *
+          显示名 * · {APP_VISIBLE_TEXT_HINT}
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
