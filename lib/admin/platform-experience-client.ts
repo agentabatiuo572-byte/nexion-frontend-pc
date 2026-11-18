@@ -92,11 +92,15 @@ function optionalChannelText(value: unknown): string | null | undefined {
   return value;
 }
 
-function strictInterfaceLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): InterfaceLanguageCode[] {
-  const known: readonly string[] = INTERFACE_LANGUAGES.map((language) => language.code);
+function strictInterfaceLanguages(value: unknown, boundary: "response" | "request" = "response"): InterfaceLanguageCode[] {
+  const errorCode = boundary === "response" ? "PLATFORM_EXPERIENCE_RESPONSE_INVALID" : "PLATFORM_EXPERIENCE_LANGUAGES_INVALID";
+  const codes = INTERFACE_LANGUAGES.map((language) => language.code);
+  const known: readonly string[] = codes;
   if (!Array.isArray(value) || new Set(value).size !== value.length || value.some((code) => !known.includes(code))
     || INTERFACE_LANGUAGES.some((language) => language.base && !value.includes(language.code))) throw new Error(errorCode);
-  return INTERFACE_LANGUAGES.map((language) => language.code).filter((code) => value.includes(code));
+  const ordered = codes.filter((code) => value.includes(code));
+  if (boundary === "response" && ordered.some((code, index) => code !== value[index])) throw new Error(errorCode);
+  return ordered;
 }
 
 export function isOperatingLanguageList(value: unknown): value is OperatingLanguageCode[] {
@@ -236,7 +240,7 @@ export async function platformExperienceBody(
     expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels,
     appDownload, reason: reason.trim(), operator,
     ...(config.interfaceLanguages === undefined ? {} : {
-      interfaceLanguages: strictInterfaceLanguages(config.interfaceLanguages, "PLATFORM_EXPERIENCE_LANGUAGES_INVALID"),
+      interfaceLanguages: strictInterfaceLanguages(config.interfaceLanguages, "request"),
     }),
     ...(operatingLanguages === undefined ? {} : {
       operatingLanguages: strictOperatingLanguages(operatingLanguages, "PLATFORM_OPERATING_LANGUAGES_INVALID"),
