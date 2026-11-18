@@ -1059,6 +1059,8 @@ export type CopyAbStats = {
   runningExps: number;
   weeklyExposures: string;
   topLift: string;
+  cumulativeExperimentImpressions?: number;
+  highestVariantCvrPct?: number | null;
 };
 
 export type CopyModule = "home" | "store" | "earn" | "me";

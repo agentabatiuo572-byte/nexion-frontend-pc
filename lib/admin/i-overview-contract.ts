@@ -65,6 +65,12 @@ function optionalArray(moduleId: IModuleId, owner: Record<string, unknown>, key:
 }
 
 function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
+  const stats = record(moduleId, value.stats);
+  const impressions = stats.cumulativeExperimentImpressions;
+  if (impressions !== undefined && (!Number.isSafeInteger(impressions) || Number(impressions) < 0)) fail(moduleId);
+  const best = stats.highestVariantCvrPct;
+  if (best != null && (typeof best !== "number" || !Number.isFinite(best) || best < 0 || best > 100)) fail(moduleId);
+
   for (const option of records(moduleId, value.versionOptions)) {
     if (typeof option.status !== "string" || !["ACTIVE", "INACTIVE"].includes(option.status.toUpperCase())) fail(moduleId);
     // The repository emits lowercase statuses; the editor and write DTO use uppercase.
