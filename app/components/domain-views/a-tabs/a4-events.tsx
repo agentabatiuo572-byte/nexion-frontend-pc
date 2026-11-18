@@ -1575,9 +1575,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <Tr key={batch.id} selected={batchIdx === index} onOpen={() => setBatchIdx(index)}>
                   <Td><span className="a4-ename" title={`工单 ${batch.id}`}><span className="a4-ename-desc">{operatorCopyText(batch.title)}</span><span data-mono>{batch.details.length > 0 ? breakable(batch.details[0].item) : `工单 ${batch.id}`}</span></span></Td>
                   <Td>{batch.newDomains.length > 0
-                    ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined} title={moduleText(domain.name) ? `模块代码 ${domain.name}` : undefined}>{moduleText(domain.name) ?? <span data-mono>{domain.name}</span>}</span>)}</span>
+                    ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => {
+                      const name = moduleText(domain.name, domain.displayName);
+                      return <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined} title={name ? `模块代码 ${domain.name}` : undefined}>{name ?? <span data-mono>{domain.name}</span>}</span>;
+                    })}</span>
                     : <span className="a4-dim">核对后台操作事件清单</span>}</Td>
-                  <Td><Cell main={batch.proposer} title={batch.proposer} /></Td>
+                  <Td><Cell main={batch.proposer ?? "—"} title={batch.proposer ?? undefined} /></Td>
                   <Td><StatusTag tone={state.tone === "role-other" ? "neutral" : state.tone}>{state.label}</StatusTag></Td>
                   <Td grow><span className="a4-clamp" title={operatorCopyText(batch.impact)}>{operatorCopyText(batch.impact)}</span></Td>
                   <Td sticky="end" align="right" data-fit="">
@@ -1722,9 +1725,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {batch && <>
           <Facts>
             <Fact k="状态" tone={BATCH_STATE[batch.state].tone === "warn" ? "warn" : undefined}>{BATCH_STATE[batch.state].label}</Fact>
-            <Fact k="提出方">{batch.proposer}</Fact>
+            <Fact k="提出方">{batch.proposer ?? "—"}</Fact>
             <Fact k="影响">{operatorCopyText(batch.impact)}</Fact>
-            <Fact k="新模块">{batch.newDomains.length ? batch.newDomains.map((domain) => domain.name).join("、") : "—"}</Fact>
+            <Fact k="新模块">{batch.newDomains.length ? batch.newDomains.map((domain) => domain.displayName ?? domain.name).join("、") : "—"}</Fact>
           </Facts>
           <Table label="批次明细" className="a4-family-table">
             <thead><tr><Th>事件或项目</Th><Th>说明</Th></tr></thead>

@@ -26,6 +26,7 @@ export type A4Stats = {
 export type A4EventDetailRow = {
   item: string;
   desc: string;
+  displayName?: string | null;
 };
 
 export type A4EventFamily = {
@@ -62,13 +63,16 @@ export type A4KpiFormula = {
 export type A4DomainItem = {
   name: string;
   n: boolean;
+  displayName?: string | null;
 };
 
 export type A4DomainExtensionBatch = {
   id: string;
   title: string;
   state: "done" | "inprogress" | "pending" | "scheduled" | "registered";
-  proposer: string;
+  proposer?: string | null;
+  producerReference?: string | null;
+  consumerReference?: string | null;
   impact: string;
   newDomains: A4DomainItem[];
   details: A4EventDetailRow[];
@@ -79,6 +83,7 @@ export type A4SchemaRegistration = {
   ownerDomain: string;
   displayName?: string | null;
   ownerDisplayName?: string | null;
+  producerReference?: string | null;
   familyKey: string;
   producer: string;
   consumers: string;
@@ -178,6 +183,7 @@ function normalizeSchemaRegistration(row: Record<string, unknown>): A4SchemaRegi
     ownerDomain: requiredText(row.ownerDomain, "schemaRegistrations.ownerDomain"),
     displayName: optionalLabel(row.displayName, "schemaRegistrations.displayName"),
     ownerDisplayName: optionalLabel(row.ownerDisplayName, "schemaRegistrations.ownerDisplayName"),
+    producerReference: optionalLabel(row.producerReference, "schemaRegistrations.producerReference"),
     familyKey: requiredText(row.familyKey, "schemaRegistrations.familyKey"),
     producer: requiredText(row.producer, "schemaRegistrations.producer"),
     consumers: requiredText(row.consumers, "schemaRegistrations.consumers"),
@@ -222,6 +228,7 @@ function normalizeDetail(row: Record<string, unknown>): A4EventDetailRow {
   return {
     item: requiredText(row.item, "eventDetail.item"),
     desc: requiredText(row.desc, "eventDetail.desc"),
+    displayName: optionalLabel(row.displayName, "eventDetail.displayName"),
   };
 }
 
@@ -249,9 +256,15 @@ function normalizeBatch(row: Record<string, unknown>): A4DomainExtensionBatch {
     id: requiredText(row.id, "domainExtension.id"),
     title: requiredText(row.title, "domainExtension.title"),
     state: normalizeBatchState(row.state),
-    proposer: requiredText(row.proposer, "domainExtension.proposer"),
+    proposer: optionalLabel(row.proposer, "domainExtension.proposer"),
+    producerReference: optionalLabel(row.producerReference, "domainExtension.producerReference"),
+    consumerReference: optionalLabel(row.consumerReference, "domainExtension.consumerReference"),
     impact: requiredText(row.impact, "domainExtension.impact"),
-    newDomains: requiredRows(row.newDomains, "domainExtension.newDomains", (item) => ({ name: requiredText(item.name, "domainExtension.domain"), n: requiredBoolean(item.n, "domainExtension.newDomainFlag") })),
+    newDomains: requiredRows(row.newDomains, "domainExtension.newDomains", (item) => ({
+      name: requiredText(item.name, "domainExtension.domain"),
+      n: requiredBoolean(item.n, "domainExtension.newDomainFlag"),
+      displayName: optionalLabel(item.displayName, "domainExtension.displayName"),
+    })),
     details: requiredRows(row.details, "domainExtension.details", normalizeDetail),
   };
 }
