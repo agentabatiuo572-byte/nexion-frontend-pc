@@ -1086,7 +1086,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const stuckIn = (list: QuestTask[]) => list.filter(activeUnbound).length;
   const attention: Array<{ key: string; tone: "warn" | "neutral"; title: string; go?: Tab; href?: string }> = [
     ...(stuck.length ? [{ key: "stuck", tone: "warn" as const, title: `${stuck.length} 个已启用的任务没绑定完成事件，用户做不完`, go: (stuckIn(dayOne) ? "dayOne" : "weekly") as Tab }] : []),
-    ...(orphans.length ? [{ key: "orphan", tone: "warn" as const, title: `${orphans.length} 条启用的完成条件对应的任务不在这页，要核查`, go: "bindings" as Tab }] : []),
+    ...(orphans.length ? [{ key: "orphan", tone: "warn" as const, title: `${orphans.length} 条启用的完成条件找不到对应的任务，要核查`, go: "bindings" as Tab }] : []),
     ...(regionPending ? [{ key: "region", tone: "neutral" as const, title: "每周区号规则的修改在等批准", go: "weekly" as Tab }] : []),
     ...(region.reviewError ? [{ key: "region-read", tone: "warn" as const, title: "区号规则的审批进度读取失败，暂不能再次提交", go: "weekly" as Tab }] : []),
     ...(configPending.length + creationPending.length ? [{ key: "fund", tone: "neutral" as const,
@@ -1466,8 +1466,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               })}
             </tbody>
           </Table>}
-        {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件对应的任务不在这页`}>
-          <p>这页只列新手任务和每周任务。先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
+        {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件找不到对应的任务`}>
+          <p>{orphans.every((binding) => binding.targetInTaskCatalog === false) ? "任务目录里没有它指向的任务。" : "这页只列新手任务和每周任务。"}先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
         </Notice></div>}
       </Panel>
     </div>
