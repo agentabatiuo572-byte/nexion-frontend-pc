@@ -20,7 +20,7 @@ import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from 
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { PAYOUT_VND_HELP, PAYOUT_VND_SOURCE_HELP } from "@/lib/admin/config-help/d7-payout-vnd";
-import { DRequestError, isDOutcomeUnknownError } from "@/lib/admin/d-client";
+import { DOutcomeUnknownError, DRequestError, isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -452,9 +452,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
             after?.();
           } catch (cause) {
             // 确定被拒才丢号；结果未知保号，转成页面上方的待确认（OP-93）。
-            if (!isDOutcomeUnknownError(cause)) directCommands.forget(DIRECT_SCOPE, key);
+            const rejected = isExplicitRejection(cause);
+            if (rejected) directCommands.forget(DIRECT_SCOPE, key);
             syncPending();
-            throw cause;
+            if (rejected || isPermissionDenied(cause)) throw cause;
+            throw new DOutcomeUnknownError(key);
           }
         } catch (cause) {
           if (isA2OutcomeUncertainError(cause) || isDOutcomeUnknownError(cause)) {
@@ -637,15 +639,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /**
-   * 查不到原单后按原操作重试。查到确实没有原单、重试又被明确拒绝时，记录由 submitConfigApproval 清掉，页面写拒绝原因；
-   * 其余明确拒绝保留记录，人核实过再「解除待确认」，和 USDT 提现参数一样（协调人决定 1）。
-   */
+  /** 查不到原单后按原操作重试。明确拒绝时共用提交入口清除原记录。 */
   const retryApproval = async () => {
     if (!session || !approval) return;
     const key = approval.commandKey;
     setRecovering("approval-retry");
-    setRetryRejected((current) => current.filter((item) => item !== key));
     note(key, "");
     try {
       const result = await submitConfigApproval("D7", session, null, "", loadPayoutVndConfig, "retry-original");
@@ -664,15 +662,11 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         return;
       }
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
-      const kept = pendingConfigApproval("D7", session.adminId);
-      if (kept && isExplicitRejection(cause)) {
-        note(key, `重试被拒绝：${message}。先核对原审批单，查不到不代表没有生成。解除原操作记录不算核查结案。`);
-        setRetryRejected((current) => [...current, key]);
-      } else if (kept) {
+      if (isExplicitRejection(cause)) {
+        setApprovalRejected(`${message}。这条记录已清除，要改请重新提交。`);
+      } else {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
         note(key, `重试没有完成：${message}。记录继续保留，稍后再查询原结果或重试。`);
-      } else {
-        setApprovalRejected(`${message}。这条记录已清除，要改请重新提交。`);
       }
     } finally {
       setRecovering("");

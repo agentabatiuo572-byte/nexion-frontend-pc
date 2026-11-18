@@ -26,7 +26,7 @@ import { A2RoleGrantsChange, isRoleGrantsTicket, roleGrantsSummary } from "./a2-
  *   审批单、统计和记录上，不分开读的话待审批数会跟着操作记录的筛选变。
  * - 批准、驳回、撤回、调整机制参数、立即清理、导出：先把命令号和原内容（导出连同已应用的筛选）存进本标签页再发；
  *   结果未知时关框，转成页面上方的待确认条，这张单（这项设置、清理、导出）锁住，只能按原操作重试；
- *   重试被后端明确拒绝（isExplicitRejection）后才能解除，超过 24 小时只能核对（OP-92～OP-96、OP-153）。
+ *   批准、驳回、撤回重试被后端明确拒绝（isExplicitRejection）就结案；其余重试被明确拒绝后由人解除；超过 24 小时只能核对（OP-92～OP-96、OP-153）。
  * - 批准、驳回入口使用后端返回的当前资格，没有权限的不显示入口（OP-124）。
  * - 记录只追加：没有改、删记录的接口，页面也不给入口。所有写操作都要填理由。
  */
@@ -1561,7 +1561,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /**
    * 先把原操作存好再发（OP-92）；明确被拒丢号，留在确认框；结果未知保号，关框，转成页面上方的待确认条，
    * 这张单在确认前不能再处理（OP-93）。接口成功但读回看不到目标结果，也算结果未知（OP-88）。
-   * 重试的是保留下来的原命令时，明确被拒也证明不了原命令的结果，继续保留（CP-33）。只有成功并读回到目标状态才解除。
+   * 重试的是保留下来的原命令时这里不丢号，由 retryPending 按命令类型决定结案还是待人核实（CP-33）。成功并读回到目标状态才解除。
    */
   const sendCommand = async <T,>(scope: string, extra: A2PendingExtra, prefix: string, send: (key: string) => Promise<T>, confirm: (result: T) => Promise<boolean>): Promise<"ok" | "unknown"> => {
     const retained = a2Commands.get(scope);
@@ -1703,7 +1703,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /**
    * 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功并读回到目标状态才解除待确认。
-   * 失败时只有后端对这条命令下了结论（isExplicitRejection：带原因码的 4xx）才放出「解除待确认」；
+   * 失败时只有后端对这条命令下了结论（isExplicitRejection：带原因码的 4xx）才算数：批准、驳回、撤回直接结案；
+   * 机制参数、清理、导出的后端在按原号回放前还有别的检查，被拒说明不了原操作，放出「解除待确认」由人核实。
    * 登录、权限、超时、限流、IDEMPOTENCY_* 只更新说明，原命令和锁都留着（M1、OP-153）。
    */
   const retryPending = async (record: A2PendingCommand) => {
@@ -1735,6 +1736,17 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if ((cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true) { toast(why, "warn"); return; }
       if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
         toast(why, "error");
+        return;
+      }
+      const refusedCode = (cause as { backendMessage?: unknown; reasonCode?: unknown }) ?? {};
+      const code = typeof refusedCode.reasonCode === "string" ? refusedCode.reasonCode : typeof refusedCode.backendMessage === "string" ? refusedCode.backendMessage : "";
+      if (isExplicitRejection(cause) && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw") && !/^(A2_)?REASON_/.test(code)) {
+        // 批准、驳回、撤回按原命令号重试：后端（OpsAuditCenterService.idempotentTicket）在按原号回放之前只查权限，权限拒绝不算明确拒绝；
+        // 原操作已成功会原样回放成功。所以这里被业务规则明确拒绝，就说明原操作没有生效：结案，不留待确认。
+        // 理由长度在回放之前按「当前」下限校验（AdminReasonConstraintAdvice），下限调高后原理由会被拒，证明不了原操作，留给人核实。
+        a2Commands.forget(record.fingerprint, record.commandKey);
+        syncPending();
+        toast(`${record.label}没有生效：${why}。原记录已解除。`, "warn");
         return;
       }
       if (isExplicitRejection(cause)) {
@@ -1775,7 +1787,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     const found = ticketStatus(next, record.target);
     if (!found) { notePending(record, "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
-    // 批准、驳回、撤回只能对待审批的单发出；按单现在的状态和处理人说这次操作的结果，记录照旧保留。
+    // 批准、驳回、撤回只能对待审批的单发出；按单现在的状态和处理人说这次操作的结果，记录照旧保留：
+    // 同一账号在另一标签页用另一个命令号处理同一张单，读到的状态和处理人一模一样，证明不了是原命令。
     const kind = record.kind as "approve" | "reject" | "withdraw";
     const verb = DECISION_VERB[kind];
     const step = retryBlock(record) ? "原记录继续保留。" : "按原请求重试可确认，不会重复执行。";
@@ -1793,7 +1806,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     syncPending();
     setReleasing(null);
     toast(record.kind === "param" ? "已解除原操作记录，这项设置可以重新调整" : record.kind === "retention" ? "已解除原操作记录，可以重新清理"
-      : record.kind === "export" ? "已解除原操作记录，可以重新导出" : "已解除原操作记录，这张单可以重新处理", "success");
+      : record.kind === "export" ? "已解除原操作记录，可以重新导出" : "已解除原操作记录，按这张单现在的状态处理", "success");
   };
 
   /** 「在操作记录里查看」：切到操作记录，对象填审批单号或机制、清理的资源名，导出按这次的命令号查，模块不限。 */

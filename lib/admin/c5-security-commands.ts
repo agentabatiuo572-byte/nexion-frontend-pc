@@ -1,5 +1,5 @@
 /** C5 login commands: the object, body and command number survive refresh together. */
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { createA2CommandKey } from "./a2-client";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "./pending-mutation-store";
 import { disableUserTwoFactor, requestUserPasswordReset, revokeUserSession, unlockUserSecurity, updateUserCredentialParam, UsersOutcomeUnknownError, type UserSecurityActionEvidence } from "./user360-client";
@@ -10,9 +10,9 @@ export type C5Original = {
   path: string; method: "POST" | "PATCH"; body: string; reason: string; operator: string;
   value?: string; version?: number; lockKind?: "SHORT" | "LONG"; operatorConfirmed?: boolean;
 };
-export type C5Pending = PendingMutationRecord & Partial<C5Original> & { returned?: boolean; rejection?: string };
+export type C5Pending = PendingMutationRecord & Partial<C5Original> & { returned?: boolean; rejection?: string; rejectionCode?: string };
 const commands = createPendingMutationStore<C5Pending>({ storageKey: "nexion-admin-c5-security-commands-v1", retainExpiredRecords: true });
-export function pendingC5Commands(owner: number) {
+export function c5CommandRecords(owner: number) {
   return commands.list().filter(row => row.owner === owner || row.owner === undefined && hasPersistedPendingCommandOwner(String(owner)));
 }
 export function isCompleteC5Command(row: C5Pending): row is C5Pending & C5Original {
@@ -25,7 +25,7 @@ export function isCompleteC5Command(row: C5Pending): row is C5Pending & C5Origin
 }
 export function prepareC5Command(original: C5Original) {
   const scope = original.kind === "credential" ? `credential|${original.target}` : `user|${original.userId}`;
-  if (pendingC5Commands(original.owner).some(row => !isCompleteC5Command(row) || row.fingerprint === scope)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
+  if (c5CommandRecords(original.owner).some(row => !row.rejection && (!isCompleteC5Command(row) || row.fingerprint === scope))) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
   const key = createA2CommandKey("c5-command");
   commands.remember(scope, key, original);
   if (!commands.isDurablyStored(scope, key)) {
@@ -36,7 +36,7 @@ export function prepareC5Command(original: C5Original) {
 }
 export function forgetC5Command(row: C5Pending) { commands.forget(row.fingerprint, row.commandKey); }
 export async function submitC5Command(row: C5Pending) {
-  if (!isCompleteC5Command(row) || row.expiresAt <= Date.now() || row.returned) throw new Error("此原操作只能读回核对，不能重发。");
+  if (!isCompleteC5Command(row) || row.expiresAt <= Date.now() || row.returned || row.rejection) throw new Error("此原操作只能读回核对，不能重发。");
   const evidence: UserSecurityActionEvidence = { operatorConfirmed: row.operatorConfirmed === true, lockKind: row.lockKind ?? null };
   try {
     const result = row.kind === "revoke-one" ? await revokeUserSession(row.target, row.reason, row.operator, row.commandKey)
@@ -52,7 +52,8 @@ export async function submitC5Command(row: C5Pending) {
           : row.kind === "disable-2fa" ? result.twoFactorEnabled !== false : result.locked !== false))) throw new UsersOutcomeUnknownError(row.commandKey);
     commands.remember(row.fingerprint, row.commandKey, { ...row, returned: true });
   } catch (failure) {
-    if (isExplicitRejection(failure)) commands.remember(row.fingerprint, row.commandKey, { ...row, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
+    const rejectionCode = explicitRejectionCode(failure);
+    if (rejectionCode) commands.remember(row.fingerprint, row.commandKey, { ...row, rejectionCode, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
     throw failure;
   }
 }

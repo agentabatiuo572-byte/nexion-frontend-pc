@@ -6,8 +6,8 @@
  * - IDEMPOTENCY_*：幂等层的状态（处理中、结果查不清、内容和原号对不上）；
  * - 结果未知、处理中、响应读不懂、本地没发出去（没有状态码）。
  *
- * 原因码在 D 域和付款接口的 reasonCode，审批接口的 backendMessage。D1、D2、D5、D6、D7 的重试被拒都按这一条判断。
- * 新命令被拒后丢不丢号是另一件事，按 outcome-classification 的口径，不用这条。
+ * 原因码在 D 域和付款接口的 reasonCode，审批接口的 backendMessage。D1、D2、D3、D5、D6、D7 的重试被拒都按这一条判断。
+ * D3、D5–D7 的首次发送也用这一条决定命令号是否保留。
  */
 import { isA2OutcomeUncertainError } from "./a2-client";
 import { isDOutcomeUnknownError } from "./d-client";
@@ -37,29 +37,33 @@ const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
 ]);
 
 export function isExplicitRejection(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if (isDOutcomeUnknownError(error) || isA2OutcomeUncertainError(error) || isOutcomeUnknownError(error)) return false;
+  return explicitRejectionCode(error) !== undefined;
+}
+
+export function explicitRejectionCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return;
+  if (isDOutcomeUnknownError(error) || isA2OutcomeUncertainError(error) || isOutcomeUnknownError(error)) return;
   const value = error as { status?: unknown; reasonCode?: unknown; backendMessage?: unknown; unknownOutcome?: unknown; f4PayoutCoverageRefusal?: unknown };
-  if (value.unknownOutcome === true) return false;
+  if (value.unknownOutcome === true) return;
   const code = typeof value.reasonCode === "string" ? value.reasonCode : typeof value.backendMessage === "string" ? value.backendMessage : "";
   // 763729e6 restores only three single-key hint receipts. Older backends and
   // other retired/batch keys still reject before replay; this code alone cannot
   // establish the original outcome. Keep the record available for lookup.
-  if (code === "E3_CONFIG_KEY_RETIRED") return false;
+  if (code === "E3_CONFIG_KEY_RETIRED") return;
   // These receipts exist, but their original actor cannot be verified. The
   // refusal to replay them does not establish whether the original write ran.
   if (code === "ACCOUNT_LEGACY_COMMAND_REVIEW_REQUIRED" || code === "A6_RECEIPT_OWNER_UNVERIFIED"
-    || code === "TRUST_DOCUMENT_LEGACY_COMMAND_REVIEW_REQUIRED") return false;
+    || code === "TRUST_DOCUMENT_LEGACY_COMMAND_REVIEW_REQUIRED") return;
   // ef4b1a5a refuses to expose an existing K4 batch receipt when its owner or content cannot be proved.
-  if (code === "K4_SCORE_BATCH_RECEIPT_OWNER_UNPROVEN" || code === "K4_SCORE_BATCH_RECEIPT_UNREADABLE") return false;
+  if (code === "K4_SCORE_BATCH_RECEIPT_OWNER_UNPROVEN" || code === "K4_SCORE_BATCH_RECEIPT_UNREADABLE") return;
   // J4 reconciliation can persist partial progress after RECOVERY_STARTED; it is not a nonexecution verdict.
-  if (code.startsWith("J4_EXECUTION_PARTIAL:")) return false;
+  if (code.startsWith("J4_EXECUTION_PARTIAL:")) return;
   // 441c412b OpsRiskService.requireK3CoveragePrecheck rejects before either rule UPDATE,
   // inside the idempotency callback. Only this exact 503 is a business verdict.
-  if (value.status === 503 && code === "K3_COVERAGE_UNAVAILABLE") return true;
+  if (value.status === 503 && code === "K3_COVERAGE_UNAVAILABLE") return code;
   // 41a552fa: only the A2 client's identified F4 approved-payout pre-write refusal.
-  if (value.status === 503 && code === "COVERAGE_SNAPSHOT_UNAVAILABLE" && value.f4PayoutCoverageRefusal === true) return true;
-  return typeof value.status === "number" && value.status >= 400 && value.status < 500
+  if (value.status === 503 && code === "COVERAGE_SNAPSHOT_UNAVAILABLE" && value.f4PayoutCoverageRefusal === true) return code;
+  if (typeof value.status === "number" && value.status >= 400 && value.status < 500
     && (!NOT_A_VERDICT.has(value.status) || value.status === 403 && BUSINESS_REJECTION_BEFORE_WRITE.has(code))
-    && code !== "" && !code.startsWith("IDEMPOTENCY_");
+    && code !== "" && !code.startsWith("IDEMPOTENCY_")) return code;
 }
