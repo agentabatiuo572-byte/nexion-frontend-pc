@@ -630,8 +630,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const closedReplyTargets = closedReplyCandidates.filter(row => intent === "SERVICE" || selectedClosedIds.has(row.conversationNo)).map(({ conversationNo, throughMessageId }) => ({ conversationNo, throughMessageId }));
   const closedCandidatesReady = (!selected || messagePages.contextReady && messagePages.page?.replyContext.ready === true) && [...selectedClosedIds].every(id => closedReplyCandidates.some(row => row.conversationNo === id));
   const closedCandidateIds = closedReplyCandidates.map(row => row.conversationNo).join("|"), replyContextReady = messagePages.contextReady && messagePages.page?.replyContext.ready === true;
-  // A target someone else cleared would otherwise hold closedCandidatesReady false with nothing on screen to untick.
-  useEffect(() => { if (replyContextReady) setSelectedClosedIds(old => { const offered = new Set(closedCandidateIds.split("|")), next = [...old].filter(id => offered.has(id)); return next.length === old.size ? old : new Set(next); }); }, [closedCandidateIds, replyContextReady]);
   const targetCustomer = selected?.customerId ?? requestedCustomerId;
   const busy = flights.current.has(`${scopeIdentity}:${targetCustomer}`);
   const activeCustomerRef = useRef(targetCustomer);
@@ -697,6 +695,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const logicalSlot = selected?.id ?? (requestedCustomerId ? `first:${requestedCustomerId}` : "");
   const targetKey = logicalSlot && draftAssignment?.assignmentId && draftAssignment.agentAdminId
     ? scopedDraftSlot(logicalSlot, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId) : "";
+  const replyTargetsKey = adminId && targetKey && !qualificationUnknown ? `nexion-m3-reply-targets:${adminId}:${targetKey}` : "";
   const draftSlotRef = useRef(targetKey);
   const failedCopy = failedCopies.find(copy => conversationsAvailable && originalCustomerId(copy, visible) === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
@@ -728,7 +727,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const writeAuthorized = !qualificationUnknown && canWriteM3 && !heldByOther && (selected ? selected.detailReady === true && selected.writeState?.canReply === true && closedCandidatesReady && (canSendTo(selected, adminId) || holdAllowsOther && canSendTo({ ...selected, ownerAdminId: adminId }, adminId)) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.customerId === requestedCustomerId && firstDetail.assignmentId && (firstDetail.agentAdminId === adminId || holdAllowsOther)));
   const retryAuthority = useRef({ writeAuthorized, assignment: draftAssignment?.assignmentId, activeKey });
   retryAuthority.current = { writeAuthorized, assignment: draftAssignment?.assignmentId, activeKey };
-  const writable = writeAuthorized && !recoveryBlocksTarget;
+  const writable = writeAuthorized && !recoveryBlocksTarget && Boolean(replyTargetsKey) && metaTarget === replyTargetsKey;
   // 没有本人客户、没有可分配的客服时入口直接禁用，不打开弹窗再说做不了。读不到不拦，弹窗里有失败和重试。
   // 结果跟着已有的更新走：会话快照、名册变了，或切回这个页面，都重读一次（ST-54）。
   useEffect(() => {
@@ -891,6 +890,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     };
   }, []);
   useEffect(() => {
+    setMetaTarget("");
     setDrafts({}); setDraftOwner(0); setPeerChangedDraft(null); setActionResult(""); setSendError(""); setMaintenanceChosen(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
@@ -923,25 +923,32 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
   }, [drafts, adminId, draftOwner, qualificationUnknown]);
   useEffect(() => {
-    if (qualificationUnknown || !targetKey) return;
-    setMetaTarget("");
+    if (!replyTargetsKey || metaTarget === replyTargetsKey) return;
     try {
-      const saved=JSON.parse(sessionStorage.getItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`)??"{}");
-      setSelectedClosedIds(new Set());
+      const saved = JSON.parse(sessionStorage.getItem(replyTargetsKey) ?? "{}");
+      const ids = Array.isArray(saved.ids) ? saved.ids.filter((id: unknown) => typeof id === "string") : [];
+      setSelectedClosedIds(new Set<string>(ids));
       setIncludeCurrentReply(saved.include===true);
       const urlIntent = new URLSearchParams(window.location.search).get("intent");
       setMaintenanceChosen(urlIntent !== null ? urlIntent === "maintenance" : saved.intent === "MAINTENANCE");
     } catch { setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); }
-    setMetaTarget(targetKey);
-  }, [targetKey, adminId, authEpoch, qualificationUnknown]);
+    setMetaTarget(replyTargetsKey);
+  }, [replyTargetsKey, metaTarget]);
   useEffect(() => {
-    if(!adminId||!targetKey||metaTarget!==targetKey||qualificationUnknown)return;
+    if (!replyTargetsKey || metaTarget !== replyTargetsKey || !replyContextReady) return;
+    const offered = new Set(closedCandidateIds.split("|"));
+    setSelectedClosedIds(previous => {
+      const remaining = [...previous].filter(id => offered.has(id));
+      return remaining.length === previous.size ? previous : new Set(remaining);
+    });
+  }, [replyTargetsKey, metaTarget, replyContextReady, closedCandidateIds]);
+  useEffect(() => {
+    if (!replyTargetsKey || metaTarget !== replyTargetsKey) return;
     try {
-      const key = `nexion-m3-reply-targets:${adminId}:${targetKey}`;
-      if (selectedClosedIds.size || includeCurrentReply || intent === "MAINTENANCE") sessionStorage.setItem(key, JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent}));
-      else sessionStorage.removeItem(key);
+      if (selectedClosedIds.size || includeCurrentReply || intent === "MAINTENANCE") sessionStorage.setItem(replyTargetsKey, JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent}));
+      else sessionStorage.removeItem(replyTargetsKey);
     } catch { setSendError("回复范围无法保存在浏览器里，请在本页核对后操作。"); }
-  }, [targetKey,metaTarget,adminId,selectedClosedIds,includeCurrentReply,intent,qualificationUnknown]);
+  }, [replyTargetsKey, metaTarget, selectedClosedIds, includeCurrentReply, intent]);
   useEffect(()=>{setListLimit(LIST_CHUNK);setArchiveIds(new Set());},[query,listTab,authEpoch]);
   useEffect(() => {
     if (!adminId) return;
