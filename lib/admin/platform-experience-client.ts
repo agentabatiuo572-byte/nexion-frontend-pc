@@ -106,9 +106,22 @@ function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIEN
 }
 
 class PlatformExperienceRequestError extends Error {
-  constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string) {
+  readonly resultUnconfirmed: boolean;
+
+  constructor(
+    public readonly status: number,
+    public readonly apiCode: number | undefined,
+    public readonly apiMessage: string | undefined,
+  ) {
+    const resultUnconfirmed = apiMessage === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || apiMessage === "IDEMPOTENCY_RESULT_UNKNOWN";
+    const message = resultUnconfirmed
+      ? "保存结果未确认，请保持输入不变，稍后再次保存核对。"
+      : apiMessage === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
+        ? apiMessage
+        : formatAdminApiError(apiMessage, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${status}`);
     super(message);
     this.name = "PlatformExperienceRequestError";
+    this.resultUnconfirmed = resultUnconfirmed;
   }
 }
 
@@ -116,10 +129,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await guardedFetch(path, { ...init, cache: "no-store" });
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!response.ok || !body || body.code !== 0) {
-    const message = body?.message === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
-      ? "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
-      : formatAdminApiError(body?.message, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${response.status}`);
-    throw new PlatformExperienceRequestError(response.status, body?.code, message);
+    throw new PlatformExperienceRequestError(response.status, body?.code, body?.message);
   }
   return body.data as T;
 }
@@ -247,7 +257,7 @@ export async function updatePlatformExperienceConfig(
     if (saved.operatingLanguages) requiredContentLanguages = Promise.resolve(saved.operatingLanguages);
     return saved;
   } catch (cause) {
-    if (cause instanceof PlatformExperienceRequestError && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
+    if (cause instanceof PlatformExperienceRequestError && !cause.resultUnconfirmed && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
       commandAttempts.forget(slot);
     }
     // Keep the key on an uncertain result; editing the form/version makes a new fingerprint.
