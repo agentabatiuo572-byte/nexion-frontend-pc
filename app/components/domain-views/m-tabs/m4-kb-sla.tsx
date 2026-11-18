@@ -39,6 +39,7 @@ const CATEGORY_OPTIONS: SupportTicketCategory[] = ["withdrawal", "deposit", "har
 const FAQ_CATEGORY_OPTIONS: SupportFaq["category"][] = ["general", ...CATEGORY_OPTIONS];
 const SURFACES: SupportFaq["surface"][] = ["Help Center", "Nova"];
 const FAQ_PAGE_SIZE = 5;
+const DEFAULT_FAQ_LANGUAGE = "en-US";
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -539,7 +540,7 @@ function FaqModal({
   const initial = recovery?.faq?.row ?? row;
   const [category, setCategory] = useState<SupportFaq["category"]>(initial?.category ?? "general");
   const [surface, setSurface] = useState<SupportFaq["surface"]>(initial?.surface ?? "Help Center");
-  const [language, setLanguage] = useState<string>(initial?.language ?? "zh-CN");
+  const [language, setLanguage] = useState<string>(initial?.language ?? DEFAULT_FAQ_LANGUAGE);
   const [sortOrder, setSortOrder] = useState(String(initial?.sortOrder ?? 10));
   const [question, setQuestion] = useState(initial?.question ?? "");
   const [answer, setAnswer] = useState(initial?.answer ?? "");
@@ -574,7 +575,7 @@ function FaqModal({
   // 英语问答改成别的语言保存，后端会清掉附带的翻译（OpsSupportKnowledgeService.updateFaq）。
   const translationCount = row?.language === "en-US" && language !== "en-US" ? Object.keys(row.translations ?? {}).length : 0;
   const dirty = question !== (row?.question ?? "") || answer !== (row?.answer ?? "") || reason !== "" || category !== (row?.category ?? "general")
-    || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? "en-US") || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
+    || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? DEFAULT_FAQ_LANGUAGE) || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
   const save = () => {
     setTried(true);
     setFailure(null);

@@ -604,7 +604,10 @@ function readI3Command(row: IContentPending): I3Command | undefined {
           : id && method === "POST" && ["schedule", "send-now", "cancel"].includes(operation) ? operation as "schedule" | "send-now" | "cancel" : undefined;
     if (!action || action !== "create" && (!Number.isInteger(input.expectedRevision) || Number(input.expectedRevision) < 0)) return fallback;
     if (["create", "draft"].includes(action)) {
-      if (!["name", "titleZh", "titleVi", "titleEn", "bodyZh", "bodyVi", "bodyEn", "kind", "ctaHref", "ctaLabel", "tier"].every((key) => typeof input[key] === "string")) return fallback;
+      const { ctaHref, ctaLabel } = input;
+      // A draft without a destination can omit the label. The service stores it as an empty string.
+      if (!["name", "titleZh", "titleVi", "titleEn", "bodyZh", "bodyVi", "bodyEn", "kind", "tier"].every((key) => typeof input[key] === "string")
+        || typeof ctaHref !== "string" || (typeof ctaLabel !== "string" && (ctaLabel != null || trimStoredContent(ctaHref) !== ""))) return fallback;
       const target = input.audienceTarget as Record<string, unknown> | null;
       if (!target || typeof target !== "object" || !["phaseMin", "phaseMax", "language"].every((key) => typeof target[key] === "string")
         || !Number.isInteger(target.registrationDaysMin) || input.budget != null && !(typeof input.budget === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(input.budget))) return fallback;

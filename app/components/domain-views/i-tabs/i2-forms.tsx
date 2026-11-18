@@ -179,6 +179,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
             const required = requiredLanguages.includes(l.code);
             const partial = !!title.trim() !== !!body.trim();
             const previewTitle = effective[`title${l.key}`], previewBody = effective[`body${l.key}`];
+            const previewFilled = !!previewTitle.trim() && !!previewBody.trim();
             const shown = social && !retiredPreview ? previewText(previewTitle, previewBody, l.lang, sample) : { title: previewTitle, body: previewBody };
             const hint = l.code !== "en" && required && isEnglishCopy({ title: form.titleEn, body: form.bodyEn }, { title, body })
               ? englishCopyHint(l.code) : undefined;
@@ -192,7 +193,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
                   {(control) => <Textarea {...control} rows={4} maxLength={4000} value={body} count={`${body.length}/4000`} onChange={(e) => setForm({ ...form, [`body${l.key}`]: e.target.value })} placeholder={l.key === "Zh" ? "例如：{actor} 在 {city} 刚刚提现到账 {amount}" : `${l.label}正文`} />}
                 </Field>
                 <AppNotice lang={l.lang} title={shown.title} body={shown.body} cta={form.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(form.channel)}
-                  missing={filled ? undefined : required ? `${l.label}还没填，发布前要补上` : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。"} />
+                  missing={previewFilled ? undefined : required ? `${l.label}还没填，发布前要补上` : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。"} />
               </section>
             );
           })}

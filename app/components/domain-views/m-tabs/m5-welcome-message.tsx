@@ -214,7 +214,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
               {submittedTexts && changed.includes(lang)
                 ? <>
                   <div className="m5-bubble" data-old=""><span className="m5-bubble-tag">现在线上</span>{current.texts[lang]}</div>
-                  <div className="m5-bubble" data-user-content=""><span className="m5-bubble-tag" data-new="">保存后</span>{draft[lang].trim() || <span className="m5-bubble-empty">还没有内容</span>}</div>
+                  <div className="m5-bubble" data-user-content=""><span className="m5-bubble-tag" data-new="">保存后</span>{submittedTexts[lang].trim() || <span className="m5-bubble-empty">还没有内容</span>}</div>
                 </>
                 : <div className="m5-bubble" data-user-content=""><span className="m5-bubble-tag">现在线上</span>{current.texts[lang]}</div>}
             </div>

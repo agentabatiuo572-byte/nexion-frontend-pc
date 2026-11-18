@@ -14,7 +14,7 @@ import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store
 import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
-import { APP_FIELD_LIMIT, i4AppFieldIssue, i4HasEnglishFields } from "@/lib/admin/i4-trust-contract";
+import { APP_FIELD_LIMIT, appBlanking, i4AppFieldIssue, i4HasEnglishFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
 
 import type { TrustPublishedSnapshotView, TrustSectionVersionView } from "@/lib/admin/i-client";
@@ -309,16 +309,19 @@ export type EditorState = {
 };
 
 /** 草稿编辑区：左边填，右边是 App 里的样子，三语切换；和公开版不同的字段标「已改」。 */
-export function DraftEditorBody({ editor, published, publishedVersion, onChange, blanked, requiredLanguages, frozen = false }: {
+export function DraftEditorBody({ editor, published, publishedVersion, onChange, requiredLanguages, frozen = false }: {
   editor: EditorState;
   requiredLanguages: readonly OperatingLanguageCode[];
   published: readonly TrustField[];
   publishedVersion: string;
   frozen?: boolean;
   onChange: (next: EditorState) => void;
-  blanked: { all?: string; keys: Set<string> };
 }) {
   const [lang, setLang] = useState<Lang>("zh");
+  const submittedFields = mapTrustSectionLanguageFields(editor.fields.map(({ key, label, value }) => ({
+    key: key.trim(), label: label.trim(), value: value.trim(),
+  })), requiredLanguages, "submit");
+  const blanked = appBlanking(editor.sectionKey, "", submittedFields);
   const changed = changedKeys(mapTrustSectionLanguageFields([...published], requiredLanguages, "load"), editor.fields);
   const groups = { en: {} as Record<string, string>, zh: {} as Record<string, string>, vi: {} as Record<string, string> };
   for (const field of editor.fields) {
@@ -358,7 +361,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
           {changed.size > 0 && <StatusTag tone="progress">和 {publishedVersion || "公开版"} 比改了 {changed.size} 项</StatusTag>}
         </div>
         {overLimit && <Notice tone="warn">内容超过 {APP_FIELD_LIMIT} 项：后台能保存，但发布后 App 会拒收整份内容。</Notice>}
-        <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(mapTrustSectionLanguageFields(editor.fields, requiredLanguages, "submit"))} />
+        <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(submittedFields)} />
         <div className="i4-editor-list">
           {shown.map(({ field, index }) => (
             <div className="i4-editor-field" key={field.key} data-changed={changed.has(field.key) ? "" : undefined}>
@@ -386,7 +389,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
           <Explain label="预览说明" content="按内容项原样排列，只示意用户看到的文字，不是 App 的真实排版。" />
         </div>
         {blanked.all && <Notice tone="neutral">{blanked.all}</Notice>}
-        <FieldList label="App 里的样子" fields={editor.fields} lang={lang} blanked={blanked} changed={changed} />
+        <FieldList label="App 里的样子" fields={submittedFields} lang={lang} blanked={blanked} changed={changed} />
       </aside>
     </div>
   );
