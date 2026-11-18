@@ -1279,7 +1279,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="App 上的文字" sub={contentEvent?.id}
-      explain={`改一格保存一格，App 下次读取就用新内容，不用发布。开放活动、首次开启玩法前要填齐${REQUIRED_TEXT}的${contentFieldsText(contentEvent?.appUsesAuthoredRewardName)}${OPTIONAL_TEXT ? `，${OPTIONAL_TEXT}可以不填` : ""}；已开放的活动照常进行，没填的格 App 用英文或原文${contentEvent?.appUsesAuthoredRewardName === false ? "。这个活动的奖励一行由系统按实际发放写，不用奖项名" : contentEvent?.appUsesAuthoredRewardName === true ? "" : "，有玩法规则的活动奖项名没填时显示规则摘要"}。`}>
+      explain={`改一格保存一格，App 下次读取就用新内容，不用发布。开放活动、首次开启玩法前要填齐${REQUIRED_TEXT}的${contentFieldsText(contentEvent?.appUsesAuthoredRewardName)}${OPTIONAL_TEXT ? `，${OPTIONAL_TEXT}可以不填` : ""}；已开放的活动照常进行，没填的格 App 用英文或原文${contentEvent?.appUsesAuthoredRewardName === undefined ? "，有玩法规则的活动奖项名没填时显示规则摘要" : ""}。`}>
       {contentEvent && <EventPreview canEdit={canModuleWrite} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} authored={contentEvent.appUsesAuthoredRewardName} appNames={contentEvent.appRewardNames} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}

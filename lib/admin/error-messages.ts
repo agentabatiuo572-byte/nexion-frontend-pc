@@ -3873,10 +3873,10 @@ function eventLocalizedMissingMessage(code: string, data: unknown): string | und
   };
   // 必填语言没填（missing）必须补；选填语言只填了一部分（incomplete）要么填齐、要么全部留空。两类分开说。
   const must = byLanguage(missing).map(([language, fields]) => `${language}${[...fields].join("、")}`);
-  const half = byLanguage(incomplete).map(([language, fields]) => `${language}只填了一部分（缺${[...fields].join("、")}）`);
+  const half = byLanguage(incomplete).map(([language, fields]) => `${language}只填了一半（缺${[...fields].join("、")}）`);
   if (!must.length && !half.length) return;
-  const parts = [must.length ? `还缺${must.join("、")}，必须补齐` : "", half.length ? `${half.join("；")}，要么填齐、要么全部留空` : ""];
-  return `${parts.filter(Boolean).join("；")}。到「既有活动」页签，从这个活动卡片底部打开文字逐格改。`;
+  const parts = [must.length ? `还缺${must.join("、")}` : "", half.length ? `${half.join("；")}，要么填齐、要么全空` : ""];
+  return `${parts.filter(Boolean).join("；")}。到「既有活动」卡片底部逐格补。`;
 }
 
 export function formatAdminApiError(
