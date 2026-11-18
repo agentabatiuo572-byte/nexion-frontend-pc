@@ -827,8 +827,8 @@ const reviewOperation = (w: { operationCode?: string; action: string }) =>
 const G_PARAM_NAMES: Record<string, string> = {
   userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
   apy: "参考年奖励率", lockDays: "锁仓期限", nurture: "好友升级奖励倍率", lottery: "创世节点抽奖券", penalty: "提前解锁扣款", presets: "锁定金额快捷选项",
-  supply: "节点总量", price: "一级购买单价", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "每日收益基数公式",
-  airdropPct: "Genesis 释放分配占比", emissionCurve: "释放曲线", airdropLockDays: "OG 倍率锁仓期",
+  supply: "节点总量", price: "一级购买单价", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "收益计算基数",
+  airdropPct: "空投占比", emissionCurve: "收益发放曲线", airdropLockDays: "早期持有人奖励锁仓期",
 };
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
 /** H3 审批单对象的配置键写 H3 页上这一项的叫法（H3 页的设置名和改值框标题）。 */
