@@ -1805,7 +1805,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     syncPending();
     setReleasing(null);
     toast(record.kind === "param" ? "已解除原操作记录，这项设置可以重新调整" : record.kind === "retention" ? "已解除原操作记录，可以重新清理"
-      : record.kind === "export" ? "已解除原操作记录，可以重新导出" : "已解除原操作记录，这张单可以重新处理", "success");
+      : record.kind === "export" ? "已解除原操作记录，可以重新导出" : "已解除原操作记录，按这张单现在的状态处理", "success");
   };
 
   /** 「在操作记录里查看」：切到操作记录，对象填审批单号或机制、清理的资源名，导出按这次的命令号查，模块不限。 */
