@@ -938,6 +938,8 @@ function G2ExchangePage() {
       void readOriginalCommand(original);
       return;
     }
+    // 没收到结果的是一次清空（提交的是空值）：按清空的确认框重试，调整框不收空值。
+    if (original && original.input.value === "") { clearEta(key); return; }
     const name = ETA[key].name;
     const estimate = latest.current.overview?.queueEstimate;
     const hoursNow = estimate?.hours?.trim() ?? "";
@@ -998,30 +1000,46 @@ function G2ExchangePage() {
   /** 清空一项预计设置：单独确认，按原保存通路提交空值。 */
   const clearEta = (key: EtaKey) => {
     const path = `/exchange/params/${key}`;
+    const original = pendingG2ExchangeCommand(batchAdminId, path);
+    if (original && (g2ExchangeCommandExpired(original) || !original.context?.cap
+      || !useAdminAuth.getState().session?.authorities.includes(capAuthority(key)))) {
+      void readOriginalCommand(original);
+      return;
+    }
     const name = ETA[key].name;
     const estimate = latest.current.overview?.queueEstimate;
-    const current = etaRaw(estimate, key);
+    const current = original?.context?.cap?.value ?? etaRaw(estimate, key);
     const hoursNow = etaRaw(estimate, "queueEtaHours");
-    const cap: G2Cap = { key, name, sub: "", value: current, displayValue: current, note: "", loosen: false };
+    const cap: G2Cap = original?.context?.cap ?? { key, name, sub: "", value: current, displayValue: current, note: "", loosen: false };
     const appLanguage = ETA_APP_LANGUAGE[key];
     const after = appLanguage
       ? `App ${appLanguage}界面不再用这句；运营区域语言勾了${appLanguage}时，App 上整条预计都不显示`
       : "排队单上不再显示预计时间，改成「等运营处理」";
     openActionConfirm({ briefKind: "config",
       action: `清空排队预计 · ${name}`,
-      title: `清空${name}`,
+      title: original ? `清空${name} · 按原请求重试` : `清空${name}`,
       detail: <>{ETA[key].what}。</>,
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      effect: original
+        ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经清空。有效期内按原内容重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
+        : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认清空",
       facts: <Facts>
         <Fact k="改的是">{name}</Fact>
         <Fact k="现在">{key === "queueEtaHours" ? paramValueText(key, current) : etaHoursValid(hoursNow) ? etaSentence(current, hoursNow) : current}</Fact>
         <Fact k="清空后" tone="danger">{after}</Fact>
-        <Fact k="什么时候生效">确认后立即生效，不用审批</Fact>
+        <Fact k="什么时候生效">{original ? "提交结果未知，可能已经清空。有效期内按原内容重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
       </Facts>,
       statedBrief: { impact: "只清空这一项，不改兑换的处理顺序。", check: "理由写清为什么清空，或写工单号。" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
       run: async (reason) => {
+        const saved = pendingG2ExchangeCommand(batchAdminId, path);
+        if (original || saved) {
+          if (!saved) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+          if (g2ExchangeCommandExpired(saved)) { await readOriginalCommand(saved); return; }
+          try { await mutate(`param:${key}`, async () => await retryG2ExchangeCommand(batchAdminId, saved.commandKey) as G2Overview, `${name}已清空`, true); }
+          catch (error) { await reload(true); if (!pendingG2ExchangeCommand(batchAdminId, path)) openActionConfirm(null); throw error; }
+          return;
+        }
         const view = latest.current;
         if (!view.overview?.queueEstimate || view.loading || view.readFailed || view.rereadPending || view.busyKey) {
           throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
