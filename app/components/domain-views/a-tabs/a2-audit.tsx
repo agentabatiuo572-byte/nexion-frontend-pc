@@ -2039,12 +2039,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const j4 = isJ4Execution(w);
     const scheduled = phoneScheduledAt(w);
     const g3 = g3PolicyExecutionTiming(w);
+    const i5Publish = w.operationCode === "i5_disclosure_publish" || w.operationCode === "i4_disclosure_publish";
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
     const impact = scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
         : w.coverageCheckOnApproval ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
+            // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
+            : i5Publish ? "批准后这版封存，用户看到的版本不变。"
             : isFunds ? "立即执行，改资金或账目；失败不改原值。"
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
@@ -2053,6 +2056,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
         : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
+            : i5Publish || w.operationCode === "i5_matrix_configure" ? "核对这次披露改了什么，理由写清版本依据。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
     const amplifies = w.amplifies && !w.coverageCheckOnApproval;
     const k1 = k1TicketView(w);
