@@ -383,7 +383,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const eventContent = model?.contentLocales?.event ?? {};
-  const missingFor = (event: LegacyEvent) => eventLocalizedContentGaps(eventContent[event.id]);
+  const missingFor = (event: LegacyEvent) => eventLocalizedContentGaps(eventContent[event.id], event.appUsesAuthoredRewardName);
   /** 还没开放，或玩法还能首次开启：必填语言都要填（和开放、开启时的检查同一个条件）。 */
   const allLocalesRequired = (event: LegacyEvent) => {
     const rule = rules?.find((row) => row.eventCode === event.id);
@@ -394,7 +394,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     && (event.rewardCopyOnly ?? (rules !== null && H4_EVENT_RULE_CODES.has(event.id) && !!rules.find((row) => row.eventCode === event.id))) === true;
   const weighedGaps = (event: LegacyEvent) => {
     const requiresAll = allLocalesRequired(event), fromRule = rewardFromRule(event);
-    const gaps = contentGaps(eventContent[event.id]).map(gap => ({ ...gap, weight: gapWeight(gap, requiresAll, fromRule) }));
+    const gaps = contentGaps(eventContent[event.id])
+      .filter(gap => gap.field !== "rewardName" || event.appUsesAuthoredRewardName !== false)
+      .map(gap => ({ ...gap, weight: gapWeight(gap, requiresAll, fromRule) }));
     return { must: gaps.filter(gap => gap.weight === "must"), soft: [...new Set(gaps.filter(gap => gap.weight === "soft").map(gap => gap.locale))] };
   };
 

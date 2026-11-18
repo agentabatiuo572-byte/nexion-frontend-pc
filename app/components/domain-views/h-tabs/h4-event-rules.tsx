@@ -160,8 +160,11 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
           if (!original) {
             assertH4Fresh("rules", readVersion);
             if (firstOpen) {
-              const missing = eventRuleReadiness(base, eventContent).missing.filter(key => key.startsWith("localized."));
-              if (missing.length) throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing }));
+              const readiness = eventRuleReadiness(base, eventContent);
+              const missing = readiness.missing.filter(key => key.startsWith("localized."));
+              if (missing.length || readiness.incomplete?.length) {
+                throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing, incomplete: readiness.incomplete }));
+              }
             }
           }
           const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen);
@@ -235,14 +238,15 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
     const lockedForm = !canWrite || saving || saved || h4Blocked(`H/h4_event_rule/${selected.eventCode}`) || !!review;
     const showSaved = saved && (!error || readFailed);
     const readiness = eventRuleReadiness(selected, eventContent);
-    const enableBlocked = !readiness.ready ? `还没就绪：${missing(readiness.missing).join("、") || "参与条件与奖励配置"}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
+    const gaps = missing([...readiness.missing, ...(readiness.incomplete ?? [])]);
+    const enableBlocked = !readiness.ready ? `还没就绪：${gaps.join("、") || "参与条件与奖励配置"}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
     return <div className="h4-dialog-body">
       {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
       {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新配置，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
       <fieldset disabled={lockedForm} className="h4-fieldset">
       <Facts>
         <Fact k="玩法">{PLAY_SENTENCE[playKey({ kind: selected.kind, rules: draft.rules })] ?? "—"}</Fact>
-        <Fact k="就绪" tone={readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : readiness.ready ? "配置已满足开启条件" : `待补齐：${missing(readiness.missing).join("、") || "参与条件与奖励配置"}`}</Fact>
+        <Fact k="就绪" tone={readiness.ready ? "ok" : "warn"}>{ended(selected) ? "活动已结束，参与条件与有效期保持原配置" : readiness.ready ? "配置已满足开启条件" : `待补齐：${gaps.join("、") || "参与条件与奖励配置"}`}</Fact>
         <Fact k="改动范围">{selected.rulesLocked ? "玩法和时间已固定，只可关闭活动；关闭后不能重新开启" : "第一次开启后玩法和时间固定；关闭后不能重新开启"}</Fact>
       </Facts>
       <Field label="开放状态" explain={enableBlocked ? `不能选「开启」：${enableBlocked}。` : undefined}>
@@ -306,7 +310,7 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
       : <div className="h4-cards">{rows.map(row => {
         const supported = !!EVENT_KIND_LABELS[row.kind];
         const readiness = eventRuleReadiness(row, eventContent);
-        const lack = missing(readiness.missing);
+        const lack = missing([...readiness.missing, ...(readiness.incomplete ?? [])]);
         return <article key={row.eventCode} className="h4-card h4l-play" aria-label={`${EVENT_KIND_LABELS[row.kind] ?? "其他活动"} · ${row.eventCode}`} data-dim={!supported || ended(row) ? "" : undefined}>
           <header className="h4-card-head">
             <div className="h4-card-title"><h3>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.eventCode}>{row.eventCode}</span></span></div>

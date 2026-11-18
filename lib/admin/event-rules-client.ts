@@ -1,4 +1,4 @@
-import { growthRequest } from "./h-client";
+import { growthRequest, validH4AppRewardPresentation, type H4AppRewardPresentation } from "./h-client";
 import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
 
 // Backend 04d11022: H4EventRuleService.CODES (lines 28–30), used by
@@ -8,7 +8,13 @@ export const H4_EVENT_RULE_CODES = new Set([
   "evt-spring-spin", "evt-reinvest-bonus", "evt-onboarding-7d", "evt-black-friday", "evt-anniversary-spin",
 ]);
 
-export interface EventRuleView {
+export interface EventRuleReadiness {
+  ready: boolean;
+  missing: string[];
+  incomplete?: string[];
+}
+
+export interface EventRuleView extends H4AppRewardPresentation {
   eventCode: string;
   kind: string;
   revision: number;
@@ -17,7 +23,7 @@ export interface EventRuleView {
   startsAt: string | null;
   endsAt: string | null;
   rules: Record<string, unknown>;
-  readiness: { ready: boolean; missing: string[] };
+  readiness: EventRuleReadiness;
   supported?: boolean;
   rewardCopyOnly?: boolean;
 }
@@ -30,6 +36,8 @@ export function parseEventRule(value: unknown): EventRuleView {
     || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.enabled !== "boolean" || typeof row.rulesLocked !== "boolean"
     || !row.rules || typeof row.rules !== "object" || Array.isArray(row.rules)
     || typeof row.readiness?.ready !== "boolean" || !Array.isArray(row.readiness.missing) || row.readiness.missing.some(item => typeof item !== "string")
+    || row.readiness.incomplete !== undefined && (!Array.isArray(row.readiness.incomplete) || row.readiness.incomplete.some(item => typeof item !== "string"))
+    || !validH4AppRewardPresentation(row)
     || [row.startsAt, row.endsAt].some(value => value !== null && (typeof value !== "string" || !Number.isFinite(Date.parse(value))))) throw new Error("活动规则读取失败，请刷新后重试。");
   return row;
 }

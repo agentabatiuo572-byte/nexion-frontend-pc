@@ -1,4 +1,4 @@
-import type { EventRuleView } from "./event-rules-client";
+import type { EventRuleReadiness, EventRuleView } from "./event-rules-client";
 
 /** 开放活动、首次开启玩法前必须填的语言：拦截和页面文字共用这一份。 */
 export const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
@@ -6,21 +6,24 @@ const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
 
 export type EventLocalizedContent = Record<string, Record<string, unknown>>;
 
-export function eventLocalizedContentGaps(content?: EventLocalizedContent) {
+export function eventLocalizedContentGaps(content: EventLocalizedContent | undefined, requiresRewardName = true) {
   return EVENT_CONTENT_LOCALES.flatMap(locale => EVENT_CONTENT_FIELDS.filter(field => {
+    if (field === "rewardName" && !requiresRewardName) return false;
     const value = content?.[locale]?.[field];
     return typeof value !== "string" || !value.trim();
   }).map(field => ({ locale, field })));
 }
 
 export function eventRuleReadiness(
-  row: Pick<EventRuleView, "enabled" | "eventCode" | "readiness">,
+  row: Pick<EventRuleView, "enabled" | "eventCode" | "readiness" | "appUsesAuthoredRewardName">,
   content?: Record<string, EventLocalizedContent>,
-) {
-  if (row.enabled || !content) return row.readiness;
-  const localized = eventLocalizedContentGaps(content[row.eventCode]).map(({ locale, field }) => `localized.${locale}.${field}`);
+): EventRuleReadiness {
+  // The reward projection was added alongside the authoritative copy readiness rules.
+  if (row.appUsesAuthoredRewardName !== undefined || row.enabled || !content) return row.readiness;
+  const localized = eventLocalizedContentGaps(content[row.eventCode]).map(({ locale, field }) => `localized.${locale}.${field}`)
+    .filter(key => !row.readiness.incomplete?.includes(key));
   const missing = [...new Set([...row.readiness.missing, ...localized])];
-  return { ready: row.readiness.ready && missing.length === 0, missing };
+  return { ...row.readiness, ready: row.readiness.ready && missing.length === 0, missing };
 }
 
 export interface EventRuleField { key: string; label: string; type?: "text" | "regions" | "weekdays" | "voucher"; integer?: boolean; }
@@ -62,7 +65,7 @@ export function eventRuleMissingLabel(key: string): string {
 
 export function eventRuleReadinessText(row: Pick<EventRuleView, "rulesLocked" | "endsAt" | "readiness">, now = Date.now()): string {
   if (row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= now) return "活动已结束，参与条件与有效期保持原配置。";
-  return row.readiness.ready ? "配置已满足开启条件。" : `待补齐：${[...new Set(row.readiness.missing.map(eventRuleMissingLabel))].join("、") || "参与条件与奖励配置"}。`;
+  return row.readiness.ready ? "配置已满足开启条件。" : `待补齐：${[...new Set([...row.readiness.missing, ...(row.readiness.incomplete ?? [])].map(eventRuleMissingLabel))].join("、") || "参与条件与奖励配置"}。`;
 }
 
 export function eventRuleDraftRules(row: Pick<EventRuleView, "kind" | "rules"> & { eventCode?: string }): Record<string, unknown> {

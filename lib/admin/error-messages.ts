@@ -3848,12 +3848,14 @@ const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 function eventLocalizedMissingMessage(code: string, data: unknown): string | undefined {
   if (code !== "EVENT_LOCALIZED_CONTENT_INCOMPLETE" && code !== "EVENT_RULE_INCOMPLETE") return;
-  if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
+  if (!data || typeof data !== "object") return;
+  const missing = "missing" in data && Array.isArray(data.missing) ? data.missing : [];
+  const incomplete = "incomplete" in data && Array.isArray(data.incomplete) ? data.incomplete : [];
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
   const fieldLabels = { name: "名称", description: "说明", rewardName: "奖项名" };
   const byLanguage = new Map<string, Set<string>>();
-  for (const item of data.missing) {
+  for (const item of [...missing, ...incomplete]) {
     const key = typeof item === "string" ? item
       : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
         ? `localized.${item.locale}.${item.field}` : "";
