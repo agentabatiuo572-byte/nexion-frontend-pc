@@ -17,6 +17,7 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   agentIdForName,
   buildMLegacyParams,
+  explicitMContentRejectionCode,
   fetchMConversationSnapshot,
   fetchMConversationDetail,
   fetchMContentData,
@@ -525,10 +526,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         meta?.onBackendResult?.(backendResult);
         return true;
       } catch (error) {
-        // Only the status write's explicit state rejection settles this receipt. Preread,
-        // network, 5xx and idempotency-unknown failures do not prove the original command failed.
-        const rejected = !writeConfirmed && closeMatch && error instanceof MContentReadError
-          && error.apiCode === 409 && [200, 409].includes(error.status) && error.backendMessage === "INVALID_STATE_TRANSITION";
+        const rejected = !writeConfirmed && explicitMContentRejectionCode(error) !== undefined;
         if (rejected) {
           mCommands.forget(commandSlot(commandFingerprint), idempotencyKey);
           pendingMCommandMetadata.current.delete(commandFingerprint);
@@ -539,8 +537,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         const message = displayAdminError(error);
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
-        const failure = rejected ? `后台明确拒绝原会话结束操作，请核对当前会话后重新确认${detail}` : refusedWrite(error) ? `后台拒绝了这次操作${detail}` : `结果未知${detail.replace(/。$/, "")}。再点确认会按原请求重试`;
-        if (meta?.onFailure) meta.onFailure(failure); else setToast(failure, rejected || refusedWrite(error) ? "error" : "warn");
+        const failure = rejected ? message : `结果未知${detail.replace(/。$/, "")}。再点确认会按原请求重试`;
+        if (meta?.onFailure && !(rejected && confirming)) meta.onFailure(failure);
+        else setToast(failure, rejected ? "error" : "warn");
         return false;
       }
     },
