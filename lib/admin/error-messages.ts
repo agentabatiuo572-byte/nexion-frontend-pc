@@ -3856,21 +3856,27 @@ function eventLocalizedMissingMessage(code: string, data: unknown): string | und
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
   const fieldLabels = { name: "名称", description: "说明", rewardName: "奖项名" };
-  const byLanguage = new Map<string, Set<string>>();
-  for (const item of [...missing, ...incomplete]) {
-    const key = typeof item === "string" ? item
-      : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
-        ? `localized.${item.locale}.${item.field}` : "";
-    const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
-    if (!match) continue;
-    const language = languageLabels[match[1] as keyof typeof languageLabels];
-    const fields = byLanguage.get(language) ?? new Set<string>();
-    fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
-    byLanguage.set(language, fields);
-  }
-  if (!byLanguage.size) return;
-  const labels = [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`);
-  return `还缺${labels.join("、")}。到「既有活动」页签，点这个活动卡片底部的「翻译没填」补齐。`;
+  const byLanguage = (items: unknown[]) => {
+    const grouped = new Map<string, Set<string>>();
+    for (const item of items) {
+      const key = typeof item === "string" ? item
+        : item && typeof item === "object" && "locale" in item && "field" in item && typeof item.locale === "string" && typeof item.field === "string"
+          ? `localized.${item.locale}.${item.field}` : "";
+      const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
+      if (!match) continue;
+      const language = languageLabels[match[1] as keyof typeof languageLabels];
+      const fields = grouped.get(language) ?? new Set<string>();
+      fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
+      grouped.set(language, fields);
+    }
+    return [...grouped];
+  };
+  // 必填语言没填（missing）必须补；选填语言只填了一部分（incomplete）要么填齐、要么全部留空。两类分开说。
+  const must = byLanguage(missing).map(([language, fields]) => `${language}${[...fields].join("、")}`);
+  const half = byLanguage(incomplete).map(([language, fields]) => `${language}只填了一部分（缺${[...fields].join("、")}）`);
+  if (!must.length && !half.length) return;
+  const parts = [must.length ? `还缺${must.join("、")}，必须补齐` : "", half.length ? `${half.join("；")}，要么填齐、要么全部留空` : ""];
+  return `${parts.filter(Boolean).join("；")}。到「既有活动」页签，从这个活动卡片底部打开文字逐格改。`;
 }
 
 export function formatAdminApiError(
