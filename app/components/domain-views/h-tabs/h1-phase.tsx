@@ -1067,19 +1067,18 @@ export default function H1Phase({ ctx,
         </Fold>
       </div>
       <div id={nav.anchor("attribution")} className="h1-section">
-        <Fold title="阶段归因" icon={ChartNoAxesCombined} tone="role-other" summary={`${model.attribution.length} 个阶段的参考资料`} open={!!folds.attribution} onOpenChange={(open) => setFolds((value) => ({
+        <Fold title="阶段归因" icon={ChartNoAxesCombined} tone="role-other" summary={model.attribution.every((row) => !row.value || row.value === "未提供效果数据") ? `${model.attribution.length} 个阶段 · 还没有效果数据` : `${model.attribution.length} 个阶段的参考资料`} open={!!folds.attribution} onOpenChange={(open) => setFolds((value) => ({
           ...value,
           attribution: open
-        }))} explain="固定的参考资料，不是本月实际参数，也不是效果统计；实际数据看运营阶段状态和设备、任务与团队报表。">
+        }))} explain="每个阶段主要靠哪项参数、由哪个模块负责。系统还没有这些参数的效果数据，这里不代表已测出的效果；实际数据看运营阶段状态和设备、任务与团队报表。">
           {!model.attribution.length ? <BlockState state="empty" title="没有阶段参考资料" /> : <div className="h1-attribution">{model.attribution.map((row) => <section key={row.phase} id={`h1-attribution-${row.phase}`} tabIndex={-1} className="h1-attribution-item" data-hit={deepLink?.phase === row.phase ? "" : undefined}>
-            <h3>{row.phase} {row.name}{deepLink?.phase === row.phase && <StatusTag tone="progress" icon={MapPin}>跳转定位</StatusTag>}</h3>{["P5",
-              "P6"].includes(row.phase) && <Notice tone="warn">这份资料含已停用的参数，不能当作现在的依据。</Notice>}
+            <h3>{row.phase} {row.name}{deepLink?.phase === row.phase && <StatusTag tone="progress" icon={MapPin}>跳转定位</StatusTag>}</h3>{(row.paramKey === "withdrawPenaltyFeeRate" || row.driver.includes("提现费率")) && <Notice tone="warn">这份资料含已停用的提现惩罚费率，不能当作现在的依据。</Notice>}
             <Facts>
               <Fact k="主要驱动">{row.driver.replaceAll("提现冷却",
                 "到账审查窗口").replaceAll("增强合规审查",
                   "加强合规审查")}</Fact>
               <Fact k="阶段参数">{DIALS.find((dial) => dial.key === row.paramKey)?.label ?? row.paramKey}</Fact>
-              <Fact k="参考值">{format(row.value, row.paramKey === "withdrawCooldownDays" ? 0 : undefined)}{number(row.value) != null && DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact>
+              {row.value && row.value !== "未提供效果数据" && <Fact k="参考值">{format(row.value, row.paramKey === "withdrawCooldownDays" ? 0 : undefined)}{number(row.value) != null && DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact>}
               <Fact k="负责模块">{row.owner}</Fact>
             </Facts>
             <Fold inset title="原始资料" summary="系统里的原文">

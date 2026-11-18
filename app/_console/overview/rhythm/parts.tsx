@@ -256,7 +256,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
                 <Td align="right"><span className="b4-value" data-retired={retired ? "" : undefined}>{dial.key === "binaryDailyCap" && dial.currentValue != null && String(dial.currentValue).trim() !== "" && Number(dial.currentValue) === 0 && <StatusTag tone="warn" icon={CircleSlash} explain="这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。">以前存的</StatusTag>}{dialText(dial.currentValue, dial.unit)}</span></Td>
                 {!last && (
                   <Td align="right">
-                    {retired ? <span className="b4-muted">{change ? `${change.from} → ${change.to}` : "不变"}</span>
+                    {retired ? <span className="b4-muted">{change ? `${change.from} → ${change.to}（不收）` : "不变"}</span>
                       : change ? (change.from ? <Change from={change.from} to={change.to} /> : change.to) : <span className="b4-muted">不变</span>}
                   </Td>
                 )}

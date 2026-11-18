@@ -208,11 +208,30 @@ const PARAM: Record<string, {
   },
 };
 const PARAM_ORDER = ["userDailyCap", "platformDailyCap", "fee", "feeMin", "queueMode"];
+/** 排队单上的预计时间：两项都直接保存，不走审批（finprod_g2_write）。 */
+type EtaKey = "queueEtaHours" | "queueEtaCopy";
+const ETA: Record<EtaKey, { name: string; what: string }> = {
+  queueEtaHours: { name: "预计处理时长", what: "排队单大约多久处理，填小时数" },
+  queueEtaCopy: { name: "预计说法", what: "排队单上写的预计时间，用 {hours} 代表小时数" },
+};
+const isEtaKey = (key: string): key is EtaKey => key in ETA;
+/** 和后端的校验一致：1–999 的整数；说法要含 {hours}、最多 240 个字、不能有换行等控制字符。 */
+const etaHoursValid = (value: string) => /^[1-9]\d{0,2}$/.test(value.trim());
+const etaCopyIssue = (value: string) => {
+  const text = value.trim();
+  if (!text.includes("{hours}")) return "要写上 {hours}，显示时换成小时数";
+  if ([...text].length > 240) return "最多 240 个字";
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(text)) return "不能有换行";
+  return undefined;
+};
+const etaSentence = (copy: string, hours: string) => copy.trim().replaceAll("{hours}", hours.trim());
 /** 排队单的原因：系统给的是「排队等待次日处理」，不是排好的时间，这里不写固定时刻（G2-BE-05）。 */
 const queueReasonText = (order: { status: string; gateReason: string }) => order.status === "QUEUED" ? "超过日额度" : order.gateReason;
+/** 拦截原因：地区封锁的原文带页面代号，写成运营的说法。 */
+const gateReasonText = (order: { gateType: string; gateReason: string }) => order.gateType === "geo" ? "所在地区被封锁" : order.gateReason;
 
 function paramName(key: string, fallback?: string) {
-  return PARAM[key]?.name ?? (fallback ? operatorCopyText(fallback) : key);
+  return PARAM[key]?.name ?? (isEtaKey(key) ? ETA[key].name : fallback ? operatorCopyText(fallback) : key);
 }
 
 /** 参数值的写法：额度和最低手续费写 USDT，费率写 %，策略写排队/拒绝；后端的 $ 写法不用。 */
@@ -224,7 +243,8 @@ function paramValueText(key: string, raw: string | undefined, display?: string) 
     if (upper === "REJECT" || upper === "REJECTED" || value === "拒绝") return "拒绝";
     return display ? operatorCopyText(display) : value || "—";
   }
-  if (!value) return "—";
+  if (!value) return key === "queueEtaHours" || key === "queueEtaCopy" ? "未设置" : "—";
+  if (key === "queueEtaHours") return etaHoursValid(value) ? `${value} 小时` : value;
   if (key === "fee") return percent(value);
   if (key === "userDailyCap" || key === "platformDailyCap") return `${amount(value)} USDT`;
   if (key === "feeMin") return `${amount(value)} USDT`;
@@ -466,8 +486,13 @@ function G2ExchangePage() {
         const cancelNo = /^\/exchange\/queue\/([^/]+)\/cancel$/.exec(record.path)?.[1];
         const order = record.context?.order;
         const name = param ? paramName(param) : batch ? "处理排队" : record.path === "/exchange/swap" ? "紧急暂停兑换" : "取消排队兑换";
+        // 预计说法可能很长：前后两句各占一行、超出省略，悬停看全文，原操作提醒不被撑高。
+        const paramText = (key: string, raw: string | undefined, display?: string) => {
+          const text = paramValueText(key, raw, display);
+          return key === "queueEtaCopy" ? <span className="g2x-eta-clip" title={text}>{text}</span> : text;
+        };
         const change = param
-          ? record.context?.cap ? <Change from={paramValueText(param, record.context.cap.value, record.context.cap.displayValue)} to={paramValueText(param, record.input.value)} /> : <>改成 {paramValueText(param, record.input.value)}</>
+          ? record.context?.cap ? <Change from={paramText(param, record.context.cap.value, record.context.cap.displayValue)} to={paramText(param, record.input.value)} /> : <>改成 {paramText(param, record.input.value)}</>
           : batch ? <>这一批最多 {fmtCount(record.input.limit ?? 0)} 单</>
           : record.path === "/exchange/swap" ? <Change from="开着" to="暂停" />
           : <><span data-mono>{order?.exchangeNo ?? decodeURIComponent(cancelNo ?? "")}</span>{order ? ` · ${amount(order.amountUsdtText ?? order.amountUsdt)} USDT` : ""}</>;
@@ -475,7 +500,7 @@ function G2ExchangePage() {
         const canRetry = !expired && (param ? !!record.context?.cap && authorities.includes(capAuthority(param))
           : record.path === "/exchange/swap" ? record.context?.queueDepth !== undefined && authorities.includes("finprod_g2_swap_toggle")
           : !!order && authorities.includes("finprod_g2_queue_cancel"));
-        const retry = param ? () => void adjCap(record.context!.cap!)
+        const retry = param ? isEtaKey(param) ? () => editEta(param) : () => void adjCap(record.context!.cap!)
           : record.path === "/exchange/swap" ? () => toggleSwap()
           : () => cancelQueue(order!);
         const query = batch
@@ -499,7 +524,7 @@ function G2ExchangePage() {
         : `这些操作先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
         <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
-        <p>要改成别的值，等原操作有结论后再在「额度和手续费」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
+        <p>要改成别的值，等原操作有结论后再在「兑换参数」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
       </>} />;
   };
 
@@ -896,6 +921,70 @@ function G2ExchangePage() {
     });
   };
 
+
+  /** 预计处理时长、预计说法：直接保存，确认后立即生效，不走审批；没收到结果时按原请求重试或查询。 */
+  const editEta = (key: EtaKey) => {
+    const path = `/exchange/params/${key}`;
+    const original = pendingG2ExchangeCommand(batchAdminId, path);
+    if (original && (g2ExchangeCommandExpired(original) || !original.context?.cap
+      || !useAdminAuth.getState().session?.authorities.includes(capAuthority(key)))) {
+      void readOriginalCommand(original);
+      return;
+    }
+    const name = ETA[key].name;
+    const estimate = latest.current.overview?.queueEstimate;
+    const hoursNow = estimate?.hours?.trim() ?? "";
+    const copyNow = estimate?.copy?.trim() ?? "";
+    const current = original?.context?.cap?.value ?? (key === "queueEtaHours" ? hoursNow : copyNow);
+    const cap: G2Cap = original?.context?.cap ?? { key, name, sub: "", value: current, displayValue: current, note: "", loosen: false };
+    const shown = (value: string) => {
+      const hours = key === "queueEtaHours" ? value : hoursNow;
+      const copy = key === "queueEtaCopy" ? value : copyNow;
+      if (!etaHoursValid(hours)) return "「预计处理时长」还没设好，排队单上先不显示";
+      if (etaCopyIssue(copy)) return "「预计说法」还没设好，排队单上先不显示";
+      return <>排队单上显示：「{etaSentence(copy, hours)}」</>;
+    };
+    openActionConfirm({ briefKind: "config",
+      action: `调整排队预计 · ${name}`,
+      title: original ? `${name} · 按原请求重试` : `调整${name}`,
+      detail: <>{ETA[key].what}。</>,
+      effect: original
+        ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
+        : <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      confirmLabel: "确认修改",
+      facts: <Facts>
+        <Fact k="改的是">{name}</Fact>
+        <Fact k="什么时候生效">{original ? "提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
+        <Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact>
+        <Fact k="显示在哪">这页排队单的详情；App 和 H5 现在还不显示</Fact>
+      </Facts>,
+      statedBrief: { impact: "改的是排队单上写的预计时间，不改处理顺序，也不会让单子自动成交。", check: "核对新值；理由写清依据或工单号。" },
+      edit: key === "queueEtaHours"
+        ? { kind: "number", current, displayCurrent: current ? undefined : "未设置", currentLabel: original ? "提交时" : undefined, disallowCurrent: true,
+            initialValue: original?.input.value, min: 1, max: 999, step: 1, maxDecimals: 0, unit: "小时", hint: "1–999 的整数",
+            validate: value => etaHoursValid(value) ? undefined : "填 1–999 的整数，开头不要写 0", preview: shown }
+        : { kind: "text", current, displayCurrent: current ? undefined : "未设置", currentLabel: original ? "提交时" : undefined, disallowCurrent: true,
+            initialValue: original?.input.value, hint: "写预计多久，不写具体几点；用 {hours} 代表小时数",
+            validate: etaCopyIssue, preview: shown },
+      getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
+      run: async (reason, value) => {
+        const saved = pendingG2ExchangeCommand(batchAdminId, path);
+        if (original || saved) {
+          if (!saved) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+          if (g2ExchangeCommandExpired(saved)) { await readOriginalCommand(saved); return; }
+          try { await mutate(`param:${key}`, async () => await retryG2ExchangeCommand(batchAdminId, saved.commandKey) as G2Overview, `${name}已保存`, true); }
+          catch (error) { await reload(true); if (!pendingG2ExchangeCommand(batchAdminId, path)) openActionConfirm(null); throw error; }
+          return;
+        }
+        const view = latest.current;
+        if (!view.overview?.queueEstimate || view.loading || view.readFailed || view.rereadPending || view.busyKey || !value) {
+          throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
+        }
+        await mutate(`param:${key}`, () => updateG2ExchangeParam(key, value, reason, OPERATOR(), cap), `${name}已保存`);
+      },
+    });
+  };
+
   if (loading && !overview) {
     return (
       <>
@@ -932,6 +1021,8 @@ function G2ExchangePage() {
     { key: "geo", label: "地区封锁", count: stats.gateGeo, explain: "今天创建、因用户所在地区被封锁而拦下的兑换单数。" },
   ];
   const platformCap = caps.find((cap) => cap.key === "platformDailyCap");
+  const queueModeRaw = caps.find((cap) => cap.key === "queueMode")?.value.trim().toUpperCase();
+  const queueModeNow = queueModeRaw === "QUEUE" || queueModeRaw === "REJECT" ? queueModeRaw : undefined;
   const userCap = caps.find((cap) => cap.key === "userDailyCap");
   const platformCapValue = platformCap ? Number(platformCap.value) : Number.NaN;
   const usedMicros = micros(stats.todayUsd);
@@ -941,7 +1032,7 @@ function G2ExchangePage() {
   const queueAllVisible = queue.length >= stats.queueDepth;
 
   const openBatch = () => openActionConfirm({ briefKind: "funds",
-    action: "处理今天的排队兑换",
+    action: "处理排队中的兑换",
     title: "处理排队中的兑换",
     detail: <>按当前 UVT 价格、每日额度、地区封锁和用户余额逐单检查，符合条件的马上成交。</>,
     effect: <><StatusTag tone="progress" filled>立即执行</StatusTag><IrreversibleTag>成交后不能撤销</IrreversibleTag></>,
@@ -1065,6 +1156,41 @@ function G2ExchangePage() {
     );
   });
 
+
+  // 预计设置：后端给了 queueEstimate 才显示（旧版后端没有这两项，单上的预计也不显示）。
+  const estimate = overview.queueEstimate;
+  const etaHours = estimate?.hours?.trim() ?? "";
+  const etaCopy = estimate?.copy?.trim() ?? "";
+  const etaReady = etaHoursValid(etaHours) && !etaCopyIssue(etaCopy);
+  const etaFirstMissing: EtaKey | undefined = etaReady ? undefined : !etaHoursValid(etaHours) ? "queueEtaHours" : "queueEtaCopy";
+  const etaRows = estimate ? (["queueEtaHours", "queueEtaCopy"] as const).map((key) => {
+    const name = ETA[key].name;
+    const direct = directCommands.find(row => row.path === `/exchange/params/${key}`);
+    const raw = key === "queueEtaHours" ? etaHours : etaCopy;
+    const valueText = key === "queueEtaHours" ? paramValueText(key, raw) : !raw ? "未设置" : etaHoursValid(etaHours) ? etaSentence(raw, etaHours) : raw;
+    return (
+      <ConfigRow key={key} name={name}
+        what={ETA[key].what}
+        where="这页排队单的详情；App 和 H5 现在还不显示"
+        when="确认后立即生效，不用审批"
+        effect="排队中的单和之后排队的单，单上的预计时间都按新值显示"
+        note="「预计处理时长」和「预计说法」都设好后，排队单上才显示预计时间。"
+        value={<span className="g2x-param">
+          <span className="g2x-value">
+            <span className={key === "queueEtaCopy" ? "g2x-eta-copy" : "g2x-value-num"} title={key === "queueEtaCopy" && raw ? valueText : undefined}>{valueText}</span>
+          </span>
+          {direct ? <span className="g2x-dir">{g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct")}</span>
+            : etaFirstMissing === key
+            ? <span className="g2x-dir"><StatusTag tone="warn" explain="两项都设好后才显示。">排队单上不显示</StatusTag></span>
+            : <span className="g2x-dir">立即生效</span>}
+        </span>}
+        action={allowed(capAuthority(key)) || direct ? (describedBy) => (
+          <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
+            disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
+        ) : undefined} />
+    );
+  }) : [];
+
   const batchAction = (canProcessBatch || ownPendingBatch) && (ownPendingBatch
     ? <Button size="sm" variant="primary" disabledReason={busyReason} onClick={() => {
       setRecoveryError(null);
@@ -1147,13 +1273,14 @@ function G2ExchangePage() {
           </div>
         </Panel>
 
-        <Panel title="额度和手续费" icon={SlidersHorizontal} tone="role-4"
+        <Panel title="兑换参数" icon={SlidersHorizontal} tone="role-4"
           explain={<>
             <p>每项自己保存。往「让平台多付」的方向改（调高额度、调低手续费、从拒绝改成排队）要另一位超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
             <p>同一项有待批的申请时被审批锁住，调高调低都改不了，直到批准、驳回或撤回。</p>
-            <p>兑换暂停时，两个额度和超额度处置策略不能改，两项手续费仍可改。</p>
+            <p>兑换暂停时，两个额度和超额度处置策略不能改，其余各项仍可改。</p>
+            {estimate && <p>预计处理时长和预计说法不涉及付钱，确认后立即生效。</p>}
           </>}>
-          <ConfigList label="兑换参数">{configRows}</ConfigList>
+          <ConfigList label="兑换参数">{configRows}{etaRows}</ConfigList>
         </Panel>
       </div>
 
@@ -1248,7 +1375,10 @@ function G2ExchangePage() {
             sub={`今天 ${fmtCount(detail.count)} 次${detail.count > detail.rows.length ? ` · 列出最近 ${fmtCount(detail.rows.length)} 条` : ""}`}
             explain={<>
               <p>{tile.explain}</p>
-              <p>只能查看。要调额度改「额度和手续费」。额度和地区检查不看信任名单，把用户加进信任名单不能让这些兑换通过。</p>
+              {gateDrawer !== "geo" && queueModeNow && <p>{queueModeNow === "QUEUE"
+                ? "现在超额度处置策略是「排队」：用户选了「超额时排队」的进入排队，其余直接拒绝。"
+                : "现在超额度处置策略是「拒绝」：超过额度的兑换直接拒绝，不排队。"}</p>}
+              <p>只能查看。要调额度改「兑换参数」。额度和地区检查不看信任名单，把用户加进信任名单不能让这些兑换通过。</p>
             </>}
             footer={<Decision primary={<Button onClick={() => setGateDrawer(null)}>关闭</Button>} />}>
             <Table label={`${tile.label}的拦截记录`} className="g2x-gate-table">
@@ -1260,7 +1390,7 @@ function G2ExchangePage() {
                     <Td><Cell main={row.userNo} sub={operatorNicknameText(row.nickname)} /></Td>
                     <Td><ExchangeNo value={row.exchangeNo} /></Td>
                     <Td align="right"><Cell num main={`${assetNum(row.toAmountText ?? row.toAmount, row.toAsset)} ${row.toAsset}`} sub={`${assetNum(row.fromAmountText ?? row.fromAmount, row.fromAsset)} ${row.fromAsset} 换`} /></Td>
-                    <Td grow><Cell main={row.gateReason} title={row.gateReason} /></Td>
+                    <Td grow><Cell main={gateReasonText(row)} title={gateReasonText(row)} /></Td>
                   </tr>
                 ))}
               </tbody>
@@ -1277,7 +1407,9 @@ function G2ExchangePage() {
             danger={<Button variant="danger-outline" disabledReason={busyReason ?? (directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? undefined : newWriteBlockedReason)} aria-label="取消这笔兑换" onClick={() => cancelQueue(selectedQueue)}>取消这笔兑换</Button>} /> : undefined}>
           <JudgmentPoints rows={[
             { label: "排队原因", value: queueReasonText(selectedQueue), state: "warn" },
-            { label: "预计处理", value: "等运营处理", reason: "没有排好的处理时间，由运营在这页点「处理排队」后成交，到账时间以实际处理为准。" },
+            estimate && selectedQueue.etaLabel && selectedQueue.etaLabel !== "—"
+              ? { label: "预计处理", value: selectedQueue.etaLabel, reason: "按「兑换参数」里设的预计显示，不是排好的处理时间。" }
+              : { label: "预计处理", value: "等运营处理", reason: "没有排好的处理时间，由运营在这页点「处理排队」后成交，到账时间以实际处理为准。" },
             { label: "用户所在地区", value: selectedQueue.countryCode, reason: "处理排队时按这个国家判断地区封锁。" },
           ]} />
           <Facts>
