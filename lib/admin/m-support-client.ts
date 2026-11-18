@@ -196,6 +196,11 @@ export function isSupportScopeDenial(error: unknown): boolean {
   return status === 403 || status === 404;
 }
 
+export function supportAssignmentChanged(error: unknown): boolean {
+  return error instanceof SupportClientError && (error.status === 409 || error.status === 200 && error.apiCode === 409)
+    && error.backendMessage === "SUPPORT_ASSIGNMENT_CHANGED";
+}
+
 export function isIndeterminateSupportError(error: unknown): boolean {
   return error instanceof SupportClientError && error.status === 409
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");

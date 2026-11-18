@@ -43,8 +43,8 @@ import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { supportClient, isSupportScopeDenial, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { supportClient, isSupportScopeDenial, supportAssignmentChanged, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -206,7 +206,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     void reloadMContent();
   }, [authEpoch, reloadMContent]);
 
-  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string) => {
+  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string) => {
+    // A receipt for an already redacted assignment must not erase a later draft.
+    if (changedAssignmentKey && !readSavedSends(session?.adminId ?? 0).some(entry =>
+      entry.row.commandKey === changedAssignmentKey && (entry.reply || entry.first))) return;
     if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
     mLoadCoordinator.current.beginConversationSnapshot();
     liveSnapshotController.current?.abort();
@@ -214,7 +217,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     customerId = cleared?.customerId ?? customerId;
     const affectedIds = cleared?.affected ?? [];
     if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
-    window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared } }));
+    window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared, changedAssignmentKey } }));
     setMData((previous) => previous ? {
       ...previous,
       conversations: previous.conversations.filter((conversation) =>
@@ -1230,7 +1233,7 @@ function dockRelWhen(ts: number): string {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
-function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: (conversationNo?: string, customerId?: string, notice?: string) => void }) {
+function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: MCtx["invalidateScope"] }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -1353,6 +1356,11 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
     } catch (error) {
       if (!sameAccount()) return;
+      if (key && supportAssignmentChanged(error)) {
+        onScopeInvalidated(conv.id, conv.customerId, "消息没有发出：这个会话的权限变了，请到专属会话核对。", key);
+        dockCommands.forget(dockSlot, key);
+        return;
+      }
       const rejected = key && refusedMessage(error, true);
       const scopeLost = error instanceof SupportClientError && [403, 404].includes(error.status);
       if (rejected) {

@@ -12,7 +12,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
-import { supportClient, isSupportScopeDenial, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { supportClient, isSupportScopeDenial, supportAssignmentChanged, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -766,7 +766,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     attachmentRef.current = null;
     setAttachment(null);
   }, [adminId]);
-  const revokeCustomer = useCallback((customerId?: string, authoritative = false, originalConversationId?: string, commandKey?: string, persisted?: ReturnType<typeof redactCustomerSends>) => {
+  const revokeCustomer = useCallback((customerId?: string, authoritative = false, originalConversationId?: string, commandKey?: string, persisted?: ReturnType<typeof redactCustomerSends>, assignmentChanged = false) => {
     // A pending roster is not evidence that access was revoked. Server denials still clear immediately.
     if (qualificationUnknown && !authoritative) return;
     if (!commandKey) {
@@ -777,7 +777,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const { affected, clearFirst, revokeAll } = cleared;
     customerId = cleared.customerId;
     if (cleared.error) setRecoveryError(cleared.error);
-    if (!commandKey) setRevokedIds((old) => new Set([...old, ...affected]));
+    if (!commandKey && !assignmentChanged) setRevokedIds((old) => new Set([...old, ...affected]));
     if (!commandKey) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
     setDrafts((old) => {
       if (revokeAll) return {};
@@ -801,8 +801,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   useEffect(() => { setRecoveryError(""); }, [authEpoch]);
   useEffect(() => {
     const onScope = (event: Event) => {
-      const target = (event as CustomEvent<{ customerId?: string; conversationNo?: string; cleared?: ReturnType<typeof redactCustomerSends> }>).detail;
-      revokeCustomer(target?.customerId, true, target?.conversationNo, undefined, target?.cleared);
+      const target = (event as CustomEvent<{ customerId?: string; conversationNo?: string; cleared?: ReturnType<typeof redactCustomerSends>; changedAssignmentKey?: string }>).detail;
+      revokeCustomer(target?.customerId, true, target?.conversationNo, undefined, target?.cleared, Boolean(target?.changedAssignmentKey));
     };
     window.addEventListener("support-scope-invalidated", onScope);
     return () => window.removeEventListener("support-scope-invalidated", onScope);
@@ -919,7 +919,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         && useAdminAuth.getState().authEpoch === authEpoch;
       void request.then(detail => {
         if (!current() || detail.customerId !== customerId) return false;
-        if (detail.assignmentId !== assignmentId || !canReviewAll && detail.agentAdminId !== adminId) {
+        if (detail.assignmentId !== assignmentId) {
+          ctx.invalidateScope(conversationId, customerId, undefined, key);
+          return false;
+        }
+        if (!canReviewAll && detail.agentAdminId !== adminId) {
           redactRecovery(customerId, conversationId, key);
           return false;
         }
@@ -1072,6 +1076,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
     if (result.status === "SUCCEEDED" || result.status === "FAILED" || result.status === "REJECTED") {
       if (useAdminAuth.getState().session?.adminId !== adminId) return result;
+      if (result.status === "REJECTED" && result.businessCode === 409 && result.businessReason === "SUPPORT_ASSIGNMENT_CHANGED") {
+        ctx.invalidateScope(locator.conversationId, customerId, undefined, row.commandKey);
+        forgetSavedSend(row.fingerprint, row.commandKey);
+        return result;
+      }
       const original = reply ?? first;
       const authorizedDraft = mounted.current && verifiedKeys.current?.has(row.commandKey);
       if (!authorizedDraft && reply && originalView() && selected?.id === reply.conversationId) {
@@ -1224,6 +1233,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         ({ conversationNo } = await supportClient.startConversation({ customerId: record.customerId, openingText: record.body, intent: record.intent, clientMessageId: record.clientMessageId, expectedAssignmentId: record.assignmentId, expectedVersion: record.version, replyTargets: record.replyTargets }, record.key));
       } catch (cause) {
         if (!sameAccount()) return;
+        if (supportAssignmentChanged(cause)) {
+          ctx.invalidateScope(undefined, customerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。", record.key);
+          forgetSavedSend(slot, record.key);
+          return;
+        }
         const refused = refusedMessage(cause, !retryFirst);
         const busyHold = supportSessionBusy(cause);
         if (refused || busyHold) forgetSavedSend(slot, record.key);
@@ -1312,6 +1326,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (flight.image) flight.image.outcome = "sent";
     } catch (cause) {
       if (!sameAccount()) return;
+      if (supportAssignmentChanged(cause)) {
+        if (flight.image) flight.image.outcome = "unused";
+        ctx.invalidateScope(record.conversationId, String(selected.customerId), "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。", record.key);
+        forgetSavedSend(slot, record.key);
+        return;
+      }
       const refused = refusedMessage(cause, !retry);
       const busyHold = supportSessionBusy(cause);
       if (refused || busyHold) {
