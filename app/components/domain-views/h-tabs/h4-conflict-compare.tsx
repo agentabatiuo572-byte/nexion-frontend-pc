@@ -32,7 +32,8 @@ function rebuild(key: string, leaves: Array<{ path: string; value: unknown }>): 
 }
 
 export function h4ConflictGroups(fields: HConflictField[], groupOf: (path: string) => string, label: (key: string) => string,
-  show: (key: string, value: unknown, which: Which) => ReactNode): H4ConflictGroup[] {
+  show: (key: string, value: unknown, which: Which) => ReactNode,
+  options?: { equal?: (key: string, left: unknown, right: unknown) => boolean }): H4ConflictGroup[] {
   const groups = new Map<string, HConflictField[]>();
   for (const field of fields) { const key = groupOf(field.path); groups.set(key, [...(groups.get(key) ?? []), field]); }
   return [...groups].flatMap(([key, leaves]) => {
@@ -40,7 +41,8 @@ export function h4ConflictGroups(fields: HConflictField[], groupOf: (path: strin
     if (!byOther && !byMe) return [];
     const raw = (which: Which) => rebuild(key, leaves.map(leaf => ({ path: leaf.path, value: leaf[which] })));
     const value = (which: Which) => show(key, raw(which), which);
-    const overwritesOther = byOther && JSON.stringify(raw("latest")) !== JSON.stringify(raw("mine"));
+    const latest = raw("latest"), draft = raw("mine");
+    const overwritesOther = byOther && JSON.stringify(latest) !== JSON.stringify(draft) && !options?.equal?.(key, latest, draft);
     return [{ key, label: label(key), opened: value("opened"), latest: value("latest"), mine: value("mine"), byOther, byMe, overwritesOther }];
   });
 }
