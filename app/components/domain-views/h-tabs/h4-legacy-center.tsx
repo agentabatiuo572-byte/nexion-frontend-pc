@@ -42,7 +42,7 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
-import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
+import { fetchAdminRaffles, RAFFLE_READBACK_ADVANCED, type AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
@@ -978,11 +978,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const refreshAll = async () => {
     await reloadH4Approvals();
     await reload();
-    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), import("@/lib/admin/genesis-raffle-client").then(m => m.fetchAdminRaffles())]);
+    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), fetchAdminRaffles()]);
     window.dispatchEvent(new CustomEvent("admin-h4-readback", { detail: {
       rules: rules.status === "fulfilled" ? rules.value : undefined, ruleError: rules.status === "rejected" ? displayAdminError(rules.reason) : "",
-      raffles: raffles.status === "fulfilled" ? raffles.value : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
+      raffles: raffles.status === "fulfilled" ? raffles.value.rows : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
     } }));
+    if (raffles.status === "fulfilled" && raffles.value.advanced) toast(RAFFLE_READBACK_ADVANCED);
   };
   const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);
