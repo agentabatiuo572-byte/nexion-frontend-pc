@@ -120,6 +120,7 @@
 .g2x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .g2x-value-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .g2x-eta-copy { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g2x-eta-clip { display: inline-block; max-width: 18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .g2x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .g2x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
 .g2x-recover li { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }

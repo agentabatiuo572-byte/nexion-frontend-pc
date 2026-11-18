@@ -486,8 +486,13 @@ function G2ExchangePage() {
         const cancelNo = /^\/exchange\/queue\/([^/]+)\/cancel$/.exec(record.path)?.[1];
         const order = record.context?.order;
         const name = param ? paramName(param) : batch ? "处理排队" : record.path === "/exchange/swap" ? "紧急暂停兑换" : "取消排队兑换";
+        // 预计说法可能很长：前后两句各占一行、超出省略，悬停看全文，原操作提醒不被撑高。
+        const paramText = (key: string, raw: string | undefined, display?: string) => {
+          const text = paramValueText(key, raw, display);
+          return key === "queueEtaCopy" ? <span className="g2x-eta-clip" title={text}>{text}</span> : text;
+        };
         const change = param
-          ? record.context?.cap ? <Change from={paramValueText(param, record.context.cap.value, record.context.cap.displayValue)} to={paramValueText(param, record.input.value)} /> : <>改成 {paramValueText(param, record.input.value)}</>
+          ? record.context?.cap ? <Change from={paramText(param, record.context.cap.value, record.context.cap.displayValue)} to={paramText(param, record.input.value)} /> : <>改成 {paramText(param, record.input.value)}</>
           : batch ? <>这一批最多 {fmtCount(record.input.limit ?? 0)} 单</>
           : record.path === "/exchange/swap" ? <Change from="开着" to="暂停" />
           : <><span data-mono>{order?.exchangeNo ?? decodeURIComponent(cancelNo ?? "")}</span>{order ? ` · ${amount(order.amountUsdtText ?? order.amountUsdt)} USDT` : ""}</>;
