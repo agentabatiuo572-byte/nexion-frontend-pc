@@ -1174,9 +1174,10 @@ function G2ExchangePage() {
           <span className="g2x-value">
             <span className={key === "queueEtaCopy" ? "g2x-eta-copy" : "g2x-value-num"} title={key === "queueEtaCopy" && raw ? valueText : undefined}>{valueText}</span>
             {direct && (g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
-            {!direct && etaFirstMissing === key && <StatusTag tone="warn" explain="「预计处理时长」和「预计说法」都设好后，排队单上才显示预计时间。">排队单上不显示</StatusTag>}
           </span>
-          <span className="g2x-dir">立即生效</span>
+          {!direct && etaFirstMissing === key
+            ? <span className="g2x-dir"><StatusTag tone="warn" explain="两项都设好后才显示。">排队单上不显示</StatusTag></span>
+            : <span className="g2x-dir">立即生效</span>}
         </span>}
         action={allowed(capAuthority(key)) || direct ? (describedBy) => (
           <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
@@ -1370,7 +1371,7 @@ function G2ExchangePage() {
             explain={<>
               <p>{tile.explain}</p>
               {gateDrawer !== "geo" && queueModeNow && <p>{queueModeNow === "QUEUE"
-                ? "现在超额度处置策略是「排队」：用户发起时选了「超额时排队」的进入排队等运营处理，其余直接拒绝。"
+                ? "现在超额度处置策略是「排队」：用户选了「超额时排队」的进入排队，其余直接拒绝。"
                 : "现在超额度处置策略是「拒绝」：超过额度的兑换直接拒绝，不排队。"}</p>}
               <p>只能查看。要调额度改「兑换参数」。额度和地区检查不看信任名单，把用户加进信任名单不能让这些兑换通过。</p>
             </>}
@@ -1402,7 +1403,7 @@ function G2ExchangePage() {
           <JudgmentPoints rows={[
             { label: "排队原因", value: queueReasonText(selectedQueue), state: "warn" },
             estimate && selectedQueue.etaLabel && selectedQueue.etaLabel !== "—"
-              ? { label: "预计处理", value: selectedQueue.etaLabel, reason: "按「预计处理时长」和「预计说法」显示的预计，不是排好的处理时间；到账时间以实际处理为准。" }
+              ? { label: "预计处理", value: selectedQueue.etaLabel, reason: "按「兑换参数」里设的预计显示，不是排好的处理时间。" }
               : { label: "预计处理", value: "等运营处理", reason: "没有排好的处理时间，由运营在这页点「处理排队」后成交，到账时间以实际处理为准。" },
             { label: "用户所在地区", value: selectedQueue.countryCode, reason: "处理排队时按这个国家判断地区封锁。" },
           ]} />
