@@ -872,7 +872,8 @@ function h3ConfigValue(key: string | undefined, value: string) {
 }
 
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
-function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null }) {
+function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null; disclosureReview?: A2OperationRow["disclosureReview"] }) {
+  if (w.disclosureReview) return w.disclosureReview.jurisdiction;
   if (w.objDisplayName && isGParamTicket(w)) return w.objDisplayName;
   if (w.objDisplayName) return a2ObjectText(w);
   if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
@@ -1166,7 +1167,12 @@ function deviceApprovalValue(value: string, operationCode?: string) {
  * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
  * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
  */
-const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown }) => {
+function i5MatrixVersionText(summary: string, version: string) {
+  return version ? summary.startsWith(`${version} · `) ? summary : version : "未配置";
+}
+
+const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.before, row.disclosureReview.expectedVersion);
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_FROM[fund.state] ?? "批准时的状态";
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.before);
@@ -1178,7 +1184,9 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
-const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string }) => {
+const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.after, row.disclosureReview.version);
+  if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
@@ -2031,12 +2039,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const j4 = isJ4Execution(w);
     const scheduled = phoneScheduledAt(w);
     const g3 = g3PolicyExecutionTiming(w);
+    const i5Publish = w.operationCode === "i5_disclosure_publish" || w.operationCode === "i4_disclosure_publish";
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
     const impact = scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
         : w.coverageCheckOnApproval ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
+            // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
+            : i5Publish ? "批准后这版封存，用户看到的版本不变。"
             : isFunds ? "立即执行，改资金或账目；失败不改原值。"
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
@@ -2045,6 +2056,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
         : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
+            : i5Publish || w.operationCode === "i5_matrix_configure" ? "核对这次披露改了什么，理由写清版本依据。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
     const amplifies = w.amplifies && !w.coverageCheckOnApproval;
     const k1 = k1TicketView(w);
@@ -2099,7 +2111,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} />}
+            : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}>
+                {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
+                <A2I5DisclosureReview key={w.id} ticket={w} />
+              </A2ChangeReview>}
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
