@@ -26,6 +26,19 @@ function EditorSection({ id, title, children }: { id: string; title: string; chi
   return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
 }
 
+/** App 用户能看到的九个字段：含中文时字段下马上提示，提交时同样拦下。 */
+const E1_APP_VISIBLE_FIELDS = [
+  ["name", "型号名称"],
+  ["badge", "营销角标"],
+  ["tagline", "商品标语"],
+  ["gpu", "GPU 型号（单卡）"],
+  ["power", "功耗 / 功率说明"],
+  ["datacenter", "托管机房"],
+  ["uptime", "在线率"],
+  ["warranty", "质保期限"],
+  ["specDocumentTitle", "资料名称"],
+] as const;
+
 export function E1Editor({ request, gates, writable, currentSku, onClose, onReview, busy, toast, onMediaChange, writeBlockedReason }: {
   request: E1EditRequest | null; gates: E1GenerationGateData | null; writable: boolean; currentSku?: OpsSku;
   onClose: () => void; onReview: (sku: OpsSku, before: OpsSku | undefined, form: SkuForm) => void;
@@ -225,18 +238,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
     if (latestChanged && !versionAccepted) e.form = "商品修订已变化，请核对新旧修订后继续";
-    const appVisibleFields = [
-      ["name", "型号名称"],
-      ["badge", "营销角标"],
-      ["tagline", "商品标语"],
-      ["gpu", "GPU 型号（单卡）"],
-      ["power", "功耗 / 功率说明"],
-      ["datacenter", "托管机房"],
-      ["uptime", "在线率"],
-      ["warranty", "质保期限"],
-      ["specDocumentTitle", "资料名称"],
-    ] as const;
-    for (const [key, label] of appVisibleFields) {
+    for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
       if (key === "power" && form.tier === "Share") {
@@ -256,13 +258,18 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
     onReview(draft, original, form);
   };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
-  const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: string; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
+  const appTextErrors: Record<string, string> = {};
+  for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
+    const error = appVisibleTextError(form[key], label);
+    if (error && !(key === "power" && form.tier === "Share")) appTextErrors[key] = error;
+  }
+  const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: string; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key] || appTextErrors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
   const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : !dirty || original && !changes.length ? "没有修改" : undefined;
   const sectionItems = SECTIONS.map((s, index) => {
     const keys = index === 0 ? ["name", "id", "tier", "lifecycle", "badge", "tagline", "media"] : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
-    const invalid = keys.some(key => !!errors[key]);
+    const invalid = keys.some(key => !!(errors[key] || appTextErrors[key]));
     const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
@@ -308,7 +315,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
           {canClear && <Check label="关闭已有月收益目标，改用兼容展示值" checked={!hasTarget} onChange={e => setForm(f => ({ ...f, monthlyTargetUsdt: e.target.checked ? "" : String(original!.monthlyTargetUsdt), monthlyTargetBandPct: e.target.checked ? "" : String(original!.monthlyTargetBandPct) }))} />}
           {form.allowedPoolCodes.length > 0 && !hasTarget && <Notice tone="warn" title="已选任务等级，必须填写月收益目标" />}
           {hasTarget && Number(form.monthlyTargetUsdt) >= 1 && Number(form.monthlyTargetBandPct) >= 1 && Number(form.monthlyTargetBandPct) <= 50 && <div className="e1-draft-preview"><span className="e1-muted">本次草稿 · 配置边界</span><E1TargetRange sku={draft} /></div>}
-          <Field label="托管机房" error={errors.datacenter} hint="最多128字" explain={`${APP_VISIBLE_TEXT_HINT}。交付时复制到新设备的文字，已交付设备不随SKU修改。建议英文城市和编号，可自由手填。`}><Input aria-label="托管机房" list="e1-hosting-labels" maxLength={128} value={form.datacenter} placeholder="Singapore · SG-1" onChange={e => update("datacenter", e.target.value)} /><datalist id="e1-hosting-labels">{labels.map(label => <option key={label} value={label} />)}</datalist></Field>
+          <Field label="托管机房" error={errors.datacenter || appTextErrors.datacenter} hint="最多128字" explain={`${APP_VISIBLE_TEXT_HINT}。交付时复制到新设备的文字，已交付设备不随SKU修改。建议英文城市和编号，可自由手填。`}><Input aria-label="托管机房" list="e1-hosting-labels" maxLength={128} value={form.datacenter} placeholder="Singapore · SG-1" onChange={e => update("datacenter", e.target.value)} /><datalist id="e1-hosting-labels">{labels.map(label => <option key={label} value={label} />)}</datalist></Field>
           {labelError && <span className="e1-muted">{labelError}</span>}
           <div className="rd-form-grid">{form.tier !== "Share" ? <>
             {!hasTarget && field("dailyEarn", "每日收益 USDT", { number: true, min: 0, step: 0.000001, help: original?.monthlyTargetUsdt != null ? "关闭月目标时须在同一申请中手填" : "兼容展示值" })}

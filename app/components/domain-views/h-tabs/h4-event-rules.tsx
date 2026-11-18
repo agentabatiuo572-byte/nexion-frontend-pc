@@ -228,6 +228,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     });
   };
   const close = () => { conflictReview.current = null; setSelected(null); setDraft(null); setError(""); };
+  // 改过的地区名称含中文时写在框下，和保存时拦下的是同一句。
+  const regionNameError = selected?.kind === "regional" && regions !== eventRegionText(selected.rules.regions)
+    ? regions.split(/\r?\n/).filter(line => line.trim()).map((line, index) => appVisibleTextError(line.split(":")[0].trim(), `第 ${index + 1} 个地区名称`)).find(Boolean)
+    : undefined;
   // 三方对比：项名、显示写法照表单；数字原样写，不舍入。
   const review = selected && draft ? conflictReview.current : null;
   const compareGroups: H4ConflictGroup[] = review && selected ? h4ConflictGroups(review.fields,
@@ -316,7 +320,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
               </div>;
             }
             if (field.type === "regions") return <div key={field.key} className="h4-field" data-wide="">
-              <Field label={field.label} help={`地区名称：${APP_VISIBLE_TEXT_HINT}。每行一个地区，国家用两位代码；同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。`}>
+              <Field label={field.label} help={`每行一个地区，国家用两位代码；地区名称 ${APP_VISIBLE_TEXT_HINT}`} explain="同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。" error={regionNameError}>
                 <Textarea aria-label={field.label} rows={4} value={regions} onChange={event => setRegions(event.target.value)} placeholder={"Southeast Asia: VN, TH\nEurope: DE, FR"} />
               </Field>
             </div>;
@@ -334,7 +338,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       {selected.kind === "boost" && draft.rules.action === "CHECKIN_MULTIPLIER" && <Notice tone="neutral">加成预算耗尽后恢复原有签到奖励，不影响用户继续签到。</Notice>}
       {selected.kind === "wheel" && <Notice tone="neutral">抽奖奖项、概率和奖池限制在「转盘奖池」里维护。</Notice>}
       {selected.kind === "regional" && <Notice tone="neutral">排名按加入活动后的有效支付订单金额统计；获胜地区内按个人有效支付金额比例分配奖池，并列第一的地区共同分享总奖池。</Notice>}
-      {(error || saved) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={showSaved ? "已保存，但没读到最新配置" : stale ? "没有保存：最新配置也没读到" : "没有保存"}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
+      {(error && error !== regionNameError || saved) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={showSaved ? "已保存，但没读到最新配置" : stale ? "没有保存：最新配置也没读到" : "没有保存"}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
     </fieldset></div>;
   })();
 

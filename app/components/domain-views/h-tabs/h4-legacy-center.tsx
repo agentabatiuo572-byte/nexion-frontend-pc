@@ -68,7 +68,7 @@ type Model = H4Statistics & {
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
 function wheelRewardNameFeedback(value: BusinessFormValue, label: string) {
   const message = appVisibleTextError(value.rewardName, label);
-  return { message: message ?? "", invalid: message !== undefined, field: "rewardName" };
+  return { message: message ?? "", invalid: message !== undefined, field: "rewardName", live: true };
 }
 
 const killOn = (value: string) => ["1", "true", "on", "enabled", "open", "开"].includes(value.trim().toLowerCase());
