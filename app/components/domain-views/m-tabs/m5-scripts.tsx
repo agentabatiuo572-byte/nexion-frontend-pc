@@ -404,7 +404,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     canManageM5Content && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
       action: <>新增专属客服话术</>,
       briefKind: "config",
-      detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文，中文、越南语在那里补；发布走操作确认。</>,
+      detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文；中文、越南语在那里按运营区域语言补；发布走操作确认。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "英文话术" },
       reasonMin: 8,
@@ -443,7 +443,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     canManageM5Content && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>新增即时回复模板</>,
       briefKind: "config",
-      detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文，中文、越南语在那里补；发布后可在专属会话回复框中选用。</>,
+      detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文；中文、越南语在那里按运营区域语言补；发布后可在专属会话回复框中选用。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "英文模板" },
       reasonMin: 8,

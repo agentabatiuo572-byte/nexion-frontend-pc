@@ -438,7 +438,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({ briefKind: "content",
     action: <>回滚 · {copy.key} → 重新发布 {v}</>,
-    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。仅完整满足中英越、受众和投放位置要求的归档版允许恢复。</>,
+    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。只有已存中文、英文、越南语齐全（选填语言保存时已用英文补上），且受众和投放位置完整的归档版可以恢复。</>,
     amplifies: false,
     run: (reason) => {
       if (copy.revision == null) {

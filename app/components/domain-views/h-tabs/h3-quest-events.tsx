@@ -635,7 +635,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string) => {
     openActionConfirm({ briefKind: "config",
       action: `新建任务 · ${subject}`,
-      detail: <>新建一条{subject}，新建后先是停用状态。请先在下方「任务完成条件」里绑定完成条件，再启用。</>,
+      detail: <>新建一条{subject}，新建后先是停用状态。启用前要在下方「任务完成条件」里绑定完成条件，并在「App 运营内容」补齐英文和运营区域语言的任务名称。</>,
       amplifies: true,
       businessForm: { kind: "mission-create", subject },
       run: async (reason, _v, bv) => {
@@ -651,7 +651,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           category: String(bv.category || "").trim(),
           actionRoute: String(bv.actionRoute || "").trim(),
         }, reason));
-        toast(`任务「${missionName}」已新建（停用中，绑定完成条件后再启用）`);
+        toast(`任务「${missionName}」已新建（停用中，绑定完成条件并补齐名称后再启用）`);
       },
     });
   };
@@ -680,10 +680,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const clearable = entity === "event" && optional && event?.deleteState === "draft"
       && displayed.trim() !== "";
     const requiredEventCopy = "活动发布前须填写此语言的必填文案。";
+    const computedRewardName = field === "rewardName" && !!event && !(rule ?? event).appUsesAuthoredRewardName;
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: cell?.missing ? requiredEventCopy
-        : clearable ? `选填。清空后确认可删除此格译文；取消不保存。${cell?.rewardFromPreview ? "App 实际显示值见奖项预览。" : ""}`
+      detail: computedRewardName ? "App 奖励名以奖项预览为准，由服务端按实际奖励生成；这里的奖名供后台维护，不一定显示在 App。"
+        : cell?.missing ? requiredEventCopy
+        : clearable ? `选填。清空输入框后确认，会删除这一格译文；如果这是这门语言最后一格真译，其余跟随英文的副本也会一起清空。取消不保存。${cell?.rewardFromPreview ? "App 实际显示值见奖项预览。" : ""}`
         : cell?.incomplete ? "选填译文未填齐，请补齐此格。"
         : cell?.fallsBack ? "选填，不填时 App 显示英文。"
         : cell?.required ? requiredEventCopy
@@ -699,6 +701,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           await saveEventLocalizedCell(code, field, locale, current, operator, submitted, reason);
         } else apply(await updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason));
         toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+      },
+    });
+  };
+
+  const openClearEventCopy = (event: QuestEvent, field: EventContentField, locale: OperatingLanguageCode, source: string, stored: string) => {
+    const operator = currentAdminOperator();
+    openConfirm({ briefKind: "config",
+      action: `清空已存副本 · ${LOCALE_LABEL[locale]} · ${source}`,
+      detail: <>这一格存的是英文副本「{stored}」，App 在{LOCALE_LABEL[locale]}下显示英文。清空后这一格不再存副本；活动开启时，空着的选填格仍会用英文补上。</>,
+      chips: [["记入操作记录", "done"]],
+      reason: true,
+      okLabel: "清空副本",
+      run: async (reason) => {
+        await saveEventLocalizedCell(event.id, field, locale, stored, operator, "", reason);
+        toast(`${source} ${locale.toUpperCase()} 副本已清空`);
       },
     });
   };
@@ -782,7 +799,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     openConfirm({ briefKind: "config",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
-      detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。</>,
+      detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。{targetStatus === "active" && taskKind === "MISSION" ? "启用前会检查英文和运营区域语言的任务名称是否已填。" : ""}</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
@@ -924,12 +941,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openCreateBinding = () => {
     if (bindingMissionOptions.length === 0) {
-      toast("没有可以绑定的任务，请先新建任务，绑定完成条件后再启用");
+      toast("没有可以绑定的任务，请先新建任务，绑定完成条件并补齐名称后再启用");
       return;
     }
     openActionConfirm({ briefKind: "config",
       action: "新增任务完成条件",
-      detail: <>选择「用户做了什么」和对应的任务。用户做了这件事，任务就算完成。新任务要先绑定再启用。</>,
+      detail: <>选择「用户做了什么」和对应的任务。用户做了这件事，任务就算完成。新任务要先绑定、补齐名称再启用。</>,
       businessForm: {
         kind: "multi-field",
         title: "新增完成条件",
@@ -1405,7 +1422,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <span className="ttl">App 运营内容</span>
           <span className="sub">{section === "events"
             ? "· 活动名称和说明须填写英文及运营区域语言；奖名是否必填以服务端为准"
-            : "· 任务启用前须补齐英文和运营区域语言的名称"}</span>
+            : "· 首日和每周任务启用前须补齐英文和运营区域语言的名称；停用不检查"}</span>
         </div>
         {section === "events" && localizedNotice && (
           <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
@@ -1451,6 +1468,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {missing ? "缺失" : incomplete ? "未填齐" : current || (event && !event.copyReadiness ? "未确认" : cell?.fallsBack ? "未填，App 显示英文" : cell?.rewardFromPreview ? "未填，见奖项预览" : "填写")}{cell?.required ? " *" : ""}
                         </button>
                         {(missing || incomplete) && <span className="bdg warn" style={{ marginLeft: 6 }} title={missing ? "活动设为「进行中」前必须补齐这个语言" : "选填译文未填齐"}>{missing ? "缺" : "未齐"}</span>}
+                        {event && cell && cell.optional && event.deleteState === "draft" && !cell.current && cell.stored.trim() !== "" && (
+                          <button className="l-btn sm" style={{ marginLeft: 6 }} disabled={!canModuleWrite}
+                            aria-label={`清空已存副本 ${row.label} ${LOCALE_LABEL[language]}`}
+                            onClick={() => openClearEventCopy(event, row.field, language, row.label, cell.stored)}>清空副本</button>
+                        )}
                       </td>
                     );
                   })}
@@ -1690,7 +1712,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card" data-proof="h3-event-binding">
         <div className="l-h">
           <span className="ttl">任务完成条件</span>
-          <span className="sub">· 用户做了某件事 → 对应任务算完成。新任务要先绑定再启用</span>
+          <span className="sub">· 用户做了某件事 → 对应任务算完成。新任务要先绑定、补齐名称再启用</span>
           <div className="r"><button className="l-btn sm mc" onClick={openCreateBinding} disabled={!canModuleWrite}>+ 新增绑定</button></div>
         </div>
         <div style={{ overflowX: "auto" }}>
