@@ -872,7 +872,8 @@ function h3ConfigValue(key: string | undefined, value: string) {
 }
 
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
-function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null }) {
+function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null; disclosureReview?: A2OperationRow["disclosureReview"] }) {
+  if (w.disclosureReview) return w.disclosureReview.jurisdiction;
   if (w.objDisplayName && isGParamTicket(w)) return w.objDisplayName;
   if (w.objDisplayName) return a2ObjectText(w);
   if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
@@ -1166,7 +1167,12 @@ function deviceApprovalValue(value: string, operationCode?: string) {
  * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
  * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
  */
-const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown }) => {
+function i5MatrixVersionText(summary: string, version: string) {
+  return version ? summary.startsWith(`${version} · `) ? summary : version : "未配置";
+}
+
+const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.before, row.disclosureReview.expectedVersion);
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_FROM[fund.state] ?? "批准时的状态";
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.before);
@@ -1178,7 +1184,9 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
-const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string }) => {
+const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.after, row.disclosureReview.version);
+  if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
