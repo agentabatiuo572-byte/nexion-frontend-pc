@@ -68,7 +68,7 @@ type Model = H4Statistics & {
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
 function wheelRewardNameFeedback(value: BusinessFormValue, label: string) {
   const message = appVisibleTextError(value.rewardName, label);
-  return { message: message ?? "", invalid: message !== undefined, field: "rewardName" };
+  return { message: message ?? "", invalid: message !== undefined, field: "rewardName", live: true };
 }
 
 const killOn = (value: string) => ["1", "true", "on", "enabled", "open", "开"].includes(value.trim().toLowerCase());
@@ -633,7 +633,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         feedback: (value) => wheelRewardNameFeedback(value, "奖品名称"),
         fields: [
           { key: "tierName", label: "奖项编号", current: "", placeholder: "如 uvt-100", required: true, help: "不能和已有奖项重复" },
-          { key: "rewardName", label: "奖品名称", current: "", placeholder: "100 UVT", required: true, help: `${APP_VISIBLE_TEXT_HINT}。App 抽中时显示这串文字，不影响发放` },
+          { key: "rewardName", label: "奖品名称", current: "", placeholder: "100 UVT", required: true, help: APP_VISIBLE_TEXT_HINT, explain: "抽中时 App 显示这串文字，不影响发放。" },
           { key: "rewardKind", label: "奖励类型", current: "uvt", inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" } },
           { key: "realOutflow", label: "是否发真钱", current: "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" },
             warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则保存会被拒绝" : undefined },

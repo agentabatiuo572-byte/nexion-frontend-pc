@@ -803,7 +803,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string; /** 写在那一项下，不等失焦或点提交（App 可见文字含中文）。 */ live?: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1938,7 +1938,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     const legend = spec.title ?? (surface ? undefined : "填写设置");
     const feedback = spec.feedback?.(value);
     const issues = surface ? multiFieldIssues(spec, value) : {};
-    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft) ? feedback.message : undefined);
+    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft || feedback.live) ? feedback.message : undefined);
     // 只有一项时占满一行，不留半边空。
     const alone = surface && visibleFields.length === 1;
     const fieldName = (f: (typeof spec.fields)[number]) => <>
@@ -2686,7 +2686,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     return (
       <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-jurisdiction">
         <div className={surface ? "rd-form-grid" : "grid g-2"} data-cols={surface ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
-          <RdField label="适用范围代码" required={spec.mode === "create"} error={codeError}>
+          <RdField label="适用范围代码" required={spec.mode === "create"} help={surface ? "创建后不能修改" : undefined} error={codeError}>
             {(control) => <input
               {...control}
               className={surface ? "rd-input" : "fld"}
@@ -2699,11 +2699,11 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
             />}
           </RdField>
-          {surface ? <RdField label="适用范围名称" required>
+          {surface ? <RdField label="适用范围名称" required help={APP_VISIBLE_TEXT_HINT} error={appVisibleTextError(value.name, "名称")}>
             {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="State Bank of Vietnam" />}
           </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "State Bank of Vietnam")}
         </div>
-        <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>适用范围名称：{APP_VISIBLE_TEXT_HINT}。代码创建后不能修改。</div>
+        {!surface && <div className="rd-form-help" style={{ marginTop: 8 }}>适用范围名称：{APP_VISIBLE_TEXT_HINT}。代码创建后不能修改。</div>}
       </div>
     );
   }
@@ -3887,7 +3887,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // 表单自己写了校验提示的，理由下面的清单不再写一遍（VS-105）。
   const formFeedback = surface && activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.feedback?.(businessValue) : undefined;
   // 已经写在字段下的不再列一遍。
-  const shownInFields = surface && activeBusinessForm?.kind === "multi-field" ? [...Object.values(multiFieldIssues(activeBusinessForm, businessValue)), ...(formFeedback?.invalid ? [formFeedback.message] : [])] : [];
+  const shownInFields = surface && activeBusinessForm?.kind === "multi-field" ? [...Object.values(multiFieldIssues(activeBusinessForm, businessValue)), ...(formFeedback?.invalid ? [formFeedback.message] : [])]
+    : surface && activeBusinessForm?.kind === "disclosure-jurisdiction" ? [appVisibleTextError(businessValue.name, "适用范围名称") ?? ""] : [];
   const listedMissing = businessMissing.filter((message) => !shownInFields.includes(message));
   const submittedValue = spec?.submitEditValue
     ? newVal
