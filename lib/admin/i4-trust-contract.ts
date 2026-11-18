@@ -1,5 +1,4 @@
 import type { TrustPublishedSnapshotView, TrustSectionVersionView } from "./i-client";
-import { formatAdminApiError } from "./error-messages";
 
 export type TrustField = { key: string; label: string; value: string };
 export const APP_FIELD_LIMIT = 80;
@@ -53,9 +52,9 @@ export function parseI4SectionVersion(value: unknown): TrustSectionVersionView {
 }
 
 export function i4FieldValueIssue(fields: readonly TrustField[]): string | undefined {
-  if (fields.some(field => [...field.value].length > 500)) {
-    return formatAdminApiError("TRUST_SECTION_STRUCTURED_FIELDS_INVALID", "");
-  }
+  const long = fields.find(field => [...field.value].length > 500);
+  // 指出是哪一项：用运营看得到的名称，不用内部标识。
+  if (long) return `${long.label.trim() ? `「${long.label.trim()}」` : "有一项内容"}超过 500 字：每项内容最多 500 字，链接也算。`;
 }
 
 /** App field contract on publish and rollback. */

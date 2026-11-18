@@ -2846,7 +2846,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRUST_SECTION_DRAFT_FIELDS_REQUIRED: "草稿的版本、说明、结构或内容不完整，请检查后再保存。",
   TRUST_SECTION_DRAFT_FIELDS_INVALID: "草稿说明或结构含不支持的内容，请使用安全的纯文本。",
   TRUST_SECTION_STRUCTURED_FIELDS_INVALID: "内容项的标识、名称或内容无效，或标识重复，请核对版块结构。",
-  TRUST_SECTION_FIELD_VALUE_TOO_LONG: "链接以外的每项内容最多 500 字，请缩短后重试。",
+  TRUST_SECTION_FIELD_VALUE_TOO_LONG: "每项内容最多 500 字，链接也算，请缩短后重试。",
   TRUST_SECTION_LINK_INVALID: "链接不符合安全规则，请使用有效的 HTTPS 地址或受支持的 App 内部路径。",
   TRUST_SECTION_FIELD_SCHEMA_UNAVAILABLE: "当前发布版缺少有效的版块结构，暂时不能保存草稿，请联系管理员核对。",
   TRUST_SECTION_FIELD_SCHEMA_MISMATCH: "草稿的内容项和当前发布版的结构不一致，请保留已有译文并核对全部内容项。",
