@@ -6,12 +6,14 @@ import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleReadi
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
-export type EventRuleSnapshot = { rows: EventRuleReadback[]; contentRevision: number };
+export type EventRuleSnapshot = { rule: EventRuleReadback; contentRevision: number };
 
-export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }: {
+export default function H4EventRules({ ctx, rows, confirmedRules, currentEventCodes, setSnapshot, contentRevision }: {
   ctx: HCtx;
   rows: EventRuleReadback[];
-  setSnapshot: Dispatch<SetStateAction<EventRuleSnapshot | null>>;
+  confirmedRules: ReadonlyMap<string, EventRuleReadback>;
+  currentEventCodes: ReadonlySet<string>;
+  setSnapshot: Dispatch<SetStateAction<EventRuleSnapshot[]>>;
   contentRevision: number;
 }) {
   const [selected, setSelected] = useState<EventRuleReadback | null>(null);
@@ -23,22 +25,36 @@ export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
+  const selectionRemoved = selected !== null && !currentEventCodes.has(selected.eventCode);
+  const latestSelected = selected && confirmedRules.get(selected.eventCode);
+  const canEnable = !!latestSelected?.readiness.ready;
   const choose = (row: EventRuleReadback) => { setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
-  const applyRule = (rule: EventRuleReadback) => setSnapshot(current => current && {
-    ...current, rows: current.rows.map(row => row.eventCode === rule.eventCode ? rule : row),
-  });
+  const applyRule = (rule: EventRuleReadback) => setSnapshot(current => current.map(entry =>
+    entry.rule.eventCode === rule.eventCode ? { rule, contentRevision } : entry));
   const load = async (resetDraft = true) => {
     const own = ++generation.current; if (resetDraft) setLoading(true); setError("");
-    try { const values = await fetchEventRules(); if (own === generation.current) { setSnapshot({ rows: values, contentRevision }); if (resetDraft) { setSelected(null); setDraft(null); } } }
+    try {
+      const values = await fetchEventRules();
+      if (own !== generation.current) return;
+      setSnapshot(current => values.map(rule => {
+        const confirmed = current.find(entry => entry.rule.eventCode === rule.eventCode);
+        return confirmed?.contentRevision === contentRevision && confirmed.rule.revision > rule.revision
+          ? confirmed : { rule, contentRevision };
+      }));
+      if (resetDraft) { setSelected(null); setDraft(null); }
+    }
     catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); }
     finally { if (own === generation.current) setLoading(false); }
   };
-  useEffect(() => { setSaving(false); setError(""); setSnapshot(null); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
+  useEffect(() => { setSaving(false); setError(""); setSnapshot([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
   useEffect(() => {
     if (lastContentRevision.current === contentRevision) return;
     lastContentRevision.current = contentRevision;
     if (canRead) void load(false);
   }, [contentRevision, canRead]);
+  useEffect(() => {
+    if (selectionRemoved) { setSelected(null); setDraft(null); }
+  }, [selectionRemoved]);
   useEffect(() => {
     let alive = true; setVouchers([]); setVoucherError(""); setVoucherLoading(false);
     if (selected?.kind !== "seasonal" || !canRead || !canReadVouchers) return;
@@ -50,7 +66,7 @@ export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }
   }, [selected?.eventCode, selected?.kind, canRead, canReadVouchers, operator, voucherRetry]);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
   const save = () => {
-    if (!selected || !draft || saving || !canWrite) return;
+    if (!selected || selectionRemoved || !draft || saving || !canWrite || (draft.enabled && !canEnable)) return;
     const next = { ...draft, rules: { ...draft.rules } };
     try { if (selected.kind === "regional") next.rules.regions = parseEventRegions(regions); }
     catch (cause) { setError(displayAdminError(cause)); return; }
@@ -78,7 +94,6 @@ export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }
     });
   };
   if (!canRead) return null;
-  const latestSelected = rows.find(row => row.eventCode === selected?.eventCode);
   return <section className="l-card">
     <div className="l-h"><span className="ttl">活动玩法与开放设置</span><span className="sub">先保存完整配置，再开启活动</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button></div></div>
     <div className="l-b">
@@ -87,10 +102,10 @@ export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }
         {!rows.length && !error && <p>暂无活动规则。</p>}
         {!rows.length && error && <button className="l-btn" onClick={() => void load()}>重试</button>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.eventCode} disabled={saving || !!selected || !EVENT_KIND_LABELS[row.kind]} aria-pressed={selected?.eventCode === row.eventCode} onClick={() => choose(row)}>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"} · {row.eventCode} · {row.enabled ? "已开启" : "已关闭"}</button>)}</div>
-        {selected && draft && <><fieldset disabled={!canWrite || saving} style={{ marginTop: 16, border: 0, padding: 0 }}>
+        {!selectionRemoved && selected && draft && <><fieldset disabled={!canWrite || saving} style={{ marginTop: 16, border: 0, padding: 0 }}>
           <p>{latestSelected ? eventRuleReadinessText(latestSelected) : "开启条件尚未确认，请核对配置。"}</p>
           <p>{selected.rulesLocked ? "活动玩法和有效期已固定，只可关闭活动；关闭后不能重新开启。" : "活动首次开放后，玩法和有效期固定；关闭后不能重新开启。"}</p>
-          <label className="field"><span>活动开放</span><select value={String(draft.enabled)} onChange={event => setDraft({ ...draft, enabled: event.target.value === "true" })}><option value="false">关闭</option><option value="true" disabled={!latestSelected?.readiness.ready || (selected.rulesLocked && !selected.enabled)}>开启</option></select></label>
+          <label className="field"><span>活动开放</span><select value={String(draft.enabled)} onChange={event => setDraft({ ...draft, enabled: event.target.value === "true" })}><option value="false">关闭</option><option value="true" disabled={!canEnable || (selected.rulesLocked && !selected.enabled)}>开启</option></select></label>
           <fieldset disabled={selected.rulesLocked} className="grid g-2" style={{ gap: 12, border: 0, margin: 0, padding: 0 }}>
             {(["startsAt", "endsAt"] as const).map((key, index) => <label className="field" key={key}><span>{index ? "结束时间" : "开始时间"}（UTC）</span><input type="datetime-local" step={1} value={draft[key] ? new Date(draft[key]!).toISOString().slice(0, 19) : ""} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : null })}/></label>)}
             {selected.kind === "boost" && <div className="field"><span>加成玩法</span><span>{draft.rules.action === "CHECKIN_MULTIPLIER" ? "周末签到加倍" : "锁定计划加抽奖券"}</span></div>}
@@ -103,7 +118,7 @@ export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }
           {selected.kind === "boost" && draft.rules.action === "CHECKIN_MULTIPLIER" && <p>加成预算耗尽后恢复原有签到奖励，不影响用户继续签到。</p>}
           {selected.kind === "wheel" && <p>抽奖奖项、概率和奖池限制在下方转盘配置维护。</p>}
           {selected.kind === "regional" && <p>排名按加入活动后的有效支付订单金额统计；获胜地区内按个人有效支付金额比例分配奖池，并列第一的地区共同分享总奖池。</p>}
-          <div style={{ marginTop: 14 }}><button className="l-btn mc" onClick={save}>{saving ? "正在保存…" : "保存配置"}</button></div>
+          <div style={{ marginTop: 14 }}><button className="l-btn mc" disabled={draft.enabled && !canEnable} onClick={save}>{saving ? "正在保存…" : "保存配置"}</button></div>
         </fieldset><button className="l-btn" style={{ marginTop: 10 }} disabled={saving} onClick={() => { setSelected(null); setDraft(null); setError(""); }}>关闭配置</button></>}
       </>}
     </div>

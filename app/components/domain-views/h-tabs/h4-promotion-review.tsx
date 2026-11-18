@@ -26,6 +26,18 @@ const ACTIONS: Record<string, {
     'draft-versions': { label: '创建改版草稿', operation: 'createDraftVersion', authority: 'edit', version: false, copy: '复制当前配置建立候选草稿；旧版本继续运行，历史参与上限不重置。' },
     copies: { label: '复制为新活动', operation: 'copyPromotion', authority: 'edit', version: false, copy: '只复制配置。新活动具有独立身份，不复制审批、使用量或历史订单。' },
 };
+function currentCandidate(activity: Promotion) {
+    const current = activity.current;
+    return activity.draftVersion != null && current?.activityId === activity.activityId
+        && current.version === activity.draftVersion && current.state !== 'PUBLISHED' ? current : null;
+}
+
+function latestCandidateHistory(activity: Promotion, items: Version[] = []) {
+    return items.reduce<Version | undefined>((latest, version) =>
+        version.activityId === activity.activityId && version.version === activity.draftVersion
+            && (!latest || version.revision > latest.revision) ? version : latest, undefined);
+}
+
 export default function PromotionReview({ activity, catalog, requiredLanguages, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false }: {
     activity: Promotion;
     catalog: Catalog;
@@ -33,7 +45,7 @@ export default function PromotionReview({ activity, catalog, requiredLanguages, 
     can: (v: string) => boolean;
     onRefresh: () => Promise<void>;
     onReload: (latest: Promotion) => void;
-    onCandidateConflict: (message?: string) => void;
+    onCandidateConflict: (message?: string, latest?: Promotion) => void;
     onCopyCreated: (receipt: CommandReceipt) => Promise<void>;
     onEdit: () => void;
     onRewards: () => void;
@@ -50,7 +62,12 @@ export default function PromotionReview({ activity, catalog, requiredLanguages, 
         setHistory(previous => ({...previous, error: null, loading: true}));
         try {
             const data = await promotionVersions(target.activityId);
-            if (requestedHistoryScope.current === scope) setHistory({data, error: null, loading: false});
+            if (requestedHistoryScope.current === scope) {
+                setHistory({data, error: null, loading: false});
+                if (latestCandidateHistory(target, data.items)?.state === 'PUBLISHED') {
+                    onCandidateConflict('原候选已发布，正在读取最新活动资料。');
+                }
+            }
         } catch (error) {
             if (requestedHistoryScope.current === scope) setHistory(previous => ({...previous, error, loading: false}));
             throw error;
@@ -58,24 +75,29 @@ export default function PromotionReview({ activity, catalog, requiredLanguages, 
     };
     useEffect(() => {
         if (requestedHistoryScope.current !== historyScope) void readVersions().catch(() => undefined);
+        return () => {
+            if (requestedHistoryScope.current === historyScope) requestedHistoryScope.current = '';
+        };
     }, [historyScope]);
     const versions = {...history, reload: () => { void readVersions().catch(() => undefined); }};
     const [action, setAction] = useState<string | null>(null), [reservations, setReservations] = useState(false);
-    const [simulationState, setSimulationState] = useState<{ scope: string; open: boolean; result?: AdminSimulation; conflict?: boolean } | null>(null);
-    const current = activity.current, active = versions.data?.items.find(version => version.version === activity.activeVersion);
-    const draftVersion = activity.draftVersion;
-    const currentCandidate = draftVersion != null && current?.activityId === activity.activityId && current.version === draftVersion ? current : null;
-    const historicalCandidate = draftVersion == null ? undefined
-        : versions.data?.items.find(version => version.activityId === activity.activityId && version.version === draftVersion);
-    const candidate = currentCandidate && (!historicalCandidate || currentCandidate.revision >= historicalCandidate.revision)
-        ? currentCandidate : historicalCandidate;
-    const candidateScope = candidate ? `${activity.activityId}:${candidate.version}:${candidate.revision}` : null;
+    const [simulationState, setSimulationState] = useState<{ scope: string; open: boolean; result?: AdminSimulation; conflict?: { latest?: Promotion } } | null>(null);
+    const active = versions.data?.items.find(version => version.version === activity.activeVersion);
+    const detailCandidate = currentCandidate(activity);
+    const historicalCandidate = latestCandidateHistory(activity, versions.data?.items);
+    const candidate = historicalCandidate?.state === 'PUBLISHED' ? null
+        : detailCandidate && (!historicalCandidate || detailCandidate.revision >= historicalCandidate.revision)
+            ? detailCandidate : historicalCandidate;
+    const candidateScope = candidate ? `${activity.activityId}:${candidate.version}:${candidate.revision}:${candidate.contentHash}` : null;
     const currentSimulation = simulationState?.scope === candidateScope ? simulationState : null;
     const simulation = currentSimulation?.result;
     useEffect(() => {
-        if (!currentSimulation?.conflict) return;
+        const conflict = currentSimulation?.conflict;
+        if (!conflict) return;
         setSimulationState(null);
-        onCandidateConflict('试算回执与提交的活动、版本或配置不符。请核对刷新后的候选并重新试算。');
+        onCandidateConflict(conflict.latest
+            ? '当前候选已变化。请核对最新活动资料，有候选时重新试算。'
+            : '试算回执与提交的活动、版本或配置不符。请核对刷新后的候选并重新试算。', conflict.latest);
     }, [currentSimulation?.conflict, onCandidateConflict]);
     const blockers = candidate?.policyResolutionErrors || [], impact = activity.impact;
     const missingPublicLanguages = promotionPublicMissing(candidate?.draft, requiredLanguages);
@@ -126,12 +148,18 @@ export default function PromotionReview({ activity, catalog, requiredLanguages, 
     {action && <ConfirmCommand prepareBody={action === 'submit' ? prepareReviewBody : undefined} onReload={activityStateAction ? reloadForConfirmation : undefined} onVersionConflict={activityStateAction ? undefined : () => { setAction(null); onCandidateConflict(); }} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate) && (!['submit', 'publish'].includes(action) || !missingPublicLanguages.length) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state))} title={ACTIONS[action].label} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async result => { if (action === 'copies') await onCopyCreated(result); else { await onRefresh(); versions.reload(); } setAction(null); }}><Notice title="确认影响范围">{ACTIONS[action].copy}</Notice><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/></ConfirmCommand>}
     {currentSimulation?.open && candidate && <SimulationDialog key={candidateScope} activity={activity} version={candidate} catalog={catalog} can={can}
         onClose={() => setSimulationState(previous => previous?.scope === candidateScope ? { ...previous, open: false } : previous)}
-        onResult={result => {
+        onResult={async result => {
             // The request sends the candidate draft unchanged. Its stored hash identifies that contract.
             const matches = result.activityId === candidate.activityId && result.version === candidate.version && result.configHash === candidate.contentHash;
+            // Activity detail reads the draft pointer and its current version in a single server snapshot.
+            const latest = matches ? await promotionRead<Promotion>(`/promotions/${encodeURIComponent(candidate.activityId)}`) : undefined;
+            const latestCandidate = latest && currentCandidate(latest);
+            const stillCurrent = matches && latestCandidate?.activityId === candidate.activityId
+                && latestCandidate.version === candidate.version && latestCandidate.revision === candidate.revision
+                && latestCandidate.contentHash === candidate.contentHash;
             setSimulationState(previous => {
                 if (previous?.scope !== candidateScope || !previous.open) return previous;
-                return matches ? { scope: previous.scope, open: false, result } : { scope: previous.scope, open: false, conflict: true };
+                return stillCurrent ? { scope: previous.scope, open: false, result } : { scope: previous.scope, open: false, conflict: { latest } };
             });
         }}/>}
     {reservations && <Dialog title="原订单预留" wide onClose={() => setReservations(false)}><Table headers={['订单', '锁定版本', '原付款截止', '预留奖励']} rows={impact.reservedOrders.map(r => [r.orderNo, `v${r.version}`, formatTime(r.payBy), r.reservedRewards])}/></Dialog>}
@@ -143,12 +171,12 @@ function SimulationDialog({ activity, version, catalog, can, onClose, onResult }
     catalog: Catalog;
     can: (v: string) => boolean;
     onClose: () => void;
-    onResult: (s: AdminSimulation) => void;
+    onResult: (s: AdminSimulation) => Promise<void>;
 }) {
     const [items, setItems] = useState<Item[]>([]), [sample, setSample] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
     const failedRead = useRef<{target: string; retry: () => Promise<void>} | null>(null);
     const run = async () => { setBusy(true); setError(null); try {
-        onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: version.draft, items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
+        await onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: version.draft, items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
     }
     catch (e) {
         failedRead.current = {target: '只读购买试算', retry: run};
