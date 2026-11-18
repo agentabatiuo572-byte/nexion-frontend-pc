@@ -21,7 +21,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
   write: (payload: T, key: string) => Promise<R>;
   query: (key: string, payload: T) => Promise<{ status: "SUCCEEDED"; result: R } | { status: "FAILED" | "UNKNOWN" | "PROCESSING" | "PENDING" }>;
   onSuccess: () => void;
-  onRefusal: (error: unknown, recovered: boolean, payload: T) => void;
+  onRefusal: (error: unknown, recovered: boolean, payload: T, before?: B) => void;
 }) {
   const actorId = useAdminAuth(state => state.session?.adminId);
   const epoch = useAdminAuth(state => state.authEpoch);
@@ -92,7 +92,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
       }
       store.forget(record.fingerprint, record.commandKey); setPending(undefined);
       if (receipt?.status === "FAILED") {
-        options.onRefusal(new Error("原请求没有成功，你填的内容还在；请检查后重新提交。"), true, record.payload);
+        options.onRefusal(new Error("原请求没有成功，你填的内容还在；请检查后重新提交。"), true, record.payload, record.before);
         setMessage("原请求没有成功，你填的内容还在；请检查后重新提交。");
       } else options.onSuccess();
     } catch (error) {
@@ -101,7 +101,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
           && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
       if (rejected) {
         store.forget(record.fingerprint, record.commandKey); setPending(undefined);
-        options.onRefusal(error, false, record.payload);
+        options.onRefusal(error, false, record.payload, record.before);
         setMessage(displayAdminError(error));
       } else {
         if (options.requireMissingReceipt && error instanceof SupportClientError && [401, 403].includes(error.status)) {

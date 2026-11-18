@@ -1178,7 +1178,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DISCLOSURE_FIELDS_REQUIRED: "请填写适用地区、语言范围、生效日期及英文和运营区域语言的披露正文。",
   DISCLOSURE_VERSION_SERVER_ASSIGNED: "新版本号由系统分配，请重新打开新建版本。",
   DISCLOSURE_LANGUAGE_SCOPE_UNSUPPORTED: "当前语言范围不受支持，请选择可录入的中、越、英语范围。",
-  DISCLOSURE_EN_REQUIRED_FOR_SCOPE: "请补齐英文和运营区域语言的披露正文。",
+  DISCLOSURE_EN_REQUIRED_FOR_SCOPE: "英语正文必填，App 其他缺少翻译的语言需要回退到英语。",
   DISCLOSURE_EFFECTIVE_DATE_INVALID: "披露生效日期格式无效，请重新选择日期。",
   DISCLOSURE_RAW_JSON_OR_URL_NOT_ALLOWED: "披露内容含不允许的原始 JSON 或链接，请改成可阅读的正文。",
   DISCLOSURE_PLACEHOLDERS_MISMATCH: "各语言正文的占位符不一致，请按中文正文逐项核对。",

@@ -680,7 +680,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </div>,
       amplifies: false,
       run: async (reason) => {
-        if (!selectedMessage) return false;
+        if (!selectedMessage || !issue.samples.includes(selectedMessage.messageKey)) return false;
         const messageKey = selectedMessage.messageKey;
         return runBackend(actions.fixI6Integrity(issue.code, {
           messageKey, ...await submittedMessageText(selectedMessage.placeholders, form),
@@ -1552,9 +1552,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const editorMissing = copyEditor && sm ? copyFormMissing(sm.placeholders ?? [], copyEditor, requiredLanguages) : [];
     const editorBlocked = blockedText(editorMissing);
     const startEdit = async (mode: CopyEditor["mode"], issue?: IntegrityIssue) => {
-      if (!sm) return;
+      const target = issue && !issue.samples.includes(sm?.messageKey ?? "")
+        ? issue.samples.map(key => MESSAGES.find(message => message.messageKey === key)).find(Boolean)
+        : sm;
+      if (!target) return;
       const required = await readRequiredLanguages();
-      setCopyEditor({ mode, issue, ...mapSingleContentText(sm, required, "edit"), tried: false });
+      setSelectedMessageKey(target.messageKey);
+      setCopyEditor({ mode, issue, ...mapSingleContentText(target, required, "edit"), tried: false });
     };
     const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
       : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案；App 拉到新文案包后改用自带文字" : "—";

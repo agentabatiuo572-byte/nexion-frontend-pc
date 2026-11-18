@@ -17,7 +17,8 @@ import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use
 import type { MSupportPermission } from "./m5-service-rules";
 
 type WelcomePayload = Parameters<typeof supportWelcomeMessageClient.update>[0];
-type WelcomePendingRecord = M5ManagementRecord<WelcomePayload, SupportWelcomeMessage>;
+type WelcomeBefore = SupportWelcomeMessage & { editedTexts?: Partial<SupportWelcomeTexts> };
+type WelcomePendingRecord = M5ManagementRecord<WelcomePayload, WelcomeBefore>;
 const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({ storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && isM5ManagementPayload("welcome", row.payload) && (row.before === undefined || isM5ManagementPayload("welcome", row.before, true)) });
 const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "英语" }, { key: "vi", label: "越南语" }];
 const MAX = 500;
@@ -59,15 +60,18 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const [reason, setReason] = useState("");
   // expiresAt = the original record's 24h limit: after it the key may no longer be replayed, only looked up.
   const [reload, setReload] = useState(0);
-  const preserveDraft = useRef(false);
+  const refused = useRef<{ actor: string; attempted: SupportWelcomeTexts; before?: WelcomeBefore } | undefined>(undefined);
   const [lang, setLang] = useState<SupportWelcomeLanguage>("zh");
   const command = useM5ManagementCommand({
     store: welcomeCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
     fingerprint: fingerprintOf, write: m5ManagementClient.welcome, query: m5ManagementClient.welcomeCommand,
-    onSuccess: () => { preserveDraft.current = false; setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
-    onRefusal: (cause, recovered, payload) => {
+    onSuccess: () => { refused.current = undefined; setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
+    onRefusal: (cause, recovered, payload, before) => {
       setError(errorText(cause));
-      if (recovered) { preserveDraft.current = true; setDraft(payload.texts); setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); }
+      if (recovered) {
+        refused.current = { actor: actorStamp(), attempted: payload.texts, before };
+        setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1);
+      }
       else if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "SUPPORT_WELCOME_VERSION_CONFLICT") {
         setConflict(true); setConfirm(false); void refreshLatest();
       }
@@ -83,9 +87,18 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     Promise.all([supportWelcomeMessageClient.read(controller.signal), getRequiredContentLanguages()]).then(([value, required]) => {
       if (controller.signal.aborted) return;
       const pending = welcomeCommands.list().find((row) => row.actorId === adminId);
+      const rejected = refused.current?.actor === actorStamp() ? refused.current : undefined;
       setRequiredLanguages(required);
-      setCurrent(value); setDraft(old => pending ? pending.payload.texts : preserveDraft.current && old ? old : mapSingleContentText(value.texts, required, "edit")); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
-      setReason(old => pending?.payload.reason ?? (preserveDraft.current ? old : ""));
+      if (rejected && !rejected.before?.editedTexts) {
+        setCurrent(rejected.before ?? value); setDraft(rejected.attempted); setLatest(value); setConflict(true);
+      } else {
+        refused.current = undefined;
+        setCurrent(value);
+        setDraft(pending?.payload.texts ?? { ...mapSingleContentText(value.texts, required, "edit"), ...rejected?.before?.editedTexts });
+        setLatest(null); setConflict(false);
+      }
+      setError(""); setReadUnavailable(false);
+      setReason(pending?.payload.reason ?? "");
     }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -113,16 +126,19 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         return;
       }
       setSaved(false);
-      await command.run("submit", { expectedVersion: current.version, texts, reason: reason.trim() }, current);
+      const edited = changedLanguages(mapSingleContentText(current.texts, requiredLanguages, "edit"), draft);
+      const editedTexts = Object.fromEntries(edited.map(key => [key, draft[key]])) as Partial<SupportWelcomeTexts>;
+      await command.run("submit", { expectedVersion: current.version, texts, reason: reason.trim() }, { ...current, editedTexts });
     } finally { setCheckingLanguages(false); }
   }
 
   // Keep the languages this operator edited; take every other language from the latest saved version.
   function reviewLatest() {
     if (!latest || !current || !draft) return;
-    const edited = changedLanguages(mapSingleContentText(current.texts, requiredLanguages, "edit"), draft);
+    const edited = refused.current ? [] : changedLanguages(mapSingleContentText(current.texts, requiredLanguages, "edit"), draft);
     const next = mapSingleContentText(latest.texts, requiredLanguages, "edit");
     for (const key of edited) next[key] = draft[key];
+    refused.current = undefined;
     setCurrent(latest); setDraft(next); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
   }
 
