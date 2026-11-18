@@ -12,6 +12,7 @@ import { createPendingMutationStore } from "../../../../lib/admin/pending-mutati
 import { businessZone, formatBusinessTimeCompact, parseBusinessTime } from "../../../../lib/admin/business-time";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
+import type { MCtx } from "./types";
 import type { MSupportPermission } from "./m5-service-rules";
 import "./m-support-admin.css";
 import { SupportRandomAssignment, hasPendingRandomAssignment } from "./support-random-assignment";
@@ -38,7 +39,7 @@ export function isAssignable(agent: SupportAgentCandidate): boolean {
   return agent.assignmentEligible === true && !agent.busy;
 }
 
-export function PoolRouteModal({ item, groups, onClose, onDone }: { item: SupportBindingPoolItem; groups: SupportGroup[]; onClose: () => void; onDone: () => void }) {
+export function PoolRouteModal({ item, groups, onClose, onDone }: { item: SupportBindingPoolItem; groups: SupportGroup[]; onClose: () => void; onDone: (applied?: boolean) => void }) {
   const adminId = useAdminAuth(state => state.session?.adminId);
   const [pending, setPending] = useState(() => routeCommands.list().find(row => row.actorId === adminId && row.item.customerId === item.customerId) ?? null);
   const [targetId, setTargetId] = useState(pending?.payload.targetGroupId ?? "");
@@ -94,10 +95,9 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
       const result = await supportClient.command(pending.commandKey);
       if (stamp !== actorStamp() || !mounted.current) return;
       if (result.status === "SUCCEEDED" || result.status === "FAILED") {
-        if (result.status === "SUCCEEDED") await verifyRouteFacts(pending);
         if (stamp !== actorStamp() || !mounted.current || pending.actorId !== useAdminAuth.getState().session?.adminId) return;
         routeCommands.forget(pending.fingerprint, pending.commandKey);
-        if (result.status === "SUCCEEDED") onDone();
+        if (result.status === "SUCCEEDED") onDone(true);
         else { setPending(null); setVersions(null); setRequiresFreshPool(true); setError("原调整没有成功；请回到客户池读最新资料后重新确认。"); }
       }
       else setError("原调整结果仍然未知，请稍后再查询。");
@@ -105,7 +105,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
   if (pending) return <Modal title="组范围调整结果未知" icon={Users} busy={busy} onClose={onClose} footer={<><Button size="sm" disabled={busy} onClick={onClose}>返回</Button><Button variant="primary" disabled={busy} onClick={() => void check()}>查询原结果</Button></>}><Notice tone="warn">有一次调整结果未知，原客户和内容已锁定。</Notice><Facts><Fact k="客户">{m1CustomerCode(pending.item.customerId)}</Fact><Fact k="原组">{groups.find(g => g.id === pending.item.routeGroupId)?.name || "未分组"}</Fact><Fact k="目标组">{groups.find(g => g.id === pending.payload.targetGroupId)?.name || "未分组"}</Fact><Fact k="原理由">{pending.payload.reason}</Fact></Facts><Fold title="技术信息" summary="原请求编号和版本"><Facts><Fact k="原请求编号">{pending.commandKey}</Fact><Fact k="路由版本">{pending.payload.expectedRouteVersion}</Fact><Fact k="源组版本">{pending.payload.sourceGroupVersion ?? "—"}</Fact><Fact k="目标组版本">{pending.payload.targetGroupVersion ?? "—"}</Fact></Facts></Fold>{error && <Notice tone="danger">{error}</Notice>}</Modal>;
-  if (requiresFreshPool) return <Modal title="返回客户池重新确认" icon={Users} onClose={onDone} footer={<><Button size="sm" onClick={onDone}>返回</Button></>}><Notice tone="danger">{error}</Notice></Modal>;
+  if (requiresFreshPool) return <Modal title="返回客户池重新确认" icon={Users} onClose={() => onDone()} footer={<><Button size="sm" onClick={() => onDone()}>返回</Button></>}><Notice tone="danger">{error}</Notice></Modal>;
   return <Modal title="调整待绑定客户组范围" icon={Users} busy={busy} onClose={onClose} footer={<><Button size="sm" disabled={busy} onClick={onClose}>返回</Button><Button variant="primary" disabled={busy} disabledReason={!canSave ? "选一个不同的目标组，填 8–200 字理由；分组资料读完后才能提交" : undefined} onClick={() => void save()}>确认调整</Button></>}>
     <div className="m1-command-form">
     <Facts><Fact k="客户">{operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}</Fact><Fact k="当前范围">{item.routeState === "UNKNOWN" ? "资料未同步" : groups.find(g => g.id === item.routeGroupId)?.name || "未分组"}</Fact><Fact k="调整到">{groups.find(g => g.id === targetId)?.name || "未分组"}</Fact></Facts>
@@ -132,7 +132,7 @@ function errorText(error: unknown, reading = false): string {
   return "待分配服务暂时不可用，没有提交任何分配，请重试。";
 }
 
-export function M1SupervisorPool({ permission, initialGroupId }: { permission: MSupportPermission; initialGroupId?: number }) {
+export function M1SupervisorPool({ permission, initialGroupId, toast }: { permission: MSupportPermission; initialGroupId?: number; toast: MCtx["toast"] }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const hasWrite = useAdminAuth(state => Boolean(state.session?.authorities.includes("service_m1_write")));
@@ -358,7 +358,10 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
       <Facts><Fact k="客户编码">{m1CustomerCode(poolDetail.customerId)}</Fact><Fact k="脱敏电话">{poolDetail.phoneMasked || "—"}</Fact><Fact k="入池原因">{POOL_REASONS[poolDetail.reason]}</Fact><Fact k="自动分配资格">{poolDetail.autoEligible == null ? "未知" : poolDetail.autoEligible ? "当前可自动重试" : "需主管处理"}</Fact><Fact k="已尝试">{poolDetail.attempts ?? "—"} 次</Fact><Fact k="最近尝试">{poolDetail.lastAttemptAt ? `${formatBusinessTimeCompact(poolDetail.lastAttemptAt, "时间待核验")}（北京时间）` : "尚无记录"}</Fact><Fact k="最近尝试状态">{{ ASSIGNED: "已分配", WAITING_CANDIDATE: "等待合格候选，将按规则重试", PAUSED: "已暂停，需核对分配模式", NONE: "历史记录需明确处理" }[poolDetail.autoAttemptState || ""] || "状态未知"}</Fact><Fact k="最近结果">{{ NO_CANDIDATE: "暂无合格候选", ASSIGNED: "已成功分配", SUPERVISOR_MODE: "当前由主管处理" }[poolDetail.lastOutcome || ""] || (poolDetail.lastOutcome ? "需刷新资料后核对" : "尚无结果")}</Fact><Fact k="客户留言"><span data-user-content>{poolDetail.lastMessagePreview || "暂无留言"}</span></Fact></Facts><Fold title="技术信息" summary="客户、路由与池版本"><Facts><Fact k="客户编号">{poolDetail.customerId}</Fact><Fact k="池版本">{poolDetail.version}</Fact><Fact k="路由版本">{poolDetail.routeVersion ?? "—"}</Fact></Facts></Fold>
     </Drawer>}
     {randomCustomers&&<SupportRandomAssignment customers={randomCustomers} onClose={()=>setRandomCustomers(null)} onDone={()=>{setSelected(new Map());setReload(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));}}/>}
-    {routeItem && scope.mode === "ALL" && isSuper && <PoolRouteModal item={routeItem} groups={scope.groups} onClose={() => setRouteItem(null)} onDone={() => { setRouteItem(null); setPool(null); setSelected(new Map()); setTarget(null); setReload(n => n + 1); }} />}
+    {routeItem && scope.mode === "ALL" && isSuper && <PoolRouteModal item={routeItem} groups={scope.groups} onClose={() => setRouteItem(null)} onDone={applied => {
+      setRouteItem(null); setPool(null); setSelected(new Map()); setTarget(null); setReload(n => n + 1);
+      if (applied) toast("原组范围调整已生效。", "success");
+    }} />}
     {confirm && <Modal title="确认分配客户" icon={Users} wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }} footer={<><Button type="button" size="sm" disabled={saving} onClick={() => setConfirm(false)}>返回</Button><Button type="button" variant="primary" disabled={saving} disabledReason={pending ? "先查询原结果" : !canSubmit ? "请选择有效专属客服并填写 8–200 字原因" : undefined} onClick={() => void assign()}>{saving ? "分配中…" : pending ? "等待原命令结果" : `确认分配 ${assignmentCustomers.length} 位`}</Button></>}>
       <div className="m1-command-form">
       <section className="m1-assign-customers" aria-label="本次分配的客户"><h3>本次分配 <b>{assignmentCustomers.length}</b> 位客户</h3><ul>{assignmentCustomers.map((item) => <li key={item.customerId}><span data-mono>{m1CustomerCode(item.customerId)}</span><span>{POOL_REASONS[item.reason]}</span></li>)}</ul><p className="rd-note">只分配下列选中的客户，其他客户不变。之后这些客户邀请的新用户会跟随同一位专属客服。</p></section>
