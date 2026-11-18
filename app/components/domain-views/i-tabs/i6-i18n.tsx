@@ -1774,12 +1774,39 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const submittedCount = courseRecords.filter((record) => record.ticketStatus !== "pending" && record.receiptKnown).length;
   const pendingCourseCount = new Set([...courseApprovalRows.map(row => row.obj), ...courseRecords.filter(record => record.ticketStatus === "pending")
     .map(record => record.payload.kind === "proposal" ? record.payload.input.obj : "")].filter(Boolean)).size;
+  /**
+   * App 给英语、越南语用户读课时的取法：越南语缺的格用英文；标题、正文、每道题的题干和
+   * 至少两个、和中文一样多的选项都读得到才显示，读不到整门课不显示。中文缺格也用英文。
+   */
+  const appCopy = (c: Course, lang: Lang) => {
+    const pick = (own: string | undefined, en: string) => lang !== "en" && own?.trim() ? own : en;
+    const own = lang === "zh" ? { title: c.titleZh, body: c.bodyZh } : lang === "vi" ? { title: c.titleVi, body: c.bodyVi } : { title: c.titleEn, body: c.bodyEn };
+    return { title: pick(own.title, c.titleEn), body: pick(own.body, c.bodyEn), english: lang !== "en" && (!own.title?.trim() || !own.body?.trim()) };
+  };
+  const appHidden = (c: Course): Lang[] => liveStatus(c) !== "published" ? [] : (["en", "vi"] as const).filter(lang => {
+    const copy = appCopy(c, lang);
+    if (!copy.title.trim() || !copy.body.trim()) return true;
+    return c.quizQuestions.some(q => {
+      const options = lang === "vi" && q.optionsVi?.length ? q.optionsVi : q.optionsEn;
+      return !(lang === "vi" && q.questionVi?.trim() ? q.questionVi : q.questionEn).trim()
+        || options.length < 2 || options.length !== q.optionsZh.length || options.some(option => !option.trim());
+    });
+  });
+  const hiddenTag = (c: Course) => {
+    const hidden = appHidden(c);
+    if (!hidden.length) return null;
+    const who = hidden.map(lang => lang === "en" ? "英语" : "越南语").join("、");
+    return <StatusTag tone="warn" icon={EyeOff} explain={`后台是在线，但 App 上${who}用户看不到这门课：这种语言的标题、正文或测验题不全（越南语缺的用英文的）。在「详情与版本」建新版本草稿，补齐后发布。`}>{who}用户看不到</StatusTag>;
+  };
+  const hiddenCount = allCourses.filter(c => appHidden(c).length > 0).length;
   const conclusion = unknownCount > 0
     ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里先查询原结果" }
     : submittedCount > 0
       ? { state: "neutral" as const, text: `${count(submittedCount)} 张课程申请已提交，审批状态还没查到`, hint: "在下面点「查询原结果」再查" }
     : pendingCourseCount > 0
       ? { state: "neutral" as const, text: `${count(pendingCourseCount)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
+      : hiddenCount > 0
+        ? { state: "warn" as const, text: `${count(hiddenCount)} 门在线课有的语言用户看不到`, hint: "课程卡上标了是哪种语言，补齐后发布新版本" }
       : counts.draft > 0
         ? { state: "warn" as const, text: `${count(counts.online)} 门课在线，${count(counts.draft)} 门草稿还没发布`, hint: "草稿用户看不到，在课程卡上发布" }
         : allCourses.length === 0
@@ -1824,30 +1851,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const langDone = (c: Course, lang: Lang) => {
     const F = lang === "zh" ? "Zh" : lang === "vi" ? "Vi" : "En";
     return !!(c[`title${F}` as "titleZh"]?.trim() && c[`body${F}` as "bodyZh"]?.trim());
-  };
-  /**
-   * App 给英语、越南语用户读课时的取法：越南语缺的格用英文；标题、正文、每道题的题干和
-   * 至少两个、和中文一样多的选项都读得到才显示，读不到整门课不显示。中文缺格也用英文。
-   */
-  const appCopy = (c: Course, lang: Lang) => {
-    const pick = (own: string | undefined, en: string) => lang !== "en" && own?.trim() ? own : en;
-    const own = lang === "zh" ? { title: c.titleZh, body: c.bodyZh } : lang === "vi" ? { title: c.titleVi, body: c.bodyVi } : { title: c.titleEn, body: c.bodyEn };
-    return { title: pick(own.title, c.titleEn), body: pick(own.body, c.bodyEn), english: lang !== "en" && (!own.title?.trim() || !own.body?.trim()) };
-  };
-  const appHidden = (c: Course): Lang[] => liveStatus(c) !== "published" ? [] : (["en", "vi"] as const).filter(lang => {
-    const copy = appCopy(c, lang);
-    if (!copy.title.trim() || !copy.body.trim()) return true;
-    return c.quizQuestions.some(q => {
-      const options = lang === "vi" && q.optionsVi?.length ? q.optionsVi : q.optionsEn;
-      return !(lang === "vi" && q.questionVi?.trim() ? q.questionVi : q.questionEn).trim()
-        || options.length < 2 || options.length !== q.optionsZh.length || options.some(option => !option.trim());
-    });
-  });
-  const hiddenTag = (c: Course) => {
-    const hidden = appHidden(c);
-    if (!hidden.length) return null;
-    const who = hidden.map(lang => lang === "en" ? "英语" : "越南语").join("、");
-    return <StatusTag tone="warn" icon={EyeOff} explain={`后台是在线，但 App 上${who}用户看不到这门课：这种语言的标题、正文或测验题不全（越南语缺的用英文的）。在「详情与版本」建新版本草稿，补齐后发布。`}>{who}用户看不到</StatusTag>;
   };
 
   return <>
@@ -1952,7 +1955,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 items={LANGS.map((item) => ({ value: item.key, label: item.label, missing: !langDone(versionCourse, item.key) }))} /></div>
               <Facts>
                 <Fact k="标题">{(versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"] || "—")}</Fact>
-                <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}{hiddenTag(versionCourse)}</Fact>
+                <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}{hiddenTag(versionCourse) && <> {hiddenTag(versionCourse)}</>}</Fact>
                 <Fact k="学完发" unit={versionCourse.rewardRaw === null ? undefined : "UVT/人"}>{versionCourse.rewardRaw === null ? NO_REWARD : uvtText(versionCourse.rewardRaw)}</Fact>
                 <Fact k="分类">{categoryLabel(versionCourse.cat)}</Fact>
                 <Fact k="形式和难度">{FORMAT_LABEL[versionCourse.format] ?? versionCourse.format} · {LEVEL_LABEL[versionCourse.level] ?? versionCourse.level}</Fact>
@@ -1968,7 +1971,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 body={copy ? copy.body : versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"]} category={versionCourse.cat} format={versionCourse.format}
                 level={versionCourse.level} duration={versionCourse.duration} reward={versionCourse.rewardRaw ?? ""} quizCount={versionCourse.quizQuestions.length}
                 passScore={String(versionCourse.passScore ?? "")} retries={String(versionCourse.retryLimit ?? "")}
-                hidden={hidden ? "标题、正文或测验题不全，课程列表里没有它" : undefined}
+                hidden={hidden ? "标题、正文或测验题不全" : undefined}
                 caption={copy?.english && !hidden ? "这种语言没填的部分，App 显示英文" : "App 里大致的样子；线上课程显示已发布的内容"} />;
             })()}
           </div>}
