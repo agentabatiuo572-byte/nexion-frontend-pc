@@ -584,6 +584,14 @@ function logActionShown(code: string) {
   return text === code && /^[A-Za-z][\w.:-]*$/.test(code) && /[_.:]|[a-z][A-Z]/.test(code) ? { text: "未识别的操作", raw: code } : { text };
 }
 
+/** 操作记录对象是配置键时，写对应页面上这一项的名字（G2 兑换参数各行；A3 界面语言表的两列）。A3 整组保存记在分享链接键上，只写类型「App 分享与下载」。 */
+const AUDIT_CONFIG_KEY_NAMES: Record<string, string> = {
+  "wallet.exchange.user_daily_cap_usdt": "单用户日额度", "wallet.exchange.platform_daily_cap_usdt": "平台日额度",
+  "wallet.exchange.fee_pct": "兑换手续费率", "wallet.exchange.fee_min_usdt": "最低手续费", "wallet.exchange.queue_mode": "超额度处置策略",
+  "wallet.exchange.queue_eta_hours": "预计处理时长", "wallet.exchange.queue_eta_copy": "预计说法",
+  "platform.experience.interface_languages": "界面语言 · App 里可选", "platform.experience.operating_languages": "界面语言 · 发布时必填",
+};
+
 /** 配置键、接口路径、页面编号、全大写或驼峰的代码：只给技术同事看，不当对象编号显示。 */
 const INTERNAL_OBJECT_ID = /^\/|^[A-Za-z][\w-]*(?:\.[\w-]+)+$|^[A-Z]+(?:_[A-Z0-9]+)*$|^[a-z0-9]+(?:_[a-z0-9]+)+$|^[a-z]+[A-Z]\w*$|^[A-M]\d{1,2}$/;
 
@@ -600,7 +608,7 @@ function logObject(l: A2AuditLogRow): { kind?: string; id?: string; raw?: string
   }
   const kind = AUDIT_RESOURCE_NAMES[type] ?? (h3ConfigName(rid) ? "用户任务设置" : undefined);
   const id = rid.replace(/^[A-Z][A-Z0-9_]*:(?=\S)/, "");
-  const named = h3ConfigName(id);
+  const named = h3ConfigName(id) ?? AUDIT_CONFIG_KEY_NAMES[id];
   const shownId = named ?? (!id || id === type || INTERNAL_OBJECT_ID.test(id) ? undefined : id);
   const hidden = !AUDIT_RESOURCE_NAMES[type] || shownId !== id;
   return { kind: shownId || kind ? kind : "未识别的对象", id: shownId, raw: hidden ? l.obj : undefined };
