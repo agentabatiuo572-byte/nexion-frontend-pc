@@ -1,9 +1,10 @@
 import { growthRequest } from "./h-client";
 import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
 
-export interface RafflePrize { id: string; nameZh: string; nameEn: string; nameVi: string; rewardType: "UVT" | "USDT" | "DEVICE"; amount: number | string; quantity: number; productNo?: string; }
+type RaffleTranslations = Record<string, string | null>;
+export interface RafflePrize { id: string; nameZh: string; nameEn: string; nameVi: string; rewardType: "UVT" | "USDT" | "DEVICE"; amount: number | string; quantity: number; productNo?: string | null; nameTranslations?: RaffleTranslations | null; }
 export interface RaffleDraft { id: string; titleZh: string; titleEn: string; titleVi: string; startsAt: string; drawAt: string; prizes: RafflePrize[]; }
-export interface AdminRaffle extends RaffleDraft { status: "DRAFT" | "OPEN" | "PROCESSING" | "DRAWN"; revision: number; totalEntries: number; }
+export interface AdminRaffle extends RaffleDraft { status: "DRAFT" | "OPEN" | "PROCESSING" | "DRAWN"; revision: number; totalEntries: number; titleTranslations?: RaffleTranslations | null; }
 export function raffleDraftError(value: RaffleDraft): string {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value.id)) return "本期编号需为 1–64 位字母、数字、下划线或短横线。";
   if (![value.titleZh, value.titleEn, value.titleVi].every(text => text.trim())) return "请填写三种语言的抽奖名称。";
@@ -22,6 +23,10 @@ export function parseAdminRaffle(value: unknown): AdminRaffle {
   if (!row || !["DRAFT", "OPEN", "PROCESSING", "DRAWN"].includes(row.status) || !Number.isSafeInteger(row.revision) || !Number.isSafeInteger(row.totalEntries) || row.totalEntries < 0 || !Array.isArray(row.prizes)) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
   // Drafts may be incomplete; only structural values are required on read.
   if (![row.id, row.titleZh, row.titleEn, row.titleVi, row.startsAt, row.drawAt].every(value => typeof value === "string")) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
+  if ([row.titleTranslations, ...row.prizes.map(prize => prize?.nameTranslations)].some(map => map != null
+    && (typeof map !== "object" || Array.isArray(map) || Object.values(map).some(value => value !== null && typeof value !== "string")))) {
+    throw new Error("创世抽奖配置读取失败，请刷新后重试。");
+  }
   return row;
 }
 export async function fetchAdminRaffles(): Promise<AdminRaffle[]> {

@@ -357,7 +357,18 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
   );
 }
 
-export type H4EventCapabilities = {
+export type H4AppRewardPresentation = {
+  appUsesAuthoredRewardName?: boolean;
+  appRewardNames?: Record<"en" | "zh" | "vi", string>;
+};
+
+export function validH4AppRewardPresentation({ appUsesAuthoredRewardName, appRewardNames }: H4AppRewardPresentation) {
+  return (appUsesAuthoredRewardName === undefined || typeof appUsesAuthoredRewardName === "boolean")
+    && (appRewardNames === undefined || !!appRewardNames
+      && typeof appRewardNames.en === "string" && typeof appRewardNames.zh === "string" && typeof appRewardNames.vi === "string");
+}
+
+export type H4EventCapabilities = H4AppRewardPresentation & {
   supported?: boolean | null;
   rewardCopyOnly?: boolean | null;
   hasRule?: boolean;
@@ -371,7 +382,8 @@ export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"):
     for (const event of result.events) {
       if (!event || typeof event !== "object" || Array.isArray(event)
         || [event.supported, event.rewardCopyOnly].some(value => value !== undefined && value !== null && typeof value !== "boolean")
-        || event.hasRule !== undefined && typeof event.hasRule !== "boolean") throw new Error("活动规则读取失败，请刷新后重试。");
+        || event.hasRule !== undefined && typeof event.hasRule !== "boolean"
+        || !validH4AppRewardPresentation(event)) throw new Error("活动规则读取失败，请刷新后重试。");
     }
   }
   Object.assign(result, readH4Statistics(result));

@@ -1,4 +1,4 @@
-import type { Catalog, Draft, DraftPurchaseRule, DraftRewardSpec, Limit, Policy, PolicyRef, Template } from './promotion-types.ts';
+import type { Catalog, Draft, DraftLocalizedText, DraftPurchaseRule, DraftRewardSpec, Limit, Policy, PolicyRef, Template } from './promotion-types.ts';
 import { parseStrictFiniteNumber } from './strict-number.ts';
 import { nexGridBrandText } from './brand-copy.ts';
 
@@ -62,6 +62,12 @@ export function policyLabel(policy:Policy,catalog:Catalog):string {
 }
 export const limitText=(value:Limit|null|undefined)=>!value?'未配置':value.mode==='UNLIMITED'?'无限制':String(value.value);
 export const emptyDraft=(template:Template):Draft=>({category:template==='DIRECT_REFERRAL'?'REFERRAL':'PROMOTION',template,placement:null,inviterAudience:null,combinationMatch:template==='MULTI_PRODUCT'?null:'ANY'});
+/** Draft writes replace a supplied language map as a whole. An empty map clears it. */
+export function promotionDraftForRequest(draft: Draft): Draft {
+  const sparse = (map: DraftLocalizedText | null | undefined) => map == null ? map
+    : Object.fromEntries(Object.entries(map).filter(([, value]) => value.trim() !== ''));
+  return { ...draft, title: sparse(draft.title), terms: sparse(draft.terms) };
+}
 export const newPurchaseRule=():DraftPurchaseRule=>({ruleId:`rule-${crypto.randomUUID()}`});
 export function changeTemplate(draft:Draft,template:Template):Draft {
   return {...draft,...emptyDraft(template),rules:null,buyerAudience:null,inviterAudience:null,combinationMatch:template==='MULTI_PRODUCT'?null:'ANY',perPersonLimit:null,maxRewardUnitsPerOrder:null,budgets:null,shortagePolicy:null,policies:null,activityLimit:null};

@@ -2180,6 +2180,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   "reward is required": "请完整填写连签奖励后再提交。",
   "Earn milestone key is required": "缺少收益里程碑编号，本次未修改。请刷新档位。",
   EVENT_CONFIG_STALE: "活动已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
+  EVENT_ALREADY_EXISTS: "活动编号已被使用，本次未创建。请选择其他编号。",
+  H4_EVENT_MUTEX_UNAVAILABLE: "当前暂时无法锁定活动配置，本次未修改。请稍后重试。",
   EVENT_FEATURED_REQUIRES_ONGOING: "只有进行中的活动才能设为主推，本次未生效。请核对活动状态后重试。",
   EVENT_RULE_NOT_FOUND: "该活动尚未配置玩法，请刷新活动列表后核对。",
   EVENT_RULE_INCOMPLETE: "参与条件、奖励或有效期尚未配置完整，请补齐后再开启活动。",
@@ -3848,12 +3850,14 @@ const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 function eventLocalizedMissingMessage(code: string, data: unknown): string | undefined {
   if (code !== "EVENT_LOCALIZED_CONTENT_INCOMPLETE" && code !== "EVENT_RULE_INCOMPLETE") return;
-  if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
+  if (!data || typeof data !== "object") return;
+  const missing = "missing" in data && Array.isArray(data.missing) ? data.missing : [];
+  const incomplete = "incomplete" in data && Array.isArray(data.incomplete) ? data.incomplete : [];
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
   const fieldLabels = { name: "名称", description: "说明", rewardName: "奖项名" };
   const byLanguage = new Map<string, Set<string>>();
-  for (const item of data.missing) {
+  for (const item of [...missing, ...incomplete]) {
     const key = typeof item === "string" ? item
       : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
         ? `localized.${item.locale}.${item.field}` : "";

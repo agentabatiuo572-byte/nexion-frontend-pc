@@ -1,4 +1,5 @@
 import type { TrustPublishedSnapshotView, TrustSectionVersionView } from "./i-client";
+import { formatAdminApiError } from "./error-messages";
 
 export type TrustField = { key: string; label: string; value: string };
 export const APP_FIELD_LIMIT = 80;
@@ -51,7 +52,13 @@ export function parseI4SectionVersion(value: unknown): TrustSectionVersionView {
   return row as TrustSectionVersionView;
 }
 
-/** App field contract; backend 19eb16f5 enforces it on new publish/rollback, drafts remain wider. */
+export function i4FieldValueIssue(fields: readonly TrustField[]): string | undefined {
+  if (fields.some(field => [...field.value].length > 500)) {
+    return formatAdminApiError("TRUST_SECTION_STRUCTURED_FIELDS_INVALID", "");
+  }
+}
+
+/** App field contract on publish and rollback. */
 export function i4AppFieldIssue(fields: readonly TrustField[]): string | undefined {
   if (!fields.length || fields.some(field => !field.label.trim())) return "请完整填写版本、说明、结构、字段和保存说明";
   if (fields.length > APP_FIELD_LIMIT) return "字段超过 80 个，App 会拒收整份内容，请先核对字段模板。";
@@ -59,7 +66,7 @@ export function i4AppFieldIssue(fields: readonly TrustField[]): string | undefin
     || new Set(fields.map(field => field.key.trim().toLowerCase())).size !== fields.length) {
     return "字段标识不符合 App 规则，请核对字段模板；不能包含连续或结尾的分隔符。";
   }
-  return undefined;
+  return i4FieldValueIssue(fields);
 }
 
 /** Publication still replaces fields, including omitted translations. */
