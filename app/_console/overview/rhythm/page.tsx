@@ -232,7 +232,7 @@ export default function RhythmPage() {
                 <span className="b4-lever-key" title={lever.key}>{lever.key}</span>
                 <b>{operatorCopyText(lever.label)}</b>
                 <span className="b4-muted">{lever.purpose}</span>
-                {lever.key === "提现" && <StatusTag tone="neutral" icon={Ban}>其中提现惩罚费率已退役，现在不收</StatusTag>}
+                {lever.key === "提现" && <StatusTag tone="neutral" icon={Ban}>其中提现惩罚费率已停用，现在不收</StatusTag>}
               </li>
             ))}
           </ol>

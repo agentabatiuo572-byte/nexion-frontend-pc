@@ -162,8 +162,8 @@ const DIALS: Record<string, { name: string; what: string; detail: string; retire
   newUserBonusMultiplier: { name: "新用户加成", what: "新用户奖励的倍率", detail: "这个月新用户相关奖励按这个倍率算；改了不追溯已结算的奖励。" },
   inviteRewardMultiplier: { name: "邀请加成", what: "邀请奖励的倍率", detail: "这个月邀请奖励按这个倍率算；改了不重算已有的邀请结算。" },
   reinvestMultiplier: { name: "锁定计划加成", what: "锁定计划的阶段倍率", detail: "参与锁定计划时用的阶段倍率。" },
-  withdrawPenaltyFeeRate: { name: "提现惩罚费率", what: "已退役，现在不收", retired: true,
-    detail: "这项已经退役：新提现的惩罚费现在是 0，运营阶段设置里也没有这一项。这里只显示配置里还留着的数，不会向用户收。" },
+  withdrawPenaltyFeeRate: { name: "提现惩罚费率", what: "已停用，现在不收", retired: true,
+    detail: "这项已经停用：新提现的惩罚费现在是 0，运营阶段设置里也没有这一项。这里只显示配置里还留着的数，不会向用户收。" },
   withdrawCooldownDays: { name: "到账审查窗口", what: "大额提现要等的天数",
     detail: "加强合规审查开启时，USDT 提现每笔人工审查，本金大于 1,000 USDT 的还要等这些天；0 天也要人工审查。不是所有提现都要等。" },
   binaryDailyCap: { name: "团队平衡奖励每日上限", what: "团队平衡奖励每天封顶", detail: "每天团队平衡奖励最多发这么多，要大于 0。以前存成 0 的月份不结算这项奖励，App 里也读不到。" },
@@ -213,7 +213,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
       sub={`${named(currentPhase)} · ${source ? operatorCopyText(source) : `第 ${data.rhythm.currentMonth} 个月`}`}
       explain={<>
         <p>按运营阶段设置当前月份的值，和上面选的查看方式、阶段、月份无关。要改到运营阶段设置去改，这页只能看。</p>
-        <p>标「已退役」的那项系统不再执行，值只是以前存的；其余各项按「现在」的值执行，开关看开没开。</p>
+        <p>标「已停用」的那项系统不再执行；其余各项按「现在」的值执行，开关看开没开。</p>
       </>}>
       <p className="b4-panel-note">
         {last ? "已是最后一个月，后面没有要切换的参数。"
@@ -250,9 +250,9 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
                     <b>{meta.name}</b>
                     {meta.detail && <Explain label={`${meta.name}管什么`} content={meta.detail} />}
                   </span>
-                  {retired && <span className="b4-retired-inline"><StatusTag tone="neutral" icon={Ban}>已退役，现在不收</StatusTag></span>}
+                  {retired && <span className="b4-retired-inline"><StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag></span>}
                 </Td>
-                <Td className="b4-col-what">{retired ? <StatusTag tone="neutral" icon={Ban}>已退役，现在不收</StatusTag> : <span className="b4-muted">{meta.what}</span>}</Td>
+                <Td className="b4-col-what">{retired ? <StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag> : <span className="b4-muted">{meta.what}</span>}</Td>
                 <Td align="right"><span className="b4-value" data-retired={retired ? "" : undefined}>{dial.key === "binaryDailyCap" && dial.currentValue != null && String(dial.currentValue).trim() !== "" && Number(dial.currentValue) === 0 && <StatusTag tone="warn" icon={CircleSlash} explain="这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。">以前存的</StatusTag>}{dialText(dial.currentValue, dial.unit)}</span></Td>
                 {!last && (
                   <Td align="right">
@@ -263,7 +263,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
                 {canJump && (
                   <Td align="right" data-fit="">
                     {retired ? (
-                      <span className="b4-muted" aria-label={`${meta.name}已退役，没有调整入口`}>—</span>
+                      <span className="b4-muted" aria-label={`${meta.name}已停用，没有调整入口`}>—</span>
                     ) : (
                       <a href={dial.adjustHref} className="rd-link b4-nowrap" aria-disabled={busy !== ""} aria-label={`去运营阶段设置调整${meta.name}`}
                         onClick={(event) => {
