@@ -37,6 +37,7 @@ import {
   lBiActions,
   submitL5TaskAction,
   type AdminPage,
+  type L2FunnelQuery,
   type LExportAuditRow,
   type LExportTask,
   type LRegulatoryOptions,
@@ -48,6 +49,7 @@ import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
 import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 import { allowedAggregateExportOptions, canAccessBiReportType } from "./l1-l2-live-data";
+import { l2ScopeText } from "./l2-scope-text";
 import {
   AuditTable, L5RecoveryNotice, MASK_LABEL, MaskRuleTable, PendingCard, RouteFacts, TaskStatusTag, pageName, rowsText, taskSource, taskTitle, taskStatus,
   type L5RecoveryItem, type MaskRule,
@@ -72,8 +74,32 @@ function cohortScope(value: string): ScopeParts {
   return { main: `${range}${dates ? " " : ""}注册 · ${group}`, sub: [`数据截至 ${asOf}`, ...slices].join(" · ") };
 }
 
+/**
+ * 用户转化与留存导出存「时间范围；切片=全部」或「时间范围；切片={cohort=…, phase=…, locale=…, ref=}」（OpsBiService.reportScope）。
+ * 这类导出不按时间筛，时间范围只是记下来的说明：L2 页写的两句不重复，只写哪批用户；别处手填的时间照留。
+ */
+const FUNNEL_BASE: Record<string, string> = { "当前同批用户时段": "", "按需导出": "", "当前数据": "全部数据，不带筛选" };
+function funnelScope(value: string): ScopeParts | undefined {
+  const match = /^(.*)；切片=(?:全部|\{(.*)\})$/.exec(value);
+  if (!match) return undefined;
+  const filters: Record<string, string> = {};
+  for (const part of (match[2] ?? "").split(",")) {
+    const split = part.indexOf("=");
+    if (split > 0 && part.slice(split + 1).trim()) filters[part.slice(0, split).trim()] = part.slice(split + 1).trim();
+  }
+  if (Object.keys(filters).some((key) => !["cohort", "phase", "locale", "ref"].includes(key))) return { main: "范围读不出", raw: value };
+  // 后端建任务时已校验过这四项（validateL2Filters），这里只换说法。
+  const who = l2ScopeText(filters as L2FunnelQuery);
+  const base = match[1].trim();
+  const fixed = FUNNEL_BASE[base];
+  if (fixed === undefined) return { main: base || who, sub: base ? who : undefined };
+  return { main: fixed && !Object.keys(filters).length ? fixed : who };
+}
+
 function reportScopeParts(value: string): ScopeParts {
   if (value.startsWith("L1 granularity=")) return cohortScope(value);
+  const funnel = funnelScope(value);
+  if (funnel) return funnel;
   // 资金明细的范围是「开始日期/结束日期」。
   const dates = /^(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/.exec(value);
   if (dates) return { main: `${dates[1]} 至 ${dates[2]}` };
@@ -107,7 +133,7 @@ function legacyScopeText(value: string): string {
       return `${key}：${raw}`;
     }).join(" · ");
   }
-  const scope = /^(L[1-4]) \{(.*)\}$/.exec(value) ?? /^(.*)；切片=\{(.*)\}$/.exec(value);
+  const scope = /^(L[1-4]) \{(.*)\}$/.exec(value);
   if (!scope) return value.replace(/ \/ platform$/, " / 平台汇总").replace(/ \/ user$/, " / 用户明细");
   const labels: Record<string,string> = {stage:"转化步骤",window:"统计窗口",from:"开始日期",to:"结束日期",cohort:"注册用户组",phase:"运营阶段",locale:"语言",ref:"推荐渠道"};
   const parts = scope[2].split(",").map(part => {

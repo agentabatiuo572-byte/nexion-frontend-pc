@@ -3,7 +3,8 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
-import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
+import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
+import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
@@ -540,6 +541,12 @@ function middle(text: string, max: number) {
 function actionName(ticket: string | { action: string; obj?: string; after?: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
   if (typeof ticket !== "string" && (ticket.operationCode === "k1_release_param" || ticket.operationCode === "k1_earnings_release")) return A2_ACTION_NAMES[ticket.operationCode];
   if (typeof ticket !== "string" && ticket.operationCode === "j1_gate_resume" && ticket.obj) return `恢复业务开关 · ${j1GateName(ticket.obj)}`;
+  // H3：和 H3 页改值框、新建抽屉的标题同名。审批结果里没有对象，照原动作名。
+  if (typeof ticket !== "string" && ticket.operationCode === "h3_quest_config" && ticket.obj && h3ConfigName(ticket.obj)) return `改${/^P\d/.test(h3ConfigName(ticket.obj)!) ? " " : ""}${h3ConfigName(ticket.obj)}`;
+  if (typeof ticket !== "string" && ticket.operationCode === "h3_mission_create" && ticket.after) {
+    const mission = h3MissionView({ operationCode: ticket.operationCode, after: ticket.after });
+    if (mission) return `新建${mission.type}`;
+  }
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
@@ -562,6 +569,39 @@ function actionName(ticket: string | { action: string; obj?: string; after?: str
 /** 本页的码翻中文；别的模块的码原样，等宽显示。 */
 function logActionText(code: string) {
   return A2_ACTION_NAMES[code] ?? a2ActionText(code);
+}
+
+/** 前 → 后里后端存的 true / false 写成是 / 否，原文在抽屉的技术信息里。 */
+function logDeltaText(delta: string) {
+  return delta.split(" → ").map((part) => part === "true" ? "是" : part === "false" ? "否" : part).join(" → ");
+}
+
+/** 动作名的显示：认得出的写中文；没收录的动作码写「未识别的操作」，原码在抽屉的技术信息里；本来就是中文的照写。 */
+function logActionShown(code: string) {
+  const text = logActionText(code);
+  return text === code && /^[A-Za-z][\w.:-]*$/.test(code) && /[_.:]|[a-z][A-Z]/.test(code) ? { text: "未识别的操作", raw: code } : { text };
+}
+
+/** 配置键、接口路径、页面编号、全大写或驼峰的代码：只给技术同事看，不当对象编号显示。 */
+const INTERNAL_OBJECT_ID = /^\/|^[A-Za-z][\w-]*(?:\.[\w-]+)+$|^[A-Z]+(?:_[A-Z0-9]+)*$|^[a-z0-9]+(?:_[a-z0-9]+)+$|^[a-z]+[A-Z]\w*$|^[A-M]\d{1,2}$/;
+
+/**
+ * 操作记录的对象。后端只给「类型码 · 编号」时（a2-policy resolveA2AuditObject），类型码换成中文名，内部编号不摆出来；
+ * 换掉或藏起来的原文带在 raw 里，进抽屉的技术信息。后端写了对象说明的照原样。
+ */
+function logObject(l: A2AuditLogRow): { kind?: string; id?: string; raw?: string } {
+  const type = l.resourceType?.trim() ?? "", rid = l.resourceId?.trim() ?? "";
+  const derived = !!type && [`${type} · ${rid}`, type].includes(l.obj);
+  if (!derived) {
+    const [kind, ...rest] = l.obj.split(" · ");
+    return rest.length ? { kind, id: rest.join(" · ") } : { id: l.obj };
+  }
+  const kind = AUDIT_RESOURCE_NAMES[type] ?? (h3ConfigName(rid) ? "用户任务设置" : undefined);
+  const id = rid.replace(/^[A-Z][A-Z0-9_]*:(?=\S)/, "");
+  const named = h3ConfigName(id);
+  const shownId = named ?? (!id || id === type || INTERNAL_OBJECT_ID.test(id) ? undefined : id);
+  const hidden = !AUDIT_RESOURCE_NAMES[type] || shownId !== id;
+  return { kind: shownId || kind ? kind : "未识别的对象", id: shownId, raw: hidden ? l.obj : undefined };
 }
 
 /** 后端时间是存储时钟、没有时区，按业务时区显示（TX-25、TX-26）。只到分钟时补秒再解析。 */
@@ -791,6 +831,29 @@ const G_PARAM_NAMES: Record<string, string> = {
   airdropPct: "Genesis 释放分配占比", emissionCurve: "释放曲线", airdropLockDays: "OG 倍率锁仓期",
 };
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
+/** H3 审批单对象的配置键写 H3 页上这一项的叫法（H3 页的设置名和改值框标题）。 */
+function h3ConfigName(key: string): string | undefined {
+  if (key === "dayOne.triReward") return "新手任务奖励";
+  const m = /^weekly\.mult\.(P[1-6])$/.exec(key) ?? /^(mission|monthly)\.([A-Za-z0-9_-]{2,64})\.reward$/.exec(key);
+  if (!m) return undefined;
+  return m.length === 2 ? `${m[1]} 每周阶段倍率` : `${m[1] === "mission" ? "每周任务奖励" : "月度挑战奖励"} · ${m[2]}`;
+}
+/** H3 新建任务的类型，和 H3 新建抽屉的标题同名（h3-mission-form SUBJECT_TEXT）。 */
+const H3_MISSION_TYPE: Record<string, string> = { DAY_ONE: "新手任务", WEEKLY_T1: "每周一档任务", WEEKLY_T2: "每周二档任务" };
+/** H3 新建任务单的变更后是后端建单时拼的一句（OpsGrowthService.createMission）：编号；名称；类型；奖励 N UVT；类别；去完成页面；paused。 */
+function h3MissionView(w: { operationCode?: string | null; after: string }) {
+  if (w.operationCode !== "h3_mission_create") return undefined;
+  const m = /^([A-Za-z0-9_-]{2,64})；(.+)；(DAY_ONE|WEEKLY_T1|WEEKLY_T2)；奖励 (\d+) UVT；([A-Z]+)；(\/pages\/\S+)；paused$/.exec(w.after.trim());
+  return m ? { code: m[1], name: m[2], type: H3_MISSION_TYPE[m[3]], reward: `${grouped(m[4])} UVT`,
+    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5], route: TASK_ACTION_ROUTE_LABELS[m[6]] ?? m[6] } : undefined;
+}
+/** 新手任务奖励的原值可能带旧名称 NEX：照 H3 页写成 UVT 并标出旧名称。 */
+function h3ConfigValue(key: string | undefined, value: string) {
+  if (key !== "dayOne.triReward") return value;
+  const reward = legacyAssetText(value);
+  return reward.legacy ? `${reward.text}（旧名称 NEX）` : value;
+}
+
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
 function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null }) {
   if (w.objDisplayName) return a2ObjectText(w);
@@ -798,6 +861,8 @@ function objectText(w: { action: string; obj: string; after?: string; objDisplay
   if (w.operationCode === "k1_earnings_release") return `收益记录 ${w.obj}`;
   if (w.operationCode === "j1_gate_resume") return j1GateName(w.obj);
   if (w.operationCode === "f_unilevel_bootstrap") return "团队购买奖励 · L1–L7";
+  if (w.operationCode === "h3_mission_create") return `任务 ${w.obj}`;
+  if (w.operationCode === "h3_quest_config") return h3ConfigName(w.obj) ?? w.obj;
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" && fund.period) return fund.period;
   if (fund?.kind === "f5Status" && fund.eventId) return `奖励记录 ${fund.eventId}`;
@@ -1090,6 +1155,9 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   if (fund?.kind === "f5Suspension") return fund.suspended ? "批准时的状态" : "暂停中";
   if (fund?.kind === "f5Reissue") return "";
   if (fund?.kind === "f5Reverse") return "批准时的状态";
+  // 新建任务的变更前是「任务不存在：编号」：按新建显示，不画变更前。
+  if (row.operationCode === "h3_mission_create" && row.after && h3MissionView({ operationCode: row.operationCode, after: row.after })) return "";
+  if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string }) => {
@@ -1098,6 +1166,9 @@ const changeAfter = (row: { after: string; obj?: string; action?: string; operat
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
   if (fund?.kind === "f5Suspension") return fund.suspended ? "暂停中" : "已恢复";
   if (fund?.kind === "f5Reissue") return `生成 ${fund.count ?? "—"} 条新记录`;
+  const mission = h3MissionView({ operationCode: row.operationCode, after: row.after });
+  if (mission) return JSON.stringify({ 任务名称: mission.name, 类型: mission.type, 奖励: mission.reward, 类别: mission.category, 去完成页面: mission.route, 建好后: "已停用，绑定完成条件后才能启用" });
+  if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.after);
   return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : deviceApprovalValue(row.after, row.operationCode);
 };
 const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
@@ -1756,6 +1827,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const ambassador = !w.objDisplayName && /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
     if (ambassador) return <>区域大使申请 <span data-mono className="a2-code">#{ambassador[1]}</span><Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
     if (w.operationCode === "j1_gate_resume") return <>{j1GateName(w.obj)}<Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
+    if (w.operationCode === "h3_mission_create") return <>任务 <span data-mono className="a2-code">{w.obj}</span></>;
+    if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return <>{h3ConfigName(w.obj)}<Explain label="技术信息" content={`配置键 ${w.obj}`} /></>;
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
@@ -2404,7 +2477,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   const batch = fBatchTicket(w);
                   const k1 = k1TicketView(w);
                   const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
-                  const change = boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
+                  const mission = h3MissionView(w);
+                  const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? { main: `${fBatchLabel(batch.items[0], fBatchPages(batch.items))} ${batch.items[0].after}${batch.count > 1 ? ` 等 ${batch.count} 项` : ""}`, sub: `原 ${batch.items[0].before}` }
                     : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
@@ -2489,14 +2563,17 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {hasApplied ? <>当前筛选下暂无操作记录 <Button size="sm" onClick={clearFilter}>清除筛选</Button></> : "暂无操作记录"}
                   </TableMessage>
                 ) : logPageRows.map((l) => {
-                  const translated = A2_ACTION_NAMES[l.action] !== undefined || a2ActionText(l.action) !== l.action;
+                  const act = logActionShown(l.action);
+                  const obj = logObject(l);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
                       <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
                       <Td><Cell main={middle(l.actor, 16)} sub={logRoleText(l.role) || undefined} title={l.actor} /></Td>
-                      <Td><Cell mono={!translated} main={translated ? logActionText(l.action) : middle(l.action, 18)} title={logActionText(l.action)} /></Td>
-                      <Td>{fBatchLogItems(l) ? <Cell main="整批调整的团队参数" title={l.obj} /> : <Cell main={objectCell(l.obj).main} sub={objectCell(l.obj).sub} title={l.obj} />}</Td>
-                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : <Cell mono main={l.delta} title={l.delta} />}</Td>
+                      <Td><Cell main={act.text} title={act.raw ? `${act.text}（原始动作码在详情的技术信息里）` : act.text} /></Td>
+                      <Td>{fBatchLogItems(l) || F_BATCH_DIGEST.test(l.obj) ? <Cell main="整批调整的团队参数" title={l.obj} />
+                        : obj.id ? <Cell main={obj.id.length > 16 ? `${obj.id.slice(0, 8)}…${obj.id.slice(-6)}` : obj.id} sub={obj.kind} title={[obj.kind, obj.id].filter(Boolean).join(" · ")} />
+                          : <Cell main={obj.kind} title={obj.kind} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
                     </Tr>
                   );
                 })}
@@ -2655,6 +2732,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
   const requestNo = shownLog ? shownLog.idempotencyKey || (needIdem ? "缺失" : "—") : "—";
+  const shownLogObject = shownLog ? logObject(shownLog) : undefined;
 
   /* 审批结果抽屉 */
   const shownHistory = historyShown.current;
@@ -2727,11 +2805,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: logIndex > 0, hasNext: logIndex >= 0 && logIndex < logPageRows.length - 1, onPrev: () => { if (logIndex > 0) setLogId(logPageRows[logIndex - 1].id); }, onNext: () => { if (logIndex >= 0 && logPageRows[logIndex + 1]) setLogId(logPageRows[logIndex + 1].id); } }}>
         {shownLog && <>
           <JudgmentPoints rows={[
-            { label: "动作", value: A2_ACTION_NAMES[shownLog.action] !== undefined || a2ActionText(shownLog.action) !== shownLog.action ? logActionText(shownLog.action) : <span data-mono>{shownLog.action}</span> },
+            { label: "动作", value: logActionShown(shownLog.action).text },
             { label: shownLog.action === "A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED" ? "执行人 / 角色" : "操作者 / 角色", icon: Users, tone: "users", value: logRoleText(shownLog.role) ? `${shownLog.actor} · ${logRoleText(shownLog.role)}` : shownLog.actor },
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
-            { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : shownLog.obj },
-            ...(fBatchLogItems(shownLog) ? [] : [{ label: "前值 → 后值", value: <span data-mono>{shownLog.delta}</span> }]),
+            { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
+            ...(fBatchLogItems(shownLog) ? [] : [{ label: "前值 → 后值", value: <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
@@ -2740,10 +2818,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
               <Fact k="请求编号"><span data-mono>{requestNo}</span></Fact>
               {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
-              {logActionText(shownLog.action) !== shownLog.action && <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact>}
+              {logActionText(shownLog.action) !== shownLog.action || logActionShown(shownLog.action).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
+              {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
-              {fBatchLogItems(shownLog) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
+              {(fBatchLogItems(shownLog) || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}

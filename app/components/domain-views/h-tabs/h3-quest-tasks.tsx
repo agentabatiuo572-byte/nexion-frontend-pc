@@ -1335,7 +1335,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       facts: (value) => {
         const direction = current == null ? null : directionOf(current, decimalOf(value));
         return <Facts>
-          <Fact k={`${phase} 倍率`}>{value ? <Change from={shown} to={value} /> : shown}</Fact>
+          <Fact k={`${phase} 倍率`}>{value ? <Change from={shown} to={`${value.replace(/[×x]\s*$/, "")}×`} /> : shown}</Fact>
           {whenFact(direction, first && !!value)}
           <Fact k="已发布的每周任务">不变：按发布时冻结的倍率</Fact>
           <Fact k="之后发布的">平台在 {phase} 时发布的每周任务乘新倍率</Fact>

@@ -21,11 +21,10 @@ import {
   type L2FunnelQuery,
   type L2TrialFunnel,
 } from "@/lib/admin/l-client";
-import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 import { lowestConversionIndex } from "@/lib/admin/funnel-conversion";
 import { businessZone } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
-import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
+import { l2ScopeText as scopeText } from "./l2-scope-text";
 import { PaginationExemptionList } from "../design-kit";
 import { rec, rows, str, strings } from "./live-data";
 import { readL2LiveStages, SMALL_SAMPLE_LABEL, type L2LiveStage } from "./l1-l2-live-data";
@@ -66,7 +65,6 @@ const L2_WINDOWS = ["Day1", "Day7", "Day14", "Day30", "Day60"] as const;
 const EXPORT_PAGE = "/analytics/export";
 const DETAIL_ID = "l2-step-detail";
 const PHASES = ["P1", "P2", "P3", "P4", "P5", "P6"] as const;
-const LANGUAGE_NAME = new Map<string, string>(INTERFACE_LANGUAGES.map((item) => [item.code, item.zhName]));
 const PROTECT_NOTE = "少于 5 人的分组不显示人数和比例，0 人也算，防止从小分组推出具体用户。";
 const METRIC_NAME = { cvr: "首购转化率", ret: "第 7 天仍活跃", trial: "试用后购买比例" } as const;
 
@@ -174,17 +172,6 @@ function normalizeXdMetric(raw: unknown): XdMetric {
       post: str(msg.post),
     },
   };
-}
-
-/** 现在看的是哪一批人：已应用的条件，不是输入框里还没提交的。 */
-function scopeText(query: L2FunnelQuery) {
-  const parts = [
-    query.cohort ? `注册批次 ${query.cohort}` : null,
-    query.phase ? `阶段 ${query.phase}` : null,
-    query.locale ? `语言 ${LANGUAGE_NAME.get(query.locale.toLowerCase().split("-")[0]) ?? query.locale}（${query.locale}）` : null,
-    query.ref ? `渠道 ${formatB3RefOption(query.ref)}` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "全部注册用户";
 }
 
 const caliberNote = () => (
