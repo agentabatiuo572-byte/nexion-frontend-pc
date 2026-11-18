@@ -967,8 +967,8 @@ function G2ExchangePage() {
         <Fact k="改的是">{name}</Fact>
         <Fact k="什么时候生效">{original ? "提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
         {appLanguage
-          ? <Fact k="显示在哪">App {appLanguage}界面；App 和 H5 现在还不显示</Fact>
-          : <><Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact><Fact k="显示在哪">这页排队单的详情；App 和 H5 现在还不显示</Fact></>}
+          ? <Fact k="显示在哪">App {appLanguage}界面，兑换进入排队时的提示；H5 不显示</Fact>
+          : <><Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact><Fact k="显示在哪">这页排队单的详情，App 兑换进入排队时的提示；H5 不显示</Fact></>}
       </Facts>,
       statedBrief: { impact: appLanguage ? `改的是 App ${appLanguage}界面写的预计时间，不改处理顺序，也不会让单子自动成交。` : "改的是排队单上写的预计时间，不改处理顺序，也不会让单子自动成交。", check: "核对新值；理由写清依据或工单号。" },
       edit: key === "queueEtaHours"
@@ -1236,7 +1236,7 @@ function G2ExchangePage() {
     return (
       <ConfigRow key={key} name={name}
         what={ETA[key].what}
-        where={appLanguage ? `App ${appLanguage}界面；App 和 H5 现在还不显示` : "这页排队单的详情；App 和 H5 现在还不显示"}
+        where={appLanguage ? `App ${appLanguage}界面，兑换进入排队时的提示；H5 不显示` : "这页排队单的详情，App 兑换进入排队时的提示；H5 不显示"}
         when="确认后立即生效，不用审批"
         effect={appLanguage ? `运营区域语言没勾${appLanguage}时可以不填；勾了就要填好，不然 App 上整条预计都不显示` : "排队中的单和之后排队的单，单上的预计时间都按新值显示"}
         note={appLanguage ? "要写上 {hours}；清空后这种语言不再用这句。" : "「预计处理时长」和「英文预计说法」都设好后，排队单上才显示预计时间；清空任一项，排队单上就不显示。"}
