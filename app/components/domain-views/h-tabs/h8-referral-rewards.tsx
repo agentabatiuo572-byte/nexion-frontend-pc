@@ -372,6 +372,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         pending: !!pending,
         initialRecovery: pending && lookupOnly ? "lookup" : "retry",
         expired: !!pending && !canRetryH8RewardCommand(pending),
+        expiredRequestRecovery: pending && isRetryExpired(pending)
+          ? pending.kind === "direct" ? "reload" : "query" : undefined,
         disabledReason: pending && canRetryH8RewardCommand(pending) && !canWrite ? displayAdminError(new Error("ACCESS_DENIED")) : undefined,
         resolve: (form) => {
           const value = storedValue(form);
@@ -527,6 +529,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     getPendingReason: () => { const o = currentCommand()?.original; return o && o.kind !== "direct" ? o.request.reason : undefined; },
     inlineApproval: {
       pending: !!pending, initialRecovery: pending && lookupOnly ? "lookup" : "retry", expired: !!pending && !canRetryH8RewardCommand(pending),
+      expiredRequestRecovery: pending && isRetryExpired(pending) ? "query" : undefined,
       disabledReason: pending && canRetryH8RewardCommand(pending) && !canSettle ? displayAdminError(new Error("ACCESS_DENIED")) : undefined,
       resolve: () => undefined,
       recover: async () => { const record = currentCommand(); return record ? queryCommand(record) : false; },

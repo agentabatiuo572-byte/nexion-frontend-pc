@@ -232,6 +232,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const directRecovery = (id: string, restored?: H7DirectMutation, initialRecovery: "lookup" | "retry" = "retry") => ({
     pending: !!restored, initialRecovery,
     get expired() { const saved = directRecord(id); return !!saved && isRetryExpired(saved); },
+    get expiredRequestRecovery() { const saved = directRecord(id); return saved && isRetryExpired(saved) ? "reload" as const : undefined; },
     resolve: () => undefined,
     get disabledReason() {
       const saved = directRecord(id);
@@ -412,6 +413,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       inlineApproval: {
         pending: !!pending,
         get expired() { const saved = original(); return !!saved && isRetryExpired(saved); },
+        get expiredRequestRecovery() { const saved = original(); return saved && isRetryExpired(saved) ? "query" : undefined; },
         get disabledReason() {
           const saved = original();
           return !useAdminAuth.getState().session?.authorities.includes("growth_h7_write") || saved && !canRetryH7VoucherApproval(saved) ? "请查询原结果" : undefined;

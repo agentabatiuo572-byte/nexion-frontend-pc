@@ -41,7 +41,7 @@ import {
   type G3MarketChange, type G3DirectChange, type G3ReviewedChange, type G3PendingCommand,
 } from "@/lib/admin/g3-market-command";
 import { OperationConfirmModal, useToast, type EditSpec, type OperatorBriefKind } from "../design-kit";
-import { G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
+import { G3_EXPIRED_DIRECT_READ, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
 import { G3ScheduleResult } from "./g3-schedule-result";
 
 /** 本页的共用确认框请求：action 照旧是记进操作记录的名字，title 只写动作和对象（VS-101）。 */
@@ -607,6 +607,16 @@ function G3MarketEditor() {
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
     </>} />;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
+  const directPastDeadline = pendingDirect && Date.now() >= pendingDirect.expiresAt;
+  const readCurrent = async () => {
+    const current = await fetchG3MarketReadOverview();
+    const auth = useAdminAuth.getState();
+    if (!auth.isAuthenticated || auth.session?.adminId !== session?.adminId || auth.authEpoch !== epoch) {
+      throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
+    }
+    showRead(current);
+    return true;
+  };
   const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
     : rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined;
   const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
@@ -620,6 +630,7 @@ function G3MarketEditor() {
       {marketConfirm && session && <G3MarketConfirm session={session} epoch={epoch} requested={marketConfirm}
         newWriteBlockedReason={newWriteBlockedReason}
         getReadBlockedReason={readBlockedReason}
+        readCurrent={readCurrent}
         today={overview?.activeDayIndex} frames={overview?.frames ?? (marketConfirm.action === "curve-cell"
           ? marketConfirm.expectedFrames.map(frame => ({ dayIndex: frame.dayIndex, targetPrice: Number(frame.targetPrice), pumpProbability: Number(frame.pumpProbability), volatilityPct: Number(frame.volatilityPct) })) : [])} tuning={MANUAL_TUNING}
         onStateChange={syncCommands} onFailure={onCommandFailure} onBusy={value => setBusyKey(value ? "market-confirm" : null)}
@@ -656,11 +667,13 @@ function G3MarketEditor() {
             pending: !!pendingDirect,
             initialRecovery: "retry",
             expired: !!pendingDirect && g3MarketCommandExpired(pendingDirect),
-            disabledReason: pendingDirect && g3MarketCommandExpired(pendingDirect)
+            expiredRequestRecovery: directPastDeadline ? "reload" : undefined,
+            disabledReason: directPastDeadline ? G3_EXPIRED_DIRECT_READ : pendingDirect && g3MarketCommandExpired(pendingDirect)
               ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项查不了原结果，请到「操作记录与审批」核对。"
               : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value) ? "你没有修改这一项的权限。" : undefined,
             resolve: () => undefined,
-            recover: async () => {
+            recoverLabel: directPastDeadline ? "读取当前配置" : undefined,
+            recover: directPastDeadline ? readCurrent : async () => {
               if (session) await executeG3MarketChange(session, confirm.change, "", "", "lookup");
               return false;
             },

@@ -166,6 +166,7 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
         resolve: () => undefined,
         initialRecovery: "retry",
         expired: !!existing && existing.expiresAt <= Date.now(),
+        expiredRequestRecovery: existing && existing.expiresAt <= Date.now() ? "query" : undefined,
         disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
         recover: async () => { const resolved = await ctx.recoverF1(slot.current, "query"); if (resolved) onClose(); return resolved; },
         retry: async () => { await ctx.recoverF1(slot.current, "retry"); onClose(); },

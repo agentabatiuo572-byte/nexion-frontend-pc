@@ -80,22 +80,28 @@ interface B1PendingCommand {
   /** 展开后：能做什么。过期后直接写入查不到不等于没执行；审批单查不到可以解除。 */
   note: string;
   onRetry?: () => void;
+  queryLabel?: string;
   onQuery: () => void;
   /** 只有审批提案过期、且刚刚按原请求查询明确没有这张单时才给（决定 R1-提案过期）。 */
   onRelease?: () => void;
 }
 
+const READ_CURRENT_VALUE = "读取当前值";
+
 /** 和资金页同一个恢复面板：每条一行，按钮位置固定，「到操作记录与审批核对」整块只放一次。 */
 function PendingCommands({ items, auditReachable }: { items: readonly B1PendingCommand[]; auditReachable: boolean }) {
   const waiting = items.filter((item) => item.tag.label === "待审批").length;
+  const recoveryInstruction = items.some(item => item.queryLabel)
+    ? "请按各条提示核对。"
+    : "先查询原结果；";
   return (
     <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone="warn" explainLabel="结果未知怎么处理"
-      explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；24 小时内只能按原请求重试，不能改值。有结果前，红线、健康线和储备注入不能再提交。"
+      explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}24 小时内只能按原请求重试，不能改值。有结果前，红线、健康线和储备注入不能再提交。`}
       foot={auditReachable ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined}
       items={items.map((item): RecoveryItem => ({
         key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
         actions: <>
-          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>查询原结果</Button>
+          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>{item.queryLabel ?? "查询原结果"}</Button>
           {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
           {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
         </>,
@@ -292,6 +298,7 @@ export default function DualLedgerPage() {
   const statDigits = amountDigits(valuationReliable ? [reserveUsd, liabilitiesUsd] : [reserveUsd]);
 
   const thresholdBaseline = mc?.kind === "threshold" ? mc.baseline : null;
+  const directPastDeadline = !!mc?.original && mc.original.expiresAt <= Date.now();
   const dialogFacts: B1CommandFacts = mc?.original?.facts ?? mc?.facts ?? { reserveUsd, valuationReliable, redlineBreached: LEDGER.redlineBreached, coverageRatio, redlinePct, healthyPct, thresholdVersion: LEDGER.thresholdVersion, generatedAt };
   const newWriteBlocked = !bDomain.hasData || !!bDomain.error || bDomain.loading || needsRead || !!b1DataError;
   const writePermission = (kind: B1PendingWrite["kind"]) => kind === "threshold" ? canConfigureThresholds : kind === "injection" ? canInjectReserve : canAcknowledge;
@@ -446,7 +453,7 @@ export default function DualLedgerPage() {
   const recoverWrite = (record: B1PendingWrite) => setActionConfirm(record.kind === "threshold"
     ? { kind: "threshold", idempotencyKey: record.commandKey, original: record, baseline: record.facts }
     : { kind: record.kind, idempotencyKey: record.commandKey, original: record });
-  const queryWrite = async (record: B1PendingWrite) => {
+  const readCurrentForWrite = async (record: B1PendingWrite) => {
     if (await refreshB1()) setToast(record.expiresAt <= Date.now()
       ? "已读取现在的值。现在的值说明不了原操作成没成，记录继续保留。"
       : "已读取现在的值。说明不了原操作成没成，可以按原请求重试，不会重复执行。");
@@ -480,18 +487,22 @@ export default function DualLedgerPage() {
     if (!pendingApproval?.b1Facts) { void queryApproval(); return; }
     setActionConfirm({ kind: "threshold", idempotencyKey: pendingApproval.commandKey, baseline: pendingApproval.b1Facts, facts: pendingApproval.b1Facts, approvalRecovery: true });
   };
-  const pendingItems: B1PendingCommand[] = pendingWrites.map(record => ({
-    commandKey: record.commandKey,
-    object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
-    tag: { tone: "warn", label: record.expiresAt <= Date.now() ? "已过期" : "结果未知" },
-    line: record.expiresAt <= Date.now() ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
-    body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
-      .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
-    expired: record.expiresAt <= Date.now(),
-    note: record.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询；查到的是现在的值，说明不了原操作成没成。" : "24 小时内只能按原请求重试，不能改值。",
-    onRetry: () => recoverWrite(record),
-    onQuery: () => void queryWrite(record),
-  }));
+  const pendingItems: B1PendingCommand[] = pendingWrites.map(record => {
+    const expired = record.expiresAt <= Date.now();
+    return {
+      commandKey: record.commandKey,
+      object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
+      tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
+      line: expired ? "超过 24 小时不能再重试，请读取当前值核对。" : "可能已经生效，先查询原结果。",
+      body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
+        .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
+      expired,
+      note: expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原请求重试，不能改值。",
+      onRetry: () => recoverWrite(record),
+      queryLabel: expired ? READ_CURRENT_VALUE : undefined,
+      onQuery: () => void readCurrentForWrite(record),
+    };
+  });
   if (pendingApproval) {
     const expired = pendingApproval.expiresAt <= Date.now();
     const verified = verifiedPendingKey === pendingApproval.commandKey;
@@ -841,14 +852,17 @@ export default function DualLedgerPage() {
       reasonPlaceholder={mc.kind === "injection" ? "例如：到账依据、工单号" : mc.kind === "export" ? "例如：月度对账、工单号" : mc.kind === "ack" ? "例如：已暂停大额放行，已上报财务主管" : "例如：调整依据、工单号"}
       initialReason={mc.draftReason}
       inlineApproval={mc.original ? {
-        pending: true, initialRecovery: "retry", expired: mc.original.expiresAt <= Date.now(),
+        pending: true, initialRecovery: "retry", expired: directPastDeadline,
+        expiredRequestRecovery: directPastDeadline ? "reload" : undefined,
+        recoverLabel: directPastDeadline ? READ_CURRENT_VALUE : undefined,
         resolve: () => undefined,
         renderForm: mc.kind === "threshold" ? thresholdForm : undefined,
-        recover: async () => { await queryWrite(mc.original!); return true; },
+        recover: async () => { await readCurrentForWrite(mc.original!); return true; },
         retry: () => onMcConfirm(""),
       } : thresholdBaseline ? {
         pending: !!pendingApproval,
         expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
+        expiredRequestRecovery: pendingApproval && pendingApproval.expiresAt <= Date.now() ? "query" : undefined,
         disabledReason: !canConfigureThresholds ? "当前账号缺少设置兑付覆盖率阈值的权限。" : undefined,
         resolve: (value) => pendingApproval || value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
           coverageCheckCopy: "提交和批准时都按拟调整的红线校验覆盖率。",

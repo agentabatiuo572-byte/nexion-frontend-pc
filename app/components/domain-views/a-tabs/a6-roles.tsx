@@ -633,6 +633,7 @@ export default function A6Roles() {
   const recoveryRecord = confirmReq?.getRecord();
   const recovery: InlineOperationApproval | undefined = confirmReq ? {
     resolve: () => undefined, pending: !!recoveryRecord, initialRecovery: "retry", expired: !!recoveryRecord && isRetryExpired(recoveryRecord),
+    expiredRequestRecovery: recoveryRecord && isRetryExpired(recoveryRecord) ? "query" : undefined,
     disabledReason: recoveryRecord && !authorities.includes(rbacAuthority(recoveryRecord.original)) ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
     recover: async () => { const record = confirmReq.getRecord(); if (record) await queryOriginal(record); return true; },
   } : undefined;
