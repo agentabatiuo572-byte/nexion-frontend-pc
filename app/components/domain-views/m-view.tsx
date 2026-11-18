@@ -44,7 +44,7 @@ import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { supportLengthHint, blocksNewSend, failedDraftCopies, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -1325,8 +1325,14 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
       identityGeneration.current++;
       setDraft("");
     };
+    const restored = (event: Event) => {
+      const copy = (event as CustomEvent<{ key: string; body: string }>).detail;
+      if (copy.key === draftKey) setDraft(copy.body);
+    };
+    window.addEventListener("dock-draft-restored", restored);
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => {
+      window.removeEventListener("dock-draft-restored", restored);
       identityGeneration.current++;
       window.removeEventListener("support-scope-invalidated", invalidate);
     };
@@ -1406,8 +1412,28 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
       const rejected = key && refusedMessage(error, true);
       const scopeLost = error instanceof SupportClientError && [403, 404].includes(error.status);
       if (rejected && key) {
-        if (!scopeLost && restoreFailedDraft(currentAdminId, key, conv.customerId) && currentDock()) setDraft(draft);
-        dockCommands.forget(dockSlot, key);
+        if (scopeLost) dockCommands.forget(dockSlot, key);
+        else {
+          let restored = false;
+          try {
+            const copy = closeFailedDraft(currentAdminId, key, conv.customerId);
+            if (copy) {
+              const detail = await supportClient.customerDetail(conv.customerId);
+              if (!sameAccount()) return;
+              if (detail.assignmentId !== copy.assignmentId || detail.agentAdminId !== currentAdminId) {
+                onScopeInvalidated(conv.id, conv.customerId, DOCK_NOT_YOURS_SENT, key);
+                return;
+              }
+              restored = Boolean(restoreFailedDraft(currentAdminId, key, detail));
+            }
+          } catch (cause) {
+            if (!sameAccount()) return;
+            if (isSupportScopeDenial(cause)) { onScopeInvalidated(conv.id, conv.customerId); return; }
+            if (currentDock()) setSendError(displayAdminError(cause));
+            return;
+          }
+          if (!restored && currentDock()) { setSendError("这条消息没发出。客户仍归你时，原文会放回原来的输入框。"); return; }
+        }
       }
       if (scopeLost) {
         onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? DOCK_NO_ACCESS_SENT : "消息发送结果未知：你已不能接待这位客户，原文已清除，只能查询结果。");

@@ -47,12 +47,30 @@ export const dockCommands = createMessageJournal<DockCommandRecord>({
     && (record.readOnlyRecovery === undefined || typeof record.readOnlyRecovery === "boolean"),
 });
 // Closed commands with text displaced by a newer draft. These copies never lock or replay a send.
-interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string }
-export const failedDraftCopies = createMessageJournal<FailedDraftCopy>({
+interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string; source?: "dock" | "main" }
+const legacyDraftCopies = createMessageJournal<FailedDraftCopy>({
   storageKey: "nexion-m3-failed-draft-copies-v1", retainExpiredRecords: true,
   isValidRecord: row => typeof row.customerId === "string" && typeof row.assignmentId === "string"
     && (row.conversationId === undefined || typeof row.conversationId === "string") && typeof row.body === "string",
 });
+// Closed text stays in its original table until an editable copy can be saved.
+export const failedDraftCopies = {
+  list(): FailedDraftCopy[] {
+    const copies = legacyDraftCopies.list();
+    for (const source of ["dock", "main"] as const) {
+      for (const row of (source === "dock" ? dockCommands : pendingMessages).list()) {
+        const [kind, customerId, assignmentId, conversationId] = row.fingerprint.split("@");
+        if (kind !== `failed-${source}` || !assignmentId) continue;
+        copies.push({ ...row, source, customerId, assignmentId, conversationId: conversationId || undefined, body: row.payload });
+      }
+    }
+    return copies;
+  },
+  forget(slot: string, key: string) {
+    const store = slot.startsWith("failed-dock@") ? dockCommands : slot.startsWith("failed-main@") ? pendingMessages : legacyDraftCopies;
+    store.forget(slot, key);
+  },
+};
 export const SUPPORT_MESSAGE_MAX_LENGTH = 2000;
 /** 输入框下的字数提示（小窗和专属会话共用）：接近上限才出现，超了马上说，不等点发送。按发送时的算法数（去掉首尾空白）。 */
 export function supportLengthHint(draft: string) {
@@ -156,34 +174,43 @@ export const dockDraftKey = (adminId: number, customerId: string, conversationNo
   `nexion-m-dock-draft:${adminId}:${customerId}:${conversationNo}:${assignmentId ?? ""}`;
 export const sendJournal = (slot: string) => slot.startsWith("dock|") ? dockCommands : pendingMessages;
 
-// Called only after a definitive failure and verification of the original assignment.
-export function restoreFailedDraft(adminId: number, commandKey: string, customerId: string) {
+// Replace the replayable row atomically. Its compact payload contains only editable text.
+export function closeFailedDraft(adminId: number, commandKey: string, customerId?: string) {
   const entry = readSavedSends(adminId).find(item => item.row.commandKey === commandKey);
   const original = entry?.reply ?? entry?.first;
   if (!entry || !original || entry.reply?.kind === "IMAGE") return;
-  const { reply, first, dock } = entry;
   const body = original.originalDraft ?? original.body;
-  const slot = original.draftSlot ?? reply?.conversationId ?? `first:${customerId}`;
+  const slot = [entry.dock ? "failed-dock" : "failed-main", customerId, entry.first?.assignmentId ?? entry.reply!.expectedAssignmentId, entry.reply?.conversationId].join("@");
+  const store = entry.dock ? dockCommands : pendingMessages;
+  if (entry.dock) dockCommands.remember(slot, commandKey, { payload: body, conversationNo: entry.dock.conversationNo });
+  else pendingMessages.remember(slot, commandKey, { payload: body });
+  if (!store.isDurablyStored(slot, commandKey)) throw new Error("浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。");
+  return failedDraftCopies.list().find(copy => copy.commandKey === commandKey);
+}
+
+export function restoreFailedDraft(adminId: number, commandKey: string, detail: { customerId: string; assignmentId: string | null; agentAdminId: number | null }) {
+  const copy = failedDraftCopies.list().find(row => row.commandOwnerId === adminId && row.commandKey === commandKey);
+  if (!copy?.source || copy.customerId && copy.customerId !== detail.customerId || detail.assignmentId !== copy.assignmentId || !detail.agentAdminId) return;
+  const { customerId, assignmentId, agentAdminId } = detail;
+  const { conversationId, body } = copy;
   try {
-    if (dock) {
-      const key = dockDraftKey(adminId, customerId, dock.conversationNo, reply!.expectedAssignmentId);
+    if (copy.source === "dock" && conversationId) {
+      const key = dockDraftKey(adminId, customerId, conversationId, assignmentId);
       const newer = sessionStorage.getItem(key);
-      if (!newer || newer === body) {
-        sessionStorage.setItem(key, body);
-        return true;
-      }
+      if (newer && newer !== body) return;
+      sessionStorage.setItem(key, body);
+      window.dispatchEvent(new CustomEvent("dock-draft-restored", { detail: { key, body } }));
     } else {
       const key = `nexion-m3-drafts:${adminId}`;
+      const slot = scopedDraftSlot(conversationId ?? `first:${customerId}`, customerId, assignmentId, agentAdminId);
       const drafts = JSON.parse(sessionStorage.getItem(key) ?? "{}");
-      if (!drafts[slot] || drafts[slot] === body) {
-        sessionStorage.setItem(key, JSON.stringify({ ...drafts, [slot]: body }));
-        window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body } }));
-        return true;
-      }
+      if (drafts[slot] && drafts[slot] !== body) return;
+      sessionStorage.setItem(key, JSON.stringify({ ...drafts, [slot]: body }));
+      window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body } }));
     }
-  } catch { /* Keep a read-only copy if the editable draft cannot be saved. */ }
-  failedDraftCopies.remember(slot, commandKey, { customerId, conversationId: reply?.conversationId,
-    assignmentId: first?.assignmentId ?? reply!.expectedAssignmentId, body });
+  } catch { return; } // The closed row remains available after a storage failure.
+  failedDraftCopies.forget(copy.fingerprint, commandKey);
+  return true;
 }
 
 // Undefined denotes an owned original whose customer cannot yet be proved.

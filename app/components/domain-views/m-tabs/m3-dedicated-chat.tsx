@@ -31,7 +31,7 @@ import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-
 import { legacySupportDestination, supportEnhancements } from "@/lib/admin/m-support-enhancements";
 import { businessResultUnavailableText, RecoveryPanel, type RecoveryItem } from "../recovery-panel";
 import { m1CustomerCode } from "./m1-customer-code";
-import { scopedDraftSlot, supportLengthHint, blocksNewSend, failedDraftCopies, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
+import { scopedDraftSlot, supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
 export { validCustomerId } from "./m-message-journal";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
@@ -418,10 +418,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const recoveryTargets = savedSends.flatMap(({ row, reply, first, locator }) => {
     const customerId = originalCustomer(locator);
     const assignmentId = first?.assignmentId ?? reply?.expectedAssignmentId;
-    return customerId && assignmentId ? [{ key: row.commandKey, customerId, assignmentId, conversationId: reply?.conversationId }] : [];
+    return customerId && assignmentId ? [{ key: row.commandKey, customerId, assignmentId, conversationId: reply?.conversationId, closed: false }] : [];
   });
-  for (const copy of failedCopies) recoveryTargets.push({ key: copy.commandKey, customerId: copy.customerId,
-    assignmentId: copy.assignmentId, conversationId: copy.conversationId });
+  for (const copy of failedCopies) {
+    const customerId = originalCustomerId(copy, visible);
+    if (customerId) recoveryTargets.push({ key: copy.commandKey, customerId, assignmentId: copy.assignmentId, conversationId: copy.conversationId, closed: true });
+  }
   const recoveryScope = JSON.stringify([pageScope, scopeMode, snapshotRevision, entryCheck, detailRetry, profileRetry, recoveryTargets]);
   const [verifiedRecovery, setVerifiedRecovery] = useState<{ scope: string; keys: Set<string> } | null>(null);
   const verifiedKeys = useRef<Set<string> | undefined>(undefined);
@@ -948,6 +950,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           return false;
         }
         if (conversationId && !visible.some(row => row.id === conversationId && row.customerId === customerId)) return false;
+        if (original.closed && restoreFailedDraft(adminId, key, detail)) return true;
         setVerifiedRecovery(old => ({ scope, keys: new Set([...(old?.scope === scope ? old.keys : []), key]) }));
         return true;
       }, cause => {
@@ -1093,31 +1096,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     };
   }, [adminId]);
 
-  const keepRefusedDraft = async (entry: SavedSend, customerId?: string) => {
-    const { row, first, reply } = entry;
-    if (!customerId || (!first && !reply) || reply?.kind === "IMAGE") return false;
-    const sameActor = () => useAdminAuth.getState().session?.adminId === adminId;
-    if (!sameActor()) return false;
-    // A terminal receipt may arrive before background verification or after leaving M3.
-    {
-      try {
-        if (reply && !visible.some(c => c.id === reply.conversationId && c.customerId === customerId)) {
-          const thread = await fetchMConversationDetail(reply.conversationId, undefined, false);
-          if (!sameActor() || thread.customerId !== customerId) return false;
-        }
-        const detail = await supportClient.customerDetail(customerId);
-        if (!sameActor() || detail.customerId !== customerId) return false;
-        if (detail.assignmentId !== (first?.assignmentId ?? reply?.expectedAssignmentId) || !canReviewAll && detail.agentAdminId !== adminId) {
-          ctx.invalidateScope(reply?.conversationId, customerId, undefined, row.commandKey);
-          return false;
-        }
-      } catch (error) {
-        if (sameActor() && isSupportScopeDenial(error)) ctx.invalidateScope(reply?.conversationId, customerId);
-        return false;
-      }
-    }
-    restoreFailedDraft(adminId, row.commandKey, customerId);
-    return true;
+  const closeRefusedText = (key: string, customerId?: string) => {
+    const entry = readSavedSends(adminId).find(item => item.row.commandKey === key);
+    const original = entry?.first ?? entry?.reply;
+    if (!entry || !original || entry.reply?.kind === "IMAGE") return;
+    const copy = closeFailedDraft(adminId, key, customerId);
+    if (copy && !entry.dock) clearSubmittedDraft(original.draftSlot ?? entry.reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft);
   };
 
   const querySavedSend = async (entry: SavedSend) => {
@@ -1137,15 +1121,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         return result;
       }
       const original = reply ?? first;
-      const authorizedDraft = result.status === "SUCCEEDED" || reply?.kind === "IMAGE"
-        ? mounted.current && verifiedKeys.current?.has(row.commandKey)
-        : await keepRefusedDraft(entry, customerId);
+      if (result.status !== "SUCCEEDED") closeRefusedText(row.commandKey, customerId);
+      const authorizedDraft = result.status === "SUCCEEDED" && mounted.current && verifiedKeys.current?.has(row.commandKey);
       if (useAdminAuth.getState().session?.adminId !== adminId) return result;
       if (!authorizedDraft && reply && originalView() && selected?.id === reply.conversationId) {
         if (reply.attachmentId && attachmentRef.current?.id === reply.attachmentId) clearAttachment(false);
         if (reply.kind === "SKU" || reply.kind === "LINK") setContentChoice(null);
       }
-      if (original && !entry.dock && reply?.kind !== "IMAGE" && (result.status === "SUCCEEDED" || !authorizedDraft)) {
+      if (original && !entry.dock && reply?.kind !== "IMAGE" && result.status === "SUCCEEDED") {
         clearSubmittedDraft(original.draftSlot ?? reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft);
       }
       if (reply?.attachmentId) {
@@ -1302,7 +1285,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         const refused = refusedMessage(cause, !retryFirst);
         const busyHold = supportSessionBusy(cause);
         if (refused || busyHold) {
-          if (retryFirst && activeEntry && !isSupportScopeDenial(cause)) await keepRefusedDraft(activeEntry, customerId);
+          if (!isSupportScopeDenial(cause)) closeRefusedText(record.key, customerId);
           forgetSavedSend(slot, record.key);
         }
         if (lostPermission(cause)) {
@@ -1400,7 +1383,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const busyHold = supportSessionBusy(cause);
       if (refused || busyHold) {
         if (flight.image) flight.image.outcome = "unused";
-        if (retry && activeEntry && !isSupportScopeDenial(cause)) await keepRefusedDraft(activeEntry, String(selected.customerId));
+        if (!isSupportScopeDenial(cause)) closeRefusedText(record.key, String(selected.customerId));
         forgetSavedSend(slot, record.key);
       }
       if (lostPermission(cause)) {
