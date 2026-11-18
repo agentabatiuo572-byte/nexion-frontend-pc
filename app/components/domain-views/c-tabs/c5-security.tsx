@@ -10,15 +10,15 @@ import { businessZoneText, formatBusinessTimeCompact } from "@/lib/admin/busines
 import { formatAccountStatus } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { pendingC5Commands, prepareC5Command, submitC5Command, forgetC5Command, isCompleteC5Command, type C5CommandKind, type C5Pending } from "@/lib/admin/c5-security-commands";
+import { c5CommandRecords, prepareC5Command, submitC5Command, forgetC5Command, isCompleteC5Command, type C5CommandKind, type C5Pending } from "@/lib/admin/c5-security-commands";
 import { listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
 import { fetchUserProfilesPage, fetchUserSecurityOverview, type User360Profile, type UserCredentialParam, type UserSecurityOverview, type UserSecurityUserRow, type UserSession } from "@/lib/admin/user360-client";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { sessionTimeAnomaly } from "@/lib/admin/session-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { pendingPaymentPolicy, pendingPaymentReleases, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
-import { pendingPhoneCommands, pendingModelLockCommands } from "@/lib/admin/phone-replacement-client";
+import { pendingPaymentPolicy, paymentReleaseRecords, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
+import { pendingPhoneCommands, modelLockCommandRecords } from "@/lib/admin/phone-replacement-client";
 import { PaymentPasswordPanel } from "./payment-password-panel";
 import { PhoneReplacementPanel } from "./phone-replacement-panel";
 import type { CCtx } from "./types";
@@ -123,12 +123,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     }).catch(() => { if (live) setProfile(null); });
     return () => { live = false; };
   }, [userId, selectedUser?.userNo, canFind, epoch]);
-  const pending = useMemo(() => owner && canRead ? pendingC5Commands(owner) : [], [owner, canRead, pendingTick]);
+  const commandRecords = useMemo(() => owner && canRead ? c5CommandRecords(owner) : [], [owner, canRead, pendingTick]);
+  const pending = commandRecords.filter(row => !row.rejection);
   const logoutPending = useMemo(() => owner && canRead ? listSessionRevocationApprovals(owner) : [], [owner, canRead, pendingTick]);
   const policyPending = owner ? pendingPaymentPolicy(owner) : null;
-  const paymentPending = owner && canRead ? pendingPaymentReleases(owner).filter(row => row.portKey === `global:${row.userId}`
-    && !(tab === "payment" && (params?.get("paymentTab") !== "exceptions" ? row.userId === userId : row.recordId === shownPaymentRecord))) : [];
-  const phonePending = owner && userId ? pendingPhoneCommands(owner, userId) : [], modelPending = owner && userId ? pendingModelLockCommands(owner, userId) : [];
+  const paymentRecords = owner && canRead ? paymentReleaseRecords(owner).filter(row => row.portKey === `global:${row.userId}`
+    && !(tab === "payment" && (params?.get("paymentTab") !== "exceptions" ? !row.rejection && row.userId === userId : row.recordId === shownPaymentRecord))) : [];
+  const phonePending = owner && userId ? pendingPhoneCommands(owner, userId) : [], modelRecords = owner && userId ? modelLockCommandRecords(owner, userId) : [];
+  const modelPending = modelRecords.filter(row => !row.rejection);
   const userBlocked = (id: string) => busy ? "正在提交，请稍候" : pending.some(row => !isCompleteC5Command(row) || row.userId === id) || logoutPending.some(row => row.userId === id) ? "此用户有结果未知的原操作，请先核对" : undefined;
   const sessions = overview?.sessions?.records ?? [], selectedSession = sessions.find(row => row.refreshTokenId === shownSession);
   const lockedUsers = overview?.lockedUsers ?? [], credentials = overview?.credentialParams ?? [];
@@ -158,7 +160,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     } catch (failure) {
       if (!row) throw failure;
       if (failure instanceof Error && "status" in failure && [401, 403].includes(Number(failure.status))) { setOverview(null); setProfile(null); setShownSession(null); setShownLock(null); announcePermissionDenied(); }
-      ctx.toast("原操作已保留，请到页面上方核对结果。", "warn"); return true;
+      const rejected = c5CommandRecords(owner).find(command => command.commandKey === row?.commandKey)?.rejection;
+      ctx.toast(rejected ?? "原操作已保留，请到页面上方核对结果。", "warn"); return true;
     } finally { mutation.current = false; setBusy(false); refreshPending(); }
   }
   function begin(kind: C5CommandKind, row: UserSecurityUserRow, device?: UserSession) {
@@ -199,10 +202,10 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     try {
       if (retry) await submitC5Command(recovery);
       const refreshed = recovery.userId && selectedRef.current !== recovery.userNo ? await fetchUserSecurityOverview({ userKey: recovery.userNo || recovery.userId, pageNum: 1, pageSize: 10 }) : await load();
-      const latest = pendingC5Commands(owner).find(row => row.commandKey === recovery.commandKey);
+      const latest = c5CommandRecords(owner).find(row => row.commandKey === recovery.commandKey);
       if (refreshed && latest?.returned) { forgetC5Command(latest); setRecovery(null); ctx.toast("原操作已有结果，页面已重新读取"); }
       else { setRecovery(latest ?? recovery); setRecoveryMessage("已读取现在的值。现在的值说明不了原操作成没成，记录继续保留。"); }
-    } catch (failure) { setRecovery(pendingC5Commands(owner).find(row => row.commandKey === recovery.commandKey) ?? recovery); setRecoveryMessage(displayAdminError(failure)); }
+    } catch (failure) { setRecovery(c5CommandRecords(owner).find(row => row.commandKey === recovery.commandKey) ?? recovery); setRecoveryMessage(displayAdminError(failure)); }
     finally { mutation.current = false; setBusy(false); refreshPending(); }
   }
   const userTable = <><Table aria-label="用户列表" label="用户列表" className="c5-users"><thead><tr><Th>用户</Th><Th className="c5-phone-col">手机号</Th><Th sticky="end">操作</Th></tr></thead><tbody>
@@ -219,15 +222,18 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     {(() => {
       // 页面上方的待确认：一笔时是一条提示；多笔时并成一块，每笔一行，各自的入口不变，不把页签挤到下面很远。
       const items: { key: string; title: ReactNode; meta: ReactNode; action: ReactNode }[] = [
-        ...pending.map(row => ({ key: row.commandKey, title: row.label ?? "旧登录处置结果未知", action: <Button size="sm" disabled={busy} onClick={() => { setRecovery(row); setRelease(false); setRecoveryMessage(""); }}>查询原结果</Button>, meta: <span>{row.userNo || "原对象见恢复记录"} · {time(new Date(row.createdAt).toISOString())} · {row.returned ? "操作已返回，页面尚未刷新" : row.expiresAt <= Date.now() ? "已过 24 小时，只能查询原结果" : "结果未知"}</span> })),
+        ...commandRecords.map(row => ({ key: row.commandKey, title: row.label ?? "旧登录处置结果未知", action: <Button size="sm" disabled={busy} onClick={() => { setRecovery(row); setRelease(false); setRecoveryMessage(""); }}>查询原结果</Button>, meta: <span>{row.userNo || "原对象见恢复记录"} · {time(new Date(row.createdAt).toISOString())} · {row.rejection ? "已明确拒绝" : row.returned ? "操作已返回，页面尚未刷新" : row.expiresAt <= Date.now() ? "已过 24 小时，只能查询原结果" : "结果未知"}</span> })),
         ...logoutPending.map(row => ({ key: row.commandKey, title: `全部设备登出审批结果未知 · ${row.label}`, action: <Button size="sm" disabledReason={busy ? "正在提交" : undefined} onClick={async () => { if (!session) return; setBusy(true); try { await proposeSessionRevocation(session, row.userId, row.label, row.reason); ctx.toast("已查到原审批单，批准后生效"); } catch (failure) { ctx.toast(displayAdminError(failure), "warn"); } finally { setBusy(false); refreshPending(); } }}>查询原结果</Button>, meta: <span>{time(new Date(row.createdAt).toISOString())} · 可能已建审批单<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{row.commandKey}</span></>} /></span> })),
         ...(policyPending && (tab !== "payment" || params?.get("paymentTab") === "exceptions") ? [{ key: "payment-policy", title: "支付密码规则调整结果未知", action: <Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原结果</Button>, meta: "原调整记录已保留，请先核对结果。" }] : []),
-        ...paymentPending.map(row => ({ key: row.commandKey, title: `支付密码解除结果未知 · ${row.userId === userId ? userLabel(selectedUser) : `user:${row.userId}`}`, action: <Button size="sm" onClick={() => { setPaymentRecovery(row); setUrl({ tab: "payment", paymentTab: "exceptions" }); }}>查询原结果</Button>, meta: <>原记录 {row.recordId} · 只能查询原结果。</> })),
+        ...paymentRecords.map(row => ({ key: row.commandKey, title: `支付密码解除${row.rejection ? "已拒绝" : "结果未知"} · ${row.userId === userId ? userLabel(selectedUser) : `user:${row.userId}`}`, action: <Button size="sm" onClick={() => { setPaymentRecovery(row); setUrl({ tab: "payment", paymentTab: "exceptions" }); }}>查询原结果</Button>, meta: <>原记录 {row.recordId} · {row.rejection ? "已保留拒绝详情。" : "只能查询原结果。"}</> })),
         ...((phonePending.length > 0 || modelPending.length > 0) && tab !== "phone" ? [{ key: "phone", title: `手机处置结果未知 · ${userLabel(selectedUser)}`, action: <Button size="sm" onClick={() => setUrl({ tab: "phone" })}>查询原结果</Button>, meta: <>{phonePending.length + modelPending.length} 项操作结果未知，先查询原结果。</> }] : []),
+        ...(modelRecords.some(row => row.rejection) && tab !== "phone" ? [{ key: "model-rejection", title: `机型锁解除已拒绝 · ${userLabel(selectedUser)}`, action: <Button size="sm" onClick={() => setUrl({ tab: "phone" })}>查看原解除记录</Button>, meta: "已保留拒绝详情。" }] : []),
       ];
+      const hasRejections = commandRecords.some(row => row.rejection) || paymentRecords.some(row => row.rejection) || items.some(item => item.key === "model-rejection");
+      const itemLabel = hasRejections ? "操作记录" : "结果未知的操作";
       if (items.length === 1) return <Notice tone="warn" title={items[0].title} action={items[0].action}>{items[0].meta}</Notice>;
       // 多于三条时默认只露三条，提示不把页签和正事挤出首屏。
-      return items.length > 1 && <Notice tone="warn" title={`${items.length} 项操作结果未知`}><ul className="c5-pending-list" aria-label="结果未知的操作">{(pendingAll ? items : items.slice(0, 3)).map(item => <li key={item.key}><span className="c5-pending-what"><strong>{item.title}</strong><span>{item.meta}</span></span>{item.action}</li>)}</ul>
+      return items.length > 1 && <Notice tone="warn" title={`${items.length} 项${hasRejections ? "操作记录" : "操作结果未知"}`}><ul className="c5-pending-list" aria-label={itemLabel}>{(pendingAll ? items : items.slice(0, 3)).map(item => <li key={item.key}><span className="c5-pending-what"><strong>{item.title}</strong><span>{item.meta}</span></span>{item.action}</li>)}</ul>
         {items.length > 3 && <Button size="sm" variant="ghost" aria-expanded={pendingAll} onClick={() => setPendingAll(value => !value)}>{pendingAll ? "只看前 3 条" : `展开全部 ${items.length} 条`}</Button>}</Notice>;
     })()}
     <PageTabs ids={ids} label="安全管理内容" value={tab} onChange={value => setUrl({ tab: value })} items={[{ value: "security", label: "用户安全处置", disabled: busy }, { value: "credentials", label: "登录与改号规则", disabled: busy }, { value: "payment", label: "支付密码", disabled: busy }, { value: "phone", label: "手机换机", disabled: busy }]} />
@@ -253,8 +259,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     </Drawer>}
     {tab === "security" && locksOpen && !shownLock && <Drawer open onClose={() => setLocksOpen(false)} title="锁定账户" sub="最多 5 条 · 按输错次数排序" icon={LockKeyhole}><Table aria-label="被锁定的账户" label="被锁定的账户" className="c5-locks"><thead><tr><Th>用户</Th><Th>锁定类型</Th><Th>原因</Th><Th sticky="end">操作</Th></tr></thead><tbody>{lockedUsers.map(row => <Tr key={userIdOf(row)} onOpen={() => setShownLock(row)}><Td><Cell main={userNicknameText(text(row.nickname, ""), row.phoneMasked) || text(row.userNo)} sub={row.nickname ? text(row.userNo) : undefined} /></Td><Td><StatusTag tone="warn">{lockLabel(row)}</StatusTag></Td><Td><Cell main={text(row.lockReason)} title={text(row.lockReason)} /></Td><Td sticky="end">{canUnlock(row) ? <Button size="sm" disabledReason={userBlocked(userIdOf(row))} onClick={() => begin("unlock", row)}>解锁</Button> : <Button variant="ghost" size="sm" onClick={() => setShownLock(row)}>查看详情</Button>}</Td></Tr>)}{!lockedUsers.length && <TableMessage columns={4}>当前可见范围没有锁定账户</TableMessage>}</tbody></Table></Drawer>}
     {tab === "security" && shownLock && <Drawer open onClose={() => setShownLock(null)} title="登录锁定详情" sub={text(shownLock.userNo)} icon={LockKeyhole} footer={<Decision others={<Button onClick={() => setShownLock(null)}>返回列表</Button>} primary={canUnlock(shownLock) && <Button disabledReason={userBlocked(userIdOf(shownLock))} onClick={() => begin("unlock", shownLock)}>解除{shownLock.lockKind === "LONG" ? "长" : "短"}锁</Button>} />}><JudgmentPoints rows={[{ label: "用户", value: userLabel(shownLock) }, { label: "登录锁定", value: lockLabel(shownLock), state: "warn" }, { label: "输错次数", value: `${text(shownLock.loginFailCount)} 次` }, { label: "密码重置", value: shownLock.passwordResetRequired ? "待用户重置密码" : "未要求重置" }]} /><Facts><Fact k="原因">{text(shownLock.lockReason)}</Fact><Fact k="剩余说明">{text(shownLock.lockLeft)}</Fact></Facts></Drawer>}
-    {recovery && <Modal title={release ? "解除原操作记录" : "核对原登录操作"} icon={ShieldCheck} onClose={() => { setRecovery(null); setRelease(false); }} busy={busy} footer={<Decision others={<Button onClick={() => { if (release) setRelease(false); else setRecovery(null); }}>返回</Button>} danger={release ? <Button variant="danger" onClick={() => { forgetC5Command(recovery); setRecovery(null); setRelease(false); refreshPending(); }}>确认解除</Button> : recovery.rejection && <Button variant="danger-outline" onClick={() => setRelease(true)}>解除原操作记录</Button>} primary={!release && <><Button disabled={busy} onClick={() => void recover(false)}>读取现在的值</Button>{isCompleteC5Command(recovery) && !recovery.returned && !recovery.rejection && recovery.expiresAt > Date.now() && <Button variant="primary" disabledReason={!rights.includes(recovery.kind === "credential" ? "user_c5_write" : recovery.kind === "revoke-one" ? "user_c5_session_revoke_one" : recovery.kind === "password-reset" ? "user_c5_password_reset" : recovery.kind === "disable-2fa" ? "user_c5_2fa_disable" : recovery.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short") ? "当前缺少原操作权限" : undefined} onClick={() => void recover(true)}>按原请求重试</Button>}</>} />}>
-      {release ? <ReleaseBody label={recovery.label ?? "旧登录操作"} explain={recovery.rejection} /> : <><Facts><Fact k="原对象">{recovery.label ?? "旧登录处置（缺少原对象快照）"}</Fact><Fact k="发起时间">{time(new Date(recovery.createdAt).toISOString())}</Fact><Fact k="原请求编号"><span data-mono>{recovery.commandKey}</span><IconButton aria-label="复制原请求编号" onClick={() => void navigator.clipboard.writeText(recovery.commandKey).then(() => ctx.toast("已复制原请求编号"), () => ctx.toast("复制失败，请手动复制", "warn"))}><Copy size={14} /></IconButton></Fact>{recovery.reason && <Fact k="原理由">{recovery.reason}</Fact>}{recovery.version !== undefined && <Fact k="原版本">{recovery.version}</Fact>}{recovery.value && <Fact k="原新值">{recovery.value}</Fact>}</Facts>{!recovery.rejection && <Notice tone="warn">{!isCompleteC5Command(recovery) ? "旧记录缺少完整原请求，只能读取现在的值核对；记录继续保留。" : recovery.expiresAt <= Date.now() ? "原请求已超过 24 小时，不能再重试；记录继续保留。" : recovery.returned ? "操作已返回，页面还没刷新，请点「读取现在的值」核对。" : "按原请求重试只用原对象、原内容和原理由。现在的值说明不了原操作成没成。"}</Notice>}{recovery.rejection && <Notice tone="danger" title="原操作已明确拒绝">{recovery.rejection}</Notice>}{recoveryMessage && recoveryMessage !== recovery.rejection && <Notice tone="warn">{recoveryMessage}</Notice>}</>}
+    {recovery && commandRecords.some(row => row.commandKey === recovery.commandKey) && <Modal title={release ? "解除原操作记录" : "核对原登录操作"} icon={ShieldCheck} onClose={() => { setRecovery(null); setRelease(false); }} busy={busy} footer={<Decision others={<Button onClick={() => { if (release) setRelease(false); else setRecovery(null); }}>返回</Button>} danger={release ? <Button variant="danger" onClick={() => { forgetC5Command(recovery); setRecovery(null); setRelease(false); refreshPending(); }}>确认解除</Button> : recovery.rejection && <Button variant="danger-outline" onClick={() => setRelease(true)}>解除原操作记录</Button>} primary={!release && !recovery.rejection && <><Button disabled={busy} onClick={() => void recover(false)}>读取现在的值</Button>{isCompleteC5Command(recovery) && !recovery.returned && !recovery.rejection && recovery.expiresAt > Date.now() && <Button variant="primary" disabledReason={!rights.includes(recovery.kind === "credential" ? "user_c5_write" : recovery.kind === "revoke-one" ? "user_c5_session_revoke_one" : recovery.kind === "password-reset" ? "user_c5_password_reset" : recovery.kind === "disable-2fa" ? "user_c5_2fa_disable" : recovery.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short") ? "当前缺少原操作权限" : undefined} onClick={() => void recover(true)}>按原请求重试</Button>}</>} />}>
+      {release ? <ReleaseBody label={recovery.label ?? "旧登录操作"} explain={recovery.rejection} /> : <><Facts><Fact k="原对象">{recovery.label ?? "旧登录处置（缺少原对象快照）"}</Fact><Fact k="发起时间">{time(new Date(recovery.createdAt).toISOString())}</Fact><Fact k="原请求编号"><span data-mono>{recovery.commandKey}</span><IconButton aria-label="复制原请求编号" onClick={() => void navigator.clipboard.writeText(recovery.commandKey).then(() => ctx.toast("已复制原请求编号"), () => ctx.toast("复制失败，请手动复制", "warn"))}><Copy size={14} /></IconButton></Fact>{recovery.reason && <Fact k="原理由">{recovery.reason}</Fact>}{recovery.version !== undefined && <Fact k="原版本">{recovery.version}</Fact>}{recovery.value && <Fact k="原新值">{recovery.value}</Fact>}</Facts>{!recovery.rejection && <Notice tone="warn">{!isCompleteC5Command(recovery) ? "旧记录缺少完整原请求，只能读取现在的值核对；记录继续保留。" : recovery.expiresAt <= Date.now() ? "原请求已超过 24 小时，不能再重试；记录继续保留。" : recovery.returned ? "操作已返回，页面还没刷新，请点「读取现在的值」核对。" : "按原请求重试只用原对象、原内容和原理由。现在的值说明不了原操作成没成。"}</Notice>}{recovery.rejection && <Notice tone="danger" title="原操作已明确拒绝">{recovery.rejection}{recovery.rejectionCode && <> · <span data-mono>{recovery.rejectionCode}</span></>}</Notice>}{recoveryMessage && recoveryMessage !== recovery.rejection && <Notice tone="warn">{recoveryMessage}</Notice>}</>}
     </Modal>}
   </div>;
 }
