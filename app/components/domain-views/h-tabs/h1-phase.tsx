@@ -1074,7 +1074,7 @@ export default function H1Phase({ ctx,
           {!model.attribution.length ? <BlockState state="empty" title="没有阶段参考资料" /> : <div className="h1-attribution">{model.attribution.map((row) => <section key={row.phase} id={`h1-attribution-${row.phase}`} tabIndex={-1} className="h1-attribution-item" data-hit={deepLink?.phase === row.phase ? "" : undefined}>
             <h3>{row.phase} {row.name}{deepLink?.phase === row.phase && <StatusTag tone="progress" icon={MapPin}>跳转定位</StatusTag>}</h3>{(row.paramKey === "withdrawPenaltyFeeRate" || row.driver.includes("提现费率")) && <Notice tone="warn">这份资料含已停用的提现惩罚费率，不能当作现在的依据。</Notice>}
             <Facts>
-              <Fact k="主要驱动">{row.driver.replaceAll("提现冷却",
+              <Fact k="主要驱动">{row.driver.replaceAll("提现冷却期", "到账审查窗口").replaceAll("提现冷却",
                 "到账审查窗口").replaceAll("增强合规审查",
                   "加强合规审查")}</Fact>
               <Fact k="阶段参数">{DIALS.find((dial) => dial.key === row.paramKey)?.label ?? row.paramKey}</Fact>
