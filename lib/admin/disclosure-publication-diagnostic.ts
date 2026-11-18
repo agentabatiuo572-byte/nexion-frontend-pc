@@ -12,8 +12,14 @@ export function disclosurePublicationIssue(
   const version = matches[0];
   if (!["published", "superseded"].includes(version.status.toLowerCase())) return "矩阵引用的版本尚未发布或已归档，App 无法读取。请按既有发布流程核对正文与映射。";
   const chapters = version.chapters;
-  const languages = version.languageScope === "zh+vi" ? ["zh", "vi"] as const
-    : version.languageScope === "zh+vi+en" ? ["zh", "vi", "en"] as const : null;
+  // Stored scopes the App can read (risk-disclosure-api requires zh and vi): zh+vi, zh+vi+en, or zh+vi+en followed by
+  // distinct additional interface languages (OpsTrustDisclosureService). A bare en draft input is saved as zh+vi+en,
+  // plus any additional languages the edited draft already had.
+  const scope = version.languageScope.split("+");
+  const validScope = ["zh+vi", "zh+vi+en"].includes(version.languageScope)
+    || (scope.length > 3 && scope.slice(0, 3).join("+") === "zh+vi+en" && new Set(scope).size === scope.length
+      && scope.slice(3).every((code) => ["id", "ms", "fil", "ru", "kk", "uz"].includes(code)));
+  const languages = !validScope ? null : scope.includes("en") ? ["zh", "vi", "en"] as const : ["zh", "vi"] as const;
   const complete = languages && chapters.length === 7 && Array.from({ length: 7 }, (_, index) => String(index + 1).padStart(2, "0")).every((no) => {
     const matching = chapters.filter((chapter) => chapter.no === no);
     if (matching.length !== 1) return false;
