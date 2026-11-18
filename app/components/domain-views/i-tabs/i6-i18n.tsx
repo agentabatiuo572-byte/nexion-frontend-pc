@@ -35,7 +35,7 @@ import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-cop
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
+import { I6_COURSE_REWARD_DECIMALS, i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
 import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, courseFormMissing, mapCourseLanguages, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
 /** 查到原审批单时说结论：还在等批准，或已有结果、执行情况到操作记录看。 */
@@ -799,7 +799,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前发奖按现在的数。`}>批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       statedBrief: { impact: "批准后，还没发到账的奖励都按新数发；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
-      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/人", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max,
+      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/人", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, maxDecimals: I6_COURSE_REWARD_DECIMALS,
         amplifiesWhen: (value) => (i6RewardChange(value, c.rewardRaw)?.direction ?? 0) > 0,
         hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT/人`,
         preview: (value: string) => {

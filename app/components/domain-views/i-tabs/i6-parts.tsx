@@ -12,7 +12,7 @@ import { BookOpen, CircleSlash, EyeOff, Gem, GraduationCap, Plus, Rocket, Shield
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { i6Amount } from "@/lib/admin/i6-amount";
+import { I6_COURSE_REWARD_DECIMALS, i6Amount } from "@/lib/admin/i6-amount";
 import { i6HasCopyText } from "@/lib/admin/i6-copy-quality";
 
 export type Lang = "zh" | "vi" | "en";
@@ -134,6 +134,12 @@ export function mapCourseLanguages(form: CourseForm, required: readonly Operatin
 }
 
 type Missing = { key: string; text: string; need?: boolean };
+function courseRewardPrecisionError(value: string | undefined): string | undefined {
+  if ((value?.split(".")[1]?.length ?? 0) > I6_COURSE_REWARD_DECIMALS) {
+    return `完成奖励最多填 ${I6_COURSE_REWARD_DECIMALS} 位小数。`;
+  }
+}
+
 /** 课程抽屉与提交前共用，每项带上字段键，好把错误写在框下。 */
 export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[] {
   const missing: Missing[] = [];
@@ -153,6 +159,8 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
   }
   if (i6HasCopyText(state.reward ?? "")) {
     const reward = Number(state.reward);
+    const precisionError = courseRewardPrecisionError(state.reward);
+    if (precisionError) missing.push({ key: "reward", text: precisionError });
     if (!Number.isFinite(reward)) missing.push({ key: "reward", text: "奖励数值" });
     if (spec.rewardMin != null && reward < spec.rewardMin) missing.push({ key: "reward", text: `奖励 ≥ ${spec.rewardMin}` });
     if (spec.rewardMax != null && reward > spec.rewardMax) missing.push({ key: "reward", text: `奖励 ≤ ${spec.rewardMax}` });
@@ -283,7 +291,8 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
   const completed = useMemo(() => mapCourseLanguages(form, requiredLanguages, "submit"), [form, requiredLanguages]);
   const missing = useMemo(() => spec ? courseFormMissing(spec, completed) : [], [spec, completed]);
   if (!spec) return null;
-  const rewardError = missing.some(item => item.key === "reward") ? displayAdminError("LEARNING_REWARD_OUT_OF_RANGE") : undefined;
+  const rewardPrecisionError = courseRewardPrecisionError(form.reward);
+  const rewardError = rewardPrecisionError ?? (missing.some(item => item.key === "reward") ? displayAdminError("LEARNING_REWARD_OUT_OF_RANGE") : undefined);
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const err = (key: string) => { const item = tried ? missing.find((row) => row.key === key) : undefined; return item ? (item.need ? `请填${item.text}` : item.text) : undefined; };
   const quizCount = Math.max(1, Number(form.quizCount || 1));
@@ -415,7 +424,7 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
                   <Select aria-label="预计时长" value={form.duration ?? ""} onChange={(value) => set("duration", value)}
                     options={durations.map((value) => ({ value, label: durationText(value) }))} />
                 </Field>
-                <Field label="学完发多少" required hint={`${spec.rewardMin}–${spec.rewardMax} UVT`} explain="每位学完并通过测验的用户在这个版本领一次。有奖励的课发布要提交审批。" error={err("reward")}>
+                <Field label="学完发多少" required hint={`${spec.rewardMin}–${spec.rewardMax} UVT`} explain="每位学完并通过测验的用户在这个版本领一次。有奖励的课发布要提交审批。" error={rewardPrecisionError ?? err("reward")}>
                   <NumberInput unit="UVT" min={spec.rewardMin} max={spec.rewardMax} value={form.reward ?? ""} onChange={(event) => set("reward", event.target.value)} />
                 </Field>
               </div>
