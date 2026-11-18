@@ -515,7 +515,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
         explain={<>
           <p>一个账户 24 小时内被拦到这个次数就进告警名单；看 7 天、30 天时门槛按 7 倍、30 倍算。</p>
           <p>「风险评分：计入」表示新的篡改事件会给账户加风险分；不计入时风险提醒照常收到。</p>
-          <p>「紧急停用开关」页的篡改告警激增规则读的也是这个阈值，那条规则只告警，不会自动关停业务。</p>
+          <p>「紧急停用开关」页的篡改告警激增规则读的也是这个阈值，那条规则只在这页统计账户，不发通知、不自动关停。</p>
         </>} />
     </StatBand>
 
@@ -800,7 +800,7 @@ function J3ConfigModal({ ctx, original, onClose, onPending, onOutcome }: { ctx: 
       {changed && (
         <Facts>
           {thresholdChanged && <Fact k="已在名单里的账户">名单不单独保存，每次打开都按新阈值重新筛；已经加的风险分、已经送到风险提醒的不撤回</Fact>}
-          {thresholdChanged && <Fact k="紧急停用开关">篡改告警激增规则读同一个阈值，打开那页就显示新值；它只告警，不自动关停业务</Fact>}
+          {thresholdChanged && <Fact k="紧急停用开关">篡改告警激增规则读同一个阈值，打开那页就显示新值；它只统计，不发通知、不自动关停</Fact>}
           <Fact k="留痕">写一条操作记录；超级管理员随后收到提醒</Fact>
         </Facts>
       )}
