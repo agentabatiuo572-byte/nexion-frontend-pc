@@ -14,22 +14,21 @@ export function fillBlankContentLanguage<Fields extends Record<string, ContentLa
     : value.every((entry) => entry.trim() === "")) ? english : localized;
 }
 
-export function blankCopiedContentField(
-  requiredLanguages: readonly OperatingLanguageCode[], language: OperatingLanguageCode, english: string, localized: string,
-): string;
-export function blankCopiedContentField(
-  requiredLanguages: readonly OperatingLanguageCode[], language: OperatingLanguageCode, english: readonly string[], localized: readonly string[],
-): readonly string[];
-export function blankCopiedContentField(
+export function blankCopiedContentLanguage<Fields extends Record<string, ContentLanguageValue>>(
   requiredLanguages: readonly OperatingLanguageCode[],
   language: OperatingLanguageCode,
-  english: ContentLanguageValue,
-  localized: ContentLanguageValue,
-): ContentLanguageValue {
+  english: Fields,
+  localized: Fields,
+): Fields {
   if (requiredLanguages.includes(language)) return localized;
-  if (typeof localized === "string") {
-    return typeof english === "string" && localized.trim() === english.trim() ? "" : localized;
-  }
-  return typeof english !== "string" && localized.length === english.length
-    && localized.every((entry, index) => entry.trim() === english[index].trim()) ? localized.map(() => "") : localized;
+  const fields = Object.entries(localized);
+  const copied = fields.every(([field, value]) => {
+    const original = english[field];
+    return typeof value === "string"
+      ? typeof original === "string" && value.trim() === original.trim()
+      : Array.isArray(original) && value.length === original.length
+        && value.every((entry, index) => entry.trim() === original[index].trim());
+  });
+  if (!copied) return localized;
+  return Object.fromEntries(fields.map(([field, value]) => [field, typeof value === "string" ? "" : value.map(() => "")])) as Fields;
 }

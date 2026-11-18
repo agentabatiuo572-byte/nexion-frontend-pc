@@ -178,7 +178,9 @@ function normalize(raw: unknown): PlatformExperienceConfig {
 }
 
 export async function fetchPlatformExperienceConfig() {
-  return normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
+  const config = normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
+  if (config.operatingLanguages) requiredContentLanguages = Promise.resolve(config.operatingLanguages);
+  return config;
 }
 
 export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]> {
