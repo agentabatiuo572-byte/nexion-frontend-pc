@@ -470,7 +470,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         : fromRule ? <>已开放的活动照常进行；这一格空着时 App 显示玩法规则摘要。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact>
-        {fromRule && <><Fact k="App 上">{LOCALE_NAME[locale]}显示这里填的；空着显示玩法规则摘要，不借用英文</Fact><Fact k="发奖">按玩法规则，奖项名里写的数额不影响发多少</Fact></>}</Facts>,
+        {fromRule && <><Fact k="App 上">{LOCALE_NAME[locale]}填了就显示，空着显示规则摘要</Fact><Fact k="发奖">按玩法规则，奖项名里写的数额不影响发多少</Fact></>}</Facts>,
       reasonPlaceholder: "例如：补齐上线前的翻译",
       edit: { kind: "text", current, initialValue: draft?.value },
       run: async (reason, value) => {

@@ -274,7 +274,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
           </div>
         </div>
         {fallback && <p className="h4l-preview-note">有内容没填{LOCALE_NAME[locale]}，这里按 App 的回退显示</p>}
-        {rewardFromRule && names[locale].rewardName && <p className="h4l-preview-note" data-tone="warn">奖项名里写的数额不影响发奖，按玩法规则发；数额要和规则一致</p>}
+        {rewardFromRule && names[locale].rewardName && <p className="h4l-preview-note" data-tone="warn">发奖按玩法规则，奖项名里写数额要和规则一致</p>}
       </aside>
     </div>
   );
