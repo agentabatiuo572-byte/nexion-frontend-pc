@@ -209,7 +209,7 @@ const PARAM: Record<string, {
 };
 const PARAM_ORDER = ["userDailyCap", "platformDailyCap", "fee", "feeMin", "queueMode"];
 /** 排队单的原因：系统给的是「排队等待次日处理」，不是排好的时间，这里不写固定时刻（G2-BE-05）。 */
-const queueReasonText = (order: { status: string; gateReason: string }) => order.status === "QUEUED" ? "超过日额度，排队等运营处理" : order.gateReason;
+const queueReasonText = (order: { status: string; gateReason: string }) => order.status === "QUEUED" ? "超过日额度" : order.gateReason;
 
 function paramName(key: string, fallback?: string) {
   return PARAM[key]?.name ?? (fallback ? operatorCopyText(fallback) : key);
@@ -1015,7 +1015,7 @@ function G2ExchangePage() {
       ? <Conclusion state="warn" icon={ListOrdered}
           hint={<>{canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}{disclosureHint}</>}
           explain={<>
-            <p>排队数是所有还在排队的单，不限哪天创建。系统不定时处理，由运营确认后处理，到账时间以实际处理为准。</p>
+            <p>排队数是所有还在排队的单，不限哪天创建。没有定时处理，由运营确认后成交，到账时间以实际处理为准。</p>
             {disclosureExplain}
           </>}>
           兑换开着，有 {fmtCount(stats.queueDepth)} 单在排队等处理</Conclusion>
