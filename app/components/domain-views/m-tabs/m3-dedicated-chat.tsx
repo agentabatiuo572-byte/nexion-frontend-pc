@@ -468,7 +468,23 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const [verifiedRecovery, setVerifiedRecovery] = useState<{ scope: string; keys: Set<string> } | null>(null);
   const verifiedKeys = useRef<Set<string> | undefined>(undefined);
   verifiedKeys.current = verifiedRecovery?.scope === recoveryScope ? verifiedRecovery.keys : undefined;
-  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, ctx.invalidateScope, ctx.loadConversationDetail);
+  const leaveUnavailableConversation = useCallback((no: string, customerId?: string, notice?: string) => {
+    // A denied deep link must stop driving selection before invalidation reloads the inbox.
+    const url = new URL(window.location.href);
+    const linked = url.searchParams.get("conversationNo");
+    if (linked === no || !linked && !url.searchParams.has("customerId")) {
+      url.searchParams.delete("conversationNo");
+      // Keep the inbox clear even if changing the URL remounts the chat.
+      window.history.replaceState({ m3SelectionDismissed: true }, "", url);
+      setScreen("list");
+    }
+    setRestoredId(current => current === no ? "" : current);
+    ctx.invalidateScope(no, customerId, notice);
+  }, [ctx.invalidateScope]);
+  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, (no, customerId, status) => {
+    if (status === 401) ctx.invalidateScope(no, customerId);
+    else leaveUnavailableConversation(no, customerId, CONTINUATION_REASSIGNED);
+  }, ctx.loadConversationDetail);
   const pageConversation = messagePages.page?.conversation.id === selectedSummary?.id ? messagePages.page?.conversation : null;
   const selected = selectedSummary ? { ...selectedSummary, ...(pageConversation ?? {}),
     writeState: messagePages.writeState,
@@ -1091,19 +1107,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     return () => { controller.abort(); if (markedRef.current === marker) markedRef.current = ""; };
   }, [selected?.id, selected?.ownerAdminId, selected?.version, readContextsKey, messagePages.readCursor, messagePages.readReady, conversationsAvailable, adminId, authEpoch, readRetry, screen, revokeCustomer]);
   const customerIdOfSelection = selected?.customerId ?? savedSends.find(entry => entry.locator.conversationId === selectedId)?.locator.customerId;
-  const leaveUnavailableConversation = useCallback((no: string, customerId?: string, notice?: string) => {
-    // A denied deep link must stop driving selection before invalidation reloads the inbox.
-    const url = new URL(window.location.href);
-    const linked = url.searchParams.get("conversationNo");
-    if (linked === no || !linked && !url.searchParams.has("customerId")) {
-      url.searchParams.delete("conversationNo");
-      // Keep the inbox clear even if changing the URL remounts the chat.
-      window.history.replaceState({ m3SelectionDismissed: true }, "", url);
-      setScreen("list");
-    }
-    setRestoredId(current => current === no ? "" : current);
-    ctx.invalidateScope(no, customerId, notice);
-  }, [ctx.invalidateScope]);
   useEffect(() => {
     if (qualificationUnknown || !lostAccess && (!selected || selected.ownerAdminId === adminId || canReviewAll)) return;
     const customerId = customerIdOfSelection;

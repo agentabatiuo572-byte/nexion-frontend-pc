@@ -14,7 +14,7 @@ export type M3PagesState = { key: string; page: M3MessagePage | null; messages: 
 const empty = (key: string): M3PagesState => ({ key, page: null, messages: [], hasMore: false, cursor: null, loading: false, error: "", failed: "reset", change: "reset", revision: 0, gap: false });
 
 /** Pages are private to the current identity/customer/assignment and never persisted. */
-export function useM3MessagePages(summary: SessionConvo | null, scope: string, opening: number, onDenied: (no: string, customer?: string) => void, loadDetail: MCtx["loadConversationDetail"]) {
+export function useM3MessagePages(summary: SessionConvo | null, scope: string, opening: number, onDenied: (no: string, customer: string | undefined, status: 401 | 403 | 404) => void, loadDetail: MCtx["loadConversationDetail"]) {
   const key = summary ? `${scope}:${summary.id}:${summary.customerId}:${summary.ownerAdminId}:${summary.assignmentId}:${opening}` : "";
   const keyRef = useRef(key); keyRef.current = key;
   const summaryRef = useRef(summary); summaryRef.current = summary;
@@ -78,8 +78,8 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
     } catch (cause) {
       if (!isCurrent()) return;
       const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
-      if ([401, 403, 404].includes(status)) {
-        setState(empty("")); deniedRef.current(current.id, current.customerId);
+      if (status === 401 || status === 403 || status === 404) {
+        setState(empty("")); deniedRef.current(current.id, current.customerId, status);
       } else setState(previous => ({ ...previous, loading: false, error: displayAdminError(cause), failed: kind }));
     } finally { if (generation === serial.current) controller.current = null; }
   }, []);
