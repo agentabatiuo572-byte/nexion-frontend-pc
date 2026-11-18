@@ -1551,10 +1551,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           sub="基础奖励 × 展示倍率" what="按上面两项算，不是实际发的奖励。" />
         <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
         <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
-        {/* 币种：USDT 跟在金额后；后端给 null 或旧数据没有这项写「币种未知」；认不出的写「币种读不出」，原值放问号的技术信息。 */}
+        {/* 币种：USDT 跟在金额后；后端给 null 或旧数据没有这项写「币种未知」；认不出的写「币种读不出」，原值放问号里。 */}
         <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : promo.targetDailyAsset === "USDT" ? `${text(promo.targetDaily)} USDT` : text(promo.targetDaily)}
           sub={decimalOf(promo.targetDaily) == null || promo.targetDailyAsset === "USDT" ? undefined : promo.targetDailyAsset == null ? "币种未知" : "币种读不出"}
-          note={decimalOf(promo.targetDaily) != null && promo.targetDailyAsset != null && promo.targetDailyAsset !== "USDT" ? `技术信息：币种原值 ${promo.targetDailyAsset}` : undefined} />
+          note={decimalOf(promo.targetDaily) != null && promo.targetDailyAsset != null && promo.targetDailyAsset !== "USDT" ? `页面认不出这个币种，原值 ${promo.targetDailyAsset}` : undefined} />
       </ConfigList>
     </Fold>
   );
