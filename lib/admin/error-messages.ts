@@ -3843,7 +3843,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
  */
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
-function eventLocalizedMissingMessage(data: unknown): string | undefined {
+function eventLocalizedMissingMessage(code: string, data: unknown): string | undefined {
+  if (code !== "EVENT_LOCALIZED_CONTENT_INCOMPLETE" && code !== "EVENT_RULE_INCOMPLETE") return;
   if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
@@ -3874,10 +3875,8 @@ export function formatAdminApiError(
   const raw = (message || fallback || "").trim();
   if (!raw) return "操作失败，请稍后重试。";
 
-  if (raw === "EVENT_LOCALIZED_CONTENT_INCOMPLETE" || raw === "EVENT_RULE_INCOMPLETE") {
-    const localized = eventLocalizedMissingMessage(data);
-    if (localized) return localized;
-  }
+  const localized = eventLocalizedMissingMessage(raw, data);
+  if (localized) return localized;
 
   if (raw.startsWith("J4_EXECUTION_PARTIAL:")) {
     const executionId = raw.split(":")[1] || "未知";
@@ -3957,6 +3956,10 @@ export function displayAdminError(error: unknown): string {
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string") {
     // The monthly-target client has already added the server limit and affected model names.
     if (["MONTHLY_TARGET_POOL_INELIGIBLE", "MONTHLY_TARGET_REWARD_OUT_OF_RANGE"].includes(error.backendMessage) && HAS_CJK_RE.test(error.message)) return error.message;
+    if ("details" in error) {
+      const localized = eventLocalizedMissingMessage(error.backendMessage, error.details);
+      if (localized) return localized;
+    }
     const known = ADMIN_ERROR_MESSAGES[error.backendMessage];
     if (typeof known === "string") return known;
   }
