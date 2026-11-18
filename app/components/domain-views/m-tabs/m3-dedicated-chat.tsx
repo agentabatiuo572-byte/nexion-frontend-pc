@@ -630,8 +630,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const closedReplyTargets = closedReplyCandidates.filter(row => intent === "SERVICE" || selectedClosedIds.has(row.conversationNo)).map(({ conversationNo, throughMessageId }) => ({ conversationNo, throughMessageId }));
   const closedCandidatesReady = (!selected || messagePages.contextReady && messagePages.page?.replyContext.ready === true) && [...selectedClosedIds].every(id => closedReplyCandidates.some(row => row.conversationNo === id));
   const closedCandidateIds = closedReplyCandidates.map(row => row.conversationNo).join("|"), replyContextReady = messagePages.contextReady && messagePages.page?.replyContext.ready === true;
-  // A target someone else cleared would otherwise hold closedCandidatesReady false with nothing on screen to untick.
-  useEffect(() => { if (replyContextReady) setSelectedClosedIds(old => { const offered = new Set(closedCandidateIds.split("|")), next = [...old].filter(id => offered.has(id)); return next.length === old.size ? old : new Set(next); }); }, [closedCandidateIds, replyContextReady]);
   const targetCustomer = selected?.customerId ?? requestedCustomerId;
   const busy = flights.current.has(`${scopeIdentity}:${targetCustomer}`);
   const activeCustomerRef = useRef(targetCustomer);
@@ -697,6 +695,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const logicalSlot = selected?.id ?? (requestedCustomerId ? `first:${requestedCustomerId}` : "");
   const targetKey = logicalSlot && draftAssignment?.assignmentId && draftAssignment.agentAdminId
     ? scopedDraftSlot(logicalSlot, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId) : "";
+  const replyTargetsKey = adminId && targetKey && !qualificationUnknown ? `nexion-m3-reply-targets:${adminId}:${targetKey}` : "";
   const draftSlotRef = useRef(targetKey);
   const failedCopy = failedCopies.find(copy => conversationsAvailable && originalCustomerId(copy, visible) === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
@@ -728,7 +727,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const writeAuthorized = !qualificationUnknown && canWriteM3 && !heldByOther && (selected ? selected.detailReady === true && selected.writeState?.canReply === true && closedCandidatesReady && (canSendTo(selected, adminId) || holdAllowsOther && canSendTo({ ...selected, ownerAdminId: adminId }, adminId)) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.customerId === requestedCustomerId && firstDetail.assignmentId && (firstDetail.agentAdminId === adminId || holdAllowsOther)));
   const retryAuthority = useRef({ writeAuthorized, assignment: draftAssignment?.assignmentId, activeKey });
   retryAuthority.current = { writeAuthorized, assignment: draftAssignment?.assignmentId, activeKey };
-  const writable = writeAuthorized && !recoveryBlocksTarget;
+  const writable = writeAuthorized && !recoveryBlocksTarget && Boolean(replyTargetsKey) && metaTarget === replyTargetsKey;
   // 没有本人客户、没有可分配的客服时入口直接禁用，不打开弹窗再说做不了。读不到不拦，弹窗里有失败和重试。
   // 结果跟着已有的更新走：会话快照、名册变了，或切回这个页面，都重读一次（ST-54）。
   useEffect(() => {
@@ -891,6 +890,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     };
   }, []);
   useEffect(() => {
+    setMetaTarget("");
     setDrafts({}); setDraftOwner(0); setPeerChangedDraft(null); setActionResult(""); setSendError(""); setMaintenanceChosen(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
@@ -923,25 +923,32 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
   }, [drafts, adminId, draftOwner, qualificationUnknown]);
   useEffect(() => {
-    if (qualificationUnknown || !targetKey) return;
-    setMetaTarget("");
+    if (!replyTargetsKey || metaTarget === replyTargetsKey) return;
     try {
-      const saved=JSON.parse(sessionStorage.getItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`)??"{}");
-      setSelectedClosedIds(new Set());
+      const saved = JSON.parse(sessionStorage.getItem(replyTargetsKey) ?? "{}");
+      const ids = Array.isArray(saved.ids) ? saved.ids.filter((id: unknown) => typeof id === "string") : [];
+      setSelectedClosedIds(new Set<string>(ids));
       setIncludeCurrentReply(saved.include===true);
       const urlIntent = new URLSearchParams(window.location.search).get("intent");
       setMaintenanceChosen(urlIntent !== null ? urlIntent === "maintenance" : saved.intent === "MAINTENANCE");
     } catch { setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); }
-    setMetaTarget(targetKey);
-  }, [targetKey, adminId, authEpoch, qualificationUnknown]);
+    setMetaTarget(replyTargetsKey);
+  }, [replyTargetsKey, metaTarget]);
   useEffect(() => {
-    if(!adminId||!targetKey||metaTarget!==targetKey||qualificationUnknown)return;
+    if (!replyTargetsKey || metaTarget !== replyTargetsKey || !replyContextReady) return;
+    const offered = new Set(closedCandidateIds.split("|"));
+    setSelectedClosedIds(previous => {
+      const remaining = [...previous].filter(id => offered.has(id));
+      return remaining.length === previous.size ? previous : new Set(remaining);
+    });
+  }, [replyTargetsKey, metaTarget, replyContextReady, closedCandidateIds]);
+  useEffect(() => {
+    if (!replyTargetsKey || metaTarget !== replyTargetsKey) return;
     try {
-      const key = `nexion-m3-reply-targets:${adminId}:${targetKey}`;
-      if (selectedClosedIds.size || includeCurrentReply || intent === "MAINTENANCE") sessionStorage.setItem(key, JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent}));
-      else sessionStorage.removeItem(key);
+      if (selectedClosedIds.size || includeCurrentReply || intent === "MAINTENANCE") sessionStorage.setItem(replyTargetsKey, JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent}));
+      else sessionStorage.removeItem(replyTargetsKey);
     } catch { setSendError("回复范围无法保存在浏览器里，请在本页核对后操作。"); }
-  }, [targetKey,metaTarget,adminId,selectedClosedIds,includeCurrentReply,intent,qualificationUnknown]);
+  }, [replyTargetsKey, metaTarget, selectedClosedIds, includeCurrentReply, intent]);
   useEffect(()=>{setListLimit(LIST_CHUNK);setArchiveIds(new Set());},[query,listTab,authEpoch]);
   useEffect(() => {
     if (!adminId) return;
@@ -1877,9 +1884,17 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
   };
   const sendTech = (key: string) => <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{key}</span></Fact></Facts></Fold>;
+  const isRedacted = (entry: SavedSend) => entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey);
+  const lookupReason = scopeDenied ? "当前账号看不到客户会话。" : qualificationUnknown ? "暂时读不到你能看的客户范围，请重试。" : "读不到会话。";
+  const pendingHelp = [
+    "发出后没收到明确结果的消息，查清前不能再给同一位客户发。",
+    recoveries.some(entry => entry.first || entry.reply) && `「只能查询结果」：${lookupReason}`,
+    recoveries.some(isRedacted) && "「已不能接待，只能查询结果」：客户被转走或你的权限变了，原文和图片已从本机清除，只能查有没有发出，不能重发。",
+    `时间为${zoneLabel}。`,
+  ].filter(Boolean).join("");
   const pendingItems: RecoveryItem[] = [
     ...recoveries.map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt, object: customerLabel(originalCustomer(entry.locator)), tag: null,
-      line: entry.first || entry.reply ? "只能查询结果" : entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
+      line: entry.first || entry.reply ? "只能查询结果" : isRedacted(entry) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
       actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原结果</Button> })),
     ...otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
@@ -1988,7 +2003,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           {archiveMode && <div className="m3s-batch"><span role="status">已选 {archiveIds.size} 位客户</span><Button size="sm" disabled={!archiveIds.size || actionChecking} onClick={() => void archiveBatch()}>归档已选 {archiveIds.size}</Button><Button size="sm" variant="ghost" onClick={() => { setArchiveMode(false); setArchiveIds(new Set()); }}>取消</Button></div>}
         </header>
         {pendingItems.length > 0 && <div className="m3s-pending"><RecoveryPanel label="发送结果未知的消息" title={`${pendingItems.length} 条消息发送结果未知`} explainLabel="这些消息怎么处理"
-            explain={`发出后没收到明确结果的消息，查清前不能再给同一位客户发。「只能查询」：客户被转走或你的权限变了，原文和图片已从本机清除，只能查有没有发出，不能重发。时间为${zoneLabel}。`} items={pendingItems} /></div>}
+            explain={pendingHelp} items={pendingItems} /></div>}
         {recoveryError && <div className="m3s-pending"><Notice tone={recoveryError.startsWith("查到了") ? "neutral" : "warn"} action={<Button size="sm" onClick={() => setRecoveryError("")}>知道了</Button>}>{recoveryError}</Notice></div>}
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
           {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}
