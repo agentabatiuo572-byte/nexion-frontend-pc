@@ -1292,13 +1292,14 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
   const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type !== "ai" && conv.status === "open");
-  const [draftScope, setDraftScope] = useState<{ revision: number; assignmentId: string } | null>(null);
+  const [draftScope, setDraftScope] = useState<{ revision: number | null; assignmentId: string } | null>(null);
   const closedDockKeys = failedDraftCopies.list().filter(copy => copy.source === "dock" && copy.conversationId === lastId && copy.commandOwnerId === currentAdminId).map(copy => copy.commandKey).join("|");
   const assignmentId = draftScope?.revision === snapshotRevision ? draftScope.assignmentId : undefined;
   useEffect(() => {
     if (hidden || !open || !owned || !conv?.customerId) return;
     const controller = new AbortController();
-    setDraftScope(null);
+    // Hide the draft during revalidation without invalidating a send for the same assignment.
+    setDraftScope(previous => previous && { ...previous, revision: null });
     supportClient.customerDetail(conv.customerId, controller.signal).then(detail => {
       if (controller.signal.aborted) return;
       if (detail.customerId !== conv.customerId || detail.agentAdminId !== currentAdminId || !detail.assignmentId) {
@@ -1349,6 +1350,15 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
     } else setDraft("");
   }, [draftKey, owned, newSendBlocked]);
   useLayoutEffect(() => {
+    const restored = (event: Event) => {
+      const copy = (event as CustomEvent<{ key: string; body: string }>).detail;
+      if (copy.key === draftKey) setDraft(copy.body);
+    };
+    window.addEventListener("dock-draft-restored", restored);
+    return () => window.removeEventListener("dock-draft-restored", restored);
+  }, [draftKey]);
+  const lastAssignmentId = draftScope?.assignmentId;
+  useLayoutEffect(() => {
     sendInFlight.current = false;
     setSending(false);
     setSendError("");
@@ -1358,27 +1368,21 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
       identityGeneration.current++;
       setDraft("");
     };
-    const restored = (event: Event) => {
-      const copy = (event as CustomEvent<{ key: string; body: string }>).detail;
-      if (copy.key === draftKey) setDraft(copy.body);
-    };
     const assignmentChanged = (event: Event) => {
       const target = (event as CustomEvent<{ customerId?: string; cleared: ReturnType<typeof redactCustomerSends> }>).detail;
-      if (target.customerId === conv?.customerId && target.cleared.assignmentId === assignmentId) {
+      if (target.customerId === conv?.customerId && target.cleared.assignmentId === lastAssignmentId) {
         identityGeneration.current++;
         setDraftScope(null); setDraft(""); setDetailRetry(value => value + 1);
       }
     };
     window.addEventListener("m3-assignment-invalidated", assignmentChanged);
-    window.addEventListener("dock-draft-restored", restored);
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => {
-      window.removeEventListener("dock-draft-restored", restored);
       window.removeEventListener("m3-assignment-invalidated", assignmentChanged);
       identityGeneration.current++;
       window.removeEventListener("support-scope-invalidated", invalidate);
     };
-  }, [draftKey, owned, lastId, conv?.customerId]);
+  }, [lastAssignmentId, owned, lastId, conv?.customerId]);
 
   const loadConversationDetail = ctx.loadConversationDetail;
   useEffect(() => {
