@@ -5,6 +5,8 @@
  * 表单的值、默认值和校验照搬共用确认框的 course-authoring、localized-copy（design-kit 的
  * initialBusinessValue、missingBusinessFields），提交时交给 i6-i18n 里原来的 coursePayload 拼请求，请求不变。
  */
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy, mapSingleContentText, trimStoredContent } from "@/lib/admin/content-language-rules";
+import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BookOpen, CircleSlash, EyeOff, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
@@ -107,15 +109,39 @@ export function courseFormState(spec: CourseSpec): CourseForm {
   return state;
 }
 
+function courseCopyKeys(form: CourseForm, lang: Lang) {
+  const suffix = LANG_FIELD[lang];
+  return [`title${suffix}`, `body${suffix}`, ...Array.from({ length: Number(form.quizCount || 0) }, (_, question) => [
+    `quiz.${question}.question${suffix}`,
+    ...Array.from({ length: Number(form[`quiz.${question}.optionCount`] || 0) }, (_, option) => `quiz.${question}.option.${option}.${lang}`),
+  ]).flat()];
+}
+
+function courseCopyGroup(form: CourseForm, lang: Lang) {
+  return { values: courseCopyKeys(form, lang).map(key => i6HasCopyText(form[key] ?? "") ? form[key] : "") };
+}
+
+export function mapCourseLanguages(form: CourseForm, required: readonly OperatingLanguageCode[], mode: "edit" | "submit"): CourseForm {
+  const transform = mode === "edit" ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  const english = courseCopyGroup(form, "en");
+  const mapped = { ...form };
+  for (const lang of ["zh", "vi"] as const) {
+    const { values } = transform(required, lang, english, courseCopyGroup(form, lang));
+    courseCopyKeys(form, lang).forEach((key, index) => { mapped[key] = values[index]; });
+  }
+  return mapped;
+}
+
 type Missing = { key: string; text: string; need?: boolean };
 /** 和共用表单 course-authoring 的校验一字不差（design-kit missingBusinessFields），每项带上字段键，好把错误写在框下。 */
 export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[] {
   const missing: Missing[] = [];
-  const needs = (key: string, text: string) => { if (!state[key]?.trim()) missing.push({ key, text, need: true }); };
+  const needs = (key: string, text: string) => { if (!i6HasCopyText(state[key] ?? "")) missing.push({ key, text, need: true }); };
   const NAMES: Record<string, string> = { slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英语标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英语正文", bodyVi: "越南语正文" };
   Object.keys(NAMES).forEach((key) => needs(key, NAMES[key]));
   for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
-    if ((state[key] ?? "").trim().length > 1024) missing.push({ key, text: `${NAMES[key]}最多 1024 字` });
+    const limit = key === "titleZh" ? 128 : 1024;
+    if (trimStoredContent(state[key] ?? "").length > limit) missing.push({ key, text: `${NAMES[key]}最多 ${limit} 字` });
   }
   if (spec.mode === "version-create" || spec.mode === "version-edit") {
     needs("version", "课程版本号");
@@ -150,14 +176,18 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
 }
 
 /** 和共用表单 localized-copy 的校验一致：三语都要填，原有的变量三语都要带上。 */
-export function copyFormMissing(placeholders: readonly string[], state: Record<Lang, string>): Missing[] {
+export function copyFormMissing(placeholders: readonly string[], input: Record<Lang, string>, required: readonly OperatingLanguageCode[]): Missing[] {
+  const state = mapSingleContentText(input, required, "submit");
   const missing: Missing[] = [];
   if (!i6HasCopyText(state.zh)) missing.push({ key: "zh", text: "中文", need: true });
   if (!i6HasCopyText(state.en)) missing.push({ key: "en", text: "英语", need: true });
   if (!i6HasCopyText(state.vi)) missing.push({ key: "vi", text: "越南语", need: true });
   placeholders.forEach((ph) => {
-    if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push({ key: `ph:${ph}`, text: `变量 ${ph}` });
+    if (!state.zh.includes(ph) || !state.en.includes(ph) || !state.vi.includes(ph)) missing.push({ key: `ph:${ph}`, text: `变量 ${ph}` });
   });
+  for (const { key, label } of LANGS) {
+    if (trimStoredContent(state[key]).length > 1024) missing.push({ key, text: `${label}最多 1024 字` });
+  }
   return missing;
 }
 
@@ -219,9 +249,10 @@ const EDITOR_TABS: readonly { value: EditorTab; label: string }[] = [
 const TAB_OF = (key: string): EditorTab => key.startsWith("quiz.") || ["quizCount", "passScore", "retries", "completionCond", "rewardEvent"].includes(key) ? "quiz"
   : ["slug", "version", "category", "format", "difficulty", "duration", "reward"].includes(key) ? "settings" : "body";
 
-export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: {
+export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, onClose, onSave }: {
   open: boolean;
   spec: CourseSpec | null;
+  requiredLanguages: readonly OperatingLanguageCode[];
   title: string;
   sub?: ReactNode;
   busy?: boolean;
@@ -236,27 +267,22 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
   const specKey = spec ? `${spec.mode}:${spec.current?.slug ?? ""}:${spec.current?.version ?? ""}` : "";
   useEffect(() => {
     if (!spec) return;
-    setForm(courseFormState(spec));
+    setForm(mapCourseLanguages(courseFormState(spec), requiredLanguages, "edit"));
     setTab("body");
     setLang("zh");
     setTried(false);
     // 换了编辑对象才重置；同一对象的 spec 引用变化不清掉已填内容。
   }, [specKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const missing = useMemo(() => spec ? courseFormMissing(spec, form) : [], [spec, form]);
+  const completed = useMemo(() => mapCourseLanguages(form, requiredLanguages, "submit"), [form, requiredLanguages]);
+  const missing = useMemo(() => spec ? courseFormMissing(spec, completed) : [], [spec, completed]);
   if (!spec) return null;
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const err = (key: string) => { const item = tried ? missing.find((row) => row.key === key) : undefined; return item ? (item.need ? `请填${item.text}` : item.text) : undefined; };
   const quizCount = Math.max(1, Number(form.quizCount || 1));
-  const langMissing = (code: Lang) => {
-    const F = LANG_FIELD[code];
-    if (!form[`title${F}`]?.trim() || !form[`body${F}`]?.trim()) return true;
-    for (let q = 0; q < quizCount; q += 1) {
-      if (!form[`quiz.${q}.question${F}`]?.trim()) return true;
-      const count = Math.max(2, Number(form[`quiz.${q}.optionCount`] || 2));
-      for (let o = 0; o < count; o += 1) if (!form[`quiz.${q}.option.${o}.${code}`]?.trim()) return true;
-    }
-    return false;
-  };
+  const langMissing = (code: Lang) => courseCopyGroup(completed, code).values.some(value => !value);
+  const required = requiredLanguages.includes(lang);
+  const copyHint = lang !== "en" && required && isEnglishCopy(courseCopyGroup(form, "en"), courseCopyGroup(form, lang))
+    ? englishCopyHint(lang) : undefined;
   const tabMissing = (value: EditorTab) => missing.filter((item) => TAB_OF(item.key) === value).length;
   const F = LANG_FIELD[lang];
   const langLabel = LANGS.find((item) => item.key === lang)!.label;
@@ -302,10 +328,10 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
                 items={LANGS.map((item) => ({ value: item.key, label: item.label, missing: langMissing(item.key) }))} />
             </div>}
             {tab === "body" && <>
-              <Field label={`${langLabel}标题`} required error={err(`title${F}`)}>
+              <Field label={`${langLabel}标题`} required={required} error={err(`title${F}`)}>
                 <Input value={form[`title${F}`] ?? ""} maxLength={1024} onChange={(event) => set(`title${F}`, event.target.value)} />
               </Field>
-              <Field label={`${langLabel}正文`} required error={err(`body${F}`)}>
+              <Field label={`${langLabel}正文`} required={required} help={copyHint} error={err(`body${F}`)}>
                 <Textarea rows={8} value={form[`body${F}`] ?? ""} maxLength={1024} count={`${(form[`body${F}`] ?? "").length}/1024`} onChange={(event) => set(`body${F}`, event.target.value)} />
               </Field>
             </>}
@@ -319,7 +345,7 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
                     <Field label="题目标识" required error={err(`quiz.${q}.id`)}>
                       <Input value={form[`quiz.${q}.id`] ?? ""} onChange={(event) => set(`quiz.${q}.id`, event.target.value)} />
                     </Field>
-                    <Field label={`${langLabel}题干`} required error={err(`quiz.${q}.question${F}`)}>
+                    <Field label={`${langLabel}题干`} required={required} error={err(`quiz.${q}.question${F}`)}>
                       <Input value={form[`quiz.${q}.question${F}`] ?? ""} onChange={(event) => set(`quiz.${q}.question${F}`, event.target.value)} />
                     </Field>
                   </div>
@@ -389,7 +415,7 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
             </>}
           </div>
         </div>
-        <AppCoursePreview lang={lang} title={form[`title${F}`] ?? ""} body={form[`body${F}`] ?? ""} category={form.category ?? ""} format={form.format ?? ""}
+        <AppCoursePreview lang={lang} title={completed[`title${F}`] ?? ""} body={completed[`body${F}`] ?? ""} category={form.category ?? ""} format={form.format ?? ""}
           level={form.difficulty ?? ""} duration={form.duration ?? ""} reward={form.reward ?? ""} quizCount={quizCount} passScore={form.passScore ?? ""} retries={form.retries ?? ""}
           caption="App 里大致的样子，跟着上面选的语言变" />
       </div>

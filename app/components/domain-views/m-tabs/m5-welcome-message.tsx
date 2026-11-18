@@ -1,5 +1,7 @@
 "use client";
 
+import { englishCopyHint, isEnglishCopy, mapSingleContentText } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useEffect, useRef, useState } from "react";
 import { m5ManagementClient, supportWelcomeMessageClient, isIndeterminateSupportError, type SupportWelcomeLanguage, type SupportWelcomeMessage, type SupportWelcomeTexts } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib/admin/business-time";
@@ -15,7 +17,8 @@ import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use
 import type { MSupportPermission } from "./m5-service-rules";
 
 type WelcomePayload = Parameters<typeof supportWelcomeMessageClient.update>[0];
-type WelcomePendingRecord = M5ManagementRecord<WelcomePayload, SupportWelcomeMessage>;
+type WelcomeBefore = SupportWelcomeMessage & { editedTexts?: Partial<SupportWelcomeTexts> };
+type WelcomePendingRecord = M5ManagementRecord<WelcomePayload, WelcomeBefore>;
 const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({ storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && isM5ManagementPayload("welcome", row.payload) && (row.before === undefined || isM5ManagementPayload("welcome", row.before, true)) });
 const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "英语" }, { key: "vi", label: "越南语" }];
 const MAX = 500;
@@ -27,7 +30,7 @@ const codePointLength = (value: string) => Array.from(value.trim()).length;
 
 function textProblem(text: string): string {
   const length = codePointLength(text);
-  if (length === 0) return "不能为空";
+  if (length === 0 || !/[^\s\u001c-\u001f]/u.test(text)) return "不能为空";
   if (length > MAX) return `超出 ${length - MAX} 字，最多 ${MAX} 字`;
   return "";
 }
@@ -43,6 +46,8 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const canWrite = permission === "superadmin" && Boolean(authorities?.includes("service_m1_write"));
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  const [checkingLanguages, setCheckingLanguages] = useState(false);
   const [current, setCurrent] = useState<SupportWelcomeMessage | null>(null);
   const [draft, setDraft] = useState<SupportWelcomeTexts | null>(null);
   const [latest, setLatest] = useState<SupportWelcomeMessage | null>(null);
@@ -55,40 +60,54 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const [reason, setReason] = useState("");
   // expiresAt = the original record's 24h limit: after it the key may no longer be replayed, only looked up.
   const [reload, setReload] = useState(0);
-  const preserveDraft = useRef(false);
+  const refused = useRef<{ actor: string; attempted: SupportWelcomeTexts; before?: WelcomeBefore } | undefined>(undefined);
   const [lang, setLang] = useState<SupportWelcomeLanguage>("zh");
   const command = useM5ManagementCommand({
     store: welcomeCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
     fingerprint: fingerprintOf, write: m5ManagementClient.welcome, query: m5ManagementClient.welcomeCommand,
-    onSuccess: () => { preserveDraft.current = false; setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
-    onRefusal: (cause, recovered, payload) => {
+    onSuccess: () => { refused.current = undefined; setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
+    onRefusal: (cause, recovered, payload, before) => {
       setError(errorText(cause));
-      if (recovered) { preserveDraft.current = true; setDraft(payload.texts); setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); }
+      if (recovered) {
+        refused.current = { actor: actorStamp(), attempted: payload.texts, before };
+        setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1);
+      }
       else if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "SUPPORT_WELCOME_VERSION_CONFLICT") {
         setConflict(true); setConfirm(false); void refreshLatest();
       }
     },
   });
-  const saving = command.busy;
+  const saving = command.busy || checkingLanguages;
   const retry = command.pending ? { ...command.pending, key: command.pending.commandKey } : null;
 
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    supportWelcomeMessageClient.read(controller.signal).then((value) => {
+    Promise.all([supportWelcomeMessageClient.read(controller.signal), getRequiredContentLanguages()]).then(([value, required]) => {
       if (controller.signal.aborted) return;
       const pending = welcomeCommands.list().find((row) => row.actorId === adminId);
-      setCurrent(value); setDraft(old => pending ? pending.payload.texts : preserveDraft.current && old ? old : value.texts); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
-      setReason(old => pending?.payload.reason ?? (preserveDraft.current ? old : ""));
+      const rejected = refused.current?.actor === actorStamp() ? refused.current : undefined;
+      setRequiredLanguages(required);
+      if (rejected && !rejected.before?.editedTexts) {
+        setCurrent(rejected.before ?? value); setDraft(rejected.attempted); setLatest(value); setConflict(true);
+      } else {
+        refused.current = undefined;
+        setCurrent(value);
+        setDraft(pending?.payload.texts ?? { ...mapSingleContentText(value.texts, required, "edit"), ...rejected?.before?.editedTexts });
+        setLatest(null); setConflict(false);
+      }
+      setError(""); setReadUnavailable(false);
+      setReason(pending?.payload.reason ?? "");
     }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [permission, reload, adminId]);
 
-  const problems = draft ? LANGUAGES.map(({ key }) => textProblem(draft[key])) : [];
-  const valid = Boolean(draft) && problems.every((problem) => !problem);
-  const changed = current && draft ? changedLanguages(current.texts, draft) : [];
+  const submittedTexts = draft && mapSingleContentText(draft, requiredLanguages, "submit");
+  const problems = submittedTexts ? LANGUAGES.map(({ key }) => textProblem(submittedTexts[key])) : [];
+  const valid = Boolean(submittedTexts) && problems.every((problem) => !problem);
+  const changed = current && submittedTexts ? changedLanguages(current.texts, submittedTexts) : [];
   const editable = canWrite && Boolean(current) && !loading && !readUnavailable && !saving && !conflict && !retry;
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canConfirm = editable && valid && changed.length > 0 && reasonOk;
@@ -97,16 +116,29 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     if (saving) return;
     if (retry) { await command.run("replay"); return; }
     if (!canConfirm || !current || !draft) return;
-    setSaved(false);
-    await command.run("submit", { expectedVersion: current.version, texts: { zh: draft.zh.trim(), en: draft.en.trim(), vi: draft.vi.trim() }, reason: reason.trim() }, current);
+    setCheckingLanguages(true);
+    try {
+      const required = await getRequiredContentLanguages();
+      setRequiredLanguages(required);
+      const texts = mapSingleContentText({ en: draft.en.trim(), zh: draft.zh.trim(), vi: draft.vi.trim() }, required, "submit");
+      if (Object.values(texts).some(textProblem)) {
+        setError("内容未通过校验：请检查英文和必填语言是否已填、每种语言不超过 500 字，以及修改理由，再提交。");
+        return;
+      }
+      setSaved(false);
+      const edited = changedLanguages(mapSingleContentText(current.texts, requiredLanguages, "edit"), draft);
+      const editedTexts = Object.fromEntries(edited.map(key => [key, draft[key]])) as Partial<SupportWelcomeTexts>;
+      await command.run("submit", { expectedVersion: current.version, texts, reason: reason.trim() }, { ...current, editedTexts });
+    } finally { setCheckingLanguages(false); }
   }
 
   // Keep the languages this operator edited; take every other language from the latest saved version.
   function reviewLatest() {
     if (!latest || !current || !draft) return;
-    const edited = changedLanguages(current.texts, draft);
-    const next = { ...latest.texts };
+    const edited = refused.current ? [] : changedLanguages(mapSingleContentText(current.texts, requiredLanguages, "edit"), draft);
+    const next = mapSingleContentText(latest.texts, requiredLanguages, "edit");
     for (const key of edited) next[key] = draft[key];
+    refused.current = undefined;
     setCurrent(latest); setDraft(next); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
   }
 
@@ -158,10 +190,13 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         {current && shownTexts && !(readUnavailable && !retry) && <div className="m5-welcome-body">
           <div className="m5-welcome-edit">
             <LocaleTabs label="欢迎语语言" value={lang} onChange={setLang}
-              items={LANGUAGES.map(({ key, label }) => ({ value: key, label: (draft && current.texts[key] !== draft[key].trim()) ? <>{label} · 已改</> : label, missing: !shownTexts[key].trim() }))} />
+              items={LANGUAGES.map(({ key, label }) => ({ value: key, label: (changed.includes(key)) ? <>{label} · 已改</> : label, missing: retry ? !shownTexts[key].trim() : !!problems[LANGUAGES.findIndex(item => item.key === key)] }))} />
             {LANGUAGES.filter(({ key }) => key === lang).map(({ key, label }) => {
               const problem = draft ? problems[LANGUAGES.findIndex((item) => item.key === key)] : "";
-              return <Field key={key} label={`${label}欢迎语`} hint="最多 500 字" error={problem || undefined}>
+              const required = requiredLanguages.includes(key) || !!retry;
+              const hint = key !== "en" && required && !retry && isEnglishCopy({ text: shownTexts.en }, { text: shownTexts[key] })
+                ? englishCopyHint(key) : undefined;
+              return <Field key={key} label={`${label}欢迎语`} required={required} hint="最多 500 字" help={hint} error={problem || undefined}>
                 {(control) => <Textarea {...control} className="m5-welcome-text" rows={6} value={shownTexts[key]} disabled={!editable} count={`${codePointLength(shownTexts[key])}/${MAX}`}
                   onChange={(event) => { const value = event.target.value; setDraft((old) => old ? { ...old, [key]: value } : old); setSaved(false); }} />}
               </Field>;
@@ -176,7 +211,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
             <div className="m5-phone-head">用户在客服对话里看到的样子<Explain label="预览怎么看" content="只示意内容和顺序，字号、头像以 App 为准。有专属客服的显示这位客服的名字和头像，还没有的显示「待分配」。" side="top" align="start" /></div>
             <div className="m5-phone">
               <div className="m5-phone-bar">专属客服 · {langLabel}</div>
-              {draft && current.texts[lang] !== draft[lang].trim()
+              {submittedTexts && changed.includes(lang)
                 ? <>
                   <div className="m5-bubble" data-old=""><span className="m5-bubble-tag">现在线上</span>{current.texts[lang]}</div>
                   <div className="m5-bubble" data-user-content=""><span className="m5-bubble-tag" data-new="">保存后</span>{draft[lang].trim() || <span className="m5-bubble-empty">还没有内容</span>}</div>
@@ -194,7 +229,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         {draft && current && permission === "superadmin" && !(readUnavailable && !retry) && <div className="rd-toolbar" data-end="">
           <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : changed.length > 0 ? `改了${changed.map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、")}，还没保存` : "没有改动"}</span>
           <Button variant="primary" icon={<Save size={14} aria-hidden />} disabled={retry ? false : !editable || !valid || changed.length === 0}
-            disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !valid ? "有一种语言是空的或超过 500 字" : undefined}
+            disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !valid ? "内容未通过校验：请检查英文和必填语言是否已填、每种语言不超过 500 字，以及修改理由，再提交。" : undefined}
             onClick={() => retry ? restore() : setConfirm(true)}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
         </div>}
       </Panel>
@@ -209,7 +244,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           {(retry ? retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key) : changed).map((key) => <div key={key} className="m5-wdiff-row">
             <div className="m5-wdiff-lang">{LANGUAGES.find((item) => item.key === key)?.label}</div>
             <div className="m5-wdiff-text" data-user-content=""><span className="m5-bubble-tag">现在线上</span>{retry && !retry.before ? "—" : original.texts[key]}</div>
-            <div className="m5-wdiff-text" data-new="" data-user-content=""><span className="m5-bubble-tag" data-new="">保存后</span>{(retry ? retry.payload.texts : draft)[key].trim()}</div>
+            <div className="m5-wdiff-text" data-new="" data-user-content=""><span className="m5-bubble-tag" data-new="">保存后</span>{(retry?.payload.texts ?? submittedTexts)?.[key].trim()}</div>
           </div>)}
         </div>
         <Facts>

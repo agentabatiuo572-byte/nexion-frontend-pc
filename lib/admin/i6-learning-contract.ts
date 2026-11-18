@@ -22,6 +22,9 @@ function object(value: unknown): Record<string, unknown> {
 function list(value: unknown): unknown[] { if (!Array.isArray(value)) invalid(); return value; }
 function strings(value: unknown) { if (!list(value).every(item => typeof item === "string")) invalid(); }
 function texts(row: Record<string, unknown>, keys: string[]) { if (!keys.every(key => typeof row[key] === "string")) invalid(); }
+function translations(value: unknown) {
+  if (value != null && !Object.values(object(value)).every(text => typeof text === "string")) invalid();
+}
 function natural(value: unknown) { if (!Number.isSafeInteger(value) || Number(value) < 0) invalid(); }
 function reward(value: unknown) {
   // Nullable DTO values stay missing; repository-produced zero remains the server's zero.
@@ -48,6 +51,8 @@ function quiz(value: unknown) {
     strings(row.optionsZh); strings(row.optionsEn);
     if (row.questionVi != null && typeof row.questionVi !== "string") invalid();
     if (row.optionsVi != null) strings(row.optionsVi);
+    translations(row.questionTranslations);
+    if (row.optionTranslations != null) Object.values(object(row.optionTranslations)).forEach(strings);
     natural(row.correctOptionIndex);
   }
 }
@@ -75,6 +80,7 @@ export function parseI6Course(value: unknown): LearningCourseView {
   const row = object(value);
   texts(row, ["id", "title", "category", "format", "level", "duration", "version", "status", "body", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]);
   row.rewardNex = reward(row.rewardNex); natural(row.revision); quiz(row.quizQuestions);
+  translations(row.titleTranslations); translations(row.bodyTranslations);
   if (typeof row.featured !== "boolean") invalid();
   for (const key of ["passScore", "retryLimit"]) if (row[key] != null) natural(row[key]);
   for (const key of ["completionCondition", "rewardEvent"]) if (row[key] != null && typeof row[key] !== "string") invalid();
@@ -89,6 +95,7 @@ export function parseI6CourseVersion(value: unknown): LearningCourseVersionView 
   const payload = object(row.payload);
   texts(payload, ["titleZh", "titleEn", "bodyZh", "bodyEn", "category", "format", "difficulty", "duration", "publishState"]);
   for (const key of ["titleVi", "bodyVi", "completionCondition", "rewardEvent", "version"]) if (payload[key] != null && typeof payload[key] !== "string") invalid();
+  translations(payload.titleTranslations); translations(payload.bodyTranslations);
   payload.rewardNex = reward(payload.rewardNex);
   if (payload.quizQuestions != null) quiz(payload.quizQuestions);
   for (const key of ["passScore", "retryLimit", "expectedRevision"]) if (payload[key] != null) natural(payload[key]);

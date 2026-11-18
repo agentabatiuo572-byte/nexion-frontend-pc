@@ -1,5 +1,6 @@
 "use client";
 
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -50,9 +51,10 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   }
 }
 
-export default function H4EventRules({ ctx, eventContent, contentRefresh, onRowsChange, onApprovalCompleted }: {
+export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted }: {
   ctx: HCtx;
   eventContent?: Record<string, EventLocalizedContent>;
+  requiredLanguages?: readonly OperatingLanguageCode[];
   contentRefresh?: number;
   onApprovalCompleted?: () => Promise<void>;
   onRowsChange?: (rows: EventRuleView[] | null) => void;
@@ -160,7 +162,10 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
           if (!original) {
             assertH4Fresh("rules", readVersion);
             if (firstOpen) {
-              const readiness = eventRuleReadiness(base, eventContent);
+              const [latest, required] = await Promise.all([fetchEventRules(), getRequiredContentLanguages()]);
+              const current = latest.find(row => row.eventCode === base.eventCode);
+              if (!current || current.revision !== base.revision || current.enabled !== base.enabled) throw new Error("EVENT_RULE_STALE");
+              const readiness = eventRuleReadiness(current, eventContent, required);
               const missing = readiness.missing.filter(key => key.startsWith("localized."));
               if (missing.length || readiness.incomplete?.length) {
                 throw new Error(formatAdminApiError("EVENT_RULE_INCOMPLETE", "", "write", { missing, incomplete: readiness.incomplete }));
@@ -247,7 +252,7 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
     const saved = savedUnread;
     const lockedForm = !canWrite || saving || saved || h4Blocked(`H/h4_event_rule/${selected.eventCode}`) || !!review;
     const showSaved = saved && (!error || readFailed);
-    const readiness = eventRuleReadiness(selected, eventContent);
+    const readiness = eventRuleReadiness(selected, eventContent, requiredLanguages);
     const enableBlocked = !readiness.ready ? `还没就绪，${readinessGapParts(readiness).join("；")}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
     return <div className="h4-dialog-body">
       {review && <H4ConflictCompare groups={compareGroups} onMerge={mergeConflict} onKeepMine={keepMine} />}
@@ -318,7 +323,7 @@ export default function H4EventRules({ ctx, eventContent, contentRefresh, onRows
       : !rows.length ? <BlockState state="empty" title="暂无活动规则" />
       : <div className="h4-cards">{rows.map(row => {
         const supported = !!EVENT_KIND_LABELS[row.kind];
-        const readiness = eventRuleReadiness(row, eventContent);
+        const readiness = eventRuleReadiness(row, eventContent, requiredLanguages);
         const lack = readinessLacks(readiness);
         return <article key={row.eventCode} className="h4-card h4l-play" aria-label={`${EVENT_KIND_LABELS[row.kind] ?? "其他活动"} · ${row.eventCode}`} data-dim={!supported || ended(row) ? "" : undefined}>
           <header className="h4-card-head">

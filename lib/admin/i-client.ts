@@ -1,3 +1,4 @@
+import { trimStoredContent } from "@/lib/admin/content-language-rules";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -65,8 +66,9 @@ export type I6CommandSnapshot = {
   featuredCourse?: LearningCourseView;
   stats?: I18nLearningStats;
 };
-type IContentPending = PendingMutationRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
-export type I1Command = PendingMutationRecord & {
+type ContentWriteRecord = PendingMutationRecord & { readbackReceipt?: { data: unknown } };
+type IContentPending = ContentWriteRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
+export type I1Command = ContentWriteRecord & {
   original?: I1Original;
   label: string;
   target: string;
@@ -81,7 +83,14 @@ const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/)|trust-disclosure\/trust-sections\/|i18n-learning\/)/.test(row.fingerprint),
 });
 
-export type I6Command = PendingMutationRecord & {
+function rememberContentReadback(command: ContentWriteRecord, data: unknown) {
+  const record = uncertainCommandKeys.list().find(row => row.commandKey === command.commandKey && row.fingerprint === command.fingerprint);
+  if (record && !record.readbackReceipt) {
+    uncertainCommandKeys.remember(record.fingerprint, record.commandKey, { ...record, readbackReceipt: { data } });
+  }
+}
+
+export type I6Command = ContentWriteRecord & {
   original?: I1Original;
   scope: string;
   operation: string;
@@ -185,10 +194,53 @@ export function i6RetryPermission(command: I6Command): string | undefined {
   return undefined;
 }
 
+function localizedFieldsMatch(saved: Record<string, unknown>, submitted: Record<string, unknown>, fields: readonly string[]) {
+  return fields.every(field => typeof submitted[field] === "string" && saved[field] === trimStoredContent(submitted[field]));
+}
+
+function learningCopyMatches(saved: Record<string, unknown>, submitted: Record<string, unknown>, standalone: boolean) {
+  if (!localizedFieldsMatch(saved, submitted, ["titleEn", "titleZh", "titleVi", "bodyEn", "bodyZh", "bodyVi"])) return false;
+  const duration = String(submitted.duration ?? "5 min").trim();
+  if (saved.category !== submitted.category || saved.format !== submitted.format
+    || (standalone ? saved.level : saved.difficulty) !== submitted.difficulty
+    || saved.duration !== (standalone ? `${Number(duration.replace(/[^0-9]/g, "") || "5")} min` : duration)
+    || saved.rewardNex === null || Number(saved.rewardNex) !== Number(submitted.rewardNex)
+    || saved.passScore !== submitted.passScore || saved.retryLimit !== submitted.retryLimit
+    || (saved.completionCondition ?? "") !== String(submitted.completionCondition ?? "").trim()
+    || (saved.rewardEvent ?? "") !== String(submitted.rewardEvent ?? "").trim()) return false;
+  const questions = saved.quizQuestions as LearningQuizQuestionView[] | undefined;
+  const expected = submitted.quizQuestions as LearningQuizQuestionView[] | undefined;
+  return !!questions && !!expected && questions.length === expected.length && expected.every((question, index) => {
+    const row = questions[index];
+    return row.questionId === trimStoredContent(question.questionId) && row.correctOptionIndex === question.correctOptionIndex
+      && (["En", "Zh", "Vi"] as const).every(locale => {
+        const input = question[`options${locale}`], actual = row[`options${locale}`];
+        return row[`question${locale}`] === trimStoredContent(question[`question${locale}`] ?? "")
+          && !!input && !!actual && actual.length === input.length
+          && actual.every((value, optionIndex) => value === trimStoredContent(input[optionIndex]));
+      });
+  });
+}
+
+async function i6DeletionMatches(command: I6Command) {
+  if (command.operation === "course-delete") {
+    const { courses } = await fetchI6LearningOverview();
+    return courses.every(course => course.id !== command.target);
+  }
+  const versions = await iContentActions.fetchI7CourseVersions(command.target);
+  return versions.every(row => row.courseId === command.target && row.version !== command.version);
+}
+
 async function sendI6Command(command: I6Command, retry: boolean): Promise<unknown> {
   const uncertain = (message: string) => Object.assign(new OutcomeUnknownError(message), { commandKey: command.commandKey });
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (command.original?.owner !== useAdminAuth.getState().session?.adminId) throw new Error("登录身份已变更，请重新打开页面。");
+  const deletion = command.operation === "course-delete" || command.operation === "version-delete";
+  if (deletion && command.readbackReceipt?.data === null) {
+    if (!await i6DeletionMatches(command).catch(() => false)) throw uncertain("CONTENT_DRAFT_DELETION_NOT_CONFIRMED");
+    uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+    return null;
+  }
   const permission = i6RetryPermission(command);
   if (permission) throw new Error(permission);
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
@@ -219,20 +271,33 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
       valid = message.messageKey === command.target
         && message.status === (command.operation === "message-draft" ? "draft" : command.operation === "message-archive" ? "archived" : "published")
         && message.version === (["message-draft", "message-rollback"].includes(command.operation) ? next : expected);
+      if (valid && ["message-draft", "message-publish"].includes(command.operation)) {
+        valid = localizedFieldsMatch(message, command.input, ["en", "zh", "vi"]);
+      } else if (valid && command.operation === "message-rollback" && command.snapshot?.messageVersion) {
+        valid = localizedFieldsMatch(message, command.snapshot.messageVersion, ["en", "zh", "vi"]);
+      }
     } else if (command.operation === "integrity-fix") {
       const issue = parseI6Issue(payload.data);
       valid = issue.code === decodeURIComponent(command.original.path.split("/")[3])
         && (issue.messageKey === undefined || matchesI6Repair(command, issue));
-    } else if (["course-delete", "version-delete"].includes(command.operation)) valid = payload.data === null;
-    else if (["version-create", "version-draft"].includes(command.operation)) {
+    } else if (deletion && payload.data === null) {
+      rememberContentReadback(command, null);
+      valid = await i6DeletionMatches(command);
+    } else if (["version-create", "version-draft"].includes(command.operation)) {
       const version = parseI6CourseVersion(payload.data);
       valid = version.courseId === command.target && version.version === command.version && version.status === "DRAFT"
-        && version.revision === (command.operation === "version-create" ? 0 : Number(command.input.expectedRevision) + 1);
+        && version.revision === (command.operation === "version-create" ? 0 : Number(command.input.expectedRevision) + 1)
+        && version.payload.publishState === "draft" && version.payload.version === command.version
+        && learningCopyMatches(version.payload, command.input, false);
     } else {
       const course = parseI6Course(payload.data);
       valid = course.id === command.target && (command.operation === "featured" ? course.featured
         : course.status === (command.operation === "course-archive" ? "archived" : ["course-create", "course-draft"].includes(command.operation) ? "draft" : "published"))
         && (!command.version || course.version === command.version);
+      if (valid && ["course-create", "course-draft"].includes(command.operation)) {
+        valid = course.revision === (command.operation === "course-create" ? 0 : Number(command.input.expectedRevision) + 1)
+          && learningCopyMatches(course, command.input, true);
+      }
     }
   } catch { /* An unreadable success is still an unresolved original. */ }
   if (!valid) throw uncertain("原操作的返回内容无法核实，请保留记录并查询原结果。");
@@ -299,7 +364,7 @@ export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvi
   return { settled: false as const, receipt, overview, messageVersions, courseVersions };
 }
 
-export type I4DraftCommand = PendingMutationRecord & {
+export type I4DraftCommand = ContentWriteRecord & {
   original?: I1Original;
   snapshot?: TrustSectionVersionView;
   action: "create" | "edit" | "delete";
@@ -364,9 +429,20 @@ export function i4DraftPermission(): string | undefined {
     ? "当前账号没有草稿维护权限，请查询原结果。" : undefined;
 }
 
+async function i4DeletionMatches(command: I4DraftCommand) {
+  const { trustSectionVersions } = await fetchI4TrustOverview();
+  return !!trustSectionVersions && !trustSectionVersions.map(parseI4SectionVersion)
+    .some(row => row.sectionKey === command.sectionKey && row.version === command.version);
+}
+
 async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Promise<void> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (useAdminAuth.getState().session?.adminId !== command.original.owner) throw new Error("登录身份已变更，请重新打开页面。");
+  if (command.action === "delete" && command.readbackReceipt?.data === null) {
+    if (!await i4DeletionMatches(command).catch(() => false)) throw new OutcomeUnknownError("CONTENT_DRAFT_DELETION_NOT_CONFIRMED");
+    uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+    return;
+  }
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
   const permission = i4DraftPermission();
   if (permission) throw new Error(permission);
@@ -391,15 +467,18 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
     throw new OutcomeUnknownError(failure.message);
   }
   let valid = command.action === "delete" && payload.data === null;
-  if (command.action !== "delete") {
-    try {
+  try {
+    if (valid) {
+      rememberContentReadback(command, null);
+      valid = await i4DeletionMatches(command);
+    } else if (command.action !== "delete") {
       const row = parseI4SectionVersion(payload.data);
       valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
         && row.revision === (command.action === "create" ? 1 : command.input!.expectedRevision! + 1)
         && row.description === command.input!.description && row.structure === command.input!.structure
         && i4DraftReceiptFieldsMatch(command.input!.fields, row.fields, command.snapshot?.fields);
-    } catch { /* An unreadable success cannot resolve the original command. */ }
-  }
+    }
+  } catch { valid = false; }
   if (!valid) throw new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。");
   uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
 }
@@ -606,6 +685,16 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
       valid = !!row.id && row.status === expectedStatus
         && (command.action === "create" ? row.revision === 0 && row.name === String(input.name).trim()
           : row.id === command.target && row.revision === Number(input.expectedRevision) + (command.action === "send-now" ? 2 : 1));
+      if (valid && (command.action === "create" || command.action === "draft")) {
+        valid = (["Zh", "Vi", "En"] as const).every(locale =>
+          row[`body${locale}`] === `${trimStoredContent(String(input[`title${locale}`]))}\n${trimStoredContent(String(input[`body${locale}`]))}`)
+          && row.ctaHref === trimStoredContent(String(input.ctaHref ?? "")) && row.ctaLabel === trimStoredContent(String(input.ctaLabel ?? ""));
+        const translations = input.translations as NotificationCampaignRow["translations"];
+        if (valid && translations) valid = Object.entries(translations).every(([locale, copy]) => {
+          const saved = row.translations?.[locale];
+          return saved?.title === copy.title && saved.body === copy.body && saved.ctaLabel === copy.ctaLabel;
+        });
+      }
     } catch { /* Unreadable success is still unknown; retain the original request. */ }
   }
   if (!valid) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
@@ -762,7 +851,7 @@ function i2ReceiptMatches(command: I2Command, data: unknown): boolean {
     && (operation === "status" || ["name", "trigger", "tick", "cooldown"].every((field) => result[field] === String(input[field]).trim()));
   if (family === "templates") return result.channel === (key ?? input.channel)
     && result.status === (operation === "status" ? input.status : "DRAFT")
-    && (operation === "status" || ["name", "cta", "version", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((field) => result[field] === String(input[field]).trim()));
+    && (operation === "status" || ["name", "cta", "version", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((field) => result[field] === trimStoredContent(String(input[field]))));
   if (key === "sync") return ["discovered", "inserted", "duplicates"].every((field) => typeof result[field] === "number" && Number.isInteger(result[field]) && Number(result[field]) >= 0)
     && Array.isArray(result.sources) && result.sources.every((source) => source && typeof source === "object"
       && ["AVAILABLE", "UNAVAILABLE"].includes(source.status)
@@ -904,8 +993,20 @@ function i1CanWrite(permission: string) {
   return !!session && (session.role === "superadmin" || session.authorities.includes(permission));
 }
 
+function i1CopyPlacementMatches(saved: Pick<CopyVersionRow, "surface" | "copyPosition" | "trafficSplit" | "versionNote" | "audienceTarget">, input: Record<string, unknown>) {
+  const target = saved.audienceTarget;
+  const submitted = input.audienceTarget as CopyAudienceTarget | null | undefined;
+  return saved.surface === String(input.surface).trim().toLowerCase() && saved.copyPosition === String(input.copyPosition).trim()
+    && saved.trafficSplit === String(Number(String(input.trafficSplit).trim().replace("%", "")))
+    && saved.versionNote === String(input.versionNote).trim() && target?.mode === "structured" && submitted
+    && (target.registrationDaysMin ?? null) === (submitted.registrationDaysMin ?? null)
+    && (target.registrationDaysMax ?? null) === (submitted.registrationDaysMax ?? null)
+    && target.locales.join(",") === [...new Set(submitted.locales.map(locale => locale.trim()))].sort().join(",")
+    && target.tiers.join(",") === [...new Set(submitted.tiers.map(tier => tier.trim().toUpperCase()))].sort().join(",");
+}
+
 /** Validate the actual write receipt before forgetting its durable evidence. Never use it as current overview. */
-function i1ReceiptMatches(command: I1Command, data: unknown) {
+async function i1ReceiptMatches(command: I1Command, data: unknown) {
   if (!command.original) return false;
   const { path, method, body } = command.original;
   const input = JSON.parse(body) as Record<string, unknown>;
@@ -928,19 +1029,40 @@ function i1ReceiptMatches(command: I1Command, data: unknown) {
     const publishVersion = method === "POST" && action === "versions" && version === undefined;
     const revisionMatches = result.revision === expectedRevision + 1
       || (publishVersion && result.revision === expectedRevision + 2);
-    return result.key === (key ?? input.copyKey) && revisionMatches
-      // 18308d7b preserves the copy's existing publication/archive state. Older
-      // receipts still carry draft-saved; neither state changes the draft proof.
-      && (action === "draft" ? result.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(String(result.status))
-        : method === "DELETE" ? result.draftVersion == null
-          : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
-            && result.status === (action === "archive" ? "archived" : "published"));
+    if (result.key !== (key ?? input.copyKey) || !revisionMatches) return false;
+    const saved = result as CopyContentRow;
+    if (action === "draft") {
+      // Saving a draft preserves the current publication state.
+      return saved.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(saved.status)
+        && localizedFieldsMatch({ zh: saved.draftZh, en: saved.draftEn, vi: saved.draftVi }, input, ["en", "zh", "vi"])
+        && i1CopyPlacementMatches({ surface: saved.draftSurface ?? "", copyPosition: saved.draftCopyPosition,
+          trafficSplit: saved.draftTrafficSplit ?? "", versionNote: saved.draftNote ?? "", audienceTarget: saved.draftAudienceTarget }, input);
+    }
+    if (action === "archive") return saved.version === input.expectedVersion && saved.status === "archived";
+    if (method === "DELETE" ? saved.draftVersion != null
+      : saved.version !== (tail === "rollback" ? version : input.version) || saved.status !== "published"
+        || typeof input.description === "string" && saved.desc !== input.description.trim()
+        || typeof input.i18nKey === "string" && saved.i18nKey !== input.i18nKey.trim()) return false;
+    rememberContentReadback(command, data);
+    const overview = await fetchI1CopyOverview();
+    const row = overview.versions.find(item => item.copyKey === saved.key && item.version === (method === "DELETE" ? version : saved.version));
+    if (method === "DELETE") return !row;
+    return !!row && (tail === "rollback" ? row.status === "published"
+      : localizedFieldsMatch(row, input, ["en", "zh", "vi"]) && i1CopyPlacementMatches(row, input));
   }
   return false;
 }
 
+async function finishI1Receipt(command: I1Command, data: unknown) {
+  const matches = await i1ReceiptMatches(command, data).catch(() => false);
+  if (!matches) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  return data;
+}
+
 async function sendI1Command(command: I1Command, retry: boolean): Promise<unknown> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (command.readbackReceipt) return finishI1Receipt(command, command.readbackReceipt.data);
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");
   if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
@@ -969,9 +1091,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }
-  if (!i1ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
-  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
-  return payload.data;
+  return finishI1Receipt(command, payload.data);
 }
 
 export async function retryI1Command(saved: I1Command): Promise<void> {
@@ -1040,10 +1160,15 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (isWrite) throw new OutcomeUnknownError(formatAdminApiError(undefined, `CONTENT_API_${res.status}`));
     throw error;
   }
-  if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
+  if (!payload || !Number.isInteger(payload.code)) {
+    const error = "CONTENT_API_INVALID_RESPONSE";
+    throw isWrite ? new OutcomeUnknownError(error) : new Error(error);
+  }
+  const proxyUnknown = res.headers.get("X-Nexion-Upstream-Outcome") === "unknown";
+  if (!res.ok || payload.code !== 0 || proxyUnknown) {
     // 本域早就是目标口径(只在确定性拒绝时弃号),2026-08-06 改接共享谓词统一来源:
     // 判据只此一处,别处再改口径时不会落下这一面。
-    const unknown = outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message);
+    const unknown = proxyUnknown || (payload.code ?? 0) >= 500 || outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message);
     if (isWrite && !unknown) {
       uncertainCommandKeys.forget(commandFingerprint);
     }
@@ -1051,7 +1176,8 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       ? "这个代码已有适用范围在用，请更换代码；如需改名，请编辑已有的适用范围。"
       : payload.message;
     const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`, isWrite ? "write" : "read");
-    throw Object.assign(isWrite && unknown ? new OutcomeUnknownError(formatted) : new Error(formatted), { status: res.status, reasonCode: payload.message });
+    const status = res.ok && payload.code! >= 400 ? payload.code : res.status;
+    throw Object.assign(isWrite && unknown ? new OutcomeUnknownError(formatted) : new Error(formatted), { status, reasonCode: payload.message });
   }
   if (isWrite) uncertainCommandKeys.forget(commandFingerprint);
   return payload.data as T;
@@ -1392,6 +1518,7 @@ export type NotificationCampaignRow = {
   bodyVi: string;
   ctaLabel: string;
   ctaHref: string;
+  translations?: Record<string, { title: string; body: string; ctaLabel: string }>;
   swipeTo: string;
   budget?: string | number | null;
   audienceTarget: NotificationAudienceTarget;
@@ -1508,7 +1635,10 @@ export type DisclosureJurisdictionView = {
   pendingAck?: number;
   acked?: number;
 };
-export type DisclosureChapterView = { jurisdiction: string; version: string; no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string };
+export type DisclosureChapterView = {
+  jurisdiction: string; version: string; no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string;
+  titleTranslations?: Record<string, string>; bodyTranslations?: Record<string, string>;
+};
 export type DisclosureVersionItemView = DisclosureDraftView & {
   chapters: DisclosureChapterView[];
   operator?: string;
@@ -1551,6 +1681,7 @@ export type DisclosureDraftView = {
   status: string;
   revision?: number;
   contentHash?: string;
+  translations?: Record<string, string>;
 };
 export type TrustDisclosureOverview = {
   stats: TrustDisclosureStats;
@@ -1619,6 +1750,8 @@ export type LearningCourseView = {
   titleZh: string;
   titleEn: string;
   titleVi: string;
+  titleTranslations?: Record<string, string> | null;
+  bodyTranslations?: Record<string, string> | null;
   bodyZh: string;
   bodyEn: string;
   bodyVi: string;
@@ -1638,6 +1771,8 @@ export type LearningQuizQuestionView = {
   correctOptionIndex: number;
   questionVi?: string | null;
   optionsVi?: string[] | null;
+  questionTranslations?: Record<string, string> | null;
+  optionTranslations?: Record<string, string[]> | null;
 };
 export type TutorialRewardRange = { min: number; max: number };
 export type LearningMetricView = { key: string; value: string };
@@ -1795,6 +1930,55 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
   };
 }
 
+type DisclosureReadback = { jurisdiction: string; version: string } & (
+  { revision: number; contentHash: string } | { deleted: true }
+);
+
+export class DisclosureReadbackPending extends OutcomeUnknownError {
+  constructor(public readonly readback: DisclosureReadback) {
+    super(`写入已确认，读回未确认。请重试核对或刷新查看目标版本 ${readback.version}。`);
+  }
+}
+
+export async function checkDisclosureDraftReadback(readback: DisclosureReadback, submitted?: Record<string, unknown>) {
+  if ("deleted" in readback) {
+    const overview = parseIOverview("I5", await apiRequest("/trust-disclosure/overview")) as TrustDisclosureOverview;
+    if (!overview.disclosureVersionItems?.every(row => typeof row.jurisdiction === "string" && typeof row.version === "string"
+      && (row.jurisdiction !== readback.jurisdiction || row.version !== readback.version))) throw new DisclosureReadbackPending(readback);
+    return;
+  }
+  if (!submitted) throw new DisclosureReadbackPending(readback);
+  const row = await iContentActions.fetchI5DisclosureVersion(readback.jurisdiction, readback.version);
+  const chapters = submitted.chapters as Array<Record<string, unknown>>;
+  if (row?.jurisdiction !== readback.jurisdiction || row.version !== readback.version
+    || row.revision !== readback.revision || row.contentHash !== readback.contentHash
+    || row.effectiveDate !== submitted.effectiveDate || row.requiresReack !== submitted.requiresReack
+    || row.languageScope !== (String(submitted.languageScope).startsWith("zh+vi+en") ? submitted.languageScope : "zh+vi+en")
+    || !localizedFieldsMatch(row, submitted, ["en", "zh", "vi"])
+    || !Array.isArray(row.chapters) || row.chapters.length !== chapters.length || !chapters.every(chapter => {
+      const actual = row.chapters.find(candidate => candidate.no === chapter.no);
+      return actual?.jurisdiction === readback.jurisdiction && actual.version === readback.version
+        && localizedFieldsMatch({ ...actual, enTitle: actual.en, zhTitle: actual.zh, viTitle: actual.vi }, chapter,
+          ["enTitle", "zhTitle", "viTitle", "enBody", "zhBody", "viBody"]);
+    })) throw new DisclosureReadbackPending(readback);
+}
+
+async function saveDisclosureVersion(jurisdiction: string, version: string | undefined, body: Record<string, unknown>, reason: string, key?: string) {
+  const saved = await apiRequest<DisclosureDraftView>(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions${version ? `/${encodeURIComponent(version)}` : ""}`, {
+    method: version ? "PATCH" : "POST", headers: commandHeaders(key), body: JSON.stringify(withReason(body, reason)),
+  });
+  const scope = String(body.languageScope);
+  if (saved?.jurisdiction !== jurisdiction || !saved.version || (version && saved.version !== version)
+    || saved.status !== "draft" || !Number.isSafeInteger(saved.revision) || !saved.contentHash
+    || (version && saved.revision !== Number(body.expectedRevision) + 1)
+    || saved.languageScope !== (scope.startsWith("zh+vi+en") ? scope : "zh+vi+en")
+    || saved.effectiveDate !== body.effectiveDate || saved.requiresReack !== body.requiresReack
+    || !localizedFieldsMatch(saved, body, ["en", "zh", "vi"])) throw new OutcomeUnknownError("CONTENT_API_INVALID_RESPONSE");
+  const readback = { jurisdiction, version: saved.version, revision: saved.revision!, contentHash: saved.contentHash };
+  try { await checkDisclosureDraftReadback(readback, body); }
+  catch { throw new DisclosureReadbackPending(readback); }
+}
+
 export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   createI1Copy: (body, reason) => apiRequest("/copy-ab/copies", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI1CopyPosition: (body, reason) => apiRequest("/copy-ab/positions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
@@ -1866,9 +2050,17 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   archiveI5Matrix: (jurisdiction, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI5GateScope: (scope, reason) => apiRequest("/trust-disclosure/disclosures/gated-actions", { method: "PATCH", body: JSON.stringify(withReason({ scope }, reason)) }).then(() => undefined),
   fetchI5DisclosureVersion: (jurisdiction, version) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`),
-  createI5DisclosureVersion: (jurisdiction, body, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions`, { method: "POST", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI5DisclosureVersion: (jurisdiction, version, body, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", headers: commandHeaders(commandKey), body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)) }).then(() => undefined),
+  createI5DisclosureVersion: (jurisdiction, body, reason, commandKey) => saveDisclosureVersion(jurisdiction, undefined, body, reason, commandKey),
+  updateI5DisclosureVersion: (jurisdiction, version, body, reason, commandKey) => saveDisclosureVersion(jurisdiction, version, body, reason, commandKey),
+  deleteI5DisclosureVersion: async (jurisdiction, version, expectedRevision, expectedContentHash, reason, commandKey) => {
+    const saved = await apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, {
+      method: "DELETE", headers: commandHeaders(commandKey), body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)),
+    });
+    if (saved !== null) throw new OutcomeUnknownError("CONTENT_API_INVALID_RESPONSE");
+    const readback = { jurisdiction, version, deleted: true } as const;
+    try { await checkDisclosureDraftReadback(readback); }
+    catch { throw new DisclosureReadbackPending(readback); }
+  },
   createI5Jurisdiction: (body, reason, commandKey) => apiRequest("/trust-disclosure/disclosures/jurisdictions", { method: "POST", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI5Jurisdiction: (code, body, reason, commandKey) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "PATCH", headers: commandHeaders(commandKey), body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   enableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/enable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),

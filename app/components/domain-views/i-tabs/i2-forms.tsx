@@ -4,6 +4,8 @@
  * I2 的三个填写抽屉：频道、模板、事件概率。只画表单，表单值、校验结果和提交都由 i2-nova.tsx 传进来，
  * 提交内容和改版前一样（频道直接保存，模板和概率再进共用确认框写理由）。
  */
+import { englishCopyHint, isEnglishCopy, mapContentTitleBody } from "@/lib/admin/content-language-rules";
+import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { FileText, Percent, Radio } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, Notice, NumberInput, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatNovaDuration, NOVA_TIME_UNITS, type NovaTimeUnit } from "@/lib/admin/nova-cadence";
@@ -93,16 +95,16 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
 
 export type TemplateFormValue = { channel: string; name: string; cta: string; version: string; titleZh: string; bodyZh: string; titleVi: string; bodyVi: string; titleEn: string; bodyEn: string };
 type Locale = "Zh" | "Vi" | "En";
-const LOCALES: readonly { key: Locale; lang: "ZH" | "VI" | "EN"; label: string; required: boolean }[] = [
-  { key: "Zh", lang: "ZH", label: "中文", required: true },
-  { key: "Vi", lang: "VI", label: "越南语", required: true },
-  { key: "En", lang: "EN", label: "英语", required: false },
+const LOCALES: readonly { key: Locale; lang: "ZH" | "VI" | "EN"; label: string; code: OperatingLanguageCode }[] = [
+  { key: "Zh", lang: "ZH", label: "中文", code: "zh" },
+  { key: "Vi", lang: "VI", label: "越南语", code: "vi" },
+  { key: "En", lang: "EN", label: "英语", code: "en" },
 ];
 
 /** 三语里正文变量对不上、用了不认识的变量：只提醒，后端保存时会再查。 */
-export function templateIssues(form: TemplateFormValue) {
+export function templateIssues(form: TemplateFormValue, requiredLanguages: readonly OperatingLanguageCode[]) {
   // 已停用的 {sourceNote} 单独提示删掉，不算进「三语变量要一样」，免得提示去别的语言补上它。
-  const sets = LOCALES.filter((l) => l.required || form[`body${l.key}`].trim()).map((l) => ({ label: l.label, vars: placeholdersOf(form[`body${l.key}`]).filter((v) => v !== RETIRED_PLACEHOLDER) }));
+  const sets = LOCALES.filter((l) => requiredLanguages.includes(l.code) || form[`body${l.key}`].trim()).map((l) => ({ label: l.label, vars: placeholdersOf(form[`body${l.key}`]).filter((v) => v !== RETIRED_PLACEHOLDER) }));
   const all = [...new Set(sets.flatMap((s) => s.vars))];
   const mismatch = all.length ? sets.filter((s) => all.some((v) => !s.vars.includes(v))).map((s) => `${s.label}少了 ${all.filter((v) => !s.vars.includes(v)).join("、")}`) : [];
   const used = [...new Set(LOCALES.flatMap((l) => [...placeholdersOf(form[`title${l.key}`]), ...placeholdersOf(form[`body${l.key}`])]))];
@@ -110,9 +112,10 @@ export function templateIssues(form: TemplateFormValue) {
   return { mismatch, unknown, used };
 }
 
-export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, social, sample, retiredInTranslations, blocked, onClose, onSubmit }: {
+export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, social, sample, retiredInTranslations, requiredLanguages, blocked, onClose, onSubmit }: {
   editing: boolean;
   form: TemplateFormValue;
+  requiredLanguages: readonly OperatingLanguageCode[];
   setForm: (next: TemplateFormValue) => void;
   channels: readonly { value: string; label: string }[];
   ctaOptions: readonly NovaOptionView[];
@@ -125,9 +128,9 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   onClose: () => void;
   onSubmit: () => void;
 }) {
-  const issues = templateIssues(form);
+  const issues = templateIssues(form, requiredLanguages);
+  const effective = mapContentTitleBody(form, requiredLanguages, "submit");
   const varSpots = LOCALES.flatMap((l) => [placeholdersOf(form[`title${l.key}`]).length ? `${l.label}标题` : "", placeholdersOf(form[`body${l.key}`]).length ? `${l.label}正文` : ""]).filter(Boolean);
-  const enPair = !!form.titleEn.trim() !== !!form.bodyEn.trim();
   const retiredCta = UNREACHABLE_CTA.has(form.cta);
   /** 带已停用的 {sourceNote} 时后端整份模板都不渲染：预览也不替换变量。 */
   const retiredPreview = issues.used.includes(RETIRED_PLACEHOLDER) || !!retiredInTranslations;
@@ -173,18 +176,23 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
             const title = form[`title${l.key}`];
             const body = form[`body${l.key}`];
             const filled = !!title.trim() && !!body.trim();
-            const shown = social && !retiredPreview ? previewText(title, body, l.lang, sample) : { title, body };
+            const required = requiredLanguages.includes(l.code);
+            const partial = !!title.trim() !== !!body.trim();
+            const previewTitle = effective[`title${l.key}`], previewBody = effective[`body${l.key}`];
+            const shown = social && !retiredPreview ? previewText(previewTitle, previewBody, l.lang, sample) : { title: previewTitle, body: previewBody };
+            const hint = l.code !== "en" && required && isEnglishCopy({ title: form.titleEn, body: form.bodyEn }, { title, body })
+              ? englishCopyHint(l.code) : undefined;
             return (
               <section key={l.key} className="i2-lang" aria-label={l.label}>
-                <h3 className="i2-lang-head">{l.label}{filled ? <StatusTag tone="ok">已填</StatusTag> : l.required ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
-                <Field label="标题" required={l.required} error={l.key === "En" && enPair && !title.trim() ? "英语标题和正文要么都填，要么都空" : undefined}>
+                <h3 className="i2-lang-head">{l.label}{filled ? <StatusTag tone="ok">已填</StatusTag> : required ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
+                <Field label="标题" required={required} error={partial && !title.trim() ? l.key === "En" ? "英语标题和正文都要填写。" : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。" : undefined}>
                   <Input value={title} maxLength={255} onChange={(e) => setForm({ ...form, [`title${l.key}`]: e.target.value })} placeholder={`${l.label}标题`} />
                 </Field>
-                <Field label="正文" required={l.required} error={l.key === "En" && enPair && !body.trim() ? "英语标题和正文要么都填，要么都空" : undefined}>
+                <Field label="正文" required={required} help={hint} error={partial && !body.trim() ? l.key === "En" ? "英语标题和正文都要填写。" : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。" : undefined}>
                   {(control) => <Textarea {...control} rows={4} maxLength={4000} value={body} count={`${body.length}/4000`} onChange={(e) => setForm({ ...form, [`body${l.key}`]: e.target.value })} placeholder={l.key === "Zh" ? "例如：{actor} 在 {city} 刚刚提现到账 {amount}" : `${l.label}正文`} />}
                 </Field>
                 <AppNotice lang={l.lang} title={shown.title} body={shown.body} cta={form.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(form.channel)}
-                  missing={filled ? undefined : l.required ? `${l.label}还没填，发布前要补上` : "没填英语：中文、越南语以外的用户收到通用英文提示，有译文的语言用译文"} />
+                  missing={filled ? undefined : required ? `${l.label}还没填，发布前要补上` : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。"} />
               </section>
             );
           })}

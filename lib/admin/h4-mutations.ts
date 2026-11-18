@@ -4,8 +4,10 @@ import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { saveH4UploadFile, readH4UploadFile, deleteH4UploadFile } from "./h4-upload-file";
 import type { UploadedAsset } from "./media-client";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
-import { growthRequest } from "./h-client";
-import { parseAdminRaffle } from "./genesis-raffle-client";
+import { growthRequest, validateH4OverviewEvents } from "./h-client";
+import { parseEventRule } from "./event-rules-client";
+import { trimStoredContent } from "./content-language-rules";
+import { parseAdminRaffle, RAFFLE_LANGUAGES } from "./genesis-raffle-client";
 import { h4CommandStores, type H4StoredCommand } from "./h4-command-store";
 import { findHighOp } from "./high-ops-registry";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -310,7 +312,24 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
           : request.path.includes("/content/") ? updated.key === `content.event.${target}.${parts[5]}.${parts[6]}` && updated.field === parts[5] && updated.locale === parts[6]
           : updated.eventId === target && (request.method === "POST" ? updated.action === "created" : updated.field === parts[4]));
       if (!valid) throw new OutcomeUnknownError("H4_RESPONSE_INVALID");
-      if (parts[1] === "genesis-raffle") parseAdminRaffle(result);
+      if (parts[1] === "event-rules") {
+        parseEventRule(result);
+      } else if (parts[1] === "genesis-raffle") {
+        const saved = parseAdminRaffle(result);
+        if (Object.values(RAFFLE_LANGUAGES).some(({ suffix }) =>
+          saved[`title${suffix}`] !== b[`title${suffix}`]
+          || b.prizes.some((prize: { id: string } & Record<string, unknown>) =>
+            saved.prizes.find(item => item.id === prize.id)?.[`name${suffix}`] !== prize[`name${suffix}`]))) {
+          throw new OutcomeUnknownError("H4_RESPONSE_INVALID");
+        }
+      } else if (parts[1] === "quest-events" && !(parts[2] === "events" && request.method === "DELETE")
+        && !request.path.endsWith("/retire")) {
+        validateH4OverviewEvents(result.events);
+        if (request.path.includes("/content/")) {
+          const actual = result.contentLocales?.event?.[target]?.[parts[6]]?.[parts[5]];
+          if ((actual ?? "") !== trimStoredContent(b.value)) throw new OutcomeUnknownError("H4_RESPONSE_INVALID");
+        }
+      }
       }
     }
   } catch (error) {

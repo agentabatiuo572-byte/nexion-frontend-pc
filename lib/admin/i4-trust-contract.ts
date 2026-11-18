@@ -179,13 +179,6 @@ export function i4HasEnglishFields(fields: readonly Pick<TrustField, "key" | "va
   return families.size > 0 && [...families.values()].every(languages => languages.has("en"));
 }
 
-export function i4TrilingualFields(fields: readonly Pick<TrustField, "key" | "value">[]) {
-  const families = i4LocalizedFieldFamilies(fields);
-  const missing = [...families].filter(([, languages]) => !["zh", "vi", "en"].every(lang => languages.has(lang))).map(([key]) => key);
-  if (!families.size) missing.push("至少一组 .zh/.vi/.en 字段");
-  return { valid: !missing.length, missing };
-}
-
 /** Mirror OpsTrustDisclosureService.isSafeTrustSectionLink:1586–1654 at 24972948.
  * Java URI does not normalize whitespace, percent escapes, host names or dot segments like URL does.
  * Page inference remains until the visual pass connects fetchI4PublishedSnapshot.

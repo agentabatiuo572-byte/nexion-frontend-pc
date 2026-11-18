@@ -1,4 +1,6 @@
 "use client";
+import { mapContentTitleBody, type LocalizedTitleBody } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
@@ -50,6 +52,20 @@ const EMPTY_FORM: NovaForm = {
   cooldownValue: "",
   cooldownUnit: "hours",
 };
+const TEMPLATE_LANGUAGES = [
+  { code: "en", suffix: "En", label: "英语" },
+  { code: "zh", suffix: "Zh", label: "中文" },
+  { code: "vi", suffix: "Vi", label: "越南语" },
+] as const;
+
+function templateCopyGap(copy: LocalizedTitleBody) {
+  return TEMPLATE_LANGUAGES.find(({ suffix }) => !copy[`title${suffix}`].trim() || !copy[`body${suffix}`].trim());
+}
+
+function templateLanguageText(copy: LocalizedTitleBody) {
+  return TEMPLATE_LANGUAGES.filter(({ suffix }) => copy[`title${suffix}`].trim() && copy[`body${suffix}`].trim()).map(({ label }) => label).join("、") || "—";
+}
+
 const EMPTY_TEMPLATE: TemplateForm = {
   channel: "", name: "", cta: "", version: "v1",
   titleZh: "", bodyZh: "", titleVi: "", bodyVi: "", titleEn: "", bodyEn: "",
@@ -456,7 +472,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return openActionConfirm({ briefKind: "content",
       action: <>发布模板 · {name}</>,
       title: "发布模板",
-      detail: <>频道 <b>{ch}</b>。发布后，这个频道之后生成的消息用这份内容；频道不会自动启用。中文和越南语必须完整、正文变量一致（英文可选），含已退役品牌词时会被拒。</>,
+      detail: <>频道 <b>{ch}</b>。发布后，这个频道之后生成的消息用这份内容；频道不会自动启用。英文和运营区域语言、变量在保存时已检查。</>,
       effect: LIVE,
       statedBrief: { impact: "这个频道之后生成的消息用这份内容；频道不会自动启用，已经发出的不变。", check: "提交时会查中文、越南语是否完整、正文变量是否一致、有没有已退役的品牌词；真实动态以外的频道带变量也会被拒。" },
       facts: (
@@ -465,7 +481,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <Fact k="频道">{displayOf(ch)}</Fact>
           <Fact k="模板状态"><Change from="草稿" to="已发布" /></Fact>
           <Fact k="版本">{t?.v ?? "—"}</Fact>
-          <Fact k="语言">{t && t.titleEn.trim() && t.bodyEn.trim() ? "中文、越南语、英语" : "中文、越南语（英语没填）"}</Fact>
+          <Fact k="语言">{t ? templateLanguageText(t) : "—"}</Fact>
           {t && ch !== SOCIAL_CHANNEL && (() => {
             const used = [...new Set([t.titleZh, t.bodyZh, t.titleVi, t.bodyVi, t.titleEn, t.bodyEn].flatMap(placeholdersOf))];
             return used.length ? <Fact k="变量" tone="danger">{`有 ${used.join("、")}：这个频道填不了，发布会被拒`}</Fact> : null;
@@ -478,6 +494,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         </Facts>
       ),
       confirmLabel: "确认发布",
+      blockedReason: t && templateCopyGap(t) ? displayAdminError(new Error("NOVA_TEMPLATE_LOCALIZED_CONTENT_REQUIRED")) : undefined,
       reasonPlaceholder: "例如：文案已审核，工单号",
       amplifies: false,
       reasonMax: 200,
@@ -514,20 +531,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     });
   };
 
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [tplDrawer, setTplDrawer] = useState(false);
   const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
-  const newTpl = () => {
+  const newTpl = async () => {
+    setRequiredLanguages(await getRequiredContentLanguages());
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
     setEditTplChannel(null);
     setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
     setTplDrawer(true);
   };
-  const editTpl = (t: (typeof NOVA_TPLS)[number]) => {
+  const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
     setEditTplChannel(t.ch);
-    setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v,
-      titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
-      titleEn: t.titleEn, bodyEn: t.bodyEn });
+    setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") });
     setTplDrawer(true);
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
@@ -537,16 +557,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       errorHandled: true,
       action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
       title: editTplChannel ? "保存模板草稿" : "新建模板草稿",
-      detail: <>保存后是草稿，用户还看不到；发布前会再检查中文、越南语是否完整、正文变量是否一致。对应频道如果开着，保存后会被停用。</>,
+      detail: <>保存后是草稿。保存时检查英文和运营区域语言是否填齐、变量是否一致；没勾的中文、越南语标题和正文都不填时，保存英文副本，App 显示英文。{n?.on ? "对应频道如果开着，保存后会被停用。" : ""}</>,
       effect: n?.on ? <><StatusTag tone="done" filled>保存为草稿</StatusTag><StatusTag tone="warn">频道会被停用</StatusTag></> : <StatusTag tone="done" filled>保存为草稿</StatusTag>,
       statedBrief: n?.on
-        ? { impact: `保存后是草稿；「${channelName(n.key, n.name)}」频道会被停用，发布模板后要再手动启用。`, check: "发布时会再查中文、越南语是否完整、正文变量是否一致。" }
-        : { impact: "保存后是草稿，用户还看不到；发布后频道才用新内容。", check: "发布时会再查中文、越南语是否完整、正文变量是否一致。" },
+        ? { impact: `保存后是草稿；「${channelName(n.key, n.name)}」频道会被停用，发布模板后要再手动启用。`, check: "英文和运营区域语言、变量在保存时已检查。" }
+        : { impact: "保存后是草稿，用户还看不到；发布后频道才用新内容。", check: "英文和运营区域语言、变量在保存时已检查。" },
       content: (
         <Facts>
           <Fact k="频道">{n ? channelName(n.key, n.name) : tplForm.channel}</Fact>
           <Fact k="模板">{`${tplForm.name} · ${tplForm.version}`}</Fact>
-          <Fact k="语言">{tplForm.titleEn.trim() && tplForm.bodyEn.trim() ? "中文、越南语、英语" : "中文、越南语（英语没填）"}</Fact>
+          <Fact k="语言">{templateLanguageText(mapContentTitleBody(tplForm, requiredLanguages, "submit"))}</Fact>
           <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(tplForm.cta) ? "warn" : undefined}>{ctaLabel(CTA_OPTIONS, tplForm.cta)}</Fact>
           {n?.on && <Fact k="频道状态"><Change from="已启用" to="已停用" tone="warn" /></Fact>}
         </Facts>
@@ -554,8 +574,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       reasonPlaceholder: "例如：新活动文案，工单号",
       reason: true,
       okLabel: "保存草稿",
-      run: (reason) => {
-        const body = { ...tplForm };
+      run: async (reason) => {
+        const required = await getRequiredContentLanguages();
+        setRequiredLanguages(required);
+        const copy = mapContentTitleBody(tplForm, required, "submit");
+        if (templateCopyGap(copy)) throw new Error("NOVA_TEMPLATE_FIELDS_REQUIRED");
+        const body = { ...tplForm, ...copy };
         return runBackend(editTplChannel
           ? actions.updateI2Template(editTplChannel, body, reason, data?.templates.find(t => t.channel === editTplChannel))
           : actions.createI2Template(body, reason),
@@ -989,9 +1013,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const templateChannelOptions = novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
     .map((n) => ({ value: n.key, label: `${channelName(n.key, n.name)}（${n.key}）` }));
   const tplRetiredTranslations = !!editTplChannel && hasRetiredPlaceholder(...Object.values(data?.templates.find((t) => t.channel === editTplChannel)?.translations ?? {}).flatMap((t) => [t.title, t.body]));
+  const missingTemplateCopy = templateCopyGap(mapContentTitleBody(tplForm, requiredLanguages, "submit"));
   const tplBlocked = lockReason(`channel:${tplForm.channel}`) || (!tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
-    : !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() ? "填写中文标题和正文" : !tplForm.titleVi.trim() || !tplForm.bodyVi.trim() ? "填写越南语标题和正文"
-      : (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim()) ? "英语标题和正文要么都填，要么都空"
+    : missingTemplateCopy ? missingTemplateCopy.code === "en" ? "英语标题和正文都要填写。" : `填写${missingTemplateCopy.label}标题和正文`
         : UNREACHABLE_CTA.has(tplForm.cta) ? "「点击后去哪」已停用，请改选一个"
           : hasRetiredPlaceholder(tplForm.titleZh, tplForm.bodyZh, tplForm.titleVi, tplForm.bodyVi, tplForm.titleEn, tplForm.bodyEn) ? `删掉已停用的 ${RETIRED_PLACEHOLDER}`
             : tplRetiredTranslations ? "旧译文里有已停用的变量，请联系技术同事" : undefined);
@@ -1044,7 +1068,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         items={[{ value: "templates", label: "消息模板" }, { value: "material", label: "真实动态素材" }]} />
       <div {...lowerIds.panel("templates")} hidden={lower !== "templates"} className="rd-tab-pane">
       <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
-        explain="模板就是用户收到的标题和正文。中文、越南语必填，英语可选；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
+        explain="模板就是用户收到的标题和正文。英文和运营区域语言必填；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
         actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={newTpl}>新建模板</Button> : undefined}>
         <Table label="消息模板" className="i2-tpl-table">
           <thead>
@@ -1058,7 +1082,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                   <Td><Cell main={t.name} sub={`${displayOf(t.ch)} · ${t.v}`} title={t.name} /></Td>
                   <Td><TemplateTag state={st} /></Td>
                   <Td><span className="i2-lang-chips">
-                    {([["中", t.titleZh, t.bodyZh, true], ["越", t.titleVi, t.bodyVi, true], ["英", t.titleEn, t.bodyEn, false]] as const).map(([label, title, body, req]) => (
+                    {([["中", t.titleZh, t.bodyZh, requiredLanguages.includes("zh")], ["越", t.titleVi, t.bodyVi, requiredLanguages.includes("vi")], ["英", t.titleEn, t.bodyEn, true]] as const).map(([label, title, body, req]) => (
                       <span key={label} data-state={langState(title, body) ? "ok" : req ? "missing" : "empty"} title={`${label === "中" ? "中文" : label === "越" ? "越南语" : "英语"}${langState(title, body) ? "已填" : req ? "缺" : "没填（可选）"}`}>{label}</span>
                     ))}
                   </span></Td>
@@ -1199,7 +1223,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               ? `这个频道不替换变量，用户会看到原样的 ${used.join("、")}。换新模板时要删掉变量，否则保存会被拒。`
               : `这个频道不替换变量，带着 ${used.join("、")} 保存或发布都会被拒，先编辑删掉。`}</Notice>}
             <div className="i2-langs">
-              {([["ZH", "中文", t.titleZh, t.bodyZh, true], ["VI", "越南语", t.titleVi, t.bodyVi, true], ["EN", "英语", t.titleEn, t.bodyEn, false]] as const).map(([lang, label, title, body, req]) => {
+              {([["ZH", "中文", t.titleZh, t.bodyZh, requiredLanguages.includes("zh")], ["VI", "越南语", t.titleVi, t.bodyVi, requiredLanguages.includes("vi")], ["EN", "英语", t.titleEn, t.bodyEn, true]] as const).map(([lang, label, title, body, req]) => {
                 const filled = langState(title, body);
                 const shown = social && !retired ? previewText(title, body, lang, sampleEvent) : { title, body };
                 return <section key={lang} className="i2-lang" aria-label={label}>
@@ -1209,7 +1233,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     <div><dt>正文</dt><dd>{nexGridBrandText(body) || "—"}</dd></div>
                   </dl>
                   <AppNotice lang={lang} title={shown.title} body={shown.body} cta={t.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(t.ch)}
-                    missing={filled ? undefined : req ? `${label}没填，发布会被拒` : "没填英语：中文、越南语以外的用户收到通用英文提示，有译文的语言用译文"} />
+                    missing={filled ? undefined : req ? `${label}没填，发布会被拒` : "选填，不填时 App 显示英文；填了标题或正文，另一项也要填。"} />
                 </section>;
               })}
             </div>
@@ -1270,7 +1294,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       )}
       {tplDrawer && (
         <TemplateDrawer editing={!!editTplChannel} form={tplForm} setForm={setTplForm} channels={templateChannelOptions} ctaOptions={CTA_OPTIONS}
-          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} blocked={tplBlocked} onClose={closeTplDrawer} onSubmit={submitTpl} />
+          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} retiredInTranslations={tplRetiredTranslations} requiredLanguages={requiredLanguages} blocked={tplBlocked} onClose={closeTplDrawer} onSubmit={submitTpl} />
       )}
     </div>
   );

@@ -6,6 +6,9 @@
  * App 规则的出处：后端 OpsTrustDisclosureService.publishedSections（只给已公开的版块，每块当前版要完整）和
  * App src/api/trust-section-api.ts（接受 0–6 块，每块最多 80 个字段）。这里只是提示，App 实际读取以后端为准。
  */
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
+import { localizedTrustSectionField, mapTrustSectionLanguageFields } from "@/lib/admin/trust-section-validation";
+import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { useState, type ReactNode } from "react";
 import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store, Users, type LucideIcon } from "lucide-react";
 import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
@@ -99,6 +102,8 @@ export function changedKeys(base: readonly TrustField[], next: readonly TrustFie
   return keys;
 }
 
+export const TRUST_MISSING_ENGLISH = "缺英文";
+
 /** 一个版本过不过得了 App 公开的检查（不含后端的安全文本和链接细则）。返回问题，没问题是空数组。 */
 export function versionProblems(version: { version: string; description: string; structure: string; fields: readonly TrustField[] } | undefined): string[] {
   if (!version) return ["读不到当前版本的内容"];
@@ -106,7 +111,7 @@ export function versionProblems(version: { version: string; description: string;
   if (!/^v[1-9][0-9]{0,8}$/.test(version.version)) problems.push("版本号不符合 App 规则");
   if (!version.description.trim() || !version.structure.trim()) problems.push("说明或结构是空的");
   if (version.fields.length === 0) problems.push("没有内容");
-  else if (!i4HasEnglishFields(version.fields)) problems.push("中越英三语不全");
+  else if (!i4HasEnglishFields(version.fields)) problems.push(TRUST_MISSING_ENGLISH);
   const fieldIssue = i4AppFieldIssue(version.fields);
   if (fieldIssue && version.fields.length) problems.push(fieldIssue);
   return problems;
@@ -304,8 +309,9 @@ export type EditorState = {
 };
 
 /** 草稿编辑区：左边填，右边是 App 里的样子，三语切换；和公开版不同的字段标「已改」。 */
-export function DraftEditorBody({ editor, published, publishedVersion, onChange, blanked, frozen = false }: {
+export function DraftEditorBody({ editor, published, publishedVersion, onChange, blanked, requiredLanguages, frozen = false }: {
   editor: EditorState;
+  requiredLanguages: readonly OperatingLanguageCode[];
   published: readonly TrustField[];
   publishedVersion: string;
   frozen?: boolean;
@@ -313,7 +319,15 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
   blanked: { all?: string; keys: Set<string> };
 }) {
   const [lang, setLang] = useState<Lang>("zh");
-  const changed = changedKeys(published, editor.fields);
+  const changed = changedKeys(mapTrustSectionLanguageFields([...published], requiredLanguages, "load"), editor.fields);
+  const groups = { en: {} as Record<string, string>, zh: {} as Record<string, string>, vi: {} as Record<string, string> };
+  for (const field of editor.fields) {
+    const localized = localizedTrustSectionField(field.key);
+    if (localized) groups[localized.language][localized.family] = field.value;
+  }
+  const required = requiredLanguages.includes(lang);
+  const copyHint = lang !== "en" && required && Object.keys(groups.en).length === Object.keys(groups[lang]).length
+    && isEnglishCopy(groups.en, groups[lang]) ? englishCopyHint(lang) : undefined;
   const shown = editor.fields.map((field, index) => ({ field, index })).filter(({ field }) => {
     const own = fieldLang(field.key);
     return own === null || own === lang;
@@ -344,7 +358,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
           {changed.size > 0 && <StatusTag tone="progress">和 {publishedVersion || "公开版"} 比改了 {changed.size} 项</StatusTag>}
         </div>
         {overLimit && <Notice tone="warn">内容超过 {APP_FIELD_LIMIT} 项：后台能保存，但发布后 App 会拒收整份内容。</Notice>}
-        <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(editor.fields)} />
+        <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(mapTrustSectionLanguageFields(editor.fields, requiredLanguages, "submit"))} />
         <div className="i4-editor-list">
           {shown.map(({ field, index }) => (
             <div className="i4-editor-field" key={field.key} data-changed={changed.has(field.key) ? "" : undefined}>
@@ -357,7 +371,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
                 <Field label="名称">
                   <Input aria-label="名称" disabled={frozen} value={field.label} onChange={(event) => setField(index, { label: event.target.value })} />
                 </Field>
-                <Field label="内容" hint={/(url|href)$/i.test(field.key.trim()) ? "选填" : undefined}>
+                <Field label="内容" hint={/(url|href)$/i.test(field.key.trim()) || !required && fieldLang(field.key) === lang ? "选填" : undefined} help={fieldLang(field.key) === lang ? copyHint : undefined}>
                   <Textarea aria-label="内容" disabled={frozen} rows={1} value={field.value} onChange={(event) => setField(index, { value: event.target.value })} />
                 </Field>
               </div>

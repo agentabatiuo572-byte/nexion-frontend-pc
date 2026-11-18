@@ -13,7 +13,10 @@ export function isM5ManagementPayload(kind: "rules" | "welcome" | "policy", valu
   if (kind === "welcome") {
     if (!row.texts || typeof row.texts !== "object" || Array.isArray(row.texts)) return false;
     const texts = row.texts as Record<string, unknown>;
-    return [texts.zh, texts.en, texts.vi].every(text => typeof text === "string" && text.trim().length > 0);
+    const edited = row.editedTexts;
+    return [texts.zh, texts.en, texts.vi].every(text => typeof text === "string" && text.trim().length > 0)
+      && (edited === undefined || before && !!edited && typeof edited === "object" && !Array.isArray(edited)
+        && Object.entries(edited).every(([language, text]) => ["zh", "en", "vi"].includes(language) && typeof text === "string"));
   }
   return positive(row.alertMinutes) && positive(row.fallbackMinutes) && (row.defaultGroupId === null || positive(row.defaultGroupId));
 }

@@ -1,6 +1,8 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+
+import { fillBlankContentLanguage } from "./content-language-rules";
 
 export type ExperienceSource = "official" | "unavailable";
 export interface ExperienceChannel {
@@ -104,7 +106,9 @@ export function isOperatingLanguageList(value: unknown): value is OperatingLangu
 
 function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): OperatingLanguageCode[] {
   if (!isOperatingLanguageList(value)) throw new Error(errorCode);
-  return OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code));
+  const ordered = OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code));
+  if (ordered.some((code, index) => code !== value[index])) throw new Error(errorCode);
+  return ordered;
 }
 
 export function changedOperatingLanguages(
@@ -116,7 +120,7 @@ export function changedOperatingLanguages(
 }
 
 class PlatformExperienceRequestError extends Error {
-  constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string) {
+  constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string, public readonly apiMessage?: string) {
     super(message);
     this.name = "PlatformExperienceRequestError";
   }
@@ -128,7 +132,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
     const message = body?.message === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
       ? "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
       : formatAdminApiError(body?.message, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${response.status}`);
-    throw new PlatformExperienceRequestError(response.status, body?.code, message);
+    throw new PlatformExperienceRequestError(response.status, body?.code, message, body?.message);
   }
   return body.data as T;
 }
@@ -154,7 +158,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     : null;
   const notes = { zh: String(releaseNotes?.zh ?? ""), en: String(releaseNotes?.en ?? "") };
   const version = String(download.version ?? "").trim();
-  if (source !== "unavailable" && (!version || !notes.zh.trim() || !notes.en.trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  if (source !== "unavailable" && (!version || !notes.en.trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   if (source === "unavailable" && [download.officialUrl, download.iosUrl, download.androidUrl, download.apkUrl, version, notes.zh, notes.en]
     .some((value) => String(value ?? "").trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   return {
@@ -206,26 +210,31 @@ export function getRequiredContentLanguages(): Promise<readonly OperatingLanguag
   return fetchOperatingLanguages().catch(() => OPERATING_LANGUAGE_CODES);
 }
 
-export function platformExperienceBody(
+export async function platformExperienceBody(
   config: PlatformExperienceConfig, reason: string, operator = "", operatingLanguages?: readonly OperatingLanguageCode[],
 ) {
   if (!Number.isSafeInteger(config.version) || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("A3_REASON_LENGTH_INVALID");
-  if (config.appDownload.source === "official") {
+  if (config.interfaceLanguages === null) throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_INVALID");
+  if (config.operatingLanguages === null && operatingLanguages === undefined) throw new Error("PLATFORM_OPERATING_LANGUAGES_INVALID");
+  let appDownload = config.appDownload;
+  if (appDownload.source === "official") {
     for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
       try { strictUrl(config.appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
       catch { throw new Error(`${label}需填写有效的 HTTPS 地址，不能包含空格或账号密码${field === "officialUrl" ? "，支持 #download 等页面锚点" : "或页面锚点"}。`); }
     }
-    if (!config.appDownload.version.trim() || !config.appDownload.releaseNotes.zh.trim() || !config.appDownload.releaseNotes.en.trim()) {
+    const required = operatingLanguages ?? await getRequiredContentLanguages();
+    const { en, zh } = appDownload.releaseNotes;
+    const releaseNotes = { en, zh: fillBlankContentLanguage(required, "zh", { text: en }, { text: zh }).text };
+    if (!appDownload.version.trim() || !releaseNotes.zh.trim() || !releaseNotes.en.trim()) {
       throw new Error("PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED");
     }
-  } else if (config.appDownload.source !== "unavailable") {
+    appDownload = { ...appDownload, releaseNotes };
+  } else if (appDownload.source !== "unavailable") {
     throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
-  if (config.interfaceLanguages === null) throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_INVALID");
-  if (config.operatingLanguages === null && operatingLanguages === undefined) throw new Error("PLATFORM_OPERATING_LANGUAGES_INVALID");
   return {
     expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels,
-    appDownload: config.appDownload, reason: reason.trim(), operator,
+    appDownload, reason: reason.trim(), operator,
     ...(config.interfaceLanguages === undefined ? {} : {
       interfaceLanguages: strictInterfaceLanguages(config.interfaceLanguages, "PLATFORM_EXPERIENCE_LANGUAGES_INVALID"),
     }),
@@ -238,7 +247,7 @@ export function platformExperienceBody(
 export async function updatePlatformExperienceConfig(
   config: PlatformExperienceConfig, reason: string, operator = "", operatingLanguages?: readonly OperatingLanguageCode[],
 ) {
-  const body = platformExperienceBody(config, reason, operator, operatingLanguages);
+  const body = await platformExperienceBody(config, reason, operator, operatingLanguages);
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
   const idempotencyKey = commandAttempts.resolve(slot, fingerprint, () => `a3-experience-${crypto.randomUUID()}`);
@@ -248,7 +257,6 @@ export async function updatePlatformExperienceConfig(
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(body),
     });
-    commandAttempts.forget(slot);
     const saved = normalize(response);
     if (body.interfaceLanguages && saved.interfaceLanguages?.join() !== body.interfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
@@ -256,9 +264,12 @@ export async function updatePlatformExperienceConfig(
     if (body.operatingLanguages && saved.operatingLanguages?.join() !== body.operatingLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
     }
+    if (body.appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== body.appDownload.releaseNotes.en
+      || saved.appDownload.releaseNotes.zh !== body.appDownload.releaseNotes.zh)) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+    commandAttempts.forget(slot);
     return saved;
   } catch (cause) {
-    if (cause instanceof PlatformExperienceRequestError && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
+    if (cause instanceof PlatformExperienceRequestError && !isIdempotencyOutcomeOpen(cause.apiMessage) && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
       commandAttempts.forget(slot);
     }
     // Keep the key on an uncertain result; editing the form/version makes a new fingerprint.

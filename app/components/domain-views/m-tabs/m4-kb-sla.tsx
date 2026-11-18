@@ -574,7 +574,7 @@ function FaqModal({
   // 英语问答改成别的语言保存，后端会清掉附带的翻译（OpsSupportKnowledgeService.updateFaq）。
   const translationCount = row?.language === "en-US" && language !== "en-US" ? Object.keys(row.translations ?? {}).length : 0;
   const dirty = question !== (row?.question ?? "") || answer !== (row?.answer ?? "") || reason !== "" || category !== (row?.category ?? "general")
-    || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? "zh-CN") || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
+    || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? "en-US") || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
   const save = () => {
     setTried(true);
     setFailure(null);

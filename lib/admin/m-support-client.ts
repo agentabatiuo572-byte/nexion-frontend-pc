@@ -675,6 +675,7 @@ export function readFirstAssignmentCommand(key: string, customerId: string, targ
 export type SupportWelcomeLanguage = "zh" | "en" | "vi";
 export type SupportWelcomeTexts = Record<SupportWelcomeLanguage, string>;
 export type SupportWelcomeMessage = { version: number; texts: SupportWelcomeTexts; updatedAt: string | null; updatedBy: string | null; reason: string | null };
+type SupportWelcomeUpdate = { expectedVersion: number; texts: SupportWelcomeTexts; reason: string };
 const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
   const row = object(value, "welcome");
   const texts = object(row.texts, "welcome.texts");
@@ -688,11 +689,17 @@ const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
     reason: row.reason === null ? null : nonempty(row.reason, "welcome.reason"),
   };
 };
+function savedWelcome(value: unknown, input: SupportWelcomeUpdate) {
+  const result = welcomeMessage(value);
+  if (result.version !== input.expectedVersion + 1 || result.reason !== input.reason
+    || (["zh", "en", "vi"] as const).some(language => result.texts[language] !== input.texts[language])) malformed("welcome.receipt");
+  return result;
+}
 /** B16: the one welcome copy every new user receives in their support conversation right after registration. */
 export const supportWelcomeMessageClient = {
   read: (signal?: AbortSignal) => request("/support-agents/welcome-message", welcomeMessage, { signal }),
-  update: (input: { expectedVersion: number; texts: SupportWelcomeTexts; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
-    request("/support-agents/welcome-message", welcomeMessage, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
+  update: (input: SupportWelcomeUpdate, idempotencyKey: string, signal?: AbortSignal) =>
+    request("/support-agents/welcome-message", (value) => savedWelcome(value, input), json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
 };
 
 type M5RulesInput = Parameters<typeof supportClient.updateRules>[0];
@@ -704,18 +711,12 @@ function savedM5Rules(value: unknown, input: M5RulesInput) {
       .some(field => result[field] !== input[field])) malformed("rules.receipt");
   return result;
 }
-function savedM5Welcome(value: unknown, input: M5WelcomeInput) {
-  const result = welcomeMessage(value);
-  if (result.version !== input.expectedVersion + 1 || result.reason !== input.reason
-    || (["zh", "en", "vi"] as const).some(language => result.texts[language] !== input.texts[language])) malformed("welcome.receipt");
-  return result;
-}
 /** M5-only receipt validation; other support pages keep their existing contracts. */
 export const m5ManagementClient = {
   rules: (input: M5RulesInput, key: string) => request("/support-agents/rules", value => savedM5Rules(value, input), json("PUT", input, key)),
   rulesCommand: (key: string, input: M5RulesInput) => readManagementCommand(key, "SUPPORT_RULES", value => savedM5Rules(value, input)),
-  welcome: (input: M5WelcomeInput, key: string) => request("/support-agents/welcome-message", value => savedM5Welcome(value, input), json("PUT", input, key)),
-  welcomeCommand: (key: string, input: M5WelcomeInput) => readManagementCommand(key, "SUPPORT_WELCOME", value => savedM5Welcome(value, input)),
+  welcome: (input: M5WelcomeInput, key: string) => request("/support-agents/welcome-message", value => savedWelcome(value, input), json("PUT", input, key)),
+  welcomeCommand: (key: string, input: M5WelcomeInput) => readManagementCommand(key, "SUPPORT_WELCOME", value => savedWelcome(value, input)),
 };
 
 export type SupportPersonalPhrase = { id: string; content: string };

@@ -1,4 +1,6 @@
 "use client";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { H4DateTimeField } from './h4-date-time-field';
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
@@ -10,7 +12,7 @@ import { StatusTag } from '@/app/components/rd';
 import { PromotionRightsDialog } from './h4-promotion-policies';
 import { PromotionBanner } from './h4-promotion-banner';
 import { Amount, EditorSummary } from './h4-promotion-board';
-import { newPurchaseRule, changeRewardType, promotionRewardTypes, changeTemplate, dateInput, limitText, policyKey, policyLabel, policyRef, utcInput, parsePromotionNumericInput, promotionInputText, promotionChoiceError, promotionBudgetComparison, promotionDraftForRequest, type PromotionNumericKind } from '@/lib/admin/promotion-form';
+import { newPurchaseRule, changeRewardType, promotionRewardTypes, changeTemplate, dateInput, limitText, policyKey, policyLabel, policyRef, utcInput, parsePromotionNumericInput, promotionInputText, promotionChoiceError, promotionBudgetComparison, promotionDraftForRequest, promotionPublicText, type PromotionNumericKind } from '@/lib/admin/promotion-form';
 import { Button, Card, ConfirmCommand, Dialog, Field, Notice, PromotionSteps, ReadError, Summary, Table, TEMPLATE_LABELS, text, labelState, rewardText, promotionAssetText, formatTime } from './h4-promotion-ui';
 type NumericInputs = Record<string, string>;
 type NumericBinding = {raw?: string; onRaw: (raw: string) => void};
@@ -143,6 +145,11 @@ function AudienceFields({ label, value, onChange, catalog, readOnly, firstPurcha
     <div className="help extra-settings"><span title={extraSummary}>{extraSummary}</span><Button kind="link" onClick={()=>setExtraOpen(true)}>补充条件与政策</Button></div>
     {extraOpen&&<Dialog title={`${label} · 补充条件与政策`} wide onClose={()=>setExtraOpen(false)} footer={<Button onClick={()=>setExtraOpen(false)}>返回参与资格</Button>}><Notice title="当前草稿设置">{extraSummary}。此处变更随活动草稿一起保存。</Notice><fieldset disabled={readOnly}><div className="grid2"><Field label="邀请关系 *"><select value={audience.sponsor||''} onChange={e=>patch({sponsor:(e.target.value||undefined) as DraftAudience['sponsor']})}><option value="">未配置</option><option value="ANY">不限邀请关系</option><option value="REQUIRED">须有直接邀请人</option><option value="ABSENT">没有直接邀请人</option></select></Field><Field label="历史购机排除 *"><select value={audience.neverPurchased===undefined?'':String(audience.neverPurchased)} onChange={e=>patch({neverPurchased:e.target.value?e.target.value==='true':undefined})}><option value="">未配置</option><option value="false">不额外排除历史购机</option><option value="true">仅从未有效购机</option></select></Field></div><fieldset className="form-section"><legend>注册时长</legend>{dayFields('registrationAge')}</fieldset><fieldset className="form-section"><legend>适用市场 · 不勾选表示不限</legend><div className="rank-options">{catalog.markets.map(m=><label key={m.id}><input type="checkbox" checked={audience.markets?.includes(m.id)||false} onChange={e=>patch({markets:e.target.checked?[...(audience.markets||[]),m.id]:(audience.markets||[]).filter(v=>v!==m.id)})}/>{text(m.name)}</label>)}</div></fieldset>{audience.devicePresence&&audience.devicePresence!=='ANY'&&<PolicySelect label="设备判断政策" kind="DEVICE_AUDIENCE" value={audience.deviceAudiencePolicy} onChange={v=>patch({deviceAudiencePolicy:v})} catalog={catalog}/>} {onFirstPurchase&&<PolicySelect label="首购认定政策" kind="FIRST_PURCHASE" value={firstPurchase} catalog={catalog} onChange={onFirstPurchase}/>}</fieldset></Dialog>}</>;
 }
+function editablePromotionDraft(draft: Draft, required: readonly OperatingLanguageCode[]): Draft {
+    const mapped = promotionPublicText(draft, required, 'edit');
+    return { ...draft, title: draft.title == null ? draft.title : mapped.title, terms: draft.terms == null ? draft.terms : mapped.terms };
+}
+
 export default function PromotionEditor({ activity: requestedActivity, catalog, can, onSaved, onBack, onReview, onStep, initialStep=0 }: {
     activity: Promotion;
     catalog: Catalog;
@@ -154,6 +161,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     initialStep?:number;
 }) {
     const [activity, setActivity] = useState(requestedActivity);
+    const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
     const [conflict, setConflict] = useState<{ error: PromotionApiError; latest: Promotion | null } | null>(null);
     const [removeRule,setRemoveRule]=useState<DraftPurchaseRule|null>(null), [limitsOpen,setLimitsOpen]=useState(false), [combinationOpen,setCombinationOpen]=useState(false), [policiesOpen,setPoliciesOpen]=useState(false), [nextStep,setNextStep]=useState<number|null>(null);
     const version = activity.current!, [draft, setDraft] = useState<Draft>(() => structuredClone(version.draft)), [step, setStep] = useState(initialStep), [language, setLanguage] = useState<'zh' | 'en' | 'vi'>('zh'), [rule, setRule] = useState<DraftPurchaseRule | null>(null), [saving, setSaving] = useState(false), [template, setTemplate] = useState<Template | null>(null), [preview, setPreview] = useState<AudiencePreview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [budgetOpen, setBudgetOpen] = useState(false), [publicOpen, setPublicOpen] = useState(false), [exitTarget, setExitTarget] = useState<'detail' | 'review' | null>(null);
@@ -162,6 +170,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     const [bannerUploading, setBannerUploading] = useState(false);
     const discardRequest = useRef<object | null>(null);
     useEffect(() => () => { discardRequest.current = null; }, [exitTarget]);
+    useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
     const limitBinding = (key: string): NumericBinding => ({raw: limitInputs[key], onRaw: raw => setLimitInputs(current => ({...current, [key]: raw}))});
     const limitFields: Array<[string, string, Limit | null | undefined]> = [['buyer', '购买者活动参与上限', buyerLimit], ['inviter', '直接邀请人活动参与上限', inviterLimit], ['activity', '全活动参与订单上限', draft.activityLimit], ['order', '每单奖励义务上限', draft.maxRewardUnitsPerOrder]];
     const limitErrors = limitFields.flatMap(([key, label, value]) => {
@@ -170,7 +179,14 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     });
     const limitsFormatInvalid = limitErrors.length > 0;
     const limitsIncomplete = !!buyerLimit !== !!inviterLimit;
-    const dirty = !!conflict || bannerUploading || limitsFormatInvalid || JSON.stringify(draft) !== JSON.stringify(version.draft);
+    const [initialDraft, setInitialDraft] = useState(version.draft);
+    const dirty = !!conflict || bannerUploading || limitsFormatInvalid || JSON.stringify(draft) !== JSON.stringify(initialDraft);
+    const localPreview = promotionPublicText(draft, requiredLanguages, 'submit');
+    const currLanguageRequired = requiredLanguages.includes(language);
+    const englishCopy = language !== 'en' && currLanguageRequired && isEnglishCopy(
+        { title: draft.title?.en ?? '', terms: draft.terms?.en ?? '' },
+        { title: draft.title?.[language] ?? '', terms: draft.terms?.[language] ?? '' },
+    );
     const deleted = conflict?.error.reasonCode === 'PROMOTION_RESOURCE_NOT_FOUND';
     const reviewedVersion = conflict?.latest?.current;
     const reviewCanSave = !deleted && !!reviewedVersion && reviewedVersion.version === version.version && reviewedVersion.state === 'DRAFT'
@@ -187,10 +203,12 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
         setActivity(requestedActivity);
         setPreview(null);
         setLimitInputs({});
-        setDraft(structuredClone(requestedActivity.current!.draft));
+        const editable = editablePromotionDraft(requestedActivity.current!.draft, requiredLanguages);
+        setDraft(editable);
+        setInitialDraft(editable);
         setBuyerLimit(requestedActivity.current!.draft.perPersonLimit?.buyer || null);
         setInviterLimit(requestedActivity.current!.draft.perPersonLimit?.directInviter || null);
-    }, [requestedActivity]);
+    }, [requestedActivity, requiredLanguages]);
     useEffect(() => { onStep?.(step); }, [step, onStep]);
     useEffect(() => { if (limitsOpen && limitsFormatInvalid) focusFormatError(); }, [limitsOpen, limitsFormatInvalid]);
     useEffect(() => { const warn = (e: BeforeUnloadEvent) => { if (dirty) {
@@ -253,7 +271,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     }
     catch (f) {
         setError(f);
-    } }}/>)}</div></fieldset></Card><Card title="公开说明" body action={<Button onClick={() => setPublicOpen(true)}>公开说明预览</Button>}><PromotionBanner target={{ kind: "banner", objectId: activity.activityId, version: version.version, revision: version.revision, position: "bannerAssetId" }} assetId={draft.bannerAssetId} readOnly={readOnly} onChange={bannerAssetId => patch({ bannerAssetId })} onUploading={setBannerUploading}/><div className="tabs">{(['zh', 'en', 'vi'] as const).map((l, i) => <button key={l} className={language === l ? 'active' : ''} onClick={() => setLanguage(l)}>{['中文', '英语', '越南语'][i]}</button>)}</div><fieldset disabled={readOnly}><div className="grid2"><Field label="展示标题 *" wide><input value={draft.title?.[language] || ''} onChange={e => patch({ title: { ...draft.title, [language]: e.target.value } })}/></Field><Field label="活动规则 *" wide><textarea value={draft.terms?.[language] || ''} onChange={e => patch({ terms: { ...draft.terms, [language]: e.target.value } })}/></Field></div><p className="help">三种语言均需完整。首页推广固定进入商城并筛选适用商品。</p><label className="evidence-choice"><input type="checkbox" checked={!!draft.minimumClientCapabilities} onChange={e => patch({ minimumClientCapabilities: e.target.checked ? ['PROMOTION_QUOTE_V1', 'ORDER_ITEM_QUANTITIES_V1', 'PROMOTION_REWARDS_V1'] : null })}/>仅向支持促销报价、购买数量及奖励清单的客户端开放</label></fieldset></Card></>}
+    } }}/>)}</div></fieldset></Card><Card title="公开说明" body action={<Button onClick={() => setPublicOpen(true)}>公开说明预览</Button>}><PromotionBanner target={{ kind: "banner", objectId: activity.activityId, version: version.version, revision: version.revision, position: "bannerAssetId" }} assetId={draft.bannerAssetId} readOnly={readOnly} onChange={bannerAssetId => patch({ bannerAssetId })} onUploading={setBannerUploading}/><div className="tabs">{(['zh', 'en', 'vi'] as const).map((l, i) => <button key={l} className={language === l ? 'active' : ''} onClick={() => setLanguage(l)}>{['中文', '英语', '越南语'][i]}</button>)}</div><fieldset disabled={readOnly}><div className="grid2"><Field label={currLanguageRequired ? "展示标题 *" : "展示标题"} wide><input value={draft.title?.[language] || ''} onChange={e => patch({ title: { ...draft.title, [language]: e.target.value } })}/></Field><Field label={currLanguageRequired ? "活动规则 *" : "活动规则"} wide hint={englishCopy ? englishCopyHint(language) : undefined}><textarea value={draft.terms?.[language] || ''} onChange={e => patch({ terms: { ...draft.terms, [language]: e.target.value } })}/></Field></div><p className="help">英文和运营区域语言必填。首页推广固定进入商城并筛选适用商品。</p><label className="evidence-choice"><input type="checkbox" checked={!!draft.minimumClientCapabilities} onChange={e => patch({ minimumClientCapabilities: e.target.checked ? ['PROMOTION_QUOTE_V1', 'ORDER_ITEM_QUANTITIES_V1', 'PROMOTION_REWARDS_V1'] : null })}/>仅向支持促销报价、购买数量及奖励清单的客户端开放</label></fieldset></Card></>}
     {step === 1 && <><Card title="参与资格" body><AudienceFields primary label="购买者条件" readOnly={readOnly} value={draft.buyerAudience} onChange={v => patch({ buyerAudience: v })} catalog={catalog} firstPurchase={draft.policies?.firstPurchase} onFirstPurchase={v=>patch({policies:{...draft.policies,firstPurchase:v}})}/>{draft.template === 'DIRECT_REFERRAL' && <AudienceFields label="直接邀请人条件" readOnly={readOnly} value={draft.inviterAudience} onChange={v => patch({ inviterAudience: v })} catalog={catalog}/>}</Card><Card title="人群预览" body action={<Button kind="primary" disabled={busy || !can('growth_promotion_simulate')} onClick={previewAudience}>{busy ? '正在预览…' : '重新预览'}</Button>}>{preview ? <><Table headers={['样本分组', '数量', '依据']} rows={[['符合条件', preview.matched ?? '-', '当前条件命中'], ['不符合条件', preview.rejected ?? '-', '已确认事实未满足'], ['事实未知', preview.unknown ?? '-', '当前资料尚未确认']]}/>{preview.reasonCounts.map((r, i) => <p className="help" key={i}>{text(r.message)} · {r.count ?? '-'}</p>)}<p className="help">统计时刻：{formatTime(preview.asOf)}。条件变更后须重新预览；此结果不占资格或预算。</p>{can('user_c1_read') && preview.samples.length > 0 && <details><summary>查看授权样本</summary>{preview.samples.map(s => <p key={s.accountId}>{s.accountId} · {s.reasons.map(r => text(r.message)).join('；')}</p>)}</details>}</> : <Notice title="预览尚未生成">填写参与条件后可预览；修改条件会清除旧结果。</Notice>}</Card></>}
     {step === 2 && <><Card title="购买条件与权益" action={<div className="actions"><Button kind="primary" disabled={readOnly} onClick={() => setRule(newPurchaseRule())}>添加购买设备</Button>{draft.template === 'MULTI_PRODUCT' && <Button disabled={readOnly} onClick={() => setCombinationOpen(true)}>编辑组合</Button>}</div>}><Table headers={['购买设备', '计算方式', '受益人', '每组奖励', '规则组数上限', '操作']} rows={(draft.rules || []).map(r => [<><b>{sku(r.productNo)}</b><small>购买 {r.minBuyQty ?? '未配置'} 台为一组</small></>, r.repeatMode === 'PER_GROUP' ? '每组发放' : r.repeatMode === 'ONCE_PER_ORDER' ? '每单一次' : '未配置', r.inviterReward ? '购买者与直接邀请人' : '购买者', <>{rewardText(r.buyerReward)}{r.inviterReward && <small>{rewardText(r.inviterReward)}</small>}</>, <>每单 {limitText(r.maxGroups)} 组<small>每人累计 {limitText(r.maxGroupsPerPerson)} 组</small></>, <div className="actions"><Button kind="link" disabled={readOnly} onClick={() => setRule(r)}>编辑</Button><Button kind="link" disabled={readOnly} onClick={()=>setRemoveRule(r)}>移除</Button></div>])}/>{!draft.rules?.length && <div className="blank"><h2>还没有购买规则</h2><p>从可用商品目录选择购买设备，再为每名受益人配置一种固定奖励。</p></div>}<div className="card-body"><Notice title="按每个设备单独计奖">每个设备与受益人的奖励分别计奖。</Notice>{draft.template === 'MULTI_PRODUCT' && <Summary rows={[['组合购买匹配', draft.combinationMatch === 'ALL' ? '同时满足全部购买项' : draft.combinationMatch === 'ANY' ? '满足任一购买项' : '未配置']]}/>}</div></Card><Card title="权益与资产政策" body><Summary rows={(draft.rules || []).flatMap(r => [r.buyerReward, r.inviterReward].filter((v): v is DraftRewardSpec => !!v).map(v => [`${sku(r.productNo)} · ${v.beneficiaryRole === 'BUYER' ? '购买者' : '直接邀请人'}`, <>{rewardText(v)}<small> · {v.type === 'DISCOUNT_USDT' ? '直接抵扣订单应付，沿用活动批准政策' : policyKey(v.type === 'DEVICE' ? v.deviceRightsProfile : v.assetPolicy) || '政策尚未选择'}</small></>] as [
         string,
@@ -271,14 +289,14 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
         setConflict(current => current ? { ...current, latest } : current);
         if (!latest.current || latest.current.version !== version.version || latest.current.state !== 'DRAFT') throw new Error('PROMOTION_VERSION_NOT_CURRENT');
         return null;
-    }} writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete && (!conflict?.latest || reviewCanSave)} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedVersion: reviewCanSave ? reviewedVersion!.version : version.version, expectedRevision: reviewCanSave ? reviewedVersion!.revision : version.revision, draft: promotionDraftForRequest(draft) }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async (_result, isCurrent) => { const saved = await onSaved(isCurrent() ? nextStep??undefined : undefined); if (!isCurrent()) return; if (saved?.current) { setConflict(null); setActivity(saved); setDraft(structuredClone(saved.current.draft)); setBuyerLimit(saved.current.draft.perPersonLimit?.buyer || null); setInviterLimit(saved.current.draft.perPersonLimit?.directInviter || null); setLimitInputs({}); setPreview(null); } if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
+    }} writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete && (!conflict?.latest || reviewCanSave)} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedVersion: reviewCanSave ? reviewedVersion!.version : version.version, expectedRevision: reviewCanSave ? reviewedVersion!.revision : version.revision, draft: promotionDraftForRequest(draft) }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async (_result, isCurrent) => { const saved = await onSaved(isCurrent() ? nextStep??undefined : undefined); if (!isCurrent()) return; if (saved?.current) { setConflict(null); setActivity(saved); const editable = editablePromotionDraft(saved.current.draft, requiredLanguages); setDraft(editable); setInitialDraft(editable); setBuyerLimit(saved.current.draft.perPersonLimit?.buyer || null); setInviterLimit(saved.current.draft.perPersonLimit?.directInviter || null); setLimitInputs({}); setPreview(null); } if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
         onReview();
     else if (exitTarget === 'detail')
         onBack(); }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}
     {templatePickerOpen && <Dialog title="选择活动模板" onClose={() => setTemplatePickerOpen(false)}><p>模板只创建配置结构，业务金额、资格、预算与政策均由运营明确填写。</p><div className="actions" style={{marginTop: 18}}>{Object.entries(TEMPLATE_LABELS).map(([value, label]) => <Button key={value} disabled={readOnly} onClick={() => { setTemplatePickerOpen(false); if (value !== draft.template) setTemplate(value as Template); }}>{label}</Button>)}</div></Dialog>}
     {template && <Dialog title="切换活动模板" onClose={() => setTemplate(null)} footer={<><Button onClick={() => setTemplate(null)}>取消</Button><Button kind="primary" onClick={() => { setDraft(changeTemplate(draft, template)); setBuyerLimit(null); setInviterLimit(null); setLimitInputs({}); setPreview(null); setTemplate(null); }}>确认清空并切换</Button></>}><Notice title="不兼容配置将清空" kind="warn">人群、购买规则、奖励、限额、预算与政策需重新选择。名称、时间和公开说明保留。</Notice></Dialog>}
     {exitTarget && !saving && !limitsOpen && <Dialog title="配置尚未保存" onClose={() => setExitTarget(null)} footer={<><Button onClick={() => setExitTarget(null)}>继续编辑</Button><Button onClick={() => void discardAndLeave()}>放弃改动并返回</Button><Button kind="primary" disabled={readOnly||bannerUploading||limitsIncomplete||limitsFormatInvalid} onClick={requestSave}>保存后继续</Button></>}>{conflict ? <Notice title="别人改过这个活动" kind="warn">放弃改动后回到活动，再编辑时打开的是别人保存的内容。</Notice> : <Notice title="输入已保留">先保存草稿再进入下一页；试算和审核始终使用已保存版本。</Notice>}{limitFormatNotice}</Dialog>}
-    {publicOpen && <Dialog title="公开说明预览" onClose={() => setPublicOpen(false)}><h2>{draft.title?.[language] || '尚未填写标题'}</h2><p style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{draft.terms?.[language] || '尚未填写规则'}</p></Dialog>}
+    {publicOpen && <Dialog title="公开说明预览" onClose={() => setPublicOpen(false)}><h2>{localPreview.title[language] || '尚未填写标题'}</h2><p style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{localPreview.terms[language] || '尚未填写规则'}</p></Dialog>}
     {budgetOpen && <BudgetEditor draft={draft} catalog={catalog} activity={activity} onClose={() => setBudgetOpen(false)} onSave={budgets => { patch({ budgets }); setBudgetOpen(false); }}/>}
   </>;
 }

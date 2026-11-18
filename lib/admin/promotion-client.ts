@@ -4,7 +4,9 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-cl
 import { isExplicitRejection } from "./explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from './pending-mutation-store.ts';
-import type { CommandReceipt, PublishAction, VersionPage } from './promotion-types.ts';
+import type { CommandReceipt, Draft, DraftLocalizedText, LocalizedText, Policy, PolicyContent, Promotion, PublishAction, Version, VersionPage } from './promotion-types.ts';
+import { PROMOTION_POLICY_TEXT_FIELDS } from './promotion-form.ts';
+import { OPERATING_LANGUAGE_CODES } from './platform-experience-client.ts';
 
 export interface PromotionCommandIntent { operation: string; targetId: string; path: string; method: 'POST' | 'PUT'; body: unknown }
 export interface PendingPromotion extends PendingMutationRecord, PromotionCommandIntent { owner?: number; recoveryState?: string; receipt?: CommandReceipt }
@@ -20,6 +22,47 @@ export const acknowledgePromotionCommand = (receipt: CommandReceipt) => {
   const record=pending.list().find(r=>r.commandKey===receipt.idempotencyKey);
   if(record)forget(record.fingerprint);
 };
+
+export const PROMOTION_RECEIPT_ADVANCED = '原操作已成功，当前版本已变化，请核对最新资料。';
+
+function sameLocalizedText(saved: DraftLocalizedText | null | undefined, submitted: DraftLocalizedText | null | undefined) {
+  const expected = new Map(Object.entries(submitted ?? {}));
+  const actual = Object.entries(saved ?? {});
+  return actual.length === expected.size && actual.every(([locale, text]) => text.trim() === expected.get(locale)?.trim());
+}
+
+export async function verifyPromotionLocalizedReceipt(receipt: CommandReceipt): Promise<{ saved?: Promotion; advanced: boolean }> {
+  if (receipt.operation !== 'saveDraft' && receipt.operation !== 'createPolicy') return { advanced: false };
+  const mismatch = '操作已提交，尚未读到与提交内容匹配的版本，请核查原操作。';
+  const record = pendingPromotionCommands().find(item => item.commandKey === receipt.idempotencyKey);
+  if (!record) throw new Error(mismatch);
+  if (receipt.operation === 'saveDraft') {
+    const { draft, expectedVersion } = record.body as { draft: Draft; expectedVersion: number };
+    const resource = receipt.resource;
+    if (resource?.type !== 'VERSION' || resource.id !== `${receipt.targetId}:${expectedVersion}` || resource.revision === null) throw new Error(mismatch);
+    const path = `/promotions/${encodeURIComponent(receipt.targetId)}`;
+    const saved = await promotionRead<Promotion>(path);
+    const version = saved.current?.version === expectedVersion ? saved.current : await promotionRead<Version>(`${path}/versions/${expectedVersion}`);
+    if (saved.activityId !== receipt.targetId || version.activityId !== saved.activityId || version.version !== expectedVersion
+      || version.revision < resource.revision) throw new Error(mismatch);
+    if (version.revision === resource.revision
+      && (draft.title !== undefined && !sameLocalizedText(version.draft.title, draft.title)
+        || draft.terms !== undefined && !sameLocalizedText(version.draft.terms, draft.terms))) throw new Error(mismatch);
+    return { saved, advanced: version.revision > resource.revision || saved.draftVersion !== expectedVersion || version.state !== 'DRAFT' };
+  }
+  const { content } = record.body as { content: PolicyContent };
+  if (!(content.kind in PROMOTION_POLICY_TEXT_FIELDS)) return { advanced: false };
+  const field = PROMOTION_POLICY_TEXT_FIELDS[content.kind as keyof typeof PROMOTION_POLICY_TEXT_FIELDS];
+  const [policyId, version] = receipt.resource?.id.split(':') ?? [];
+  if (receipt.resource?.type !== 'POLICY' || receipt.resource.revision === null || !policyId || !version) throw new Error(mismatch);
+  const saved = await promotionRead<Policy>(`/promotion-policies/${encodeURIComponent(policyId)}/versions/${encodeURIComponent(version)}`);
+  if (saved.policyId !== policyId || String(saved.version) !== version || saved.revision < receipt.resource.revision) throw new Error(mismatch);
+  if (saved.revision > receipt.resource.revision) return { advanced: true };
+  const expected = (content as unknown as Record<string, LocalizedText>)[field];
+  const actual = (saved.content as unknown as Record<string, LocalizedText>)[field];
+  if (!actual || OPERATING_LANGUAGE_CODES.some(locale => actual[locale].trim() !== expected[locale].trim())) throw new Error(mismatch);
+  return { advanced: false };
+}
 export class PromotionApiError extends Error {
   unknownOutcome = false;
   bodyUnreadable = false;
@@ -53,7 +96,7 @@ export function promotionErrorMessage(code: string | undefined, status = 0): str
   return formatAdminApiError(key, `PROMOTION_REQUEST_FAILED_${status}`);
 }
 export function promotionFieldLabel(path: string): string {
-  const labels: Record<string,string> = {name:'活动名称',bannerAssetId:'活动宣传图',title:'公开标题（三种语言）',terms:'公开说明（三种语言）',startsAt:'开始时间',endsAt:'结束时间',displayTimezone:'显示时区',buyerAudience:'购买者条件',inviterAudience:'直接邀请人条件',purchaseHistory:'购机历史',devicePresence:'设备条件',registrationAge:'注册天数范围',lastValidPurchaseAge:'购机间隔范围',rankIds:'参与等级',markets:'适用市场',sponsor:'邀请关系',neverPurchased:'历史购机排除',rules:'购买规则',productNo:'购买设备',minBuyQty:'每组购买数量',buyerReward:'购买者奖励',inviterReward:'直接邀请人奖励',amount:'奖励或订单立减金额',quantity:'赠送数量',assetPolicy:'资产政策',deviceRightsProfile:'设备权益政策',giftProductNo:'赠送设备',maxGroups:'每单计奖组数',maxGroupsPerPerson:'每人累计计奖组数',repeatMode:'计奖方式',priority:'规则优先级',budgets:'预算与赠品额度',policies:'批准政策',firstPurchase:'首购认定政策',settlement:'结算政策',stacking:'叠加政策',refund:'售后政策',quote:'报价政策',authorization:'审核发布政策',perPersonLimit:'受益角色参与上限',activityLimit:'活动参与上限',maxRewardUnitsPerOrder:'每单奖励义务上限',shortagePolicy:'额度不足处理',minimumClientCapabilities:'兼容客户端要求',reason:'操作理由',evidenceRefs:'关联证据',content:'政策内容'};
+  const labels: Record<string,string> = {name:'活动名称',bannerAssetId:'活动宣传图',title:'公开标题',terms:'公开说明',en:'英文',zh:'中文',vi:'越南语',startsAt:'开始时间',endsAt:'结束时间',displayTimezone:'显示时区',buyerAudience:'购买者条件',inviterAudience:'直接邀请人条件',purchaseHistory:'购机历史',devicePresence:'设备条件',registrationAge:'注册天数范围',lastValidPurchaseAge:'购机间隔范围',rankIds:'参与等级',markets:'适用市场',sponsor:'邀请关系',neverPurchased:'历史购机排除',rules:'购买规则',productNo:'购买设备',minBuyQty:'每组购买数量',buyerReward:'购买者奖励',inviterReward:'直接邀请人奖励',amount:'奖励或订单立减金额',quantity:'赠送数量',assetPolicy:'资产政策',deviceRightsProfile:'设备权益政策',giftProductNo:'赠送设备',maxGroups:'每单计奖组数',maxGroupsPerPerson:'每人累计计奖组数',repeatMode:'计奖方式',priority:'规则优先级',budgets:'预算与赠品额度',policies:'批准政策',firstPurchase:'首购认定政策',settlement:'结算政策',stacking:'叠加政策',refund:'售后政策',quote:'报价政策',authorization:'审核发布政策',perPersonLimit:'受益角色参与上限',activityLimit:'活动参与上限',maxRewardUnitsPerOrder:'每单奖励义务上限',shortagePolicy:'额度不足处理',minimumClientCapabilities:'兼容客户端要求',reason:'操作理由',evidenceRefs:'关联证据',content:'政策内容'};
   const parts=path.split(/[.:[\]]/).filter(Boolean);
   return [...new Set(parts.map(p=>labels[p]).filter(Boolean))].join(' / ') || '当前配置（请逐步核对必填项）';
 }

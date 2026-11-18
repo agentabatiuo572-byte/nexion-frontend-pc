@@ -222,7 +222,14 @@ export function useA3Commands() {
         case "schedule": case "cancel": parseBusinessCalendar(data); break;
         case "experience": {
           const saved = parsePlatformExperienceConfig(data);
-          const { interfaceLanguages, operatingLanguages } = JSON.parse(record.body) as { interfaceLanguages?: unknown; operatingLanguages?: unknown };
+          const { interfaceLanguages, operatingLanguages, appDownload } = JSON.parse(record.body) as {
+            interfaceLanguages?: unknown; operatingLanguages?: unknown; appDownload: PlatformExperienceConfig["appDownload"];
+          };
+          if (appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== appDownload.releaseNotes.en
+            || appDownload.releaseNotes.zh.trim() && saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.zh
+            || !appDownload.releaseNotes.zh.trim() && saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.en)) {
+            throw new OutcomeUnknownError("A3_MUTATION_RESPONSE_UNREADABLE");
+          }
           if (saved.version !== record.original.config.version + 1
             || interfaceLanguages !== undefined && JSON.stringify(saved.interfaceLanguages) !== JSON.stringify(interfaceLanguages)
             || operatingLanguages !== undefined && JSON.stringify(saved.operatingLanguages) !== JSON.stringify(operatingLanguages)) {

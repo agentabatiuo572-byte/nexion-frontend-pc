@@ -4,6 +4,8 @@
  * H4 活动中心「既有活动与转盘」页签（第二部分）：既有活动、七类玩法、创世抽奖、转盘奖池与护栏。
  * 既有表单保留；H4 写入由共享命令层保存原请求、分流审批并恢复。
  */
+import { blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import type { BusinessFormValue } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
@@ -48,7 +50,7 @@ import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import {
-  ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, OPTIONAL_TEXT, REQUIRED_TEXT, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
+  ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
   type LegacyEvent, type LocaleCode, type WheelTier,
@@ -281,6 +283,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [stale, setStale] = useState<string | null>(null);
   const [releasing, setReleasing] = useState<H4Command | null>(null);
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
   const [contentRefresh, setContentRefresh] = useState(0);
   const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
@@ -306,9 +309,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     setLoading(true);
     try {
       const owner = useAdminAuth.getState().session?.adminId;
-      const result = await fetchH3QuestEvents("events");
+      const [result, required] = await Promise.all([fetchH3QuestEvents("events"), getRequiredContentLanguages()]);
       if (owner !== useAdminAuth.getState().session?.adminId) return false;
-      setModel(result as Model); setError(null);
+      setRequiredLanguages(required); setModel(result as Model); setError(null);
       return true;
     } catch (err) {
       setError(displayAdminReadError(err));
@@ -383,7 +386,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const eventContent = model?.contentLocales?.event ?? {};
-  const missingFor = (event: LegacyEvent) => eventLocalizedContentGaps(eventContent[event.id], event.appUsesAuthoredRewardName, event.copyReadiness);
+  const requiredText = languageNames(requiredLanguages);
+  const optionalText = languageNames(EVENT_CONTENT_LOCALES.filter(code => !requiredLanguages.includes(code)));
+  const missingFor = (event: LegacyEvent, required = requiredLanguages, content = eventContent) =>
+    eventLocalizedContentGaps(content[event.id], event.appUsesAuthoredRewardName, event.copyReadiness, required);
   /** 还没开放，或玩法还能首次开启：必填语言都要填（和开放、开启时的检查同一个条件）。 */
   const allLocalesRequired = (event: LegacyEvent) => {
     const rule = rules?.find((row) => row.eventCode === event.id);
@@ -397,7 +403,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const requiresAll = allLocalesRequired(event), fromRule = rewardFromRule(event);
     const gaps = contentGaps(eventContent[event.id])
       .filter(gap => gap.field !== "rewardName" || event.appUsesAuthoredRewardName !== false)
-      .map(gap => ({ ...gap, weight: gapWeight(gap, requiresAll, fromRule) }));
+      .map(gap => ({ ...gap, weight: gapWeight(gap, requiresAll, fromRule, requiredLanguages) }));
     return { must: gaps.filter(gap => gap.weight === "must"), soft: [...new Set(gaps.filter(gap => gap.weight === "soft").map(gap => gap.locale))] };
   };
 
@@ -410,11 +416,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action: `活动状态 · ${event.name}`,
       title: opening ? "开放活动" : "结束活动",
       effect: opening ? effectByDirection() : <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
-      detail: <>当前状态 <b>{lifecycleOf(event).label}</b>。</>,
+      detail: <>当前状态 <b>{lifecycleOf(event, requiredLanguages).label}</b>。</>,
       content: <>
         <Facts>
           <Fact k="活动">{eventName(event.id)}</Fact>
-          <Fact k="状态"><Change from={lifecycleOf(event).label} to={opening ? "进行中" : "已结束"} /></Fact>
+          <Fact k="状态"><Change from={lifecycleOf(event, requiredLanguages).label} to={opening ? "进行中" : "已结束"} /></Fact>
           {opening
             ? <Fact k="开放后">用户可以在 App 上参加，按活动奖励发放</Fact>
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
@@ -430,7 +436,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       reasonPlaceholder: opening ? "例如：活动素材已就绪，按排期开放" : "例如：活动到期，按排期结束",
       run: async (reason) => {
         // 缺项清单和指路已在下面的提示里逐项列出，这里只给一句结论，不重复同一份清单。
-        if (opening && missing.length) throw new Error("没有开放：还有翻译没填，见下方提示。");
+        if (opening) {
+          const [latest, required] = await Promise.all([fetchH3QuestEvents("events"), getRequiredContentLanguages()]);
+          setRequiredLanguages(required);
+          const current = (latest as Model).events?.find(row => row.id === event.id);
+          if (!current || current.state !== event.state) throw new Error("活动规则读取失败，请刷新后重试。");
+          if (missingFor(current, required, (latest as Model).contentLocales?.event ?? {}).length) {
+            throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", "write", current.copyReadiness));
+          }
+        }
         if (await apply(await updateH4EventStatus(event.id, value, event.state, reason))) toast(`${event.name} 状态已更新`);
       },
     });
@@ -459,16 +473,25 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     });
   };
 
-  const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
+  const openLocalizedContent = async (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
     if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    const required = await getRequiredContentLanguages();
+    setRequiredLanguages(required);
     const expectedValue = eventContent[code]?.[locale]?.[field];
     const current = text(expectedValue, "");
+    const group = (codeOfLanguage: LocaleCode) => ({
+      name: text(eventContent[code]?.[codeOfLanguage]?.name, ""),
+      description: text(eventContent[code]?.[codeOfLanguage]?.description, ""),
+      rewardName: text(eventContent[code]?.[codeOfLanguage]?.rewardName, ""),
+    });
+    const displayCurrent = blankCopiedContentLanguage(required, locale, group("en"), group(locale))[field];
     const saved = localizedDraft.current;
     const draft = saved?.code === code && saved.field === field && saved.locale === locale ? saved : undefined;
     const event = (model?.events ?? []).find((row) => row.id === code);
     const requiresAll = event ? allLocalesRequired(event) : true;
     const authored = event?.appUsesAuthoredRewardName, appName = event?.appRewardNames?.[locale];
     // 有后端奖励事实时按它说；没有的旧数据照旧按「有没有玩法规则」推。
+    const clearable = event?.state === "upcoming" && !required.includes(locale) && !!current.trim();
     const fromRule = !!event && authored === undefined && rewardFromRule(event) && field === "rewardName";
     const hidden = field === "rewardName" && authored === false;
     openActionConfirm({ initialReason: draft?.reason, briefKind: "config",
@@ -476,16 +499,19 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
       detail: hidden ? <>只在这页登记，不影响开放和开启玩法。</>
-        : requiresAll ? (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale) ? <>{REQUIRED_TEXT}的{contentFieldsText(authored)}填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
+        : requiresAll ? required.includes(locale) ? <>{languageNames(required)}的{contentFieldsText(authored)}填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
         : fromRule ? <>已开放的活动照常进行；这一格空着时 App 显示玩法规则摘要。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact>
         {hidden && <Fact k="App 上">不显示这一格{appName !== undefined ? <>，奖励一行显示「{appName || "—"}」</> : null}</Fact>}
         {fromRule && <><Fact k="App 上">{LOCALE_NAME[locale]}填了就显示，空着显示规则摘要</Fact><Fact k="发奖">按玩法规则，奖项名里写的数额不影响发多少</Fact></>}</Facts>,
       reasonPlaceholder: "例如：补齐上线前的翻译",
-      edit: { kind: "text", current, initialValue: draft?.value },
+      edit: { kind: "text", current, displayCurrent, initialValue: draft?.value, emptyOption: clearable ? "清空已存副本" : undefined },
       run: async (reason, value) => {
-        if (!value) return;
+        if (value === undefined) return;
+        const required = await getRequiredContentLanguages();
+        setRequiredLanguages(required);
+        if (!value.trim() && (!clearable || required.includes(locale))) return;
         localizedDraft.current = { code, field, locale, value, reason };
         const result = await updateH4LocalizedContent(code, field, locale, value, expectedValue, reason);
         localizedDraft.current = null;
@@ -510,7 +536,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: "删除既有活动",
       effect: <IrreversibleTag />,
       detail: <>删除后活动从活动中心消失，已有的参与、奖励和操作记录仍保留。只能删除草稿或已结束的活动。</>,
-      facts: <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="状态">{lifecycleOf(event).label}</Fact><Fact k="删除后">这个活动的玩法一起停掉；已有的参与、奖励和操作记录保留</Fact></Facts>,
+      facts: <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="状态">{lifecycleOf(event, requiredLanguages).label}</Fact><Fact k="删除后">这个活动的玩法一起停掉；已有的参与、奖励和操作记录保留</Fact></Facts>,
       confirmLabel: "删除活动",
       confirmTone: "danger",
       reasonPlaceholder: "例如：草稿建错了，按工单删除",
@@ -1096,7 +1122,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   ];
 
   const eventMenu = (event: LegacyEvent): MoreMenuItem[] => {
-    const life = lifecycleOf(event);
+    const life = lifecycleOf(event, requiredLanguages);
     const ended = life.key === "ended";
     const lockedReason = h4ApprovalLockedReason(hiEventScope(event.id));
     const wheelEvent = text(event.kind).toLowerCase() === "wheel";
@@ -1110,7 +1136,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     ];
   };
   const eventPrimary = (event: LegacyEvent) => {
-    const life = lifecycleOf(event);
+    const life = lifecycleOf(event, requiredLanguages);
     if (life.key === "ended") return null;
     if (event.state === "upcoming") return <Button size="sm" disabledReason={!canModuleWrite ? "没有修改既有活动的权限" : h4ApprovalLockedReason(hiEventScope(event.id))} onClick={conflictDraft.register(JSON.stringify(["openEventStatus:2", event.id]), () => openEventStatus(event, "ongoing"))}>开放</Button>;
     return null;
@@ -1158,8 +1184,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           : <div className="h4-cards">{events.map((event) => <EventCard key={event.id} event={event}
             en={{ name: localizedValue(event.id, "name", "en"), description: localizedValue(event.id, "description", "en"), rewardName: localizedValue(event.id, "rewardName", "en") }}
             zh={{ name: localizedValue(event.id, "name", "zh"), description: localizedValue(event.id, "description", "zh"), rewardName: localizedValue(event.id, "rewardName", "zh") }}
-            gaps={weighedGaps(event).must.length} softGaps={weighedGaps(event).soft} rewardFromRule={rewardFromRule(event)}
-            rule={rules ? (() => { const rule = ruleOf(event.id); return rule ? { enabled: rule.enabled, ready: eventRuleReadiness(rule, eventContent).ready, startsAt: rule.startsAt, endsAt: rule.endsAt } : null; })() : null}
+            gaps={weighedGaps(event).must.length} softGaps={weighedGaps(event).soft} requiredLanguages={requiredLanguages} rewardFromRule={rewardFromRule(event)}
+            rule={rules ? (() => { const rule = ruleOf(event.id); return rule ? { enabled: rule.enabled, ready: eventRuleReadiness(rule, eventContent, requiredLanguages).ready, startsAt: rule.startsAt, endsAt: rule.endsAt } : null; })() : null}
             pending={eventPending(event.id) ? pendingTag(eventName(event.id)) : undefined}
             primary={eventPrimary(event)} menu={eventMenu(event)} onContent={() => setContentId(event.id)} />)}</div>}
         <p className="h4l-note">时间为北京时间</p>
@@ -1167,7 +1193,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
-      <H4EventRules ctx={ctx} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
+      <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
       <H4GenesisRaffle ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRaffles} />
     </div>
 
@@ -1282,8 +1308,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="App 上的文字" sub={contentEvent?.id}
-      explain={`改一格保存一格，App 下次读取就用新内容，不用发布。开放活动、首次开启玩法前要填齐${REQUIRED_TEXT}的${contentFieldsText(contentEvent?.appUsesAuthoredRewardName)}${OPTIONAL_TEXT ? `，${OPTIONAL_TEXT}可以不填` : ""}；已开放的活动照常进行，没填的格 App 用英文或原文${contentEvent?.appUsesAuthoredRewardName === undefined ? "，有玩法规则的活动奖项名没填时显示规则摘要" : ""}。`}>
-      {contentEvent && <EventPreview canEdit={canModuleWrite} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} authored={contentEvent.appUsesAuthoredRewardName} appNames={contentEvent.appRewardNames} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
+      explain={`改一格保存一格，App 下次读取就用新内容，不用发布。开放活动、首次开启玩法前要填齐${requiredText}的${contentFieldsText(contentEvent?.appUsesAuthoredRewardName)}${optionalText ? `，${optionalText}可以不填` : ""}；已开放的活动照常进行，没填的格 App 用英文或原文${contentEvent?.appUsesAuthoredRewardName === undefined ? "，有玩法规则的活动奖项名没填时显示规则摘要" : ""}。`}>
+      {contentEvent && <EventPreview canEdit={canModuleWrite} requiredLanguages={requiredLanguages} copyReadiness={contentEvent.copyReadiness} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} authored={contentEvent.appUsesAuthoredRewardName} appNames={contentEvent.appRewardNames} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}
         onEdit={(field, locale) => openLocalizedContent(contentEvent.id, field, locale, field === "name" ? contentEvent.name : field === "description" ? text(contentEvent.description) : text(contentEvent.rewardName))} />}

@@ -10,6 +10,8 @@ import { useState, type ReactNode } from "react";
 import { FilePen, FlaskConical, MapPin, Plus, Trash2, Trophy } from "lucide-react";
 import { Button, Cell, Decision, Drawer, Explain, Fact, Facts, Field, IconButton, Input, Modal, MoreMenu, Notice, NumberInput, Panel, RatioBar, ScaleBar, Segments, Select, StatusTag, Table, Td, Textarea, Th, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { englishCopyHint, isEnglishCopy, mapSingleContentText } from "@/lib/admin/content-language-rules";
+import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 
@@ -362,27 +364,28 @@ const FIELD_NAMES: Record<string, string> = {
 };
 
 /** 同 design-kit missingBusinessFields 的 copy-edit、copy-create：返回还缺什么，按字段分开。 */
-function copyFormIssues(spec: CopyEditSpec | CopyCreateSpec, state: BusinessFormValue, mode: SaveMode) {
+function copyFormIssues(spec: CopyEditSpec | CopyCreateSpec, state: BusinessFormValue, mode: SaveMode, required: readonly OperatingLanguageCode[]) {
   const fields: Record<string, string> = {};
   const other: string[] = [];
   const keys = spec.kind === "copy-create"
-    ? ["copyKey", "description", "surface", "copyPosition", "phaseMin", "phaseMax", "language", "registrationDaysGt", "trafficSplit", "version", "versionNote", "zh", "en", "vi"]
-    : ["version", "surface", "copyPosition", "phaseMin", "phaseMax", "language", "registrationDaysGt", "trafficSplit", "versionNote", "zh", "en", "vi"];
+    ? ["copyKey", "description", "surface", "copyPosition", "phaseMin", "phaseMax", "language", "registrationDaysGt", "trafficSplit", "version", "versionNote", ...required]
+    : ["version", "surface", "copyPosition", "phaseMin", "phaseMax", "language", "registrationDaysGt", "trafficSplit", "versionNote", ...required];
   keys.forEach((key) => { if (!state[key]?.trim()) fields[key] = `请填写${FIELD_NAMES[key]}`; });
   if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) fields.phaseMax = "最高阶段不能低于最低阶段";
   if (!fields.registrationDaysGt && (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0)) fields.registrationDaysGt = "填 0 或正整数";
   const split = Number(state.trafficSplit);
   if (!fields.trafficSplit && (!Number.isFinite(split) || split <= 0 || split > 100)) fields.trafficSplit = "填 1–100";
   (spec.placeholders ?? []).forEach((ph) => {
-    for (const lang of LANGS) if (!state[lang.key]?.includes(ph) && !fields[lang.key]) fields[lang.key] = `缺少占位符 ${ph}`;
+    for (const lang of LANGS) if ((required.includes(lang.key) || state[lang.key]?.trim()) && !state[lang.key]?.includes(ph) && !fields[lang.key]) fields[lang.key] = `缺少占位符 ${ph}`;
   });
   if (spec.kind === "copy-create" || mode === "发布生效") other.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
   const list = [...Object.keys(fields).map((key) => FIELD_NAMES[key] ?? key), ...other];
   return { fields, other, blocked: list.length ? `还缺：${[...new Set(list)].join("、")}` : undefined };
 }
 
-export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion, publishBlockedReason, onClose, onSubmit }: {
+export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion, requiredLanguages, publishBlockedReason, onClose, onSubmit }: {
   spec: CopyEditSpec | CopyCreateSpec;
+  requiredLanguages: readonly OperatingLanguageCode[];
   title: string;
   sub?: ReactNode;
   basedOn?: ReactNode;
@@ -394,14 +397,17 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion
   onClose: () => void;
   onSubmit: (form: BusinessFormValue, mode: SaveMode) => void;
 }) {
-  const [initial] = useState(() => initCopyForm(spec));
+  const [initial] = useState<BusinessFormValue>(() => {
+    const form = initCopyForm(spec);
+    return { ...form, ...mapSingleContentText({ en: form.en ?? "", zh: form.zh ?? "", vi: form.vi ?? "" }, requiredLanguages, "edit") };
+  });
   const [form, setForm] = useState(initial);
   const [attempted, setAttempted] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const isCreate = spec.kind === "copy-create";
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
-  const draftCheck = copyFormIssues(spec, form, "存草稿");
-  const publishCheck = copyFormIssues(spec, form, "发布生效");
+  const draftCheck = copyFormIssues(spec, form, "存草稿", requiredLanguages);
+  const publishCheck = copyFormIssues(spec, form, "发布生效", requiredLanguages);
   const shown = attempted ? publishCheck : { fields: {} as Record<string, string>, other: [] as string[] };
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const modules = spec.modules ?? [];
@@ -457,8 +463,10 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion
           <div className="rd-form-grid i1-tri" data-cols="3">
             {LANGS.map((lang) => {
               const value = form[lang.key] ?? "";
+              const required = requiredLanguages.includes(lang.key);
+              const hint = lang.key !== "en" && required && isEnglishCopy({ text: form.en ?? "" }, { text: value }) ? englishCopyHint(lang.key) : undefined;
               return (
-                <Field key={lang.key} label={<>{lang.label}{!value.trim() && <StatusTag tone="warn">缺失</StatusTag>}</>} required error={shown.fields[lang.key]}>
+                <Field key={lang.key} label={<>{lang.label}{required && !value.trim() && <StatusTag tone="warn">缺失</StatusTag>}</>} required={required} help={hint} error={shown.fields[lang.key]}>
                   {(control) => <Textarea {...control} aria-label={`${lang.label}文案`} rows={4} value={value} count={`${value.length}/1000`} onChange={(event) => set(lang.key, event.target.value)} />}
                 </Field>
               );
