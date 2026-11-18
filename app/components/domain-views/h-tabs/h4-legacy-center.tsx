@@ -1148,7 +1148,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </Panel>}
     <div hidden={sub !== "events"} className="h4-tabpanel">
       <Panel id="h4l-events" title="既有活动" icon={Gift} tone="role-3" sub={`共 ${events.length} 个`}
-        explain={<><p>平台内置的运营活动，一张卡一个：中文名称和说明、奖励、地区、时间、参与情况。卡底部改各语言的文字，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
+        explain={<><p>平台内置的运营活动，一张卡一个：名称和说明、奖励、地区、时间、参与情况。卡底部改各语言的文字，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
         actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateEvent:1"]), openCreateEvent)}>新建既有活动</Button>}>
         {gapCount > 0 && <Notice tone="warn" title={`有 ${gapCount} 项翻译没填，点卡片底部的「翻译没填」逐格补`}>
           {gapsClosed.count > 0 && <p>补齐才能开放：{gapNames(gapsClosed.rows)}</p>}
