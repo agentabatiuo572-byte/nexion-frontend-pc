@@ -34,6 +34,12 @@ legacy 原号查询的 SUCCEEDED 仅证明处理结束，当前后端不返回�
 
 FAQ 保存/发布/下架失败回调保留 Error；现有拒绝判据认定的未知结果用 OutcomeUnknownError，编辑与状态框均按错误类型判断，展示 message 原文。修改文案前缀不再改变恢复状态。共用 useSupportManagementCommand 的失败回调附原错误或 FAILED 回执，唯一使用方首次分配继续忽略该参数；不改变其请求或恢复。
 
+## 2026-11-19 M3 按原号打开历史会话（BUG-424）
+
+- M3 地址指定 `conversationNo` 时读取该号的授权会话。客户资料的「历史会话」也按所点会话号打开。未指定会话号时沿用收件箱的客户代表会话选择规则。消息仍按该客户获准的历史段统一分页。
+- 当前专属客服打开 `writeState.canReply=false` 的旧会话时可查看历史消息。「打开当前会话」重核归属后将地址和选中会话切到 `writableConversationNo`。尚无可写线程时沿用「发起会话」进入首次联系。
+- 回复草稿和未决回复定位到原会话号，未决期间仍锁住该客户的新发送。另一段会话通过现有入口返回原会话处理。接待小窗的原发送在 M3 只能查询结果。
+
 ## 2026-11-16 M3/M4 只读增量（hd-sync10）
 
 - M3 后端 `b22edbe3` 管理详情的可空 `writeState`：`threadOwnerAgentId/Name`、`currentAssignmentAgentId/Name`、`writableConversationNo` 均为字符串或 null，`canReply` 为布尔。只表示当前分配下最新 advisor/support 线程是否等于本条，不授予账号发送权限。PC 在详情入口校验一次并传入 `SessionConvo.writeState`；显式 false 加入现有 writable 禁用条件，原有资格、写权、归属、接待状态、消息上下文保护保持。旧响应缺字段/为 null 保持原行为，不影响创建新线程和原结果核查。
