@@ -1257,13 +1257,16 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
   };
   useLayoutEffect(() => {
-    sendInFlight.current = false;
-    setSending(false);
-    setSendError("");
+    if (newSendBlocked) return;
     if (draftKey && owned) {
       try { setDraft(sessionStorage.getItem(draftKey) ?? ""); }
       catch { setDraft(""); }
     } else setDraft("");
+  }, [draftKey, owned, newSendBlocked]);
+  useLayoutEffect(() => {
+    sendInFlight.current = false;
+    setSending(false);
+    setSendError("");
     const invalidate = (event: Event) => {
       const target = (event as CustomEvent<{ conversationNo?: string; customerId?: string }>).detail;
       if ((target?.customerId || target?.conversationNo) && target.customerId !== conv?.customerId && target.conversationNo !== lastId) return;
@@ -1300,17 +1303,18 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     const text = draft.trim();
     if (!text || !canWrite || newSendBlocked || sendInFlight.current || !currentAdminId || !conv.customerId) return;
     const generation = identityGeneration.current;
-    const sameAccount = () => useAdminAuth.getState().session?.adminId === currentAdminId && useAdminAuth.getState().authEpoch === authEpoch;
+    const sameAccount = () => useAdminAuth.getState().session?.adminId === currentAdminId;
+    const currentDock = () => sameAccount() && useAdminAuth.getState().authEpoch === authEpoch && generation === identityGeneration.current;
     let key: string | undefined;
     sendInFlight.current = true;
     setSending(true);
     setSendError("");
     try {
       const owner = await supportClient.customerDetail(conv.customerId);
-      if (!sameAccount() || generation !== identityGeneration.current) return;
+      if (!currentDock()) return;
       if (owner.agentAdminId !== currentAdminId || !owner.assignmentId || conv.assignmentId && conv.assignmentId !== owner.assignmentId) throw new SupportClientError(403, undefined, "SUPPORT_CUSTOMER_SCOPE_CHANGED");
       const state = await supportClient.conversationState(conv.id);
-      if (!sameAccount() || generation !== identityGeneration.current) return;
+      if (!currentDock()) return;
       if (state.status !== "OPEN") { setSendError("当前会话已结束，请刷新会话列表后重新选择。"); return; }
       if (state.version !== conv.version) {
         setSendError("会话有新消息，请核对刷新后的详情再发送。原文已保留。");
@@ -1334,18 +1338,29 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       if (!sameAccount()) return;
       dockCommands.forget(dockSlot, key);
       window.dispatchEvent(new Event("support-todo-changed"));
-      if (generation !== identityGeneration.current) return;
+      if (!currentDock()) return;
       ctx.toast(`${conv.id} 已回复`, "success");
       try { await ctx.refreshConversations(); }
       catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
     } catch (error) {
       if (!sameAccount()) return;
       const rejected = key && refusedMessage(error, true);
-      if (rejected) dockCommands.forget(dockSlot, key);
-      if (error instanceof SupportClientError && [403, 404].includes(error.status)) {
+      const scopeLost = error instanceof SupportClientError && [403, 404].includes(error.status);
+      if (rejected) {
+        const original = dockCommands.list().find(row => row.commandKey === key && row.fingerprint === dockSlot);
+        if (original && !original.readOnlyRecovery && !scopeLost) {
+          // A definitive refusal can arrive after leaving the dock. Keep only its own
+          // draft, provided the original has not been redacted or the slot edited.
+          try {
+            if (sessionStorage.getItem(draftKey) === null) sessionStorage.setItem(draftKey, draft);
+          } catch { if (currentDock()) setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
+          if (currentDock()) setDraft(draft);
+        }
+        dockCommands.forget(dockSlot, key);
+      }
+      if (scopeLost) {
         onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。");
-      } else if (generation === identityGeneration.current) {
-        if (rejected) updateDraft(draft);
+      } else if (currentDock()) {
         setSendError(rejected ? `本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。` : key ? "发送结果仍在确认，请稍后查询原命令。" : displayAdminError(error));
       }
     } finally {
