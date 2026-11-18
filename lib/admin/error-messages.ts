@@ -1,4 +1,5 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
+import { eventRuleMissingLabel } from "./event-rule-form.ts";
 
 /** APP_TEXT_CHINESE_NOT_ALLOWED 回来的字段写成运营认得的名字；认不出的只写通用那句。 */
 const APP_TEXT_FIELD_LABELS: Record<string, string> = {
@@ -3866,7 +3867,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
  */
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
-function eventLocalizedMissingMessage(code: string, data: unknown): string | undefined {
+function eventRuleIncompleteMessage(code: string, data: unknown): string | undefined {
   if (code !== "EVENT_LOCALIZED_CONTENT_INCOMPLETE" && code !== "EVENT_RULE_INCOMPLETE") return;
   if (!data || typeof data !== "object") return;
   const missing = "missing" in data && Array.isArray(data.missing) ? data.missing : [];
@@ -3892,9 +3893,16 @@ function eventLocalizedMissingMessage(code: string, data: unknown): string | und
   // 必填语言没填（missing）必须补；选填语言只填了一部分（incomplete）要么填齐、要么全部留空。两类分开说。
   const must = byLanguage(missing).map(([language, fields]) => `${language}${[...fields].join("、")}`);
   const half = byLanguage(incomplete).map(([language, fields]) => `${language}只填了一半（缺${[...fields].join("、")}）`);
-  if (!must.length && !half.length) return;
-  const parts = [must.length ? `还缺${must.join("、")}` : "", half.length ? `${half.join("；")}，要么填齐、要么全空` : ""];
-  return `${parts.filter(Boolean).join("；")}。到「既有活动」卡片底部逐格补。`;
+  const business = code === "EVENT_RULE_INCOMPLETE"
+    ? [...new Set(missing.filter((key): key is string => typeof key === "string" && !!key && !key.startsWith("localized.")).map(eventRuleMissingLabel))]
+    : [];
+  const parts = [
+    must.length && `必填文案还缺${must.join("、")}`,
+    half.length && `${half.join("；")}，要么填齐、要么全空`,
+    business.length && `活动配置待核对：${business.join("、")}`,
+  ].filter(Boolean);
+  if (!parts.length) return;
+  return `${parts.join("；")}。${must.length || half.length ? "到「既有活动」卡片底部逐格补。" : ""}`;
 }
 
 export function formatAdminApiError(
@@ -3906,8 +3914,8 @@ export function formatAdminApiError(
   const raw = (message || fallback || "").trim();
   if (!raw) return "操作失败，请稍后重试。";
 
-  const localized = eventLocalizedMissingMessage(raw, data);
-  if (localized) return localized;
+  const eventDetails = eventRuleIncompleteMessage(raw, data);
+  if (eventDetails) return eventDetails;
   if (raw === "APP_TEXT_CHINESE_NOT_ALLOWED" && data && typeof data === "object"
     && "field" in data && typeof data.field === "string") {
     const field = data.field.trim();
@@ -3995,8 +4003,8 @@ export function displayAdminError(error: unknown): string {
     // The monthly-target client has already added the server limit and affected model names.
     if (["MONTHLY_TARGET_POOL_INELIGIBLE", "MONTHLY_TARGET_REWARD_OUT_OF_RANGE"].includes(error.backendMessage) && HAS_CJK_RE.test(error.message)) return error.message;
     if ("details" in error) {
-      const localized = eventLocalizedMissingMessage(error.backendMessage, error.details);
-      if (localized) return localized;
+      const eventDetails = eventRuleIncompleteMessage(error.backendMessage, error.details);
+      if (eventDetails) return eventDetails;
       if (error.backendMessage === "APP_TEXT_CHINESE_NOT_ALLOWED") {
         return formatAdminApiError(error.backendMessage, "", "write", error.details);
       }
