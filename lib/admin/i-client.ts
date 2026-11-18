@@ -3,6 +3,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { parseIOverview } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { trimStoredContent } from "@/lib/admin/content-language-rules";
 
 type ApiResult<T> = {
   code?: number;
@@ -19,17 +20,19 @@ function idempotencyKey() {
 // replays the same command instead of creating a second write.
 // 落 sessionStorage 而非内存:刷新页面后重试必须仍是同一命令号,否则后端无法去重。
 // fingerprint = `${method}:${path}:${body}` —— path 带目标对象 id,method + path 区分动作类型。
-type ReadbackAnchor = { data: unknown; version?: string };
-const uncertainCommandKeys = createPendingMutationStore<PendingMutationRecord & { confirmed?: ReadbackAnchor }>({
+const contentCommands = createPendingMutationStore<PendingMutationRecord & { confirmed?: { data: unknown } }>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
+  retainExpiredRecords: true,
+  // 未确认命令仍按幂等期限淘汰。已确认回执保留到读回完成或会话结束。
+  isValidRecord: (attempt) => attempt.confirmed?.data !== undefined || attempt.expiresAt > Date.now(),
 });
 
 export class IContentReceiptError extends Error {}
 
-const unknownWrite = () => new IContentReceiptError("写入结果未知，请保留原内容和理由重试，系统会沿用原操作编号。");
+const unknownWrite = () => new IContentReceiptError("写入结果未确认，请保留原内容和理由重试，系统会沿用原操作编号。");
 
 type ReadBack = (check: () => Promise<void>, version?: string) => Promise<void>;
-type VerifyReceipt<T> = (data: T, readBack: ReadBack, confirmedVersion?: string) => void | Promise<void>;
+type VerifyReceipt<T> = (data: T, readBack: ReadBack) => void | Promise<void>;
 
 async function apiRequest<T>(path: string, init?: RequestInit, verifyReceipt?: VerifyReceipt<T>): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -38,19 +41,13 @@ async function apiRequest<T>(path: string, init?: RequestInit, verifyReceipt?: V
     ? `${init?.method}:${path}:${typeof init?.body === "string" ? init.body : ""}`
     : "";
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (isWrite && !headers.has("Idempotency-Key")) {
-    const previousKey = uncertainCommandKeys.get(commandFingerprint);
-    const stableKey = previousKey ?? idempotencyKey();
-    if (!previousKey) uncertainCommandKeys.remember(commandFingerprint, stableKey);
-    headers.set("Idempotency-Key", stableKey);
-  }
-  const commandKey = headers.get("Idempotency-Key");
-  const confirmed = verifyReceipt && isWrite
-    ? uncertainCommandKeys.list().find((attempt) => attempt.commandKey === commandKey)?.confirmed
+  const attempt = isWrite
+    ? contentCommands.list().find((row) => row.fingerprint === commandFingerprint)
     : undefined;
+  const commandKey = isWrite ? attempt?.commandKey ?? headers.get("Idempotency-Key") ?? idempotencyKey() : null;
   const verify = async (data: T) => {
     await verifyReceipt?.(data, async (check, version) => {
-      if (commandKey) uncertainCommandKeys.remember(commandFingerprint, commandKey, { confirmed: { data, version } });
+      if (commandKey && !attempt?.confirmed) contentCommands.remember(commandFingerprint, commandKey, { confirmed: { data } });
       try {
         await check();
       } catch {
@@ -58,11 +55,16 @@ async function apiRequest<T>(path: string, init?: RequestInit, verifyReceipt?: V
           ? `写入已确认，读回未确认。请重试核对或刷新查看目标版本 ${version}。`
           : "写入已确认，读回未确认。请重试核对或刷新查看目标版本。");
       }
-    }, confirmed?.version);
-    if (commandKey) uncertainCommandKeys.forget(commandFingerprint, commandKey);
+    });
+    if (commandKey) contentCommands.forget(commandFingerprint, commandKey);
     return data;
   };
-  if (confirmed) return verify(confirmed.data as T);
+  // 确认过的回执只用于读回，原命令超过 24 小时后也不会再次写入。
+  if (attempt?.confirmed) return verify(attempt.confirmed.data as T);
+  if (commandKey) {
+    if (!attempt) contentCommands.remember(commandFingerprint, commandKey);
+    headers.set("Idempotency-Key", commandKey);
+  }
 
   let res: Response;
   let payload: ApiResult<T>;
@@ -80,12 +82,15 @@ async function apiRequest<T>(path: string, init?: RequestInit, verifyReceipt?: V
     if (isWrite && verifyReceipt) throw unknownWrite();
     throw error;
   }
+  if (isWrite && (payload.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || payload.message === "IDEMPOTENCY_RESULT_UNKNOWN")) {
+    throw unknownWrite();
+  }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)
     || (verifyReceipt && typeof payload.code === "number" && payload.code !== 0)) {
     // 本域早就是目标口径(只在确定性拒绝时弃号),2026-08-06 改接共享谓词统一来源:
     // 判据只此一处,别处再改口径时不会落下这一面。
     if (isWrite && !outcomeStaysUnknown(res.status, payload.code)) {
-      uncertainCommandKeys.forget(commandFingerprint, commandKey ?? undefined);
+      contentCommands.forget(commandFingerprint, commandKey ?? undefined);
     } else if (isWrite && verifyReceipt) {
       throw unknownWrite();
     }
@@ -104,11 +109,11 @@ function withReason<T extends Record<string, unknown>>(body: T, reason: string) 
 
 function writeContent<T, B extends Record<string, unknown>>(
   path: string, method: string, body: B, reason: string,
-  verify: (data: T, submitted: B, readBack: ReadBack, confirmedVersion?: string) => void | Promise<void>,
+  verify: (data: T, submitted: B, readBack: ReadBack) => void | Promise<void>,
 ) {
   const submitted = withReason(body, reason);
   return apiRequest<T>(path, { method, body: JSON.stringify(submitted) },
-    (data, readBack, confirmedVersion) => verify(data, submitted, readBack, confirmedVersion));
+    (data, readBack) => verify(data, submitted, readBack));
 }
 
 export type CopyAbStats = {
@@ -744,7 +749,7 @@ export type IContentActions = {
   archiveI6LocalizedMessage: (messageKey: string, expectedVersion: string, reason: string) => Promise<void>;
   fetchI6MessageVersions: (messageKey: string) => Promise<I18nMessagePairView[]>;
   rollbackI6LocalizedMessage: (messageKey: string, target: I18nMessagePairView, expectedVersion: string, reason: string) => Promise<void>;
-  fixI6Integrity: (issueCode: string, body: LocalizedCopyWrite & { messageKey: string }, reason: string, currentVersion: string) => Promise<I18nIntegrityIssueView>;
+  fixI6Integrity: (issueCode: string, body: LocalizedCopyWrite & { messageKey: string }, reason: string) => Promise<I18nIntegrityIssueView>;
   createI6Course: (courseId: string, body: CourseWrite, reason: string) => Promise<void>;
   updateI7CourseDraft: (courseId: string, body: CourseWrite, reason: string) => Promise<void>;
   fetchI7CourseVersions: (courseId: string) => Promise<LearningCourseVersionView[]>;
@@ -814,7 +819,9 @@ function requireCampaignCopyReceipt(saved: NotificationCampaignRow, submitted: N
 }
 
 function matchesLocalizedCopy(saved: LocalizedCopyWrite, submitted: LocalizedCopyWrite) {
-  return saved.zh === submitted.zh.trim() && saved.en === submitted.en.trim() && saved.vi === submitted.vi.trim();
+  return saved.zh === trimStoredContent(submitted.zh)
+    && saved.en === trimStoredContent(submitted.en)
+    && saved.vi === trimStoredContent(submitted.vi);
 }
 
 function matchesCopyPlacement(saved: Pick<CopyVersionRow, "surface" | "copyPosition" | "trafficSplit" | "versionNote" | "audienceTarget">, submitted: CopyWrite) {
@@ -870,7 +877,7 @@ function matchesSubmittedTranslations(saved: Record<string, string> | undefined,
 }
 
 async function requireDisclosureDraft(
-  saved: DisclosureDraftView & { chapters?: DisclosureChapterView[] }, submitted: DisclosureWrite,
+  saved: DisclosureDraftView, submitted: DisclosureWrite,
   readBack: ReadBack, expectedVersion?: string,
 ) {
   const languageScope = submitted.languageScope.startsWith("zh+vi+en") ? submitted.languageScope : "zh+vi+en";
@@ -889,10 +896,6 @@ async function requireDisclosureDraft(
       && row.zhBody === chapter.zhBody.trim() && row.enBody === chapter.enBody.trim() && row.viBody === chapter.viBody.trim()
       && matchesSubmittedTranslations(row.titleTranslations, chapter.titleTranslations)
       && matchesSubmittedTranslations(row.bodyTranslations, chapter.bodyTranslations)));
-  if (saved.chapters !== undefined) {
-    if (!Array.isArray(saved.chapters) || !matchesChapters(saved.chapters)) throw unknownWrite();
-    return;
-  }
   await readBack(async () => {
     const target = await iContentActions.fetchI5DisclosureVersion(saved.jurisdiction, saved.version);
     if (target?.jurisdiction !== saved.jurisdiction || target.version !== saved.version
@@ -951,8 +954,17 @@ function requireCourseVersionDraft(saved: LearningCourseVersionView, courseId: s
   const payload = saved?.payload;
   if (saved?.courseId !== courseId || saved.version !== version || saved.status !== "DRAFT"
     || saved.revision !== (submitted.expectedRevision === undefined ? 0 : submitted.expectedRevision + 1)
-    || payload?.publishState !== "draft"
+    || payload?.publishState !== "draft" || payload.version !== version
     || !matchesCourseCopy(payload, submitted, submitted.duration.trim(), payload.difficulty)) throw unknownWrite();
+}
+
+function deleteContentDraft(path: string, body: Record<string, unknown>, reason: string, isAbsent: () => Promise<boolean>, version?: string) {
+  return writeContent(path, "DELETE", body, reason, (data: null, _submitted, readBack) => {
+    if (data !== null) throw unknownWrite();
+    return readBack(async () => {
+      if (!await isAbsent()) throw new Error("CONTENT_DRAFT_DELETION_NOT_CONFIRMED");
+    }, version);
+  }).then(() => undefined);
 }
 
 export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
@@ -1030,7 +1042,13 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
     (saved: TrustSectionVersionView, submitted) => requireTrustDraft(saved, submitted, sectionKey)).then(() => undefined),
   updateI4TrustSectionDraft: (sectionKey, version, body, reason) => writeContent(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, "PATCH", body, reason,
     (saved: TrustSectionVersionView, submitted) => requireTrustDraft(saved, submitted, sectionKey)).then(() => undefined),
-  deleteI4TrustSectionDraft: (sectionKey, version, expectedRevision, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  deleteI4TrustSectionDraft: (sectionKey, version, expectedRevision, reason) => deleteContentDraft(
+    `/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { expectedRevision }, reason,
+    async () => {
+      const overview = await apiRequest<TrustDisclosureOverview>("/trust-disclosure/overview");
+      return Array.isArray(overview?.trustSectionVersions) && overview.trustSectionVersions.every((row) =>
+        typeof row?.sectionKey === "string" && typeof row.version === "string" && (row.sectionKey !== sectionKey || row.version !== version));
+    }, version),
   rollbackI4TrustSection: (sectionKey, targetVersion, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion, expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
   archiveI4TrustSection: (sectionKey, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
   saveI5DisclosureDraft: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
@@ -1042,7 +1060,13 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   createI5DisclosureVersion: (jurisdiction, body, reason) => writeContent(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions`, "POST", body, reason, requireDisclosureDraft),
   updateI5DisclosureVersion: (jurisdiction, version, body, reason) => writeContent(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, "PATCH", body, reason,
     (saved: DisclosureDraftView, submitted, readBack) => requireDisclosureDraft(saved, submitted, readBack, version)),
-  deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)) }).then(() => undefined),
+  deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason) => deleteContentDraft(
+    `/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { expectedRevision, expectedContentHash }, reason,
+    async () => {
+      const overview = await apiRequest<TrustDisclosureOverview>("/trust-disclosure/overview");
+      return Array.isArray(overview?.disclosureVersionItems) && overview.disclosureVersionItems.every((row) =>
+        typeof row?.jurisdiction === "string" && typeof row.version === "string" && (row.jurisdiction !== jurisdiction || row.version !== version));
+    }, version),
   createI5Jurisdiction: (body, reason) => apiRequest("/trust-disclosure/disclosures/jurisdictions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI5Jurisdiction: (code, body, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   enableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/enable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
@@ -1063,14 +1087,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   rollbackI6LocalizedMessage: (messageKey, target, expectedVersion, reason) => writeContent(
     `/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(target.version)}/rollback`, "POST", { expectedVersion }, reason,
     (saved: I18nMessagePairView, submitted) => requireMessageCopy(saved, messageKey, nextMessageVersion(submitted.expectedVersion), "published", target)).then(() => undefined),
-  fixI6Integrity: (issueCode, body, reason, currentVersion) => writeContent(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, "POST", body, reason,
-    async (saved: I18nIntegrityIssueView, submitted, readBack, confirmedVersion) => {
+  fixI6Integrity: (issueCode, body, reason) => writeContent(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, "POST", body, reason,
+    (saved: I18nIntegrityIssueView) => {
       if (saved?.code !== issueCode || !Array.isArray(saved.samples) || !Number.isInteger(saved.repairedCount)) throw unknownWrite();
-      const version = confirmedVersion ?? nextMessageVersion(currentVersion);
-      await readBack(async () => {
-        const versions = await iContentActions.fetchI6MessageVersions(submitted.messageKey);
-        requireMessageCopy(versions.find((row) => row.version === version), submitted.messageKey, version, "draft", submitted);
-      }, version);
     }),
   createI6Course: (courseId, body, reason) => writeContent(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, "POST", body, reason,
     (saved: LearningCourseView, submitted) => requireCourseDraft(saved, courseId, submitted)).then(() => undefined),
@@ -1079,16 +1098,31 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   fetchI7CourseVersions: (courseId) => apiRequest<LearningCourseVersionView[]>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`),
   createI7CourseVersion: (courseId, body, reason) => writeContent(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, "POST", body, reason,
     (saved: LearningCourseVersionView, submitted) => requireCourseVersionDraft(saved, courseId, submitted.version, submitted)).then(() => undefined),
-  updateI7CourseVersion: (courseId, version, body, reason) => writeContent(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, "PATCH", body, reason,
-    (saved: LearningCourseVersionView, submitted) => requireCourseVersionDraft(saved, courseId, version, submitted)).then(() => undefined),
-  deleteI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  updateI7CourseVersion: async (courseId, version, body, reason) => {
+    if (body.version !== version) throw new Error("课程版本号必须与所编辑的版本一致。");
+    await writeContent(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, "PATCH", body, reason,
+      (saved: LearningCourseVersionView, submitted) => requireCourseVersionDraft(saved, courseId, version, submitted));
+  },
+  deleteI7CourseVersion: (courseId, version, reason) => deleteContentDraft(
+    `/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, {}, reason,
+    async () => {
+      const versions = await iContentActions.fetchI7CourseVersions(courseId);
+      return Array.isArray(versions) && versions.every((row) => row?.courseId === courseId && typeof row.version === "string" && row.version !== version);
+    }, version),
   publishI7CourseVersion: (courseId, version, reason) => changeCourseStatus(courseId, `/versions/${encodeURIComponent(version)}/publish`, version, "published", reason),
   rollbackI7CourseVersion: (courseId, version, reason) => changeCourseStatus(courseId, `/versions/${encodeURIComponent(version)}/rollback`, version, "published", reason),
-  deleteI7CourseDraft: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  deleteI7CourseDraft: (courseId, reason) => deleteContentDraft(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, {}, reason,
+    async () => {
+      const overview = await apiRequest<I18nLearningOverview>("/i18n-learning/overview");
+      return Array.isArray(overview?.courses) && overview.courses.every((row) => typeof row?.id === "string" && row.id !== courseId);
+    }),
   publishI6Course: (courseId, version, reason) => changeCourseStatus(courseId, "/publish", version, "published", reason),
   archiveI6Course: (courseId, version, reason) => changeCourseStatus(courseId, "/archive", version, "archived", reason),
   updateI6CourseReward: (courseId, rewardNex, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/reward`, { method: "PATCH", body: JSON.stringify(withReason({ rewardNex }, reason)) }).then(() => undefined),
-  updateI6FeaturedCourse: (courseId, reason) => apiRequest("/i18n-learning/courses/featured", { method: "PATCH", body: JSON.stringify(withReason({ courseId }, reason)) }).then(() => undefined),
+  updateI6FeaturedCourse: (courseId, reason) => writeContent("/i18n-learning/courses/featured", "PATCH", { courseId }, reason,
+    (saved: LearningCourseView, submitted) => {
+      if (saved?.id !== submitted.courseId || saved.featured !== true) throw unknownWrite();
+    }).then(() => undefined),
 };
 
 function changeCourseStatus(courseId: string, suffix: string, version: string, status: string, reason: string) {

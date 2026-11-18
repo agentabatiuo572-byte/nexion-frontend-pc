@@ -362,7 +362,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
           zh: form?.zh || "",
           en: form?.en || "",
           vi: form?.vi || "",
-        }, reason, target.version), (result) => `${issue.kind} ${result.repairedCount} 处已修复 · 待重扫确认`);
+        }, reason), (result) => `${issue.kind} ${result.repairedCount} 处已修复 · 待重扫确认`);
       },
     });
   };

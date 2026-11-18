@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, fillBlankContentLanguage, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -1304,7 +1304,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const english = state.en?.trim() ?? "";
     for (const language of activeLanguages) {
       const label = `${CONTENT_LANGUAGE_LABELS[language]}文案`;
-      const copy = state[language]?.trim() ?? "";
+      const copy = trimStoredContent(state[language] ?? "");
       needs(language, label);
       if (Array.from(copy).length > 1024) missing.push(`${label}最多 1024 字`);
       if (language !== "en" && copy && english) {
