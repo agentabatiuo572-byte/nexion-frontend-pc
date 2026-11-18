@@ -6,6 +6,8 @@ export type ActionConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
   content?: ReactNode;
+  /** 当前页面不能完成这项操作（如需审批而本页没有审批入口）：常显原因并禁用确认按钮。 */
+  blockedReason?: ReactNode;
   /** 放大资金流出方向才挂(B1 覆盖率预检):解除误判 / 复审通过解冻 / 调阈值放宽 / 停用规则;冻结 / 驳回 / 确认违规不挂。 */
   amplifies?: boolean;
   coverage?: CoverageSnapshot;
@@ -40,6 +42,8 @@ export type ConfirmReq = {
   chips?: ConfirmChip[];
   /** true = 原因必填(标记类 / 白名单 / 手动补触发)。 */
   reason?: boolean;
+  /** 理由框占位符；不传用默认风控示例。 */
+  reasonPlaceholder?: string;
   /** 可选输入框:传 options 时渲染 chips 勾选(枚举值不让手输,能勾选的不要手输铁律);不传则文本框(开放值如白名单网段 / 补触发 userId / 覆盖分)。 */
   input?: {
     label: string;

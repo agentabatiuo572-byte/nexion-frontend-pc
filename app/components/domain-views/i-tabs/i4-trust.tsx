@@ -14,15 +14,17 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import Link from "next/link";
 import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
 import { useEffect, useState } from "react";
-import { Drawer, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
+import { DISCLOSURE_LANGUAGE_SCOPE, Drawer, OPTIONAL_CONTENT_HINT, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
-import type { DisclosureJurisdictionOption, DisclosureVersionItemView } from "@/lib/admin/i-client";
+import { IContentReceiptError, type DisclosureJurisdictionOption, type DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
+import { isOptionalTrustLinkField, localizedTrustSectionField, mapTrustSectionLanguageFields, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
+import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { LegalTermsEditor } from "@/app/components/domain-views/legal-terms-editor";
@@ -50,6 +52,11 @@ type TrustSectionVersion = {
 type Jurisdiction = {
   code: string; name: string; countryCodes: string[]; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number; acked?: number; pendingAck?: number;
 };
+const DISCLOSURE_SCOPE_LANGUAGE_NAMES: Record<string, string> = { zh: "中文", en: "英语", vi: "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
+const disclosureScopeLabel = (scope?: string) => scope?.trim()
+  ? scope.split("+").map((code) => DISCLOSURE_SCOPE_LANGUAGE_NAMES[code.trim().toLowerCase()] ?? code.trim()).join(" / ")
+  : "未知";
+
 const statusZh = (status?: string) => ({
   published: "已发布", draft: "草稿", archived: "已归档", superseded: "已取代",
   PUBLISHED: "已发布", DRAFT: "草稿", ARCHIVED: "已归档", SUPERSEDED: "已取代",
@@ -66,7 +73,10 @@ type DraftEditor = {
   description: string;
   structure: string;
   revision?: number;
+  expectedSectionVersion: string;
+  expectedSectionStatus: string;
   reason: string;
+  requiredLanguages: readonly OperatingLanguageCode[];
   fields: { key: string; label: string; value: string }[];
 };
 
@@ -149,23 +159,30 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     return acc;
   }, {});
   const nextVersionFor = (jurisdiction: string) => data?.nextVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersion ?? "";
-  const chapterPayload = (form: Record<string, string> | undefined) => Array.from({ length: 7 }, (_, index) => ({
-    no: form?.[`chapter.${index}.no`] ?? String(index + 1).padStart(2, "0"),
-    zhTitle: form?.[`chapter.${index}.zhTitle`] ?? "",
-    viTitle: form?.[`chapter.${index}.viTitle`] ?? "",
-    enTitle: form?.[`chapter.${index}.enTitle`] ?? "",
-    zhBody: form?.[`chapter.${index}.zhBody`] ?? "",
-    viBody: form?.[`chapter.${index}.viBody`] ?? "",
-    enBody: form?.[`chapter.${index}.enBody`] ?? "",
-  }));
-  const runBackend = async (task: Promise<void>, ok: string): Promise<boolean> => {
+  const chapterPayload = (form: Record<string, string> | undefined, source?: DisclosureVersionItemView) => Array.from({ length: 7 }, (_, index) => {
+    const no = form?.[`chapter.${index}.no`] ?? String(index + 1).padStart(2, "0");
+    const sourceChapter = source?.chapters.find((chapter) => chapter.no === no);
+    return {
+      no,
+      zhTitle: form?.[`chapter.${index}.zhTitle`] ?? "",
+      viTitle: form?.[`chapter.${index}.viTitle`] ?? "",
+      enTitle: form?.[`chapter.${index}.enTitle`] ?? "",
+      zhBody: form?.[`chapter.${index}.zhBody`] ?? "",
+      viBody: form?.[`chapter.${index}.viBody`] ?? "",
+      enBody: form?.[`chapter.${index}.enBody`] ?? "",
+      titleTranslations: sourceChapter?.titleTranslations,
+      bodyTranslations: sourceChapter?.bodyTranslations,
+    };
+  });
+  const runBackend = async <T,>(task: Promise<T>, ok: string | ((result: T) => string)): Promise<boolean> => {
     try {
-      await task;
+      const result = await task;
       await actions.reloadIContent();
-      toast(ok);
+      toast(typeof ok === "string" ? ok : ok(result));
       return true;
     } catch (error) {
-      toast(`操作失败:${displayAdminError(error)}`);
+      const message = displayAdminError(error);
+      toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
       return false;
     }
   };
@@ -220,11 +237,13 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const liveJurVersion = (j: Jurisdiction): string => j.v;
   const gateOn = (k: string): boolean => GATED_ACTIONS.find((g) => g.key === k)?.active ?? false;
   const disclosureDraft = data?.draft;
-  const disclosureFormSpec = (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: "create" | "edit"): BusinessFormSpec => ({
+  const disclosureFormSpec = (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: "create" | "edit", requiredLanguages: readonly OperatingLanguageCode[]): BusinessFormSpec => ({
     kind: "version-authoring",
+    requiredLanguages,
     mode,
     version,
     jurisdiction,
+    languageScope: snapshot?.languageScope || DISCLOSURE_LANGUAGE_SCOPE,
     zh: snapshot?.zh ?? "",
     vi: snapshot?.vi ?? "",
     en: snapshot?.en ?? "",
@@ -242,8 +261,6 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           enBody: "",
         })),
     jurisdictionOptions: mode === "edit" ? jurisdictionOptions.filter((option) => option.value === jurisdiction) : activeJurisdictionOptions,
-    languageScope: snapshot?.languageScope,
-    languageScopes: data?.languageScopes,
     effectiveDate: snapshot?.effectiveDate,
     requiresReack: snapshot?.requiresReack,
     versionReadonly: true,
@@ -265,30 +282,35 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const openChap = (no: string) => setChapNo(no);
 
   // ---------- I4 信任版块动作 ----------
-  const createSectionDraft = (s: TrustSection) => {
+  const createSectionDraft = async (s: TrustSection) => {
     const fields = currentSectionFields(s);
     if (fields.length === 0) {
       toast("当前发布版缺少字段模板，无法新建草稿");
       return;
     }
+    const requiredLanguages = await getRequiredContentLanguages();
     setDraftEditor({
       mode: "create",
       sectionKey: s.key,
       version: "",
       description: s.desc,
       structure: s.struct,
+      expectedSectionVersion: s.v,
+      expectedSectionStatus: s.status,
       reason: "日常维护信任版块草稿",
-      fields,
+      requiredLanguages,
+      fields: mapTrustSectionLanguageFields(fields, requiredLanguages, "load"),
     });
   };
 
-  const editSectionDraft = (draft: TrustSectionVersion) => {
+  const editSectionDraft = async (draft: TrustSectionVersion) => {
     const section = TRUST_SECTIONS.find((item) => item.key === draft.sectionKey);
     const publishedFields = section ? currentSectionFields(section) : [];
-    if (publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
+    if (!section || publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
       toast("草稿字段模板已过期，请删除后基于当前发布版新建");
       return;
     }
+    const requiredLanguages = await getRequiredContentLanguages();
     setDraftEditor({
       mode: "edit",
       sectionKey: draft.sectionKey,
@@ -296,32 +318,34 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       description: draft.description,
       structure: draft.structure,
       revision: draft.revision,
+      expectedSectionVersion: section.v,
+      expectedSectionStatus: section.status,
       reason: "日常维护信任版块草稿",
-      fields: draft.fields,
+      requiredLanguages,
+      fields: mapTrustSectionLanguageFields(draft.fields, requiredLanguages, "load"),
     });
   };
 
   const saveSectionDraft = () => {
     if (!draftEditor) return;
-    const sectionSnapshot = TRUST_SECTIONS.find((item) => item.key === draftEditor.sectionKey);
-    if (!sectionSnapshot) {
-      toast("版块内容已被修改，请刷新后重试");
+    const fields = mapTrustSectionLanguageFields(draftEditor.fields, draftEditor.requiredLanguages, "submit");
+    if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
+      || !draftEditor.structure.trim() || !draftEditor.reason.trim() || fields.length === 0
+      || fields.some((field) => !field.key.trim() || !field.label.trim())) {
+      toast("请完整填写版本、说明、结构、字段和保存说明");
       return;
     }
-    if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
-      || !draftEditor.structure.trim() || !draftEditor.reason.trim() || draftEditor.fields.length === 0
-      || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim()
-        || (!isOptionalTrustLinkField(field.key) && !field.value.trim()))) {
-      toast("请完整填写版本、说明、结构、字段和保存说明");
+    if (fields.some((field) => !isOptionalTrustLinkField(field.key) && !field.value.trim())) {
+      toast("请补齐英文和运营区域语言的字段；选填语言已填写的，请填完整或全部留空");
       return;
     }
     const payload = {
       version: draftEditor.version,
       description: draftEditor.description.trim(),
       structure: draftEditor.structure.trim(),
-      fields: draftEditor.fields.map((field) => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() })),
-      expectedSectionVersion: sectionSnapshot.v,
-      expectedSectionStatus: sectionSnapshot.status,
+      fields: fields.map((field) => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() })),
+      expectedSectionVersion: draftEditor.expectedSectionVersion,
+      expectedSectionStatus: draftEditor.expectedSectionStatus,
       ...(draftEditor.mode === "edit" ? { expectedRevision: draftEditor.revision ?? 0 } : {}),
     };
     const task = draftEditor.mode === "create"
@@ -341,13 +365,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     ), `${draft.sectionKey} ${draft.version} 草稿已删除`),
   });
 
-  const pubSection = (s: TrustSection, draft: TrustSectionVersion) =>
+  const pubSection = async (s: TrustSection, draft: TrustSectionVersion) => {
+    const requiredLanguages = await getRequiredContentLanguages();
     openActionConfirm({ briefKind: "content",
       action: <>发布信任版块 · {s.key} {draft.version}</>,
       detail: (
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
-          发布后 信任中心页面即时换新。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
+          发布后 信任中心页面即时换新。<b>必填语言核对</b>须确认各必填语言内容准确，关键数字一致。
           {requiresDataSource(s) && <>财务数字 / UVT介绍必须填写可追溯的<b>财务/UVT 数据来源</b>。</>}
           <b>执行门槛:{operatorCopyText(s.roleGate)}</b>
         </>
@@ -355,6 +380,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       amplifies: false,
       businessForm: {
         kind: "trust-section-publish",
+        requiredLanguages,
         currentVersion: s.v,
         targetVersion: draft.version,
         currentFields: currentSectionFields(s),
@@ -362,9 +388,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         requireDataSource: requiresDataSource(s),
       },
       run: async (reason, _value, form) => {
-        const trilingual = validateTrustSectionTrilingualFields(draft.fields);
-        if (!trilingual.valid) {
-          toast(`中越英字段不完整：${trilingual.missing.join("、")}`);
+        const required = validateTrustSectionTrilingualFields(draft.fields, requiredLanguages);
+        if (!required.valid) {
+          toast(`必填语言字段不完整：${required.missing.join("、")}`);
           return false;
         }
         const def = findHighOp("i4_trust_section_manage")!;
@@ -399,6 +425,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         });
       },
     });
+
+  };
 
   const rollbackSection = (s: TrustSection) =>
     openActionConfirm({ briefKind: "content",
@@ -472,7 +500,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
 
   // ---------- I5 披露动作 ----------
-  const draftDisclosure = (editing?: DisclosureVersionItemView) => {
+  const draftDisclosure = async (editing?: DisclosureVersionItemView) => {
     const initialJurisdiction = editing?.jurisdiction ?? activeJurisdictionOptions[0]?.value ?? "";
     if (!initialJurisdiction) {
       toast("暂无启用适用地区，请先在适用地区配置中新增或启用适用地区");
@@ -484,30 +512,34 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       return;
     }
     const base = editing ?? I5_VERSION_ROWS.find((row) => row.jurisdiction === initialJurisdiction && row.status.toLowerCase() === "published");
+    const requiredLanguages = await getRequiredContentLanguages();
+    const sources = new Map([[initialJurisdiction, editing ? undefined : base]]);
     openActionConfirm({ briefKind: "config",
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
         <>
-          中文、越南语必填；选择包含英语的语言范围时，英语也须填写完整，三语占位符一致。保存草稿立即生效，但不改变 App 内容；发布提交到「操作记录与审批」，批准后生效，仅封存七章内容。随后还须另行提交生效版本映射，批准切换后才要求用户重新确认。
+          英文和运营区域语言必填，已填写语言的占位符须一致。保存草稿立即生效，但不改变 App 内容；发布提交到「操作记录与审批」，批准后生效，封存总文和七章内容。随后还须另行提交生效版本映射，批准切换后才要求用户重新确认。
         </>
       ),
       amplifies: false,
       completionCopy: "草稿保存立即生效于草稿，App 内容不变；发布与生效版本映射须分别批准后生效。",
-      businessForm: disclosureFormSpec(base, initialJurisdiction, version, editing ? "edit" : "create"),
+      businessForm: disclosureFormSpec(base, initialJurisdiction, version, editing ? "edit" : "create", requiredLanguages),
       onBusinessSelectionChange: async (form) => {
-        if (editing) return disclosureFormSpec(editing, editing.jurisdiction, editing.version, "edit");
+        if (editing) return disclosureFormSpec(editing, editing.jurisdiction, editing.version, "edit", requiredLanguages);
         const jurisdiction = form.jurisdiction;
         const nextVersion = nextVersionFor(jurisdiction);
         const currentVersion = JURISDICTIONS.find((row) => row.code === jurisdiction)?.v ?? "";
-        let snapshot = I5_VERSION_ROWS.find((row) => row.jurisdiction === jurisdiction && row.version === currentVersion);
-        if (!snapshot && currentVersion) {
+        let source = I5_VERSION_ROWS.find((row) => row.jurisdiction === jurisdiction && row.version === currentVersion);
+        if (!source && currentVersion) {
           try {
-            snapshot = await actions.fetchI5DisclosureVersion(jurisdiction, currentVersion);
+            source = await actions.fetchI5DisclosureVersion(jurisdiction, currentVersion);
           } catch {
             toast("适用地区加载失败，请刷新后重试");
+            return;
           }
         }
-        return disclosureFormSpec(snapshot, jurisdiction, nextVersion, "create");
+        sources.set(jurisdiction, source);
+        return disclosureFormSpec(source, jurisdiction, nextVersion, "create", requiredLanguages);
       },
       run: (reason, _v, form) => {
         const targetVersion = form?.version?.trim() || "";
@@ -515,25 +547,29 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const zh = form?.zh?.trim() || "";
         const vi = form?.vi?.trim() || "";
         const en = form?.en?.trim() || "";
-        if (!targetVersion || !jurisdiction || !zh || !vi) {
+        if (!targetVersion || !jurisdiction || !en) {
           toast("缺少版本号、适用地区或正文，无法保存草稿");
           return false;
         }
+        const source = sources.get(jurisdiction);
         const payload = {
           jurisdiction,
-          languageScope: form?.languageScope || "zh+vi",
+          languageScope: form?.languageScope || DISCLOSURE_LANGUAGE_SCOPE,
           effectiveDate: form?.effectiveDate || "",
           requiresReack: form?.requiresReack !== "false",
           zh,
           vi,
           en,
-          chapters: chapterPayload(form),
+          translations: source?.translations,
+          chapters: chapterPayload(form, source),
           ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
         };
         const task = editing
           ? actions.updateI5DisclosureVersion(jurisdiction, targetVersion, payload, reason)
           : actions.createI5DisclosureVersion(jurisdiction, payload, reason);
-        return runBackend(task, "披露草稿已存 · 发布需风控操作确认");
+        return runBackend(task, (saved) => saved.version === targetVersion
+          ? "披露草稿已存 · 发布需风控操作确认"
+          : `披露草稿已存为 ${saved.version}（预览 ${targetVersion}）· 发布需风控操作确认`);
       },
     });
   };
@@ -734,7 +770,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     },
   });
 
-  const publishDisclosure = (row: DisclosureVersionItemView) => {
+  const publishDisclosure = async (row: DisclosureVersionItemView) => {
     const j = JURISDICTIONS.find((item) => item.code === row.jurisdiction);
     const current = I5_VERSION_ROWS.find((item) => item.jurisdiction === row.jurisdiction && item.status.toLowerCase() === "published");
     const affected = row.affected ?? j?.affected ?? 0;
@@ -744,13 +780,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
-          <b>合规关键操作</b>：发布的是已保存的草稿，发布后 7 章内容固定不能改；发布本身不会改变 App 上正在显示的版本，也不会要求用户重新确认。发布须批准后生效，仅封存内容；之后另行提交生效版本映射，批准切换后才要求用户重新确认。<b>需要风控或超级管理员操作</b>。
+          <b>合规关键操作</b>：发布的是已保存的草稿，发布后总文和 7 章内容固定不能改；发布本身不会改变 App 上正在显示的版本，也不会要求用户重新确认。发布须批准后生效，仅封存内容；之后另行提交生效版本映射，批准切换后才要求用户重新确认。<b>需要风控或超级管理员操作</b>。
         </>
       ),
       amplifies: false,
       completionCopy: "批准后生效：仅封存已保存草稿，App 当前版本不变，也不触发重新确认；生效版本映射须另行提交审批。",
       businessForm: {
         kind: "disclosure-publish-review",
+        requiredLanguages: await getRequiredContentLanguages(),
         jurisdiction: row.jurisdiction,
         currentVersion: current?.version ?? j?.v ?? "",
         targetVersion: row.version,
@@ -758,6 +795,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         pendingAck,
         blocked,
         gatedActions: GATED_ACTIONS.filter((action) => action.active).map((action) => action.name),
+        currentSummary: current ? { zh: current.zh, vi: current.vi, en: current.en } : undefined,
+        targetSummary: { zh: row.zh, vi: row.vi, en: row.en },
         currentChapters: current?.chapters ?? [],
         targetChapters: row.chapters,
       },
@@ -1109,7 +1148,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             <div className="itint cyan" data-proof="disclosure-draft-preview" style={{ marginTop: 10 }}>
               <b>当前披露草稿回显</b> · 版本 <span className="mono">{disclosureDraft.version}</span>
               {" "}· 适用地区 <span className="mono">{disclosureDraft.jurisdiction ?? ""}</span>
-              {" "}· 语言 <span className="mono">{disclosureDraft.languageScope ?? "zh+vi"}</span>
+              {" "}· 语言 <span className="mono">{disclosureScopeLabel(disclosureDraft.languageScope)}</span>
               {" "}· 生效日 <span className="mono">{disclosureDraft.effectiveDate ?? ""}</span>
               {" "}· 重新确认 <span className="mono">{disclosureDraft.requiresReack === false ? "否" : "是"}</span>
               <div className="grid g-3" style={{ gap: 10, marginTop: 8 }}>
@@ -1152,7 +1191,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   <td className="mono">{row.jurisdiction}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{row.version}</td>
                   <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(row.status)}</span></td>
-                  <td>{row.languageScope === "zh+vi+en" ? "中文 / 越南语 / 英语" : "中文 / 越南语"}</td>
+                  <td>{disclosureScopeLabel(row.languageScope)}</td>
                   <td className="mono tiny">{row.publishedAt || row.updatedAt || row.effectiveDate || "—"}</td>
                   <td>{row.operator || "—"}</td>
                   <td>{row.chapters.length} / 7</td>
@@ -1299,17 +1338,40 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="field"><span className="bf-legend">内容结构</span><input aria-label="内容结构" className="inp" value={draftEditor.structure} onChange={(event) => setDraftEditor({ ...draftEditor, structure: event.target.value })} /></div>
           <div className="field"><span className="bf-legend">保存说明</span><input aria-label="保存说明" className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
           <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><span className="tiny">共 {draftEditor.fields.length} 项</span></div>
-          <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。</div>
-          {draftEditor.fields.map((field, index) => <div className="itint" key={index} style={{ marginBottom: 10 }}>
-            <div className="grid g-2" style={{ gap: 8 }}>
-              <div className="field">
-                <span className="bf-legend">字段标识（系统固定）</span>
-                <div className="itint mono" data-trust-field-key="fixed">锁定 · {field.key}</div>
+          <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。带 * 的必填。没带 * 的中文、越南语选填：这一语言的字段全部不填时，保存时用对应的英文字段补上；填了其中一项就要把这一语言填齐。</div>
+          {(() => {
+            const entries = draftEditor.fields.map((field, index) => ({ field, index, localized: localizedTrustSectionField(field.key) }));
+            const familyRank = new Map<string, number>();
+            entries.forEach(({ localized, index }) => { if (localized && !familyRank.has(localized.family)) familyRank.set(localized.family, index); });
+            const languageRank = { en: 0, zh: 1, vi: 2 } as const;
+            const englishByFamily = new Map(entries.flatMap(({ localized, field }) => localized?.language === "en" ? [[localized.family, field.value] as const] : []));
+            const copyLanguages = (["zh", "vi"] as const).filter((language) => {
+              if (!draftEditor.requiredLanguages.includes(language)) return false;
+              const group = entries.filter(({ localized }) => localized?.language === language && englishByFamily.has(localized.family));
+              return group.length > 0 && isEnglishCopy(Object.fromEntries(group.map(({ localized }) => [localized!.family, englishByFamily.get(localized!.family) ?? ""])), Object.fromEntries(group.map(({ localized, field }) => [localized!.family, field.value])));
+            });
+            const hinted = new Set<string>();
+            return entries.slice().sort((left, right) => {
+              const leftRank = left.localized ? familyRank.get(left.localized.family)! : left.index;
+              const rightRank = right.localized ? familyRank.get(right.localized.family)! : right.index;
+              return leftRank !== rightRank ? leftRank - rightRank
+                : (left.localized ? languageRank[left.localized.language] : 0) - (right.localized ? languageRank[right.localized.language] : 0);
+            }).map(({ field, index, localized }) => {
+            const required = localized && draftEditor.requiredLanguages.includes(localized.language);
+            const copyHintLanguage = localized && localized.language !== "en" && copyLanguages.includes(localized.language) && !hinted.has(localized.language) ? localized.language : undefined;
+            if (copyHintLanguage) hinted.add(copyHintLanguage);
+            return <div className="itint" key={index} style={{ marginBottom: 10 }}>
+              <div className="grid g-2" style={{ gap: 8 }}>
+                <div className="field">
+                  <span className="bf-legend">字段标识（系统固定）</span>
+                  <div className="itint mono" data-trust-field-key="fixed">锁定 · {field.key}</div>
+                </div>
+                <div className="field"><span className="bf-legend">字段名称</span><input aria-label="字段名称" className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
               </div>
-              <div className="field"><span className="bf-legend">字段名称</span><input aria-label="字段名称" className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
-            </div>
-            <div className="field"><span className="bf-legend">字段内容</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
-          </div>)}
+              <div className="field"><span className="bf-legend">字段内容{required && " *"}</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} placeholder={localized && !required ? (draftEditor.fields.some((item) => { const english = localizedTrustSectionField(item.key); return english?.language === "en" && english.family === localized.family; }) ? OPTIONAL_CONTENT_HINT : "选填") : undefined} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} />{copyHintLanguage && <span className="tiny" style={{ color: "var(--warning)" }}>{englishCopyHint(copyHintLanguage)}</span>}</div>
+            </div>;
+          });
+          })()}
         </Drawer>
       )}
 
@@ -1328,7 +1390,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             当前 {sec.v} · {statusZh(liveTrustStatus(sec))} · 执行门槛:{operatorCopyText(sec.roleGate)}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>
-            结构化内容字段如下；中文、越南语文案必填，英语文案可选。发布前可预览，发布走操作确认。
+            结构化内容字段如下；英文必填，勾为运营区域语言的中文、越南语也必填。发布前可预览，发布走操作确认。
           </div>
           {sec.key === "financials" ? (
             <>
@@ -1395,7 +1457,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           </div>
           <div className="kv">
             <span className="k">语言</span>
-            <span className="v">中文 + 越南语（英语可选，在「多语言文案」里维护）</span>
+            <span className="v">{disclosureScopeLabel(I5_VERSION_ROWS.find((row) => row.jurisdiction === jur.code && row.version === liveJurVersion(jur))?.languageScope)}（生效版本已存的语言）</span>
           </div>
           <div className="kv">
             <span className="k">操作记录</span>
@@ -1419,7 +1481,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDisclosureDetailKey(null)}>关闭</button>}
         >
           <div className="itint" style={{ marginBottom: 10 }}>
-            状态：{statusZh(selectedDisclosureVersion.status)} · 语言：{selectedDisclosureVersion.languageScope === "zh+vi+en" ? "中文 / 越南语 / 英语" : "中文 / 越南语"} · 章节：{selectedDisclosureVersion.chapters.length} / 7
+            状态：{statusZh(selectedDisclosureVersion.status)} · 语言：{disclosureScopeLabel(selectedDisclosureVersion.languageScope)} · 章节：{selectedDisclosureVersion.chapters.length} / 7
           </div>
           {selectedDisclosureVersion.chapters.map((chapter) => <div className="card" key={chapter.no} style={{ padding: 10, marginTop: 8 }}>
             <b>第 {chapter.no} 章 · {chapter.zh}</b>
@@ -1440,7 +1502,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             </button>
           }
         >
-          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 4px", color: "var(--ink)" }}>zh</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 4px", color: "var(--ink)" }}>中文</div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 360 }}>
               <thead>
@@ -1470,8 +1532,23 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
               </tbody>
             </table>
           </div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>英语</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="l-tbl" style={{ minWidth: 360 }}>
+              <thead>
+                <tr>
+                  <th>{chap.en || "英语标题未填写"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{chap.enBody || "英语正文未填写"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div className="itint" style={{ marginTop: 12 }}>
-            中文、越南语都要有 ✓ 变量一致 ✓ · 用户必须滚到底并勾选才能确认；确认记录（版本 + 地区）会保存下来。
+            用户必须滚到底并勾选才能确认；确认记录（版本 + 地区）会保存下来。
           </div>
         </Drawer>
       )}

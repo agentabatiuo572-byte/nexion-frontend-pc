@@ -14,6 +14,8 @@ import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { IContentReceiptError } from "@/lib/admin/i-client";
+import { getRequiredContentLanguages } from "@/lib/admin/platform-experience-client";
 
 const COPY_MODULES = ["home", "store", "earn", "me"] as const;
 type CopyModule = (typeof COPY_MODULES)[number];
@@ -90,7 +92,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   const start = Number(phaseMin.replace("P", ""));
   const end = Number(phaseMax.replace("P", ""));
   return {
-    mode: "structured",
+    mode: "structured" as const,
     tiers: Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`),
     locales: language === "all" ? [] : [language],
     registrationDaysMin: registrationDaysGt + 1,
@@ -236,7 +238,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
       .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
+        const message = displayAdminError(error);
+        toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
         return false;
       });
   };
@@ -260,7 +263,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   });
 
   // 编辑文案(文案池每行通用) —— 默认存草稿,运营也可明确选择发布生效。
-  const editCopy = (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
+  const editCopy = async (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
     const editableVersion = targetVersion
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
@@ -277,6 +280,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       amplifies: false,
       businessForm: {
         kind: "copy-edit",
+        requiredLanguages: await getRequiredContentLanguages(),
         keyName: c.key,
         version: editingExistingDraft ? editableVersion?.v || "" : "",
         versionOptions: selectableVersions,
@@ -308,9 +312,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           registrationDaysGt: Number(form?.registrationDaysGt || 0),
           trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
           versionNote: form?.versionNote || "后台编辑文案",
-          zh: form?.zh || editableVersion?.zh || "",
-          en: form?.en || editableVersion?.en || "",
-          vi: form?.vi || editableVersion?.vi || "",
+          zh: form?.zh ?? "",
+          en: form?.en ?? "",
+          vi: form?.vi ?? "",
           expectedRevision: c.revision,
         };
         if (form?.saveMode === "存草稿") {
@@ -322,7 +326,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     });
   };
 
-  const createCopy = () => {
+  const createCopy = async () => {
     if (ACTIVE_VERSION_OPTIONS.length === 0) {
       toast("请先在文案版本列表中新增或启用文案版本");
       return;
@@ -333,6 +337,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     businessForm: {
       kind: "copy-create",
+      requiredLanguages: await getRequiredContentLanguages(),
       modules: COPY_MODULE_OPTIONS,
       positions: COPY_POSITIONS,
       versionOptions: ACTIVE_VERSION_OPTIONS,
@@ -433,7 +438,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({ briefKind: "content",
     action: <>回滚 · {copy.key} → 重新发布 {v}</>,
-    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。仅完整满足中英越、受众和投放位置要求的归档版允许恢复。</>,
+    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。只有已存中文、英文、越南语齐全（选填语言保存时已用英文补上），且受众和投放位置完整的归档版可以恢复。</>,
     amplifies: false,
     run: (reason) => {
       if (copy.revision == null) {
@@ -469,7 +474,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       return actions.deleteI1CopyDraft(copyKey, version, revision, reason)
         .then(() => actions.reloadIContent())
         .then(() => toast(`${copyKey} ${version} 草稿已删除`))
-        .catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; })
+        .catch((error) => {
+          const message = displayAdminError(error);
+          toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
+          return false;
+        })
         .finally(() => {
           deleteInFlightRef.current = false;
           setDeletingDraftKey(null);

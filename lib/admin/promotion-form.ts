@@ -1,6 +1,48 @@
-import type { Catalog, Draft, DraftPurchaseRule, DraftRewardSpec, Limit, Policy, PolicyRef, Template } from './promotion-types.ts';
+import type { Catalog, Draft, DraftLocalizedText, DraftPurchaseRule, DraftRewardSpec, Limit, LocalizedText, Policy, PolicyContent, PolicyRef, Template } from './promotion-types.ts';
 import { parseStrictFiniteNumber } from './strict-number.ts';
 import { nexGridBrandText } from './brand-copy.ts';
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from './content-language-rules.ts';
+import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from './platform-experience-client.ts';
+
+export const PROMOTION_LANGUAGE_LABELS = { en: '英文', zh: '中文', vi: '越南语' } as const;
+export const PROMOTION_POLICY_TEXT_FIELDS = { DEVICE_RIGHTS: 'rightsDescription', ASSET: 'availabilityDescription', REFUND: 'terms' } as const satisfies Partial<Record<PolicyContent['kind'], string>>;
+
+export function promotionPublicText(draft: Pick<Draft, 'title' | 'terms'>, required: readonly OperatingLanguageCode[], mode: 'edit' | 'submit'): { title: LocalizedText; terms: LocalizedText } {
+  const title: LocalizedText = { ...draft.title, zh: '', en: draft.title?.en ?? '', vi: '' };
+  const terms: LocalizedText = { ...draft.terms, zh: '', en: draft.terms?.en ?? '', vi: '' };
+  const english = { title: title.en, terms: terms.en };
+  const transform = mode === 'edit' ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  for (const locale of ['zh', 'vi'] as const) {
+    const value = { title: draft.title?.[locale] ?? '', terms: draft.terms?.[locale] ?? '' };
+    const localized = transform(required, locale, english, value);
+    title[locale] = localized.title;
+    terms[locale] = localized.terms;
+  }
+  return { title, terms };
+}
+
+export function promotionPublicMissing(draft: Pick<Draft, 'title' | 'terms'> | undefined, required: readonly OperatingLanguageCode[], checkPartial = false): OperatingLanguageCode[] {
+  return OPERATING_LANGUAGE_CODES.filter(locale => {
+    const title = !!draft?.title?.[locale]?.trim(), terms = !!draft?.terms?.[locale]?.trim();
+    return required.includes(locale) ? !title || !terms : checkPartial && title !== terms;
+  });
+}
+
+export function promotionDraftPublicText(draft: Pick<Draft, 'title' | 'terms'>): Pick<Draft, 'title' | 'terms'> {
+  const nonblank = (value: DraftLocalizedText | null | undefined): DraftLocalizedText => Object.fromEntries(
+    Object.entries(value ?? {}).filter(([locale, text]) => !OPERATING_LANGUAGE_CODES.some(code => code === locale) || text.trim()),
+  );
+  return { title: nonblank(draft.title), terms: nonblank(draft.terms) };
+}
+
+export function promotionPolicyText(field: DraftLocalizedText | undefined, required: readonly OperatingLanguageCode[]): LocalizedText {
+  const en = field?.en ?? '';
+  const english = { value: en };
+  return { en,
+    zh: fillBlankContentLanguage(required, 'zh', english, { value: field?.zh ?? '' }).value,
+    vi: fillBlankContentLanguage(required, 'vi', english, { value: field?.vi ?? '' }).value,
+  };
+}
 
 export type PromotionNumericKind = 'quantity' | 'limit' | 'priority' | 'device-budget' | 'amount';
 export const promotionInputText = (value: string | number | null | undefined) => value == null ? '' : String(value);

@@ -224,8 +224,15 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_MFA_CODE_REPLAYED: "该验证码已使用，请重新登录并等待身份验证器生成下一组验证码。",
   QUEST_DAY_ONE_GROUP_REWARD_REQUIRED: "新手任务统一使用总奖励，请在首日任务总奖励中调整，不能修改单项奖励。",
   H3_BINDING_APP_OBSERVATION_UNAVAILABLE: "该页面任务当前暂不可用，不能新增或启用；已有绑定可停用，或改绑为其他可用事件。",
-  LEARNING_COURSE_COPY_TOO_LONG: "课程各语言标题和正文分别最多 1024 字，请精简超长内容后重试；本次未保存。",
-  LEARNING_COURSE_ACTIVATION_APPROVAL_REQUIRED: "这门课程带有奖励，发布或回滚到奖励更高的版本需要审批；当前页面尚不支持提交这项审批，暂时无法在这里操作。",
+  LEARNING_COURSE_COPY_REQUIRED: "请补齐英文和运营区域语言的课程标题、正文；选填语言须整组留空或填完整。",
+  LEARNING_COURSE_QUIZ_INCOMPLETE: "请补齐英文和运营区域语言的测验题干与选项，确认各语言的选项数量及正确答案。",
+  I18N_COPY_REQUIRED: "请核对词条标识，并补齐英文和运营区域语言的文案。",
+  TRUST_SECTION_TRILINGUAL_FIELDS_REQUIRED: "请核对英文和运营区域语言字段，并重新保存信任版块草稿后再发布。",
+  DISCLOSURE_FIELDS_REQUIRED: "请填写适用地区、语言范围、生效日期及英文和运营区域语言的披露正文。",
+  DISCLOSURE_EN_REQUIRED_FOR_SCOPE: "请补齐英文和运营区域语言的披露正文。",
+  DISCLOSURE_CHAPTER_FIELDS_REQUIRED: "请补齐七章英文和运营区域语言的标题、正文与章节编号。",
+  LEARNING_COURSE_COPY_TOO_LONG: "课程中文标题最多 128 字；不填中文时英文标题会用作中文标题，也要在 128 字内。其他标题和正文最多 1024 字。请精简后重试，本次操作未生效。",
+  LEARNING_COURSE_ACTIVATION_APPROVAL_REQUIRED: "这门课程带有奖励，首次发布、发布新版本和回滚都需要审批（等额、降额也算）；当前页面尚不支持提交这项审批，暂时无法在这里操作。",
   ADMIN_SESSION_STORE_UNAVAILABLE: "登录会话服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
   ADMIN_COOKIE_NAMESPACE_INVALID: "后台登录配置有误，暂时无法使用。请联系维护人员检查服务配置后重试。",
   AUTH_REQUIRED: "登录已失效,请重新登录。",
@@ -303,6 +310,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   D2_DEVELOPMENT_SIMULATION_STATE_INVALID: "只有处于冷却期的开发账号提现单可以模拟到期，请刷新后重试。",
   D2_COOLDOWN_ALREADY_DUE: "这笔提现已到复查时间，无需模拟到期；请刷新查看系统复查结果。",
   D2_DEVELOPMENT_SIMULATION_CONFLICT: "模拟到期未完成，请刷新详情核对复查条件后重试。",
+  NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED: "通知草稿的写入结果未确认，请保留原内容重试，系统会沿用原操作编号。",
   NOTIFICATION_CAMPAIGN_STALE_VERSION: "该通知活动已被其他操作员更新，本次未覆盖。请刷新页面后基于最新状态重试。",
   NOTIFICATION_CAMPAIGN_REVISION_REQUIRED: "页面缺少通知活动版本，本次未执行。请刷新页面后重试。",
   NOTIFICATION_CAMPAIGN_DISPATCH_FAILED: "通知下发未完成，系统未把当前结果标记为成功。请刷新活动状态和用户通知数量后再决定是否重试。",
@@ -546,7 +554,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EVENT_REWARD_ASSET_INVALID: "活动奖励必须且只能包含一种资产：UVT 或 USDT。",
   EVENT_STATUS_TERMINAL: "已结束活动不能再改，不能重新上架；请新建活动版本。",
   EVENT_STATUS_TRANSITION_INVALID: "活动状态只能按“待开始→进行中/已结束”或“进行中→已结束”推进，不能回退。",
-  EVENT_LOCALIZED_CONTENT_INCOMPLETE: "请在「App 运营内容（三语）」补齐活动名称、说明和奖励名。发布前须填写英文、中文和越南语。",
+  EVENT_LOCALIZED_CONTENT_INCOMPLETE: "请在「App 运营内容」补齐活动名称、说明，以及需要运营奖名的活动的奖名。英文和运营区域语言必填。",
   EVENT_WHEEL_SINGLETON: "系统只允许一个幸运转盘活动，请直接维护现有转盘及下方奖池。",
   EVENT_WHEEL_REWARD_MANAGED_BY_POOL: "幸运转盘的实际奖励由奖池档位统一管理，不能修改活动行的展示奖励。",
   WHEEL_GUARD_STALE: "转盘护栏已被其他操作员修改，请刷新后基于最新值重试。",
@@ -693,8 +701,10 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   PLATFORM_BACKEND_TIMEOUT: "平台服务响应超时，当前结果尚未确认；写操作请保留当前输入并直接重试。",
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
   PLATFORM_EXPERIENCE_RESPONSE_INVALID: "App 体验配置服务返回的数据不完整或格式异常，页面已停止展示旧配置；请刷新重试或联系值班人员。",
-  PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED: "选择官方安装包后，必须完整填写版本号、中英文发布说明，并至少配置一个 HTTPS 官方下载地址。",
-  PLATFORM_EXPERIENCE_LANGUAGES_INVALID: "界面语言必须保留中文、English、Tiếng Việt，且不能重复或包含未知语言；本次未保存，请刷新后重新选择。",
+  PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED: "选择官方安装包后，必须填写版本号和英文发布说明，并至少配置一个 HTTPS 官方下载地址；中文设为发布必填时，中文发布说明也要填写。",
+  PLATFORM_EXPERIENCE_LANGUAGES_INVALID: "界面语言必须保留 English，且不能重复或包含未知语言；本次未保存，请刷新后重新选择。",
+  PLATFORM_OPERATING_LANGUAGES_INVALID: "发布必填语言必须包含 English，只能再选中文或越南语；本次未保存，请刷新后重新选择。",
+  PLATFORM_OPERATING_LANGUAGES_NOT_SAVED: "其他设置已保存，但发布必填语言没有按你的选择保存；请刷新后核对，再重新保存。",
   PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED: "其他设置已保存，但界面语言没有按你的选择保存；请刷新后核对，再重新保存。",
   PLATFORM_EXPERIENCE_SOURCE_INVALID: "安装包来源只能选择“官方发布”或“暂不可用”；本次未保存，请重新选择。",
   NETWORK_FAILURE: "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。",
@@ -761,6 +771,9 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   M_LOAD_CONFIG_BACKEND_RESPONSE_MISSING: "客服工作台配置加载失败，后台未返回有效配置；页面已停止使用本地猜测值，请重试加载或联系值班人员。",
   M_LOAD_CONFIG_FIELD_MISSING: "客服工作台配置缺少必需字段，页面已停止使用不完整配置；请重试加载或联系值班人员。",
   M_LOAD_REBALANCE_PAYLOAD_INVALID: "本次均衡数据或版本无效，未发起均衡；请重新打开负载调度，加载最新配置后再试。",
+  H4_APPROVAL_REQUIRED: "首次开启活动或开放抽奖报名需要审批；当前页面还不能提交这项审批，本次未保存。",
+  SESSION_TEMPLATE_I18N_ENGLISH_PUBLICATION_REQUIRED: "对应的词条还没发布。请先到「多语言与课程」发布这条话术或模板的词条，词条英文要与正文一致，再回来发布。",
+  SESSION_TEMPLATE_I18N_MISMATCH: "已发布词条的英文与正文不一致，或中文、越南语的变量和英文不同。请在「多语言与课程」改好并重新发布词条后再试。",
   M5_SESSION_TEMPLATE_PROTOCOL_INVALID: "会话话术模板服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
   M2_TICKET_DETAIL_MALFORMED: "客服工单详情返回的数据不完整或格式异常，页面已停止展示；请重试加载或联系值班人员。",
   M2_TICKET_PAGE_INCOMPLETE: "客服工单列表分页加载不完整，页面已停止展示部分数据；请重试加载或联系值班人员。",
@@ -883,6 +896,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   COPY_VERSION_OPTION_REVISION_REQUIRED: "缺少文案版本配置修订号,请刷新后重试。",
   COPY_VERSION_OPTION_REVISION_CONFLICT: "文案版本配置已被他人更新,请刷新后重试。",
   COPY_VERSION_REQUIRED: "请选择文案版本。",
+  COPY_FIELDS_REQUIRED: "请补齐文案信息和英文及运营区域语言的文案。",
   COPY_VERSION_INVALID: "所选文案版本格式不正确。",
   COPY_VERSION_ALREADY_USED: "该文案已经使用过这个版本,请选择其他启用版本。",
   COPY_DRAFT_VERSION_IMMUTABLE: "当前草稿的文案版本不可更换；请删除草稿后重新创建。",
@@ -1038,6 +1052,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // 真属运营输入侧的两个码:给可操作提示,不落中性兜底(兜底只说「刷新重试」对它们没用)。
   A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
   NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
+  NOVA_TEMPLATE_COPY_NOT_SAVED: "推送模板的写入结果未确认，请保留原内容和理由重试，系统会沿用原操作编号。",
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
   // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
   E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
@@ -1050,6 +1065,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_SESSION_NOT_ESTABLISHED: "登录未完成：系统会话尚未建立，请重新登录。",
   ADMIN_SESSION_IDENTITY_MISMATCH: "登录校验异常：会话身份与登录账号不一致，已中止本次登录；请重新登录。",
   CONTENT_API_TIMEOUT: "客服内容服务响应超时，本次加载未完成；请稍后重试。",
+  CONTENT_API_INVALID_RESPONSE: "内容服务返回的数据格式异常，请刷新后重试。",
+  CONTENT_DRAFT_DELETION_NOT_CONFIRMED: "已收到删除回执，暂未核实草稿是否已删除。请重试核对或刷新查看。",
   M2_TICKET_DETAILS_UNAVAILABLE: "客服工单详情暂时加载不到，请刷新重试；持续失败请联系值班人员。",
   M3_CONVERSATION_DETAILS_UNAVAILABLE: "客服会话详情暂时加载不到，请刷新重试；持续失败请联系值班人员。",
   M3_CONVERSATION_SNAPSHOT_UNSTABLE: "客服会话更新暂时中断，连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
@@ -1103,25 +1120,33 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 function eventLocalizedMissingMessage(data: unknown): string | undefined {
-  if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
+  if (!data || typeof data !== "object") return;
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
   const fieldLabels = { name: "名称", description: "说明", rewardName: "奖励名" };
-  const byLanguage = new Map<string, Set<string>>();
-  for (const item of data.missing) {
-    const key = typeof item === "string" ? item
-      : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
-        ? `localized.${item.locale}.${item.field}` : "";
-    const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
-    if (!match) continue;
-    const language = languageLabels[match[1] as keyof typeof languageLabels];
-    const fields = byLanguage.get(language) ?? new Set<string>();
-    fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
-    byLanguage.set(language, fields);
-  }
-  if (!byLanguage.size) return;
-  const labels = [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`);
-  return `请在「App 运营内容（三语）」填写${labels.join("、")}，补齐后再发布或开启活动。`;
+  const describe = (value: unknown) => {
+    if (!Array.isArray(value)) return "";
+    const byLanguage = new Map<string, Set<string>>();
+    for (const item of value) {
+      const key = typeof item === "string" ? item
+        : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
+          ? `localized.${item.locale}.${item.field}` : "";
+      const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
+      if (!match) continue;
+      const language = languageLabels[match[1] as keyof typeof languageLabels];
+      const fields = byLanguage.get(language) ?? new Set<string>();
+      fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
+      byLanguage.set(language, fields);
+    }
+    return [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`).join("、");
+  };
+  const missing = describe("missing" in data ? data.missing : null);
+  const incomplete = describe("incomplete" in data ? data.incomplete : null);
+  if (!missing && !incomplete) return;
+  return [
+    missing && `请在「App 运营内容」填写${missing}，补齐后再发布或开启活动。`,
+    incomplete && `选填译文未填齐：${incomplete}。请整组留空或填齐。`,
+  ].filter(Boolean).join("");
 }
 
 export function formatAdminApiError(message: string | null | undefined, fallback: string, data?: unknown) {

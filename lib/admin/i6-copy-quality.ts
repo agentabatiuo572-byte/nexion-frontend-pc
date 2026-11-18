@@ -1,3 +1,6 @@
+import type { I18nMessagePairView } from "@/lib/admin/i-client";
+import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
+
 /** Mirrors the backend I6 publish gate for immediate form feedback. */
 export function i6CopyQualityIssues(zh: string, en: string, vi: string): string[] {
   const issues: string[] = [];
@@ -10,4 +13,25 @@ export function i6CopyQualityIssues(zh: string, en: string, vi: string): string[
     if (/(^|[^A-Za-z0-9])(nexion|nex[ _-]*grid|stellar[ _-]*(box|rack))/i.test(value)) issues.push(`${locale}仍使用旧品牌`);
   }
   return issues;
+}
+
+export function messageVariables(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
+  return languages.map((language) => [...new Set(message[language].match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"));
+}
+
+export function messageQualityIssues(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
+  return i6CopyQualityIssues(languages.includes("zh") ? message.zh : "", message.en, languages.includes("vi") ? message.vi : "");
+}
+
+export function summarizePublishedI6Messages(publishedMessages: Readonly<Record<string, I18nMessagePairView>>, requiredLanguages: readonly OperatingLanguageCode[]) {
+  const completeByNamespace = new Map<string, number>();
+  let managedKeys = 0;
+  for (const message of Object.values(publishedMessages)) {
+    if (requiredLanguages.some((language) => !message[language].trim())
+      || new Set(messageVariables(message, requiredLanguages)).size !== 1
+      || messageQualityIssues(message, requiredLanguages).length > 0) continue;
+    completeByNamespace.set(message.namespace, (completeByNamespace.get(message.namespace) ?? 0) + 1);
+    managedKeys += 1;
+  }
+  return { managedKeys, completeByNamespace };
 }

@@ -270,8 +270,40 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
   );
 }
 
+export interface H4EventRewardPresentation {
+  appUsesAuthoredRewardName: boolean;
+  appRewardNames: Record<"en" | "zh" | "vi", string>;
+}
+
+export interface H4EventOverviewPresentation extends H4EventRewardPresentation {
+  copyReadiness?: { missing: string[]; incomplete: string[] };
+}
+
+export function hasH4EventRewardPresentation(value: unknown): value is H4EventRewardPresentation {
+  const row = value as Partial<H4EventRewardPresentation> | null;
+  const names = row?.appRewardNames;
+  return typeof row?.appUsesAuthoredRewardName === "boolean" && !!names && typeof names === "object" && !Array.isArray(names)
+    && typeof names.en === "string" && typeof names.zh === "string" && typeof names.vi === "string";
+}
+
+async function h4EventOverviewRequest(path: string, init?: RequestInit, idempotencyPrefix?: string) {
+  const result = await growthRequest<Record<string, any>>(path, init, idempotencyPrefix);
+  const events: unknown = result?.events;
+  if (!Array.isArray(events) || !events.every(hasH4EventRewardPresentation)) {
+    throw new Error("活动奖励展示读取失败，请刷新后重试。");
+  }
+  const rows: H4EventOverviewPresentation[] = events;
+  if (rows.some(({ copyReadiness }) => copyReadiness !== undefined && (
+    !copyReadiness || !Array.isArray(copyReadiness.missing) || copyReadiness.missing.some(key => typeof key !== "string")
+    || !Array.isArray(copyReadiness.incomplete) || copyReadiness.incomplete.some(key => typeof key !== "string")
+  ))) {
+    throw new Error("活动文案就绪读取失败，请刷新后重试。");
+  }
+  return { ...result, events: rows };
+}
+
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
+  return section === "events" ? h4EventOverviewRequest("/quest-events/events-overview") : growthRequest<Record<string, any>>("/quest-events/tasks");
 }
 
 export type H3WeeklyRegionMapping = { callingCode: string; zoneId: string };
@@ -372,7 +404,7 @@ async function h4EventMutation(
   expectedValue: string | boolean,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     `/quest-events/events/${encodeURIComponent(eventId)}/${field}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
     `h4-${field}`,
@@ -565,7 +597,7 @@ export async function updateH4LocalizedContent(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
     `h4-content-${field}`,
@@ -993,7 +1025,7 @@ export async function deleteH4QuestEvent(eventId: string, expectedVersion: strin
 }
 
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     "/quest-events/events",
     { method: "POST", body: JSON.stringify({ ...event, reason, operator: currentAdminOperator() }) },
     "h4-event-create",
@@ -1001,7 +1033,7 @@ export async function createH4QuestEvent(event: Record<string, any>, reason: str
 }
 
 export async function createH4WheelTier(tier: Record<string, any>, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     "/quest-events/wheel-tiers",
     { method: "POST", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
     "h4-tier-create",
@@ -1013,7 +1045,7 @@ export async function updateH4WheelProbabilities(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     "/quest-events/wheel-tiers/probabilities",
     { method: "PATCH", body: JSON.stringify({ probabilities, expectedSignature, reason, operator: currentAdminOperator() }) },
     "h4-tier-probabilities",
@@ -1026,7 +1058,7 @@ export async function updateH4WheelTier(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     { method: "PATCH", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
     "h4-tier-update",
@@ -1034,7 +1066,7 @@ export async function updateH4WheelTier(
 }
 
 export async function deleteH4WheelTier(tierName: string, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     {
       method: "DELETE",
@@ -1045,7 +1077,7 @@ export async function deleteH4WheelTier(tierName: string, expectedSignature: str
 }
 
 export async function createH4WheelGuard(guard: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     "/quest-events/wheel-guards",
     { method: "POST", body: JSON.stringify({ ...guard, reason, operator: currentAdminOperator() }) },
     "h4-guard-create",
@@ -1058,7 +1090,7 @@ export async function updateH4WheelGuard(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4EventOverviewRequest(
     `/quest-events/wheel-guards/${encodeURIComponent(guardKey)}`,
     {
       method: "PATCH",

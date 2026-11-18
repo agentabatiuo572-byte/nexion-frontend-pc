@@ -389,7 +389,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}专属客服话术 · {id}</>,
       briefKind: currentStatus === "published" ? "record" : "content",
-      detail: currentStatus === "published" ? <>归档后客服就选不到这条话术了，不能撤回。</> : <>发布后可在坐席快捷话术菜单选用。发布前须完成中、英、越三语发布，中文正文须与话术一致，三语需填写的字段须一致。</>,
+      detail: currentStatus === "published" ? <>归档后客服就选不到这条话术了，不能撤回。</> : <>发布后可在坐席快捷话术菜单选用。发布前要先在「多语言与课程」发布这条话术的词条：词条英文与话术正文一致；填了中文、越南语的，变量要和英文相同。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -404,9 +404,10 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     canManageM5Content && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
       action: <>新增专属客服话术</>,
       briefKind: "config",
-      detail: <>新建草稿后进入坐席可选话术库;发布走操作确认。</>,
+      detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文；中文、越南语在那里按运营区域语言补；发布走操作确认。</>,
       amplifies: false,
-      edit: { kind: "text", current: "", unit: "话术文案" },
+      edit: { kind: "text", current: "", label: "英文话术 *", multiline: true, placeholder: "例如：Hi {name}, how can I help you today?" },
+      content: <div className="itint" style={{ marginBottom: 12 }}>填写英文原文，坐席发送的就是这段英文。保存后到「多语言与课程」补齐运营区域语言，再回来发布。</div>,
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason: string, v?: string) => {
@@ -428,7 +429,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
       briefKind: "content",
-      detail: currentStatus === "published" ? <>归档后客服就选不到这个模板了，不能撤回。</> : <>发布后进入坐席快捷回复池。发布前须完成中、英、越三语发布，中文正文须与模板一致，三语需填写的字段须一致。</>,
+      detail: currentStatus === "published" ? <>归档后客服就选不到这个模板了，不能撤回。</> : <>发布后进入坐席快捷回复池。发布前要先在「多语言与课程」发布这个模板的词条：词条英文与模板正文一致；填了中文、越南语的，变量要和英文相同。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -443,9 +444,10 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     canManageM5Content && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>新增即时回复模板</>,
       briefKind: "config",
-      detail: <>新增草稿后进入坐席快捷回复模板库，发布后可在专属会话回复框中选用。</>,
+      detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文；中文、越南语在那里按运营区域语言补；发布后可在专属会话回复框中选用。</>,
       amplifies: false,
-      edit: { kind: "text", current: "", unit: "模板文案" },
+      edit: { kind: "text", current: "", label: "英文模板 *", multiline: true, placeholder: "例如：Thanks for waiting, {name}." },
+      content: <div className="itint" style={{ marginBottom: 12 }}>填写英文原文，坐席发送的就是这段英文。保存后到「多语言与课程」补齐运营区域语言，再回来发布。</div>,
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason: string, v?: string) => {

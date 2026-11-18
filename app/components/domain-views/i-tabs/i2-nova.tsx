@@ -21,6 +21,9 @@ import {
 import type { ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { IContentReceiptError } from "@/lib/admin/i-client";
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
 type NovaForm = {
   name: string;
@@ -100,7 +103,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       .then(() => actions.reloadIContent())
       .then(() => { toast(ok); onSuccess?.(); })
       .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
+        const message = displayAdminError(error);
+        toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
         throw error;
       });
 
@@ -176,7 +180,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     reasonMax: 200,
     run: (reason) => {
       if (!n.on && tplStatus(n.key) !== "published") {
-        toast("请先为该通道创建并发布完整的中越文模板，再恢复通道");
+        toast("请先为该通道创建并发布模板，再恢复通道");
         throw new Error("NOVA_PUBLISHED_TEMPLATE_REQUIRED");
       }
       return runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${n.name} 通道${n.on ? "已停推" : "已恢复"}`);
@@ -206,7 +210,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
 
   const publishTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
     action: <>发布模板 · {name}</>,
-    detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
+    detail: <>频道 <b>{ch}</b>。发布的是已保存的模板，发布后这个频道的下一条推送就用新内容。英文和运营区域语言、变量在保存时已检查。</>,
     amplifies: false,
     reasonMax: 200,
     run: (reason) => {
@@ -226,34 +230,51 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [tplDrawer, setTplDrawer] = useState(false);
   const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
-  const newTpl = () => {
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[] | null>(null);
+  const newTpl = async () => {
+    const required = await getRequiredContentLanguages();
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
     setEditTplChannel(null);
     setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
+    setRequiredLanguages(required);
     setTplDrawer(true);
   };
-  const editTpl = (t: (typeof NOVA_TPLS)[number]) => {
+  const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
+    const required = await getRequiredContentLanguages();
+    const en = { title: t.titleEn, body: t.bodyEn };
+    const zh = blankCopiedContentLanguage(required, "zh", en, { title: t.titleZh, body: t.bodyZh });
+    const vi = blankCopiedContentLanguage(required, "vi", en, { title: t.titleVi, body: t.bodyVi });
     setEditTplChannel(t.ch);
+    setRequiredLanguages(required);
     setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v,
-      titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
-      titleEn: t.titleEn, bodyEn: t.bodyEn });
+      titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body, titleEn: en.title, bodyEn: en.body });
     setTplDrawer(true);
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
-  const submitTpl = () => openConfirm({ briefKind: "config",
-    errorHandled: true,
-    action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
-    detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
-    reason: true,
-    okLabel: "保存草稿",
-    run: (reason) => {
-      const body = { ...tplForm };
-      return runBackend(editTplChannel
-        ? actions.updateI2Template(editTplChannel, body, reason)
-        : actions.createI2Template(body, reason),
-      `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
-    },
-  });
+  const templateContent = requiredLanguages && (() => {
+    const en = { title: tplForm.titleEn.trim(), body: tplForm.bodyEn.trim() };
+    const zh = fillBlankContentLanguage(requiredLanguages, "zh", en, { title: tplForm.titleZh.trim(), body: tplForm.bodyZh.trim() });
+    const vi = fillBlankContentLanguage(requiredLanguages, "vi", en, { title: tplForm.titleVi.trim(), body: tplForm.bodyVi.trim() });
+    return [en, zh, vi].some(({ title, body }) => !title || !body) ? null
+      : { titleEn: en.title, bodyEn: en.body, titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body };
+  })();
+  const submitTpl = () => {
+    if (!templateContent) return;
+    openConfirm({ briefKind: "config",
+      errorHandled: true,
+      action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
+      detail: <>保存后是草稿。保存时检查英文和运营区域语言是否填齐、变量是否一致；没勾的中文、越南语标题和正文都不填时，保存英文副本，App 显示英文。</>,
+      reason: true,
+      okLabel: "保存草稿",
+      run: (reason) => {
+        const body = { ...tplForm, ...templateContent };
+        return runBackend(editTplChannel
+          ? actions.updateI2Template(editTplChannel, body, reason)
+          : actions.createI2Template(body, reason),
+        `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
+      },
+    });
+  };
   const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送模板 · {t.name}</>,
@@ -584,7 +605,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">推送模板</span>
-            <span className="sub">· 中文/越南语必填,英语可选 · 发布操作确认</span>
+            <span className="sub">· 英文和运营区域语言必填 · 发布操作确认</span>
             <div className="r">
               {!canWriteI2 && <span className="bdg dim">只读</span>}
               {canWriteI2 && <button className="l-btn sm mc" onClick={newTpl}>+ 新模板</button>}
@@ -597,7 +618,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                   <th>频道</th>
                   <th>模板</th>
                   <th>点击后跳转页面</th>
-                  <th>中/越文预览</th>
+                  <th>已存内容</th>
                   <th>版本</th>
                   <th>状态</th>
                   <th style={{ textAlign: "right" }}></th>
@@ -614,9 +635,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
                       <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{t.cta}</td>
                       <td style={{ fontSize: 11.5, color: "var(--ink-3)", maxWidth: 260 }}>
+                        <div><b>英语：</b>{t.bodyEn ? <>{nexGridBrandText(t.titleEn)} · {nexGridBrandText(t.bodyEn)}</> : "未填写"}</div>
                         <div><b>中文：</b>{nexGridBrandText(t.titleZh)} · {nexGridBrandText(t.bodyZh)}</div>
                         <div><b>越南语：</b>{nexGridBrandText(t.titleVi)} · {nexGridBrandText(t.bodyVi)}</div>
-                        {t.bodyEn && <div><b>英语：</b>{nexGridBrandText(t.titleEn)} · {nexGridBrandText(t.bodyEn)}</div>}
                       </td>
                       <td className="mono" style={{ fontWeight: 700 }}>{t.v}</td>
                       <td>{renderTplBadge(st)}</td>
@@ -652,7 +673,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="itint">
-              <b>说明</b> · 共 {templatePager.total} 个模板，每页 {templatePager.pageSize} 个。模板里的中文、越南语（英语可选）就是实际推送的内容。流程：草稿 → 已发布 → 已归档。
+              <b>说明</b> · 共 {templatePager.total} 个模板，每页 {templatePager.pageSize} 个。模板里已存的英文、中文、越南语就是实际推送的内容。流程：草稿 → 已发布 → 已归档。
             </div>
           </div>
         </section>
@@ -924,14 +945,14 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             </label>
             {(form.tickValue || form.cooldownValue) && cadenceError && <div className="itint danger">{cadenceError}</div>}
             <div className="itint"><b>点击率 无需填写</b> · 新通道从 0% 开始，产生真实投递与点击后由系统自动统计。</div>
-            {!editNovaKey && <div className="itint warn"><b>新增后默认停用</b> · 请先在模板池填写并发布中越文模板，再开启通道。</div>}
+            {!editNovaKey && <div className="itint warn"><b>新增后默认停用</b> · 请先在模板池填写并发布模板，再开启通道。</div>}
           </div>
         </Drawer>
       )}
       {tplDrawer && (
         <Drawer
           title={editTplChannel ? "编辑 消息推送模板" : "新增 消息推送模板"}
-          sub="模板正文由 Nova 直接用于实际推送；中文、越南语必填，英语可选"
+          sub="模板正文由 Nova 直接用于实际推送；英文和运营区域语言必填"
           onClose={closeTplDrawer}
           footer={
             <>
@@ -939,9 +960,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <button
                 className="l-btn primary"
                 style={{ flex: 1, justifyContent: "center" }}
-                disabled={!tplForm.channel || !tplForm.name.trim() || !tplForm.cta || !tplForm.version.trim()
-                  || !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() || !tplForm.titleVi.trim() || !tplForm.bodyVi.trim()
-                  || (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim())}
+                disabled={!tplForm.channel || !tplForm.name.trim() || !tplForm.cta || !tplForm.version.trim() || !templateContent}
                 onClick={submitTpl}
               >保存草稿</button>
             </>
@@ -969,19 +988,22 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <option value="">请选择投放去向</option>
                 {CTA_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}（{option.value}）</option>)}
               </select></label>
-            {(["Zh", "Vi", "En"] as const).map((locale) => {
-              const label = locale === "Zh" ? "中文" : locale === "Vi" ? "越南语" : "英语（可选）";
+            {(["En", "Zh", "Vi"] as const).map((locale) => {
+              const label = locale === "Zh" ? "中文" : locale === "Vi" ? "越南语" : "英语";
+              const required = locale === "En" || (requiredLanguages?.includes(locale === "Zh" ? "zh" : "vi") ?? true);
               const titleKey = `title${locale}` as const;
               const bodyKey = `body${locale}` as const;
               return <div className="col" style={{ gap: 6 }} key={locale}>
-                <b style={{ fontSize: 12 }}>{label}</b>
+                <b style={{ fontSize: 12 }}>{label}{required ? " *" : "（选填）"}</b>
+                {!required && <span className="muted tiny">选填，不填时 App 显示英文；填了标题或正文，另一项也要填。</span>}
+                {required && locale !== "En" && isEnglishCopy({ title: tplForm.titleEn, body: tplForm.bodyEn }, { title: tplForm[titleKey], body: tplForm[bodyKey] }) && <span className="tiny" style={{ color: "var(--warning)" }}>{englishCopyHint(locale === "Zh" ? "zh" : "vi")}</span>}
                 <input className="fld" value={tplForm[titleKey]}
                   onChange={(e) => setTplForm({ ...tplForm, [titleKey]: e.target.value })} placeholder={`${label}标题`} />
                 <textarea className="fld" rows={3} value={tplForm[bodyKey]}
                   onChange={(e) => setTplForm({ ...tplForm, [bodyKey]: e.target.value })} placeholder={`${label}正文，例如：你有 {amount} UVT 待领取`} />
               </div>;
             })}
-            {!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim() && <div className="itint danger">英语标题和正文必须同时填写，或同时留空。</div>}
+            {!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim() && <div className="itint danger">英语标题和正文都要填写。</div>}
           </div>
         </Drawer>
       )}

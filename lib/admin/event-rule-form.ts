@@ -30,19 +30,23 @@ export function parseEventRegions(text: string) {
 }
 export function eventRuleMissingLabel(key: string): string {
   if (key.startsWith("localized.")) {
-    const locale = key.split(".")[1];
-    const label = locale === "en" ? "英文" : locale === "zh" ? "中文" : locale === "vi" ? "越南语" : "三语";
-    return `活动${label}文案（在活动内容区维护）`;
+    const [, locale, field] = key.split(".");
+    const label = locale === "en" ? "英文" : locale === "zh" ? "中文" : locale === "vi" ? "越南语" : "英文和运营区域语言";
+    const name = field === "name" ? "名称" : field === "description" ? "说明" : field === "rewardName" ? "奖励名" : "文案";
+    return `活动${label}${name}（在活动内容区维护）`;
   }
   const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
   if (voucherIssue) return voucherIssue;
   const field = Object.values(EVENT_RULE_FIELDS).flat().find(field => field.key === key);
-  return field?.label ?? ({ startsAt: "开始时间", endsAt: "结束时间", locales: "三语活动文案", promotion: "关联促销活动", allocation: "奖池分配规则", metric: "区域排名统计项目", "regions.countries": "参赛国家范围", regions: "参赛地区", wheel: "转盘奖池", rules: "玩法配置", stakingAppVisible: "请先在G1展示App质押功能" } as Record<string, string>)[key] ?? "参与条件或奖励配置";
+  return field?.label ?? ({ startsAt: "开始时间", endsAt: "结束时间", locales: "英文和运营区域语言活动文案", promotion: "关联促销活动", allocation: "奖池分配规则", metric: "区域排名统计项目", "regions.countries": "参赛国家范围", regions: "参赛地区", wheel: "转盘奖池", rules: "玩法配置", stakingAppVisible: "请先在G1展示App质押功能" } as Record<string, string>)[key] ?? "参与条件或奖励配置";
 }
 
 export function eventRuleReadinessText(row: Pick<EventRuleView, "rulesLocked" | "endsAt" | "readiness">, now = Date.now()): string {
   if (row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= now) return "活动已结束，参与条件与有效期保持原配置。";
-  return row.readiness.ready ? "配置已满足开启条件。" : `待补齐：${[...new Set(row.readiness.missing.map(eventRuleMissingLabel))].join("、") || "参与条件与奖励配置"}。`;
+  if (row.readiness.ready) return "配置已满足开启条件。";
+  const missing = [...new Set(row.readiness.missing.map(eventRuleMissingLabel))].join("、");
+  const incomplete = row.readiness.incomplete?.map(eventRuleMissingLabel).join("、");
+  return [missing && `待补齐：${missing}。`, incomplete && `选填译文未填齐：${incomplete}。`].filter(Boolean).join("") || "开启条件尚未确认，请核对配置。";
 }
 
 export function eventRuleDraftRules(row: Pick<EventRuleView, "kind" | "rules"> & { eventCode?: string }): Record<string, unknown> {

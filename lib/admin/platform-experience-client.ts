@@ -1,6 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { fillBlankContentLanguage } from "./content-language-rules";
 
 export type ExperienceSource = "official" | "unavailable";
 export interface ExperienceChannel {
@@ -34,6 +35,8 @@ export const INTERFACE_LANGUAGES = [
   { code: "uz", nativeName: "Oʻzbekcha", zhName: "乌兹别克语", base: false },
 ] as const;
 export type InterfaceLanguageCode = typeof INTERFACE_LANGUAGES[number]["code"];
+export const OPERATING_LANGUAGE_CODES = ["en", "zh", "vi"] as const;
+export type OperatingLanguageCode = typeof OPERATING_LANGUAGE_CODES[number];
 
 export interface PlatformExperienceConfig {
   version: number;
@@ -42,8 +45,8 @@ export interface PlatformExperienceConfig {
   appDownload: ExperienceDownload;
   homeNewcomerTasksEnabled: boolean;
   homeWeeklyPromoEnabled: boolean;
-  /** Absent until the system supports switching interface languages; then it is never sent on save. */
-  interfaceLanguages?: InterfaceLanguageCode[];
+  interfaceLanguages?: readonly InterfaceLanguageCode[] | null;
+  operatingLanguages?: readonly OperatingLanguageCode[] | null;
   ready: boolean;
   sources: string[];
   updatedAt?: string;
@@ -65,6 +68,7 @@ export function recommendedExperienceChannels(): ExperienceChannel[] {
 }
 
 interface ApiResult<T> { code: number; message?: string; data?: T; }
+const EXPERIENCE_CONFIG_PATH = "/api/admin/platform/config/experience";
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-platform-experience-commands-v1" });
 
 function strictUrl(value: unknown, required: boolean, allowHttp: boolean, allowFragment = false): string {
@@ -94,21 +98,39 @@ function strictInterfaceLanguages(value: unknown): InterfaceLanguageCode[] {
   return INTERFACE_LANGUAGES.map((language) => language.code).filter((code) => value.includes(code));
 }
 
+function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): OperatingLanguageCode[] {
+  // B26: en is required and the list comes in contract order (en, zh, vi); another order is malformed, not equivalent.
+  const ordered = Array.isArray(value) ? OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code)) : [];
+  if (!Array.isArray(value) || !ordered.includes("en") || ordered.length !== value.length
+    || ordered.some((code, index) => value[index] !== code)) throw new Error(errorCode);
+  return ordered;
+}
+
 class PlatformExperienceRequestError extends Error {
-  constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string) {
+  readonly resultUnconfirmed: boolean;
+
+  constructor(
+    public readonly status: number,
+    public readonly apiCode: number | undefined,
+    public readonly apiMessage: string | undefined,
+  ) {
+    const resultUnconfirmed = apiMessage === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || apiMessage === "IDEMPOTENCY_RESULT_UNKNOWN";
+    const message = resultUnconfirmed
+      ? "保存结果未确认，请保持输入不变，稍后再次保存核对。"
+      : apiMessage === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
+        ? apiMessage
+        : formatAdminApiError(apiMessage, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${status}`);
     super(message);
     this.name = "PlatformExperienceRequestError";
+    this.resultUnconfirmed = resultUnconfirmed;
   }
 }
 
-async function request<T>(init?: RequestInit): Promise<T> {
-  const response = await guardedFetch("/api/admin/platform/config/experience", { ...init, cache: "no-store" });
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await guardedFetch(path, { ...init, cache: "no-store" });
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!response.ok || !body || body.code !== 0) {
-    const message = body?.message === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
-      ? "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
-      : formatAdminApiError(body?.message, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${response.status}`);
-    throw new PlatformExperienceRequestError(response.status, body?.code, message);
+    throw new PlatformExperienceRequestError(response.status, body?.code, body?.message);
   }
   return body.data as T;
 }
@@ -160,13 +182,24 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     },
     homeNewcomerTasksEnabled: root.homeNewcomerTasksEnabled,
     homeWeeklyPromoEnabled: root.homeWeeklyPromoEnabled,
-    interfaceLanguages: root.interfaceLanguages === undefined ? undefined : strictInterfaceLanguages(root.interfaceLanguages),
+    interfaceLanguages: root.interfaceLanguages == null ? root.interfaceLanguages : strictInterfaceLanguages(root.interfaceLanguages),
+    operatingLanguages: root.operatingLanguages == null ? root.operatingLanguages : strictOperatingLanguages(root.operatingLanguages),
     ready: Boolean(root.ready), sources: Array.isArray(root.sources) ? root.sources.map(String) : [], updatedAt: typeof root.updatedAt === "string" ? root.updatedAt : undefined,
   };
 }
 
 export async function fetchPlatformExperienceConfig() {
-  return normalize(await request<unknown>());
+  return normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
+}
+
+export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]> {
+  const raw = await request<unknown>("/api/admin/platform/config/operating-languages");
+  if (!raw || typeof raw !== "object" || !("operatingLanguages" in raw)) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  return strictOperatingLanguages(raw.operatingLanguages);
+}
+
+export function getRequiredContentLanguages(): Promise<readonly OperatingLanguageCode[]> {
+  return fetchOperatingLanguages().catch(() => OPERATING_LANGUAGE_CODES);
 }
 
 export async function updatePlatformExperienceConfig(
@@ -175,36 +208,53 @@ export async function updatePlatformExperienceConfig(
   operator = "",
 ) {
   if (!Number.isSafeInteger(config.version) || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("A3_REASON_LENGTH_INVALID");
-  if (config.appDownload.source === "official") {
+  const submittedInterfaceLanguages = config.interfaceLanguages === null ? ["en"] : config.interfaceLanguages;
+  const submittedOperatingLanguages = config.operatingLanguages === undefined
+    ? undefined
+    : strictOperatingLanguages(config.operatingLanguages ?? ["en"], "PLATFORM_OPERATING_LANGUAGES_INVALID");
+  let appDownload = config.appDownload;
+  if (appDownload.source === "official") {
     for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
-      try { strictUrl(config.appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
+      try { strictUrl(appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
       catch { throw new Error(`${label}需填写有效的 HTTPS 地址，不能包含空格或账号密码${field === "officialUrl" ? "，支持 #download 等页面锚点" : "或页面锚点"}。`); }
     }
-    if (!config.appDownload.version.trim() || !config.appDownload.releaseNotes.zh.trim() || !config.appDownload.releaseNotes.en.trim()) {
+    const required = submittedOperatingLanguages ?? await getRequiredContentLanguages();
+    const { en, zh } = appDownload.releaseNotes;
+    const releaseNotes = { en, zh: fillBlankContentLanguage(required, "zh", { text: en }, { text: zh }).text };
+    if (!appDownload.version.trim() || !releaseNotes.zh.trim() || !releaseNotes.en.trim()) {
       throw new Error("PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED");
     }
-  } else if (config.appDownload.source !== "unavailable") {
+    appDownload = { ...appDownload, releaseNotes };
+  } else if (appDownload.source !== "unavailable") {
     throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
-  const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload: config.appDownload, reason: reason.trim(), operator };
-  if (config.interfaceLanguages) body.interfaceLanguages = config.interfaceLanguages;
+  const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload, reason: reason.trim(), operator };
+  if (submittedInterfaceLanguages) body.interfaceLanguages = submittedInterfaceLanguages;
+  if (submittedOperatingLanguages) body.operatingLanguages = submittedOperatingLanguages;
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
   const idempotencyKey = commandAttempts.resolve(slot, fingerprint, () => `a3-experience-${crypto.randomUUID()}`);
   try {
-    const response = await request<unknown>({
+    const response = await request<unknown>(EXPERIENCE_CONFIG_PATH, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(body),
     });
-    commandAttempts.forget(slot);
     const saved = normalize(response);
-    if (config.interfaceLanguages && saved.interfaceLanguages?.join() !== config.interfaceLanguages.join()) {
+    if (submittedInterfaceLanguages && saved.interfaceLanguages?.join() !== submittedInterfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
     }
+    if (submittedOperatingLanguages && saved.operatingLanguages?.join() !== submittedOperatingLanguages.join()) {
+      throw new Error("PLATFORM_OPERATING_LANGUAGES_NOT_SAVED");
+    }
+    if (appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== appDownload.releaseNotes.en
+      || saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.zh)) {
+      throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+    }
+    commandAttempts.forget(slot);
     return saved;
   } catch (cause) {
-    if (cause instanceof PlatformExperienceRequestError && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
+    if (cause instanceof PlatformExperienceRequestError && !cause.resultUnconfirmed && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
       commandAttempts.forget(slot);
     }
     // Keep the key on an uncertain result; editing the form/version makes a new fingerprint.

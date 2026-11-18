@@ -27,7 +27,7 @@ const ARRAY_KEYS: Record<IModuleId, readonly string[]> = {
   ],
   I6: [
     "namespaces", "integrityIssues", "hardcodedFindings", "messages", "courses",
-    "metrics", "categories", "formats", "levels", "statuses", "sources",
+    "categories", "formats", "levels", "statuses", "sources",
   ],
 };
 
@@ -88,7 +88,14 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
 }
 
 function validateI3(moduleId: IModuleId, value: Record<string, unknown>) {
-  records(moduleId, value.campaigns);
+  for (const campaign of records(moduleId, value.campaigns)) {
+    if (campaign.translations !== undefined) {
+      for (const translation of Object.values(record(moduleId, campaign.translations))) {
+        const copy = record(moduleId, translation);
+        if (typeof copy.title !== "string" || typeof copy.body !== "string" || typeof copy.ctaLabel !== "string") fail(moduleId);
+      }
+    }
+  }
   records(moduleId, value.capRules);
   records(moduleId, value.swipeRoutes);
   const audienceCatalog = record(moduleId, value.audienceCatalog);
@@ -132,6 +139,12 @@ function validateI6(moduleId: IModuleId, value: Record<string, unknown>) {
   for (const message of records(moduleId, value.messages)) {
     array(moduleId, message.placeholders);
   }
+  for (const [messageKey, entry] of Object.entries(record(moduleId, value.publishedMessages))) {
+    const message = record(moduleId, entry);
+    if (message.messageKey !== messageKey || message.status !== "published"
+      || ["namespace", "version", "en", "zh", "vi"].some((key) => typeof message[key] !== "string")
+      || array(moduleId, message.placeholders).some((placeholder) => typeof placeholder !== "string")) fail(moduleId);
+  }
   if (value.focusMessage !== undefined && value.focusMessage !== null) {
     array(moduleId, record(moduleId, value.focusMessage).placeholders);
   }
@@ -142,7 +155,7 @@ function validateI6(moduleId: IModuleId, value: Record<string, unknown>) {
     }
   }
   record(moduleId, value.rewardRange);
-  records(moduleId, value.metrics);
+  if (value.metrics !== undefined) records(moduleId, value.metrics);
 }
 
 export function parseIOverview(moduleId: string, input: unknown): unknown {
