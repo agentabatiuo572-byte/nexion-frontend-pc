@@ -24,6 +24,7 @@ const editableRaffle = (row: AdminRaffle, required: readonly OperatingLanguageCo
   id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi,
   startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes,
 }, required, "edit");
+const prizeKey = (id: string) => encodeURIComponent(id).replace(/\./g, "%2E");
 function equalRaffleField(path: string, left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (/^prizes\.[^.]+\.amount$/.test(path) && (typeof left === "string" || typeof left === "number")
@@ -179,10 +180,23 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const review = base && draft ? conflictReview.current : null;
   const PRIZE_FIELD: Record<string, string> = { nameZh: "中文名称", nameEn: "英文名称", nameVi: "越南语名称", rewardType: "奖励类型", amount: "每名金额", productNo: "设备商品编号", quantity: "中奖名额", id: "奖项" };
   const prizeName = (id: string) => {
-    const leaf = review?.fields.find(field => field.path === `prizes.${encodeURIComponent(id).replace(/\./g, "%2E")}.nameZh`);
+    const leaf = review?.fields.find(field => field.path === `prizes.${prizeKey(id)}.nameZh`);
     // 空名不算有名字：最新一份没写中文名时用你填的或打开时的名字。
     return [leaf?.latest, leaf?.mine, leaf?.opened].map(name => name == null ? "" : String(name).trim()).find(Boolean) || "未命名奖项";
   };
+  const submission = new Map<string, { latest: string; value: string }>();
+  if (review && draft && base) {
+    const submitted = raffleLocalizedDraft(draft, requiredLanguages, "submit");
+    const latestPrizes = new Map(base.prizes.map(prize => [prize.id, prize]));
+    for (const { suffix } of [RAFFLE_LANGUAGES.zh, RAFFLE_LANGUAGES.vi]) {
+      const title = `title${suffix}` as const, name = `name${suffix}` as const;
+      submission.set(title, { latest: base[title], value: submitted[title] });
+      for (const prize of submitted.prizes) {
+        const latest = latestPrizes.get(prize.id);
+        if (latest) submission.set(`prizes.${prizeKey(prize.id)}.${name}`, { latest: latest[name], value: prize[name] });
+      }
+    }
+  }
   const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
     path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
     key => {
@@ -195,10 +209,9 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
       : key.startsWith("prizes.") && raw === undefined ? "—"
       : key.endsWith(".amount") ? (type => type === "DEVICE" ? `${Number(raw)} 台` : `${amountText(String(raw))} ${PRIZE_UNIT[type]}`)(review.fields.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"])
-      : raw === undefined || raw === null || raw === "" ? "—" : String(raw), { equal: equalRaffleField }) : [];
+      : raw === undefined || raw === null || raw === "" ? "—" : String(raw), { equal: equalRaffleField, submission }) : [];
   // Identity sets are compared with the opened snapshot on both sides. Reordering is harmless;
   // additions/deletions require the explicit whole-draft choice, never an implicit replacement.
-  const prizeKey = (id: string) => encodeURIComponent(id).replace(/\./g, "%2E");
   const prizeFields = (id: string) => review?.fields.filter(field => field.path.startsWith(`prizes.${prizeKey(id)}.`)) ?? [];
   /** 从对比数据里按奖项拼回某一份的奖项；那一份没有这一项时是 undefined。 */
   const prizeAt = (id: string, which: "opened" | "latest" | "mine") => {
@@ -246,7 +259,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   // 整份按我填的提交时，会被换掉的别人的修改：增删过的奖项按整项说，其余逐项写「别人改成 → 提交后」。
   const overwrites: H4Overwrite[] = review ? [
     ...compareGroups.filter(group => group.overwritesOther && !prizeIds.some(id => marks(id).length && group.key.startsWith(`prizes.${prizeKey(id)}.`)))
-      .map(group => ({ key: group.key, label: group.label, latest: group.latest, mine: group.mine })),
+      .map(group => ({ key: group.key, label: group.label, latest: group.latest, submitted: group.submitted ?? group.mine })),
     ...prizeIds.flatMap(id => { const note = overwriteNote(id); return note ? [{ key: `prize:${id}`, label: prizeName(id), note: `：${note}` }] : []; }),
   ] : [];
   const sideText = (side: { added: string[]; removed: string[] }) => [
