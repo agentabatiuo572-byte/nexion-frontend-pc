@@ -43,7 +43,7 @@ import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { supportClient, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { supportClient, isSupportScopeDenial, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
@@ -1295,7 +1295,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     const controller = new AbortController();
     void loadConversationDetail(conv.id, controller.signal).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
-        if (cause instanceof SupportClientError && [403, 404].includes(cause.status)) onScopeInvalidated(conv.id, conv.customerId);
+        if (isSupportScopeDenial(cause)) onScopeInvalidated(conv.id, conv.customerId);
         else setDetailError(displayAdminError(cause));
       }
     });
