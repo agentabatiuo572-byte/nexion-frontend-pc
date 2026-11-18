@@ -1737,12 +1737,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         toast(why, "error");
         return;
       }
-      if (isExplicitRejection(cause) && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
+      const refusedCode = (cause as { backendMessage?: unknown; reasonCode?: unknown }) ?? {};
+      const code = typeof refusedCode.reasonCode === "string" ? refusedCode.reasonCode : typeof refusedCode.backendMessage === "string" ? refusedCode.backendMessage : "";
+      if (isExplicitRejection(cause) && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw") && !/^(A2_)?REASON_/.test(code)) {
         // 批准、驳回、撤回按原命令号重试：后端（OpsAuditCenterService.idempotentTicket）在按原号回放之前只查权限，权限拒绝不算明确拒绝；
         // 原操作已成功会原样回放成功。所以这里被业务规则明确拒绝，就说明原操作没有生效：结案，不留待确认。
+        // 理由长度在回放之前按「当前」下限校验（AdminReasonConstraintAdvice），下限调高后原理由会被拒，证明不了原操作，留给人核实。
         a2Commands.forget(record.fingerprint, record.commandKey);
         syncPending();
-        toast(`${record.label}没有生效：${why}。原记录已解除，这张单可以重新处理。`, "warn");
+        toast(`${record.label}没有生效：${why}。原记录已解除。`, "warn");
         return;
       }
       if (isExplicitRejection(cause)) {
@@ -1783,16 +1786,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     const found = ticketStatus(next, record.target);
     if (!found) { notePending(record, "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
-    // 批准、驳回、撤回只能对待审批的单发出；按单现在的状态和处理人说这次操作的结果，只有对得上才结案。
+    // 批准、驳回、撤回只能对待审批的单发出；按单现在的状态和处理人说这次操作的结果，记录照旧保留：
+    // 同一账号在另一标签页用另一个命令号处理同一张单，读到的状态和处理人一模一样，证明不了是原命令。
     const kind = record.kind as "approve" | "reject" | "withdraw";
     const verb = DECISION_VERB[kind];
-    // 单已经是这次要的终态、处理人就是当前账号：这次操作要的结果已经发生，单也不会再被处理，结案。
-    if (found.status === DECISION_STATUS[kind] && !!found.actor && found.actor === session?.username) {
-      a2Commands.forget(record.fingerprint, record.commandKey);
-      syncPending();
-      toast(`已确认：${record.label}已生效`, "success");
-      return;
-    }
     const step = retryBlock(record) ? "原记录继续保留。" : "按原请求重试可确认，不会重复执行。";
     const now = `「${HIST_LABEL[found.status] ?? found.status}」${found.actor ? `，处理人 ${found.actor}` : ""}`;
     notePending(record, found.status === "pending" ? `查到：这张单还是「待审批」，这次${verb}还没生效。${step}`
