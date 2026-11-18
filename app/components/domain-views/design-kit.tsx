@@ -2082,7 +2082,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form={spec.kind}>
-        <span className="bf-legend">中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
+        <span className="bf-legend">文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
         {spec.kind === "localized-copy" && spec.mode === "create" && (
           <div style={{ marginBottom: 10 }}>{input("messageKey", "词条", "如 home.hero.title")}</div>
         )}
@@ -2478,7 +2478,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             onChange(updated);
             onSelectionChange?.(updated);
           })}
-          {select("languageScope", "语言范围", [spec.languageScope], { "zh+vi": "中文 + 越南语", [DISCLOSURE_LANGUAGE_SCOPE]: "中文 + 越南语 + 英语" })}
+          {select("languageScope", "语言范围", [spec.languageScope], { "zh+vi": "中文 + 越南语", [DISCLOSURE_LANGUAGE_SCOPE]: "英文 + 中文 + 越南语" })}
           {input("effectiveDate", "生效日期", "YYYY-MM-DD", "date")}
           {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>

@@ -709,7 +709,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     openActionConfirm({ briefKind: "config",
       action: `编辑${languageLabel}${entity === "event" ? fieldLabels[field] : "任务名称"} · ${subject}`,
       detail: hint,
-      content: <div className="itint" style={{ marginBottom: 12 }}>
+      content: <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 9, background: "var(--surface-2)", fontSize: 12.5, lineHeight: 1.6 }}>
         <div>当前：{displayed.trim() ? displayed : cell?.fallsBack ? "未填（App 显示英文）" : cell?.rewardFromPreview ? "未填（App 用奖项预览里的名称）" : "未填"}</div>
         <div className="tiny" style={{ marginTop: 4, color: "var(--ink-3)" }}>{hint}</div>
       </div>,
@@ -1449,7 +1449,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             : "· 首日和每周任务启用前须补齐英文和运营区域语言的名称；停用不检查"}</span>
         </div>
         {section === "events" && localizedNotice.length > 0 && (
-          <div className="itint warn" role="status" style={{ marginBottom: 10, display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div role="status" style={{ margin: "0 12px 10px", padding: "10px 14px", borderRadius: 9, background: "var(--warning-soft)", color: "var(--ink-2)", fontSize: 12.5, lineHeight: 1.6, display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
             <div>{localizedNotice.map(line => <div key={line}>{line}</div>)}</div>
             {(localizedMissing.length > 0 || localizedIncomplete.length > 0) && (
               <label className="row" style={{ gap: 6, fontSize: 12, whiteSpace: "nowrap", cursor: "pointer" }}>
@@ -2012,7 +2012,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   return (
                     <tr key={event.id}>
                       <td style={{ color: "var(--ink)" }}>
-                        <div style={{ fontWeight: 600 }}>{zhName || "名称未填写"}</div>
+                        <div style={{ fontWeight: 600 }}>{zhName || <>{event.id}<span style={{ fontWeight: 400, color: "var(--warning)" }}> · 英文名称未填</span></>}</div>
                         <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "说明未填写"}</div>
                       </td>
                       <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
