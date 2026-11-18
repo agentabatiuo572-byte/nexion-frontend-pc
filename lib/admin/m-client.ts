@@ -1,4 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import type { M4FaqCommand } from "./m4-faq-command";
 import { m4FaqCommandOrigin } from "./m4-faq-command";
 import type { M5Command } from "./m5-command";
@@ -23,6 +24,7 @@ import {
   type MTicketAssigneeCandidate,
 } from "@/lib/admin/m-support-read-contract";
 export type { MTicketAssigneeCandidate } from "@/lib/admin/m-support-read-contract";
+
 import type {
   AdvisorScript,
   CustomerProfile,
@@ -563,6 +565,12 @@ function supportWorkbenchQueryString(query: Record<string, string | number | und
 }
 
 const CONTENT_API_TIMEOUT_MS = 8_000;
+
+export function explicitMContentRejectionCode(error: unknown): string | undefined {
+  if (!(error instanceof MContentReadError)) return;
+  // Some content responses carry the business status in an HTTP 200 envelope.
+  return explicitRejectionCode(error.status === 200 ? { ...error, status: error.apiCode } : error);
+}
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);

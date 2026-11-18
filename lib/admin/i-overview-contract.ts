@@ -305,6 +305,8 @@ function validateTrustDisclosure(moduleId: IModuleId, value: Record<string, unkn
   if (value.disclosureVersionItems !== undefined) {
     for (const version of records(moduleId, value.disclosureVersionItems)) {
       records(moduleId, version.chapters);
+      // Preserve the version reference so the matrix reports an invalid scope on that row.
+      if (moduleId === "I5" && typeof version.languageScope !== "string") version.languageScope = "";
     }
   }
   if (value.jurisdictionCatalog !== undefined) records(moduleId, value.jurisdictionCatalog);
