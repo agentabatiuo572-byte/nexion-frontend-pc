@@ -1292,6 +1292,13 @@ export type NovaSocialSyncResult = {
   }>;
 };
 
+export type NovaChannelRuntimeSource = {
+  channel: string;
+  eventNames: string[];
+  targeted: boolean;
+  eventDisplayNames?: Record<string, string> | null;
+};
+
 export type NovaOverview = {
   stats: NovaStats;
   channels: NovaChannelView[];
@@ -1305,7 +1312,7 @@ export type NovaOverview = {
   templateCtaOptions: NovaOptionView[];
   runtimeSourceOptions: NovaOptionView[];
   sources: string[];
-  channelRuntimeSources?: { channel: string; eventNames: string[]; targeted: boolean }[];
+  channelRuntimeSources?: NovaChannelRuntimeSource[];
   pushDelivery?: {
     from: string;
     to: string;

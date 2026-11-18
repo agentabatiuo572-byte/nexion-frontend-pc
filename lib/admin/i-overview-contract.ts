@@ -147,6 +147,8 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
     for (const source of records(moduleId, value.channelRuntimeSources)) {
       if (typeof source.channel !== "string" || typeof source.targeted !== "boolean"
         || !array(moduleId, source.eventNames).every((name) => typeof name === "string")) fail(moduleId);
+      if (source.eventDisplayNames != null && !Object.values(record(moduleId, source.eventDisplayNames))
+        .every((name) => typeof name === "string" && name.trim())) fail(moduleId);
     }
   }
   if (value.pushDelivery != null) {

@@ -9,7 +9,7 @@ import { Bell, Clock, Cpu, FileText, Gift, Radio, Timer, UserRound, Users, Walle
 import { Explain, StatusTag } from "@/app/components/rd";
 import { NOVA_TIME_UNITS, parseNovaDuration } from "@/lib/admin/nova-cadence";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import type { NovaOptionView, NovaSocialEventView, NovaTemplateView } from "@/lib/admin/i-client";
+import type { NovaChannelRuntimeSource, NovaOptionView, NovaSocialEventView, NovaTemplateView } from "@/lib/admin/i-client";
 
 /** 后端 seed 的内置频道写人话名字；新建的频道用运营填的名字。 */
 export const CHANNEL_NAME: Record<string, string> = {
@@ -38,7 +38,7 @@ export function sourceText(trigger: string, name: string, options: readonly Nova
   return readable(trigger);
 }
 
-/** 触发事件的中文名：先用后端选项的叫法，再用事件目录和站内已有的叫法；没有现成叫法的不起名。 */
+/** 触发事件的中文名：优先用已解析事件的名字，旧数据沿用选项和既有事件名称。 */
 const EVENT_NAME: Record<string, string> = {
   "auth.register_completed": "注册完成",
   "market.curve_advanced": "市场曲线推进",
@@ -49,21 +49,20 @@ const EVENT_NAME: Record<string, string> = {
   "staking.early_withdrawn": "质押提前退出",
   "genesis.purchased": "创世节点购买",
 };
-const eventLabel = (event: string, options: readonly NovaOptionView[]) => {
-  const label = options.find((option) => option.value === `a4:${event}`)?.label.replace(/（广播）$/, "");
-  return label ? operatorCopyText(label) : EVENT_NAME[event];
+const eventLabel = (event: string, options: readonly NovaOptionView[], displayName?: string) => {
+  const label = displayName ?? options.find((option) => option.value === `a4:${event}`)?.label;
+  return label ? operatorCopyText(label.replace(/（广播）$/, "")) : EVENT_NAME[event];
 };
-export type ChannelRuntimeSource = { channel: string; eventNames: string[]; targeted: boolean };
 /**
  * 业务频道什么时候发、发给谁。sources 没给（旧数据）时只写原来的取材说明；
  * 事件都有中文名才按事件写，否则仍写频道存的说明。unmatched：业务事件目录里对不上这个频道。
  */
-export function channelTrigger(key: string, trigger: string, name: string, options: readonly NovaOptionView[], sources?: readonly ChannelRuntimeSource[]) {
+export function channelTrigger(key: string, trigger: string, name: string, options: readonly NovaOptionView[], sources?: readonly NovaChannelRuntimeSource[]) {
   const stored = sourceText(trigger, name, options);
   if (!sources) return { when: stored };
   const source = sources.find((item) => item.channel === key);
   if (!source) return { when: stored, unmatched: true };
-  const names = source.eventNames.map((event) => eventLabel(event, options));
+  const names = source.eventNames.map((event) => eventLabel(event, options, source.eventDisplayNames?.[event]));
   const when = names.length > 0 && names.every(Boolean)
     ? `${names.length > 1 ? `${names.slice(0, -1).join("、")}或${names.at(-1)}` : names[0]}时`
     : stored;
