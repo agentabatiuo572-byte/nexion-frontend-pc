@@ -360,7 +360,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       detail: ruleBased ? "只改这页登记的奖励文字，App 上显示的奖励和发多少都不变。" : <>当前奖励 <b>{current}</b>。填写新奖励后确认。</>,
       facts: <>
         <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
-          ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">奖励一行按玩法规则显示；英文填了奖项名就显示它</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
+          ? <><Fact k="改的是">这页登记的奖励文字</Fact><Fact k="App 上">每种语言显示填的奖项名，没填的显示玩法规则摘要</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
           : <ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" />}</Facts>
       </>,
       amplifies: !ruleBased,
@@ -389,7 +389,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const rule = rules?.find((row) => row.eventCode === event.id);
     return event.state === "upcoming" || (rule !== undefined && !rule.enabled && !rule.rulesLocked && rule.supported !== false);
   };
-  /** 有玩法规则的非转盘活动：App 的奖励一行显示规则摘要（规则读不到时按没有处理，照旧显示填的奖项名）。 */
+  /** 有玩法规则的非转盘活动：没填奖项名的语言 App 显示规则摘要（规则读不到时按没有处理，照旧按英文、原文回退）。 */
   const rewardFromRule = (event: LegacyEvent) => text(event.kind, "").toLowerCase() !== "wheel"
     && (event.rewardCopyOnly ?? (rules !== null && H4_EVENT_RULE_CODES.has(event.id) && !!rules.find((row) => row.eventCode === event.id))) === true;
   const weighedGaps = (event: LegacyEvent) => {
@@ -467,10 +467,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
       detail: requiresAll ? (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale) ? <>{REQUIRED_TEXT}的名称、说明、奖项名填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
-        : fromRule ? <>已开放的活动照常进行，奖励一行按玩法规则显示。</>
+        : fromRule ? <>已开放的活动照常进行；这一格空着时 App 显示玩法规则摘要。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact>
-        {fromRule && <Fact k="App 上">{locale === "en" ? "填了就显示它，空着显示玩法规则摘要" : "奖励一行显示玩法规则摘要，不显示这里填的"}</Fact>}</Facts>,
+        {fromRule && <><Fact k="App 上">{LOCALE_NAME[locale]}填了就显示，空着显示规则摘要</Fact><Fact k="发奖">按玩法规则，奖项名里写的数额不影响发多少</Fact></>}</Facts>,
       reasonPlaceholder: "例如：补齐上线前的翻译",
       edit: { kind: "text", current, initialValue: draft?.value },
       run: async (reason, value) => {
@@ -1270,7 +1270,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="App 上的文字" sub={contentEvent?.id}
-      explain={`改一格保存一格，App 下次读取就用新内容，不用发布。开放活动、首次开启玩法前要填齐${REQUIRED_TEXT}的名称、说明、奖项名${OPTIONAL_TEXT ? `，${OPTIONAL_TEXT}可以不填` : ""}；已开放的活动照常进行，没填的格 App 用英文或原文。`}>
+      explain={`改一格保存一格，App 下次读取就用新内容，不用发布。开放活动、首次开启玩法前要填齐${REQUIRED_TEXT}的名称、说明、奖项名${OPTIONAL_TEXT ? `，${OPTIONAL_TEXT}可以不填` : ""}；已开放的活动照常进行，没填的格 App 用英文或原文，有玩法规则的活动奖项名没填时显示规则摘要。`}>
       {contentEvent && <EventPreview canEdit={canModuleWrite} requiresAll={allLocalesRequired(contentEvent)} opened={contentEvent.state !== "upcoming"} rewardFromRule={rewardFromRule(contentEvent)} lockedReason={h4ApprovalLockedReason(hiEventScope(contentEvent.id))}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
         original={{ name: text(contentEvent.name, ""), description: text(contentEvent.description, ""), rewardName: text(contentEvent.rewardName, "") }}

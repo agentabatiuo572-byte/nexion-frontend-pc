@@ -8,8 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CircleOff, Download, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
-import { BlockState, Button, Cell, Check, DiffList, Explain, Fold, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { CircleOff, Download, FilePen, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
+import { BlockState, Button, Cell, Change, Check, DiffList, Explain, Fold, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { type A3RecoveryProps } from "@/lib/admin/a3-mutations";
@@ -20,6 +20,7 @@ import {
   changedOperatingLanguages,
   fetchPlatformExperienceConfig,
   INTERFACE_LANGUAGES,
+  OPERATING_LANGUAGE_CODES,
   recommendedExperienceChannels,
   platformExperienceBody,
   type PlatformExperienceConfig,
@@ -40,6 +41,8 @@ const IN_APP: Record<string, { text: string; tone: "ok" | "neutral" | "warn"; ic
   poster: { text: "App 固定有", tone: "neutral", icon: Smartphone, explain: "App 团队页固定有「分享海报」按钮，这里关掉也还在。" },
 };
 const SAMPLE_CODE = "AB12CD";
+/** 发布必填语言的叫法（英语、中文、越南语），按九语目录里的中文名。 */
+const operatingNames = (value: readonly string[]) => INTERFACE_LANGUAGES.filter((language) => value.includes(language.code)).sort((a, b) => a.code === "en" ? -1 : b.code === "en" ? 1 : 0).map((language) => language.zhName).join("、");
 
 /** 版本冲突后：你留着的修改和刚读到的最新值逐项对照（现在 = 最新值，改后 = 你填的）。 */
 function draftVsLatest(draft: PlatformExperienceConfig, latest: PlatformExperienceConfig): DiffRow[] {
@@ -67,6 +70,7 @@ function draftVsLatest(draft: PlatformExperienceConfig, latest: PlatformExperien
   add("notesEn", "更新说明（英文）", latest.appDownload.releaseNotes.en, draft.appDownload.releaseNotes.en);
   const langs = (value: PlatformExperienceConfig["interfaceLanguages"]) => value ? INTERFACE_LANGUAGES.filter((language) => language.base || value.includes(language.code)).map((language) => language.zhName).join("、") : "只能查看";
   add("languages", "界面语言", langs(latest.interfaceLanguages), langs(draft.interfaceLanguages));
+  if (latest.operatingLanguages && draft.operatingLanguages) add("operatingLanguages", "发布必填", operatingNames(latest.operatingLanguages), operatingNames(draft.operatingLanguages));
   return rows;
 }
 
@@ -145,6 +149,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     if (JSON.stringify(config.channels) !== JSON.stringify(baseline.channels)) parts.push("分享渠道");
     if (JSON.stringify(config.appDownload) !== JSON.stringify(baseline.appDownload)) parts.push("官方应用下载");
     if (JSON.stringify(config.interfaceLanguages) !== JSON.stringify(baseline.interfaceLanguages)) parts.push("界面语言");
+    if (changedOperatingLanguages(config.operatingLanguages, baseline.operatingLanguages)) parts.push("发布必填语言");
     return parts;
   }, [config, baseline]);
 
@@ -198,6 +203,11 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const posterChannels = [...visibleInApp.slice(0, 4).map((channel) => CHANNEL_NAME[channel.key] ?? channel.key), ...(systemInApp ? ["更多"] : [])];
   const languages = config.interfaceLanguages;
   const onLanguages = INTERFACE_LANGUAGES.filter((language) => language.base || !languages || languages.includes(language.code));
+  // 发布必填：读不到这一项（旧系统）时编辑器按英文、中文、越南语都必填，这里照那个显示，只读。
+  const operating = config.operatingLanguages;
+  const requiredNow: readonly string[] = operating ?? OPERATING_LANGUAGE_CODES;
+  const operatingChanged = changed.includes("发布必填语言");
+  const onlyOperating = operatingChanged && changed.length === 1;
   const h3 = reach("/growth/quest", "growth_h3_read");
   const conflictRows = conflictDraft.current && baseline ? draftVsLatest(config, baseline) : [];
 
@@ -218,7 +228,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     {conflictDraft.current && !confirmOpen ? <Notice tone="warn" title="别人刚保存过这组配置，你的修改没有保存"
       action={<Button size="sm" loading={loading} disabled={saving} onClick={() => void refresh()}>重新读取</Button>}>
       {readReady && baseline
-        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的有 ${conflictRows.length} 处（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <div className="a3-conflict-diff"><DiffList rows={conflictRows} /></div>}</>
+        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的${conflictRows.length === 1 ? `是「${conflictRows[0].label}」` : `有 ${conflictRows.length} 处`}（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <div className="a3-conflict-diff"><DiffList rows={conflictRows} /></div>}</>
         : loading ? "正在读取最新值，你填的都还在。"
           : <>最新值没读到，你填的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
     </Notice>
@@ -313,21 +323,44 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       </div>
     </Panel>
 
-    <Panel title="界面语言" icon={Languages} tone="role-3" sub={languages ? `开启 ${onLanguages.length} 种，共 ${INTERFACE_LANGUAGES.length} 种` : "只能查看"}
+    <Panel title="界面语言" icon={Languages} tone="role-3" sub={`${languages ? `开启 ${onLanguages.length} 种，共 ${INTERFACE_LANGUAGES.length} 种` : "开关只能查看"} · 发布必填 ${operatingNames(requiredNow)}`}
       explain={<>
         <p>关闭后，用户在语言列表里看不到这种语言；正在用它的用户改用账号或手机系统的语言，都没开启时用英文。英文始终开启。</p>
         <p>App 下次读到配置后才变；重新开启后，用户原来选的语言会恢复。</p>
         <p>印尼语、马来语、菲律宾语、俄语、哈萨克语、乌兹别克语开启后，App 的说明和文档内容目前仍按英文读取。</p>
       </>}>
       <div className="a3-with-preview">
-        <div id="a3-languages" className="a3-langs" role="group" aria-label="界面语言开关">
-          {INTERFACE_LANGUAGES.map((language) => <Check key={language.code}
-            label={<span className="a3-lang"><b>{language.nativeName}</b><small>{language.zhName} · {language.code}{language.base ? " · 始终开启" : ""}</small></span>}
-            aria-label={`${language.zhName} 开启`}
-            checked={language.base || !languages || languages.includes(language.code)}
-            disabled={fieldsLocked || language.base || !languages}
-            onChange={(event) => languages && setConfig({ ...config, interfaceLanguages: INTERFACE_LANGUAGES.map((item) => item.code).filter((code) => code === language.code ? event.target.checked : languages.includes(code)) })} />)}
-          {!languages && <p className="rd-note">系统支持后，可以在这里开关界面语言，现在只能查看。</p>}
+        <div id="a3-languages" className="rd-form-stack">
+          <Table label="界面语言和发布必填">
+            <thead><tr>
+              <Th>语言</Th>
+              <Th icon={Smartphone}>App 里可选<Explain label="App 里可选是什么" content="开着的语言出现在 App 的语言列表里，用户可以选。" /></Th>
+              <Th icon={FilePen}>发布时必填<Explain label="发布时必填是什么" content={<><p>后台发布活动、课程、公告等内容时，勾上的语言必须填。没勾的语言可以不填，App 在这种语言下显示英文。</p><p>改了以后，下次打开内容编辑器时按新的检查；已发布的内容不变。</p></>} /></Th>
+            </tr></thead>
+            <tbody>
+              {INTERFACE_LANGUAGES.map((language) => {
+                const operatingCode = OPERATING_LANGUAGE_CODES.find((code) => code === language.code);
+                return <Tr key={language.code}>
+                  <Td><Cell main={language.nativeName} sub={`${language.zhName} · ${language.code}`} /></Td>
+                  <Td>
+                    <Check label={<><span className="rd-sr-only">{language.zhName} App 里可选</span>{language.base && <span className="rd-note">始终开启</span>}</>} aria-label={`${language.zhName} 开启`}
+                      checked={language.base || !languages || languages.includes(language.code)}
+                      disabled={fieldsLocked || language.base || !languages}
+                      onChange={(event) => languages && setConfig({ ...config, interfaceLanguages: INTERFACE_LANGUAGES.map((item) => item.code).filter((code) => code === language.code ? event.target.checked : languages.includes(code)) })} />
+                  </Td>
+                  <Td>{operatingCode
+                    ? <Check label={<><span className="rd-sr-only">{language.zhName} 发布时必填</span>{operatingCode === "en" && <span className="rd-note">始终必填</span>}</>} aria-label={`${language.zhName} 发布必填`}
+                      checked={requiredNow.includes(operatingCode)}
+                      disabled={fieldsLocked || operatingCode === "en" || !operating}
+                      onChange={(event) => operating && setConfig({ ...config, operatingLanguages: OPERATING_LANGUAGE_CODES.filter((code) => code === operatingCode ? event.target.checked : operating.includes(code)) })} />
+                    : <span className="rd-note">暂不支持<Explain label={`${language.zhName}为什么不能设为必填`} content="不能设为必填。App 在这种语言下显示英文。" /></span>}</Td>
+                </Tr>;
+              })}
+            </tbody>
+          </Table>
+          {(!languages || !operating) && <p className="rd-note">{!languages && !operating ? "系统支持后才能在这里开关界面语言、设置发布必填；现在英文、中文、越南语都必填。"
+            : !languages ? "系统支持后，可以在这里开关界面语言，现在只能查看。"
+            : "系统支持后才能设置发布必填，现在英文、中文、越南语都必填。"}</p>}
         </div>
         {preview("语言", <ul className="a3-preview-langs" aria-label="App 语言列表">
           {onLanguages.map((language) => <li key={language.code}>{language.nativeName}</li>)}
@@ -345,23 +378,25 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     </Panel>
 
 
-    {confirmOpen && <Modal title="保存 App 分享与下载" icon={Link2} busy={saving} dirty={Boolean(reason)} onClose={() => setConfirmOpen(false)}
-      sub={<StatusTag tone="progress" filled>保存后 App 下次读取配置时生效</StatusTag>}
+    {confirmOpen && <Modal title={onlyOperating ? "修改发布必填语言" : "保存 App 分享与下载"} icon={onlyOperating ? Languages : Link2} busy={saving} dirty={Boolean(reason)} onClose={() => setConfirmOpen(false)}
+      sub={<>{!onlyOperating && <StatusTag tone="progress" filled>保存后 App 下次读取配置时生效</StatusTag>}{operatingChanged && <StatusTag tone="progress" filled={onlyOperating}>{onlyOperating ? "保存后" : "发布必填："}下次打开内容编辑器时生效</StatusTag>}</>}
       footer={<>
         <Button disabled={saving} onClick={() => setConfirmOpen(false)}>取消</Button>
         <Button variant="primary" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : undefined} onClick={() => void save()}>确认修改</Button>
       </>}>
       {error && <Notice tone="danger" title={original ? undefined : "没有保存"}>{error}</Notice>}
       <Facts>
-        <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>
+        {!onlyOperating && <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>}
+        {operatingChanged && baseline?.operatingLanguages && config.operatingLanguages && <Fact k="发布必填"><Change from={operatingNames(baseline.operatingLanguages)} to={operatingNames(config.operatingLanguages)} /></Fact>}
         <Fact k="版本">v{config.version} → v{config.version + 1}</Fact>
-        <Fact k="官方下载">{unavailable ? "暂不提供（保存后清空安装链接、版本和说明）" : "官方渠道"}</Fact>
+        {!onlyOperating && <Fact k="官方下载">{unavailable ? "暂不提供（保存后清空安装链接、版本和说明）" : "官方渠道"}</Fact>}
         <Fact k="一起保存">分享、下载、语言整组；首页开关不在这里</Fact>
-        <Fact k="已有订单和奖励">不重算</Fact>
+        {operatingChanged && <Fact k="已发布的内容">不变；以后发布按新的必填语言检查</Fact>}
+        {!onlyOperating && <Fact k="已有订单和奖励">不重算</Fact>}
       </Facts>
-      {conflictDraft.current && conflictRows.length > 0 && <Fold inset title="和最新版本不同的地方" summary={`${conflictRows.length} 处 · 保存后按你填的覆盖`}><DiffList rows={conflictRows} /></Fold>}
+      {conflictDraft.current && conflictRows.length > 0 && <Fold inset title="和最新版本不同的地方" summary={`${conflictRows.length === 1 ? conflictRows[0].label : `${conflictRows.length} 处`} · 保存后按你填的覆盖`}><DiffList rows={conflictRows} /></Fold>}
       <Field label="保存理由" required help="8–200 字">
-        {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={original?.reason ?? reason} disabled={Boolean(original) || saving} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：上线 Telegram 分享，工单号" onChange={(event) => setReason(event.target.value)} />}
+        {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={original?.reason ?? reason} disabled={Boolean(original) || saving} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder={onlyOperating ? "例如：越南语内容改为必填，工单号" : "例如：上线 Telegram 分享，工单号"} onChange={(event) => setReason(event.target.value)} />}
       </Field>
     </Modal>}
   </div>;

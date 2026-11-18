@@ -153,7 +153,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   gaps: number;
   /** 只需轻提示的没填的格：哪些语言。 */
   softGaps: LocaleCode[];
-  /** 有玩法规则的非转盘活动：App 中文的奖励一行显示规则摘要。 */
+  /** 有玩法规则的非转盘活动：每种语言填了奖项名显示它，没填显示规则摘要。 */
   rewardFromRule: boolean;
   rule?: { enabled: boolean; ready: boolean; startsAt: string | null; endsAt: string | null } | null;
   pending?: ReactNode;
@@ -169,7 +169,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   const name = pick("name"), description = pick("description"), rewardName = pick("rewardName");
   // 一张卡只标一次，标在第一处用了英文的地方。
   const firstEn = ([["name", name], ["description", description], ["rewardName", rewardName]] as const).find(([, value]) => value?.en)?.[0];
-  const enTag = (field: ContentField) => firstEn === field ? <> <StatusTag tone="neutral" icon={Languages} explain="中文没填，这里显示的是英文那一份。">英文</StatusTag></> : null;
+  const enTag = (field: ContentField) => firstEn === field ? <> <StatusTag tone="neutral" icon={Languages} explain={field === "rewardName" && rewardFromRule ? "中文没填，这里显示的是英文那一份；App 中文显示玩法规则摘要。" : "中文没填，这里显示的是英文那一份。"}>英文</StatusTag></> : null;
   return (
     <article className="h4-card h4l-event" aria-label={name?.text || event.id} data-dim={life.key === "ended" ? "" : undefined}>
       <header className="h4-card-head">
@@ -186,7 +186,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
-          <small>{rewardFromRule ? "App 上按玩法规则显示" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
+          <small>{rewardFromRule && !rewardName ? "App 显示玩法规则摘要" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>
         <div><dt><Flag size={14} aria-hidden />参与条件</dt><dd>{text(event.condition, "") ? <span className="h4l-clip" title={text(event.condition)} data-user-content="">{text(event.condition)}</span> : <span className="h4-dim">—</span>}{event.geo ? <small>地区 {event.geo}</small> : null}</dd></div>
         <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{!rule ? <span className="h4-dim">—</span>
@@ -217,7 +217,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   requiresAll: boolean;
   /** 活动已开放过（不是预告）。 */
   opened: boolean;
-  /** 有玩法规则的非转盘活动：奖励一行 App 用规则摘要，只有英文填了奖项名才用填的。 */
+  /** 有玩法规则的非转盘活动：每种语言填了奖项名显示它，没填显示规则摘要。 */
   rewardFromRule: boolean;
   /** 活动被审批锁住时的原因：入口照常显示，灰着并写原因，和活动卡上的其他入口一样。 */
   lockedReason?: string;
@@ -230,8 +230,8 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   };
   const marks = (code: LocaleCode) => gaps.filter(gap => gap.locale === code).map(gap => gapWeight(gap, requiresAll, rewardFromRule));
   const shown = (field: "name" | "description" | "rewardName") => names[locale][field] || names.en[field] || original[field];
-  // 有玩法规则的活动：中文、越南语的奖励一行是规则摘要；英文填了奖项名才用它。
-  const ruleReward = rewardFromRule && !(locale === "en" && names.en.rewardName);
+  // 有玩法规则的活动：这种语言填了奖项名就显示它，没填显示规则摘要（不借用英文）。
+  const ruleReward = rewardFromRule && !names[locale].rewardName;
   const fallback = (["name", "description", "rewardName"] as const).some((field) => !names[locale][field] && !(field === "rewardName" && rewardFromRule));
   return (
     <div className="h4-dialog-body h4l-content">
@@ -263,17 +263,18 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
         <span className="h4l-preview-title"><Smartphone size={14} aria-hidden />App 上的样子
           <Explain label="这个预览怎么来的" content={<><p>按现在保存的{LOCALE_NAME[locale]}内容示意活动卡上的文字，不是 App 截图。</p>
             <p>{requiresAll ? `${REQUIRED_TEXT}的名称、说明、奖项名填齐，才能开放活动、开启玩法。${OPTIONAL_TEXT ? `${OPTIONAL_TEXT}可以不填，没填时 App 显示英文。` : ""}` : "已开放的活动照常进行：没填的格 App 先用英文，再用原文，不自动翻译。"}</p>
-            {rewardFromRule && <p>有玩法规则的活动，App 奖励一行显示系统按规则写的摘要；只有英文填了奖项名才显示填的字。</p>}</>} />
+            {rewardFromRule && <p>有玩法规则的活动，每种语言填了奖项名就显示它，没填显示系统按规则写的摘要，不借用英文。</p>}</>} />
         </span>
         <div className="h4l-phone">
           <div className="h4l-phone-card">
             <b>{legacyName(shown("name")).text || "—"}</b>
             <span className="h4l-phone-desc">{legacyName(shown("description")).text || "—"}</span>
-            <span className="h4l-phone-reward"><Gift size={13} aria-hidden />{ruleReward ? <span className="h4-dim">按玩法规则显示奖励</span> : legacyName(shown("rewardName")).text || "—"}</span>
+            <span className="h4l-phone-reward"><Gift size={13} aria-hidden />{ruleReward ? <span className="h4-dim">玩法规则摘要</span> : legacyName(shown("rewardName")).text || "—"}</span>
             <span className="h4l-phone-go">去参加 ›</span>
           </div>
         </div>
         {fallback && <p className="h4l-preview-note">有内容没填{LOCALE_NAME[locale]}，这里按 App 的回退显示</p>}
+        {rewardFromRule && names[locale].rewardName && <p className="h4l-preview-note" data-tone="warn">发奖按玩法规则，奖项名里写数额要和规则一致</p>}
       </aside>
     </div>
   );
