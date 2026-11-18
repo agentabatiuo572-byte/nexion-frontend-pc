@@ -1,3 +1,5 @@
+export const I6_COURSE_REWARD_DECIMALS = 6;
+
 /** Decimal strings stay exact through the course form, confirmation and request. */
 export function i6Amount(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") return undefined;
@@ -7,6 +9,19 @@ export function i6Amount(value: unknown): string | undefined {
   const plain = point <= 0 ? `0.${"0".repeat(-point)}${digits}`
     : point >= digits.length ? digits + "0".repeat(point - digits.length) : `${digits.slice(0, point)}.${digits.slice(point)}`;
   return plain.replace(/^0+(?=\d)/, "");
+}
+
+/** Both values are plain nonnegative decimals from the course request and receipt parsers. */
+export function i6CourseRewardMatches(saved: unknown, submitted: unknown): boolean {
+  if (saved == null || submitted == null) return false;
+  const [actualWhole, actualFraction = ""] = String(saved).split(".");
+  const [expectedWhole, expectedFraction = ""] = String(submitted).split(".");
+  const places = I6_COURSE_REWARD_DECIMALS;
+  const scaled = (whole: string, fraction: string) => BigInt(whole + fraction.slice(0, places).padEnd(places, "0"));
+  // Older pending requests can still carry more than six decimals. Java rounds the submitted value HALF_UP.
+  const roundUp = (expectedFraction[places] ?? "0") >= "5";
+  return !/[1-9]/.test(actualFraction.slice(places))
+    && scaled(actualWhole, actualFraction) === scaled(expectedWhole, expectedFraction) + BigInt(roundUp ? 1 : 0);
 }
 
 export function i6RewardChange(next: string, current: string | null) {
