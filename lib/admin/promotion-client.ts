@@ -4,7 +4,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-cl
 import { isExplicitRejection } from "./explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from './pending-mutation-store.ts';
-import type { CommandReceipt, VersionPage } from './promotion-types.ts';
+import type { CommandReceipt, PolicyContent, VersionPage } from './promotion-types.ts';
 
 export interface PromotionCommandIntent { operation: string; targetId: string; path: string; method: 'POST' | 'PUT'; body: unknown }
 export interface PendingPromotion extends PendingMutationRecord, PromotionCommandIntent { owner?: number; recoveryState?: string; receipt?: CommandReceipt }
@@ -69,13 +69,27 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
     error.unknownOutcome = unknown; error.bodyUnreadable = body === null;
     throw error;
   }
-  // Only admin policy projections carry this optional identity. Older servers omit it.
+  // Older admin policy projections can omit the approver identity and refund execution facts.
   if ((!init?.method || init.method === 'GET') && (path === '/promotion-policies' || /^\/promotion-policies\/[^/]+\/versions\/[0-9]+$/.test(path))) {
     const data = body.data as Record<string, unknown>;
     const rows = path === '/promotion-policies' && Array.isArray(data.items) ? data.items : [data];
     for (const row of rows) {
       if (!row || typeof row !== 'object' || Array.isArray(row)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
-      const identity: unknown = (row as Record<string, unknown>).approvedByAdmin;
+      const policy = row as Record<string, unknown>;
+      if (policy.execution !== undefined) {
+        const execution = policy.execution as Record<string, unknown> | null;
+        const content = policy.content as PolicyContent | null | undefined;
+        if (!execution || typeof execution !== 'object' || Array.isArray(execution)
+          || content?.kind !== 'REFUND' || content.executorCode !== 'PROMOTION_WALLET_REFUND_V1'
+          || execution.basis !== 'WHOLE_ORDER_REFUND_CONFIRMED'
+          || execution.walletRecovery !== 'SAME_ASSET_AVAILABLE_BALANCE'
+          || execution.deviceRecovery !== 'REVOKE_GIFT_DEVICE_CANCEL_OPEN_TASKS_KEEP_POSTED_EARNINGS'
+          || execution.insufficientRecovery !== 'PLATFORM_LOSS_AND_CLOSE'
+          || execution.negativeBalance !== false || execution.crossAssetDeduction !== false
+          || execution.terminalState !== 'REVERSED' || execution.manualReviewAppliesTo !== 'APPROVED_CORRECTION'
+          || execution.unknownEvidence !== 'ORIGINAL_REFUND_CHECKS') throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
+      }
+      const identity = policy.approvedByAdmin;
       if (identity === undefined || identity === null) continue;
       if (typeof identity !== 'object' || Array.isArray(identity)) throw new PromotionApiError(promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID'));
       const admin = identity as Record<string, unknown>;
