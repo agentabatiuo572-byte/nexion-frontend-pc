@@ -30,7 +30,7 @@ import { AssignAdvisorDialog, hasPendingFirstAssignment } from "./m3-assign-advi
 import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-alerts";
 import { legacySupportDestination, supportEnhancements } from "@/lib/admin/m-support-enhancements";
 import { businessResultUnavailableText, RecoveryPanel } from "../recovery-panel";
-import { blocksNewSend, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
+import { blocksNewSend, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
 export { validCustomerId } from "./m-message-journal";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
@@ -67,11 +67,6 @@ const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientE
   && cause.status !== 404
   && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
-// 11d9f118 OpsConversationController.sendCommand checks ownership before idempotency and message writes.
-// These codes settle a first submission only: a retry may be denied before replaying an older success.
-const rejectedMessageOwnership = (cause: unknown) => cause instanceof SupportClientError
-  && (cause.status === 404 && cause.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND"
-    || cause.status === 403 && cause.backendMessage === "SUPPORT_WRITE_FORBIDDEN");
 const conversationPeerChanged = (cause: unknown) => cause instanceof SupportClientError
   && cause.status === 409 && cause.backendMessage === "CONVERSATION_PEER_CHANGED";
 
@@ -724,10 +719,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   },[selected?.id,selected?.detailReady,selected?.messages]);
 
   useEffect(() => {
-    if (selected && !qualificationUnknown && ctx.pget("I.session.ui.lastConvo") !== selected.id) {
-      void ctx.setParam("I.session.ui.lastConvo", selected.id, { action: "持续接待窗口 选择会话", reason: "ui-state" });
+    if (!qualificationUnknown && conversationsAvailable && (selected || requestedCustomerId) && ctx.pget("I.session.ui.lastConvo") !== (selected?.id ?? "")) {
+      void ctx.setParam("I.session.ui.lastConvo", selected?.id ?? "", { action: "持续接待窗口 选择会话", reason: "ui-state" });
     }
-  }, [selected?.id, qualificationUnknown, ctx]);
+  }, [selected?.id, requestedCustomerId, qualificationUnknown, conversationsAvailable, ctx]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -785,10 +780,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!commandKey) setRevokedIds((old) => new Set([...old, ...affected]));
     if (!commandKey) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
     setDrafts((old) => {
+      if (revokeAll) return {};
       const next = { ...old };
       for (const conversationId of affected) delete next[conversationId];
       if (clearFirst && customerId) delete next[`first:${customerId}`];
-      else if (revokeAll) for (const key of Object.keys(next)) if (key.startsWith("first:")) delete next[key];
       return next;
     });
     if (commandKey) {
@@ -899,7 +894,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!conversationsAvailable || qualificationUnknown) return;
     const previous = firstThreads.current;
     const current = new Map<string, string[]>();
-    for (const { first, reply, locator, row } of savedSends) {
+    for (const { first, reply, locator, row, dock } of savedSends) {
       if (first) {
         const ids = visible.filter(convo => convo.customerId === first.customerId).map(convo => convo.id);
         if (previous.get(first.key)?.some(id => !ids.includes(id))) {
@@ -914,7 +909,9 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         continue;
       }
       // Keep legacy evidence addressable in its original slot. Remember the proven customer before a later transfer.
-      if (row.fingerprint === pendingKey(adminId) && !validCustomerId(reply.customerId ?? null)) {
+      if (dock && !validCustomerId(dock.customerId ?? null)) {
+        dockCommands.remember(row.fingerprint, row.commandKey, { conversationNo: dock.conversationNo, payload: dock.payload, customerId: customerIdOf(original) });
+      } else if (row.fingerprint === pendingKey(adminId) && !validCustomerId(reply.customerId ?? null)) {
         rememberPending(row.fingerprint, reply.key, { ...reply, customerId: customerIdOf(original) });
       }
     }
@@ -959,8 +956,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [recoveryScope, qualificationUnknown]);
   useEffect(() => {
     if (!privateContentReady) return;
-    if (!activeEntry?.dock && pending?.kind === "TEXT" && selected?.id === pending.conversationId) setDrafts(old => old[pending.conversationId] ? old : { ...old, [pending.conversationId]: pending.body });
-    if (firstPending && !selected) setDrafts(old => old[`first:${firstPending.customerId}`] ? old : { ...old, [`first:${firstPending.customerId}`]: firstPending.body });
+    if (!activeEntry?.dock && pending?.kind === "TEXT" && selected?.id === pending.conversationId) setDrafts(old => old[pending.conversationId] ? old : { ...old, [pending.conversationId]: pending.originalDraft ?? pending.body });
+    if (firstPending && !selected) setDrafts(old => old[`first:${firstPending.customerId}`] ? old : { ...old, [`first:${firstPending.customerId}`]: firstPending.originalDraft ?? firstPending.body });
   }, [pending, firstPending, selected?.id, privateContentReady, activeEntry?.dock]);
   useEffect(() => { clearAttachment(); if (!peerChangedDraft || peerChangedDraft.identity !== identityRef.current || peerChangedDraft.customerId !== (selected?.customerId ?? requestedCustomerId ?? peerChangedDraft.customerId)) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
   useEffect(() => {
@@ -1036,7 +1033,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     return () => controller.abort();
   }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, profileRetry, revokeCustomer, canReviewAll, adminId]);
 
-  const select = (convo: SessionConvo) => {
+  const select = (convo: SessionConvo, commandKey = "") => {
+    setChosenCommand(commandKey);
     setMessageOpening(value => value + 1);
     clearAttachment(pending?.kind !== "IMAGE"); setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError("");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
@@ -1049,7 +1047,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     try {
       const storageKey = `nexion-m3-drafts:${adminId}`;
       const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
-      if (saved[slot] === body || originalDraft !== undefined && saved[slot] === originalDraft) {
+      if (saved[slot] === (originalDraft ?? body)) {
         delete saved[slot];
         sessionStorage.setItem(storageKey, JSON.stringify(saved));
       }
@@ -1061,7 +1059,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const sent = (event as CustomEvent<{ adminId: number; slot: string; body: string; originalDraft?: string }>).detail;
       if (sent.adminId !== adminId) return;
       setDrafts(previous => {
-        if (!previous[sent.slot] || previous[sent.slot] !== sent.body && previous[sent.slot] !== sent.originalDraft) return previous;
+        if (!previous[sent.slot] || previous[sent.slot] !== (sent.originalDraft ?? sent.body)) return previous;
         const next = { ...previous };
         delete next[sent.slot];
         return next;
@@ -1083,7 +1081,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (result.status === "SUCCEEDED" || result.status === "FAILED" || result.status === "REJECTED") {
       if (useAdminAuth.getState().session?.adminId !== adminId) return result;
       const original = reply ?? first;
-      if (original && !entry.dock && reply?.kind !== "IMAGE" && (result.status === "SUCCEEDED" || !verifiedKeys.current?.has(row.commandKey))) {
+      const authorizedDraft = mounted.current && verifiedKeys.current?.has(row.commandKey);
+      if (!authorizedDraft && reply && originalView() && selected?.id === reply.conversationId) {
+        if (reply.attachmentId && attachmentRef.current?.id === reply.attachmentId) clearAttachment(false);
+        if (reply.kind === "SKU" || reply.kind === "LINK") setContentChoice(null);
+      }
+      if (original && !entry.dock && reply?.kind !== "IMAGE" && (result.status === "SUCCEEDED" || !authorizedDraft)) {
         clearSubmittedDraft(reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft);
       }
       if (reply?.attachmentId) {
@@ -1229,7 +1232,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         ({ conversationNo } = await supportClient.startConversation({ customerId: record.customerId, openingText: record.body, intent: record.intent, clientMessageId: record.clientMessageId, expectedAssignmentId: record.assignmentId, expectedVersion: record.version, replyTargets: record.replyTargets }, record.key));
       } catch (cause) {
         if (!sameAccount()) return;
-        const refused = (!retryFirst && rejectedMessageOwnership(cause)) || rejectedSupportWrite(cause);
+        const refused = refusedMessage(cause, !retryFirst);
         const busyHold = supportSessionBusy(cause);
         if (refused || busyHold) forgetSavedSend(slot, record.key);
         if (lostPermission(cause)) {
@@ -1310,14 +1313,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const stored = retry ? sendJournal(slot).isDurablyStored(slot, record.key) : rememberPending(slot, record.key, record);
     if (!stored) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
     setSendError("");
-    const input = activeEntry?.dock ? JSON.parse(activeEntry.dock.payload) : { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
+    const input = activeEntry?.dockInput ?? { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
     try {
       if (flight.image) flight.image.outcome = "submitted";
       await supportClient.sendConversationReply(record.conversationId, input, record.key);
       if (flight.image) flight.image.outcome = "sent";
     } catch (cause) {
       if (!sameAccount()) return;
-      const refused = (!retry && rejectedMessageOwnership(cause)) || rejectedSupportWrite(cause);
+      const refused = refusedMessage(cause, !retry);
       const busyHold = supportSessionBusy(cause);
       if (refused || busyHold) {
         if (flight.image) flight.image.outcome = "unused";
@@ -1976,11 +1979,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             {draft.trim() && <p className="m3s-aux">草稿已保留，恢复后可以继续发送。</p>}
           </>}
           {!busy && otherSends.map(entry => <Notice key={entry.row.commandKey} tone="warn" action={<Button size="sm" onClick={() => {
-            setChosenCommand(entry.row.commandKey);
             if (entry.reply) {
               const convo = visible.find(row => row.id === entry.locator.conversationId);
-              if (convo) { followSelection.current = true; select(convo); }
+              if (convo) { followSelection.current = true; select(convo, entry.row.commandKey); }
             } else if (entry.first) {
+              setChosenCommand(entry.row.commandKey);
               const customerId = entry.first.customerId;
               followSelection.current = true; setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat");
               const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url);
@@ -1996,7 +1999,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       </aside>
       {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); setActionResult(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => setActionResult(`已确认原分配，专属客服为 ${name}。会话刷新失败，请刷新会话核对。`)); }} />}
       {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={baseBlocked ?? noOwnCustomers} onClose={() => { setBulkOpen(false); setEntryCheck(value => value + 1); }} />}
-      {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
+      {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setChosenCommand(""); setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
       {timeoutOpen && timeoutPolicy && <IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={() => { if (timeoutLatest) { setTimeoutPolicy(timeoutLatest); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutError(""); setTimeoutInput(input => input && { ...input, reason: "" }); } }} onClose={() => { if (!timeoutSaving) setTimeoutOpen(false); }} onSave={saveTimeout} />}
       {timeoutOpen && !timeoutPolicy && <Modal title="会话超时策略" icon="clock" footer={<Button onClick={() => setTimeoutOpen(false)}>关闭</Button>} onClose={() => setTimeoutOpen(false)}><p role={timeoutError ? "alert" : "status"}>{timeoutError || "正在加载…"}</p>{timeoutError && <Button size="sm" onClick={() => void openTimeout()}>重新加载</Button>}</Modal>}
     </section>

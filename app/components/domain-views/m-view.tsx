@@ -43,8 +43,8 @@ import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, dockCommands, dockDraftKey, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { supportClient, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -1248,7 +1248,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const dockSlot = `dock|${currentAdminId}|${lastId}`;
   const draftKey = currentAdminId && conv?.customerId ? dockDraftKey(currentAdminId, conv.customerId, conv.id, conv.assignmentId) : "";
   const newSendBlocked = !!currentAdminId && !!conv?.customerId && blocksNewSend(pendingSendCustomers(currentAdminId, convos), conv.customerId);
-  const dockFeedback = newSendBlocked ? "原消息发送结果未知，暂时不能再发。" : sendError;
+  const dockFeedback = sendError || (newSendBlocked && !sending ? "原消息发送结果未知，暂时不能再发。" : "");
   const updateDraft = (value: string) => {
     setDraft(value);
     try {
@@ -1257,6 +1257,9 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
   };
   useLayoutEffect(() => {
+    sendInFlight.current = false;
+    setSending(false);
+    setSendError("");
     if (draftKey && owned) {
       try { setDraft(sessionStorage.getItem(draftKey) ?? ""); }
       catch { setDraft(""); }
@@ -1337,13 +1340,13 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
     } catch (error) {
       if (!sameAccount()) return;
-      const rejected = key && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+      const rejected = key && refusedMessage(error, true);
       if (rejected) dockCommands.forget(dockSlot, key);
       if (error instanceof SupportClientError && [403, 404].includes(error.status)) {
         onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。");
       } else if (generation === identityGeneration.current) {
         if (rejected) updateDraft(draft);
-        setSendError(rejected ? `本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。` : displayAdminError(error));
+        setSendError(rejected ? `本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。` : key ? "发送结果仍在确认，请稍后查询原命令。" : displayAdminError(error));
       }
     } finally {
       if (generation === identityGeneration.current) { sendInFlight.current = false; setSending(false); }
