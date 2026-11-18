@@ -1195,7 +1195,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
             {form.tier !== "Share" && <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="算力" value={form.hashRate} onChange={(v) => setForm({ ...form, hashRate: v })} placeholder="1,240 MH/s" />
-              <SkuFld label="功耗 / 功率说明" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,800 W (combined GPU rated power)" hint={`${APP_VISIBLE_TEXT_HINT}；注明是单卡、显卡合计还是整机实测`} />
+              <SkuFld label="功耗 / 功率说明" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,800 W (combined GPU rated)" hint={`${APP_VISIBLE_TEXT_HINT}；交付设备只认这几种写法：1,800 W、1,800 W TDP、1,800 W (per-GPU rated)、1,800 W (combined GPU rated)`} />
             </div>}
             <label className="col" style={{ gap: 8 }}>
               <span>托管机房 <OpsHint>{APP_VISIBLE_TEXT_HINT}。上架必填，最多 128 字。用户获得设备时复制此标签；修改商品不影响已交付设备。建议填写英文城市 + 编号。</OpsHint></span>
