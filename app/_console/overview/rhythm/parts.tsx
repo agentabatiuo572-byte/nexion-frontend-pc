@@ -217,7 +217,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
       </>}>
       <p className="b4-panel-note">
         {last ? "已是最后一个月，后面没有要切换的参数。"
-          : changed ? <>第 {pivot.atMonth} 个月配好的值有 <b>{changed}</b> 项和现在不同；{pivot.daysLeft == null ? "还没设切换时间，不会自动换过去" : `离切换还有 ${pivot.daysLeft} 天`}。</>
+          : changed ? <>第 {pivot.atMonth} 个月有 <b>{changed}</b> 项不同；{pivot.daysLeft == null ? "还没设切换时间，不会自动切" : `离切换还有 ${pivot.daysLeft} 天`}。</>
             : <>下个月（第 {pivot.atMonth} 个月）参数不变。</>}
         {filteredPhase && filteredPhase !== currentPhase && <span className="b4-muted"> 这里是当前阶段 {currentPhase} 的参数，不随上面选的 {filteredPhase} 变。</span>}
       </p>
