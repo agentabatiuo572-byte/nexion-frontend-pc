@@ -418,7 +418,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 <span>改后实际发放 <b>{reference === null ? "—" : `${amountText(reference, decimals)} ${unit}`}</b> = {amountText(value, decimals)} × {multiplierName} {multiplierText(multiplier)}<Explain label="实际发放怎么算" content={dir === "loosen"
                   ? "这是提交时按现在的加成算的参考值；批准时按那时的当月加成重算，6 位小数四舍五入。"
                   : "按现在的当月加成算，6 位小数四舍五入；加成在运营阶段设置改。"} /></span>
-                {dir === "same" && <span>和现在一样也会保存一次，生效时间同样改成保存那一刻。</span>}
+                {dir === "same" && <span>和现在一样：保存后不会改动，生效时间不变。</span>}
               </span> : undefined}>
               {(control) => <NumberInput {...control} unit={unit} min={0} max={param.max} step={param.step} disabled={locked}
                 aria-label={`${param.label}基础额`} value={form.value ?? ""}
