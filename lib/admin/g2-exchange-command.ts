@@ -1,4 +1,5 @@
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { displayAdminError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
 import { normalizeG2BatchResult } from "./g2-batch-result";
@@ -124,6 +125,21 @@ export async function recoverG2ExchangeQueue(adminId: number, commandKey: string
   // Only this endpoint returns a receipt by command number. A 404 never releases evidence.
   const response = await g2Request<BackendOverview>(BATCH_PATH, { method: "GET", headers: { "Idempotency-Key": commandKey } });
   return confirmBatch(response, original);
+}
+
+export async function queryG2ExchangeParamReceipt(adminId: number, commandKey: string) {
+  requireActor(adminId, "/exchange", false);
+  const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey && record.path.startsWith(PARAM_PATH));
+  if (!original) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+  const scope = `ADMIN:G2:PARAM:${original.path.slice(PARAM_PATH.length)}`;
+  const state = await fetchDirectCommandReceipt(scope, original.commandKey, original.adminId).catch((error: unknown) => {
+    const status = (error as { status?: number } | null)?.status;
+    if ((status && status < 500) || (error instanceof Error && error.message === "COMMAND_INVESTIGATION_FORBIDDEN")) throw error;
+    throw new Error("暂时查询不了原结果，请稍后再查。");
+  });
+  requireActor(original.adminId, original.path, false);
+  if (state === "SUCCEEDED" || state === "REJECTED") commands.forget(original.fingerprint, original.commandKey);
+  return state;
 }
 
 export async function queryG2ExchangeCommand(adminId: number, commandKey: string): Promise<G2CommandQueryResult> {
