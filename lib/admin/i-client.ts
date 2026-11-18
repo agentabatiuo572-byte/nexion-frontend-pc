@@ -1059,6 +1059,8 @@ export type CopyAbStats = {
   runningExps: number;
   weeklyExposures: string;
   topLift: string;
+  cumulativeExperimentImpressions?: number;
+  highestVariantCvrPct?: number | null;
 };
 
 export type CopyModule = "home" | "store" | "earn" | "me";
@@ -1173,6 +1175,9 @@ export type NovaStats = {
   onlineChannels: number;
   totalChannels: number;
   weeklySocial: string;
+  socialNotificationRecordsToday?: number;
+  channelStoredCtrAveragePercent?: string | null;
+  recentSocialEventsCumulativeDispatchCount?: number;
 };
 
 export type NovaChannelView = {
@@ -1295,6 +1300,16 @@ export type NovaOverview = {
   templateCtaOptions: NovaOptionView[];
   runtimeSourceOptions: NovaOptionView[];
   sources: string[];
+  channelRuntimeSources?: { channel: string; eventNames: string[]; targeted: boolean }[];
+  pushDelivery?: {
+    from: string;
+    to: string;
+    days: number;
+    eventName: string;
+    sourceAggregate: string;
+    basis: string;
+    channels: { channel: string; pushSentCount: number }[];
+  } | null;
 };
 
 export type NotificationCampaignStats = {

@@ -387,6 +387,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined;
   };
   const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
+  const highestVariantCvr = data?.stats.highestVariantCvrPct;
+  const highestVariantCvrText = highestVariantCvr === undefined
+    ? String(I1_STATS.topLift).replace(/^\+/, "")
+    : highestVariantCvr === null ? "—" : `${highestVariantCvr}%`;
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
     key: row.key,
     desc: row.desc,
@@ -1346,7 +1350,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     <div {...tabIds.panel("experiments")} className="rd-tab-pane i1-pane">
       <FilterBar scope={<Segments label="实验状态" value={expFlt} onChange={setExpFlt} items={EXP_FLT.map(([value, label]) => ({ value, label, count: expCount(value) }))} />}
         sort={<>
-          <span className="rd-filter-result">最高转化率 {String(I1_STATS.topLift).replace(/^\+/, "")}<Explain label="最高转化率怎么算" content="所有实验里单独一组的最高转化率，不是相对原版的提升。" /></span>
+          <span className="rd-filter-result">最高转化率 {highestVariantCvrText}<Explain label="最高转化率怎么算" content="所有实验里单独一组的最高转化率，不是相对原版的提升。" /></span>
           {canManageExperiments && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason ?? (EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : undefined)} onClick={createExperiment}>创建实验</Button>}
         </>} />
       {filteredExps.length === 0 && <BlockState state="empty" title={EXPS.length === 0 ? "还没有实验" : "这个状态下没有实验"} />}

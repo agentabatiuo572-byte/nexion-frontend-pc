@@ -241,27 +241,28 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
         <tbody>
           {data.dials.map((dial) => {
             const meta = DIALS[dial.key] ?? { name: dial.label, what: "—", detail: "" };
+            const retired = dial.executionStatus === undefined ? meta.retired : dial.executionStatus === "RETIRED";
             const change = changeFor(pivot.changes, dial.label, dial.unit);
             return (
-              <Tr key={dial.key} data-testid="b4-dial-row" data-retired={meta.retired ? "" : undefined}>
+              <Tr key={dial.key} data-testid="b4-dial-row" data-retired={retired ? "" : undefined}>
                 <Td>
                   <span className="b4-dial-name">
                     <b>{meta.name}</b>
                     {meta.detail && <Explain label={`${meta.name}管什么`} content={meta.detail} />}
                   </span>
-                  {meta.retired && <span className="b4-retired-inline"><StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag></span>}
+                  {retired && <span className="b4-retired-inline"><StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag></span>}
                 </Td>
-                <Td className="b4-col-what">{meta.retired ? <StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag> : <span className="b4-muted">{meta.what}</span>}</Td>
-                <Td align="right"><span className="b4-value" data-retired={meta.retired ? "" : undefined}>{dial.key === "binaryDailyCap" && dial.currentValue != null && String(dial.currentValue).trim() !== "" && Number(dial.currentValue) === 0 && <StatusTag tone="warn" icon={CircleSlash} explain="这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。">以前存的</StatusTag>}{dialText(dial.currentValue, dial.unit)}</span></Td>
+                <Td className="b4-col-what">{retired ? <StatusTag tone="neutral" icon={Ban}>已停用，现在不收</StatusTag> : <span className="b4-muted">{meta.what}</span>}</Td>
+                <Td align="right"><span className="b4-value" data-retired={retired ? "" : undefined}>{dial.key === "binaryDailyCap" && dial.currentValue != null && String(dial.currentValue).trim() !== "" && Number(dial.currentValue) === 0 && <StatusTag tone="warn" icon={CircleSlash} explain="这是以前存的 0，现在不能再设成 0；上限是 0 的月份不结算团队平衡奖励。">以前存的</StatusTag>}{dialText(dial.currentValue, dial.unit)}</span></Td>
                 {!last && (
                   <Td align="right">
-                    {meta.retired ? <span className="b4-muted">{change ? `${change.from} → ${change.to}` : "不变"}</span>
+                    {retired ? <span className="b4-muted">{change ? `${change.from} → ${change.to}` : "不变"}</span>
                       : change ? (change.from ? <Change from={change.from} to={change.to} /> : change.to) : <span className="b4-muted">不变</span>}
                   </Td>
                 )}
                 {canJump && (
                   <Td align="right" data-fit="">
-                    {meta.retired ? (
+                    {retired ? (
                       <span className="b4-muted" aria-label={`${meta.name}已停用，没有调整入口`}>—</span>
                     ) : (
                       <a href={dial.adjustHref} className="rd-link b4-nowrap" aria-disabled={busy !== ""} aria-label={`去运营阶段设置调整${meta.name}`}

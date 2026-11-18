@@ -65,6 +65,12 @@ function optionalArray(moduleId: IModuleId, owner: Record<string, unknown>, key:
 }
 
 function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
+  const stats = record(moduleId, value.stats);
+  const impressions = stats.cumulativeExperimentImpressions;
+  if (impressions !== undefined && (!Number.isSafeInteger(impressions) || Number(impressions) < 0)) fail(moduleId);
+  const best = stats.highestVariantCvrPct;
+  if (best != null && (typeof best !== "number" || !Number.isFinite(best) || best < 0 || best > 100)) fail(moduleId);
+
   for (const option of records(moduleId, value.versionOptions)) {
     if (typeof option.status !== "string" || !["ACTIVE", "INACTIVE"].includes(option.status.toUpperCase())) fail(moduleId);
     // The repository emits lowercase statuses; the editor and write DTO use uppercase.
@@ -110,6 +116,12 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
   const stats = record(moduleId, value.stats);
   for (const key of ["todayDelivered", "weeklySocial", "ctr"]) if (typeof stats[key] !== "string") fail(moduleId);
   for (const key of ["ctrTarget", "onlineChannels", "totalChannels"]) if (typeof stats[key] !== "number" || !Number.isInteger(stats[key])) fail(moduleId);
+  for (const key of ["socialNotificationRecordsToday", "recentSocialEventsCumulativeDispatchCount"]) {
+    const count = stats[key];
+    if (count !== undefined && (!Number.isSafeInteger(count) || Number(count) < 0)) fail(moduleId);
+  }
+  if (stats.channelStoredCtrAveragePercent != null && typeof stats.channelStoredCtrAveragePercent !== "string") fail(moduleId);
+
   for (const channel of records(moduleId, value.channels)) {
     if (!["key", "name", "trigger", "tick", "cooldown", "phaseKeyed"].every((key) => typeof channel[key] === "string")
       || typeof channel.ctr !== "number" || !Number.isFinite(channel.ctr) || typeof channel.enabled !== "boolean") fail(moduleId);
@@ -131,6 +143,22 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
     for (const option of records(moduleId, value[key])) if (typeof option.value !== "string" || typeof option.label !== "string") fail(moduleId);
   }
   for (const key of ["templateStatuses", "sources"]) if (!array(moduleId, value[key]).every((item) => typeof item === "string")) fail(moduleId);
+  if (value.channelRuntimeSources !== undefined) {
+    for (const source of records(moduleId, value.channelRuntimeSources)) {
+      if (typeof source.channel !== "string" || typeof source.targeted !== "boolean"
+        || !array(moduleId, source.eventNames).every((name) => typeof name === "string")) fail(moduleId);
+    }
+  }
+  if (value.pushDelivery != null) {
+    const delivery = record(moduleId, value.pushDelivery);
+    for (const key of ["from", "to", "eventName", "sourceAggregate", "basis"]) {
+      if (typeof delivery[key] !== "string") fail(moduleId);
+    }
+    if (!Number.isSafeInteger(delivery.days) || Number(delivery.days) <= 0) fail(moduleId);
+    for (const row of records(moduleId, delivery.channels)) {
+      if (typeof row.channel !== "string" || !Number.isSafeInteger(row.pushSentCount) || Number(row.pushSentCount) < 0) fail(moduleId);
+    }
+  }
 }
 
 function validateNovaEvent(event: Record<string, unknown>) {

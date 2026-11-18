@@ -241,6 +241,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     finally { recoveryInFlight.current = false; setRecovering(null); }
   };
   const I2_STATS = data?.stats ?? { todayDelivered: "—", ctr: "—", ctrTarget: 0, onlineChannels: 0, totalChannels: 0, weeklySocial: "—" };
+  const dailySocialRecords = data?.stats.socialNotificationRecordsToday ?? I2_STATS.todayDelivered;
+  const recentSocialDispatches = data?.stats.recentSocialEventsCumulativeDispatchCount ?? I2_STATS.weeklySocial;
+  const storedAverageCtr = data?.stats.channelStoredCtrAveragePercent ?? I2_STATS.ctr;
   const novas: OpsNova[] = (data?.channels ?? []).map((n) => ({
     key: n.key,
     name: n.name,
@@ -808,9 +811,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     ? `不在 ${cadenceChannelCount} 频道里的推送(统计规则闭合)`
     : `全部 ${cadenceChannelCount} 频道均已在节奏表内(统计规则闭合)`;
   // 点击率达标判定按同一数值口径算；服务端没给可解析的点击率时不判达标也不判未达标。
-  const ctrValue = Number.parseFloat(String(I2_STATS.ctr).replace("%", "").trim());
+  const ctrNumber = storedAverageCtr.replace("%", "").trim() || "—";
+  const ctrValue = Number.parseFloat(ctrNumber);
   const ctrTargetValue = Number(I2_STATS.ctrTarget);
-  const ctrComparable = Number.isFinite(ctrValue) && Number.isFinite(ctrTargetValue) && String(I2_STATS.ctr).trim() !== "—";
+  const ctrComparable = Number.isFinite(ctrValue) && Number.isFinite(ctrTargetValue);
 
   const header = (
     <PageHeader pageId="I2" title="消息推送" summary="管发到 App 消息通知里的业务推送。"
@@ -903,14 +907,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {distBad && `；事件概率合计 ${distTotal}%，不是 100%`}
     </Conclusion>;
 
-  const ctrNumber = String(I2_STATS.ctr).replace("%", "").trim() || "—";
   const stats = (
     <StatBand label="推送概况">
       <Stat tone="role-2" icon={Radio} label="已启用频道" value={String(onlineCount)} unit="个" sub={`共 ${novas.length} 个 · 已停用 ${novas.length - onlineCount} 个`}
         explain="频道开关开着的个数，不代表一定发得出。" />
-      <Stat tone="role-2" icon={Send} label="今日真实动态" value={String(I2_STATS.todayDelivered)} unit="条" sub="只数真实动态频道"
+      <Stat tone="role-2" icon={Send} label="今日真实动态" value={String(dailySocialRecords)} unit="条" sub="只数真实动态频道"
         explain={`真实动态频道今天（业务日，${businessZone().label}）已发出的通知条数；不含其他频道，也不代表都到了用户手机的系统推送。`} />
-      <Stat tone="role-3" icon={History} label="投递批次（累计）" value={String(I2_STATS.weeklySocial)} unit="次" sub="近 7 天投递过的事件"
+      <Stat tone="role-3" icon={History} label="投递批次（累计）" value={String(recentSocialDispatches)} unit="次" sub="近 7 天投递过的事件"
         explain="最近 7 天投递过的真实事件，各自累计被投递的批次数之和，不只算这 7 天；一批可能发给很多人，不是人数。" />
       <Stat tone="role-4" icon={Timer} label="频道点击率均值" value={ctrNumber} unit={ctrNumber === "—" ? undefined : "%"}
         sub={ctrComparable ? `目标均值 ${ctrTargetValue}% · ${ctrValue > ctrTargetValue ? "已高于目标" : "未到目标"}` : "暂不能和目标比较"}
@@ -939,7 +942,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         source={social ? "提现到账等五类真实事件" : sourceText(n.trigger, n.name, RUNTIME_SOURCE_OPTIONS)}
         tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}
         template={t ? { name: t.name, version: t.v } : undefined} templateState={st} warn={warn}
-        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${I2_STATS.todayDelivered} 条 · 累计 ${I2_STATS.weeklySocial} 次`}</dd></div> : undefined}
+        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${dailySocialRecords} 条 · 累计 ${recentSocialDispatches} 次`}</dd></div> : undefined}
         ctr={Number.isFinite(n.ctr) ? `${n.ctr}%` : "—"}
         actions={cardActions} onTemplate={t ? () => setDetailTpl(t.ch) : undefined} />
     );

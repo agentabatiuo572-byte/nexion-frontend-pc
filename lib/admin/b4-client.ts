@@ -30,6 +30,7 @@ export interface B4Dial {
   source: string;
   v1Status: string;
   v1Active: boolean;
+  executionStatus?: "ACTIVE" | "RETIRED";
   adjustHref: string;
 }
 

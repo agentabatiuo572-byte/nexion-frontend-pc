@@ -316,6 +316,9 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
     }
     if (typeof dial.unit !== "string") invalid("B4", `dials.${index}.unit`);
     boolean(dial.v1Active, "B4", `dials.${index}.v1Active`);
+    if (dial.executionStatus !== undefined && dial.executionStatus !== "ACTIVE" && dial.executionStatus !== "RETIRED") {
+      invalid("B4", `dials.${index}.executionStatus`);
+    }
   }
 
   const pivot = record(data.nextPivot, "B4", "nextPivot");

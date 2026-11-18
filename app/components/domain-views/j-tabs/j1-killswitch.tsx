@@ -113,6 +113,11 @@ function unitText(value: string, unit: string) {
 }
 
 function ruleValue(rule: AutoRuleRow) {
+  const actualThreshold = rule.tamperAdvisory
+    ? rule.tamperAdvisory.actualThreshold
+    : rule.autoDisableCondition?.actualThreshold;
+  if (actualThreshold === null) return "—";
+  if (actualThreshold !== undefined) return signalText(actualThreshold, rule.unit);
   return rule.kind === "number" ? unitText(Number(rule.thr).toLocaleString(), rule.unit) : rule.thr;
 }
 
@@ -133,7 +138,7 @@ const plainRuleText = (text: string) => operatorCopyText(text).replace(/\bR\d(?:
 const RULE_TEXT: Record<string, (rule: AutoRuleRow) => string> = {
   withdrawSurge: (rule) => `24 小时提现申请额达到真实储备的 ${ruleValue(rule)}（挤兑红线）时，关停提现。`,
   maturityGap: (rule) => `钱包余额和账本余额相差超过 ${ruleValue(rule)} 时，关停兑换。`,
-  tamperCluster: (rule) => `单个账户 24 小时内被拦下的篡改请求达到 ${rule.thr} 次时告警。`,
+  tamperCluster: (rule) => `单个账户 24 小时内被拦下的篡改请求达到 ${rule.tamperAdvisory ? rule.tamperAdvisory.actualThreshold ?? "—" : rule.thr} 次时告警。`,
   regulatoryDirective: () => "监管点名或法务事件时，在这页手动关停，要写原因。",
 };
 
@@ -660,7 +665,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     }, (latest, draft) => adjEmer(latest.emergencySla.find((item) => item.id === row.id) ?? row, { draft, was: row.v, round: (stale?.round ?? 0) + 1 })));
   };
 
-  const adjRule = (rule: AutoRuleRow, stale?: { draft: string; was: string; round: number }) => {
+  const adjRule = (rule: AutoRuleRow, stale?: { draft: string; was: AutoRuleRow; round: number }) => {
     openActionConfirm(staleAware({ briefKind: "config",
       formKey: stale?.round,
       action: `自动触发规则调整 · ${rule.nm}`,
@@ -668,7 +673,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       detail: "保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。",
       effect: IMMEDIATE,
       statedBrief: { impact: "阈值改小更容易自动关停，改大更不容易。", check: "核对新值和单位，理由写清依据或工单号。" },
-      facts: stale && changedByOther(ruleValue({ ...rule, thr: stale.was }), ruleValue(rule)),
+      facts: stale && changedByOther(ruleValue(stale.was), ruleValue(rule)),
       confirmLabel: "确认调整，立即生效",
       edit: { kind: "number", current: rule.thr, initialValue: stale?.draft, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
         hint: "1–1,000,000,000 的整数",
@@ -677,7 +682,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         label: `调整 ${rule.nm}`, locks: [`rule:${rule.id}`], reason, okText: `${rule.nm} 已生效`,
         command: { kind: "rule", id: rule.id, value: newValue ?? rule.thr, expected: rule.thr },
       }),
-    }, (latest, draft) => adjRule(latest.autoRules.find((item) => item.id === rule.id) ?? rule, { draft, was: rule.thr, round: (stale?.round ?? 0) + 1 })));
+    }, (latest, draft) => adjRule(latest.autoRules.find((item) => item.id === rule.id) ?? rule, { draft, was: rule, round: (stale?.round ?? 0) + 1 })));
   };
 
   const confirmAutoTrigger = (row: AutoConfirmationRow) => {
