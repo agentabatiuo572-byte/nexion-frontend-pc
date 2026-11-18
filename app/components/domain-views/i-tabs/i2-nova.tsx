@@ -948,7 +948,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return (
       <ChannelCard key={n.key} name={channelName(n.key, n.name)} keyText={n.key} on={n.on}
         sourceLabel={social ? "取材" : "触发"}
-        source={social ? "提现到账等真实事件，按概率抽" : trigger.when} audience={social ? undefined : trigger.audience}
+        source={social ? "提现到账等真实事件" : trigger.when} audience={social ? undefined : trigger.audience}
         tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}
         template={t ? { name: t.name, version: t.v } : undefined} templateState={st} warn={warn}
         stats={PUSH ? <div><dt><Send size={14} aria-label="近 7 天发出" /></dt><dd>{`近 7 天发出 ${sent === undefined ? "—" : `${sent.toLocaleString()} 人次`}`}</dd></div>
@@ -1017,7 +1017,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         {novas.length === 0
           ? <BlockState state="empty" title="新增的频道会显示在这里" detail={canWriteI2 ? "新增后先写好模板并发布，再启用。" : undefined} />
           : <div className="i2-channels">{channelCards}</div>}
-        {removedSent.length > 0 && <p className="i2-muted">{`不在上面的频道近 7 天也发过：${removedSent.map((row) => `${channelName(row.channel, "")} ${row.pushSentCount.toLocaleString()} 人次`).join("、")}`}</p>}
+        {removedSent.length > 0 && <p className="i2-muted i2-removed-sent" title={removedSent.map((row) => `${catalogName(channelName(row.channel, ""))} ${row.pushSentCount.toLocaleString()} 人次`).join("、")}>
+          {`已删除或不在上面的 ${removedSent.length} 个频道，近 7 天共发出 ${removedSent.reduce((sum, row) => sum + row.pushSentCount, 0).toLocaleString()} 人次。`}
+        </p>}
         <Fold title="不在频道里的推送" inset summary={offTableChannels.length ? `${offTableChannels.length} 条 · 节奏由别处的设置决定` : "没有"}
           explain="市场行情和市场事件通知是两个独立频道，可以分别启停、设间隔。">
           {offTableChannels.length === 0
@@ -1260,7 +1262,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           fixedSource={editNovaKey && !form.runtimeSource ? (() => {
             const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey);
             if (!prev) return "";
-            if (prev.key === SOCIAL_CHANNEL) return "提现到账等真实事件，按概率抽";
+            if (prev.key === SOCIAL_CHANNEL) return "提现到账等真实事件";
             const fixed = channelTrigger(prev.key, prev.trigger, prev.name, drawerSource.current?.runtimeSourceOptions ?? [], drawerSource.current?.channelRuntimeSources);
             return fixed.audience ? `${fixed.when} · ${fixed.audience}` : fixed.when;
           })() : undefined}
