@@ -9,7 +9,7 @@
  * 新建 Campaign / 行点击详情 = 本地 Drawer 原语(design-kit 共享 Drawer);提交新建走后端 /content/campaigns。
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { Drawer, OPTIONAL_CONTENT_HINT, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 import type { NotificationAudienceTarget, NotificationCampaignRow } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -330,7 +330,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     const vi = fillBlankContentLanguage(requiredLanguages, "vi", en, { title: form.titleVi.trim(), body: form.bodyVi.trim() });
     const submittedCopy = [en, zh, vi];
     if (submittedCopy.some(({ title, body }) => !title || !body)) {
-      toast(displayAdminError("VALIDATION_FAILED"));
+      toast("请填写英文标题和正文，以及带 * 的语言；选填语言填了标题或正文，另一项也要填。");
       return;
     }
     if (submittedCopy.some(({ title, body }) => {
@@ -338,7 +338,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       return title.length > 160 || body.length > 4000
         || Array.from(delivered.title.trim()).length > 128 || Array.from(delivered.body.trim()).length > 512;
     })) {
-      toast(displayAdminError("VALIDATION_FAILED"));
+      toast("标题或正文太长：App 通知标题最多 128 字、正文最多 512 字，请精简后再保存。");
       return;
     }
     const minIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMin) ?? -1;
@@ -349,7 +349,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     }
     const ctaLabel = CTA_LABELS_EN[form.ctaHref];
     if (form.ctaHref && (!ctaLabel || ctaLabel.length > 64)) {
-      toast(displayAdminError("VALIDATION_FAILED"));
+      toast("这个跳转页面没有可用的按钮文案，请重新选择点击后跳转的页面。");
       return;
     }
     const englishOverride = editing?.translations?.en;
@@ -628,7 +628,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       {newOpen && canWriteI3 && (
         <Drawer
           title={editing ? `编辑 通知活动 草稿 · ${editing.id}` : "新建 通知活动（存为草稿）"}
-          sub="中文、越南语必填，英文可选 · 受众条件要同时满足 · 发送时另行确认"
+          sub="英文和运营区域语言必填 · 受众条件要同时满足 · 发送时另行确认"
           onClose={() => { if (!submitting) { setNewOpen(false); setEditing(null); } }}
           footer={
             <>
@@ -663,7 +663,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 <input
                   value={form.titleZh}
                   onChange={(e) => setForm({ ...form, titleZh: e.target.value })}
-                  placeholder="通知流第一行（中文）"
+                  placeholder={requiredLanguages?.includes("zh") === false ? OPTIONAL_CONTENT_HINT : "通知流第一行（中文）"}
                   style={INPUT_STYLE}
                 />
               </FormField>
@@ -671,11 +671,11 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 <input
                   value={form.titleVi}
                   onChange={(e) => setForm({ ...form, titleVi: e.target.value })}
-                  placeholder="Dòng đầu tiên (VI)"
+                  placeholder={requiredLanguages?.includes("vi") === false ? OPTIONAL_CONTENT_HINT : "通知流第一行（越南语）"}
                   style={INPUT_STYLE}
                 />
               </FormField>
-              <FormField label="英文标题（可选）" required>
+              <FormField label="英文标题" required>
                 <input
                   value={form.titleEn}
                   onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
@@ -688,7 +688,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   rows={4}
                   value={form.bodyZh}
                   onChange={(e) => setForm({ ...form, bodyZh: e.target.value })}
-                  placeholder="填写中文正文"
+                  placeholder={requiredLanguages?.includes("zh") === false ? OPTIONAL_CONTENT_HINT : "填写中文正文"}
                   style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>
@@ -697,11 +697,11 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   rows={4}
                   value={form.bodyVi}
                   onChange={(e) => setForm({ ...form, bodyVi: e.target.value })}
-                  placeholder="请输入越南语内容"
+                  placeholder={requiredLanguages?.includes("vi") === false ? OPTIONAL_CONTENT_HINT : "填写越南语正文"}
                   style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>
-              <FormField label="英文正文（可选）" required>
+              <FormField label="英文正文" required>
                 <textarea
                   rows={4}
                   value={form.bodyEn}
@@ -711,6 +711,11 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 />
               </FormField>
             </div>
+            {requiredLanguages && requiredLanguages.length < 3 && (
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: -6 }}>
+                没带 * 的中文、越南语选填：标题和正文都不填时 App 显示英文；填了其中一项，另一项也要填。
+              </div>
+            )}
             <FormField label="优先级">
               <select
                 value={form.tier}

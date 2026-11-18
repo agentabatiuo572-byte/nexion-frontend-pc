@@ -52,7 +52,7 @@ function errorText(error: unknown): string {
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权修改欢迎语。";
-  if (status === 400 || status === 422) return "内容未通过校验，请检查三种语言的文字和修改理由后再提交。";
+  if (status === 400 || status === 422) return "内容未通过校验：请检查英文和必填语言是否已填、每种语言不超过 500 字，以及修改理由，再提交。";
   return "欢迎语暂不可用，请重试；当前输入已保留。";
 }
 
@@ -215,9 +215,10 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       {draft && current && <>
         {LANGUAGES.map(({ key, label }, index) => {
           const problem = problems[index], length = codePointLength(draft[key]);
+          const required = requiredLanguages.includes(key);
           return <label className="field m5-welcome-field" key={key}>
-            <span>{label}</span>
-            <textarea value={draft[key]} disabled={!editable} aria-invalid={Boolean(problem)} aria-describedby={`m5-welcome-${key}-count`} onChange={(event) => { const value = event.target.value; setDraft((old) => old ? { ...old, [key]: value } : old); setSaved(false); }} />
+            <span>{label}{required ? " *" : "（选填）"}</span>
+            <textarea value={draft[key]} placeholder={required ? undefined : "选填，不填时新用户收到英文"} disabled={!editable} aria-invalid={Boolean(problem)} aria-describedby={`m5-welcome-${key}-count`} onChange={(event) => { const value = event.target.value; setDraft((old) => old ? { ...old, [key]: value } : old); setSaved(false); }} />
             <span id={`m5-welcome-${key}-count`} className={`m5-welcome-count${problem ? " invalid" : ""}`}>{problem ? `${problem} · ` : ""}{length}/{MAX}</span>
           </label>;
         })}

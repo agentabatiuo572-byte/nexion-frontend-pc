@@ -51,6 +51,11 @@ type TrustSectionVersion = {
 type Jurisdiction = {
   code: string; name: string; countryCodes: string[]; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number; acked?: number; pendingAck?: number;
 };
+const DISCLOSURE_SCOPE_LANGUAGE_NAMES: Record<string, string> = { zh: "中文", en: "英语", vi: "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
+const disclosureScopeLabel = (scope?: string) => scope?.trim()
+  ? scope.split("+").map((code) => DISCLOSURE_SCOPE_LANGUAGE_NAMES[code.trim().toLowerCase()] ?? code.trim()).join(" / ")
+  : "未知";
+
 const statusZh = (status?: string) => ({
   published: "已发布", draft: "草稿", archived: "已归档", superseded: "已取代",
   PUBLISHED: "已发布", DRAFT: "草稿", ARCHIVED: "已归档", SUPERSEDED: "已取代",
@@ -512,7 +517,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
         <>
-          英文和运营区域语言必填，已填写语言的占位符须一致。保存草稿立即生效，但不改变 App 内容；发布提交到「操作记录与审批」，批准后生效，仅封存七章内容。随后还须另行提交生效版本映射，批准切换后才要求用户重新确认。
+          英文和运营区域语言必填，已填写语言的占位符须一致。保存草稿立即生效，但不改变 App 内容；发布提交到「操作记录与审批」，批准后生效，封存总文和七章内容。随后还须另行提交生效版本映射，批准切换后才要求用户重新确认。
         </>
       ),
       amplifies: false,
@@ -774,7 +779,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
-          <b>合规关键操作</b>：发布的是已保存的草稿，发布后 7 章内容固定不能改；发布本身不会改变 App 上正在显示的版本，也不会要求用户重新确认。发布须批准后生效，仅封存内容；之后另行提交生效版本映射，批准切换后才要求用户重新确认。<b>需要风控或超级管理员操作</b>。
+          <b>合规关键操作</b>：发布的是已保存的草稿，发布后总文和 7 章内容固定不能改；发布本身不会改变 App 上正在显示的版本，也不会要求用户重新确认。发布须批准后生效，仅封存内容；之后另行提交生效版本映射，批准切换后才要求用户重新确认。<b>需要风控或超级管理员操作</b>。
         </>
       ),
       amplifies: false,
@@ -789,6 +794,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         pendingAck,
         blocked,
         gatedActions: GATED_ACTIONS.filter((action) => action.active).map((action) => action.name),
+        currentSummary: current ? { zh: current.zh, vi: current.vi, en: current.en } : undefined,
+        targetSummary: { zh: row.zh, vi: row.vi, en: row.en },
         currentChapters: current?.chapters ?? [],
         targetChapters: row.chapters,
       },
@@ -1140,7 +1147,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             <div className="itint cyan" data-proof="disclosure-draft-preview" style={{ marginTop: 10 }}>
               <b>当前披露草稿回显</b> · 版本 <span className="mono">{disclosureDraft.version}</span>
               {" "}· 适用地区 <span className="mono">{disclosureDraft.jurisdiction ?? ""}</span>
-              {" "}· 语言 <span className="mono">{disclosureDraft.languageScope ?? "zh+vi"}</span>
+              {" "}· 语言 <span className="mono">{disclosureScopeLabel(disclosureDraft.languageScope)}</span>
               {" "}· 生效日 <span className="mono">{disclosureDraft.effectiveDate ?? ""}</span>
               {" "}· 重新确认 <span className="mono">{disclosureDraft.requiresReack === false ? "否" : "是"}</span>
               <div className="grid g-3" style={{ gap: 10, marginTop: 8 }}>
@@ -1183,7 +1190,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   <td className="mono">{row.jurisdiction}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{row.version}</td>
                   <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(row.status)}</span></td>
-                  <td>{row.languageScope === "zh+vi+en" ? "中文 / 越南语 / 英语" : "中文 / 越南语"}</td>
+                  <td>{disclosureScopeLabel(row.languageScope)}</td>
                   <td className="mono tiny">{row.publishedAt || row.updatedAt || row.effectiveDate || "—"}</td>
                   <td>{row.operator || "—"}</td>
                   <td>{row.chapters.length} / 7</td>
@@ -1330,7 +1337,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="field"><span className="bf-legend">内容结构</span><input aria-label="内容结构" className="inp" value={draftEditor.structure} onChange={(event) => setDraftEditor({ ...draftEditor, structure: event.target.value })} /></div>
           <div className="field"><span className="bf-legend">保存说明</span><input aria-label="保存说明" className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
           <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><span className="tiny">共 {draftEditor.fields.length} 项</span></div>
-          <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。</div>
+          <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。带 * 的必填。没带 * 的中文、越南语选填：这一语言的字段全部不填时，保存时用对应的英文字段补上；填了其中一项就要把这一语言填齐。</div>
           {draftEditor.fields.map((field, index) => {
             const localized = localizedTrustSectionField(field.key);
             const required = localized && draftEditor.requiredLanguages.includes(localized.language);
@@ -1342,7 +1349,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 </div>
                 <div className="field"><span className="bf-legend">字段名称</span><input aria-label="字段名称" className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
               </div>
-              <div className="field"><span className="bf-legend">字段内容{required && " *"}</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} placeholder={localized && !required ? OPTIONAL_CONTENT_HINT : undefined} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
+              <div className="field"><span className="bf-legend">字段内容{required && " *"}</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} placeholder={localized && !required ? (draftEditor.fields.some((item) => { const english = localizedTrustSectionField(item.key); return english?.language === "en" && english.family === localized.family; }) ? OPTIONAL_CONTENT_HINT : "选填") : undefined} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
             </div>;
           })}
         </Drawer>
@@ -1363,7 +1370,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             当前 {sec.v} · {statusZh(liveTrustStatus(sec))} · 执行门槛:{operatorCopyText(sec.roleGate)}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>
-            结构化内容字段如下；中文、越南语文案必填，英语文案可选。发布前可预览，发布走操作确认。
+            结构化内容字段如下；英文必填，勾为运营区域语言的中文、越南语也必填。发布前可预览，发布走操作确认。
           </div>
           {sec.key === "financials" ? (
             <>
@@ -1430,7 +1437,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           </div>
           <div className="kv">
             <span className="k">语言</span>
-            <span className="v">中文 + 越南语（英语可选，在「多语言文案」里维护）</span>
+            <span className="v">{disclosureScopeLabel(I5_VERSION_ROWS.find((row) => row.jurisdiction === jur.code && row.version === liveJurVersion(jur))?.languageScope)}（生效版本已存的语言）</span>
           </div>
           <div className="kv">
             <span className="k">操作记录</span>
@@ -1454,7 +1461,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDisclosureDetailKey(null)}>关闭</button>}
         >
           <div className="itint" style={{ marginBottom: 10 }}>
-            状态：{statusZh(selectedDisclosureVersion.status)} · 语言：{selectedDisclosureVersion.languageScope === "zh+vi+en" ? "中文 / 越南语 / 英语" : "中文 / 越南语"} · 章节：{selectedDisclosureVersion.chapters.length} / 7
+            状态：{statusZh(selectedDisclosureVersion.status)} · 语言：{disclosureScopeLabel(selectedDisclosureVersion.languageScope)} · 章节：{selectedDisclosureVersion.chapters.length} / 7
           </div>
           {selectedDisclosureVersion.chapters.map((chapter) => <div className="card" key={chapter.no} style={{ padding: 10, marginTop: 8 }}>
             <b>第 {chapter.no} 章 · {chapter.zh}</b>
@@ -1475,7 +1482,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             </button>
           }
         >
-          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 4px", color: "var(--ink)" }}>zh</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 4px", color: "var(--ink)" }}>中文</div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 360 }}>
               <thead>
@@ -1505,8 +1512,23 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
               </tbody>
             </table>
           </div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>英语</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="l-tbl" style={{ minWidth: 360 }}>
+              <thead>
+                <tr>
+                  <th>{chap.en || "英语标题未填写"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{chap.enBody || "英语正文未填写"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div className="itint" style={{ marginTop: 12 }}>
-            中文、越南语都要有 ✓ 变量一致 ✓ · 用户必须滚到底并勾选才能确认；确认记录（版本 + 地区）会保存下来。
+            用户必须滚到底并勾选才能确认；确认记录（版本 + 地区）会保存下来。
           </div>
         </Drawer>
       )}

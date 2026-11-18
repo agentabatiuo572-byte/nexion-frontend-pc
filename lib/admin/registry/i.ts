@@ -33,7 +33,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/i18n",
-    summary: "管理多语言文案和课程：词条、课程、推荐位、发布状态和完成奖励。调高课程奖励需审批，并先通过兑付覆盖率检查。",
+    summary: "管理多语言文案和课程：词条、课程、推荐位、发布状态和完成奖励。带奖励的课程发布和回滚需审批，并先通过兑付覆盖率检查。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

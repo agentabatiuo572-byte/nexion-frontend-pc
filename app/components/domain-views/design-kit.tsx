@@ -664,7 +664,7 @@ export type BusinessFormSpec =
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
   | { kind: "version-authoring"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope: string; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
   | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
-  | { kind: "disclosure-publish-review"; requiredLanguages: readonly OperatingLanguageCode[]; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
+  | { kind: "disclosure-publish-review"; requiredLanguages: readonly OperatingLanguageCode[]; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentSummary?: { zh: string; vi: string; en: string }; targetSummary: { zh: string; vi: string; en: string }; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
   | { kind: "trust-section-publish"; requiredLanguages: readonly OperatingLanguageCode[]; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
@@ -2101,10 +2101,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         )}
         <div className="grid g-2" style={{ gap: 10 }}>
-          {textArea("zh", "中文文案", "填写中文草稿")}
-          {textArea("en", "英文文案", "Fill English copy")}
-          {spec.kind === "localized-copy" && textArea("vi", "越南语文案", "Nhập nội dung tiếng Việt")}
-          {isManagedCopy && textArea("vi", "越南语文案", "Nhập nội dung tiếng Việt")}
+          {textArea("zh", "中文文案", "填写中文文案")}
+          {textArea("en", "英文文案", "填写英文文案")}
+          {spec.kind === "localized-copy" && textArea("vi", "越南语文案", "填写越南语文案")}
+          {isManagedCopy && textArea("vi", "越南语文案", "填写越南语文案")}
         </div>
         {(spec.kind === "copy-edit" || spec.kind === "copy-create") && (
           <div style={{ marginTop: 10 }}>
@@ -2307,26 +2307,28 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     return (
       <div className="field" data-business-form="course-authoring">
         <span className="bf-legend">新建 / 编辑课程</span>
+        <div className="tint tiny" style={{ marginBottom: 10 }}>带 * 的语言必填。没带 * 的中文、越南语选填：标题、正文、题干和选项全部不填时 App 显示英文；填了任何一项就要全部填齐。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("slug", "课程标识", "learn-earn-basics")}
-          {(spec.mode === "version-create" || spec.mode === "version-edit") && input("version", "版本号", "v2")}
+          {spec.mode === "version-create" && input("version", "版本号", "v2")}
+          {spec.mode === "version-edit" && <div className="field" style={{ marginBottom: 0 }}><span>版本号</span><output className="fld" aria-label="版本号" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{value.version} · 编辑中的草稿</output></div>}
           {select("category", "课程分类", spec.categories ?? DEFAULT_COURSE_CATEGORIES, COURSE_CATEGORY_LABELS)}
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
           {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
           {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
           {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, "5", "number")}
           <div className="itint ok">保存为{COURSE_STATUS_LABELS.draft}，发布请回到课程列表操作。</div>
-          {input("titleZh", "中文标题（最多 1024 字）", "课程标题", "text", 1024)}
-          {input("titleVi", "越南语标题（最多 1024 字）", "Tiêu đề khóa học", "text", 1024)}
-          {input("titleEn", "英语标题（最多 1024 字）", "Course title", "text", 1024)}
+          {input("titleZh", "中文标题（最多 128 字）", "中文课程标题", "text", 1024)}
+          {input("titleVi", "越南语标题（最多 1024 字）", "越南语课程标题", "text", 1024)}
+          {input("titleEn", "英语标题（最多 1024 字，中文不填时最多 128 字）", "英语课程标题", "text", 1024)}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {textArea("bodyZh", "中文正文（最多 1024 字）", "课程正文与完成条件", 4, 1024)}
-          {textArea("bodyVi", "越南语正文（最多 1024 字）", "Nội dung khóa học và điều kiện hoàn thành", 4, 1024)}
-          {textArea("bodyEn", "英语正文（最多 1024 字）", "Course body and completion criteria", 4, 1024)}
+          {textArea("bodyZh", "中文正文（最多 1024 字）", "中文课程正文", 4, 1024)}
+          {textArea("bodyVi", "越南语正文（最多 1024 字）", "越南语课程正文", 4, 1024)}
+          {textArea("bodyEn", "英语正文（最多 1024 字）", "英语课程正文", 4, 1024)}
         </div>
         <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>测验与发奖（发布前须填写完整）</div>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>测验与发奖（保存前须填写完整）</div>
           {Array.from({ length: questionCount }, (_, questionIndex) => {
             const optionCount = Math.max(2, Number(value[`quiz.${questionIndex}.optionCount`] || 2));
             const addOption = () => onChange({ ...value,
@@ -2342,9 +2344,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               </div>
               <div className="grid g-2" style={{ gap: 10 }}>
                 {input(`quiz.${questionIndex}.id`, "题目标识", `q${questionIndex + 1}`)}
-                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "本课核心结论是什么？")}
-                {input(`quiz.${questionIndex}.questionEn`, "英文题干", "What is the key takeaway?")}
-                {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "Kết luận chính của bài học là gì?")}
+                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "中文题干")}
+                {input(`quiz.${questionIndex}.questionEn`, "英文题干", "英文题干")}
+                {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "越南语题干")}
                 {Array.from({ length: optionCount }, (_, optionIndex) => <Fragment key={optionIndex}>
                   <div className="field" style={{ gridColumn: "1 / -1", marginBottom: -4 }}>
                     <label className="row" style={{ gap: 8, cursor: "pointer", color: "var(--ink-2)" }}>
@@ -2357,9 +2359,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                       <b>设为正确答案：选项 {optionIndex + 1}</b>
                     </label>
                   </div>
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "请输入中文选项")}
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "Enter English option")}
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "Nhập lựa chọn tiếng Việt")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "中文选项")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "英文选项")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "越南语选项")}
                 </Fragment>)}
               </div>
               <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={addOption}>+ 添加选项</button>
@@ -2370,9 +2372,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
             {input("passScore", "通过分数（1-100）", "60", "number")}
             {input("retries", "最多重试次数（0-10）", "3", "number")}
-            {select("completionCond", "完成条件", ["quiz_passed", "all_questions_correct"], { quiz_passed: "达到通过分数", all_questions_correct: "全部答对" })}
-            {select("rewardEvent", "何时发奖", ["quiz.passed", "course.completed"], { "quiz.passed": "测验通过", "course.completed": "课程完成" })}
           </div>
+          {(spec.current?.completionCondition || spec.current?.rewardEvent) && (
+            <div className="itint" data-proof="course-retired-options" style={{ marginTop: 10 }}>
+              <div className="tiny" style={{ color: "var(--ink-3)", marginBottom: 6 }}>以下两项已停用，只显示这条记录的历史值，保存时原样保留，不能修改。用户按上面的通过分数判定是否通过。</div>
+              <div className="grid g-2" style={{ gap: 10 }}>
+                {spec.current?.completionCondition && <div className="field" style={{ marginBottom: 0 }}><span>完成条件（历史值）</span><output className="fld" aria-label="完成条件（历史值）" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{({ quiz_passed: "达到通过分数", all_questions_correct: "全部答对" } as Record<string, string>)[spec.current.completionCondition] ?? spec.current.completionCondition}</output></div>}
+                {spec.current?.rewardEvent && <div className="field" style={{ marginBottom: 0 }}><span>何时发奖（历史值）</span><output className="fld" aria-label="何时发奖（历史值）" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{({ "quiz.passed": "测验通过", "course.completed": "课程完成" } as Record<string, string>)[spec.current.rewardEvent] ?? spec.current.rewardEvent}</output></div>}
+              </div>
+            </div>
+          )}
           <div className="tint tiny" style={{ marginTop: 8 }}>同一用户在同一课程版本只发一次奖励；发奖失败会自动重试，仍失败则转人工处理。</div>
         </div>
       </div>
@@ -2442,6 +2451,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     return (
       <div className="field" data-business-form="version-authoring">
         <span className="bf-legend">新建 / 编辑披露草稿</span>
+        <div className="tint tiny" style={{ marginBottom: 10 }}>带 * 的语言必填。没带 * 的中文、越南语选填：总文和七章的标题、正文全部不填时 App 显示英文；填了任何一项就要全部填齐。发布时封存总文和七章。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>披露版本（系统自动编号）</span>
@@ -2457,9 +2467,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
-          {textArea("vi", "越南语版本正文", "Nhập nội dung công bố bằng tiếng Việt", 4)}
-          {textArea("en", "英语版本正文", "Fill English disclosure body", 4)}
+          {textArea("zh", "中文总文", "填写中文披露总文", 4)}
+          {textArea("vi", "越南语总文", "填写越南语披露总文", 4)}
+          {textArea("en", "英语总文", "填写英语披露总文", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
           <span className="bf-legend">章节内容（共 7 章）</span>
@@ -2467,11 +2477,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             <b>第 {chapter.no} 章</b>
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
               {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
-              {input(`chapter.${index}.viTitle`, "越南语标题", "Nhập tiêu đề tiếng Việt")}
-              {input(`chapter.${index}.enTitle`, "英语标题", "English title")}
+              {input(`chapter.${index}.viTitle`, "越南语标题", "请输入越南语标题")}
+              {input(`chapter.${index}.enTitle`, "英语标题", "请输入英语标题")}
               {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
-              {textArea(`chapter.${index}.viBody`, "越南语正文", "Nhập nội dung tiếng Việt", 3)}
-              {textArea(`chapter.${index}.enBody`, "英语正文", "English body", 3)}
+              {textArea(`chapter.${index}.viBody`, "越南语正文", "请输入越南语正文", 3)}
+              {textArea(`chapter.${index}.enBody`, "英语正文", "请输入英语正文", 3)}
             </div>
           </div>)}
         </div>
@@ -2506,10 +2516,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   }
 
   if (spec.kind === "disclosure-publish-review") {
-    const changed = spec.targetChapters.filter((target) => {
+    const reviewLanguages = [["zh", "中文"], ["vi", "越南语"], ["en", "英语"]] as const;
+    const chapterChangedLanguages = (target: (typeof spec.targetChapters)[number]) => {
       const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-      return !current || current.zh !== target.zh || current.vi !== target.vi || current.en !== target.en || current.zhBody !== target.zhBody || current.viBody !== target.viBody || current.enBody !== target.enBody;
-    });
+      return reviewLanguages.filter(([language]) => !current || current[language] !== target[language] || current[`${language}Body`] !== target[`${language}Body`]).map(([, label]) => label);
+    };
+    const changed = spec.targetChapters.filter((target) => chapterChangedLanguages(target).length > 0);
+    const summaryChangedLanguages = reviewLanguages.filter(([language]) => spec.currentSummary?.[language] !== spec.targetSummary[language]).map(([, label]) => label);
     return (
       <div className="field" data-business-form="disclosure-publish-review">
         <span className="bf-legend">发布前合规核对</span>
@@ -2519,18 +2532,26 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <div style={{ marginTop: 4 }}>本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：{spec.gatedActions.join("、") || "无"}</div>
         </div>
         <div className="itint" style={{ marginTop: 10 }}>
-          <b>版本差异</b> · 共 {changed.length} / 7 章发生变化
+          <b>版本差异</b> · 总文{summaryChangedLanguages.length > 0 ? "有修改" : "无变化"} · 七章中 {changed.length} 章有修改。发布会封存下面的总文和七章。
         </div>
         <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
+          <div className="card" data-proof="disclosure-summary-diff" style={{ padding: 10, marginTop: 8, borderColor: summaryChangedLanguages.length > 0 ? "var(--warning)" : undefined }}>
+            <b>总文 · {summaryChangedLanguages.length > 0 ? `有修改（${summaryChangedLanguages.join("、")}）` : "无变化"}</b>
+            <div className="grid g-3" style={{ gap: 8, marginTop: 6 }}>
+              <div><span className="tiny">中文</span><div className="tiny">{spec.targetSummary.zh}</div></div>
+              <div><span className="tiny">越南语</span><div className="tiny">{spec.targetSummary.vi}</div></div>
+              <div><span className="tiny">英语</span><div className="tiny">{spec.targetSummary.en || "未填写英语总文"}</div></div>
+            </div>
+          </div>
           {spec.targetChapters.map((target) => {
-            const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-            const isChanged = !current || current.zh !== target.zh || current.vi !== target.vi || current.en !== target.en || current.zhBody !== target.zhBody || current.viBody !== target.viBody || current.enBody !== target.enBody;
+            const changedLanguages = chapterChangedLanguages(target);
+            const isChanged = changedLanguages.length > 0;
             return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
-              <b>第 {target.no} 章 · {isChanged ? "有修改" : "无变化"}</b>
+              <b>第 {target.no} 章 · {isChanged ? `有修改（${changedLanguages.join("、")}）` : "无变化"}</b>
               <div className="grid g-3" style={{ gap: 8, marginTop: 6 }}>
                 <div><span className="tiny">中文</span><div>{target.zh}</div><div className="tiny">{target.zhBody}</div></div>
                 <div><span className="tiny">越南语</span><div>{target.vi}</div><div className="tiny">{target.viBody}</div></div>
-                <div><span className="tiny">英语</span><div>{target.en || "未提供英语标题"}</div><div className="tiny">{target.enBody || "未提供英语正文"}</div></div>
+                <div><span className="tiny">英语</span><div>{target.en || "未填写英语标题"}</div><div className="tiny">{target.enBody || "未填写英语正文"}</div></div>
               </div>
             </div>;
           })}
@@ -2539,7 +2560,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
         </label>
         <label className="field" style={{ marginTop: 6 }}>
-          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对七章必填语言（{spec.requiredLanguages.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}），与监管要求一致</span>
+          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对总文和七章的必填语言（{spec.requiredLanguages.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}），与监管要求一致</span>
         </label>
       </div>
     );

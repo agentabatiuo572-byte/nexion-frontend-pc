@@ -319,7 +319,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
     selectedMessage && openActionConfirm({ briefKind: "content",
       action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
       detail: <>
-        把这个旧版本的三语内容复制成一个新版本发布，旧记录不会被改动。
+        把这个旧版本的中文、英文、越南语内容原样复制成一个新版本发布，旧记录不会被改动。
         当前版本 <b>{selectedMessage.version}</b>，回滚到 <b>{target.version}</b>。
       </>,
       amplifies: false,
@@ -343,7 +343,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
         <>
-          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。保存后重新检查，问题清零后才能发布。
+          {issue.kind} 共 <b>{issue.cnt}</b> 处。在下面补齐这条已注册词条的英文和运营区域语言、修正变量。保存后点「重扫」更新问题数；发布时只检查要发布的那条词条草稿。
         </>
       ),
       amplifies: false,
@@ -373,7 +373,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。这次只发布内容，不提高奖励。
+          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。{c.reward > 0 ? "带奖励的课程发布要走审批，当前页面还不能提交审批，后台会拒绝直接发布。" : "发布后直接生效。"}
         </>
       ),
       amplifies: false,
@@ -475,7 +475,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
-          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题、正文和测验须填写英文和运营区域语言。草稿用户看不到，发布时需要确认。
+          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题、正文和测验须填写英文和运营区域语言。草稿用户看不到；发布时需要确认，带奖励的课程发布还要审批。
         </>
       ),
       amplifies: false,
@@ -822,7 +822,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
                 <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || (requiredLanguages.includes("vi") ? "待补齐" : "—")}</div></div>
               </div>
               <div className={`itint ${missingLocales.length === 0 ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
-                <b>三语内容</b> · 版本 {selectedMessage.version} · 变量 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
+                <b>已存内容</b> · 版本 {selectedMessage.version} · 变量 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
               </div>
               <div style={{ overflowX: "auto", marginTop: 12 }}>
                 <table className="l-tbl" style={{ minWidth: 520 }}>
@@ -1189,7 +1189,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       </>}
 
       <p className="f-foot">
-        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查英文、运营区域语言和变量。发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
+        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查英文、运营区域语言和变量。发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>带奖励的课程</b>（奖励大于 0）首次发布、发布新版本和回滚都要审批，且覆盖率不能低于红线；当前页面还不能提交这项审批。</>}
       </p>
       <PaginationExemptionList
         items={view === "i18n" ? [
@@ -1326,7 +1326,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
             </table>
           </div>
           <div className="itint" style={{ fontSize: 12, lineHeight: 1.6 }}>
-            <b>硬编码</b> = 没走词条系统的裸文案,只有一种语言。处置:建词条(中、英、越三语)→ 替换引用 → 重扫清零。
+            <b>硬编码</b> = 没走词条系统的裸文案,只有一种语言。处置:建词条(英文和运营区域语言必填)→ 替换引用 → 重扫清零。
           </div>
         </Drawer>
       )}
