@@ -33,6 +33,7 @@ import {
   type G2ExchangeOrder,
   type G2Overview,
   type G2PendingBatch,
+  type G2QueueEstimate,
 } from "@/lib/admin/g2-client";
 import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -209,11 +210,17 @@ const PARAM: Record<string, {
 };
 const PARAM_ORDER = ["userDailyCap", "platformDailyCap", "fee", "feeMin", "queueMode"];
 /** 排队单上的预计时间：两项都直接保存，不走审批（finprod_g2_write）。 */
-type EtaKey = "queueEtaHours" | "queueEtaCopy";
+type EtaKey = "queueEtaHours" | "queueEtaCopy" | "queueEtaCopyZh" | "queueEtaCopyVi";
 const ETA: Record<EtaKey, { name: string; what: string }> = {
   queueEtaHours: { name: "预计处理时长", what: "排队单大约多久处理，填小时数" },
-  queueEtaCopy: { name: "预计说法", what: "排队单上写的预计时间，用 {hours} 代表小时数" },
+  queueEtaCopy: { name: "英文预计说法", what: "排队单上写的预计时间，用 {hours} 代表小时数" },
+  queueEtaCopyZh: { name: "中文预计说法", what: "App 中文界面写的预计时间，用 {hours} 代表小时数" },
+  queueEtaCopyVi: { name: "越南语预计说法", what: "App 越南语界面写的预计时间，用 {hours} 代表小时数" },
 };
+/** 中越说法只给 App 用；运营区域语言勾了这种语言时，这句没填好 App 上整条预计都不显示（AppExchangeService.queueEstimate）。 */
+const ETA_APP_LANGUAGE: Partial<Record<EtaKey, string>> = { queueEtaCopyZh: "中文", queueEtaCopyVi: "越南语" };
+const etaRaw = (estimate: G2QueueEstimate | null | undefined, key: EtaKey) =>
+  (key === "queueEtaHours" ? estimate?.hours : key === "queueEtaCopy" ? estimate?.copy : key === "queueEtaCopyZh" ? estimate?.copyZh : estimate?.copyVi)?.trim() ?? "";
 const isEtaKey = (key: string): key is EtaKey => key in ETA;
 /** 和后端的校验一致：1–999 的整数；说法要含 {hours}、最多 240 个字、不能有换行等控制字符。 */
 const etaHoursValid = (value: string) => /^[1-9]\d{0,2}$/.test(value.trim());
@@ -935,13 +942,15 @@ function G2ExchangePage() {
     const estimate = latest.current.overview?.queueEstimate;
     const hoursNow = estimate?.hours?.trim() ?? "";
     const copyNow = estimate?.copy?.trim() ?? "";
-    const current = original?.context?.cap?.value ?? (key === "queueEtaHours" ? hoursNow : copyNow);
+    const current = original?.context?.cap?.value ?? etaRaw(estimate, key);
     const cap: G2Cap = original?.context?.cap ?? { key, name, sub: "", value: current, displayValue: current, note: "", loosen: false };
+    const appLanguage = ETA_APP_LANGUAGE[key];
     const shown = (value: string) => {
       const hours = key === "queueEtaHours" ? value : hoursNow;
-      const copy = key === "queueEtaCopy" ? value : copyNow;
-      if (!etaHoursValid(hours)) return "「预计处理时长」还没设好，排队单上先不显示";
-      if (etaCopyIssue(copy)) return "「预计说法」还没设好，排队单上先不显示";
+      const copy = key === "queueEtaHours" ? copyNow : value;
+      if (!etaHoursValid(hours)) return `「预计处理时长」还没设好，${appLanguage ? "App" : "排队单"}上先不显示`;
+      if (appLanguage) return <>App {appLanguage}界面显示：「{etaSentence(copy, hours)}」</>;
+      if (etaCopyIssue(copy)) return "「英文预计说法」还没设好，排队单上先不显示";
       return <>排队单上显示：「{etaSentence(copy, hours)}」</>;
     };
     openActionConfirm({ briefKind: "config",
@@ -955,8 +964,9 @@ function G2ExchangePage() {
       facts: <Facts>
         <Fact k="改的是">{name}</Fact>
         <Fact k="什么时候生效">{original ? "提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
-        <Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact>
-        <Fact k="显示在哪">这页排队单的详情；App 和 H5 现在还不显示</Fact>
+        {appLanguage
+          ? <Fact k="显示在哪">App {appLanguage}界面；App 和 H5 现在还不显示</Fact>
+          : <><Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact><Fact k="显示在哪">这页排队单的详情；App 和 H5 现在还不显示</Fact></>}
       </Facts>,
       statedBrief: { impact: "改的是排队单上写的预计时间，不改处理顺序，也不会让单子自动成交。", check: "核对新值；理由写清依据或工单号。" },
       edit: key === "queueEtaHours"
@@ -981,6 +991,40 @@ function G2ExchangePage() {
           throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
         }
         await mutate(`param:${key}`, () => updateG2ExchangeParam(key, value, reason, OPERATOR(), cap), `${name}已保存`);
+      },
+    });
+  };
+
+  /** 清空一项预计设置：单独确认，按原保存通路提交空值。 */
+  const clearEta = (key: EtaKey) => {
+    const path = `/exchange/params/${key}`;
+    const name = ETA[key].name;
+    const current = etaRaw(latest.current.overview?.queueEstimate, key);
+    const cap: G2Cap = { key, name, sub: "", value: current, displayValue: current, note: "", loosen: false };
+    const appLanguage = ETA_APP_LANGUAGE[key];
+    const after = appLanguage
+      ? `App ${appLanguage}界面不再用这句；运营区域语言勾了${appLanguage}时，App 上整条预计都不显示`
+      : "排队单上不再显示预计时间，改成「等运营处理」";
+    openActionConfirm({ briefKind: "config",
+      action: `清空排队预计 · ${name}`,
+      title: `清空${name}`,
+      detail: <>清空后{after}。</>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      confirmLabel: "确认清空",
+      facts: <Facts>
+        <Fact k="改的是">{name}</Fact>
+        <Fact k="现在">{key === "queueEtaHours" ? paramValueText(key, current) : current}</Fact>
+        <Fact k="清空后" tone="danger">{after}</Fact>
+        <Fact k="什么时候生效">确认后立即生效，不用审批</Fact>
+      </Facts>,
+      statedBrief: { impact: `清空后${after}；不改处理顺序。`, check: "理由写清为什么清空，或写工单号。" },
+      getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
+      run: async (reason) => {
+        const view = latest.current;
+        if (!view.overview?.queueEstimate || view.loading || view.readFailed || view.rereadPending || view.busyKey) {
+          throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
+        }
+        await mutate(`param:${key}`, () => updateG2ExchangeParam(key, "", reason, OPERATOR(), cap), `${name}已清空`);
       },
     });
   };
@@ -1163,21 +1207,22 @@ function G2ExchangePage() {
   const etaCopy = estimate?.copy?.trim() ?? "";
   const etaReady = etaHoursValid(etaHours) && !etaCopyIssue(etaCopy);
   const etaFirstMissing: EtaKey | undefined = etaReady ? undefined : !etaHoursValid(etaHours) ? "queueEtaHours" : "queueEtaCopy";
-  const etaRows = estimate ? (["queueEtaHours", "queueEtaCopy"] as const).map((key) => {
+  const etaRows = estimate ? (["queueEtaHours", "queueEtaCopy", "queueEtaCopyZh", "queueEtaCopyVi"] as const).map((key) => {
     const name = ETA[key].name;
     const direct = directCommands.find(row => row.path === `/exchange/params/${key}`);
-    const raw = key === "queueEtaHours" ? etaHours : etaCopy;
-    const valueText = key === "queueEtaHours" ? paramValueText(key, raw) : !raw ? "未设置" : etaHoursValid(etaHours) ? etaSentence(raw, etaHours) : raw;
+    const raw = etaRaw(estimate, key);
+    const appLanguage = ETA_APP_LANGUAGE[key];
+    const valueText = key === "queueEtaHours" ? paramValueText(key, raw) : !raw ? (appLanguage ? "未设置 · 选填" : "未设置") : etaHoursValid(etaHours) ? etaSentence(raw, etaHours) : raw;
     return (
       <ConfigRow key={key} name={name}
         what={ETA[key].what}
-        where="这页排队单的详情；App 和 H5 现在还不显示"
+        where={appLanguage ? `App ${appLanguage}界面；App 和 H5 现在还不显示` : "这页排队单的详情；App 和 H5 现在还不显示"}
         when="确认后立即生效，不用审批"
-        effect="排队中的单和之后排队的单，单上的预计时间都按新值显示"
-        note="「预计处理时长」和「预计说法」都设好后，排队单上才显示预计时间。"
+        effect={appLanguage ? `运营区域语言没勾${appLanguage}时可以不填；勾了就要填好，不然 App 上整条预计都不显示` : "排队中的单和之后排队的单，单上的预计时间都按新值显示"}
+        note={appLanguage ? "要写上 {hours}；清空后这种语言不再用这句。" : "「预计处理时长」和「英文预计说法」都设好后，排队单上才显示预计时间；清空任一项，排队单上就不显示。"}
         value={<span className="g2x-param">
           <span className="g2x-value">
-            <span className={key === "queueEtaCopy" ? "g2x-eta-copy" : "g2x-value-num"} title={key === "queueEtaCopy" && raw ? valueText : undefined}>{valueText}</span>
+            <span className={key !== "queueEtaHours" ? "g2x-eta-copy" : "g2x-value-num"} title={key !== "queueEtaHours" && raw ? valueText : undefined}>{valueText}</span>
           </span>
           {direct ? <span className="g2x-dir">{g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct")}</span>
             : etaFirstMissing === key
@@ -1185,8 +1230,12 @@ function G2ExchangePage() {
             : <span className="g2x-dir">立即生效</span>}
         </span>}
         action={allowed(capAuthority(key)) || direct ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
-            disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
+          <span className="rd-row-actions">
+            <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
+              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
+            {!direct && raw && allowed(capAuthority(key)) && <Button size="sm" variant="ghost" aria-label={`清空${name}`}
+              disabledReason={busyReason ?? newWriteBlockedReason} onClick={() => clearEta(key)}>清空</Button>}
+          </span>
         ) : undefined} />
     );
   }) : [];
