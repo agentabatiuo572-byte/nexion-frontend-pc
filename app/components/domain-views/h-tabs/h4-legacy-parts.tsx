@@ -244,7 +244,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
             : `未填写，App 显示原文：${original[field] || "—"}`;
           return <li key={field}>
             <span className="h4l-locale-key">{FIELD_NAME[field]}</span>
-            <span className="h4l-locale-value" data-empty={blank ? "" : undefined}>{!blank ? old.text : blankText}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
+            <span className="h4l-locale-value" data-empty={!blank ? undefined : weight === "must" ? "" : "soft"}>{!blank ? old.text : blankText}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}</span>
             {canEdit && (lockedReason
               ? <Button size="sm" variant="ghost" className="h4l-locale-edit" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} disabledReason={lockedReason}>{value ? "编辑" : "填写"}</Button>
               : <button type="button" className="rd-link" aria-label={`${value ? "编辑" : "填写"} ${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} onClick={() => onEdit(field, locale)}>{value ? "编辑" : "填写"}</button>)}

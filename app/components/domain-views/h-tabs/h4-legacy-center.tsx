@@ -466,6 +466,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
       detail: requiresAll ? (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale) ? <>{REQUIRED_TEXT}的名称、说明、奖项名填齐，活动才能开放、玩法才能开启。</> : <>{LOCALE_NAME[locale]}可以不填，空着时 App 显示英文。</>
+        : fromRule ? <>已开放的活动照常进行，奖励一行按玩法规则显示。</>
         : <>已开放的活动：这一格空着时 App {locale === "en" ? "显示原文" : "先用英文，再用原文"}，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact>
         {fromRule && <Fact k="App 上">{locale === "en" ? "填了就显示它，空着显示玩法规则摘要" : "奖励一行显示玩法规则摘要，不显示这里填的"}</Fact>}</Facts>,

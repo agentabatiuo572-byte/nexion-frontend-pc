@@ -310,6 +310,7 @@
 .h4l-locale-key { color: var(--rd-text-3); font-size: var(--rd-text-aux); padding-top: 2px; }
 .h4l-locale-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
 .h4l-locale-value[data-empty] { color: var(--rd-warn); }
+.h4l-locale-value[data-empty="soft"] { color: var(--rd-text-3); }
 .h4l-preview { display: flex; flex-direction: column; gap: 8px; }
 .h4l-preview-title { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4l-phone { padding: 14px 12px 18px; border-radius: 20px; border: 1px solid var(--rd-line-strong); background: var(--rd-panel); }
