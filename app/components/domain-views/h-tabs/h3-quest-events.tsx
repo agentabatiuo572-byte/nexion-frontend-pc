@@ -709,7 +709,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const operator = currentAdminOperator();
     openConfirm({ briefKind: "config",
       action: `清空已存副本 · ${LOCALE_LABEL[locale]} · ${source}`,
-      detail: <>这一格存的是英文副本「{stored}」，App 在{LOCALE_LABEL[locale]}下显示英文。清空后这一格不再存副本；活动开启时，空着的选填格仍会用英文补上。</>,
+      detail: <>这一格存的是英文副本「{stored}」，App 在{LOCALE_LABEL[locale]}下显示英文。清空后，这个活动在{LOCALE_LABEL[locale]}下跟随英文的副本会一起清空；活动开启时，空着的选填格仍会用英文补上，App 显示英文。</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: "清空副本",

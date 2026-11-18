@@ -663,7 +663,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 <input
                   value={form.titleZh}
                   onChange={(e) => setForm({ ...form, titleZh: e.target.value })}
-                  placeholder={requiredLanguages?.includes("zh") === false ? OPTIONAL_CONTENT_HINT : "通知流第一行（中文）"}
+                  placeholder={requiredLanguages?.includes("zh") === false ? "选填" : "通知流第一行（中文）"}
                   style={INPUT_STYLE}
                 />
               </FormField>
@@ -671,7 +671,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 <input
                   value={form.titleVi}
                   onChange={(e) => setForm({ ...form, titleVi: e.target.value })}
-                  placeholder={requiredLanguages?.includes("vi") === false ? OPTIONAL_CONTENT_HINT : "通知流第一行（越南语）"}
+                  placeholder={requiredLanguages?.includes("vi") === false ? "选填" : "通知流第一行（越南语）"}
                   style={INPUT_STYLE}
                 />
               </FormField>
