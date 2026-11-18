@@ -798,7 +798,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       <Panel title={<span tabIndex={-1} data-l5-focus="">导出任务</span>} explainLabel="导出任务" icon={ListChecks}
         sub={taskPage ? `共 ${taskTotal} 份 · 每页 8 份${otherTasks.some((t) => reportScopeParts(t.scope).sub) ? ` · 时间为${businessZone().label}` : ""}` : undefined}
         explain={<>
-          <p>各报表页和这页创建的导出都在这里，按状态排：待放行在最前，其次生成中、可下载、已过期、失败。</p>
+          <p>各报表页和这页创建的导出都在这里：待放行在最前，其次生成中、可下载、已过期、失败。</p>
           <p>汇总和当前披露快照创建后直接可下载；脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载；团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」导出时直接下载，这里只能再下载已生成的，不能重新发起。</p>
           <p>失败或过期的任务可以「重新发起」：用原来那份文件，不重新取数；含隐私的要再放行一次。</p>
         </>}>
