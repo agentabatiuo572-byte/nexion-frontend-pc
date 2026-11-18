@@ -19,7 +19,7 @@ import { compactSupportBoardValue } from "./support-leaderboard";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import {
-  buildM5Command, sendM5Command,
+  buildM5Command, explicitMContentRejectionCode, sendM5Command,
   fetchMAdvisorBindingUsers,
   type MAdvisorBindingUser,
   fetchMSupportAgentsPage,
@@ -31,9 +31,7 @@ import {
 } from "@/lib/admin/m-client";
 import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
 import type { M5Command } from "@/lib/admin/m5-command";
-import { MContentReadError } from "@/lib/admin/m-support-read-contract";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isDeterministicRejection, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportAnalyticsClient } from "@/lib/admin/support-analytics-client";
@@ -325,9 +323,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       await readCurrent(); if (!command.profile) toast(command.successMessage); return true;
     } catch (error) {
       if (!current()) return false;
-      const rejected = recovered ? isExplicitRejection(error)
-        : error instanceof MContentReadError && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
-      if (rejected) {
+      if (explicitMContentRejectionCode(error) !== undefined) {
         mCommands.forget(record.fingerprint, record.commandKey); syncPending();
         activeConfirm.current.original = undefined;
         if (recovered) { ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined); }

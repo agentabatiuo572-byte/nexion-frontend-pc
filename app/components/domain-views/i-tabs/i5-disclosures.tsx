@@ -94,10 +94,10 @@ const PRIVACY_STATUS: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "�
 const queueTitle = (action: string) => action.replace("披露适用地区版本矩阵", "生效版本设置").replace("披露适用地区", "适用范围");
 const STATUS_TEXT: Record<string, string> = { published: "已发布", draft: "草稿", archived: "已归档", superseded: "已取代", pending: "待处理", active: "已启用", disabled: "已停用", pending_review: "待发布复核" };
 const statusZh = (status?: string) => STATUS_TEXT[(status ?? "").toLowerCase()] ?? "未知状态";
-const languageText = (scope?: string) => {
+const languageText = (scope?: string, format: "compact" | "full" = "compact") => {
   const names = (scope ?? "").split("+").filter(Boolean).map((code) => LANGUAGE_NAME[code] ?? code);
   if (!names.length) return "—";
-  return names.length > 3 ? `${names.slice(0, 3).join(" / ")} 等 ${names.length} 种语言` : names.join(" / ");
+  return format === "compact" && names.length > 3 ? `${names.slice(0, 3).join(" / ")} 等 ${names.length} 种语言` : names.join(" / ");
 };
 const count = (value: number) => value.toLocaleString("en-US");
 const ackText = (value: number) => `${value.toFixed(1)}%`;
@@ -835,7 +835,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
               <Tr key={versionKey(row)} selected={detail === row} onOpen={() => openVersion(row)}>
                 <Td><Cell main={`${row.jurisdiction} ${row.version}`} sub={`${row.chapters.length} / 7 章`} /></Td>
                 <Td><StatusTag tone={versionState(row).tone}>{versionState(row).text}</StatusTag></Td>
-                <Td>{languageText(row.languageScope)}</Td>
+                <Td>{languageText(row.languageScope, "full")}</Td>
                 <Td><Cell num main={timeText(row.publishedAt || row.updatedAt || row.effectiveDate)} sub={row.operator ? operatorText(row.operator) : undefined} /></Td>
                 <Td sticky="end" align="right"><span className="rd-row-actions"><Button size="sm" onClick={() => openVersion(row)}>查看全文</Button>{isDraft && draftActions(row)}</span></Td>
               </Tr>
@@ -928,7 +928,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         <Steps label="披露版本进度" items={versionSteps(detail, jurisdictions.find((item) => item.code === detail.jurisdiction))} />
         <JudgmentPoints title="版本要点" rows={[
           { label: "状态", value: versionState(detail).text },
-          { label: "语言", value: languageText(detail.languageScope) },
+          { label: "语言", value: languageText(detail.languageScope, "full") },
           { label: "章节", value: `${detail.chapters.length} / 7`, state: detail.chapters.length === 7 ? undefined : "warn" },
           { label: "生效日期", value: detail.effectiveDate || "—" },
         ]} />
