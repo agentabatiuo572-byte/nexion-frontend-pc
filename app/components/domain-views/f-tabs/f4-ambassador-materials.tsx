@@ -278,6 +278,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         pending: !!pending,
         initialRecovery: "retry",
         expired: !!pending && (isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")),
+        expiredRequestRecovery: pending && isRetryExpired(pending) ? "query" : undefined,
         recover: queryOriginal,
       }}
       onClose={() => setConfirmation(null)}

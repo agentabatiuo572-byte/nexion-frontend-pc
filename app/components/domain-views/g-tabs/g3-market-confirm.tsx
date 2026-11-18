@@ -19,6 +19,7 @@ export const G3_TUNING_FORBIDDEN = "当前环境不允许人工改现价和上�
  * 这条拒绝不能按「没有权限」关框，要留在框里用明确拒绝的红条显示这句，再把页面的 MANUAL_TUNING 置为 forbidden。
  */
 export const G3_TUNING_FORBIDDEN_REJECTED = "没有执行：当前环境不允许人工改现价和上涨概率，这不是账号权限问题，换账号也一样。要调价请改七天计划的目标价。";
+export const G3_EXPIRED_DIRECT_READ = "原操作已过期，不能重发。请读取当前配置核对，原记录会保留。";
 
 function price(value: number) {
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
@@ -29,12 +30,13 @@ function price(value: number) {
  * 提交、查询原审批单和按原操作重试统一走 executeG3MarketChange，保留原确认框：
  * 标题写动作和对象，标题下是生效方式，事实区随填写的新值说清生效方式、对兑换的影响和后端检查什么。
  */
-export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, newWriteBlockedReason, getReadBlockedReason, onClose, onDone, onStateChange, onFailure, onBusy, onCurrent }: {
+export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, newWriteBlockedReason, getReadBlockedReason, readCurrent, onClose, onDone, onStateChange, onFailure, onBusy, onCurrent }: {
   session: AdminSession; epoch: number; requested: G3ReviewedChange;
   /** 今天是第几天、七天计划与读取提供的环境能力。 */
   today?: number; frames: G3CurveFrame[]; tuning: "unknown" | "forbidden" | "allowed";
   newWriteBlockedReason?: string;
   getReadBlockedReason: (change: G3MarketChange, value?: string, forceApproval?: boolean) => string | undefined;
+  readCurrent: () => Promise<boolean>;
   onClose: () => void; onDone: (result: G3CommandResult) => void;
   onStateChange: () => void; onFailure: (change: G3MarketChange, failure: unknown) => void; onBusy: (busy: boolean) => void;
   onCurrent: (overview: G3ReadOverview) => void;
@@ -42,6 +44,9 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   const [forceApproval, setForceApproval] = useState(false);
   const [approvalBasis, setApprovalBasis] = useState<G3ReviewedChange>();
   const pending = pendingG3MarketCommand(session.adminId, requested);
+  const expired = !!pending && g3MarketCommandExpired(pending);
+  const expiredRecovery = pending && Date.now() >= pending.expiresAt
+    ? pending.request.kind === "approval" ? "query" : "reload" : undefined;
   const change = (pending?.change ?? approvalBasis ?? requested) as G3ReviewedChange;
   const schedule = change.action === "schedule";
   const initialSchedule = schedule && change.current === "";
@@ -180,8 +185,9 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       fieldLayout: "compact",
       pending: !!pending,
       initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
-      expired: !!pending && g3MarketCommandExpired(pending),
-      disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
+      expired,
+      expiredRequestRecovery: expiredRecovery,
+      disabledReason: expiredRecovery === "reload" ? G3_EXPIRED_DIRECT_READ : expired && pending?.request.kind === "direct"
         ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项不能按原请求查询结果，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {
@@ -193,7 +199,8 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
             ?? (!/^[0-9a-f]{64}$/.test(change.expectedRevision) ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。" : undefined),
         };
       },
-      recover: () => execute("lookup"),
+      recoverLabel: expiredRecovery === "reload" ? "读取当前配置" : undefined,
+      recover: expiredRecovery === "reload" ? readCurrent : () => execute("lookup"),
       retry: () => execute("retry").then(() => undefined),
     }}
     onClose={onClose}

@@ -8,6 +8,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { i4DraftReceiptFieldsMatch, parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
+import { i6CourseRewardMatches } from "./i6-amount";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundCommandInvestigation } from "./fund-command-investigation";
 import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
@@ -204,7 +205,7 @@ function learningCopyMatches(saved: Record<string, unknown>, submitted: Record<s
   if (saved.category !== submitted.category || saved.format !== submitted.format
     || (standalone ? saved.level : saved.difficulty) !== submitted.difficulty
     || saved.duration !== (standalone ? `${Number(duration.replace(/[^0-9]/g, "") || "5")} min` : duration)
-    || saved.rewardNex === null || Number(saved.rewardNex) !== Number(submitted.rewardNex)
+    || !i6CourseRewardMatches(saved.rewardNex, submitted.rewardNex)
     || saved.passScore !== submitted.passScore || saved.retryLimit !== submitted.retryLimit
     || (saved.completionCondition ?? "") !== String(submitted.completionCondition ?? "").trim()
     || (saved.rewardEvent ?? "") !== String(submitted.rewardEvent ?? "").trim()) return false;

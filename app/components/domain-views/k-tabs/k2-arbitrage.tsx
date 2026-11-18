@@ -572,6 +572,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
         resolve: () => undefined,
         pending: true,
         expired: isRetryExpired(retained),
+        expiredRequestRecovery: isRetryExpired(retained) ? "query" as const : undefined,
         recover: async () => {
           const original = originalFor(attempt);
           if (!original) throw new Error("INVALID_STATE_TRANSITION");

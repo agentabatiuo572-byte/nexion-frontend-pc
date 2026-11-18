@@ -899,6 +899,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求">{changeOf(c)}</Fact></Facts>,
       initialReason: c.reason, getPendingReason: () => mutations.record(c.target)?.change.reason,
       inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
+        expiredRequestRecovery: isRetryExpired(original)
+          ? original.request.kind === "direct" ? "reload" : "query" : undefined,
         disabledReason: mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果",
         recover: async () => { await mutations.query(original); return true; }, retry: () => mutations.retry(original) },
       run: async () => { await mutations.retry(original); },
@@ -993,6 +995,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           inlineApproval={mc.inlineApproval ?? {
             pending: !!savedForConfirm, initialRecovery: "retry", resolve: () => undefined,
             expired: savedForConfirm ? isRetryExpired(savedForConfirm) : false,
+            expiredRequestRecovery: savedForConfirm && isRetryExpired(savedForConfirm)
+              ? savedForConfirm.request.kind === "direct" ? "reload" : "query" : undefined,
             disabledReason: savedForConfirm && !mutations.canRetry(savedForConfirm) ? isRetryExpired(savedForConfirm) ? RETRY_EXPIRED_TEXT : "请查询原结果" : undefined,
             recover: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.query(saved); return true; },
             retry: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.retry(saved); },

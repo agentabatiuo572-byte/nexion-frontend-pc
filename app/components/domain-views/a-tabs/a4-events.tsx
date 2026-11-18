@@ -957,6 +957,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           inlineApproval={{
             pending: !!pendingRegistry,
             expired: !!pendingRegistry && Date.now() >= pendingRegistry.expiresAt,
+            expiredRequestRecovery: pendingRegistry && Date.now() >= pendingRegistry.expiresAt ? "query" : undefined,
             initialRecovery: registryConfirm.retry ? "retry" : "lookup",
             disabledReason: registryConfirm.retry && !canWrite ? "你只有查看权限" : undefined,
             resolve: () => ({
