@@ -1455,6 +1455,8 @@ export type NovaOverview = {
   runtimeSourceOptions: NovaOptionView[];
   sources: string[];
   channelRuntimeSources?: NovaChannelRuntimeSource[];
+  /** 已发布且还带退役品牌名的模板所在频道（后端 75888a2d）；这些频道发送时会被跳过。 */
+  retiredBrandPublishedChannels?: string[];
   pushDelivery?: {
     from: string;
     to: string;

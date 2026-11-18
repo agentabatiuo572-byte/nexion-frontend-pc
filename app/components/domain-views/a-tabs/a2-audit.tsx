@@ -589,7 +589,7 @@ function logActionShown(code: string) {
 const AUDIT_CONFIG_KEY_NAMES: Record<string, string> = {
   "wallet.exchange.user_daily_cap_usdt": "单用户日额度", "wallet.exchange.platform_daily_cap_usdt": "平台日额度",
   "wallet.exchange.fee_pct": "兑换手续费率", "wallet.exchange.fee_min_usdt": "最低手续费", "wallet.exchange.queue_mode": "超额度处置策略",
-  "wallet.exchange.queue_eta_hours": "预计处理时长", "wallet.exchange.queue_eta_copy": "预计说法",
+  "wallet.exchange.queue_eta_hours": "预计处理时长", "wallet.exchange.queue_eta_copy": "英文预计说法", "wallet.exchange.queue_eta_copy_zh": "中文预计说法", "wallet.exchange.queue_eta_copy_vi": "越南语预计说法",
   "platform.experience.interface_languages": "界面语言 · App 里可选", "platform.experience.operating_languages": "界面语言 · 发布时必填",
 };
 

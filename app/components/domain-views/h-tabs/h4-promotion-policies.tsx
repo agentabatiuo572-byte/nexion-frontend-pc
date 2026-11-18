@@ -2,6 +2,7 @@
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { PROMOTION_POLICY_TEXT_FIELDS, promotionPolicyText } from "@/lib/admin/promotion-form";
 import { a2ActionText } from "@/lib/admin/operator-copy";
+import { AUDIT_ACTION_NAMES } from "@/lib/admin/audit-action-names";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useState, type ReactNode } from 'react';
 import type { Catalog, DraftLocalizedText, NativeRef, Policy, PolicyContent, PolicyPage, RefundPolicyExecution } from '@/lib/admin/promotion-types';
@@ -53,7 +54,7 @@ function PolicyCreate({ catalog, requiredLanguages, can, onClose, onDone }: {
     })?.resourceId || ''} onChange={e => { const n = catalog.nativeContracts.find(n => n.system === system && n.resourceId === e.target.value); patch(key, n?.reference); }}><option value="">请选择原业务协议</option>{catalog.nativeContracts.filter(n => n.system === system).map(n => <option key={n.resourceId} value={n.resourceId} disabled={!n.available || !n.reference}>{(text(n.title))}{!n.available ? ' · 当前不可用' : ''}</option>)}</select></Field>;
     const localized = (key: string) => <fieldset className="form-section wide" key={key}><legend>{FIELD_LABELS[key]} *</legend><div className="grid2">{(['zh', 'en', 'vi'] as const).map((lang, i) => <Field label={`${['中文', '英语', '越南语'][i]}${requiredLanguages.includes(lang) ? ' *' : ' · 选填，不填时 App 显示英文'}`} key={lang}><textarea value={(content[key] as Record<string, string>)?.[lang] || ''} onChange={e => patch(key, { ...(content[key] as Record<string, string> || {}), [lang]: e.target.value })}/></Field>)}</div></fieldset>;
     const sku = <Field label="适用设备 *"><select value={String(content.productNo || '')} onChange={e => patch('productNo', e.target.value)}><option value="">请选择</option>{catalog.skus.filter(s => s.giftEligible && s.available).map(s => <option value={s.productNo} key={s.productNo}>{(text(s.name))}</option>)}</select></Field>;
-    const evidence = [...(audit.data?.operationQueue || []).filter(t => t.status === 'approved').map(t => ({ value: t.id, label: `已批准操作 · ${a2ActionText(t.action)}` })), ...(audit.data?.recentLogs || []).map(t => ({ value: t.id, label: `审计记录 · ${t.action} · ${t.ts}` }))];
+    const evidence = [...(audit.data?.operationQueue || []).filter(t => t.status === 'approved').map(t => ({ value: t.id, label: `已批准操作 · ${a2ActionText(t.action)}` })), ...(audit.data?.recentLogs || []).map(t => ({ value: t.id, label: `审计记录 · ${AUDIT_ACTION_NAMES[t.action] ?? a2ActionText(t.action)} · ${t.ts}` }))];
     if (confirm)
         return <ConfirmCommand writeAllowed={can('growth_promotion_policy_write') && !audit.loading && !audit.error && !missingText} prepareBody={async body => {
             if (!textField) return body;

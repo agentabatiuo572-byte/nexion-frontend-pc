@@ -853,7 +853,7 @@ function G4GenesisPage() {
       facts: next === "closed" ? <Facts>
         <Fact k="用户能做的">照常浏览介绍、档位和权益，查看自己的持仓；不能购买，也不能转让</Fact>
         <Fact k="已有持仓和收益">不受影响；分红发不发和市场开不开无关</Fact>
-        <Fact k="商城入口">不变，是另一个开关（「App 商城入口」）</Fact>
+        <Fact k="商城入口">不变，是另一个开关（「App 商城展示」）</Fact>
         <Fact k="App 上">不显示倒计时和剩余名额，显示下面选的提示</Fact>
       </Facts> : <Facts>
         <Fact k="提交时检查">节点系列和价格档位设置完整；兑付覆盖率不低于红线（算不准也拒绝）</Fact>
@@ -1102,7 +1102,7 @@ function G4GenesisPage() {
     const next = showcaseEnabledParam.value !== "true";
     openActionConfirm({ briefKind: "record", directObject: "params/showcaseEnabled",
       action: next ? "显示创世节点商城入口" : "隐藏创世节点商城入口",
-      title: next ? "展示 App 商城入口" : "隐藏 App 商城入口",
+      title: next ? "App 商城展示：改为展示" : "App 商城展示：改为隐藏",
       detail: <>只控制 App 商城里是否显示入口，不影响持仓、收益、市场状态、紧急暂停和购买资格。</>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: next ? "确认展示" : "确认隐藏",
@@ -1111,7 +1111,7 @@ function G4GenesisPage() {
         <Fact k="什么时候生效">确认后立即保存；App 下次读取时{next ? "显示" : "不再显示"}入口</Fact>
         <Fact k="不影响">已有持仓和收益、市场开放状态、紧急暂停、购买资格；{next ? "展示了也不保证用户能买" : "隐藏后已持有的用户仍能看到自己的持仓"}</Fact>
       </Facts>,
-      statedBrief: { impact: "只改 App 商城入口显示，不改任何资产和规则。", check: "理由写清依据或工单号。" },
+      statedBrief: { impact: "只改 App 上创世节点商城入口显不显示，不改任何资产和规则。", check: "理由写清依据或工单号。" },
       run: async (reason) => {
         await mutate("param:showcaseEnabled", () => updateG4GenesisParam(
           "showcaseEnabled", String(next), reason, OPERATOR(),
@@ -1277,7 +1277,7 @@ function G4GenesisPage() {
           explain="下一张节点按哪个价卖：累计售出数落在哪一档就按哪一档的价格。已下单的订单按下单时的价格，不跟着改。" />
         <Stat label="今日分红" icon={dividendState.icon} tone={dividendState.tone === "ok" ? "ok" : dividendState.tone === "warn" ? "warn" : "role-other"}
           value={dividendState.text} sub={dividendState.sub}
-          explain="今天这一批（按业务日）真实发出去的节点数和金额。系统目前没有每天自动发放（已提给技术同事），要发请在「每日分红」里手动发放。" />
+          explain="今天这一批（按业务日）真实发出去的节点数和金额，以批次实际入账为准。系统不保证每天会自动发；今天还没发时，在「每日分红」里手动发放。" />
         <Stat label="没处理完的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
           sub={pendingCount > 0 ? "见上面的提醒" : "没有压着的申请"}
           explain="你在这台电脑上提交、还没处理完的申请。待审批是在等另一位超级管理员批准；结果未知是可能已经生效，先查询原结果。别人发起的在「操作记录与审批」看。" />
@@ -1344,7 +1344,7 @@ function G4GenesisPage() {
         <Panel title="每日分红" icon={Coins} tone="role-1"
           explain={<>
             <p>现有持仓每天的分红按「系列当前价 × 持仓数量 × 每日收益比例」算，逐个节点算到 6 位小数再合计。收益计算基数和发放曲线目前只是说明，不参与计算。</p>
-            <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。系统目前没有每天自动发放（已提给技术同事），要发请点「重新发放今日收益」。</p>
+            <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。估算应发不等于已发，以批次实际入账为准。系统不保证每天会自动发；今天还没发时，点「重新发放今日收益」。</p>
           </>}
           actions={(allowed("finprod_g4_write") || paramApproval.record(dividend.batchNo))
             ? <span className="g4x-head-actions">{batchRerun && <StatusTag tone="done" explain="今天这一批已经重新发放过；再点一次会按真实待付金额判断，没有待付时不新付钱。">今天已重发</StatusTag>}<Button size="sm" variant={batchRerun ? "secondary" : "primary"} disabledReason={rerunDisabledReason} onClick={runRerunBatch}>重新发放今日收益</Button></span>
@@ -1405,7 +1405,7 @@ function G4GenesisPage() {
 
         <Panel title="市场与转让" icon={Store} tone="role-3"
           explain={<>
-            <p>三个开关各管各的：「创世市场」是运营节奏，两个方向都能在这页改；「紧急暂停」是止血，这页只能暂停，恢复要去「紧急停用开关」；「App 商城入口」只管入口显示。</p>
+            <p>三个开关各管各的：「创世市场」是运营节奏，两个方向都能在这页改；「紧急暂停」是止血，这页只能暂停，恢复要去「紧急停用开关」；「App 商城展示」只管 App 上的入口显不显示。</p>
             <p>两者并存时 App 显示「暂未开放」；市场开放和没有暂停都满足，用户才可能买卖。</p>
             <p>封锁地区在「地区访问限制」修改。节点转让后，之后新建的分红批次发给新持有人。</p>
           </>}
@@ -1428,13 +1428,13 @@ function G4GenesisPage() {
                 <span className="g4x-dir">{marketOn ? "暂停在页面右上角" : "这页只能暂停"}</span></span>}
               action={!marketOn && reach("/emergency/kill-switch") ? <Link className="rd-link g4x-nowrap" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link> : undefined} />
             {showcaseEnabledParam && (
-              <ConfigRow key="showcase" name="App 商城入口"
+              <ConfigRow key="showcase" name="App 商城展示"
                 what="App 商城里显示不显示创世节点入口"
                 when="确认后立即保存，App 下次读取时生效"
                 effect="只管入口显示；不影响已有持仓和收益、市场状态、紧急暂停和购买资格"
                 value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{g4ParamValueText("showcaseEnabled", showcaseEnabledParam.value)}</span></span><span className="g4x-dir">立即生效</span></span>}
                 action={allowed(paramAuthority(showcaseEnabledParam.key)) ? (
-                  <Button size="sm" disabledReason={busy ? busyReason : directRecord("params/showcaseEnabled") ? "上次操作结果未知，先查询原结果" : undefined} aria-label={showcaseEnabledParam.value === "true" ? "隐藏 App 商城入口" : "展示 App 商城入口"} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</Button>
+                  <Button size="sm" disabledReason={busy ? busyReason : directRecord("params/showcaseEnabled") ? "上次操作结果未知，先查询原结果" : undefined} aria-label={showcaseEnabledParam.value === "true" ? "App 商城展示：改为隐藏" : "App 商城展示：改为展示"} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</Button>
                 ) : undefined} />
             )}
             {paramRow(royaltyParam)}

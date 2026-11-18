@@ -22,7 +22,7 @@ export const G4_PARAM_NAME: Record<string, string> = {
   emissionCurve: "收益发放曲线",
   airdropLockDays: "早期持有人奖励锁仓期",
   divBase: "收益计算基数",
-  showcaseEnabled: "App 商城入口",
+  showcaseEnabled: "App 商城展示",
 };
 
 /** 去掉补的 0，至少两位小数，带千分位；不舍入。 */
