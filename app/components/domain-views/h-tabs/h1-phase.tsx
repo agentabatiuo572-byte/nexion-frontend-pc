@@ -1079,7 +1079,7 @@ export default function H1Phase({ ctx,
                 "到账审查窗口").replaceAll("增强合规审查",
                   "加强合规审查")}</Fact>
               <Fact k="阶段参数">{DIALS.find((dial) => dial.key === row.paramKey)?.label ?? row.paramKey}</Fact>
-              <Fact k="参考值">{format(row.value, row.paramKey === "withdrawCooldownDays" ? 0 : undefined)}{DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact>
+              <Fact k="参考值">{format(row.value, row.paramKey === "withdrawCooldownDays" ? 0 : undefined)}{number(row.value) != null && DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact>
               <Fact k="负责模块">{row.owner}</Fact>
             </Facts>
             <Fold inset title="原始资料" summary="系统里的原文">
