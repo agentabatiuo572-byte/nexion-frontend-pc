@@ -451,7 +451,11 @@ export type DisclosureJurisdictionView = {
   pendingAck?: number;
   acked?: number;
 };
-export type DisclosureChapterView = { jurisdiction: string; version: string; no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string };
+export type DisclosureChapterView = {
+  jurisdiction: string; version: string; no: string;
+  zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string;
+  titleTranslations?: Record<string, string>; bodyTranslations?: Record<string, string>;
+};
 export type DisclosureVersionItemView = DisclosureDraftView & {
   chapters: DisclosureChapterView[];
   operator?: string;
@@ -491,6 +495,7 @@ export type DisclosureDraftView = {
   zh: string;
   vi: string;
   en: string;
+  translations?: Record<string, string>;
   status: string;
   revision?: number;
   contentHash?: string;
@@ -581,10 +586,11 @@ export type I18nLearningOverview = {
   hardcodedFindings: I18nHardcodedFindingView[];
   focusMessage?: I18nMessagePairView;
   messages: I18nMessagePairView[];
+  publishedMessages: Record<string, I18nMessagePairView>;
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
   featuredCourseId: string;
-  metrics: LearningMetricView[];
+  metrics?: LearningMetricView[];
   categories: string[];
   formats: string[];
   levels: string[];

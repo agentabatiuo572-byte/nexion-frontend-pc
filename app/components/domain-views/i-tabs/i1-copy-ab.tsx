@@ -14,6 +14,7 @@ import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { getRequiredContentLanguages } from "@/lib/admin/platform-experience-client";
 
 const COPY_MODULES = ["home", "store", "earn", "me"] as const;
 type CopyModule = (typeof COPY_MODULES)[number];
@@ -260,7 +261,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   });
 
   // 编辑文案(文案池每行通用) —— 默认存草稿,运营也可明确选择发布生效。
-  const editCopy = (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
+  const editCopy = async (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
     const editableVersion = targetVersion
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
@@ -277,6 +278,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       amplifies: false,
       businessForm: {
         kind: "copy-edit",
+        requiredLanguages: await getRequiredContentLanguages(),
         keyName: c.key,
         version: editingExistingDraft ? editableVersion?.v || "" : "",
         versionOptions: selectableVersions,
@@ -308,9 +310,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           registrationDaysGt: Number(form?.registrationDaysGt || 0),
           trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
           versionNote: form?.versionNote || "后台编辑文案",
-          zh: form?.zh || editableVersion?.zh || "",
-          en: form?.en || editableVersion?.en || "",
-          vi: form?.vi || editableVersion?.vi || "",
+          zh: form?.zh ?? "",
+          en: form?.en ?? "",
+          vi: form?.vi ?? "",
           expectedRevision: c.revision,
         };
         if (form?.saveMode === "存草稿") {
@@ -322,7 +324,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     });
   };
 
-  const createCopy = () => {
+  const createCopy = async () => {
     if (ACTIVE_VERSION_OPTIONS.length === 0) {
       toast("请先在文案版本列表中新增或启用文案版本");
       return;
@@ -333,6 +335,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     businessForm: {
       kind: "copy-create",
+      requiredLanguages: await getRequiredContentLanguages(),
       modules: COPY_MODULE_OPTIONS,
       positions: COPY_POSITIONS,
       versionOptions: ACTIVE_VERSION_OPTIONS,

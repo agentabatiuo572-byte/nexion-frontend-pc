@@ -14,6 +14,8 @@ import "./i-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { fetchIContentOverviews, iContentActions, type IContentData } from "@/lib/admin/i-client";
+import { summarizePublishedI6Messages } from "@/lib/admin/i6-copy-quality";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
@@ -66,7 +68,7 @@ function contentErrorText(error: string) {
   return error;
 }
 
-function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null) {
+function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null, publishedCopyCount?: number) {
   if (loading || error) return "";
   if (tab === "I1") {
     const stats = content.copyAb?.stats;
@@ -94,7 +96,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
-    return stats ? `词条 ${countText(stats.managedKeys)} 条 · 上线课程 ${countText(stats.coursesOnline)} 门 · 本周发放 ${nexGridBrandText(stats.weeklyNexPayout)}` : "";
+    return stats && publishedCopyCount !== undefined ? `词条 ${countText(publishedCopyCount)} 条 · 上线课程 ${countText(stats.coursesOnline)} 门 · 本周发放 ${nexGridBrandText(stats.weeklyNexPayout)}` : "";
   }
   return "";
 }
@@ -104,6 +106,10 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "I1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  useEffect(() => {
+    if (tab === "I6") void getRequiredContentLanguages().then(setRequiredLanguages);
+  }, [tab]);
   const contentPermissionScope = useAdminAuth((state) => {
     const session = state.session;
     return [
@@ -197,7 +203,10 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     contentError,
   };
 
-  const live = liveFromBackend(tab, content, contentLoading, contentError);
+  const publishedMessages = content.i18nLearning?.publishedMessages;
+  const publishedCoverage = useMemo(() => tab === "I6" && publishedMessages
+    ? summarizePublishedI6Messages(publishedMessages, requiredLanguages) : undefined, [tab, publishedMessages, requiredLanguages]);
+  const live = liveFromBackend(tab, content, contentLoading, contentError, publishedCoverage?.managedKeys);
   const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
 
   return (
@@ -224,7 +233,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
       {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
       {(!contentError || contentReadable) && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
-      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
+      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} requiredLanguages={requiredLanguages} publishedCoverage={publishedCoverage} />}
 
       {mc && (
         <OperationConfirmModal briefKind={mc.briefKind}
