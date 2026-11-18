@@ -68,7 +68,7 @@ const IMPACT = "只影响之后的报价；用户还没提交的旧报价需要�
 const APPROVAL_NOTE = "另一位超级管理员批准后才用于新报价。";
 const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 /** 共用文字泛指「这个对象」并让人去「操作记录与审批」；这页写明是哪组参数，当前权限到不了那页的账号写等谁处理。 */
-const PENDING_HERE = "这组参数已有放宽单在等批准，审批完或提交人撤回后才能再提交放宽";
+const PENDING_HERE = "这组参数已有放宽单在等批准，审批完或发起人撤回后才能再提交放宽";
 const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处理后再提交。";
 
 /** 直接保存的原操作：结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。 */
@@ -310,7 +310,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       : errorCount > 0 ? `有 ${errorCount} 项要修改`
       : undefined;
     const approvalReason = amplifies
-      ? approvalBlocked ?? (pendingTicket ? "已有放宽单在等批准，审批完或提交人撤回后才能再提交放宽。" : coverageLow ? "兑付覆盖率低于红线，放宽提交不了。" : undefined)
+      ? approvalBlocked ?? (pendingTicket ? "已有放宽单在等批准，审批完或发起人撤回后才能再提交放宽。" : coverageLow ? "兑付覆盖率低于红线，放宽提交不了。" : undefined)
       : undefined;
     const submitBlock = shared ?? (inverted ? (canForce ? "价格倒挂，默认不能保存" : "价格倒挂，默认不能保存。强制保存只有超级管理员能做") : approvalReason);
     const forceBlock = shared ?? approvalReason;
