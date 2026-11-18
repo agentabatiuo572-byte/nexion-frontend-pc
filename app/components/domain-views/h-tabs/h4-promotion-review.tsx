@@ -68,8 +68,7 @@ export default function PromotionReview({ activity, catalog, requiredLanguages, 
         if (!candidate || candidate.state !== 'DRAFT') throw new Error('请刷新并核对当前候选草稿。');
         const missing = promotionPublicMissing(candidate.draft, requiredLanguages, true);
         if (missing.length) throw new Error(`请补齐${missing.map(locale => PROMOTION_LANGUAGE_LABELS[locale]).join('、')}的展示标题和活动规则。选填语言请整组留空或填齐。`);
-        if (!promotionPublicMissing(candidate.draft, OPERATING_LANGUAGE_CODES).length) return body;
-        if (!can('growth_promotion_edit')) throw new Error('补齐选填语言需要活动编辑权限，请由有权限的运营提交审核。');
+        if (!can('growth_promotion_edit') || !promotionPublicMissing(candidate.draft, OPERATING_LANGUAGE_CODES).length) return body;
         const text = promotionPublicText(candidate.draft, requiredLanguages, 'submit');
         const receipt = await promotionCommand({ operation: 'saveDraft', targetId: activity.activityId,
             path: `/promotions/${encodeURIComponent(activity.activityId)}/draft`, method: 'PUT',
