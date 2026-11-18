@@ -128,6 +128,15 @@ export interface E1GenerationGateData {
   phases: E1Phase[];
   platformMonth: number;
   phaseCurrent: string;
+  phaseComparison?: {
+    e1CurrentPhase: string;
+    h1CurrentPhase?: string | null;
+    same: boolean;
+    gateSource: "E1_CONFIGURED_RELEASE_PHASE";
+    h1PhaseCatalog?: Record<string, string>;
+    mappingStatus?: "EXACT_ID_PRESENT" | "UNMAPPED";
+    mappedH1Phase?: string | null;
+  };
   releases: E1GenerationRelease[];
   configValues: Record<string, string>;
   allowedFields: string[];

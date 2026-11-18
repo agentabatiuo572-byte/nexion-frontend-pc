@@ -1166,6 +1166,7 @@ export type H3QuestEventBinding = {
   status: number;
   targetInTaskCatalog?: boolean | null;
   targetActiveInTaskCatalog?: boolean | null;
+  liveTargetState?: "TARGET_MISSING" | "TARGET_INACTIVE" | "BINDING_DISABLED" | "TARGET_READY" | null;
 };
 
 export type H3QuestEventBindingCommand = {

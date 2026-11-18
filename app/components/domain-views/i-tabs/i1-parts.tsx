@@ -518,26 +518,22 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion
 export type ExperimentCopyOption = Extract<BusinessFormSpec, { kind: "copy-experiment-create" }>["copies"][number];
 type ExperimentVersionOption = ExperimentCopyOption["versions"][number];
 
-/** 同 design-kit copyExperimentAudienceSignature。 */
 function audienceSignature(version?: ExperimentVersionOption): string {
   if (!version) return "";
-  const parsed = parseCopyAudience(version.audience);
-  const start = Number(parsed.phaseMin.slice(1));
-  const end = Number(parsed.phaseMax.slice(1));
-  const tiers = version.audienceTarget?.tiers?.length
-    ? [...version.audienceTarget.tiers].map((tier) => tier.toUpperCase()).sort()
-    : Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`);
-  const locales = version.audienceTarget
-    ? (version.audienceTarget.locales?.length ? [...version.audienceTarget.locales].map((locale) => locale.toLowerCase()).sort() : ["all"])
-    : [parsed.language.toLowerCase()];
-  const registrationDaysMin = version.audienceTarget?.registrationDaysMin ?? Number(parsed.registrationDaysGt) + 1;
-  const registrationDaysMax = version.audienceTarget?.registrationDaysMax ?? null;
-  return JSON.stringify({ tiers, locales, registrationDaysMin, registrationDaysMax });
+  const target = version.audienceTarget;
+  if (!target) return JSON.stringify(version.audience ?? null);
+  return JSON.stringify({
+    tiers: target.tiers,
+    locales: target.locales,
+    registrationDaysMin: target.registrationDaysMin ?? null,
+    registrationDaysMax: target.registrationDaysMax ?? null,
+  });
 }
 
 /** 受众写成一句：阶段、语言、注册天数（同 design-kit 实验表单的读法）。 */
 export function audienceText(version?: { audience?: string; audienceTarget?: ExperimentVersionOption["audienceTarget"] | null }) {
   const target = version?.audienceTarget;
+  if (!target && version?.audience === "全量") return version.audience;
   const parsed = parseCopyAudience(version?.audience);
   const tiers = target?.tiers?.length
     ? `${target.tiers[0]}${target.tiers.length > 1 ? `–${target.tiers[target.tiers.length - 1]}` : ""}`
