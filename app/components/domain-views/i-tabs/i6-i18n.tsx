@@ -122,7 +122,13 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
   });
   const nsDrawer = NAMESPACES.find((namespace) => namespace.ns === nsDrawerKey);
   const namespaceMessages = nsDrawer ? MESSAGES.filter((message) => message.namespace === nsDrawer.ns) : [];
-  const INTEGRITY_ISSUES: IntegrityIssue[] = data?.integrityIssues ?? [];
+  const hasRequiredEnglishCopy = (message: { en: string; zh: string; vi: string }) => message.en.trim() !== ""
+    && (["zh", "vi"] as const).some((language) => requiredLanguages.includes(language) && message[language].trim() === message.en.trim());
+  const publishedEnglishCopies = Object.values(data?.publishedMessages ?? {}).filter(hasRequiredEnglishCopy).length;
+  const INTEGRITY_ISSUES: IntegrityIssue[] = (data?.integrityIssues ?? []).map((issue) => ({
+    ...issue,
+    kind: ({ "missing-en": "缺英文", "missing-zh": "缺中文", "missing-vi": "缺越南语" } as Record<string, string>)[issue.code] ?? issue.kind,
+  }));
   const HARDCODED_FINDINGS: HardcodedFinding[] = data?.hardcodedFindings ?? [];
   const COURSES: Course[] = (data?.courses ?? []).map((c) => ({
     id: c.id,
@@ -668,7 +674,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
           <div className="v">
             {publishedCoverage?.managedKeys ?? 0} / {I6_STATS.totalKeys}
           </div>
-          <div className="sub">已发布词条 · 必填语言</div>
+          <div className="sub">已发布词条 · 必填语言{publishedEnglishCopies > 0 ? ` · 其中 ${publishedEnglishCopies} 条为英文副本` : ""}</div>
         </div>
         <div className={`f-stat ${liveIntegrity === 0 ? "ok" : "warn"}`}>
           <div className="k">完整性问题</div>
@@ -786,7 +792,7 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
                   <td>{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[message.namespace] ?? message.namespace}</td>
                   <td className="mono">{message.version}</td>
                   <td><span className={`bdg ${message.status === "published" ? "ok" : message.status === "draft" ? "warn" : "dim"}`}>{statusLabel(message.status)}</span></td>
-                  <td>{languageCount}/{requiredLanguages.length} · {languageCount === requiredLanguages.length ? "必填语言完整" : "待补齐"}</td>
+                  <td>{languageCount}/{requiredLanguages.length} · {languageCount === requiredLanguages.length ? "必填语言完整" : "待补齐"}{hasRequiredEnglishCopy(message) && <span style={{ color: "var(--warning)" }}> · 含英文副本</span>}</td>
                   <td style={{ textAlign: "right" }}><button className="l-btn sm" aria-label={`选择 ${message.messageKey}`} onClick={(event) => { event.stopPropagation(); setSelectedMessageKey(message.messageKey); }}>选择</button></td>
                 </tr>;
               })}

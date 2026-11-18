@@ -21,7 +21,7 @@ import {
 import type { ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
 type NovaForm = {
@@ -992,6 +992,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               return <div className="col" style={{ gap: 6 }} key={locale}>
                 <b style={{ fontSize: 12 }}>{label}{required ? " *" : "（选填）"}</b>
                 {!required && <span className="muted tiny">选填，不填时 App 显示英文；填了标题或正文，另一项也要填。</span>}
+                {required && locale !== "En" && isEnglishCopy({ title: tplForm.titleEn, body: tplForm.bodyEn }, { title: tplForm[titleKey], body: tplForm[bodyKey] }) && <span className="tiny" style={{ color: "var(--warning)" }}>{englishCopyHint(locale === "Zh" ? "zh" : "vi")}</span>}
                 <input className="fld" value={tplForm[titleKey]}
                   onChange={(e) => setTplForm({ ...tplForm, [titleKey]: e.target.value })} placeholder={`${label}标题`} />
                 <textarea className="fld" rows={3} value={tplForm[bodyKey]}

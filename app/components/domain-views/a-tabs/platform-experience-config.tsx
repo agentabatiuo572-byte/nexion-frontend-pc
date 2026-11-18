@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchPlatformExperienceConfig,
@@ -114,6 +114,7 @@ export function PlatformExperienceConfig() {
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>版本</label><input aria-label="安装包版本" value={config.appDownload.version} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, version: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
         </div><div><label className="tiny">来源（仅允许官方）</label><select aria-label="安装包来源" value={config.appDownload.source} disabled={!canWrite} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, source: event.target.value as PlatformExperienceConfig["appDownload"]["source"] } })} style={{ width: "100%", marginTop: 4 }}><option value="official">官方渠道</option><option value="unavailable">暂不提供</option></select>
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>发布说明（英文必填；中文{(operatingLanguages ?? fallbackOperatingLanguages).includes("zh") ? "必填" : "选填，不填时 App 显示英文"}）</label><div className="row"><input aria-label="中文发布说明" placeholder={(operatingLanguages ?? fallbackOperatingLanguages).includes("zh") ? "中文发布说明" : "选填，不填时显示英文"} value={releaseNotesZh} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setReleaseNotesZhDraft(event.target.value)} /><input aria-label="英文发布说明" placeholder="英文发布说明" value={config.appDownload.releaseNotes.en} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } } })} /></div>
+          {config.appDownload.source !== "unavailable" && (operatingLanguages ?? fallbackOperatingLanguages).includes("zh") && isEnglishCopy({ text: config.appDownload.releaseNotes.en }, { text: releaseNotesZh }) && <div className="tiny" style={{ marginTop: 4, color: "var(--warning)" }}>{englishCopyHint("zh")}</div>}
           {config.appDownload.source === "unavailable" && <div className="tiny" style={{ marginTop: 6 }}>当前暂不提供官方安装包；安装链接、版本和发布说明不生效。确定官方发布地址后再切换来源。</div>}
         </div></div>
         <h3 id="a3-languages" className="a3-experience-heading">界面语言</h3>

@@ -5,10 +5,11 @@ import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDr
 import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
-const LANGUAGES = ["zh", "en", "vi"] as const;
+const LANGUAGES = ["en", "zh", "vi"] as const;
 export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx; requiredLanguages: readonly OperatingLanguageCode[] }) {
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
@@ -60,7 +61,7 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
           <fieldset disabled={locked} style={{ border: 0, margin: 0, padding: 0 }}>
             <div className="grid g-2" style={{ gap: 12 }}>
               <label className="field"><span>本期编号</span><input value={draft.id} disabled={!!base} onChange={event => setDraft({ ...draft, id: event.target.value })}/></label>
-              {LANGUAGES.map(locale => { const { suffix, label } = RAFFLE_LANGUAGES[locale], required = requiredLanguages.includes(locale); return <label className="field" key={locale}><span>抽奖名称 · {label}{locked || !write ? "" : required ? " *" : " · 选填，不填时 App 显示英文"}</span><input value={draft[`title${suffix}`]} onChange={event => setDraft({ ...draft, [`title${suffix}`]: event.target.value })}/></label>; })}
+              {LANGUAGES.map(locale => { const { suffix, label } = RAFFLE_LANGUAGES[locale], required = requiredLanguages.includes(locale); return <label className="field" key={locale}><span>抽奖名称 · {label}{locked || !write ? "" : required ? " *" : " · 选填，不填时 App 显示英文"}</span><input value={draft[`title${suffix}`]} onChange={event => setDraft({ ...draft, [`title${suffix}`]: event.target.value })}/>{!locked && write && required && locale !== "en" && isEnglishCopy({ values: [draft.titleEn, ...draft.prizes.map(prize => prize.nameEn)] }, { values: [draft[`title${suffix}`], ...draft.prizes.map(prize => prize[`name${suffix}`])] }) && <small style={{ color: "var(--warning)" }}>{englishCopyHint(locale)}</small>}</label>; })}
               {(["startsAt", "drawAt"] as const).map((key, index) => <label className="field" key={key}><span>{index ? "开奖时间" : "报名开始"}（UTC）</span><input type="datetime-local" step={1} value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : "" })}/></label>)}
             </div>
             {draft.prizes.map((prize, index) => <section key={prize.id} style={{ marginTop: 14, padding: 12, border: "1px solid var(--line)", borderRadius: 10 }}><b>奖项 {index + 1}</b><div className="grid g-2" style={{ gap: 12, marginTop: 10 }}>

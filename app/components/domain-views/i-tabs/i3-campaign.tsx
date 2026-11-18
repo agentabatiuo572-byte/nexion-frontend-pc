@@ -19,7 +19,7 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
 /** 每个 CAP 档位一个槽位:同档位改了值就铸新命令号并丢弃旧号(旧号可能已被后端消费,
@@ -330,7 +330,18 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     const vi = fillBlankContentLanguage(requiredLanguages, "vi", en, { title: form.titleVi.trim(), body: form.bodyVi.trim() });
     const submittedCopy = [en, zh, vi];
     if (submittedCopy.some(({ title, body }) => !title || !body)) {
-      toast("请填写英文标题和正文，以及带 * 的语言；选填语言填了标题或正文，另一项也要填。");
+      const names = { en: "英文", zh: "中文", vi: "越南语" } as const;
+      const typed = { en, zh: { title: form.titleZh.trim(), body: form.bodyZh.trim() }, vi: { title: form.titleVi.trim(), body: form.bodyVi.trim() } };
+      const problems = (["en", "zh", "vi"] as const).flatMap((language) => {
+        const { title, body } = typed[language];
+        if (language !== "en" && !requiredLanguages.includes(language)) {
+          if (title && !body) return [`${names[language]}已填标题，正文也要填（或清空${names[language]}标题）`];
+          if (!title && body) return [`${names[language]}已填正文，标题也要填（或清空${names[language]}正文）`];
+          return [];
+        }
+        return [!title && `${names[language]}标题`, !body && `${names[language]}正文`].filter(Boolean) as string[];
+      });
+      toast(`缺：${problems.join("；")}。`);
       return;
     }
     if (submittedCopy.some(({ title, body }) => {
@@ -659,6 +670,14 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               )}
             </FormField>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+              <FormField label="英文标题" required>
+                <input
+                  value={form.titleEn}
+                  onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
+                  placeholder="通知流第一行（英文）"
+                  style={INPUT_STYLE}
+                />
+              </FormField>
               <FormField label="中文标题" required={requiredLanguages?.includes("zh")}>
                 <input
                   value={form.titleZh}
@@ -675,12 +694,13 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={INPUT_STYLE}
                 />
               </FormField>
-              <FormField label="英文标题" required>
-                <input
-                  value={form.titleEn}
-                  onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
-                  placeholder="通知流第一行（英文）"
-                  style={INPUT_STYLE}
+              <FormField label="英文正文" required>
+                <textarea
+                  rows={4}
+                  value={form.bodyEn}
+                  onChange={(e) => setForm({ ...form, bodyEn: e.target.value })}
+                  placeholder="填写英文正文"
+                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>
               <FormField label="中文正文" required={requiredLanguages?.includes("zh")}>
@@ -701,16 +721,10 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>
-              <FormField label="英文正文" required>
-                <textarea
-                  rows={4}
-                  value={form.bodyEn}
-                  onChange={(e) => setForm({ ...form, bodyEn: e.target.value })}
-                  placeholder="填写英文正文"
-                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
-                />
-              </FormField>
             </div>
+            {(["zh", "vi"] as const).filter((language) => requiredLanguages?.includes(language)
+              && isEnglishCopy({ title: form.titleEn, body: form.bodyEn }, language === "zh" ? { title: form.titleZh, body: form.bodyZh } : { title: form.titleVi, body: form.bodyVi }))
+              .map((language) => <div key={language} style={{ fontSize: 11.5, color: "var(--warning)", marginTop: -6 }}>{englishCopyHint(language)}</div>)}
             {requiredLanguages && requiredLanguages.length < 3 && (
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: -6 }}>
                 没带 * 的中文、越南语选填：标题和正文都不填时 App 显示英文；填了其中一项，另一项也要填。
@@ -752,6 +766,9 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                     <option key={option.value || "none"} value={option.value}>{option.label}</option>
                   ))}
                 </select>
+                {form.ctaHref && CTA_LABELS_EN[form.ctaHref] && (
+                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4 }}>App 按钮文字：{CTA_LABELS_EN[form.ctaHref]}（系统按跳转页面固定，不能修改）</div>
+                )}
               </FormField>
             </div>
 
@@ -892,7 +909,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 onChange={(e) => setScheduleVerified(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              <span>我已核对中文、越南语、英文标题、正文和受众条件；排期后如需修改，应先取消排期再编辑草稿。</span>
+              <span>我已核对英文和运营区域语言的标题、正文和受众条件；排期后如需修改，应先取消排期再编辑草稿。</span>
             </label>
           </div>
         </Drawer>

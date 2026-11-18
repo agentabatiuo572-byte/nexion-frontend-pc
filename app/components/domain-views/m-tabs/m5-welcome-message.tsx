@@ -7,14 +7,14 @@ import { Modal } from "../design-kit";
 import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
-import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import type { MSupportPermission } from "./m5-service-rules";
 
 type WelcomePayload = Parameters<typeof supportWelcomeMessageClient.update>[0];
 type WelcomeAttempt = { fingerprint: string; commandKey: string; expiresAt: number; payload: WelcomePayload; editedTexts?: Partial<SupportWelcomeTexts> };
 type WelcomePendingRecord = WelcomeAttempt & { createdAt: number; actorId: number };
-const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "English" }, { key: "vi", label: "Tiếng Việt" }];
+const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "en", label: "English" }, { key: "zh", label: "中文" }, { key: "vi", label: "Tiếng Việt" }];
 const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({
   storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true,
   isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion) && row.payload.texts
@@ -219,6 +219,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
           return <label className="field m5-welcome-field" key={key}>
             <span>{label}{required ? " *" : "（选填）"}</span>
             <textarea value={draft[key]} placeholder={required ? undefined : "选填，不填时新用户收到英文"} disabled={!editable} aria-invalid={Boolean(problem)} aria-describedby={`m5-welcome-${key}-count`} onChange={(event) => { const value = event.target.value; setDraft((old) => old ? { ...old, [key]: value } : old); setSaved(false); }} />
+            {required && key !== "en" && isEnglishCopy({ text: draft.en }, { text: draft[key] }) && <span className="tiny" style={{ color: "var(--warning)" }}>{englishCopyHint(key)}</span>}
             <span id={`m5-welcome-${key}-count`} className={`m5-welcome-count${problem ? " invalid" : ""}`}>{problem ? `${problem} · ` : ""}{length}/{MAX}</span>
           </label>;
         })}

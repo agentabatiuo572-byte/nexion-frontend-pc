@@ -5,6 +5,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { fetchA2Overview } from "@/lib/admin/a2-client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
@@ -1507,6 +1508,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event, rule)}>
                           {current && !missing && !incomplete ? current : statusText}
                         </button>
+                        {language !== "en" && requiredLanguages.includes(language) && current.trim() !== "" && (event
+                          ? isEnglishCopy(eventFields(event.id, "en"), eventFields(event.id, language))
+                          : isEnglishCopy({ name: rawLocalizedValue(item.entity, item.code, "name", "en") }, { name: current })) && (
+                          <div className="tiny" style={{ color: "var(--warning)", marginTop: 2 }}>{englishCopyHint(language)}</div>
+                        )}
                         {event && cell && cell.optional && event.deleteState === "draft" && !cell.current && cell.stored.trim() !== "" && (
                           <button className="l-btn sm" style={{ marginLeft: 8 }} disabled={!canModuleWrite}
                             aria-label={`清空已存副本 ${row.label} ${LOCALE_LABEL[language]}`}

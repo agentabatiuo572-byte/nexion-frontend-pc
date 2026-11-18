@@ -23,7 +23,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/trust",
-    summary: "编辑 App 信任中心的 6 个版块：财务数据、团队、UVT 介绍、徽章、审计和外部链接。财务数据和 UVT 介绍发布时须注明数据来源，并核对中英越三语。",
+    summary: "编辑 App 信任中心的 6 个版块：财务数据、团队、UVT 介绍、徽章、审计和外部链接。财务数据和 UVT 介绍发布时须注明数据来源，并核对英文和运营区域语言。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

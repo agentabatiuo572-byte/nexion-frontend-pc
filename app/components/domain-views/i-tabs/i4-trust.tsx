@@ -14,6 +14,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import Link from "next/link";
 import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
 import { useEffect, useState } from "react";
+import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { DISCLOSURE_LANGUAGE_SCOPE, Drawer, OPTIONAL_CONTENT_HINT, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
 import { IContentReceiptError, type DisclosureJurisdictionOption, type DisclosureVersionItemView } from "@/lib/admin/i-client";
@@ -1338,9 +1339,27 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="field"><span className="bf-legend">保存说明</span><input aria-label="保存说明" className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
           <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><span className="tiny">共 {draftEditor.fields.length} 项</span></div>
           <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。带 * 的必填。没带 * 的中文、越南语选填：这一语言的字段全部不填时，保存时用对应的英文字段补上；填了其中一项就要把这一语言填齐。</div>
-          {draftEditor.fields.map((field, index) => {
-            const localized = localizedTrustSectionField(field.key);
+          {(() => {
+            const entries = draftEditor.fields.map((field, index) => ({ field, index, localized: localizedTrustSectionField(field.key) }));
+            const familyRank = new Map<string, number>();
+            entries.forEach(({ localized, index }) => { if (localized && !familyRank.has(localized.family)) familyRank.set(localized.family, index); });
+            const languageRank = { en: 0, zh: 1, vi: 2 } as const;
+            const englishByFamily = new Map(entries.flatMap(({ localized, field }) => localized?.language === "en" ? [[localized.family, field.value] as const] : []));
+            const copyLanguages = (["zh", "vi"] as const).filter((language) => {
+              if (!draftEditor.requiredLanguages.includes(language)) return false;
+              const group = entries.filter(({ localized }) => localized?.language === language && englishByFamily.has(localized.family));
+              return group.length > 0 && isEnglishCopy(Object.fromEntries(group.map(({ localized }) => [localized!.family, englishByFamily.get(localized!.family) ?? ""])), Object.fromEntries(group.map(({ localized, field }) => [localized!.family, field.value])));
+            });
+            const hinted = new Set<string>();
+            return entries.slice().sort((left, right) => {
+              const leftRank = left.localized ? familyRank.get(left.localized.family)! : left.index;
+              const rightRank = right.localized ? familyRank.get(right.localized.family)! : right.index;
+              return leftRank !== rightRank ? leftRank - rightRank
+                : (left.localized ? languageRank[left.localized.language] : 0) - (right.localized ? languageRank[right.localized.language] : 0);
+            }).map(({ field, index, localized }) => {
             const required = localized && draftEditor.requiredLanguages.includes(localized.language);
+            const copyHintLanguage = localized && localized.language !== "en" && copyLanguages.includes(localized.language) && !hinted.has(localized.language) ? localized.language : undefined;
+            if (copyHintLanguage) hinted.add(copyHintLanguage);
             return <div className="itint" key={index} style={{ marginBottom: 10 }}>
               <div className="grid g-2" style={{ gap: 8 }}>
                 <div className="field">
@@ -1349,9 +1368,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 </div>
                 <div className="field"><span className="bf-legend">字段名称</span><input aria-label="字段名称" className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
               </div>
-              <div className="field"><span className="bf-legend">字段内容{required && " *"}</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} placeholder={localized && !required ? (draftEditor.fields.some((item) => { const english = localizedTrustSectionField(item.key); return english?.language === "en" && english.family === localized.family; }) ? OPTIONAL_CONTENT_HINT : "选填") : undefined} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
+              <div className="field"><span className="bf-legend">字段内容{required && " *"}</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} placeholder={localized && !required ? (draftEditor.fields.some((item) => { const english = localizedTrustSectionField(item.key); return english?.language === "en" && english.family === localized.family; }) ? OPTIONAL_CONTENT_HINT : "选填") : undefined} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} />{copyHintLanguage && <span className="tiny" style={{ color: "var(--warning)" }}>{englishCopyHint(copyHintLanguage)}</span>}</div>
             </div>;
-          })}
+          });
+          })()}
         </Drawer>
       )}
 

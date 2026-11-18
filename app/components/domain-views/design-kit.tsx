@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { blankCopiedContentLanguage, fillBlankContentLanguage, trimStoredContent } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -1460,7 +1460,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (spec.targetChapters.some((chapter) => !chapter[language].trim() || !chapter[`${language}Body`].trim())) missing.push(`七章${CONTENT_LANGUAGE_LABELS[language]}完整内容`);
     }
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
-    if (state.bilingualConfirmed !== "true") missing.push("七章必填语言核对");
+    if (state.bilingualConfirmed !== "true") missing.push("总文和七章必填语言核对");
   } else if (spec.kind === "disclosure-matrix") {
     ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
   } else if (spec.kind === "trust-section-authoring") {
@@ -1751,16 +1751,31 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       for (const key of localizedFormKeys(spec, value, language)) localizedRequirements.set(key, spec.requiredLanguages.includes(language));
     }
   }
+  const englishCopyKeys = new Map<string, "zh" | "vi">();
+  if ("requiredLanguages" in spec) {
+    const englishKeys = localizedFormKeys(spec, value, "en");
+    for (const language of ["zh", "vi"] as const) {
+      const keys = localizedFormKeys(spec, value, language);
+      if (spec.requiredLanguages.includes(language) && keys.length === englishKeys.length
+        && isEnglishCopy({ values: englishKeys.map((key) => value[key] ?? "") }, { values: keys.map((key) => value[key] ?? "") })) englishCopyKeys.set(keys[0], language);
+    }
+  }
+  const copyHint = (key: string) => {
+    const language = englishCopyKeys.get(key);
+    return language ? <span className="tiny" data-proof="english-copy-hint" style={{ color: "var(--warning)", marginTop: 4 }}>{englishCopyHint(language)}</span> : null;
+  };
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}{localizedRequirements.get(key) && " *"}</span>
       <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={localizedRequirements.get(key) === false ? OPTIONAL_CONTENT_HINT : placeholder} />
+      {copyHint(key)}
     </label>
   );
   const input = (key: string, label: string, placeholder: string, type = "text", maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}{localizedRequirements.get(key) && " *"}</span>
       <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={localizedRequirements.get(key) === false ? OPTIONAL_CONTENT_HINT : placeholder} />
+      {copyHint(key)}
     </label>
   );
   const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void, unavailableLabel?: string) => {
@@ -2101,8 +2116,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         )}
         <div className="grid g-2" style={{ gap: 10 }}>
-          {textArea("zh", "中文文案", "填写中文文案")}
           {textArea("en", "英文文案", "填写英文文案")}
+          {textArea("zh", "中文文案", "填写中文文案")}
           {spec.kind === "localized-copy" && textArea("vi", "越南语文案", "填写越南语文案")}
           {isManagedCopy && textArea("vi", "越南语文案", "填写越南语文案")}
         </div>
@@ -2316,16 +2331,17 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
           {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
           {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
-          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, "5", "number")}
+          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, String(spec.rewardMin ?? 10), "number")}
           <div className="itint ok">保存为{COURSE_STATUS_LABELS.draft}，发布请回到课程列表操作。</div>
-          {input("titleZh", "中文标题（最多 128 字）", "中文课程标题", "text", 1024)}
-          {input("titleVi", "越南语标题（最多 1024 字）", "越南语课程标题", "text", 1024)}
-          {input("titleEn", "英语标题（最多 1024 字，中文不填时最多 128 字）", "英语课程标题", "text", 1024)}
+          {input("titleEn", "英文标题", "英文课程标题", "text", 1024)}
+          {input("titleZh", "中文标题", "中文课程标题", "text", 1024)}
+          {input("titleVi", "越南语标题", "越南语课程标题", "text", 1024)}
         </div>
+        <div className="tint tiny" style={{ marginTop: 6 }}>中文标题最多 128 字；中文不填时英文标题会用作中文标题，也要在 128 字内。其他标题和正文最多 1024 字。</div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {textArea("bodyZh", "中文正文（最多 1024 字）", "中文课程正文", 4, 1024)}
-          {textArea("bodyVi", "越南语正文（最多 1024 字）", "越南语课程正文", 4, 1024)}
-          {textArea("bodyEn", "英语正文（最多 1024 字）", "英语课程正文", 4, 1024)}
+          {textArea("bodyEn", "英文正文", "英文课程正文", 4, 1024)}
+          {textArea("bodyZh", "中文正文", "中文课程正文", 4, 1024)}
+          {textArea("bodyVi", "越南语正文", "越南语课程正文", 4, 1024)}
         </div>
         <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
           <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>测验与发奖（保存前须填写完整）</div>
@@ -2344,8 +2360,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               </div>
               <div className="grid g-2" style={{ gap: 10 }}>
                 {input(`quiz.${questionIndex}.id`, "题目标识", `q${questionIndex + 1}`)}
-                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "中文题干")}
                 {input(`quiz.${questionIndex}.questionEn`, "英文题干", "英文题干")}
+                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "中文题干")}
                 {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "越南语题干")}
                 {Array.from({ length: optionCount }, (_, optionIndex) => <Fragment key={optionIndex}>
                   <div className="field" style={{ gridColumn: "1 / -1", marginBottom: -4 }}>
@@ -2359,8 +2375,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                       <b>设为正确答案：选项 {optionIndex + 1}</b>
                     </label>
                   </div>
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "中文选项")}
                   {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "英文选项")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "中文选项")}
                   {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "越南语选项")}
                 </Fragment>)}
               </div>
@@ -2467,21 +2483,21 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {textArea("en", "英文总文", "填写英文披露总文", 4)}
           {textArea("zh", "中文总文", "填写中文披露总文", 4)}
           {textArea("vi", "越南语总文", "填写越南语披露总文", 4)}
-          {textArea("en", "英语总文", "填写英语披露总文", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
           <span className="bf-legend">章节内容（共 7 章）</span>
           {(spec.chapters ?? []).map((chapter, index) => <div className="card" key={`${chapter.no}-${index}`} style={{ padding: 10, marginTop: 8 }}>
             <b>第 {chapter.no} 章</b>
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
+              {input(`chapter.${index}.enTitle`, "英文标题", "请输入英文标题")}
               {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
               {input(`chapter.${index}.viTitle`, "越南语标题", "请输入越南语标题")}
-              {input(`chapter.${index}.enTitle`, "英语标题", "请输入英语标题")}
+              {textArea(`chapter.${index}.enBody`, "英文正文", "请输入英文正文", 3)}
               {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
               {textArea(`chapter.${index}.viBody`, "越南语正文", "请输入越南语正文", 3)}
-              {textArea(`chapter.${index}.enBody`, "英语正文", "请输入英语正文", 3)}
             </div>
           </div>)}
         </div>
@@ -2516,7 +2532,17 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   }
 
   if (spec.kind === "disclosure-publish-review") {
-    const reviewLanguages = [["zh", "中文"], ["vi", "越南语"], ["en", "英语"]] as const;
+    const reviewLanguages = [["en", "英文"], ["zh", "中文"], ["vi", "越南语"]] as const;
+    const reviewCopy = (copy: Record<"en" | "zh" | "vi", { title?: string; body: string }>) => {
+      const sameAsEnglish = (["zh", "vi"] as const).filter((language) => (copy[language].title ?? "").trim() === (copy.en.title ?? "").trim() && copy[language].body.trim() === copy.en.body.trim());
+      const own = reviewLanguages.filter(([language]) => language === "en" || !sameAsEnglish.includes(language as "zh" | "vi"));
+      return <>
+        <div className={`grid g-${own.length}`} style={{ gap: 8, marginTop: 6 }}>
+          {own.map(([language, label]) => <div key={language}><span className="tiny">{label}</span>{copy[language].title !== undefined && <div>{copy[language].title || `未填写${label}标题`}</div>}<div className="tiny">{copy[language].body || `未填写${label}正文`}</div></div>)}
+        </div>
+        {sameAsEnglish.length > 0 && <div className="tiny" style={{ marginTop: 6, color: "var(--ink-3)" }}>{sameAsEnglish.map((language) => language === "zh" ? "中文" : "越南语").join("、")}：同英文（App 显示英文）</div>}
+      </>;
+    };
     const chapterChangedLanguages = (target: (typeof spec.targetChapters)[number]) => {
       const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
       return reviewLanguages.filter(([language]) => !current || current[language] !== target[language] || current[`${language}Body`] !== target[`${language}Body`]).map(([, label]) => label);
@@ -2537,22 +2563,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
           <div className="card" data-proof="disclosure-summary-diff" style={{ padding: 10, marginTop: 8, borderColor: summaryChangedLanguages.length > 0 ? "var(--warning)" : undefined }}>
             <b>总文 · {summaryChangedLanguages.length > 0 ? `有修改（${summaryChangedLanguages.join("、")}）` : "无变化"}</b>
-            <div className="grid g-3" style={{ gap: 8, marginTop: 6 }}>
-              <div><span className="tiny">中文</span><div className="tiny">{spec.targetSummary.zh}</div></div>
-              <div><span className="tiny">越南语</span><div className="tiny">{spec.targetSummary.vi}</div></div>
-              <div><span className="tiny">英语</span><div className="tiny">{spec.targetSummary.en || "未填写英语总文"}</div></div>
-            </div>
+            {reviewCopy({ en: { body: spec.targetSummary.en }, zh: { body: spec.targetSummary.zh }, vi: { body: spec.targetSummary.vi } })}
           </div>
           {spec.targetChapters.map((target) => {
             const changedLanguages = chapterChangedLanguages(target);
             const isChanged = changedLanguages.length > 0;
             return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
               <b>第 {target.no} 章 · {isChanged ? `有修改（${changedLanguages.join("、")}）` : "无变化"}</b>
-              <div className="grid g-3" style={{ gap: 8, marginTop: 6 }}>
-                <div><span className="tiny">中文</span><div>{target.zh}</div><div className="tiny">{target.zhBody}</div></div>
-                <div><span className="tiny">越南语</span><div>{target.vi}</div><div className="tiny">{target.viBody}</div></div>
-                <div><span className="tiny">英语</span><div>{target.en || "未填写英语标题"}</div><div className="tiny">{target.enBody || "未填写英语正文"}</div></div>
-              </div>
+              {reviewCopy({ en: { title: target.en, body: target.enBody }, zh: { title: target.zh, body: target.zhBody }, vi: { title: target.vi, body: target.viBody } })}
             </div>;
           })}
         </div>
