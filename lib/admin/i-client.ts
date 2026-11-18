@@ -66,8 +66,9 @@ export type I6CommandSnapshot = {
   featuredCourse?: LearningCourseView;
   stats?: I18nLearningStats;
 };
-type IContentPending = PendingMutationRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
-export type I1Command = PendingMutationRecord & {
+type ContentWriteRecord = PendingMutationRecord & { readbackReceipt?: { data: unknown } };
+type IContentPending = ContentWriteRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
+export type I1Command = ContentWriteRecord & {
   original?: I1Original;
   label: string;
   target: string;
@@ -82,7 +83,14 @@ const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/)|trust-disclosure\/trust-sections\/|i18n-learning\/)/.test(row.fingerprint),
 });
 
-export type I6Command = PendingMutationRecord & {
+function rememberContentReadback(command: ContentWriteRecord, data: unknown) {
+  const record = uncertainCommandKeys.list().find(row => row.commandKey === command.commandKey && row.fingerprint === command.fingerprint);
+  if (record && !record.readbackReceipt) {
+    uncertainCommandKeys.remember(record.fingerprint, record.commandKey, { ...record, readbackReceipt: { data } });
+  }
+}
+
+export type I6Command = ContentWriteRecord & {
   original?: I1Original;
   scope: string;
   operation: string;
@@ -214,10 +222,25 @@ function learningCopyMatches(saved: Record<string, unknown>, submitted: Record<s
   });
 }
 
+async function i6DeletionMatches(command: I6Command) {
+  if (command.operation === "course-delete") {
+    const { courses } = await fetchI6LearningOverview();
+    return courses.every(course => course.id !== command.target);
+  }
+  const versions = await iContentActions.fetchI7CourseVersions(command.target);
+  return versions.every(row => row.courseId === command.target && row.version !== command.version);
+}
+
 async function sendI6Command(command: I6Command, retry: boolean): Promise<unknown> {
   const uncertain = (message: string) => Object.assign(new OutcomeUnknownError(message), { commandKey: command.commandKey });
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (command.original?.owner !== useAdminAuth.getState().session?.adminId) throw new Error("登录身份已变更，请重新打开页面。");
+  const deletion = command.operation === "course-delete" || command.operation === "version-delete";
+  if (deletion && command.readbackReceipt?.data === null) {
+    if (!await i6DeletionMatches(command).catch(() => false)) throw uncertain("CONTENT_DRAFT_DELETION_NOT_CONFIRMED");
+    uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+    return null;
+  }
   const permission = i6RetryPermission(command);
   if (permission) throw new Error(permission);
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
@@ -257,14 +280,10 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
       const issue = parseI6Issue(payload.data);
       valid = issue.code === decodeURIComponent(command.original.path.split("/")[3])
         && (issue.messageKey === undefined || matchesI6Repair(command, issue));
-    } else if (command.operation === "course-delete" && payload.data === null) {
-      const { courses } = await fetchI6LearningOverview();
-      valid = courses.every(course => course.id !== command.target);
-    } else if (command.operation === "version-delete" && payload.data === null) {
-      const versions = await iContentActions.fetchI7CourseVersions(command.target);
-      valid = versions.every(row => row.courseId === command.target && row.version !== command.version);
-    }
-    else if (["version-create", "version-draft"].includes(command.operation)) {
+    } else if (deletion && payload.data === null) {
+      rememberContentReadback(command, null);
+      valid = await i6DeletionMatches(command);
+    } else if (["version-create", "version-draft"].includes(command.operation)) {
       const version = parseI6CourseVersion(payload.data);
       valid = version.courseId === command.target && version.version === command.version && version.status === "DRAFT"
         && version.revision === (command.operation === "version-create" ? 0 : Number(command.input.expectedRevision) + 1)
@@ -345,7 +364,7 @@ export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvi
   return { settled: false as const, receipt, overview, messageVersions, courseVersions };
 }
 
-export type I4DraftCommand = PendingMutationRecord & {
+export type I4DraftCommand = ContentWriteRecord & {
   original?: I1Original;
   snapshot?: TrustSectionVersionView;
   action: "create" | "edit" | "delete";
@@ -410,9 +429,20 @@ export function i4DraftPermission(): string | undefined {
     ? "当前账号没有草稿维护权限，请查询原结果。" : undefined;
 }
 
+async function i4DeletionMatches(command: I4DraftCommand) {
+  const { trustSectionVersions } = await fetchI4TrustOverview();
+  return !!trustSectionVersions && !trustSectionVersions.map(parseI4SectionVersion)
+    .some(row => row.sectionKey === command.sectionKey && row.version === command.version);
+}
+
 async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Promise<void> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (useAdminAuth.getState().session?.adminId !== command.original.owner) throw new Error("登录身份已变更，请重新打开页面。");
+  if (command.action === "delete" && command.readbackReceipt?.data === null) {
+    if (!await i4DeletionMatches(command).catch(() => false)) throw new OutcomeUnknownError("CONTENT_DRAFT_DELETION_NOT_CONFIRMED");
+    uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+    return;
+  }
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
   const permission = i4DraftPermission();
   if (permission) throw new Error(permission);
@@ -439,8 +469,8 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
   let valid = command.action === "delete" && payload.data === null;
   try {
     if (valid) {
-      const { trustSectionVersions } = await fetchI4TrustOverview();
-      valid = !!trustSectionVersions && !trustSectionVersions.some(row => row.sectionKey === command.sectionKey && row.version === command.version);
+      rememberContentReadback(command, null);
+      valid = await i4DeletionMatches(command);
     } else if (command.action !== "delete") {
       const row = parseI4SectionVersion(payload.data);
       valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
@@ -1013,6 +1043,7 @@ async function i1ReceiptMatches(command: I1Command, data: unknown) {
       : saved.version !== (tail === "rollback" ? version : input.version) || saved.status !== "published"
         || typeof input.description === "string" && saved.desc !== input.description.trim()
         || typeof input.i18nKey === "string" && saved.i18nKey !== input.i18nKey.trim()) return false;
+    rememberContentReadback(command, data);
     const overview = await fetchI1CopyOverview();
     const row = overview.versions.find(item => item.copyKey === saved.key && item.version === (method === "DELETE" ? version : saved.version));
     if (method === "DELETE") return !row;
@@ -1022,8 +1053,16 @@ async function i1ReceiptMatches(command: I1Command, data: unknown) {
   return false;
 }
 
+async function finishI1Receipt(command: I1Command, data: unknown) {
+  const matches = await i1ReceiptMatches(command, data).catch(() => false);
+  if (!matches) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  return data;
+}
+
 async function sendI1Command(command: I1Command, retry: boolean): Promise<unknown> {
   if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (command.readbackReceipt) return finishI1Receipt(command, command.readbackReceipt.data);
   if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");
   if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
@@ -1052,10 +1091,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
   }
-  const matches = await i1ReceiptMatches(command, payload.data).catch(() => false);
-  if (!matches) throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
-  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
-  return payload.data;
+  return finishI1Receipt(command, payload.data);
 }
 
 export async function retryI1Command(saved: I1Command): Promise<void> {
