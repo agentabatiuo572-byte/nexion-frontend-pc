@@ -166,6 +166,8 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   const life = lifecycleOf(event);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
   const reward = legacyName(event.reward);
+  // 中文、英文说明都没填时 App 显示原文（说明那一列，新建时填的「活动说明」）。
+  const originalDescription = text(event.description, "");
   // 卡片先显示中文；中文没填用英文那一份并标出来；都没有才写「未配置」。
   const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false } : en[field] ? { text: en[field], en: true } : null;
   // App 上的奖励文字有后端给的事实（appRewardNames）时原样照它写，不换旧名、不改格式；旧数据没有时照旧按填的奖项名推。
@@ -186,7 +188,9 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
           <StatusTag tone={life.tone} explain={life.explain}>{life.label}</StatusTag>
         </span>
       </header>
-      <p className="h4l-desc" data-empty={description ? undefined : ""}>{description?.text ?? "说明未配置"}{enTag("description")}</p>
+      {description || !originalDescription
+        ? <p className="h4l-desc" data-empty={description ? undefined : ""}>{description?.text ?? "说明未配置"}{enTag("description")}</p>
+        : <p className="h4l-desc h4l-clip" data-empty="" title={originalDescription}>中英文说明没填，App 显示原文：<span data-user-content="">{originalDescription}</span></p>}
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
@@ -265,7 +269,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
             : requiresAll && weight === "must" ? (opened ? "未填写，开启玩法前必须补齐" : "未填写，开放前必须补齐")
             : weight === null ? "未填写，App 显示玩法规则摘要"
             : locale !== "en" && names.en[field] ? "未填写，App 显示英文"
-            : `未填写，App 显示原文：${original[field] || "—"}`;
+            : original[field] ? `未填写，App 显示原文：${original[field]}` : "未填写，App 上是空的";
           return <li key={field}>
             <span className="h4l-locale-key">{FIELD_NAME[field]}</span>
             <span className="h4l-locale-value" data-empty={!blank ? undefined : weight === "must" ? "" : "soft"}>{!blank ? old.text : blankText}{old.legacy && <LegacyNameTag where={`${LOCALE_NAME[locale]}${FIELD_NAME[field]}`} />}
