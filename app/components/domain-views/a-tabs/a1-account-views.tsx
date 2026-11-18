@@ -422,7 +422,7 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
   const displayNameError = appVisibleTextError(displayName, "显示名");
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : displayNameError,
+    !displayName.trim() ? "显示名未填写" : displayNameError ? "显示名含中文" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     recoveryMode && role !== "super" ? "恢复期只能新建超级管理员" : "",
     !reason.trim() ? "操作理由未填写" : "",
@@ -452,7 +452,7 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
           <Field label="登录名" required hint="3–32 位" error={(touched || username.trim()) && !usernameOk ? (username.trim() ? "只能用小写字母、数字、点、下划线或短横线。" : "请填写登录名。") : undefined}>
             <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="例如 risk.shift" autoComplete="username" />
           </Field>
-          <Field label="显示名" required help={APP_VISIBLE_TEXT_HINT} error={touched ? (!displayName.trim() ? "请填写显示名。" : displayNameError) : undefined}>
+          <Field label="显示名" required help={APP_VISIBLE_TEXT_HINT} error={!displayName.trim() ? (touched ? "请填写显示名。" : undefined) : displayNameError}>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Alex Chen" />
           </Field>
           <Field label="工作邮箱" hint="选填" error={email.trim() && !emailOk ? "请输入有效邮箱格式。" : undefined}>
@@ -540,7 +540,7 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
     || avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED");
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : displayNameError,
+    !displayName.trim() ? "显示名未填写" : displayNameError ? "显示名含中文" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     !changed ? "资料没有变化" : "",
     !reason.trim() ? "操作理由未填写" : "",
@@ -571,7 +571,7 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
             error={(touched || username.trim()) && !usernameOk ? (username.trim() ? "只能用小写字母、数字、点、下划线或短横线。" : "请填写登录名。") : undefined}>
             <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoComplete="username" />
           </Field>
-          <Field label="显示名" required help={APP_VISIBLE_TEXT_HINT} error={touched ? (!displayName.trim() ? "请填写显示名。" : displayNameError) : undefined}>
+          <Field label="显示名" required help={APP_VISIBLE_TEXT_HINT} error={!displayName.trim() ? (touched ? "请填写显示名。" : undefined) : displayNameError}>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
           </Field>
           <Field label="工作邮箱" hint="选填" error={email.trim() && !emailOk ? "请输入有效邮箱格式。" : undefined}>

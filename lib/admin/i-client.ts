@@ -997,12 +997,15 @@ function i1CanWrite(permission: string) {
   return !!session && (session.role === "superadmin" || session.authorities.includes(permission));
 }
 
-function i1CopyPlacementMatches(saved: Pick<CopyVersionRow, "surface" | "copyPosition" | "trafficSplit" | "versionNote" | "audienceTarget">, input: Record<string, unknown>) {
+function i1CopyPlacementMatches(saved: Pick<CopyVersionRow, "surface" | "copyPosition" | "trafficSplit" | "versionNote" | "audience" | "audienceTarget">, input: Record<string, unknown>) {
+  if (saved.surface !== String(input.surface).trim().toLowerCase() || saved.copyPosition !== String(input.copyPosition).trim()
+    || saved.trafficSplit !== String(Number(String(input.trafficSplit).trim().replace("%", "")))
+    || saved.versionNote !== String(input.versionNote).trim()) return false;
+
   const target = saved.audienceTarget;
   const submitted = input.audienceTarget as CopyAudienceTarget | null | undefined;
-  return saved.surface === String(input.surface).trim().toLowerCase() && saved.copyPosition === String(input.copyPosition).trim()
-    && saved.trafficSplit === String(Number(String(input.trafficSplit).trim().replace("%", "")))
-    && saved.versionNote === String(input.versionNote).trim() && target?.mode === "structured" && submitted
+  if (submitted == null) return target == null && typeof input.audience === "string" && saved.audience === input.audience.trim();
+  return target?.mode === "structured"
     && (target.registrationDaysMin ?? null) === (submitted.registrationDaysMin ?? null)
     && (target.registrationDaysMax ?? null) === (submitted.registrationDaysMax ?? null)
     && target.locales.join(",") === [...new Set(submitted.locales.map(locale => locale.trim()))].sort().join(",")
@@ -1040,7 +1043,8 @@ async function i1ReceiptMatches(command: I1Command, data: unknown) {
       return saved.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(saved.status)
         && localizedFieldsMatch({ zh: saved.draftZh, en: saved.draftEn, vi: saved.draftVi }, input, ["en", "zh", "vi"])
         && i1CopyPlacementMatches({ surface: saved.draftSurface ?? "", copyPosition: saved.draftCopyPosition,
-          trafficSplit: saved.draftTrafficSplit ?? "", versionNote: saved.draftNote ?? "", audienceTarget: saved.draftAudienceTarget }, input);
+          trafficSplit: saved.draftTrafficSplit ?? "", versionNote: saved.draftNote ?? "", audience: saved.draftAudience ?? "",
+          audienceTarget: saved.draftAudienceTarget }, input);
     }
     if (action === "archive") return saved.version === input.expectedVersion && saved.status === "archived";
     if (method === "DELETE" ? saved.draftVersion != null
@@ -1451,6 +1455,8 @@ export type NovaOverview = {
   runtimeSourceOptions: NovaOptionView[];
   sources: string[];
   channelRuntimeSources?: NovaChannelRuntimeSource[];
+  /** 已发布且还带退役品牌名的模板所在频道（后端 75888a2d）；这些频道发送时会被跳过。 */
+  retiredBrandPublishedChannels?: string[];
   pushDelivery?: {
     from: string;
     to: string;
@@ -1984,15 +1990,17 @@ async function saveDisclosureVersion(jurisdiction: string, version: string | und
   catch { throw new DisclosureReadbackPending(readback); }
 }
 
+const I1_ORDINARY_PUBLICATION = { audience: "全量", trafficSplit: "100" };
+
 export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
-  createI1Copy: (body, reason) => apiRequest("/copy-ab/copies", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  createI1Copy: (body, reason) => apiRequest("/copy-ab/copies", { method: "POST", body: JSON.stringify(withReason({ ...body, ...I1_ORDINARY_PUBLICATION }, reason)) }).then(() => undefined),
   createI1CopyPosition: (body, reason) => apiRequest("/copy-ab/positions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI1CopyPosition: (positionKey, reason) => apiRequest(`/copy-ab/positions/${encodeURIComponent(positionKey)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI1CopyVersionOption: (body, reason) => apiRequest("/copy-ab/version-options", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI1CopyVersionOption: (versionKey, body, reason) => apiRequest(`/copy-ab/version-options/${encodeURIComponent(versionKey)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI1CopyVersionOption: (versionKey, revision, reason) => apiRequest(`/copy-ab/version-options/${encodeURIComponent(versionKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision: revision }, reason)) }).then(() => undefined),
   saveI1CopyDraft: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason({ ...body, ...I1_ORDINARY_PUBLICATION }, reason)) }).then(() => undefined),
   deleteI1CopyDraft: (copyKey, version, revision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion: version, expectedRevision: revision }, reason)) }).then(() => undefined),
   rollbackI1CopyVersion: (copyKey, version, expectedVersion, expectedRevision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedRevision }, reason)) }).then(() => undefined),
   archiveI1Copy: (copyKey, expectedVersion, expectedRevision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedRevision }, reason)) }).then(() => undefined),

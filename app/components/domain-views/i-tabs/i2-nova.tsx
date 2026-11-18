@@ -277,6 +277,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     titleEn: t.titleEn, bodyEn: t.bodyEn,
   }));
   const templatePager = useDataListPager(NOVA_TPLS, { initialPageSize: 7 });
+  const retiredBrandChannels = data?.retiredBrandPublishedChannels ?? [];
   const CTA_OPTIONS = data?.templateCtaOptions ?? [];
   const RUNTIME_SOURCE_OPTIONS = data?.runtimeSourceOptions ?? [];
   const RUNTIME_SOURCES = data?.channelRuntimeSources;
@@ -1073,6 +1074,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
         explain="模板就是用户收到的标题和正文。英文和运营区域语言必填；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
         actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={newTpl}>新建模板</Button> : undefined}>
+        {retiredBrandChannels.length > 0 && <Notice tone="warn" title={`${retiredBrandChannels.length} 个频道的已发布模板里还有退役的品牌名，现在发不出去`}>
+          <p>{retiredBrandChannels.map(displayOf).join("、")}：系统发送时会跳过这些模板。要恢复推送：归档模板，删掉后用现在的名称新建、发布，再启用频道。</p>
+        </Notice>}
         <Table label="消息模板" className="i2-tpl-table">
           <thead>
             <tr><Th>模板</Th><Th>状态</Th><Th>语言</Th><Th>内容（中文）</Th><Th>点击后去哪</Th>{canWriteI2 && <Th sticky="end">操作</Th>}</tr>

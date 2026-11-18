@@ -415,5 +415,5 @@ export async function fetchG2ExchangeOverview() {
 export {
   cancelG2ExchangeQueueOrder, pendingG2QueueBatch, processG2ExchangeQueue,
   recoverG2ExchangeQueue, updateG2ExchangeParam, updateG2ExchangeSwapStatus,
-  type G2PendingBatch,
+  G2_QUEUE_ESTIMATE_FIELDS, type G2QueueEstimateParamKey, type G2PendingBatch,
 } from "./g2-exchange-command";

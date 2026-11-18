@@ -244,8 +244,7 @@ export function PlatformParamsRegistry() {
   };
 
   const statusCell = (row: A5RegistryRow) => {
-    if (row.canonicalKey === H5_RETIRED_KEY) return <StatusTag tone="done" icon={Ban}>已停用</StatusTag>;
-    if (row.canonicalKey === CONTINUITY_RETIRED_KEY) return <StatusTag tone="done" icon={Ban}>已停用</StatusTag>;
+    if (row.usageStatus === "RETIRED" || row.canonicalKey === H5_RETIRED_KEY || row.canonicalKey === CONTINUITY_RETIRED_KEY) return <StatusTag tone="done" icon={Ban}>已停用</StatusTag>;
     if (row.live && row.stale) return <StatusTag tone="warn">没读到实时值</StatusTag>;
     if (row.live) return <StatusTag tone="neutral" icon={Activity}>实时读取</StatusTag>;
     if (row.stale) return <StatusTag tone="warn">旧值已过期</StatusTag>;

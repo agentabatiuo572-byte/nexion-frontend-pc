@@ -76,6 +76,8 @@ export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
   roleGrantsDiff?: unknown;
+  /** Optional projection of the publish command's bound draft. Older servers omit it. */
+  i5DisclosurePublishReview?: unknown;
   ruleTaskAction?: A2RuleTaskAction | null;
   approveDeniedCode?: number | null;
   approveDeniedMessage?: string | null;
@@ -201,10 +203,18 @@ export interface A2RoleGrantsReview {
   menusRemoved: { id: number; name: string | null; catalogueStatus: A2CatalogueStatus }[];
 }
 
+interface I5DisclosurePublishReview {
+  jurisdiction: string;
+  version: string;
+  expectedRevision: number;
+  expectedContentHash: string;
+}
+
 export interface A2OperationRow {
   /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
   roleGrantsDiff: A2RoleGrantsDiff | null;
   roleGrantsReview: A2RoleGrantsReview | null;
+  i5DisclosurePublishReview?: I5DisclosurePublishReview;
   ruleTaskAction?: A2RuleTaskAction;
   approveDeniedMessage?: string;
   rejectDeniedMessage?: string;
@@ -389,6 +399,16 @@ function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
   };
 }
 
+function readI5DisclosurePublishReview(value: unknown): I5DisclosurePublishReview | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { jurisdiction, version, expectedRevision, expectedContentHash } = value as Record<string, unknown>;
+  if (typeof jurisdiction !== "string" || !jurisdiction
+    || typeof version !== "string" || !version
+    || typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1
+    || typeof expectedContentHash !== "string" || !expectedContentHash) return undefined;
+  return { jurisdiction, version, expectedRevision, expectedContentHash };
+}
+
 function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {
   const permission = (code: string) => {
     const entry = permissions?.get(code);
@@ -476,6 +496,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   return {
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
+    i5DisclosurePublishReview: readI5DisclosurePublishReview(ticket.i5DisclosurePublishReview),
     ruleTaskAction: ticket.ruleTaskAction ?? undefined,
     approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
     rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,

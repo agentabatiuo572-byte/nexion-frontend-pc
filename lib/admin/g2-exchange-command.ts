@@ -3,7 +3,7 @@ import { displayAdminError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
 import { normalizeG2BatchResult } from "./g2-batch-result";
 import {
-  fetchG2ExchangeOverview, g2Request, normalizeG2ExchangeOverview, type BackendOverview, type G2Cap, type G2ExchangeOrder, type G2Overview,
+  fetchG2ExchangeOverview, g2Request, normalizeG2ExchangeOverview, type BackendOverview, type G2Cap, type G2ExchangeOrder, type G2Overview, type G2QueueEstimate,
 } from "./g2-client";
 import {
   createPendingMutationStore, hasPersistedPendingCommandOwner, RETRY_EXPIRED_TEXT, type PendingMutationRecord,
@@ -20,6 +20,15 @@ export type G2PendingBatch = G2PendingCommand & { limit: number; reason: string 
 export type G2CommandQueryResult =
   | { confirmed: true; overview: G2Overview; batch: ReturnType<typeof normalizeG2BatchResult> }
   | { confirmed: false; overview: G2Overview; message: string };
+export const G2_QUEUE_ESTIMATE_FIELDS = {
+  queueEtaHours: "hours",
+  queueEtaCopy: "copy",
+  queueEtaCopyZh: "copyZh",
+  queueEtaCopyVi: "copyVi",
+} as const satisfies Record<string, keyof G2QueueEstimate>;
+export type G2QueueEstimateParamKey = keyof typeof G2_QUEUE_ESTIMATE_FIELDS;
+const PARAM_PATH = "/exchange/params/";
+const PARAM_KEYS = new Set(["userDailyCap", "platformDailyCap", "fee", "feeMin", "queueMode", ...Object.keys(G2_QUEUE_ESTIMATE_FIELDS)]);
 const BATCH_PATH = "/exchange/queue/process";
 const commands = createPendingMutationStore<PendingMutationRecord & { adminId?: number; context?: G2CommandContext }>({
   storageKey: "nexion-admin-g2-exchange-commands-v1",
@@ -45,8 +54,9 @@ export function listG2ExchangeCommands(adminId: number): G2PendingCommand[] {
     if (!match) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
     const [, prefix, method, path, body] = match;
     const input = JSON.parse(body) as CommandBody;
-    const param = /^\/exchange\/params\/(userDailyCap|platformDailyCap|fee|feeMin|queueMode|queueEtaHours|queueEtaCopy(?:Zh|Vi)?)$/.exec(path);
-    const validTarget = param ? method === "PATCH" && prefix === `g2-param-${param[1]}` && typeof input?.value === "string"
+    const paramKey = path.startsWith(PARAM_PATH) ? path.slice(PARAM_PATH.length) : undefined;
+    // The ETA contract uses an explicit empty string to clear a field. Check the type, not truthiness.
+    const validTarget = paramKey !== undefined ? method === "PATCH" && PARAM_KEYS.has(paramKey) && prefix === `g2-param-${paramKey}` && typeof input?.value === "string"
       : path === "/exchange/swap" ? method === "PATCH" && prefix === "g2-swap" && input?.enabled === false
         && Array.isArray(input.geoBlock) && input.geoBlock.every(country => typeof country === "string") && typeof input.triggerBasis === "string"
       : path === BATCH_PATH ? method === "POST" && prefix === "g2-queue-batch" && Number.isSafeInteger(input?.limit) && input.limit! >= 1 && input.limit! <= 100
@@ -57,7 +67,7 @@ export function listG2ExchangeCommands(adminId: number): G2PendingCommand[] {
     const context = record.context;
     if (context !== undefined) {
       if (!context || typeof context !== "object" || Array.isArray(context)) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
-      if (context.cap !== undefined && (!param || !context.cap || context.cap.key !== param[1]
+      if (context.cap !== undefined && (paramKey === undefined || !context.cap || context.cap.key !== paramKey
         || !["name", "sub", "value", "displayValue", "note"].every(key => typeof context.cap![key as keyof G2Cap] === "string")
         || typeof context.cap.loosen !== "boolean")) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
       if (context.order !== undefined) {
@@ -185,7 +195,8 @@ async function execute(path: string, method: "PATCH" | "POST", input: CommandBod
 }
 
 export async function updateG2ExchangeParam(paramKey: string, value: string, reason: string, operator: string, cap?: G2Cap) {
-  return execute(`/exchange/params/${encodeURIComponent(paramKey)}`, "PATCH", { value, reason, operator }, `g2-param-${paramKey}`, cap ? { cap } : undefined) as Promise<import("./g2-client").G2Overview>;
+  if (!PARAM_KEYS.has(paramKey)) throw new Error(displayAdminError("G2_EXCHANGE_PARAM_KEY_INVALID"));
+  return execute(`${PARAM_PATH}${paramKey}`, "PATCH", { value, reason, operator }, `g2-param-${paramKey}`, cap ? { cap } : undefined) as Promise<G2Overview>;
 }
 
 export async function updateG2ExchangeSwapStatus(enabled: boolean, reason: string, operator: string, context: { geoBlock?: string[]; triggerBasis?: string; queueDepth?: number } = {}) {

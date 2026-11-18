@@ -63,7 +63,6 @@ export default function H4Promotions({ ctx, legacy }: {
         const settled = (event: Event) => {
             const commandKey = (event as CustomEvent<string>).detail;
             setPending(current => current?.commandKey === commandKey ? null : current);
-            if (pendingPromotionCommands().some(record => record.commandKey === commandKey && record.receipt)) ctx.toast('原操作已确认成功，正在更新活动资料。');
             catalog.reload(); reloadList(); if (id) retryActivity();
         };
         window.addEventListener('admin-promotion-original-settled', settled);

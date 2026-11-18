@@ -1,5 +1,11 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
+/** APP_TEXT_CHINESE_NOT_ALLOWED 回来的字段写成运营认得的名字；认不出的只写通用那句。 */
+const APP_TEXT_FIELD_LABELS: Record<string, string> = {
+  displayName: "显示名", rewardName: "奖品名称", name: "名称", badge: "营销角标", tagline: "商品标语", gpu: "GPU 型号",
+  power: "功耗 / 功率说明", datacenter: "托管机房", uptime: "在线率", warranty: "质保期限", specDocumentTitle: "资料名称",
+};
+
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   APP_TEXT_CHINESE_NOT_ALLOWED: "显示给 App 用户的文字不能包含中文，请改成英文",
   NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED: "通知草稿的写入结果未确认，请保留原内容重试，系统会沿用原操作编号。",
@@ -3071,6 +3077,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   COPY_DRAFT_VERSION_MUST_DIFFER_FROM_PUBLISHED: "草稿不能使用当前发布的版本号，请选择这条文案未用过的启用版本。",
   COPY_VERSION_HISTORY_IMMUTABLE: "历史内容不能覆盖修改，请新增版本或继续编辑当前草稿。",
   COPY_PUBLISH_VERSION_MUST_DIFFER_FROM_PUBLISHED: "不能再次发布当前发布的版本号，请选择当前草稿或未用过的启用版本。",
+  COPY_PUBLISH_ALLOCATION_EXPERIMENT_ONLY: "普通发布面向全量用户，定向和分流只用于实验。",
   COPY_METADATA_INVALID: "文案标识或说明不符合要求，请核对标识格式及名称、词条和版本说明的长度。",
   COPY_KEY_EXISTS: "这个文案标识已存在，请换一个标识；修改已有内容请从原文案进入。",
   COPY_KEY_INVALID: "文案标识无效，请重新加载后从原文案进入操作。",
@@ -3902,8 +3909,11 @@ export function formatAdminApiError(
   const localized = eventLocalizedMissingMessage(raw, data);
   if (localized) return localized;
   if (raw === "APP_TEXT_CHINESE_NOT_ALLOWED" && data && typeof data === "object"
-    && "field" in data && typeof data.field === "string" && data.field.trim()) {
-    return `${ADMIN_ERROR_MESSAGES[raw]}。字段：${data.field.trim()}`;
+    && "field" in data && typeof data.field === "string") {
+    const field = data.field.trim();
+    const region = /^regions\[(\d+)\]\.name$/.exec(field);
+    const label = region ? `第 ${Number(region[1]) + 1} 个地区名称` : APP_TEXT_FIELD_LABELS[field];
+    if (label) return `${label}不能包含中文，请改成英文`;
   }
 
   if (raw.startsWith("J4_EXECUTION_PARTIAL:")) {

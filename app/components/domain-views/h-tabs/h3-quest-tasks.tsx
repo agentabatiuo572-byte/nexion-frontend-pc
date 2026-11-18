@@ -624,6 +624,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       .find((item) => text(item.taskCode ?? item.missionCode ?? item.id, "") === code);
     return task ? text(model?.contentLocales?.mission?.[code]?.zh?.name, "") || taskTitleText(text(task.task ?? task.cond)) : null;
   };
+  /** 本页任务里找不到时，按后端给的目录事实分开说；没给事实的旧数据照旧说不在本页。 */
+  const bindingTargetGap = (binding: H3QuestEventBinding) => binding.targetInTaskCatalog === false ? "任务目录里没有这个任务"
+    : binding.targetInTaskCatalog !== true ? "不在本页任务里"
+      : binding.targetActiveInTaskCatalog === false ? "任务目录里有，但已停用"
+        : binding.targetActiveInTaskCatalog === true ? "有效任务，本页没列出" : "不在本页任务里";
 
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
@@ -638,7 +643,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       content: <Facts>
         <Fact k="条件"><span data-mono="">{binding.bindingCode}</span></Fact>
         <Fact k="用户做了什么">{bindingEventText(binding)}</Fact>
-        <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `不在本页任务里（${binding.questCode}）`}</Fact>
+        <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `${bindingTargetGap(binding)}（${binding.questCode}）`}</Fact>
         <Fact k="状态"><Change from={enabled ? "已启用" : "已停用"} to={!nextEnabled ? "已停用" : "已启用"} /></Fact>
         <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
         <Fact k="以后的用户">{!nextEnabled ? "之后注册、之后发布的任务里，做这件事不再算完成" : "之后注册、之后发布的任务里，做这件事算完成"}</Fact>
@@ -820,7 +825,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       content: <Facts>
         <Fact k="条件"><span data-mono="">{binding.bindingCode}</span></Fact>
         <Fact k="用户做了什么">{bindingEventText(binding)}</Fact>
-        <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `不在本页任务里（${binding.questCode}）`}</Fact>
+        <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `${bindingTargetGap(binding)}（${binding.questCode}）`}</Fact>
         <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
         <Fact k="以后的用户">之后注册、之后发布的任务里，做这件事不再算完成</Fact>
         {enabled && <Fact k="会被拒绝的情况">它是已启用新手任务的最后一条启用条件</Fact>}
@@ -1050,7 +1055,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const active = all.filter((task) => taskStatusOf(task) === "active");
   const stuck = all.filter(activeUnbound);
   const codes = new Set(all.map(codeOf));
-  const orphans = bindings.filter((binding) => binding.status === 1 && binding.targetInTaskCatalog !== true && !codes.has(binding.questCode));
+  const missingBindingTarget = (binding: (typeof bindings)[number], inPage: boolean) => binding.liveTargetState != null
+    ? binding.liveTargetState === "TARGET_MISSING"
+    : !inPage && binding.targetInTaskCatalog !== true;
+  const orphans = bindings.filter((binding) => binding.status === 1 && missingBindingTarget(binding, codes.has(binding.questCode)));
   const h1 = model.phaseMultiplierReadonly ?? {};
   const currentPhase = cleanPhaseKey(text(h1.currentPhase, ""));
   const h1Value = decimalOf(h1.value);
@@ -1081,7 +1089,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const stuckIn = (list: QuestTask[]) => list.filter(activeUnbound).length;
   const attention: Array<{ key: string; tone: "warn" | "neutral"; title: string; go?: Tab; href?: string }> = [
     ...(stuck.length ? [{ key: "stuck", tone: "warn" as const, title: `${stuck.length} 个已启用的任务没绑定完成事件，用户做不完`, go: (stuckIn(dayOne) ? "dayOne" : "weekly") as Tab }] : []),
-    ...(orphans.length ? [{ key: "orphan", tone: "warn" as const, title: `${orphans.length} 条启用的完成条件对应的任务不在这页，要核查`, go: "bindings" as Tab }] : []),
+    ...(orphans.length ? [{ key: "orphan", tone: "warn" as const, title: `${orphans.length} 条启用的完成条件找不到对应的任务，要核查`, go: "bindings" as Tab }] : []),
     ...(regionPending ? [{ key: "region", tone: "neutral" as const, title: "每周区号规则的修改在等批准", go: "weekly" as Tab }] : []),
     ...(region.reviewError ? [{ key: "region-read", tone: "warn" as const, title: "区号规则的审批进度读取失败，暂不能再次提交", go: "weekly" as Tab }] : []),
     ...(configPending.length + creationPending.length ? [{ key: "fund", tone: "neutral" as const,
@@ -1260,7 +1268,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <ConfigList label="新手任务设置">
           <ConfigRow name="新手任务奖励" value={tri && !triLegacy.legacy ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triCurrent}
             sub={pendingLine("dayOne.triReward") || (lockTag("dayOne.triReward") ?? "调高或第一次设置要批准")}
-            what="做完全部新手任务后领一次。按领取时离注册多久分三档：注册后 24 小时内领是全额，之后到完成期限前领是宽限，过了完成期限是 0。"
+            what="做完全部新手任务后领一次，按领取那一刻分三档：注册后 24 小时内领是全额，之后到完成期限前领是宽限，过了完成期限是 0。做完任务不锁定金额；期限按用户那份新手任务生成时定下的算。"
             when={`调高或第一次设置：提交审批，${FUND_APPROVER}批准后生效；调低确认后立即生效。`}
             effect="只影响之后注册的用户；已经注册的按注册时定下的三档。"
             action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:1"]), () => openSimpleConfig("dayOne.triReward", "新手任务奖励", triFirst ? "" : triRaw, true, {
@@ -1443,11 +1451,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               {bindings.map((binding) => {
                 const enabled = Number(binding.status) === 1;
                 const task = bindingTaskName(binding.questCode);
-                return <Tr key={binding.bindingCode} mark={enabled && !task && binding.targetInTaskCatalog !== true ? "danger" : undefined}>
+                return <Tr key={binding.bindingCode} mark={enabled && missingBindingTarget(binding, !!task) ? "danger" : undefined}>
                   <Td grow><Cell main={bindingEventText(binding)} title={`${binding.bindingCode} · ${producerText(binding.producer)} · ${binding.eventType}`} sub={<><span data-mono="">{binding.bindingCode}</span>{` · ${producerText(binding.producer)} · `}<span data-mono="">{binding.eventType}</span></>} /></Td>
                   <Td>{task
                     ? <Cell main={task} sub={<span data-mono="">{binding.questCode}</span>} />
-                    : <Cell main={<span className="h3-card-alert"><CircleAlert size={14} aria-hidden />不在本页任务里</span>} sub={<span data-mono="">{binding.questCode}</span>} />}</Td>
+                    : <Cell main={binding.targetActiveInTaskCatalog === true && binding.targetInTaskCatalog === true ? bindingTargetGap(binding) : <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{bindingTargetGap(binding)}</span>} sub={<span data-mono="">{binding.questCode}</span>} />}</Td>
                   <Td><Cell main={H3_BINDING_USER_FIELD_LABELS[binding.userIdField] ?? binding.userIdField} sub={<span data-mono="">{binding.userIdField}</span>} /></Td>
                   <Td>{enabled ? <StatusTag tone="ok" icon={CircleCheck}>已启用</StatusTag> : <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>}</Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
@@ -1461,8 +1469,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               })}
             </tbody>
           </Table>}
-        {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件对应的任务不在这页`}>
-          <p>这页只列新手任务和每周任务。先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
+        {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件找不到对应的任务`}>
+          <p>{orphans.every((binding) => binding.targetInTaskCatalog === false) ? "任务目录里没有它指向的任务。" : "这页只列新手任务和每周任务。"}先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
         </Notice></div>}
       </Panel>
     </div>

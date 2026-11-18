@@ -248,6 +248,9 @@ export function parseH3Model(value: unknown): H3Model {
       if (fact === 0 || fact === 1) item[key] = fact === 1;
       else if (fact != null && typeof fact !== "boolean") throw new Error("H3_RESPONSE_INVALID");
     }
+    if (item.liveTargetState != null && !["TARGET_MISSING", "TARGET_INACTIVE", "BINDING_DISABLED", "TARGET_READY"].includes(item.liveTargetState)) {
+      throw new Error("H3_RESPONSE_INVALID");
+    }
   }
   return row as H3Model;
 }

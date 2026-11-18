@@ -190,6 +190,9 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     if (actorStamp() === sessionKey) invalidateScope(undefined, customerId);
     return true;
   }, [invalidateScope, sessionKey]);
+  const latestDetailSuccess = useRef(new Map<string, number>());
+  const refreshAssignments = useRef(ctx.refreshConversations);
+  refreshAssignments.current = ctx.refreshConversations;
   const openDetail = useCallback(async (customerId: string) => {
     const generation = ++detailsGeneration.current;
     const actorKey = actorStamp();
@@ -198,11 +201,20 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     setTransferInScope(null); setMaintenanceNeedsRefresh(false);
     try {
       const next = await supportClient.customerDetail(customerId);
-      if (detailsGeneration.current !== generation || actorStamp() !== actorKey) return;
+      if (actorStamp() !== actorKey) return;
+      latestDetailSuccess.current.set(customerId, Math.max(generation, latestDetailSuccess.current.get(customerId) ?? 0));
+      if (detailsGeneration.current !== generation) return;
       setDetail(next); setDetailActorKey(actorKey);
       if (permission !== "agent") void readTransferTargets(next.agentAdminId, "MANAGED").then((targets) => { if (detailsGeneration.current === generation) setTransferInScope(targets !== null); }).catch(() => undefined);
     }
-    catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(customerId, error)) setDetailError(errorText(error)); }
+    catch (error) {
+      if (actorStamp() !== actorKey) return;
+      if ((latestDetailSuccess.current.get(customerId) ?? 0) > generation) {
+        if (isSupportScopeDenial(error)) void refreshAssignments.current().catch(cause => setNotice(errorText(cause)));
+        return;
+      }
+      if (!invalidateCustomerOnDenied(customerId, error) && detailsGeneration.current === generation) setDetailError(errorText(error));
+    }
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
   }, [adminId, permission, invalidateCustomerOnDenied]);
   const closeDetail = useCallback(() => {
@@ -292,10 +304,10 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     } catch (error) {
       if (actor !== actorStamp()) return;
       if (!acknowledged && isExplicitRejection(error)) { maintenanceCommands.forget(fingerprint, key); setMaintenancePending(null); setMaintenanceNeedsRefresh(true); setSaveError(errorText(error)); return; }
+      if (acknowledged && invalidateCustomerOnDenied(payload.customerId, error)) return;
       if (detailsGeneration.current === generation) {
         setNotice("操作结果未知，原内容和理由已保留，请查询原结果。");
         closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1);
-        invalidateCustomerOnDenied(payload.customerId, error);
       }
     } finally { setSaving(false); }
   };

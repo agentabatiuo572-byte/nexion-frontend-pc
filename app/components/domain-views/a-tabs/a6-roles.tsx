@@ -9,6 +9,7 @@ import {
   type A6RoleOverview, type A6RoleDetail, type A6RoleCreateInput, type A6RoleUpdateInput, type A6RoleSummary,
 } from "@/lib/admin/a6-client";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
+import { permLabel } from "@/lib/admin/rbac-labels";
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { domainOfPermission } from "@/lib/admin/perm-domain";
 import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
@@ -945,6 +946,11 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
           {duty && <div><dt>默认职责<Explain label="默认职责" content="页面上写的职责说明，不是授权。这个角色实际能做什么，以存着的权限和菜单为准。" /></dt><dd>{duty.desc}（{duty.scope}）</dd></div>}
           <div><dt>备注</dt><dd data-empty={detail.remark ? undefined : ""}>{detail.remark || "—"}</dd></div>
         </dl>
+
+        {!!detail.legacyNonReadPermissionCodes?.length && <Notice tone="warn" title={`还存着 ${detail.legacyNonReadPermissionCodes.length} 项历史留下的修改权限`}>
+          <p>默认职责是只读；这几项是早期授权留下的，不是现行职责，现在仍然有效：{detail.legacyNonReadPermissionCodes.slice(0, 5).map((code) => permLabel(code, permByCode.get(code))).join("、")}{detail.legacyNonReadPermissionCodes.length > 5 ? ` 等 ${detail.legacyNonReadPermissionCodes.length} 项` : ""}。</p>
+          <p>要收回，点下面「改权限和菜单」去掉，另一位管理员批准后生效；这页不会自动收回。</p>
+        </Notice>}
 
 
         {mismatch && <MismatchNotice mismatch={mismatch} menuById={menuById} />}

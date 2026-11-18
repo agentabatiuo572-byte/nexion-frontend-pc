@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BookOpen, CircleSlash, EyeOff, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6Amount } from "@/lib/admin/i6-amount";
 import { i6HasCopyText } from "@/lib/admin/i6-copy-quality";
 
@@ -133,10 +134,13 @@ export function mapCourseLanguages(form: CourseForm, required: readonly Operatin
 }
 
 type Missing = { key: string; text: string; need?: boolean };
-/** 和共用表单 course-authoring 的校验一字不差（design-kit missingBusinessFields），每项带上字段键，好把错误写在框下。 */
+/** 课程抽屉与提交前共用，每项带上字段键，好把错误写在框下。 */
 export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[] {
   const missing: Missing[] = [];
-  const needs = (key: string, text: string) => { if (!i6HasCopyText(state[key] ?? "")) missing.push({ key, text, need: true }); };
+  const needs = (key: string, text: string) => {
+    if (!i6HasCopyText(state[key] ?? "")) missing.push(key === "reward"
+      ? { key, text: displayAdminError("LEARNING_REWARD_OUT_OF_RANGE") } : { key, text, need: true });
+  };
   const NAMES: Record<string, string> = { slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英语标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英语正文", bodyVi: "越南语正文" };
   Object.keys(NAMES).forEach((key) => needs(key, NAMES[key]));
   for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
@@ -147,10 +151,12 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
     needs("version", "课程版本号");
     if (!/^v[1-9][0-9]{0,8}$/i.test(state.version || "")) missing.push({ key: "version", text: "版本号格式 v1、v2…" });
   }
-  const reward = Number(state.reward);
-  if (!Number.isFinite(reward)) missing.push({ key: "reward", text: "奖励数值" });
-  if (spec.rewardMin != null && reward < spec.rewardMin) missing.push({ key: "reward", text: `奖励 ≥ ${spec.rewardMin}` });
-  if (spec.rewardMax != null && reward > spec.rewardMax) missing.push({ key: "reward", text: `奖励 ≤ ${spec.rewardMax}` });
+  if (i6HasCopyText(state.reward ?? "")) {
+    const reward = Number(state.reward);
+    if (!Number.isFinite(reward)) missing.push({ key: "reward", text: "奖励数值" });
+    if (spec.rewardMin != null && reward < spec.rewardMin) missing.push({ key: "reward", text: `奖励 ≥ ${spec.rewardMin}` });
+    if (spec.rewardMax != null && reward > spec.rewardMax) missing.push({ key: "reward", text: `奖励 ≤ ${spec.rewardMax}` });
+  }
   const quizCount = Number(state.quizCount || 0);
   if (!Number.isInteger(quizCount) || quizCount < 1) missing.push({ key: "quizCount", text: "至少一道测验题" });
   for (let q = 0; q < quizCount; q += 1) {
@@ -211,15 +217,16 @@ function appRewardText(value: string): string | null {
   return `${fixed.slice(0, -2)}.${fixed.slice(-2)}`;
 }
 
-export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, quizCount, passScore, retries, caption, hidden }: {
+export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, rewardError, quizCount, passScore, retries, caption, hidden }: {
   lang: Lang; title: string; body: string; category: string; format: string; level: string; duration: string; reward: string;
+  rewardError?: string;
   quizCount: number; passScore: string; retries: string; caption?: ReactNode;
   /** 线上课程在这种语言下 App 不显示时，写不显示的原因。 */
   hidden?: string;
 }) {
   const Icon = categoryIcon(category);
   const langLabel = LANGS.find((item) => item.key === lang)?.label ?? "";
-  const rewardText = appRewardText(reward);
+  const rewardText = rewardError ? null : appRewardText(reward);
   return (
     <figure className="i6-phone" aria-label={`App 里这门课的样子（${langLabel}）`}>
       <div className="i6-phone-screen">
@@ -230,7 +237,7 @@ export function AppCoursePreview({ lang, title, body, category, format, level, d
           <span className="i6-phone-cat">{categoryLabel(category)} · {FORMAT_LABEL[format] ?? format} · {LEVEL_LABEL[level] ?? level}</span>
         </div>
         <h3 className="i6-phone-title" data-user-content="" data-empty={title.trim() ? undefined : ""}>{title.trim() ? nexGridBrandText(title) : `缺${langLabel}标题`}</h3>
-        <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">{rewardText === null ? "没有奖励" : `学完得 ${rewardText} UVT`}</span></div>
+        <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">{rewardError ?? (rewardText === null ? "没有奖励" : `学完得 ${rewardText} UVT`)}</span></div>
         <p className="i6-phone-body" data-user-content="" data-empty={body.trim() ? undefined : ""}>{body.trim() ? nexGridBrandText(body) : `缺${langLabel}正文`}</p>
         <div className="i6-phone-quiz"><GraduationCap size={14} aria-hidden /><span>测验 {quizCount} 题</span><span>{passScore || "—"} 分及格</span><span>可重试 {retries || "—"} 次</span></div>
         </>}
@@ -276,6 +283,7 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
   const completed = useMemo(() => mapCourseLanguages(form, requiredLanguages, "submit"), [form, requiredLanguages]);
   const missing = useMemo(() => spec ? courseFormMissing(spec, completed) : [], [spec, completed]);
   if (!spec) return null;
+  const rewardError = missing.some(item => item.key === "reward") ? displayAdminError("LEARNING_REWARD_OUT_OF_RANGE") : undefined;
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const err = (key: string) => { const item = tried ? missing.find((row) => row.key === key) : undefined; return item ? (item.need ? `请填${item.text}` : item.text) : undefined; };
   const quizCount = Math.max(1, Number(form.quizCount || 1));
@@ -416,7 +424,7 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
           </div>
         </div>
         <AppCoursePreview lang={lang} title={completed[`title${F}`] ?? ""} body={completed[`body${F}`] ?? ""} category={form.category ?? ""} format={form.format ?? ""}
-          level={form.difficulty ?? ""} duration={form.duration ?? ""} reward={form.reward ?? ""} quizCount={quizCount} passScore={form.passScore ?? ""} retries={form.retries ?? ""}
+          level={form.difficulty ?? ""} duration={form.duration ?? ""} reward={form.reward ?? ""} rewardError={rewardError} quizCount={quizCount} passScore={form.passScore ?? ""} retries={form.retries ?? ""}
           caption="App 里大致的样子，跟着上面选的语言变" />
       </div>
     </Drawer>

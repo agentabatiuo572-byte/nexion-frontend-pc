@@ -16,6 +16,7 @@ import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
+import { A2I5DisclosureReview } from "./a2-i5-disclosure-review";
 import { A2RoleGrantsChange, isRoleGrantsTicket, roleGrantsSummary } from "./a2-role-grants";
 
 /**
@@ -588,7 +589,7 @@ function logActionShown(code: string) {
 const AUDIT_CONFIG_KEY_NAMES: Record<string, string> = {
   "wallet.exchange.user_daily_cap_usdt": "单用户日额度", "wallet.exchange.platform_daily_cap_usdt": "平台日额度",
   "wallet.exchange.fee_pct": "兑换手续费率", "wallet.exchange.fee_min_usdt": "最低手续费", "wallet.exchange.queue_mode": "超额度处置策略",
-  "wallet.exchange.queue_eta_hours": "预计处理时长", "wallet.exchange.queue_eta_copy": "预计说法",
+  "wallet.exchange.queue_eta_hours": "预计处理时长", "wallet.exchange.queue_eta_copy": "英文预计说法", "wallet.exchange.queue_eta_copy_zh": "中文预计说法", "wallet.exchange.queue_eta_copy_vi": "越南语预计说法",
   "platform.experience.interface_languages": "界面语言 · App 里可选", "platform.experience.operating_languages": "界面语言 · 发布时必填",
 };
 
@@ -1192,7 +1193,7 @@ const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: un
   : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
     .replace(/；(NOT_SUBMITTED|PENDING|NEEDS_MORE|PASSED)$/, (_, state: string) => `；${ambassadorMaterialStateLabel(state)}`);
 
-export function A2ChangeReview({ before, after, omit = [], operationCode }: { before: string; after: string; omit?: readonly string[]; operationCode?: string }) {
+export function A2ChangeReview({ before, after, omit = [], operationCode, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; children?: ReactNode }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
   let body: ReactNode;
@@ -1241,6 +1242,7 @@ export function A2ChangeReview({ before, after, omit = [], operationCode }: { be
     <section className="a2-change-review" aria-label="完整变更内容">
       <div className="a2-change-title">完整变更内容{created && <StatusTag tone="neutral">新建</StatusTag>}</div>
       {body}
+      {children}
     </section>
   );
 }
@@ -2810,7 +2812,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />}
+            : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}>
+                <A2I5DisclosureReview key={shown.id} ticket={shown} />
+              </A2ChangeReview>}
           {reissueList(shown, true)}
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
