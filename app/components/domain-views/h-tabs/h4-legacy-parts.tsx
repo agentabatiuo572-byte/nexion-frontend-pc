@@ -190,8 +190,8 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
           <StatusTag tone={life.tone} explain={life.explain}>{life.label}</StatusTag>
         </span>
       </header>
-      <p className="h4l-desc" data-empty={description ? undefined : ""} data-clamp={description?.original ? "" : undefined} title={description?.original ? description.text : undefined}>
-        {originalFields[0] === "description" && <>{originalTag} </>}{description?.original ? <span data-user-content="">{description.text}</span> : description?.text ?? "说明未配置"}{enTag("description")}</p>
+      <p className="h4l-desc" data-empty={description ? undefined : ""} data-user-content={description ? "" : undefined} data-clamp={description?.original ? "" : undefined} title={description?.original ? description.text : undefined}>
+        {originalFields[0] === "description" && <>{originalTag} </>}{description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
