@@ -13,7 +13,7 @@ export interface EventRuleView {
   rules: Record<string, unknown>;
   readiness: { ready: boolean; missing: string[]; incomplete?: string[] };
 }
-type EventRuleReadback = EventRuleView & H4EventRewardPresentation;
+export type EventRuleReadback = EventRuleView & H4EventRewardPresentation;
 export type EventRuleChange = Pick<EventRuleView, "enabled" | "startsAt" | "endsAt" | "rules">;
 export interface EventVoucherOption { id: string; name: string; percent: number; status: "active" | "paused"; }
 const attempts = createSlotAttemptStore({ storageKey: "uvel-admin-event-rule-attempts-v1" });

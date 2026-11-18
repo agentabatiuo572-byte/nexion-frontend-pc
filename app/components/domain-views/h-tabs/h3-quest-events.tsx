@@ -49,12 +49,11 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
-import { blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import type { EventRuleView } from "@/lib/admin/event-rules-client";
+import type { EventRuleReadback } from "@/lib/admin/event-rules-client";
 import { eventRuleMissingLabel } from "@/lib/admin/event-rule-form";
-import H4EventRules from "./h4-event-rules";
+import H4EventRules, { type EventRuleSnapshot } from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 
 type EventState = "upcoming" | "ongoing" | "ended";
@@ -435,7 +434,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const [, pendingDeleteChanged] = useState(0);
   const [model, setModel] = useState<H3Model | null>(null);
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
-  const [eventRules, setEventRules] = useState<EventRuleView[]>([]);
+  const [eventRuleSnapshot, setEventRuleSnapshot] = useState<EventRuleSnapshot | null>(null);
   const [eventContentRevision, setEventContentRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -583,12 +582,20 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     return { name: read("name"), description: read("description"), rewardName: read("rewardName") };
   };
 
-  const eventEditFields = (event: QuestEvent, locale: OperatingLanguageCode) => {
+  const eventContentCell = (event: QuestEvent, rule: EventRuleReadback | undefined, field: EventContentField, locale: OperatingLanguageCode) => {
     const english = eventFields(event.id, "en"), localized = eventFields(event.id, locale);
-    if (event.appUsesAuthoredRewardName) return blankCopiedContentLanguage(requiredLanguages, locale, english, localized);
-    const active = blankCopiedContentLanguage(requiredLanguages, locale,
-      { name: english.name, description: english.description }, { name: localized.name, description: localized.description });
-    return { ...active, rewardName: localized.rewardName };
+    const optional = !requiredLanguages.includes(locale);
+    const followsEnglish = optional && (["name", "description", "rewardName"] as const).every(key => {
+      const value = localized[key].trim();
+      return !value || value === english[key].trim();
+    });
+    const key = `localized.${locale}.${field}`;
+    const missing = rule?.readiness.missing.includes(key) ?? false;
+    const incomplete = rule?.readiness.incomplete?.includes(key) ?? false;
+    const rewardNames = rule?.appRewardNames ?? event.appRewardNames;
+    const fallsBack = !!rule && followsEnglish && !missing && !incomplete
+      && (field === "rewardName" ? !!rewardNames.en && rewardNames[locale] === rewardNames.en : !!english[field].trim());
+    return { optional, current: followsEnglish ? "" : localized[field], stored: localized[field], fallsBack, missing, incomplete };
   };
 
   const openEventStatus = (event: QuestEvent) => {
@@ -647,33 +654,44 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
 
+  const saveEventLocalizedCell = async (
+    code: string, field: EventContentField, locale: OperatingLanguageCode, original: string,
+    operator: string, submitted: string, reason: string,
+  ) => {
+    if (currentAdminOperator() !== operator) throw new Error("登录身份已变化，请重新打开活动配置。");
+    const next = await updateH4LocalizedContent(code, field, locale, submitted, original.trim() ? original : "__MISSING__", reason) as H3Model;
+    apply(next);
+    setEventContentRevision(revision => revision + 1);
+    if (rawLocalizedValue("event", code, field, locale, next).trim() !== submitted) throw new Error("提交值与读回不一致，请核对已保存的文案。");
+  };
+
   const openLocalizedContent = (
     entity: "mission" | "event", code: string,
-    field: EventContentField, locale: OperatingLanguageCode, source: string, event?: QuestEvent,
+    field: EventContentField, locale: OperatingLanguageCode, source: string, event?: QuestEvent, rule?: EventRuleReadback,
   ) => {
-    const current = rawLocalizedValue(entity, code, field, locale);
-    const optional = !requiredLanguages.includes(locale);
-    const computedReward = field === "rewardName" && event && !event.appUsesAuthoredRewardName;
-    const displayed = event ? eventEditFields(event, locale)[field] : current;
+    const cell = event ? eventContentCell(event, rule, field, locale) : undefined;
+    const current = cell?.stored ?? rawLocalizedValue(entity, code, field, locale);
+    const optional = cell?.optional ?? !requiredLanguages.includes(locale);
+    const displayed = cell?.current ?? current;
     const operator = currentAdminOperator();
     const clearable = entity === "event" && optional && event?.deleteState === "draft"
-      && current.trim() !== "";
+      && displayed.trim() !== "";
+    const requiredRewardName = (rule ?? event)?.appUsesAuthoredRewardName;
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: clearable ? "选填。清空后确认可删除此格译文；取消不保存。" : computedReward
-        ? "App 奖励标签由服务端提供，不要求填写运营奖名。" : optional ? "选填，不填时 App 显示英文。" : entity === "event"
+      detail: clearable ? "选填。清空后确认可删除此格译文；取消不保存。"
+        : cell?.incomplete ? "选填译文未填齐，请补齐此格。"
+        : cell?.fallsBack ? "选填，不填时 App 显示英文。"
+        : optional || (event && field === "rewardName" && !requiredRewardName) ? "选填。" : entity === "event"
         ? "活动发布前须填写此语言的必填文案。"
         : "任务启用前须补齐英文和运营区域语言的名称。",
       edit: { kind: "text", current: displayed, initialValue: clearable ? displayed : undefined, allowEmpty: clearable, disallowCurrent: clearable },
       run: async (reason, value) => {
         if (value === undefined) return;
         if (entity === "event") {
-          if (currentAdminOperator() !== operator) throw new Error("登录身份已变化，请重新打开活动配置。");
           const submitted = value.trim();
-          const next = await updateH4LocalizedContent(code, field, locale, submitted, current.trim() || "__MISSING__", reason) as H3Model;
-          apply(next);
-          setEventContentRevision(revision => revision + 1);
-          if (rawLocalizedValue("event", code, field, locale, next).trim() !== submitted) throw new Error("提交值与读回不一致，请核对已保存的文案。");
+          if (!submitted && !clearable) return;
+          await saveEventLocalizedCell(code, field, locale, current, operator, submitted, reason);
         } else apply(await updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason));
         toast(`${source} ${locale.toUpperCase()} 文案已保存`);
       },
@@ -1010,6 +1028,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (!ctx.can("growth_h4_write")) throw new Error("你没有删除活动的权限。");
     try {
       apply(await deleteH4QuestEvent(eventId, expectedVersion, reason));
+      setEventContentRevision(revision => revision + 1);
       toast("活动已删除，历史参与、奖励与操作记录保留");
     } finally { pendingDeleteChanged(value => value + 1); }
   };
@@ -1047,6 +1066,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.id || !payload.name) return;
         apply(await createH4QuestEvent(payload, reason));
+        setEventContentRevision(revision => revision + 1);
         toast(`活动「${payload.name}」已新建`);
       },
     });
@@ -1307,9 +1327,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       ]
     : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name, readOnly: false, event }));
 
-  const localizedGaps = eventRules.flatMap(rule => rule.readiness.missing.filter(key => key.startsWith("localized."))
-    .map(key => ({ eventCode: rule.eventCode, key })));
-  const localizedGapKeys = new Set(localizedGaps.map(({ eventCode, key }) => `${eventCode}:${key}`));
+  const currentEventCodes = new Set((model.events ?? []).map(event => event.id));
+  const eventRules = (eventRuleSnapshot?.rows ?? []).filter(rule => currentEventCodes.has(rule.eventCode));
+  const confirmedRules = eventRuleSnapshot?.contentRevision === eventContentRevision && ctx.can("growth_h4_read") ? eventRules : [];
+  const rulesByEvent = new Map(confirmedRules.map(rule => [rule.eventCode, rule]));
+  const unconfirmedEventCodes = [...currentEventCodes].filter(code => !rulesByEvent.has(code));
+  const localizedMissing = confirmedRules.flatMap(rule => rule.readiness.missing.filter(key => key.startsWith("localized."))
+    .map(key => `${rule.eventCode} ${eventRuleMissingLabel(key)}`));
+  const localizedIncomplete = confirmedRules.flatMap(rule => (rule.readiness.incomplete ?? []).filter(key => key.startsWith("localized."))
+    .map(key => `${rule.eventCode} ${eventRuleMissingLabel(key)}`));
+  const summarize = (items: string[]) => items.slice(0, 6).join(" · ") + (items.length > 6 ? ` 等 ${items.length} 项` : "");
+  const localizedNotice = [
+    localizedMissing.length && `必填文案缺失（设为「进行中」前须补齐）：${summarize(localizedMissing)}`,
+    localizedIncomplete.length && `选填译文未填齐：${summarize(localizedIncomplete)}`,
+    unconfirmedEventCodes.length && `文案就绪尚未确认：${summarize(unconfirmedEventCodes)}`,
+  ].filter(Boolean).join("。");
 
   return (
     <>
@@ -1367,11 +1399,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             ? "· 活动名称和说明须填写英文及运营区域语言；奖名是否必填以服务端为准"
             : "· 任务启用前须补齐英文和运营区域语言的名称"}</span>
         </div>
-        {localizedGaps.length > 0 && (
+        {section === "events" && localizedNotice && (
           <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
-            有 {localizedGaps.length} 项翻译没填，相关活动不能设为「进行中」：
-            {localizedGaps.slice(0, 6).map(({ eventCode, key }) => `${eventCode} ${eventRuleMissingLabel(key)}`).join(" · ")}
-            {localizedGaps.length > 6 ? ` 等 ${localizedGaps.length} 项` : ""}
+            {localizedNotice}
           </div>
         )}
         <div style={{ overflowX: "auto" }}>
@@ -1382,14 +1412,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 { field: "name", source: item.label, label: item.code },
               ];
               const event = item.entity === "event" ? item.event : undefined;
+              const rule = event ? rulesByEvent.get(event.id) : undefined;
               if (event) {
-                const rewardLabels = !event.appUsesAuthoredRewardName ? EVENT_CONTENT_LOCALES.flatMap(locale => {
-                  const label = event.appRewardNames[locale];
+                const rewardNames = (rule ?? event).appRewardNames;
+                const rewardLabels = EVENT_CONTENT_LOCALES.flatMap(locale => {
+                  const label = rewardNames[locale];
                   return label ? [`${LOCALE_LABEL[locale]} ${label}`] : [];
-                }) : [];
+                });
                 rows.push(
                   { field: "description", source: text(event.description), label: `${item.code} · 活动说明` },
-                  { field: "rewardName", source: text(event.rewardName), label: `${item.code} · 奖项名称`, preview: rewardLabels.length ? `App 显示的奖励：${rewardLabels.join(" · ")}` : undefined },
+                  { field: "rewardName", source: text(event.rewardName), label: `${item.code} · 奖项名称`, preview: rewardLabels.length ? `App 显示的奖励：${rewardLabels.join(" · ")}` : "App 奖励标签未提供" },
                 );
               }
               return rows.map((row) => (
@@ -1397,21 +1429,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <td className="mono">{row.label}</td>
                   <td>{row.preview ?? taskTitleText(row.source)}</td>
                   {EVENT_CONTENT_LOCALES.map((language) => {
-                    const current = event ? eventEditFields(event, language)[row.field] : rawLocalizedValue(item.entity, item.code, row.field, language);
+                    const cell = event ? eventContentCell(event, rule, row.field, language) : undefined;
+                    const current = cell?.current ?? rawLocalizedValue(item.entity, item.code, row.field, language);
                     if (item.readOnly) {
                       return <td key={language}><span title="任务已归档，译文只读">{current || "未填写"}</span></td>;
                     }
-                    const missing = item.entity === "event" && localizedGapKeys.has(`${item.code}:localized.${language}.${row.field}`);
-                    const rewardName = row.field === "rewardName";
-                    const required = event && requiredLanguages.includes(language) && (!rewardName || event.appUsesAuthoredRewardName);
+                    const missing = cell?.missing, incomplete = cell?.incomplete;
+                    const required = event && requiredLanguages.includes(language) && (row.field !== "rewardName" || (rule ?? event).appUsesAuthoredRewardName);
                     return (
                       <td key={language}>
                         <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
                           aria-label={`${missing ? "填写（上线前必须补齐）" : current ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
-                          onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event)}>
-                          {missing ? "缺失" : current || (event && (!rewardName || event.appUsesAuthoredRewardName) ? "未填，App 显示英文" : "填写")}{required ? " *" : ""}
+                          onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event, rule)}>
+                          {missing ? "缺失" : incomplete ? "未填齐" : current || (event && !rule ? "未确认" : cell?.fallsBack ? "未填，App 显示英文" : "填写")}{required ? " *" : ""}
                         </button>
-                        {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="活动设为「进行中」前必须补齐这个语言">缺</span>}
+                        {(missing || incomplete) && <span className="bdg warn" style={{ marginLeft: 6 }} title={missing ? "活动设为「进行中」前必须补齐这个语言" : "选填译文未填齐"}>{missing ? "缺" : "未齐"}</span>}
                       </td>
                     );
                   })}
@@ -1870,7 +1902,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
         })}>查看结果</button>
       </div>)}
-      <H4EventRules ctx={ctx} rows={eventRules} setRows={setEventRules} contentRevision={eventContentRevision} />
+      <H4EventRules ctx={ctx} rows={eventRules} setSnapshot={setEventRuleSnapshot} contentRevision={eventContentRevision} />
       <H4GenesisRaffle ctx={ctx} requiredLanguages={requiredLanguages} />
       <div className="two-col">
         <section className="l-card">

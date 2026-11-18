@@ -1,13 +1,20 @@
 "use client";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { HCtx } from "./types";
-import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
+import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleReadback, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleReadinessText, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
-export default function H4EventRules({ ctx, rows, setRows, contentRevision }: { ctx: HCtx; rows: EventRuleView[]; setRows: Dispatch<SetStateAction<EventRuleView[]>>; contentRevision: number }) {
-  const [selected, setSelected] = useState<EventRuleView | null>(null);
+export type EventRuleSnapshot = { rows: EventRuleReadback[]; contentRevision: number };
+
+export default function H4EventRules({ ctx, rows, setSnapshot, contentRevision }: {
+  ctx: HCtx;
+  rows: EventRuleReadback[];
+  setSnapshot: Dispatch<SetStateAction<EventRuleSnapshot | null>>;
+  contentRevision: number;
+}) {
+  const [selected, setSelected] = useState<EventRuleReadback | null>(null);
   const [draft, setDraft] = useState<EventRuleChange | null>(null), [regions, setRegions] = useState("");
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const [vouchers, setVouchers] = useState<EventVoucherOption[]>([]), [voucherLoading, setVoucherLoading] = useState(false), [voucherError, setVoucherError] = useState(""), [voucherRetry, setVoucherRetry] = useState(0);
@@ -16,14 +23,17 @@ export default function H4EventRules({ ctx, rows, setRows, contentRevision }: { 
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
-  const choose = (row: EventRuleView) => { setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
+  const choose = (row: EventRuleReadback) => { setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
+  const applyRule = (rule: EventRuleReadback) => setSnapshot(current => current && {
+    ...current, rows: current.rows.map(row => row.eventCode === rule.eventCode ? rule : row),
+  });
   const load = async (resetDraft = true) => {
     const own = ++generation.current; if (resetDraft) setLoading(true); setError("");
-    try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); if (resetDraft) { setSelected(null); setDraft(null); } } }
+    try { const values = await fetchEventRules(); if (own === generation.current) { setSnapshot({ rows: values, contentRevision }); if (resetDraft) { setSelected(null); setDraft(null); } } }
     catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); }
     finally { if (own === generation.current) setLoading(false); }
   };
-  useEffect(() => { setSaving(false); setError(""); setRows([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
+  useEffect(() => { setSaving(false); setError(""); setSnapshot(null); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
   useEffect(() => {
     if (lastContentRevision.current === contentRevision) return;
     lastContentRevision.current = contentRevision;
@@ -56,12 +66,12 @@ export default function H4EventRules({ ctx, rows, setRows, contentRevision }: { 
             const latest = (await fetchEventRules()).find(row => row.eventCode === base.eventCode);
             if (!latest || latest.revision !== base.revision) throw new Error("活动规则已变化，请关闭配置并刷新后核对。");
             if (own !== generation.current) return;
-            setRows(current => current.map(row => row.eventCode === latest.eventCode ? latest : row));
+            applyRule(latest);
             if (!latest.readiness.ready) throw new Error(eventRuleReadinessText(latest));
           }
           const saved = await updateEventRule(base.eventCode, next, base.revision, reason);
           if (own !== generation.current) return;
-          setRows(current => current.map(row => row.eventCode === saved.eventCode ? saved : row)); choose(saved); ctx.toast("活动规则已保存");
+          applyRule(saved); choose(saved); ctx.toast("活动规则已保存");
         } catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); throw cause; }
         finally { if (own === generation.current) setSaving(false); }
       },
