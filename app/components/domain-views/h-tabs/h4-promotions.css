@@ -232,6 +232,7 @@
 .h4-page .h4-card[data-dim] h3 { color: var(--rd-text-2); }
 .h4-page .h4l-desc { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .h4-page .h4l-desc[data-empty] { color: var(--rd-text-3); }
+.h4-page .h4l-desc[data-clamp] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .h4-page .h4l-facts { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
 .h4-page .h4l-facts > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .h4-page .h4l-facts dt { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
