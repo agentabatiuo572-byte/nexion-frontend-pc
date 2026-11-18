@@ -177,7 +177,7 @@ export function PositionCard({ title, sub, statusTag, surface, copies, problem, 
 }
 
 /** 实验卡里的一组：这组用户看到的版本、分流、转化率。 */
-export type VariantView = { name: string; version: string; versionName?: string; split: number; cvr: number; text?: string; impressions?: number; conversions?: number };
+export type VariantView = { name: string; version: string; versionName?: string; split: number; cvr: number | null; text?: string; impressions?: number; conversions?: number };
 
 export function ExperimentCard({ id, title, sub, state, variants, impressions, conversions, leader, sample, audience, note, actions, selected }: {
   id: string;
@@ -199,7 +199,8 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
   const started = state !== "scheduled";
   const hasData = started && impressions !== null && impressions > 0;
   // 有每组人数时按这一组自己判断：0 人看到的组没有转化率，不写 0%；旧数据没有每组人数，按整个实验判断。
-  const shown = (variant: VariantView) => started && (variant.impressions === undefined ? hasData : variant.impressions > 0);
+  const shown = (variant: VariantView): variant is VariantView & { cvr: number } =>
+    variant.cvr !== null && started && (variant.impressions === undefined ? hasData : variant.impressions > 0);
   const maxCvr = Math.max(0, ...variants.filter(shown).map((variant) => variant.cvr));
   const axis = niceMax(maxCvr);
   const ticks = [{ value: 0, text: "0" }, { value: axis, text: `${axis}%` }];

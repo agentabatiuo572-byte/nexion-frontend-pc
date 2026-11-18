@@ -103,6 +103,8 @@ function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
   }
   for (const experiment of records(moduleId, value.experiments)) {
     for (const variant of records(moduleId, experiment.variants)) {
+      const cvr = variant.cvr;
+      if (cvr != null && (typeof cvr !== "number" || !Number.isFinite(cvr))) fail(moduleId);
       for (const key of ["impressions", "conversions"]) {
         const count = variant[key];
         // Older backends omit these fields. Missing is unknown, never zero.
@@ -129,6 +131,7 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
   for (const event of records(moduleId, value.eventDriven)) if (!["name", "reason", "owner", "tone", "status"].every((key) => typeof event[key] === "string")) fail(moduleId);
   for (const template of records(moduleId, value.templates)) {
     if (!["channel", "name", "cta", "version", "status", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((key) => typeof template[key] === "string")) fail(moduleId);
+    if (template.revision !== undefined && (typeof template.revision !== "string" || !/^[0-9a-f]{64}$/.test(template.revision))) fail(moduleId);
     if (template.translations !== undefined) {
       for (const translation of Object.values(record(moduleId, template.translations))) {
         const text = record(moduleId, translation);

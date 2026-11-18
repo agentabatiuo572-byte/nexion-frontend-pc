@@ -77,6 +77,8 @@ export type A4DomainExtensionBatch = {
 export type A4SchemaRegistration = {
   eventName: string;
   ownerDomain: string;
+  displayName?: string | null;
+  ownerDisplayName?: string | null;
   familyKey: string;
   producer: string;
   consumers: string;
@@ -95,6 +97,7 @@ export type A4Overview = {
   registeredDomains: string[];
   pendingDomains: string[];
   sunsetDomains: string[];
+  domainDisplayNames?: Record<string, string>;
   commonFields: A4CommonField[];
   dimensionParams: A4DimensionParam[];
   kpiFormulas: A4KpiFormula[];
@@ -134,6 +137,12 @@ function requiredText(value: unknown, field: string) {
   return value.trim();
 }
 
+function optionalLabel(value: unknown, field: string): string | null | undefined {
+  if (value == null) return value;
+  if (typeof value !== "string") invalid(field);
+  return value.trim() || null;
+}
+
 function requiredCount(value: unknown, field: string) {
   const text = requiredText(value, field);
   const count = Number(text);
@@ -167,6 +176,8 @@ function normalizeSchemaRegistration(row: Record<string, unknown>): A4SchemaRegi
   return {
     eventName: requiredText(row.eventName, "schemaRegistrations.eventName"),
     ownerDomain: requiredText(row.ownerDomain, "schemaRegistrations.ownerDomain"),
+    displayName: optionalLabel(row.displayName, "schemaRegistrations.displayName"),
+    ownerDisplayName: optionalLabel(row.ownerDisplayName, "schemaRegistrations.ownerDisplayName"),
     familyKey: requiredText(row.familyKey, "schemaRegistrations.familyKey"),
     producer: requiredText(row.producer, "schemaRegistrations.producer"),
     consumers: requiredText(row.consumers, "schemaRegistrations.consumers"),
@@ -250,6 +261,8 @@ function normalizeOverview(raw: unknown): A4Overview {
   if (!Object.keys(data).length) invalid("root");
   const stats = rec(data.stats);
   if (!Object.keys(stats).length) invalid("stats");
+  const labels = data.domainDisplayNames;
+  if (labels != null && (typeof labels !== "object" || Array.isArray(labels))) invalid("domainDisplayNames");
   const overview: A4Overview = {
     stats: {
       todayEvents: requiredCount(stats.todayEvents, "stats.todayEvents"),
@@ -264,6 +277,8 @@ function normalizeOverview(raw: unknown): A4Overview {
     registeredDomains: requiredNonEmptyStrings(data.registeredDomains, "registeredDomains"),
     pendingDomains: requiredStrings(data.pendingDomains, "pendingDomains"),
     sunsetDomains: requiredStrings(data.sunsetDomains, "sunsetDomains"),
+    domainDisplayNames: labels == null ? undefined : Object.fromEntries(Object.entries(labels).map(([code, label]) =>
+      [code, requiredText(label, `domainDisplayNames.${code}`)])),
     commonFields: requiredNonEmptyRows(data.commonFields, "commonFields", (row) => ({ key: requiredText(row.key, "commonFields.key"), name: requiredText(row.name, "commonFields.name"), sub: requiredText(row.sub, "commonFields.sub"), value: requiredText(row.value, "commonFields.value") })),
     dimensionParams: requiredNonEmptyRows(data.dimensionParams, "dimensionParams", (row) => ({ key: requiredText(row.key, "dimensionParams.key"), name: requiredText(row.name, "dimensionParams.name"), sub: requiredText(row.sub, "dimensionParams.sub"), value: requiredText(row.value, "dimensionParams.value"), locked: requiredBoolean(row.locked, "dimensionParams.locked") })),
     kpiFormulas: requiredNonEmptyRows(data.kpiFormulas, "kpiFormulas", (row) => ({ n: requiredNumber(row.n, "kpiFormulas.n"), kpi: requiredText(row.kpi, "kpiFormulas.kpi"), formula: requiredText(row.formula, "kpiFormulas.formula") })),

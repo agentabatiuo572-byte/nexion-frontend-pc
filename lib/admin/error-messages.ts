@@ -3458,6 +3458,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   NOVA_TEMPLATE_CHANNEL_IMMUTABLE: "模板不能换到其他频道，请核对原频道后保存。",
   NOVA_TEMPLATE_NOT_FOUND: "这份模板已不存在，请重新加载模板列表。",
   NOVA_TEMPLATE_NOT_DRAFT: "只有草稿模板可以编辑，请重新加载核对模板状态。",
+  NOVA_TEMPLATE_REVISION_REQUIRED: "没有读到这份模板的修订号，请重新加载后打开模板再编辑。",
   NOVA_TEMPLATE_CONCURRENT_MODIFICATION: "这份模板刚被修改，请重新加载核对后再操作。",
   NOVA_PUBLISHED_TEMPLATE_CANNOT_DELETE: "已发布模板不能直接删除，请先归档。",
   NOVA_TEMPLATE_STATUS_UNSUPPORTED: "这个模板状态不受支持，请重新加载后核对。",
