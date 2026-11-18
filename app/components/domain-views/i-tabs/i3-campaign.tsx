@@ -196,16 +196,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
   /* ---------- actions ---------- */
 
-  const sendCmp = async (c: CampaignRow) => {
-    const required = requiredLanguages ?? await getRequiredContentLanguages();
-    if (required.some((language) => {
-      const body = language === "en" ? c.bodyEn : language === "zh" ? c.bodyZh : c.bodyVi;
-      const copy = splitNotificationBody(body);
-      return !copy.title.trim() || !copy.body.trim();
-    })) {
-      toast(displayAdminError("VALIDATION_FAILED"));
-      return;
-    }
+  const sendCmp = (c: CampaignRow) => {
     setScheduleRow(c);
     setScheduledAt("");
     setScheduleReason("");
@@ -357,7 +348,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       return;
     }
     const ctaLabel = CTA_LABELS_EN[form.ctaHref];
-    if (form.ctaHref && !ctaLabel) {
+    if (form.ctaHref && (!ctaLabel || ctaLabel.length > 64)) {
       toast(displayAdminError("VALIDATION_FAILED"));
       return;
     }

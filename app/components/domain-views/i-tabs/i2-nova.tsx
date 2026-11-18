@@ -206,26 +206,15 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return <span className="bdg dim">{st}</span>;
   };
 
-  const publishTpl = async (ch: string, name: string) => {
-    const required = await getRequiredContentLanguages();
-    const template = NOVA_TPLS.find((item) => item.ch === ch);
-    if (!template || required.some((language) => {
-      const locale = language === "en" ? "En" : language === "zh" ? "Zh" : "Vi";
-      return !template[`title${locale}`].trim() || !template[`body${locale}`].trim();
-    })) {
-      toast(displayAdminError("VALIDATION_FAILED"));
-      return;
-    }
-    openActionConfirm({ briefKind: "content",
-      action: <>发布模板 · {name}</>,
-      detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
-      amplifies: false,
-      reasonMax: 200,
-      run: (reason) => {
-        return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
-      },
-    });
-  };
+  const publishTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
+    action: <>发布模板 · {name}</>,
+    detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
+    amplifies: false,
+    reasonMax: 200,
+    run: (reason) => {
+      return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
+    },
+  });
   const archiveTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
     action: <>归档模板 · {name}</>,
     detail: <>归档后该模板从频道可选池移除,已在投递队列里的不撤回。</>,
