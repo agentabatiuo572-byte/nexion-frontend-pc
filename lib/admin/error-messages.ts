@@ -2193,7 +2193,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EVENT_REWARD_ASSET_INVALID: "活动奖励必须且只能包含一种资产：UVT 或 USDT。",
   EVENT_STATUS_TERMINAL: "已结束活动不能再改，不能重新上架；请新建活动版本。",
   EVENT_STATUS_TRANSITION_INVALID: "活动状态只能按“待开始→进行中/已结束”或“进行中→已结束”推进，不能回退。",
-  EVENT_LOCALIZED_CONTENT_INCOMPLETE: "活动的名称、说明、奖项名要把中文、英文、越南语都填齐。到「既有活动」页签，点这个活动卡片底部的「翻译没填」补齐。",
+  EVENT_LOCALIZED_CONTENT_INCOMPLETE: "活动的名称、说明、奖项名还有必填的语言没填。到「既有活动」页签，点这个活动卡片底部的「翻译没填」补齐。",
   EVENT_WHEEL_SINGLETON: "系统只允许一个幸运转盘活动，请直接维护现有转盘及下方奖池。",
   EVENT_WHEEL_REWARD_MANAGED_BY_POOL: "幸运转盘的实际奖励由奖池档位统一管理，不能修改活动行的展示奖励。",
   WHEEL_GUARD_STALE: "转盘护栏已被其他操作员修改，请刷新后基于最新值重试。",

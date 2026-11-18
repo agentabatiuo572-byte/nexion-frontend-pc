@@ -1,6 +1,7 @@
 import type { EventRuleView } from "./event-rules-client";
 
-const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
+/** 开放活动、首次开启玩法前必须填的语言：拦截和页面文字共用这一份。 */
+export const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
 const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
 
 export type EventLocalizedContent = Record<string, Record<string, unknown>>;

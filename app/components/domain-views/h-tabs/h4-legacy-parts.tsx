@@ -11,7 +11,7 @@ import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
-import { eventLocalizedContentGaps } from "@/lib/admin/event-rule-form";
+import { EVENT_CONTENT_LOCALES } from "@/lib/admin/event-rule-form";
 import { amountText, formatTime } from "./h4-promotion-ui";
 
 // ===== 取值小工具：照旧页面原样 =====
@@ -81,7 +81,7 @@ export type LegacyEvent = H4EventCapabilities & {
 /** 有效生命周期优先 deleteState，其次 state（H05）。 */
 export function lifecycleOf(event: LegacyEvent) {
   const lifecycle = event.deleteState || event.state;
-  if (lifecycle === "draft") return { key: "draft", label: "草稿", tone: "neutral" as const, explain: "还没开放过的活动。开放前中文、英文、越南语的名称、说明、奖项名都要填齐。" };
+  if (lifecycle === "draft") return { key: "draft", label: "草稿", tone: "neutral" as const, explain: `还没开放过的活动。开放前要填齐${REQUIRED_TEXT}的名称、说明、奖项名。` };
   if (lifecycle === "upcoming") return { key: "upcoming", label: "预告", tone: "neutral" as const, explain: "已登记、还没开放：App 上用户还参加不了。" };
   if (lifecycle === "ongoing") return { key: "ongoing", label: "进行中", tone: "ok" as const, explain: "已对用户开放。结束后不能再开。" };
   if (lifecycle === "ended") return { key: "ended", label: "已结束", tone: "done" as const, explain: "已结束：不能再开放，这页也不再提供改奖励；已有的参与、奖励和操作记录保留。" };
@@ -113,29 +113,44 @@ export const effectApproval = (note: string) => <StatusTag tone="progress" fille
 
 // ===== 既有活动卡 =====
 export type LocaleCode = "zh" | "en" | "vi";
-export const LOCALES: LocaleCode[] = ["zh", "en", "vi"];
+/** 后台能维护的活动语言，英文在前。必填的是其中 EVENT_CONTENT_LOCALES 那几种。 */
+export const LOCALES: LocaleCode[] = ["en", "zh", "vi"];
 export const LOCALE_NAME: Record<LocaleCode, string> = { zh: "中文", en: "英文", vi: "越南语" };
 export const FIELD_NAME: Record<"name" | "description" | "rewardName", string> = { name: "名称", description: "说明", rewardName: "奖项名" };
+type ContentField = "name" | "description" | "rewardName";
+const FIELDS: ContentField[] = ["name", "description", "rewardName"];
+const isRequired = (locale: LocaleCode) => (EVENT_CONTENT_LOCALES as readonly string[]).includes(locale);
+/** 必填语言、选填语言的叫法，跟着必填清单变（如「英文、中文、越南语」或「英文」）。 */
+export const REQUIRED_TEXT = LOCALES.filter(isRequired).map(code => LOCALE_NAME[code]).join("、");
+export const OPTIONAL_TEXT = LOCALES.filter(code => !isRequired(code)).map(code => LOCALE_NAME[code]).join("、");
+
+/** 每种语言每一项没填的格（不只必填语言，选填语言没填也列出来，只是轻重不同）。 */
+export function contentGaps(content?: Record<string, Record<string, unknown>>) {
+  return LOCALES.flatMap(locale => FIELDS.filter(field => {
+    const value = content?.[locale]?.[field];
+    return typeof value !== "string" || !value.trim();
+  }).map(field => ({ locale, field })));
+}
 
 /**
- * 一格没填有多要紧（卡片、待处理、三语抽屉共用一个口径）：
- * 开放前、首次开启玩法前九格都必须填；已开放的活动不追补，按 App 实际显示什么分轻重——
- * 中文、越南语没填要补（App 用英文或原文顶上），英文没填只提示（App 显示原文），
- * 有玩法规则的活动奖项名一行 App 用规则摘要，没填不提示。
+ * 一格没填有多要紧（卡片、待处理、文字抽屉共用一个口径）：
+ * 开放前、首次开启玩法前，必填语言的格必须填（must）；
+ * 有玩法规则的活动，奖项名一行 App 用规则摘要（不提示）；
+ * 已开放的活动不追补：英文以外的必填语言没填要补（用户正看着英文或原文），其余只轻提示（soft）。
  */
-export function gapWeight(gap: { locale: LocaleCode; field: "name" | "description" | "rewardName" }, requiresAll: boolean, rewardFromRule: boolean): "must" | "soft" | null {
-  if (requiresAll) return "must";
+export function gapWeight(gap: { locale: LocaleCode; field: ContentField }, requiresAll: boolean, rewardFromRule: boolean): "must" | "soft" | null {
+  if (requiresAll && isRequired(gap.locale)) return "must";
   if (gap.field === "rewardName" && rewardFromRule) return null;
-  return gap.locale === "en" ? "soft" : "must";
+  return !requiresAll && isRequired(gap.locale) && gap.locale !== "en" ? "must" : "soft";
 }
 
 export function EventCard({ event, zh, gaps, softGaps, rewardFromRule, rule, pending, primary, menu, onContent }: {
   event: LegacyEvent;
   zh: { name: string; description: string; rewardName: string };
-  /** 三语内容必须补的有几项。 */
+  /** 必须补的有几项。 */
   gaps: number;
-  /** 已开放的活动英文没填几项（只提示）。 */
-  softGaps: number;
+  /** 只需轻提示的没填的格：哪些语言。 */
+  softGaps: LocaleCode[];
   /** 有玩法规则的非转盘活动：App 中文的奖励一行显示规则摘要。 */
   rewardFromRule: boolean;
   rule?: { enabled: boolean; ready: boolean; startsAt: string | null; endsAt: string | null } | null;
@@ -175,7 +190,9 @@ export function EventCard({ event, zh, gaps, softGaps, rewardFromRule, rule, pen
       </dl>
       <footer className="h4-card-foot">
         <button type="button" className="h4-unresolved" data-tone={gaps > 0 ? "warn" : undefined} onClick={onContent}>
-          {gaps > 0 ? <><CircleAlert size={14} aria-hidden /><b className="h4-num">{gaps}</b> 项翻译没填</> : softGaps > 0 ? <><Smartphone size={14} aria-hidden />英文没填，App 显示原文</> : <><Smartphone size={14} aria-hidden />三语内容与 App 上的样子</>}
+          {gaps > 0 ? <><CircleAlert size={14} aria-hidden /><b className="h4-num">{gaps}</b> 项翻译没填</> : softGaps.includes("en") ? <><Smartphone size={14} aria-hidden />英文没填，App 显示原文</>
+            : softGaps.length > 0 ? <><Smartphone size={14} aria-hidden />{LOCALES.filter(code => softGaps.includes(code)).map(code => LOCALE_NAME[code]).join("、")}没填，App 显示英文</>
+            : <><Smartphone size={14} aria-hidden />App 上的文字</>}
         </button>
         <span className="h4-card-actions">{pending}{primary}<MoreMenu label={`${zh.name || event.id} 的更多操作`} items={menu} /></span>
       </footer>
@@ -188,7 +205,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   original: Record<"name" | "description" | "rewardName", string>;
   onEdit: (field: "name" | "description" | "rewardName", locale: LocaleCode) => void;
   canEdit: boolean;
-  /** 还没开放，或玩法还能首次开启：九格都要填。 */
+  /** 还没开放，或玩法还能首次开启：必填语言都要填。 */
   requiresAll: boolean;
   /** 活动已开放过（不是预告）。 */
   opened: boolean;
@@ -197,8 +214,8 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
   /** 活动被审批锁住时的原因：入口照常显示，灰着并写原因，和活动卡上的其他入口一样。 */
   lockedReason?: string;
 }) {
-  const [locale, setLocale] = useState<LocaleCode>("zh");
-  const gaps = eventLocalizedContentGaps(names);
+  const [locale, setLocale] = useState<LocaleCode>("en");
+  const gaps = contentGaps(names);
   const weightOf = (code: LocaleCode, field: "name" | "description" | "rewardName") => {
     const gap = gaps.find(row => row.locale === code && row.field === field);
     return gap ? gapWeight(gap, requiresAll, rewardFromRule) : null;
@@ -220,8 +237,9 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
           const value = names[locale][field];
           const old = legacyName(value);
           const blank = gaps.some(gap => gap.locale === locale && gap.field === field);
-          const blankText = requiresAll ? (opened ? "未填写，开启玩法前必须补齐" : "未填写，开放前必须补齐")
-            : weightOf(locale, field) === null ? "未填写，App 显示玩法规则摘要"
+          const weight = weightOf(locale, field);
+          const blankText = requiresAll && weight === "must" ? (opened ? "未填写，开启玩法前必须补齐" : "未填写，开放前必须补齐")
+            : weight === null ? "未填写，App 显示玩法规则摘要"
             : locale !== "en" && names.en[field] ? "未填写，App 显示英文"
             : `未填写，App 显示原文：${original[field] || "—"}`;
           return <li key={field}>
@@ -236,7 +254,7 @@ export function EventPreview({ names, original, onEdit, canEdit, requiresAll, op
       <aside className="h4l-preview" aria-label="App 上的样子">
         <span className="h4l-preview-title"><Smartphone size={14} aria-hidden />App 上的样子
           <Explain label="这个预览怎么来的" content={<><p>按现在保存的{LOCALE_NAME[locale]}内容示意活动卡上的文字，不是 App 截图。</p>
-            <p>{requiresAll ? "三种语言的名称、说明、奖项名都填齐，才能开放活动、开启玩法。" : "已开放的活动照常进行：没填的格 App 先用英文，再用原文，不自动翻译。"}</p>
+            <p>{requiresAll ? `${REQUIRED_TEXT}的名称、说明、奖项名填齐，才能开放活动、开启玩法。${OPTIONAL_TEXT ? `${OPTIONAL_TEXT}可以不填，没填时 App 显示英文。` : ""}` : "已开放的活动照常进行：没填的格 App 先用英文，再用原文，不自动翻译。"}</p>
             {rewardFromRule && <p>有玩法规则的活动，App 奖励一行显示系统按规则写的摘要；只有英文填了奖项名才显示填的字。</p>}</>} />
         </span>
         <div className="h4l-phone">
