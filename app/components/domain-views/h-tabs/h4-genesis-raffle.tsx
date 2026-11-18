@@ -33,7 +33,7 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
     const invalid = raffleDraftError(draft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const savedDraft = raffleLocalizedDraft(draft, requiredLanguages, "submit"), previous = base, nextEnabled = !!base && enabled;
     ctx.openActionConfirm({ briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, amplifies: nextEnabled,
-      detail: <>本期共 {draft.prizes.reduce((sum, prize) => sum + prize.quantity, 0)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。奖项和时间在开启后固定。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
+      detail: <>本期共 {draft.prizes.reduce((sum, prize) => sum + prize.quantity, 0)} 个中奖名额。{nextEnabled ? "开放报名需要审批，当前页面还不能提交这项审批，保存会被拒绝、不会生效。批准开放后用户可按公布时段使用抽奖券报名，奖项和时间固定。" : base?.status === "OPEN" ? "本期改回草稿并关闭报名（仅限还没人报名的轮次）。" : "保存为草稿，不会对用户开放。"}</>,
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开配置。");
         const own = generation.current; setSaving(true); setError("");

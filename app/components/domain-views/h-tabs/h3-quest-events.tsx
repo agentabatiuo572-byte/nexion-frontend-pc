@@ -683,8 +683,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const computedRewardName = field === "rewardName" && !!event && !(rule ?? event).appUsesAuthoredRewardName;
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: computedRewardName ? "App 奖励名以奖项预览为准，由服务端按实际奖励生成；这里的奖名供后台维护，不一定显示在 App。"
-        : cell?.missing ? requiredEventCopy
+      detail: cell?.missing ? requiredEventCopy
+        : computedRewardName ? "App 奖励名以奖项预览为准，由服务端按实际奖励生成；这里的奖名供后台维护，不一定显示在 App。"
         : clearable ? `选填。清空输入框后确认，会删除这一格译文；如果这是这门语言最后一格真译，其余跟随英文的副本也会一起清空。取消不保存。${cell?.rewardFromPreview ? "App 实际显示值见奖项预览。" : ""}`
         : cell?.incomplete ? "选填译文未填齐，请补齐此格。"
         : cell?.fallsBack ? "选填，不填时 App 显示英文。"
@@ -709,7 +709,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const operator = currentAdminOperator();
     openConfirm({ briefKind: "config",
       action: `清空已存副本 · ${LOCALE_LABEL[locale]} · ${source}`,
-      detail: <>这一格存的是英文副本「{stored}」，App 在{LOCALE_LABEL[locale]}下显示英文。清空后，这个活动在{LOCALE_LABEL[locale]}下跟随英文的副本会一起清空；活动开启时，空着的选填格仍会用英文补上，App 显示英文。</>,
+      detail: <>这一格存的是英文副本「{stored}」{field === "rewardName" && !(rulesByEvent.get(event.id) ?? event).appUsesAuthoredRewardName ? "，App 奖励名以奖项预览为准" : `，App 在${LOCALE_LABEL[locale]}下显示英文`}。清空后，这个活动在{LOCALE_LABEL[locale]}下跟随英文的副本会一起清空；活动开启时，空着的选填格仍会用英文补上，App 显示英文。</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: "清空副本",
@@ -1363,7 +1363,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     .map(key => `${event.id} ${eventRuleMissingLabel(key)}`) ?? []);
   const summarize = (items: string[]) => items.slice(0, 6).join(" · ") + (items.length > 6 ? ` 等 ${items.length} 项` : "");
   const localizedNotice = [
-    localizedMissing.length && `必填文案缺失（设为「进行中」前须补齐）：${summarize(localizedMissing)}`,
+    localizedMissing.length && `必填文案缺失（开启或设为「进行中」前须补齐；已开启的活动请尽快补齐）：${summarize(localizedMissing)}`,
     localizedIncomplete.length && `选填译文未填齐：${summarize(localizedIncomplete)}`,
     unconfirmedEventCodes.length && `文案就绪尚未确认：${summarize(unconfirmedEventCodes)}`,
   ].filter(Boolean).join("。");
