@@ -633,23 +633,24 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           version: form?.version || editableVersion?.v,
           surface: form?.surface || editableVersion?.surface || c.surface,
           copyPosition: form?.copyPosition || editableVersion?.copyPosition || c.copyPosition || "",
-          audience: composeAudience(form),
-          audienceTarget: composeAudienceTarget(form),
-          phaseMin: form?.phaseMin,
-          phaseMax: form?.phaseMax,
-          language: form?.language,
-          registrationDaysGt: Number(form?.registrationDaysGt || 0),
-          trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
           versionNote: form?.versionNote || "后台编辑文案",
           ...await submittedCopyText(form),
           expectedRevision: c.revision,
         };
         const done = (result: unknown) => { if (result !== false) setEditor(null); return result; };
-        if (form?.saveMode === "存草稿") {
-          return runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿 ${target} 已保存，线上不变`).then(done);
-        } else {
-          return runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`).then(done);
+        if (draft) {
+          return runBackend(actions.saveI1CopyDraft(c.key, {
+            ...payload,
+            audience: composeAudience(form),
+            audienceTarget: composeAudienceTarget(form),
+            phaseMin: form?.phaseMin,
+            phaseMax: form?.phaseMax,
+            language: form?.language,
+            registrationDaysGt: Number(form?.registrationDaysGt || 0),
+            trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
+          }, reason), `${c.key} 草稿 ${target} 已保存，线上不变`).then(done);
         }
+        return runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`).then(done);
       },
     });
   };
@@ -699,13 +700,6 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         surface: form.surface || "home",
         copyPosition: form.copyPosition || "",
         i18nKey: copyKey,
-        audience: composeAudience(form),
-        audienceTarget: composeAudienceTarget(form),
-        phaseMin: form?.phaseMin,
-        phaseMax: form?.phaseMax,
-        language: form?.language,
-        registrationDaysGt: Number(form?.registrationDaysGt || 0),
-        trafficSplit: form.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "50",
         versionNote: form.versionNote || "新增文案初始内容",
         ...await submittedCopyText(form),
       }, reason), `文案 ${copyKey} 已新增 · 初始内容已发布`).then((result) => { if (result !== false) setEditor(null); return result; });

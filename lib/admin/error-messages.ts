@@ -3071,6 +3071,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   COPY_DRAFT_VERSION_MUST_DIFFER_FROM_PUBLISHED: "草稿不能使用当前发布的版本号，请选择这条文案未用过的启用版本。",
   COPY_VERSION_HISTORY_IMMUTABLE: "历史内容不能覆盖修改，请新增版本或继续编辑当前草稿。",
   COPY_PUBLISH_VERSION_MUST_DIFFER_FROM_PUBLISHED: "不能再次发布当前发布的版本号，请选择当前草稿或未用过的启用版本。",
+  COPY_PUBLISH_ALLOCATION_EXPERIMENT_ONLY: "普通发布面向全量用户，定向和分流只用于实验。",
   COPY_METADATA_INVALID: "文案标识或说明不符合要求，请核对标识格式及名称、词条和版本说明的长度。",
   COPY_KEY_EXISTS: "这个文案标识已存在，请换一个标识；修改已有内容请从原文案进入。",
   COPY_KEY_INVALID: "文案标识无效，请重新加载后从原文案进入操作。",

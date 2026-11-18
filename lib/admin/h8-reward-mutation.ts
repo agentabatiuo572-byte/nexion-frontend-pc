@@ -192,8 +192,14 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
           && !h8RewardParamAmplifies(original.paramKey, original.value, receipt.value));
       const versionDelta = receipt?.status === "UPDATED" ? 1 : receipt?.status === "UNCHANGED" ? 0 : undefined;
       if (receipt?.key !== original.paramKey || versionDelta === undefined || receipt.version !== original.overview.version + versionDelta || !valueMatches) throw new OutcomeUnknownError("H8_PARAM_RECEIPT_INVALID");
+      const count = receipt.pendingBeforePolicyChange;
       forget(record);
-      return { ticket: null, unchanged: receipt.status === "UNCHANGED" };
+      return {
+        ticket: null,
+        unchanged: receipt.status === "UNCHANGED",
+        pendingBeforePolicyChange: typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined,
+        priorCohortDisposition: receipt.priorCohortDisposition === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" as const : undefined,
+      };
     }
     const receipt = await createA2OperationProposal(JSON.parse(original.body) as Proposal, record.commandKey, true);
     checkTicket(record, receipt);

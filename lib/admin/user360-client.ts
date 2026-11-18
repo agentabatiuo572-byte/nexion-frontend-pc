@@ -204,6 +204,7 @@ export interface UserRegistrationRiskOverview extends JsonRecord {
   captchaAlwaysScenes?: Array<"REGISTER" | "LOGIN" | "RESET"> | null;
   h5RegisterCaptcha?: boolean | null;
   h5RegisterMissingDeviceCaptcha?: boolean | null;
+  authenticationBoundaries?: Record<string, string> | null;
 }
 
 export interface UserSecurityQuery {
@@ -1177,6 +1178,8 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
   }
   if (value.captchaAlwaysScenes != null && (!Array.isArray(value.captchaAlwaysScenes)
     || value.captchaAlwaysScenes.some(scene => !["REGISTER", "LOGIN", "RESET"].includes(scene)))) return c6ResponseInvalid();
+  if (value.authenticationBoundaries != null && (!isJsonRecord(value.authenticationBoundaries)
+    || Object.values(value.authenticationBoundaries).some(note => typeof note !== "string"))) return c6ResponseInvalid();
   for (const key of ["otpToday", "captchaTriggeredToday", "lockedShort", "lockedLong", "locked", "stuffingClusters7d", "captchaRemainingSeconds"]) {
     if (!c6Numeric(stats[key])) return c6ResponseInvalid();
   }
