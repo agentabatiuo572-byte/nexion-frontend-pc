@@ -207,18 +207,22 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [authEpoch, reloadMContent]);
 
   const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string,
-    knownThreads: Pick<SessionConvo, "id" | "customerId">[] = mDataRef.current?.conversations ?? []) => {
+    knownThreads: Pick<SessionConvo, "id" | "customerId">[] = mDataRef.current?.conversations ?? [], assignmentId?: string) => {
     // A receipt for an already redacted assignment must not erase a later draft.
     if (changedAssignmentKey && !readSavedSends(session?.adminId ?? 0).some(entry =>
       entry.row.commandKey === changedAssignmentKey && (entry.reply || entry.first))
       && !failedDraftCopies.list().some(copy => copy.commandKey === changedAssignmentKey && copy.commandOwnerId === session?.adminId)) return;
     if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
-    mLoadCoordinator.current.beginConversationSnapshot();
-    liveSnapshotController.current?.abort();
-    const cleared = session?.adminId ? redactCustomerSends(session.adminId, knownThreads, customerId, conversationNo) : undefined;
+    const cleared = session?.adminId ? redactCustomerSends(session.adminId, knownThreads, customerId, conversationNo, undefined, assignmentId) : undefined;
     customerId = cleared?.customerId ?? customerId;
     const affectedIds = cleared?.affected ?? [];
     if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
+    if (assignmentId) {
+      window.dispatchEvent(new CustomEvent("m3-assignment-invalidated", { detail: { conversationNo, customerId, changedAssignmentKey, cleared } }));
+      return;
+    }
+    mLoadCoordinator.current.beginConversationSnapshot();
+    liveSnapshotController.current?.abort();
     window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared, changedAssignmentKey } }));
     setMData((previous) => previous ? {
       ...previous,
@@ -263,10 +267,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     const knownThreads = [...previousThreads, ...conversations, ...revoked.flatMap(target =>
       target.conversationId ? [{ id: target.conversationId, customerId: target.customerId }] : [])];
     const clearedCustomers = new Set<string>();
-    for (const { conversationId, customerId } of revoked) {
-      if (customerId && clearedCustomers.has(customerId)) continue;
-      invalidateScope(conversationId, customerId, undefined, undefined, knownThreads);
-      if (customerId) clearedCustomers.add(customerId);
+    for (const { conversationId, customerId, assignmentId } of revoked) {
+      const key = JSON.stringify([customerId ?? conversationId, assignmentId]);
+      if (clearedCustomers.has(key)) continue;
+      invalidateScope(conversationId, customerId, undefined, undefined, knownThreads, assignmentId);
+      clearedCustomers.add(key);
     }
   }, [authEpoch, session?.adminId, invalidateScope]);
   const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal, includeCustomerProfile = true) => {
@@ -748,7 +753,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
-      {safeMData && <SessionDock key={JSON.stringify([authEpoch, session?.adminId, mergedParams[DOCK_LAST_KEY], tab === "M3"])} ctx={ctx} hidden={tab === "M3"} onScopeInvalidated={invalidateScope} />}
+      {safeMData && <SessionDock snapshotRevision={conversationSnapshotRevision} key={JSON.stringify([authEpoch, session?.adminId, mergedParams[DOCK_LAST_KEY], tab === "M3"])} ctx={ctx} hidden={tab === "M3"} onScopeInvalidated={invalidateScope} />}
       {toastNode}
     </>
   );
@@ -1246,7 +1251,7 @@ const DOCK_NOT_YOURS_SENT = "消息没有发出：这位客户已不归你接待
 /** 403/404 只说明现在不能接待，不一定是转走。 */
 const DOCK_NO_ACCESS_SENT = "消息没有发出：你已不能接待这位客户，原文已清除。";
 
-function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: MCtx["invalidateScope"] }) {
+function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { snapshotRevision: number; ctx: MCtx; hidden: boolean; onScopeInvalidated: MCtx["invalidateScope"] }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -1269,9 +1274,27 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
   const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type !== "ai" && conv.status === "open");
-  const canWrite = canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true && conv.writeState?.canReply !== false;
+  const [draftScope, setDraftScope] = useState<{ revision: number; assignmentId: string } | null>(null);
+  const assignmentId = draftScope?.revision === snapshotRevision ? draftScope.assignmentId : undefined;
+  useEffect(() => {
+    if (hidden || !open || !owned || !conv?.customerId) return;
+    const controller = new AbortController();
+    setDraftScope(null);
+    supportClient.customerDetail(conv.customerId, controller.signal).then(detail => {
+      if (controller.signal.aborted) return;
+      if (detail.customerId !== conv.customerId || detail.agentAdminId !== currentAdminId || !detail.assignmentId) {
+        onScopeInvalidated(conv.id, conv.customerId);
+      } else setDraftScope({ revision: snapshotRevision, assignmentId: detail.assignmentId });
+    }).catch(error => {
+      if (controller.signal.aborted) return;
+      if (isSupportScopeDenial(error)) onScopeInvalidated(conv.id, conv.customerId);
+      else setSendError(displayAdminError(error));
+    });
+    return () => controller.abort();
+  }, [hidden, open, owned, conv?.id, conv?.customerId, currentAdminId, snapshotRevision, detailRetry, onScopeInvalidated]);
+  const canWrite = Boolean(assignmentId) && canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true && conv.writeState?.canReply !== false;
   const dockSlot = `dock|${currentAdminId}|${lastId}`;
-  const draftKey = currentAdminId && conv?.customerId ? dockDraftKey(currentAdminId, conv.customerId, conv.id, conv.assignmentId) : "";
+  const draftKey = currentAdminId && conv?.customerId && assignmentId ? dockDraftKey(currentAdminId, conv.customerId, conv.id, assignmentId) : "";
   const newSendBlocked = !!currentAdminId && !!conv?.customerId && blocksNewSend(pendingSendCustomers(currentAdminId, convos), conv.customerId);
   // 只决定显示哪句：被挡的是不是这位客户自己的消息。
   const blockedHere = newSendBlocked && pendingSendCustomers(currentAdminId!, convos).has(conv!.customerId);
@@ -1342,7 +1365,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     try {
       const owner = await supportClient.customerDetail(conv.customerId);
       if (!currentDock()) return;
-      if (owner.agentAdminId !== currentAdminId || !owner.assignmentId || conv.assignmentId && conv.assignmentId !== owner.assignmentId) throw new SupportClientError(403, undefined, "SUPPORT_CUSTOMER_SCOPE_CHANGED");
+      if (owner.agentAdminId !== currentAdminId || !owner.assignmentId) throw new SupportClientError(403, undefined, "SUPPORT_CUSTOMER_SCOPE_CHANGED");
+      if (owner.assignmentId !== assignmentId) { setDraftScope({ revision: snapshotRevision, assignmentId: owner.assignmentId }); sessionStorage.removeItem(draftKey); return; }
       const state = await supportClient.conversationState(conv.id);
       if (!currentDock()) return;
       if (state.status !== "OPEN") { setSendError("当前会话已结束，请刷新会话列表后重新选择。"); return; }
@@ -1361,7 +1385,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         replyTargets: latest?.sender === "user" && Number.isSafeInteger(latest.id)
           ? [{ conversationNo: conv.id, throughMessageId: latest.id! }] : undefined,
       };
-      dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId, originalDraft: draft !== text ? draft : undefined, draftAssignmentId: conv.assignmentId ?? undefined });
+      dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId, originalDraft: draft !== text ? draft : undefined, draftAssignmentId: assignmentId });
       if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
       updateDraft("");
       await supportClient.sendConversationReply(conv.id, input, key);

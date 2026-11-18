@@ -6,8 +6,8 @@ import { isSupportScopeDenial, supportClient, isDefiniteSupportRefusal, SupportC
 import type { SessionConvo, SessionMsg } from "./data";
 
 type Intent = "SERVICE" | "MAINTENANCE";
-export type Pending = { conversationId: string; customerId?: string; key: string; body: string; originalDraft?: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
-type FirstContact = { key: string; body: string; originalDraft?: string; intent: Intent; clientMessageId: string; customerId: string; assignmentId: string; version: number; replyTargets: Array<{ conversationNo: string; throughMessageId: number }> };
+export type Pending = { conversationId: string; customerId?: string; key: string; body: string; originalDraft?: string; draftSlot?: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
+type FirstContact = { key: string; body: string; originalDraft?: string; draftSlot?: string; intent: Intent; clientMessageId: string; customerId: string; assignmentId: string; version: number; replyTargets: Array<{ conversationNo: string; throughMessageId: number }> };
 
 let revision = 0;
 const listeners = new Set<() => void>();
@@ -163,10 +163,10 @@ export function restoreFailedDraft(adminId: number, commandKey: string, customer
   if (!entry || !original || entry.reply?.kind === "IMAGE") return;
   const { reply, first, dock } = entry;
   const body = original.originalDraft ?? original.body;
-  const slot = reply?.conversationId ?? `first:${customerId}`;
+  const slot = original.draftSlot ?? reply?.conversationId ?? `first:${customerId}`;
   try {
     if (dock) {
-      const key = dockDraftKey(adminId, customerId, dock.conversationNo, dock.draftAssignmentId);
+      const key = dockDraftKey(adminId, customerId, dock.conversationNo, reply!.expectedAssignmentId);
       const newer = sessionStorage.getItem(key);
       if (!newer || newer === body) {
         sessionStorage.setItem(key, body);
@@ -196,8 +196,16 @@ export function blocksNewSend(customers: Set<string | undefined>, customerId: st
 
 type PrivateTarget = { conversationId?: string; customerId?: string; assignmentId?: string; ownerAdminId?: number | null };
 
-// Inspect only originals missing from a complete authorized snapshot. A new first
-// contact has no original thread: its customer detail is the authority in that case.
+export function scopedDraftSlot(slot: string, customerId: string, assignmentId: string, ownerAdminId: number) {
+  return [slot, customerId, assignmentId, ownerAdminId].join("@");
+}
+function draftTarget(key: string): PrivateTarget {
+  const [slot, customerId, assignmentId, owner] = key.split("@");
+  return { customerId: customerId || (slot.startsWith("first:") ? slot.slice(6) : undefined),
+    conversationId: slot.startsWith("first:") ? undefined : slot, assignmentId, ownerAdminId: owner ? Number(owner) : undefined };
+}
+
+// A supervisor can still see a transferred thread. Check the original assignment even on a snapshot hit.
 export async function revokedPrivateTargets(adminId: number, previous: SessionConvo[], snapshot: SessionConvo[], signal: AbortSignal) {
   const targets: PrivateTarget[] = failedDraftCopies.list().filter(row => row.commandOwnerId === adminId);
   for (const { reply, first } of readSavedSends(adminId)) {
@@ -206,76 +214,58 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
   }
   try {
     const drafts = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}");
-    for (const [slot, value] of Object.entries(drafts)) {
-      if (typeof value !== "string" || !value) continue;
-      targets.push(slot.startsWith("first:") ? { customerId: slot.slice(6) } : { conversationId: slot });
-    }
+    for (const [slot, value] of Object.entries(drafts)) if (value) targets.push(draftTarget(slot));
     const dockPrefix = `nexion-m-dock-draft:${adminId}:`;
+    const replyPrefix = `nexion-m3-reply-targets:${adminId}:`;
     for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith(replyPrefix)) targets.push(draftTarget(key.slice(replyPrefix.length)));
       if (!key.startsWith(dockPrefix)) continue;
       const [customerId, conversationId, assignmentId] = key.slice(dockPrefix.length).split(":");
       targets.push({ customerId, conversationId, assignmentId, ownerAdminId: adminId });
     }
-  } catch { /* Still verify the originals available from the in-memory journals. */ }
-
-  const missing = new Map<string, PrivateTarget>();
-  const addThread = (target: PrivateTarget, id: string) => {
-    if (snapshot.some(row => row.id === id)) return;
-    const old = previous.find(row => row.id === id);
-    const known = missing.get(id);
-    missing.set(id, { conversationId: id, customerId: known?.customerId || target.customerId || old?.customerId,
-      assignmentId: known?.assignmentId || target.assignmentId, ownerAdminId: known?.ownerAdminId ?? target.ownerAdminId ?? old?.ownerAdminId });
-  };
-  for (const target of targets) {
-    if (target.conversationId) addThread(target, target.conversationId);
-    else if (target.customerId) {
-      const threads = previous.filter(row => row.customerId === target.customerId);
-      for (const thread of threads) addThread(target, thread.id);
-      if (!threads.length && !snapshot.some(row => row.customerId === target.customerId)) {
-        const slot = `first:${target.customerId}`;
-        if (!missing.has(slot)) missing.set(slot, target);
-      }
-    }
-  }
+  } catch { /* Journal originals can still be checked when draft storage is unavailable. */ }
 
   const denied: PrivateTarget[] = [];
   const customers = new Map<string, ReturnType<typeof supportClient.customerDetail>>();
-  await Promise.all([...missing.values()].map(async target => {
-    let { customerId } = target;
-    const { conversationId } = target;
-    if (conversationId) {
+  const threads = new Map<string, ReturnType<typeof fetchMConversationDetail>>();
+  await Promise.all(targets.map(async target => {
+    const { conversationId, assignmentId } = target;
+    const prior = previous.find(row => row.id === conversationId);
+    const visible = snapshot.find(row => row.id === conversationId);
+    let customerId = target.customerId ?? prior?.customerId ?? visible?.customerId;
+    const owner = target.ownerAdminId ?? prior?.ownerAdminId;
+    if (conversationId && !visible) {
       try {
-        const thread = await fetchMConversationDetail(conversationId, signal, false);
-        if (customerId && thread.customerId !== customerId) return;
-        customerId = thread.customerId;
-      } catch (error) {
-        if (isSupportScopeDenial(error)) {
-          denied.push({ conversationId, customerId });
+        let request = threads.get(conversationId);
+        if (!request) threads.set(conversationId, request = fetchMConversationDetail(conversationId, signal, false));
+        const detail = await request;
+        if (customerId && detail.customerId !== customerId) return;
+        customerId = detail.customerId;
+      } catch (cause) {
+        if (isSupportScopeDenial(cause)) {
+          denied.push({ customerId, conversationId });
           return;
         }
-        // A temporary thread failure still permits an independent customer check.
       }
     }
+    if (!customerId) return;
+    if (visible && !assignmentId && owner === visible.ownerAdminId) return;
     try {
-      if (!customerId) return;
       let request = customers.get(customerId);
-      if (!request) {
-        request = supportClient.customerDetail(customerId, signal);
-        customers.set(customerId, request);
-      }
+      if (!request) customers.set(customerId, request = supportClient.customerDetail(customerId, signal));
       const detail = await request;
       if (detail.customerId !== customerId) return;
-      if ((!target.assignmentId || detail.assignmentId === target.assignmentId)
-        && (target.ownerAdminId == null || detail.agentAdminId === target.ownerAdminId)) return;
+      if ((assignmentId && detail.assignmentId !== assignmentId) || (owner != null && detail.agentAdminId !== owner)) {
+        denied.push({ customerId, conversationId, assignmentId });
+      }
     } catch (error) {
-      if (!isSupportScopeDenial(error)) return;
+      if (isSupportScopeDenial(error)) denied.push({ customerId, conversationId });
     }
-    denied.push({ conversationId, customerId });
   }));
   return denied;
 }
 
-export function redactCustomerSends(adminId: number, conversations: ConversationTarget[], customerId?: string, originalConversationId?: string, commandKey?: string) {
+export function redactCustomerSends(adminId: number, conversations: ConversationTarget[], customerId?: string, originalConversationId?: string, commandKey?: string, assignmentId?: string) {
   const entries = readSavedSends(adminId);
   customerId ??= originalConversationId ? conversations.find(row => row.id === originalConversationId)?.customerId
     ?? entries.find(entry => entry.locator.conversationId === originalConversationId)?.locator.customerId : undefined;
@@ -284,14 +274,15 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
   const affected = commandKey ? [] : conversations.filter(convo => revokeAll || convo.customerId === customerId).map(convo => convo.id);
   if (originalConversationId) affected.push(originalConversationId);
   for (const copy of failedDraftCopies.list()) {
-    if (copy.commandOwnerId !== adminId || commandKey && copy.commandKey !== commandKey) continue;
+    if (copy.commandOwnerId !== adminId || assignmentId && copy.assignmentId !== assignmentId || commandKey && copy.commandKey !== commandKey) continue;
     if (revokeAll || copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
       if (copy.conversationId && !affected.includes(copy.conversationId)) affected.push(copy.conversationId);
       failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
     }
   }
   let error = "";
-  for (const { row: record, locator, dock } of entries) {
+  for (const { row: record, locator, dock, reply, first } of entries) {
+    if (assignmentId && assignmentId !== (reply?.expectedAssignmentId ?? first?.assignmentId)) continue;
     if (commandKey && record.commandKey !== commandKey) continue;
     const originalCustomer = originalCustomerId(locator, conversations);
     const matchesThread = locator.conversationId && affected.includes(locator.conversationId);
@@ -360,14 +351,19 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
       }
     }
   }
+  const matchesDraft = (slot: string) => {
+    const target = draftTarget(slot);
+    return (revokeAll || Boolean(customerId && customerId === target.customerId) || Boolean(target.conversationId && affected.includes(target.conversationId)))
+      && (!assignmentId || !target.assignmentId || target.assignmentId === assignmentId);
+  };
   try {
     const saved = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}") as Record<string, unknown>;
-    for (const key of Object.keys(saved)) if (affected.includes(key) || clearFirst && key === `first:${customerId}` || revokeAll) delete saved[key];
+    for (const key of Object.keys(saved)) if (matchesDraft(key)) delete saved[key];
     sessionStorage.setItem(`nexion-m3-drafts:${adminId}`, JSON.stringify(saved));
     for (const key of Object.keys(sessionStorage)) {
-      if (key.startsWith(`nexion-m-dock-draft:${adminId}:`) && (revokeAll || customerId && key.startsWith(`nexion-m-dock-draft:${adminId}:${customerId}:`) || affected.some(id => key.includes(`:${id}:`)))) sessionStorage.removeItem(key);
+      if (key.startsWith(`nexion-m-dock-draft:${adminId}:`) && (!assignmentId || key.endsWith(`:${assignmentId}`) || key.endsWith(":")) && (revokeAll || customerId && key.startsWith(`nexion-m-dock-draft:${adminId}:${customerId}:`) || affected.some(id => key.includes(`:${id}:`)))) sessionStorage.removeItem(key);
     }
-    for (const key of Object.keys(sessionStorage)) if (key.startsWith(`nexion-m3-reply-targets:${adminId}:`) && (revokeAll || affected.some(id => key.endsWith(`:${id}`)) || clearFirst && key.endsWith(`:first:${customerId}`))) sessionStorage.removeItem(key);
+    for (const key of Object.keys(sessionStorage)) if (key.startsWith(`nexion-m3-reply-targets:${adminId}:`) && matchesDraft(key.slice(`nexion-m3-reply-targets:${adminId}:`.length))) sessionStorage.removeItem(key);
   } catch { error = "私聊记录清理失败，请退出当前账号后重新登录。"; }
-  return { affected, customerId, clearFirst, revokeAll, error };
+  return { affected, customerId, clearFirst, revokeAll, error, matchesDraft, assignmentId };
 }
