@@ -53,6 +53,10 @@ export type I5Op =
 /** target 是这条操作锁住的对象：`jur:CN`、`gate`、`legal:en:GLOBAL`、`privacy`。 */
 export type I5Write = { target: string; label: string; op: I5Op };
 /** 保存明确拒绝的状态与原因；旧 rejected 布尔值不能证明原重试得到结论。 */
+/** 后台已确认写入、页面还没读到同样的内容：说做成了什么、下一步点哪里，不写「写入」「读回」。 */
+const readbackLine = (readback: DisclosureReadbackPending["readback"]) => "deleted" in readback
+  ? `草稿已删除，列表里还没核对到 ${readback.version} 消失。点「查询原结果」再核对。`
+  : `草稿已保存，还没核对到 ${readback.version} 的内容。点「查询原结果」再核对。`;
 type I5Pending = PendingMutationRecord & I5Write & { readback?: DisclosureReadbackPending["readback"]; rejection?: { status: number; reasonCode?: string; backendMessage?: string } };
 
 /** The saved call identifies the original HTTP route; the server supplies its scope and hash. */
@@ -320,7 +324,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       if (cause instanceof DisclosureReadbackPending) pendingWrites.remember(scope, key, { ...write, readback: cause.readback });
       sync();
       if (!unknown) throw cause;
-      toast(cause instanceof DisclosureReadbackPending ? cause.message : "结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
+      toast(cause instanceof DisclosureReadbackPending ? readbackLine(cause.readback) : "结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
       await onSettled(write);
       return "unknown";
     }
@@ -479,7 +483,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
   const statusOf = (record: I5Pending, expired: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
     const outcome = outcomes[record.commandKey];
-    if (record.readback) return { tone: "warn", label: "已保存", line: new DisclosureReadbackPending(record.readback).message };
+    if (record.readback) return { tone: "warn", label: "deleted" in record.readback ? "已删除" : "已保存", line: readbackLine(record.readback) };
     // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
     if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: "重试被明确拒绝；核对原因后可以解除。" };
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
