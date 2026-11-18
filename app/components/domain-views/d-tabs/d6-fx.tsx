@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Coins, History, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConflictBar, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Field, KeepText, Fold, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
-import { createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, type A2OperationRow } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
@@ -27,7 +27,6 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import {
   d6QuoteRate,
   DRequestError,
-  isDOutcomeUnknownError,
   loadD6FxQuote,
   parseD6ApprovalValues,
   preflightD6FxQuote,
@@ -240,7 +239,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   /**
    * 写操作只走这一条路（OP-92、OP-93）。新操作先存好再发；明确被拒丢号，留在确认框；
    * 结果未知保号，关框，清掉旧值，重读一次，转成页面上方的待确认。
-   * 重试的是保留下来的原操作时，被拒也证明不了原操作的结果，继续保留，只有成功才解除。
+   * 原号重试的明确拒绝交给恢复入口收尾。
    */
   const sendCommand = async (item: FxCommand, retry?: PendingFx) => {
     if (!retry && pendingFx.get(SCOPE)) throw new Error(LOCKED);
@@ -255,10 +254,10 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       if (item.proposal) ticket = await createA2OperationProposal(item.proposal, key, true);
       else await updateD6FxQuote(item.values, item.expectedVersion, item.reason, item.operator, key);
     } catch (cause) {
-      const unknown = isDOutcomeUnknownError(cause) || isA2OutcomeUncertainError(cause);
-      if (!unknown && !retry) pendingFx.forget(SCOPE, key);
+      const rejected = isExplicitRejection(cause);
+      if (rejected && !retry) pendingFx.forget(SCOPE, key);
       syncPending();
-      if (!unknown) throw cause;
+      if (rejected || isPermissionDenied(cause)) throw cause;
       loadEpoch.current += 1;
       setData(null);
       toast("保存结果未知，不要重新修改。先看页面上方的提示。", "warn");
@@ -285,9 +284,14 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await sendCommand(record, record);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原操作的结论，可以再重试（OP-153）。
-      if (isExplicitRejection(cause)) setRetryRejected(retryRejectedReason(cause));
-      else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
+      if (isExplicitRejection(cause)) {
+        const reason = retryRejectedReason(cause);
+        if (record.proposal) {
+          pendingFx.forget(record.fingerprint, record.commandKey);
+          syncPending();
+          toast(reason, "warn");
+        } else setRetryRejected(reason);
+      } else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
     }
