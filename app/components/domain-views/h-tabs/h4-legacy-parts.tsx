@@ -6,7 +6,7 @@
  * 取值小工具照旧页面 h3-quest-events.tsx 原样搬过来（旧文件不动）。
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { CalendarRange, CircleAlert, Clock3, Flag, Gift, Hourglass, CircleHelp, Smartphone, Star, Users } from "lucide-react";
+import { CalendarRange, CircleAlert, Clock3, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
 import { Button, Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
@@ -167,12 +167,14 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   // 卡片先显示中文；中文没填用英文那一份并标出来；都没有才写「未配置」。
   const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false } : en[field] ? { text: en[field], en: true } : null;
   const name = pick("name"), description = pick("description"), rewardName = pick("rewardName");
-  const enTag = <StatusTag tone="neutral" explain="中文没填，这里显示的是英文那一份。">英文</StatusTag>;
+  // 一张卡只标一次，标在第一处用了英文的地方。
+  const firstEn = ([["name", name], ["description", description], ["rewardName", rewardName]] as const).find(([, value]) => value?.en)?.[0];
+  const enTag = (field: ContentField) => firstEn === field ? <> <StatusTag tone="neutral" icon={Languages} explain="中文没填，这里显示的是英文那一份。">英文</StatusTag></> : null;
   return (
     <article className="h4-card h4l-event" aria-label={name?.text || event.id} data-dim={life.key === "ended" ? "" : undefined}>
       <header className="h4-card-head">
         <div className="h4-card-title">
-          <h3 data-empty={name ? undefined : ""}>{name?.text ?? "名称未配置"}{name?.en && <> {enTag}</>}</h3>
+          <h3 data-empty={name ? undefined : ""}>{name?.text ?? "名称未配置"}{enTag("name")}</h3>
           <span className="h4-card-meta"><span className="h4-card-kind">{KIND_LABEL(event.kind)}</span><span className="h4-mono" title={event.id}>{event.id}</span></span>
         </div>
         <span className="h4l-tags">
@@ -180,11 +182,11 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
           <StatusTag tone={life.tone} explain={life.explain}>{life.label}</StatusTag>
         </span>
       </header>
-      <p className="h4l-desc" data-empty={description ? undefined : ""}>{description?.text ?? "说明未配置"}{description?.en && <> {enTag}</>}</p>
+      <p className="h4l-desc" data-empty={description ? undefined : ""}>{description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
-          <small>{rewardFromRule ? "App 上按玩法规则显示" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{rewardName.en && <> {enTag}</>}</> : "奖项名未配置"}</small>
+          <small>{rewardFromRule ? "App 上按玩法规则显示" : rewardName ? <>{rewardName.text !== text(event.reward, "") ? `App 显示：${rewardName.text}` : "App 显示同上"}{enTag("rewardName")}</> : "奖项名未配置"}</small>
         </dd></div>
         <div><dt><Flag size={14} aria-hidden />参与条件</dt><dd>{text(event.condition, "") ? <span className="h4l-clip" title={text(event.condition)} data-user-content="">{text(event.condition)}</span> : <span className="h4-dim">—</span>}{event.geo ? <small>地区 {event.geo}</small> : null}</dd></div>
         <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{!rule ? <span className="h4-dim">—</span>
