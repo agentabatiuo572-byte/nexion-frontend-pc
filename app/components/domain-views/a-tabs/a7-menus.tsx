@@ -595,7 +595,7 @@ function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate,
           <Explain label="左侧导航显示规则" content={<><p>按拥有全部菜单的账号算：菜单启用、上一级启用，而且是导航里登记过的页面、地址一模一样，才会显示。</p><p>其他账号还要角色勾了这个菜单。</p></>} />
         </div>
         {node.legacyNavigationNode && <Notice tone="neutral" title="改版前留下的老节点">
-          <p>现在的左侧导航不用它。{node.roleBindingCount ? `还有 ${node.roleBindingCount} 个角色勾着它（含已停用的），` : ""}这页不会自动收回授权。</p>
+          <p>{node.roleBindingCount ? `还有 ${node.roleBindingCount} 个角色勾着它（含已停用的）；` : "没有角色勾着它；"}这页不会自动收回授权。</p>
           <p>要清理，可以在这里停用（立即生效），或到「角色管理」把它从角色里去掉（要另一位管理员批准）。</p>
         </Notice>}
         <dl className="a7-kv">
