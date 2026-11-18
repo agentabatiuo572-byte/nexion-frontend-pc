@@ -687,7 +687,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       effect: IMMEDIATE,
       statedBrief: { impact: "阈值改小更容易自动关停，改大更不容易。", check: "核对新值和单位，理由写清依据或工单号。" },
       facts: stale ? changedByOther(ruleValue(stale.was), ruleValue(rule))
-        : firstSave ? <Facts><Fact k="第一次保存">这条阈值还没保存过，现在按默认值判断；保存后按新值判断</Fact></Facts> : undefined,
+        : firstSave ? <Facts><Fact k="第一次保存">还没保存过，现在按默认值；保存后按新值判断</Fact></Facts> : undefined,
       confirmLabel: "确认调整，立即生效",
       edit: { kind: "number", current: rule.thr, currentLabel: firstSave ? "默认值" : undefined, initialValue: stale?.draft, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
         hint: "1–1,000,000,000 的整数",
