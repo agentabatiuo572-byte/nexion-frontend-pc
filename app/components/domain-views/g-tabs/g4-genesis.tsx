@@ -749,6 +749,8 @@ function G4GenesisPage() {
       edit: {
         ...(numeric ? { kind: "number", ...bounds } : { kind: "text" }),
         current: currentRaw,
+        // 收益计算基数的英文公式在「现在」里按页面读法显示；比较和提交仍用原文。
+        displayCurrent: param.key === "divBase" && currentRaw && currentText !== currentRaw ? currentText : undefined,
         initialValue: original?.request.command.params.value as string | undefined,
         submitEditValue: needsDecision,
         unit: copy?.unit,
