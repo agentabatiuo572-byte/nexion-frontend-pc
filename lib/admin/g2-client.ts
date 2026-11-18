@@ -92,6 +92,12 @@ export interface G2EmergencyExchangeSwitch {
   unavailableReason: "MISSING" | "INVALID" | null;
 }
 
+export interface G2QueueEstimate {
+  /** Raw queueEtaHours and queueEtaCopy configuration. Orders carry their own rendered ETA. */
+  hours?: string | null;
+  copy?: string | null;
+}
+
 export interface BackendOverview {
   domain?: string | null;
   asset?: string | null;
@@ -100,6 +106,7 @@ export interface BackendOverview {
   stats?: BackendStats | null;
   caps?: BackendCap[] | null;
   queue?: BackendOrder[] | null;
+  queueEstimate?: G2QueueEstimate | null;
   gateDetails?: Record<string, BackendGateDetail | null> | null;
   swap?: BackendSwap | null;
   disclosureGate: { exchange: boolean };
@@ -198,6 +205,7 @@ export interface G2Overview {
   stats: G2Stats;
   caps: G2Cap[];
   queue: G2ExchangeOrder[];
+  queueEstimate?: G2QueueEstimate | null;
   gateDetails: Record<string, G2GateDetail>;
   swap: G2Swap;
   disclosureGate: { exchange: boolean };
@@ -330,6 +338,7 @@ export function normalizeG2ExchangeOverview(data: BackendOverview | null | undef
     },
     caps: (data?.caps ?? []).map(normalizeCap),
     queue: (data?.queue ?? []).map(normalizeOrder),
+    queueEstimate: data?.queueEstimate,
     gateDetails: {
       user: normalizeGate("user", gateDetails.user),
       platform: normalizeGate("platform", gateDetails.platform),
