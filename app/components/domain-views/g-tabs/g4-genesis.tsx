@@ -52,6 +52,9 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { expiredTag, unknownTag } from "./g-recovery";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
 
+/** 系列当前价的名字：名称列窄时在括号前折行，不把「计价）」单独留在一行。 */
+const PRICE_NAME = <>系列当前价<span>（分红计价）</span></>;
+
 const OPERATOR = currentAdminOperator;
 
 function messageOf(error: unknown) {
@@ -1172,13 +1175,16 @@ function G4GenesisPage() {
 
   const paramRow = (param: G4Param | undefined, options?: { dir?: string }) => {
     if (!param) return null;
+    const valueText = g4ParamValueText(param.key, param.value);
+    // 收益计算基数读成公式时在「×」后分两行，窄列里不把「节点」单独留在末行。
+    const cut = param.key === "divBase" ? valueText.indexOf(" × ") : -1;
     const copy = PARAM_COPY[param.key];
     const name = G4_PARAM_NAME[param.key] ?? operatorCopyText(param.name);
     const record = paramApproval.record(param.key);
     const recovery = record ? records.find((row) => row.commandKey === record.commandKey) : undefined;
     const dir = options?.dir ?? (copy ? copy.tighten ? `${copy.loosen}要批准` : "改动要批准" : undefined);
     return (
-      <ConfigRow key={param.key} name={name}
+      <ConfigRow key={param.key} name={param.key === "price" ? PRICE_NAME : name} explainLabel={name}
         what={copy?.what ?? operatorCopyText(param.sub)}
         when={copy ? copy.tighten ? `${copy.loosen}是放宽，提交审批，另一位超级管理员批准后生效；${copy.tighten}是收紧，确认后立即生效` : "值有任何变化都要提交审批，另一位超级管理员批准后写入" : undefined}
         effect={copy?.effect}
@@ -1188,7 +1194,7 @@ function G4GenesisPage() {
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g4x-param">
           <span className="g4x-value">
-            <span className="g4x-value-num">{g4ParamValueText(param.key, param.value)}</span>
+            <span className="g4x-value-num">{cut < 0 ? valueText : <span className="g4x-param">{valueText.slice(0, cut + 2)}<span>{valueText.slice(cut + 3)}</span></span>}</span>
             {recovery && g4RecoveryTag(recovery, false, param.key)}
             {!recovery && directRecord(`params/${encodeURIComponent(param.key)}`) && (g4DirectCommandExpired(directRecord(`params/${encodeURIComponent(param.key)}`)!) ? expiredTag("direct") : unknownTag("direct"))}
             {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={Lock} explain={lockedParams[param.key]}>审批锁定中</StatusTag>}
@@ -1310,7 +1316,7 @@ function G4GenesisPage() {
                   value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{tierPriceText}</span></span><span className="g4x-dir">按价格档位</span></span>} />
               )}
               {priceParam && overview.tierPrice.status !== "legacy" && (
-                <ConfigRow key="series-price" name="系列当前价（分红计价）"
+                <ConfigRow key="series-price" name={PRICE_NAME} explainLabel="系列当前价（分红计价）"
                   what="现有持仓每天的分红按这个价算"
                   when="有价格档位时这里不能改"
                   value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{priceParam.value ? g4ParamValueText("price", priceParam.value) : "—"}</span></span><span className="g4x-dir">分红按它算</span></span>} />
