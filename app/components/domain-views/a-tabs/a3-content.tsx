@@ -345,7 +345,7 @@ const APP_TOKENS: Record<string, string> = {
   directPurchaseRules: "好友购买的奖励规则", networkPurchaseRules: "团队购买的奖励说明", directDeviceRules: "好友设备收益的奖励规则",
   directScope: "好友设备收益发给谁", directPrice: "UVT 价格", coolingDays: "等待天数", binaryRules: "团队平衡奖励的发放周期",
   peerRules: "同级奖励说明", cultivationRules: "好友升级奖励说明", leadershipRules: "团队激励池的参与起点", leadershipVotes: "团队激励池票数",
-  peerStatus: "同级奖励开没开", genesisStatus: "创世节点奖励开没开", exampleBase: "算例订单金额", exampleRank: "有好友升级奖励的等级",
+  peerStatus: "同级奖励是否开放", genesisStatus: "创世节点奖励是否开放", exampleBase: "算例订单金额", exampleRank: "有好友升级奖励的等级",
 };
 function previewText(page: string, value: string): ReactNode {
   if (page !== APP_FILLED_PAGE) return value;
