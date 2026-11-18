@@ -10,7 +10,7 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { fetchMRecentAdvisorConversations, type MSupportAgent } from "@/lib/admin/m-client";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
+import { supportClient, isSupportScopeDenial, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
@@ -86,12 +86,6 @@ const HISTORY_STATES: Record<string, string> = { OPEN: "进行中", SUCCEEDED: "
 const HISTORY_KINDS: Record<string, string> = { EXECUTION: "主动联系", MAINTENANCE_EXECUTION: "主动联系", CYCLE: "维护周期", MAINTENANCE_CYCLE: "维护周期" };
 function historyLabel(value: string, labels: Record<string, string>): string { return labels[value] ?? "记录未同步"; }
 function customerName(row: SupportCustomer): string { return operatorNicknameText(row.displayName || "") || m1CustomerCode(row.customerId); }
-function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean {
-  if (!(error instanceof SupportClientError) || ![403, 404].includes(error.status)) return false;
-  window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { customerId } }));
-  return true;
-}
-
 export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, primarySummary, navigation, active = true, onBrowseCustomers, onTransfer, transferRevision = 0 }: { permission: Permission; ctx: MCtx; view: PersonalWorkbenchView; onViewChange: (view: PersonalWorkbenchView) => void; primarySummary?: ReactNode; navigation?: ReactNode; active?: boolean; onBrowseCustomers?: (filter: SupportCustomerFilter) => void; onTransfer?: (customerId: string) => void; transferRevision?: number }) {
   const router = useRouter();
   const session = useAdminAuth((state) => state.session);
@@ -190,6 +184,12 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     return () => { controller.abort(); if (recentController.current === controller) recentController.current = null; };
   }, [adminId, authEpoch, recentRefresh]);
 
+  const invalidateScope = ctx.invalidateScope;
+  const invalidateCustomerOnDenied = useCallback((customerId: string, error: unknown) => {
+    if (!isSupportScopeDenial(error)) return false;
+    if (actorStamp() === sessionKey) invalidateScope(undefined, customerId);
+    return true;
+  }, [invalidateScope, sessionKey]);
   const openDetail = useCallback(async (customerId: string) => {
     const generation = ++detailsGeneration.current;
     const actorKey = actorStamp();
@@ -204,7 +204,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     }
     catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(customerId, error)) setDetailError(errorText(error)); }
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
-  }, [adminId, permission]);
+  }, [adminId, permission, invalidateCustomerOnDenied]);
   const closeDetail = useCallback(() => {
     detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setMaintenancePending(null); setTransferInScope(null); setMaintenanceNeedsRefresh(false);
   }, []);

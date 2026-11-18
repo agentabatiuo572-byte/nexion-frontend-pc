@@ -189,6 +189,13 @@ export class SupportClientError extends Error {
     this.data = data;
   }
 }
+/** Only use a denial from a read or write directed at the original customer or thread. */
+export function isSupportScopeDenial(error: unknown): boolean {
+  if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
+  const status = error.status === 200 ? error.apiCode : error.status;
+  return status === 403 || status === 404;
+}
+
 export function isIndeterminateSupportError(error: unknown): boolean {
   return error instanceof SupportClientError && error.status === 409
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
