@@ -934,7 +934,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         ]} />
         <LocaleTabs label="查看语言" value={detailLang} onChange={setDetailLang} items={[{ value: "zh", label: "中文" }, { value: "vi", label: "越南语" }, ...(detail.chapters.some((chapter) => chapter.en) ? [{ value: "en" as const, label: "英语" }] : [])]} />
         <div className="rd-doc">
-          {detail[detailLang] && <p>{detail[detailLang]}</p>}
+          {detail[detailLang] && <section><h3>总文</h3><p>{detail[detailLang]}</p></section>}
           {detail.chapters.map((chapter) => (
             <section key={chapter.no}>
               <h3>第 {chapter.no} 章 · {chapter[detailLang] || "未填写标题"}</h3>
@@ -1116,7 +1116,7 @@ function VersionEditor({ initial, requiredLanguages, switcher, regions, language
 
   const fieldName = (path: string[]) => {
     if (path[0] === "chapters") return path[1] ? `第 ${path[1]} 章${path[2]?.endsWith("Body") ? "正文" : path[2] ? "标题" : ""}` : "七章内容";
-    return { languageScope: "语言范围", effectiveDate: "生效日期", zh: "中文版本正文", vi: "越南语版本正文", en: "英语版本正文" }[path[0]] ?? null;
+    return { languageScope: "语言范围", effectiveDate: "生效日期", zh: "中文总文", vi: "越南语总文", en: "英语总文" }[path[0]] ?? null;
   };
   const completed = mapDisclosureLanguages(form, requiredLanguages, "submit");
   const langMissing = (code: Lang) => disclosureLanguageMissing(completed, code);
@@ -1160,7 +1160,7 @@ function VersionEditor({ initial, requiredLanguages, switcher, regions, language
           { value: "vi", label: "越南语", missing: langMissing("vi") },
           { value: "en", label: "英语", missing: langMissing("en") },
         ]} />
-        <Field label="版本正文" required={required} help={copyHint}>{(control) => <Textarea {...control} aria-label={`${langName}版本正文`} rows={4} value={form[lang]} onChange={(event) => setForm((current) => ({ ...current, [lang]: event.target.value }))} />}</Field>
+        <Field label="总文" required={required} help={copyHint}>{(control) => <Textarea {...control} aria-label={`${langName}总文`} rows={4} value={form[lang]} onChange={(event) => setForm((current) => ({ ...current, [lang]: event.target.value }))} />}</Field>
         <h3 className="rd-form-group-title">章节 · {form.chapters.length} 章</h3>
         {form.chapters.map((chapter, index) => (
           <Fold key={`${chapter.no}|${lang}`} inset title={`第 ${chapter.no} 章${chapter[lang] ? ` · ${chapter[lang]}` : "（未填标题）"}`} summary={chapter[`${lang}Body`] ? `${chapter[`${lang}Body`].length} 字` : "未填写"} defaultOpen={!chapter[lang].trim() || !chapter[`${lang}Body`].trim()}>
