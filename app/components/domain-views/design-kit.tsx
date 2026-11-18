@@ -545,7 +545,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; allowEmpty?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; multiline?: boolean; placeholder?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; allowEmpty?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -3838,7 +3838,17 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
               </span>}
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
-              <input
+              {kind === "text" && spec.multiline ? <textarea
+                className="fld"
+                aria-label="目标新值"
+                aria-describedby={editDescribedBy}
+                rows={3}
+                disabled={formLocked}
+                value={newVal}
+                onChange={(e) => setNewVal(e.target.value)}
+                placeholder={spec.placeholder ?? "输入新值"}
+                style={{ width: "100%", resize: "vertical" }}
+              /> : <input
                 className="fld"
                 aria-label="目标新值"
                 aria-describedby={editDescribedBy}
@@ -3851,7 +3861,7 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
-              />
+              />}
               {comparisonUnit && <span className="muted tiny" id={unitDescriptionId}>{comparisonUnit}</span>}
             </div>
           )}

@@ -121,7 +121,7 @@ export function PlatformExperienceConfig() {
         {interfaceLanguages
           ? <div className="tiny" style={{ marginBottom: 8 }}>英文始终开启。关闭后，用户在语言列表里看不到这种语言；正在使用它的用户依次改用自己选过的、账号里的或手机系统的已开启语言，都没有就用英文。App 下次读取配置后生效。</div>
           : <div className="atint" style={{ marginBottom: 8 }}>系统支持后，可以在这里开关界面语言，现在只能查看。</div>}
-        {operatingLanguages && <div className="tiny" style={{ marginBottom: 8 }}>「发布必填」是运营区域语言：后台发布活动、促销、披露、词条、课程、推送等内容时，勾上的语言必须填写；没勾的中文、越南语可以整组不填，保存时用英文补上，App 在该语言下显示英文；填了一部分就要填齐。法律条款和知识库问答按语言分条发布，不受这一设置影响。</div>}
+        {operatingLanguages && <div className="tiny" style={{ marginBottom: 8 }} title="适用于活动、促销、披露、词条、课程、推送等内容。没勾的中文、越南语整组不填时，保存时用英文补上；填了一部分就要填齐。法律条款和知识库问答按语言分条发布，不受这一设置影响。">「发布必填」：勾上的语言发布时必填；没勾的可以不填，App 显示英文。（悬停查看适用范围）</div>}
         <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>语言</th><th>中文名</th><th>代码</th><th>开启</th>{operatingLanguages && <th>发布必填</th>}</tr></thead><tbody>{INTERFACE_LANGUAGES.map((language) => {
           const languages = interfaceLanguages;
           const operating = operatingLanguages;

@@ -406,7 +406,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       briefKind: "config",
       detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文；中文、越南语在那里按运营区域语言补；发布走操作确认。</>,
       amplifies: false,
-      edit: { kind: "text", current: "", unit: "英文话术" },
+      edit: { kind: "text", current: "", label: "英文话术 *", multiline: true, placeholder: "例如：Hi {name}, how can I help you today?" },
+      content: <div className="itint" style={{ marginBottom: 12 }}>填写英文原文，坐席发送的就是这段英文。保存后到「多语言与课程」补齐运营区域语言，再回来发布。</div>,
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason: string, v?: string) => {
@@ -445,7 +446,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       briefKind: "config",
       detail: <>填写英文原文，坐席发送的就是这段英文。保存后在「多语言与课程」生成同名词条草稿，只预填英文；中文、越南语在那里按运营区域语言补；发布后可在专属会话回复框中选用。</>,
       amplifies: false,
-      edit: { kind: "text", current: "", unit: "英文模板" },
+      edit: { kind: "text", current: "", label: "英文模板 *", multiline: true, placeholder: "例如：Thanks for waiting, {name}." },
+      content: <div className="itint" style={{ marginBottom: 12 }}>填写英文原文，坐席发送的就是这段英文。保存后到「多语言与课程」补齐运营区域语言，再回来发布。</div>,
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason: string, v?: string) => {
