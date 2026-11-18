@@ -68,7 +68,7 @@ const IMPACT = "只影响之后的报价；用户还没提交的旧报价需要�
 const APPROVAL_NOTE = "另一位超级管理员批准后才用于新报价。";
 const PROPOSAL_STATUS: Record<A2OperationRow["status"], string> = { pending: "等另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 /** 共用文字泛指「这个对象」并让人去「操作记录与审批」；这页写明是哪组参数，当前权限到不了那页的账号写等谁处理。 */
-const PENDING_HERE = "这组参数已有放宽单在等批准，审批完或发起人撤回后才能再提交放宽";
+const PENDING_HERE = "已有放宽单在等批准，审批完或发起人撤回后才能再提交放宽";
 const PENDING_ELSEWHERE = "已有放宽单在等批准，等超级管理员处理后再提交。";
 
 /** 直接保存的原操作：结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。 */
