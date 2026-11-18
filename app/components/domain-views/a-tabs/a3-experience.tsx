@@ -351,7 +351,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
                       checked={requiredNow.includes(operatingCode)}
                       disabled={fieldsLocked || operatingCode === "en" || !operating}
                       onChange={(event) => operating && setConfig({ ...config, operatingLanguages: OPERATING_LANGUAGE_CODES.filter((code) => code === operatingCode ? event.target.checked : operating.includes(code)) })} />
-                    : <span className="rd-note">暂不支持<Explain label={`${language.zhName}为什么不能设为必填`} content="这种语言不能设为必填。App 在这种语言下显示英文内容。" /></span>}</Td>
+                    : <span className="rd-note">暂不支持<Explain label={`${language.zhName}为什么不能设为必填`} content="不能设为必填。App 在这种语言下显示英文。" /></span>}</Td>
                 </Tr>;
               })}
             </tbody>
