@@ -377,8 +377,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         if (!current) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
         requireActor(record.intent, false);
         // The status endpoint intentionally supplies no one-time password.
-        if (announce) toast(state !== "SUCCEEDED" ? record.request.kind === "password" ? "查到原结果：密码没有改，记录已解除。这个账号可能已被下线，要用原密码重新登录。"
-          : record.request.kind === "session" ? "查到原结果：没有完成，记录已解除。这台设备可能已下线，以刷新后的设备列表为准。" : "查到原结果：没有执行，记录已解除。"
+        if (announce) toast(state !== "SUCCEEDED" ? record.request.kind === "password" ? "查到原结果：密码没有改，记录已解除。这个账号可能已被下线，要用原密码重新登录。" : "查到原结果：没有执行，记录已解除。"
           : record.request.kind === "create" ? "查到原结果：账号已建好。一次性密码这里拿不到，请给这个账号重置一次密码，把新的一次性密码交给对方。"
             : record.request.kind === "password" ? "查到原结果：密码已重置。一次性密码这里拿不到，请再重置一次，把新的一次性密码交给对方。"
               : displayAdminError(new Error("A1_ORIGINAL_OPERATION_CONFIRMED")));
