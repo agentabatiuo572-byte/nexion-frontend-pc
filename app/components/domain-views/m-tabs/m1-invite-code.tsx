@@ -6,6 +6,7 @@ import { canReplayGroupCommand, commandRejected, groupPendingCommands, isInviteP
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import "./m1-invite-code.css";
+import { Button, Modal, Notice, Fact, Facts, Fold, Explain } from "@/app/components/rd";
 
 // Icon paths taken verbatim from the confirmed design (Main.dc.html).
 const ICON_PATHS = {
@@ -65,24 +66,29 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       .catch(() => { if (!controller.signal.aborted) { setView(null); setReadFailed(true); } });
     return () => controller.abort();
   }, [reload]);
+  useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const qr = useMemo(() => view?.link ? qrPng(view.link) : null, [view?.link]);
 
   const issue = async () => {
     if (busy || !view || pending || !adminId) return;
-    if (view.code !== null && view.version === null) { setError("当前邀请码没有版本号，暂时不能重置；请刷新后再试。"); return; }
+    if (view.code !== null && view.version === null) { setError("当前邀请码的资料不全，暂时不能重置；请刷新后再试。"); return; }
     const expectedVersion = view.code === null ? null : view.version, commandKey = crypto.randomUUID();
     groupPendingCommands.remember(fingerprint, commandKey, { actorId: adminId, intent: { kind: "INVITE_ISSUE", payload: { expectedVersion } }, label: expectedVersion === null ? "生成邀请码" : "重置邀请码" });
     const record = findPending();
-    if (record?.commandKey !== commandKey || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。"); return; }
+    if (record?.commandKey !== commandKey || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setError("浏览器存不下这次操作，没有提交；请允许浏览器保存网站数据后重试。"); return; }
     setBusy(true); setError("");
+    let acknowledged = false;
     try {
       const next = await supportGroupClient.issueSelfInviteCode(expectedVersion, commandKey);
+      acknowledged = true;
+      const current = await supportGroupClient.selfInviteCode();
+      if (current.code !== next.code || current.version !== next.version) throw new Error("SUPPORT_INVITE_READBACK_CHANGED");
       groupPendingCommands.forget(fingerprint, commandKey);
-      setView(next); setConfirming(false);
+      setView(current); setConfirming(false);
       toast(expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
     } catch (cause) {
       setConfirming(false);
-      if (!commandRejected(cause)) { setPending(record); return; } // unknown result: the shown code may already be revoked
+      if (acknowledged || !commandRejected(cause)) { setPending(record); return; } // unknown result: the shown code may already be revoked
       groupPendingCommands.forget(fingerprint, commandKey);
       if (cause instanceof SupportClientError && cause.status === 409) { setView(null); setReload(n => n + 1); }
       setError(errorText(cause));
@@ -96,24 +102,31 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     try {
       const receipt = await supportGroupClient.command(pending.commandKey);
       if (receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") { setUnresolved(false); setError("原操作仍在处理，请稍后再查询。"); return; }
+      await supportGroupClient.selfInviteCode();
       settle(pending);
       toast(receipt.status === "SUCCEEDED" ? "原操作已生效，已重新读取邀请码。" : "原操作没有生效，已重新读取邀请码。");
     } catch (cause) {
-      setUnresolved(true);
-      const reason = cause instanceof SupportClientError && cause.status === 404 ? "服务端没有这条原操作的记录，请求可能没有送达。" : "暂时无法查询原操作。";
-      setError(reason + (canReplayGroupCommand(pending) ? "可以用原命令重试原操作。" : "原操作已超过可重发时间，不能直接重发，请稍后再查询。"));
+      const absent = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
+      setUnresolved(absent);
+      const reason = absent ? "还没查到原操作的结果，这说明不了它没有执行。" : "暂时查不到原结果。";
+      setError(reason + (!canReplayGroupCommand(pending) ? "原操作已超过 24 小时，不能再重试，请稍后再查询。" : absent ? "可以按原请求重试。" : "原操作仍保留，请稍后再查询。"));
     } finally { setBusy(false); }
   };
   // Same key and frozen request body; the server dedupes it if the original did arrive.
   const replay = async () => {
     if (!pending || busy || !canReplayGroupCommand(pending)) return;
     setBusy(true); setError("");
+    let acknowledged = false;
     try {
-      await supportGroupClient.issueSelfInviteCode(pending.intent.payload.expectedVersion, pending.commandKey);
+      const next = await supportGroupClient.issueSelfInviteCode(pending.intent.payload.expectedVersion, pending.commandKey);
+      acknowledged = true;
+      const current = await supportGroupClient.selfInviteCode();
+      if (current.code !== next.code || current.version !== next.version) throw new Error("SUPPORT_INVITE_READBACK_CHANGED");
       settle(pending);
       toast(pending.intent.payload.expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
     } catch (cause) {
-      if (!commandRejected(cause)) { setError("重试结果仍未确认，原命令已保留，请稍后再查询或重试。"); return; }
+      if (acknowledged) { setError("操作已成功，但邀请码没刷新出来，请刷新核对。"); return; }
+      if (!commandRejected(cause)) { setError("重试的结果仍然未知，原操作已保留，请稍后再查询或重试。"); return; }
       settle(pending);
       setError(errorText(cause));
     } finally { setBusy(false); }
@@ -128,50 +141,38 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     anchor.href = qr; anchor.download = `客服邀请码-${code}.png`;
     anchor.click();
   };
-  const errorLine = error && <p className="m1-invite-error" role="alert">{error}</p>;
+  const errorLine = error && <div className="m1-invite-error"><Notice tone="danger">{error}</Notice></div>;
 
-  if (confirming && view?.code) return <section className="m1-invite m1-invite-confirming" aria-label="重置邀请码">
-    <div className="m1-invite-head"><h3>我的邀请码</h3><span className="m1-invite-mono">{view.code}</span></div>
-    <div className="m1-invite-confirm">
-      <h3>重置邀请码？</h3>
-      <p>旧码 {view.code} 会立即失效，之后填旧码注册会提示邀请码无效；已经绑定的客户不受影响。</p>
-      {errorLine}
-      <div className="m1-invite-actions">
-        <button type="button" className="m1-invite-btn" disabled={busy} onClick={() => { setConfirming(false); setError(""); }}>取消</button>
-        <button type="button" className="m1-invite-btn m1-invite-danger" disabled={busy} onClick={() => void issue()}>{busy ? "正在重置…" : "确认重置"}</button>
-      </div>
-    </div>
-  </section>;
+  if (confirming && view?.code) return <Modal title="重置邀请码" busy={busy} onClose={() => setConfirming(false)} footer={<><Button disabled={busy} onClick={() => { setConfirming(false); setError(""); }}>取消</Button><Button variant="danger" loading={busy} onClick={() => void issue()}>确认重置</Button></>}>
+    <div className="m1-command-form"><Facts><Fact k="当前邀请码"><span data-mono>{view.code}</span></Fact></Facts><Notice tone="danger">旧码立即失效，之后不能用于注册；已经绑定的客户不受影响。</Notice>{errorLine}</div>
+  </Modal>;
 
   return <section className="m1-invite" aria-label="我的邀请码">
-    <div className="m1-invite-title"><h3>我的邀请码</h3><p>新用户注册时填写，注册后由你接待</p></div>
+
     {pending ? <>
-      <p className="m1-invite-note m1-invite-muted" role="alert">上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码的结果还没确认；确认前暂不提供复制、链接和二维码。</p>
-      <button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</button>
-      {unresolved && canReplayGroupCommand(pending) && <button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>重试原操作</button>}
+      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原结果"}</Button>{unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原请求重试</Button>}</>}>上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。</Notice>
     </> : readFailed ? <>
-      <p className="m1-invite-note" role="alert">暂时无法读取邀请码，请重试。</p>
-      <button type="button" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</button>
+      <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
     </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在读取邀请码…</p>
       : view.code === null ? <>
         <p className="m1-invite-note">生成后可以复制邀请码、链接或二维码发给新用户。</p>
-        <button type="button" className="m1-invite-primary" disabled={busy} onClick={() => void issue()}>{busy ? "正在生成…" : "生成邀请码"}</button>
+        <Button type="button" variant="primary" disabled={busy} onClick={() => void issue()}>{busy ? "正在生成…" : "生成邀请码"}</Button>
       </> : <>
         <div className="m1-invite-box">
           <div className="m1-invite-field"><span>邀请码</span><strong className="m1-invite-code">{view.code}</strong></div>
-          <button type="button" className="m1-invite-btn" onClick={() => void copy(view.code!, "邀请码")}><InviteIcon name="copy" />复制</button>
+          <Button type="button" size="sm" className="m1-invite-btn" icon={<InviteIcon name="copy" />} onClick={() => void copy(view.code!, "邀请码")}>复制</Button>
         </div>
         {view.link && qr ? <>
           <div className="m1-invite-box m1-invite-linkbox">
             <div className="m1-invite-field"><span>邀请链接</span><span className="m1-invite-link" title={view.link}>{view.link}</span></div>
-            <button type="button" className="m1-invite-btn" onClick={() => void copy(view.link!, "邀请链接")}><InviteIcon name="link" />复制链接</button>
+            <Button type="button" size="sm" className="m1-invite-btn" icon={<InviteIcon name="link" />} onClick={() => void copy(view.link!, "邀请链接")}>复制链接</Button>
           </div>
           <div className="m1-invite-qr">
             <img src={qr} alt={`邀请二维码 ${view.code}`} width={56} height={56} />
-            <button type="button" className="m1-invite-btn" onClick={() => saveQr(view.code!)}><InviteIcon name="save" />保存二维码</button>
+            <Button type="button" size="sm" className="m1-invite-btn" icon={<InviteIcon name="save" />} onClick={() => saveQr(view.code!)}>保存二维码</Button>
           </div>
         </> : <p className="m1-invite-note m1-invite-muted">分享地址未配置，暂时只能复制邀请码</p>}
-        <button type="button" className="m1-invite-reset" onClick={() => { setError(""); setConfirming(true); }}><InviteIcon name="reset" />重置</button>
+        <Button type="button" size="sm" variant="ghost" icon={<InviteIcon name="reset" />} onClick={() => { setError(""); setConfirming(true); }}>重置</Button>
       </>}
     {errorLine}
   </section>;

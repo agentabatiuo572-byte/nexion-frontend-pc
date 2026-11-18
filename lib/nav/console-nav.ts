@@ -10,6 +10,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
+  Settings,
   ShieldCheck,
   Gauge,
   Users,
@@ -20,10 +21,11 @@ import {
   TrendingUp,
   Megaphone,
   Siren,
-  Radar,
   BarChart3,
   Headset,
 } from "lucide-react";
+
+import { b0Blocks, b0HasDailyWork } from "@/lib/admin/b0-access";
 
 export type BuiltinAdminRole =
   | "superadmin"
@@ -49,8 +51,11 @@ export const ROLE_LABEL: Record<BuiltinAdminRole, string> = {
   auditor: "审计",
 };
 
+/** 后端按岗位给的角色码，不是内置角色，顶栏也要写人话（D2 大额放行按 FINANCE_LEAD 判断）。 */
+const LEAD_ROLE_LABEL: Record<string, string> = { FINANCE_LEAD: "财务主管", RISK_LEAD: "风控主管" };
+
 export function roleLabel(role: AdminRole): string {
-  return ROLE_LABEL[role as BuiltinAdminRole] ?? role;
+  return ROLE_LABEL[role as BuiltinAdminRole] ?? LEAD_ROLE_LABEL[role] ?? role;
 }
 
 export const SUPPORT_ADMIN_ROLES: BuiltinAdminRole[] = ["support"];
@@ -84,7 +89,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     code: "A",
     name: "平台基础",
     slug: "platform",
-    icon: ShieldCheck,
+    icon: Settings,
     accentVar: "--admin-domain-a",
     roles: ["config"],
     l2: [
@@ -107,7 +112,6 @@ export const CONSOLE_NAV: NavDomain[] = [
     accentVar: "--admin-domain-b",
     l2: [
       { id: "B1", name: "资金与应付款总览", path: "/overview/dual-ledger", prdAnchor: "B1", batch: "V1", status: "flagship" },
-      { id: "B2", name: "可用资金与应付款", path: "/overview/liquidity", prdAnchor: "B2", batch: "V1", status: "flagship" },
       { id: "B3", name: "用户转化概览", path: "/overview/funnel", prdAnchor: "B3", batch: "V1", status: "flagship" },
       { id: "B4", name: "运营阶段状态", path: "/overview/rhythm", prdAnchor: "B4", batch: "V1", status: "flagship" },
       { id: "B5", name: "风险提醒", path: "/overview/risk-radar", prdAnchor: "B5", batch: "V1", status: "flagship" },
@@ -221,7 +225,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["content"],
     l2: [
       { id: "I1", name: "页面文案对比测试", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
-      { id: "I2", name: "Nova 消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
+      { id: "I2", name: "消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知活动", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
       { id: "I4", name: "信任中心", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
       { id: "I5", name: "法律条款与风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
@@ -246,7 +250,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     code: "K",
     name: "风控与反作弊",
     slug: "risk",
-    icon: Radar,
+    icon: ShieldCheck,
     accentVar: "--admin-domain-k",
     roles: ["risk"],
     l2: [
@@ -325,7 +329,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "H3": "任务引擎",
   "H9": "历史估算配置",
   "I1": "转化文案 A/B",
-  "I2": "Nova 推送运营",
+  "I2": "消息推送运营",
   "I3": "通知 Campaign",
   "I6": "i18n 文案",
   "J1": "Kill-Switch 矩阵",
@@ -456,8 +460,10 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
   // M-48: an advisor who can only read the knowledge base (M4) or service rules (M5) uses that content inside
   // the conversation; the read-only configuration pages only add menu noise. This narrows, never widens, access.
+  // M5 also hosts managed agent profiles, whose writes use M1 authority rather than M5 authority.
   // While the support qualification is unknown those pages are all the advisor has, so they stay.
-  const supportWrites = (code: string) => (snapshot.authorities ?? []).some((authority) => {
+  const supportWrites = (code: string) => (code === "M5" && snapshot.supportReadModes?.includes("MANAGED")
+    && snapshot.authorities?.includes("service_m1_write")) || (snapshot.authorities ?? []).some((authority) => {
     const upper = authority.toUpperCase();
     return upper.includes(`_${code}_`) && /_(WRITE|MANAGE|PUBLISH|EDIT)(_|$)/.test(upper);
   });
@@ -538,7 +544,66 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
   return grantedDomain?.l2.some((item) => path === item.path || path.startsWith(`${item.path}/`)) ?? false;
 }
 
-export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): string | null {
+/** 已按改版规范迁移的页面。浅色主题只对这些页的内容区生效，其余页的内容区保持深色，等迁移批次（06 VS-95）。 */
+export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/analytics/financial", "/analytics/operations", "/analytics/behavior-heatmap", "/risk/multi-account", "/emergency/kill-switch", "/emergency/tamper", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit", "/content/copy-ab", "/content/i18n", "/network/commissions", "/platform/rbac",
+  "/growth/phase",
+  "/content/notifications",
+  "/content/trust",
+  "/growth/public-stats",
+  "/growth/referral-rewards",
+  "/growth/quest",
+  "/growth/events",
+  "/finance-products/genesis",
+  "/finance-products/repurchase",
+  "/risk/withdrawal-rules",
+  "/risk/abuse",
+  "/risk/scoring",
+  "/devices/tasks",
+  "/devices/ops",
+  "/devices/compute-config",
+  "/devices/pricing",
+  "/users/security",
+  "/users/reg-risk",
+  "/service/overview",
+  "/service/kb-sla",
+  "/service/scripts",
+  "/service/leaderboard",
+  "/finance-products/exchange",
+  "/finance-products/market",
+  "/finance-products/staking",
+  "/growth/vouchers",
+  "/growth/daily",
+  "/platform/config",
+  "/platform/events",
+  "/platform/params-registry",
+  "/platform/permissions",
+  "/platform/developer-access",
+  "/platform/roles",
+  "/platform/menus",
+  "/network/v-rank",
+  "/network/royalty",
+  "/network/binary",
+  "/network/leadership-pool",
+  "/analytics/funnel-cohort",
+  "/analytics/export",
+  "/emergency/geo-block",
+  "/emergency/sop",
+  "/content/nova",
+  "/devices/trade-in",
+  "/overview/dual-ledger",
+  "/overview/funnel",
+  "/overview/risk-radar",
+  "/overview/rhythm",
+];
+/** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
+export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];
+export const isRedesignedPath = (pathname: string) => {
+  const path = pathname.split(/[?#]/, 1)[0];
+  return REDESIGNED_PATHS.includes(path) || REDESIGNED_DETAIL_PREFIXES.some((prefix) => path.startsWith(prefix));
+};
+
+/** 登录后落在哪（Q-20）：看得到待处理或经营数的落今日概览，客服落客服工作台，其余落第一个有权限的页。 */
+export function defaultConsolePath(role: AdminRole, domains: NavDomain[], authorities: readonly string[] = []): string | null {
   const first = domains.find(domain => domain.l2.length > 0);
   if (!first) return null;
   if (role === "superadmin") return "/";
@@ -549,6 +614,7 @@ export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): strin
       if (page) return page.path;
     }
   }
+  if (b0HasDailyWork(b0Blocks(authorities))) return "/";
   const platform = domains.find(domain => domain.code === "A");
   // Keep the previous landing priority for the shipped platform order.
   if (platform?.landingSortOrder !== undefined

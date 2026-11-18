@@ -1,8 +1,12 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
+import { discoverECommand, investigateECommand } from "./e-command-investigation";
 
 type ApiResult<T> = {
   code?: number;
@@ -18,9 +22,337 @@ export function createJEmergencyCommandKey() {
   return idempotencyKey();
 }
 
+export type J2CommandContext = { overview: GeoBlockOverview; label: string };
+export type J2CommandBody = {
+  reason: string; operator: string; triggerBasis?: string;
+  status?: "blocked" | "limited"; countries?: string[]; expectedCountries?: string[];
+  mode?: "derived" | "explicit"; expectedMode?: "derived" | "explicit";
+  source?: string; expectedSource?: string;
+};
+export type J2PendingCommand = SlotAttemptRecord & {
+  geo: { path: string; method: string; body: string; context: J2CommandContext; commandOrigin?: FundCommandOrigin };
+};
+export type J3ConfigBody = {
+  threshold: number; feedK4: boolean; expectedThreshold: number; expectedFeedK4: boolean;
+  operator: string; reason: string;
+};
+export type J3PendingCommand = SlotAttemptRecord & {
+  tamper: { path: "/tamper/alert-config"; method: "PUT"; body: string; input: J3ConfigBody; context: TamperAlertConfig; commandOrigin?: FundCommandOrigin };
+};
+export type J4CommandContext =
+  | { kind: "create"; fields: Record<string, string> }
+  | { kind: "update"; playbook: Playbook; fields: Record<string, string> }
+  | { kind: "drill"; playbook: Playbook }
+  | { kind: "execute"; playbook: Playbook; emergency: boolean; fields: Record<string, string> }
+  | { kind: "cancel" | "resume" | "rollback"; execution: SopExecution };
+type J4ProposalInput = Parameters<typeof createA2OperationProposal>[0];
+export type J4PendingCommand = SlotAttemptRecord & {
+  sop: { path: string; method: string; body: string; context: J4CommandContext; commandOrigin?: FundCommandOrigin };
+};
+export type J4PendingProposal = SlotAttemptRecord & {
+  sopProposal: { body: string; context: Extract<J4CommandContext, { kind: "execute" }>; accepted: boolean };
+};
+type EmergencyPendingCommand = SlotAttemptRecord & {
+  geo?: J2PendingCommand["geo"]; tamper?: J3PendingCommand["tamper"];
+  sop?: J4PendingCommand["sop"]; sopProposal?: J4PendingProposal["sopProposal"];
+};
+const J3_CONFIG_SLOT = "PUT /tamper/alert-config";
+const isJ2WriteSlot = (slot: string) => /^(?:PUT \/geo-block\/(?:country-lists\/(?:blocked|limited)|endpoints\/[^/]+|edge-judge)|POST \/geo-block\/emergency-blocks)$/.test(slot);
+const isJ2CountrySlot = (slot: string) => /^PUT \/geo-block\/countries\/[^/]+$/.test(slot);
+const isJ4WriteSlot = (slot: string) => /^(?:POST \/sop\/playbooks|PUT \/sop\/playbooks\/[^/]+|POST \/sop\/playbooks\/[^/]+\/(?:drills|executions\/[^/]+\/(?:cancel|resume|rollback)))$/.test(slot);
+export const j4ProposalSlot = (code: string) => `J4 PROPOSE ${code}`;
+const isJ4Slot = (slot: string) => isJ4WriteSlot(slot) || slot.startsWith("J4 PROPOSE ");
+// One instance owns every J emergency slot, including J4 proposals.
+const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
+  storageKey: "nexion-admin-j-emergency-commands-v1",
+  retainExpiredRecords: (record) => isJ2WriteSlot(record.fingerprint) || isJ2CountrySlot(record.fingerprint) || record.fingerprint === J3_CONFIG_SLOT || isJ4Slot(record.fingerprint),
+  isValidRecord: (record) => {
+    if (typeof record.inputFingerprint !== "string" || !record.inputFingerprint) return false;
+    if (record.sop || record.sopProposal) {
+      try {
+        const saved = record.sop ?? record.sopProposal!;
+        if (saved.body !== record.inputFingerprint) return false;
+        const input = JSON.parse(saved.body);
+        if (!input || typeof input !== "object" || Array.isArray(input)
+          || typeof input.reason !== "string" || !input.reason.trim() || typeof input.operator !== "string") return false;
+        const context = saved.context;
+        if ("fields" in context && (!context.fields || Object.values(context.fields).some((value) => typeof value !== "string"))) return false;
+        if (context.kind === "create" || context.kind === "update") {
+          if (!["name", "scene", "owner", "sla", "emergencyTrack", "actionSeq", "notifyCampaignNo", "notifyTemplate", "rollback", "drillRequired"].every((key) => typeof context.fields[key] === "string")) return false;
+          if (input.name !== context.fields.name.trim() || input.actionSeq !== context.fields.actionSeq
+            || input.scene !== context.fields.scene || input.owner !== context.fields.owner || input.sla !== context.fields.sla
+            || input.emergencyTrack !== (context.fields.emergencyTrack === "true")
+            || input.notifyCampaignNo !== context.fields.notifyCampaignNo || input.notifyTemplate !== context.fields.notifyTemplate
+            || input.rollback !== context.fields.rollback || input.drillRequired !== true) return false;
+        }
+        if ("playbook" in context) context.playbook = normalizeSopPlaybook(context.playbook);
+        if ("execution" in context) context.execution = normalizeSopExecution(context.execution);
+        if (record.sopProposal) {
+          if (context.kind !== "execute" || typeof context.fields.triggerBasis !== "string" || typeof context.fields.triggerContext !== "string"
+            || context.playbook.seq.some((_, index) => context.fields[`stepConfirm.${index}`] !== "true")
+            || !Array.isArray(input.command?.params?.stepConfirmations)
+            || input.command.params.stepConfirmations.length !== context.playbook.seq.length
+            || input.command.params.stepConfirmations.some((confirmation: J4StepConfirmationInput, index: number) =>
+              confirmation.step !== index + 1 || confirmation.domain !== context.playbook.seq[index].dom
+              || confirmation.ref !== (context.playbook.seq[index].ref || "") || confirmation.confirmed !== true)
+            || input.command.params.triggerBasis !== context.fields.triggerBasis || input.command.params.triggerContext !== context.fields.triggerContext) return false;
+          return context.kind === "execute" && typeof record.sopProposal.accepted === "boolean"
+            && record.fingerprint === j4ProposalSlot(context.playbook.code)
+            && input.obj === context.playbook.code && input.sourceDomain === "J4"
+            && input.command?.domain === "J" && input.command.op === "j4_playbook_execute"
+            && input.command.params?.code === context.playbook.code
+            && input.command.params.emergency === context.emergency
+            && input.target?.domain === "J" && input.target.type === "playbook" && input.target.id === context.playbook.code;
+        }
+        const command = record.sop!;
+        const origin = command.commandOrigin;
+        if (origin !== undefined && (origin.originalMethod !== command.method || origin.originalPath !== `/api/admin/emergency${command.path}`
+          || origin.readAuthority !== "emergency_j4_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
+        if (context.kind === "update" && input.version !== context.playbook.version) return false;
+        if ("execution" in context && !context.execution.executionId) return false;
+        const code = "playbook" in context ? context.playbook.code : "execution" in context ? context.execution.code : "";
+        const expected = context.kind === "create" ? "POST /sop/playbooks"
+          : context.kind === "update" ? `PUT /sop/playbooks/${encodeURIComponent(code)}`
+            : context.kind === "drill" ? `POST /sop/playbooks/${encodeURIComponent(code)}/drills`
+              : "execution" in context ? `POST /sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(context.execution.executionId!)}/${context.kind}` : "";
+        return record.fingerprint === expected && `${command.method} ${command.path}` === expected && isJ4WriteSlot(expected);
+      } catch { return false; }
+    }
+    if (record.tamper) {
+      try {
+        const { path, method, body, input, context } = record.tamper;
+        if (record.fingerprint !== J3_CONFIG_SLOT || path !== "/tamper/alert-config" || method !== "PUT"
+          || body !== record.inputFingerprint || JSON.stringify(input) !== body
+          || !Number.isInteger(input.threshold) || input.threshold < 1 || input.threshold > 100
+          || !Number.isInteger(input.expectedThreshold) || input.expectedThreshold < 1 || input.expectedThreshold > 100
+          || typeof input.feedK4 !== "boolean" || typeof input.expectedFeedK4 !== "boolean"
+          || typeof input.reason !== "string" || input.reason.trim().length < 8 || input.reason.length > 200
+          || typeof input.operator !== "string") return false;
+        const alertConfig = normalizeTamperAlertConfig(context);
+        if (alertConfig.threshold === null || alertConfig.threshold !== input.expectedThreshold || alertConfig.feedK4 !== input.expectedFeedK4) return false;
+        const origin = record.tamper.commandOrigin;
+        if (origin !== undefined && (origin.originalMethod !== "PUT" || origin.originalPath !== "/api/admin/emergency/tamper/alert-config"
+          || origin.readAuthority !== "emergency_j3_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
+        record.tamper.context = alertConfig;
+        return true;
+      } catch { return false; }
+    }
+    if (!record.geo) return true;
+    try {
+      const { path, method, body, context } = record.geo;
+      if (`${method} ${path}` !== record.fingerprint || !isJ2WriteSlot(record.fingerprint)
+        || typeof body !== "string" || body !== record.inputFingerprint
+        || typeof context.label !== "string") return false;
+      const origin = record.geo.commandOrigin;
+      if (origin !== undefined && (origin.originalMethod !== method || origin.originalPath !== `/api/admin/emergency${path}`
+        || origin.readAuthority !== "emergency_j2_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
+      const input = JSON.parse(body);
+      if (!input || typeof input !== "object" || Array.isArray(input)
+        || typeof input.reason !== "string" || typeof input.operator !== "string"
+        || input.triggerBasis !== undefined && typeof input.triggerBasis !== "string") return false;
+      const overview = normalizeGeo(context.overview);
+      if (path.endsWith("edge-judge")) {
+        if (typeof input.source !== "string" || typeof input.expectedSource !== "string"
+          || !overview.edge.sources.some((source) => source.value === input.source)) return false;
+      } else {
+        const codes = (value: unknown): value is string[] => Array.isArray(value)
+          && value.every((cc) => typeof cc === "string" && /^[A-Z]{2}$/.test(cc));
+        if (!codes(input.countries)) return false;
+        if (path.includes("country-lists/")) {
+          if (input.status !== path.split("/").at(-1) || !codes(input.expectedCountries)) return false;
+        } else if (path.includes("endpoints/")) {
+          if (!["derived", "explicit"].includes(input.mode) || !["derived", "explicit"].includes(input.expectedMode)
+            || !codes(input.expectedCountries)
+            || !overview.endpoints.some((entry) => entry.key === decodeURIComponent(path.split("/").at(-1)!))) return false;
+        } else if (!input.countries.length || typeof input.triggerBasis !== "string") return false;
+      }
+      context.overview = overview;
+      return true;
+    } catch { return false; }
+  },
+});
 const emergencyAttempts = createSlotAttemptStore({
   storageKey: "nexion-admin-j-emergency-commands-v1",
-});
+}, emergencyCommands);
+
+export const listJ2PendingCommands = () => emergencyCommands.list().filter((record): record is J2PendingCommand => !!record.geo);
+// Old J2 records lack the reason/body: preserve them for read-only investigation.
+export const listJ2LegacyCommands = () => emergencyCommands.list().filter((record) => isJ2WriteSlot(record.fingerprint) && !record.geo);
+// The single-country API has no current page action; expose its retained read-only records to the data layer.
+export const listJ2CountryCommands = () => emergencyCommands.list().filter((record) => isJ2CountrySlot(record.fingerprint));
+export const getJ2PendingCommand = (slot: string) => listJ2PendingCommands().find((record) => record.fingerprint === slot);
+export const getJ3PendingCommand = () => emergencyCommands.list().find((record): record is J3PendingCommand => !!record.tamper);
+export const getJ3LegacyCommand = () => emergencyCommands.list().find((record) => record.fingerprint === J3_CONFIG_SLOT && !record.tamper);
+export const listJ4PendingCommands = () => emergencyCommands.list().filter((record): record is J4PendingCommand => !!record.sop
+  && (!record.sop.commandOrigin || record.sop.commandOrigin.originalAdminId === String(useAdminAuth.getState().session?.adminId)));
+export const listJ4PendingProposals = () => emergencyCommands.list().filter((record): record is J4PendingProposal => !!record.sopProposal);
+export const listJ4LegacyCommands = () => emergencyCommands.list().filter((record) => isJ4WriteSlot(record.fingerprint) && !record.sop);
+/** Local release after confirmation: expired legacy records cannot be replayed. */
+export function releaseExpiredJLegacyCommand(record: SlotAttemptRecord) {
+  const saved = emergencyCommands.list().find((row) => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved || !isRetryExpired(saved) || saved.geo || saved.tamper || saved.sop || saved.sopProposal
+    || !(isJ2WriteSlot(saved.fingerprint) || saved.fingerprint === J3_CONFIG_SLOT || isJ4WriteSlot(saved.fingerprint))) return false;
+  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return true;
+}
+export const getJ4PendingCommand = (slot: string) => listJ4PendingCommands().find((record) => record.fingerprint === slot);
+export const getJ4PendingProposal = (code: string) => listJ4PendingProposals().find((record) => record.fingerprint === j4ProposalSlot(code));
+
+export async function retryJ4Command(record: J4PendingCommand) {
+  const saved = getJ4PendingCommand(record.fingerprint);
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+  await apiRequest(saved.sop.path, { method: saved.sop.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.sop.body }, undefined, undefined, saved.sop.context);
+}
+
+function validateJ4ProposalTicket(row: A2OperationRow, record: J4PendingProposal) {
+  // 111e00cd ticketMetadata returns the persisted command op for all command tickets.
+  // Mine is set by the authenticated maker lookup, not inferred from display names.
+  if (!row.id || !row.mine || row.obj !== record.sopProposal.context.playbook.code
+    || row.operationCode !== "j4_playbook_execute" || row.type !== "sos"
+    || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.rawStatus ?? "")) {
+    throw new EmergencyOutcomeUncertainError(formatAdminApiError("J4_PROPOSAL_RECEIPT_INVALID", "J4_PROPOSAL_RECEIPT_INVALID"));
+  }
+  return row;
+}
+
+export async function queryJ4Proposal(record: J4PendingProposal) {
+  const row = await fetchA2ProposalByKey(record.commandKey, true);
+  if (!row) {
+    if (record.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
+    return null;
+  }
+  validateJ4ProposalTicket(row, record);
+  if (row.status !== "pending") emergencyCommands.forget(record.fingerprint, record.commandKey);
+  else emergencyCommands.remember(record.fingerprint, record.commandKey, { inputFingerprint: record.sopProposal.body, sopProposal: { ...record.sopProposal, accepted: true } });
+  return row;
+}
+
+/** Called only after the operator confirms clearing an expired, authoritatively absent proposal. */
+export async function releaseExpiredJ4Proposal(record: J4PendingProposal) {
+  const saved = getJ4PendingProposal(record.sopProposal.context.playbook.code);
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (saved.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
+  if (!isRetryExpired(saved)) throw new Error("J4_PROPOSAL_NOT_EXPIRED");
+  if (await queryJ4Proposal(saved)) return false;
+  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return true;
+}
+
+export async function submitJ4Proposal(input: J4ProposalInput, commandKey: string, context: Extract<J4CommandContext, { kind: "execute" }>) {
+  const slot = j4ProposalSlot(context.playbook.code);
+  const saved = getJ4PendingProposal(context.playbook.code);
+  const body = JSON.stringify(input);
+  if (saved && (saved.commandKey !== commandKey || saved.sopProposal.body !== body)) {
+    throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+  }
+  if (saved && (isRetryExpired(saved) || saved.sopProposal.accepted)) {
+    throw new Error(saved.sopProposal.accepted ? "J4_PROPOSAL_STATUS_UNAVAILABLE" : RETRY_EXPIRED_TEXT);
+  }
+  if (!saved) emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { body, context, accepted: false } });
+  if (!emergencyCommands.isDurablyStored(slot, commandKey)) {
+    if (!saved) emergencyCommands.forget(slot, commandKey);
+    throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+  }
+  const original = getJ4PendingProposal(context.playbook.code)!;
+  try {
+    const row = await createA2OperationProposal(JSON.parse(original.sopProposal.body), commandKey, true);
+    validateJ4ProposalTicket(row, original);
+  } catch (error) {
+    const failure = error as { status?: number; backendMessage?: string } | null;
+    const rejected = saved ? isExplicitRejection(error)
+      : !isA2OutcomeUncertainError(error) && !isEmergencyOutcomeUncertain(error)
+        && !isIdempotencyOutcomeOpen(failure?.backendMessage)
+        && isDeterministicRejection(failure?.status ?? 0);
+    if (rejected) emergencyCommands.forget(slot, commandKey);
+    throw error;
+  }
+  // A replayed create receipt is historical. Persist acceptance, then query current status.
+  emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { ...original.sopProposal, accepted: true } });
+  return queryJ4Proposal(getJ4PendingProposal(context.playbook.code)!);
+}
+
+export async function retryJ4Proposal(record: J4PendingProposal) {
+  const saved = getJ4PendingProposal(record.sopProposal.context.playbook.code);
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  return submitJ4Proposal(JSON.parse(saved.sopProposal.body), saved.commandKey, saved.sopProposal.context);
+}
+
+export async function retryJ3Command(record: J3PendingCommand) {
+  const saved = getJ3PendingCommand();
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+  await apiRequest(saved.tamper.path, { method: saved.tamper.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.tamper.body }, undefined, saved.tamper.context);
+}
+
+/** Receipt lookup and controlled closure share the E4/D3 evidence contract, including after expiry. */
+export async function queryJ3Command(record: J3PendingCommand, evidence?: FundCommandEvidence) {
+  const saved = getJ3PendingCommand();
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  let receipt;
+  if (saved.tamper.commandOrigin) {
+    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.tamper.commandOrigin }, evidence);
+  } else {
+    // During backend-first rollout an older client may already have a retained server receipt.
+    // Its server-owned origin must prove this operator; do not invent or persist a legacy maker.
+    const actorId = useAdminAuth.getState().session?.adminId;
+    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
+    const locator = { commandKey: saved.commandKey, originalMethod: "PUT" as const,
+      originalPath: "/api/admin/emergency/tamper/alert-config", originalAdminId: String(actorId) };
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j3_read") : await discoverECommand(locator);
+  }
+  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
+
+// Report generation is a read-only export (B4-PD02), so an unavailable file never locks future exports.
+export const finishJ3ReportAttempt = (commandKey: string) => emergencyCommands.forget("POST /tamper/reports", commandKey);
+
+export async function retryJ2Command(record: J2PendingCommand) {
+  const saved = getJ2PendingCommand(record.fingerprint);
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+  await apiRequest(saved.geo.path, { method: saved.geo.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.geo.body }, saved.geo.context);
+}
+
+/** Read the original geo command, including rollout-era records whose origin only exists on the server. */
+export async function queryJ2Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  const saved = emergencyCommands.list().find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved || !(isJ2WriteSlot(saved.fingerprint) || isJ2CountrySlot(saved.fingerprint))) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  let receipt;
+  if (saved.geo?.commandOrigin) {
+    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.geo.commandOrigin }, evidence);
+  } else {
+    const actorId = useAdminAuth.getState().session?.adminId;
+    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
+    // The accepted slot fixes method/path; the receipt must prove the original operator and server hash.
+    const [method, path] = saved.fingerprint.split(" ");
+    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
+      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j2_read") : await discoverECommand(locator);
+  }
+  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
+
+/** Lists and current settings cannot settle a playbook command, even after its retry window. */
+export async function queryJ4Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  let receipt;
+  if (saved.sop?.commandOrigin) {
+    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.sop.commandOrigin }, evidence);
+  } else {
+    const actorId = useAdminAuth.getState().session?.adminId;
+    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
+    const [method, path] = saved.fingerprint.split(" ");
+    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
+      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
+    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j4_read") : await discoverECommand(locator);
+  }
+  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return receipt;
+}
 
 function emergencyInputFingerprint(body: BodyInit | null | undefined) {
   if (typeof body !== "string") return body == null ? "" : String(body);
@@ -28,8 +360,8 @@ function emergencyInputFingerprint(body: BodyInit | null | undefined) {
     const parsed = JSON.parse(body) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return body;
     const canonical = { ...(parsed as Record<string, unknown>) };
-    // reason/operator are audit envelope fields, not the emergency business intent. An operator
-    // may clarify the reason after an outcome-unknown response; that retry must keep the same key.
+    // Legacy non-J2 callers retain their existing fingerprint behavior.
+    // J2 uses the complete saved body, including reason and operator.
     delete canonical.reason;
     delete canonical.operator;
     return JSON.stringify(canonical);
@@ -38,8 +370,8 @@ function emergencyInputFingerprint(body: BodyInit | null | undefined) {
   }
 }
 
-class EmergencyOutcomeUncertainError extends Error {
-  constructor(message: string) {
+export class EmergencyOutcomeUncertainError extends Error {
+  constructor(message = "应急控制服务返回了无法确认的内容") {
     super(message);
     this.name = "EmergencyOutcomeUncertainError";
   }
@@ -50,29 +382,104 @@ export function isEmergencyOutcomeUncertain(error: unknown) {
     || (error instanceof Error && error.name === "EmergencyOutcomeUncertainError");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext, tamperContext?: TamperAlertConfig, sopContext?: J4CommandContext): Promise<T> {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
   const writeSlot = `${method} ${path}`;
+  const isJ1AutoRuleWrite = method === "PATCH" && path.startsWith("/kill-switches/auto-rules/");
+  const isJ2Write = isWrite && isJ2WriteSlot(writeSlot);
+  const isJ3Config = isWrite && writeSlot === J3_CONFIG_SLOT;
+  const isJ4Write = isWrite && isJ4WriteSlot(writeSlot);
+  let isOriginalRetry = false;
   const inputFingerprint = emergencyInputFingerprint(init?.body);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (isWrite) {
     const providedCommandKey = headers.get("Idempotency-Key");
-    // J3 supplies a key bound to the window and reason. Other emergency commands keep their own retry identity.
-    const fingerprint = path === "/tamper/reports" && providedCommandKey
-      ? JSON.stringify([inputFingerprint, providedCommandKey])
-      : inputFingerprint;
-    const commandKey = emergencyAttempts.resolve(
-      writeSlot,
-      fingerprint,
-      () => providedCommandKey || idempotencyKey(),
-    );
-    if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
-      emergencyAttempts.forget(writeSlot);
-      throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+    if (isJ2Write) {
+      if (listJ2LegacyCommands().some((record) => record.fingerprint === writeSlot)) {
+        throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
+      }
+      const saved = getJ2PendingCommand(writeSlot);
+      isOriginalRetry = !!saved;
+      if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+      if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
+        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+      }
+      if (!saved) {
+        if (!geoContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+        const commandKey = providedCommandKey || idempotencyKey();
+        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, geo: { path, method, body: init.body, context: geoContext,
+          commandOrigin: fundCommandOrigin(method as "PUT" | "POST", `/api/admin/emergency${path}`, "emergency_j2_read") } });
+        headers.set("Idempotency-Key", commandKey);
+      }
+      const original = getJ2PendingCommand(writeSlot)!;
+      if (!emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
+        if (!saved) emergencyCommands.forget(writeSlot, original.commandKey);
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+    } else if (isJ3Config) {
+      if (getJ3LegacyCommand()) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
+      const saved = getJ3PendingCommand();
+      isOriginalRetry = !!saved;
+      if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+      if (saved && (saved.commandKey !== providedCommandKey || saved.tamper.body !== init?.body)) {
+        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+      }
+      if (!saved) {
+        if (!tamperContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+        const commandKey = providedCommandKey || idempotencyKey();
+        emergencyCommands.remember(writeSlot, commandKey, {
+          inputFingerprint: init.body,
+          tamper: { path: "/tamper/alert-config", method: "PUT", body: init.body, input: JSON.parse(init.body), context: tamperContext,
+            commandOrigin: fundCommandOrigin("PUT", "/api/admin/emergency/tamper/alert-config", "emergency_j3_read") },
+        });
+        headers.set("Idempotency-Key", commandKey);
+      }
+      const original = getJ3PendingCommand();
+      if (!original || !emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
+        if (!saved) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+    } else if (isJ4Write) {
+      if (listJ4LegacyCommands().some((record) => record.fingerprint === writeSlot)) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
+      const saved = getJ4PendingCommand(writeSlot);
+      isOriginalRetry = !!saved;
+      if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+      if (saved && (saved.commandKey !== providedCommandKey || saved.sop.body !== init?.body)) throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+      const commandKey = providedCommandKey || idempotencyKey();
+      if (!saved) {
+        if (!sopContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, sop: { path, method, body: init.body, context: sopContext,
+          commandOrigin: fundCommandOrigin(method as "PUT" | "POST", `/api/admin/emergency${path}`, "emergency_j4_read") } });
+      }
+      if (!emergencyCommands.isDurablyStored(writeSlot, commandKey)) {
+        if (!saved) emergencyCommands.forget(writeSlot, commandKey);
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+      headers.set("Idempotency-Key", commandKey);
+    } else if (path === "/tamper/reports") {
+      const commandKey = providedCommandKey || idempotencyKey();
+      emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: String(init?.body ?? "") });
+      if (!emergencyCommands.isDurablyStored(writeSlot, commandKey)) {
+        emergencyCommands.forget(writeSlot, commandKey);
+        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+      headers.set("Idempotency-Key", commandKey);
+    } else {
+      const fingerprint = inputFingerprint;
+      const saved = emergencyAttempts.list().find(record => record.fingerprint === writeSlot && record.inputFingerprint === fingerprint);
+      const commandKey = emergencyAttempts.resolve(
+        writeSlot,
+        fingerprint,
+        () => providedCommandKey || idempotencyKey(),
+      );
+      if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
+        if (!saved) emergencyAttempts.forget(writeSlot);
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+      headers.set("Idempotency-Key", commandKey);
     }
-    headers.set("Idempotency-Key", commandKey);
   }
   let res: Response;
   try {
@@ -91,7 +498,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     text = await res.text();
   } catch {
-    const message = "应急控制服务响应中断，未收到完整执行结果";
+    const message = "应急控制服务连接中断，没收到完整的执行结果";
     throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试`);
   }
   let payload: ApiResult<T> = {};
@@ -101,16 +508,41 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const message = `应急控制服务返回了无法确认的内容（HTTP ${res.status}）`;
     throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试。`);
   }
+  if ((isJ1AutoRuleWrite || isJ4Write || path === "/sop/playbooks" || path.startsWith("/tamper/")) && (!payload || typeof payload !== "object" || Array.isArray(payload)
+    || typeof payload.code !== "number" || payload.message !== undefined && typeof payload.message !== "string")) {
+    throw isWrite ? new EmergencyOutcomeUncertainError("应急控制服务返回了无法确认的内容") : new Error(path.startsWith("/sop/") ? "J4_RESPONSE_INVALID" : "J3_RESPONSE_INVALID");
+  }
   const requestFailed = !res.ok || (isWrite
     ? payload.code !== 0
     : payload.code !== undefined && payload.code >= 400);
+  if ((isJ2Write || isJ3Config || isJ4Write) && (requestFailed || res.headers.get("X-Nexion-Upstream-Outcome") === "unknown")) {
+    const error = Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), {
+      status: res.ok && typeof payload.code === "number" ? payload.code : res.status,
+      reasonCode: payload.message,
+      unknownOutcome: res.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
+    });
+    const partialExecution = isJ4Write && payload.message?.startsWith("J4_EXECUTION_PARTIAL:");
+    const rejected = !partialExecution && (isOriginalRetry ? isExplicitRejection(error)
+      : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
+        && isDeterministicRejection(res.status, payload.code));
+    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+      useAdminAuth.getState().signOut();
+    }
+    if (rejected) {
+      emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+      throw error;
+    }
+    // 5xx 的通用中文是给读取失败写的（请稍后重新加载）；写入没收到确定结果时换成结果未知的说法。
+    throw Object.assign(new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原请求重试。" : error.message), { reasonCode: payload.message });
+  }
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
-    || (requestFailed && outcomeStaysUnknown(res.status, payload.code)))) {
+    || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message)
+      || isJ1AutoRuleWrite && (payload.code ?? res.status) >= 500)))) {
     // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知,让调用方看到「结果未确认」
     // 而不是「失败」——冠失败会诱导运营换渠道重做,而应急止血动作(kill-switch / 地域封锁)
     // 重复执行的代价极高。
     throw new EmergencyOutcomeUncertainError(
-      "应急控制服务连接在提交后中断，执行结果暂未确认",
+      "应急控制服务连接在提交后中断，结果未知",
     );
   }
   if (requestFailed) {
@@ -118,9 +550,16 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
       useAdminAuth.getState().signOut();
     }
-    throw new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`));
+    const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;
+    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status, reasonCode: payload.message });
   }
-  if (isWrite) emergencyAttempts.forget(writeSlot);
+  if (isJ4Write) {
+    // A successful J4 response is a complete sopOverview, not an empty acknowledgement.
+    try { normalizeSop(payload.data); }
+    catch { throw new EmergencyOutcomeUncertainError(formatAdminApiError("J4_RESPONSE_INVALID", "J4_RESPONSE_INVALID")); }
+  }
+  if (isJ2Write || isJ3Config || isJ4Write) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+  else if (isWrite) emergencyAttempts.forget(writeSlot);
   return payload.data as T;
 }
 
@@ -133,7 +572,7 @@ async function contentApiRequest<T>(path: string): Promise<T> {
   try {
     payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   } catch {
-    throw new Error(`内容接口返回了无法识别的内容（HTTP ${res.status}），请稍后重试。`);
+    throw new Error(`读到的内容无法识别（HTTP ${res.status}），请稍后重试。`);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
@@ -212,6 +651,16 @@ function requiredText(value: unknown, field: string) {
   if (!normalized) throw new Error(`J_DOMAIN_FIELD_REQUIRED:${field}`);
   return normalized;
 }
+
+/** 暂不可用的业务开关。代码都留着，以后恢复这项，删掉对应这一行就行。 */
+export const UNAVAILABLE_GATES: Record<string, { note: string; detail: string }> = {
+  staking: { note: "App 已下线质押功能", detail: "App 已下线质押功能，这一项暂不可用。" },
+};
+
+/** 业务开关的显示顺序（产品 2026-11-07）：提现、试用、兑换、创世节点、质押；暂不可用的永远排最后。紧急停用开关和今日概览都按它排。 */
+const GATE_DISPLAY_ORDER: readonly string[] = ["withdraw", "trial", "exchange", "genesis", "staking"];
+export const byGateDisplayOrder = (a: string, b: string) =>
+  Number(!!UNAVAILABLE_GATES[a]) - Number(!!UNAVAILABLE_GATES[b]) || GATE_DISPLAY_ORDER.indexOf(a) - GATE_DISPLAY_ORDER.indexOf(b);
 
 const J1_GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
 const J1_GATE_KEY_SET = new Set<string>(J1_GATE_KEYS);
@@ -298,8 +747,38 @@ export type AutoRuleRow = {
   unit: string;
   mode: "automatic" | "advisory" | "manual";
   adjustable: boolean;
+  thresholdSource?: "DEFAULT" | "CONFIGURED";
   refNote?: string;
   refTitle?: string;
+  autoDisableCondition?: {
+    metric: "bankRunRatioPct" | "reconciliationGapUsdt";
+    comparator: ">=" | ">";
+    actualThreshold: number;
+    target: "withdraw" | "exchange";
+    action: "autoDisable";
+  };
+  tamperAdvisory?: {
+    metric: "tamperAccountEventCount";
+    comparator: ">=";
+    actualThreshold: number | null;
+    window: "24h";
+    scope: "PER_ACCOUNT";
+    target: "account";
+    action: "advisory";
+    classification: "TAMPER_ACCOUNT_MONITOR";
+    autoDisable: false;
+    available: boolean;
+    unknownReason: "TAMPER_ALERT_THRESHOLD_INVALID" | null;
+  };
+  manualDisableContract?: {
+    manualDisable: true;
+    autoDisable: false;
+    command: string;
+    permission: string;
+    requiredInputs: string[];
+    requiredHeaders: string[];
+    conditionalInputs: string[];
+  };
 };
 
 export type KillSwitchStats = {
@@ -325,7 +804,7 @@ export type KillSwitchOverview = {
   activeGateCount: number;
   activeGates: JGate[];
   retiredGates: Record<string, unknown>[];
-  coverage: { coverageRatio: number; redlinePct: number; yellowLinePct: number; valuationReliable?: boolean; recoveryAllowedByServer?: boolean };
+  coverage: { coverageRatio: number; redlinePct: number; yellowLinePct: number; valuationReliable: boolean; recoveryAllowedByServer: boolean };
   stats: KillSwitchStats;
   emergencySla: EmergencySlaRow[];
   autoRules: AutoRuleRow[];
@@ -333,8 +812,8 @@ export type KillSwitchOverview = {
   sources: string[];
 };
 
-export type GeoCountry = { cc: string; name: string; reason: string; status: string; operator: string; updatedAt: string; activeUsers: number; walletUsdt: number };
-export type GeoCountryOption = { value: string; label: string; source: string; activeUsers: number; walletUsdt: number };
+export type GeoCountry = { cc: string; name: string; reason: string; status: string; operator: string; updatedAt: string; activeUsers: number; walletUsdt: string };
+export type GeoCountryOption = { value: string; label: string; source: string; activeUsers: number; walletUsdt: string };
 export type GeoEdgeSourceOption = { value: string; label: string; description: string; healthy: boolean; healthStatus: string; sampleCount: number };
 export type GeoRecentChange = { action: string; resourceType: string; resourceId: string; operator: string; reason: string; beforeValue: string; afterValue: string; createdAt: string };
 export type GeoEndpoint = {
@@ -355,6 +834,68 @@ export type GeoEndpoint = {
   configurable: boolean;
 };
 export type GeoHit = { cc: string; name: string; nm: string; count: number; ct: number };
+export type GeoHitSummary = {
+  domain: "J2"; window: "ROLLING_24H"; available: true;
+  windowStart: string; capturedAt: string; totalBlockedEvents: number; countryCount: number;
+  source: string[]; sourceFields: string[]; definition: string;
+  coverage: "recorded_geo_block_events_only"; uniqueUsers: false; allAccessProof: false;
+};
+
+/** Separate from the overview's top-20 sum; local database times stay unconverted. */
+export async function fetchJ2GeoHitSummary(signal?: AbortSignal): Promise<GeoHitSummary> {
+  const row = rec(await apiRequest<unknown>("/geo-block/hit-summary", { signal }));
+  if (row.domain !== "J2" || row.window !== "ROLLING_24H" || row.available !== true
+    || row.coverage !== "recorded_geo_block_events_only" || row.uniqueUsers !== false || row.allAccessProof !== false) {
+    throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitSummary");
+  }
+  const count = (key: string) => {
+    const value = requiredNum(row[key], `geo.hitSummary.${key}`);
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitSummary.${key}`);
+    return value;
+  };
+  return { domain: "J2", window: "ROLLING_24H", available: true,
+    windowStart: requiredText(row.windowStart, "geo.hitSummary.windowStart"), capturedAt: requiredText(row.capturedAt, "geo.hitSummary.capturedAt"),
+    totalBlockedEvents: count("totalBlockedEvents"), countryCount: count("countryCount"),
+    source: requiredStringArray(row.source, "geo.hitSummary.source"), sourceFields: requiredStringArray(row.sourceFields, "geo.hitSummary.sourceFields"),
+    definition: requiredText(row.definition, "geo.hitSummary.definition"), coverage: "recorded_geo_block_events_only", uniqueUsers: false, allAccessProof: false };
+}
+/** Individual refused requests, distinct from country settings and command receipts. */
+export type GeoHitDetail = {
+  id: number; recordedAt: string; countryCode: string; countryName: string;
+  endpointKey: string | null; source: string | null; userNo: string | null; eventCount: number;
+};
+export type GeoHitDetailPage = { total: number; pageNum: number; pageSize: number; records: GeoHitDetail[] };
+export type GeoHitDetailQuery = { countryCode?: string; endpointKey?: string; pageNum?: number; pageSize?: number };
+
+export async function fetchJ2GeoHitDetails(query: GeoHitDetailQuery = {}, signal?: AbortSignal): Promise<GeoHitDetailPage> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) if (value !== undefined) search.set(key, String(value));
+  const data = rec(await apiRequest<unknown>(`/geo-block/hits${search.size ? `?${search}` : ""}`, { signal }));
+  const count = (value: unknown, field: string, min = 0) => {
+    const result = requiredNum(value, `geo.hitDetails.${field}`);
+    if (!Number.isSafeInteger(result) || result < min) throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.${field}`);
+    return result;
+  };
+  const total = count(data.total, "total"), pageNum = count(data.pageNum, "pageNum", 1), pageSize = count(data.pageSize, "pageSize", 1);
+  if (pageSize > 100) throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.pageSize");
+  const records = requiredRecordRows(data.records, "geo.hitDetails.records").map((row, index): GeoHitDetail => {
+    const optionalText = (key: "endpointKey" | "source" | "userNo") => {
+      const value = row[key];
+      if (value == null) return null;
+      if (typeof value !== "string") throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.records.${index}.${key}`);
+      return value;
+    };
+    return { id: count(row.id, `records.${index}.id`, 1),
+      recordedAt: requiredText(row.recordedAt, `geo.hitDetails.records.${index}.recordedAt`),
+      countryCode: requiredText(row.countryCode, `geo.hitDetails.records.${index}.countryCode`),
+      countryName: requiredText(row.countryName, `geo.hitDetails.records.${index}.countryName`),
+      endpointKey: optionalText("endpointKey"), source: optionalText("source"), userNo: optionalText("userNo"),
+      eventCount: count(row.eventCount, `records.${index}.eventCount`) };
+  });
+  if (records.length > pageSize || records.length > total) throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitDetails.records");
+  return { total, pageNum, pageSize, records };
+}
+
 export type GeoEdgeMetric = { key: string; k: string; value: string; v: string; tone: string };
 export type GeoBlockOverview = {
   blocked: GeoCountry[];
@@ -365,7 +906,7 @@ export type GeoBlockOverview = {
   hits: GeoHit[];
   edge: { source: string; sourceKnown: boolean; sources: GeoEdgeSourceOption[]; healthy: boolean; healthStatus: string; metrics: GeoEdgeMetric[] };
   recentChanges: GeoRecentChange[];
-  stats: Record<string, unknown>;
+  stats: Record<string, unknown> & { totalHits: number };
   sources: string[];
 };
 
@@ -390,6 +931,7 @@ export type TamperAccount = {
   cnt: number;
   k4: string;
   last: string;
+  lastOccurredAt: string;
   paths: string[];
   cluster: string;
   fedToK4: boolean;
@@ -399,10 +941,19 @@ export type TamperAccount = {
 export type TamperAccountPage = {
   page: number;
   pageSize: number;
-  total: number;
-  pages: number;
+  total: number | null;
+  pages: number | null;
   hasPrev: boolean;
   hasNext: boolean;
+};
+export type TamperAlertConfig = {
+  threshold: number;
+  label: string;
+  feedK4: boolean;
+  effectiveThreshold: number;
+  effectiveLabel: string;
+  sevenDayAlertAccounts: number;
+  sevenDayPreviewByThreshold: Record<string, number>;
 };
 export type TamperOverview = {
   window: "24h" | "7d" | "30d";
@@ -420,13 +971,15 @@ export type TamperOverview = {
     activePaths: string[];
     missingPaths: string[];
   };
-  alertConfig: {
-    threshold: number;
-    label: string;
+  alertConfig: TamperAlertConfig | {
+    available: false;
+    unknownReason: "TAMPER_ALERT_THRESHOLD_INVALID";
+    threshold: null;
+    label: null;
     feedK4: boolean;
-    effectiveThreshold: number;
-    effectiveLabel: string;
-    sevenDayAlertAccounts: number;
+    effectiveThreshold: null;
+    effectiveLabel: null;
+    sevenDayAlertAccounts: null;
     sevenDayPreviewByThreshold: Record<string, number>;
   };
   sources: string[];
@@ -443,7 +996,19 @@ export type TamperReport = {
   accountCount: number;
 };
 
-export type PlaybookStep = { domain: string; dom: string; action: string; ax: string; approve: boolean; ref?: string | null };
+export type J4StepImpact = {
+  available: false;
+  reason: "NO_AUTHORITATIVE_IMPACT_COUNT" | "TARGET_SCOPE_ONLY" | "NOTIFICATION_COUNT_ONLY";
+  scope: {
+    type: "killswitch" | "country" | "user" | "cluster" | "campaign" | "disclosure" | "unknown";
+    value: string;
+    targetUserCount?: number;
+  };
+  estimatedUsers: null;
+  actualAffectedUsers: null;
+  actualNotifications: number | null;
+};
+export type PlaybookStep = { domain: string; dom: string; action: string; ax: string; approve: boolean; ref?: string | null; impact?: J4StepImpact };
 export type Playbook = {
   code: string;
   name: string;
@@ -480,11 +1045,12 @@ export type SopExecution = {
   operator: string;
   roleGate: string;
   executionId?: string;
+  executionGeneration?: number;
   rollbackStatus?: string;
   rollbackAt?: string;
   rollbackReason?: string;
   notificationDispatch: Record<string, unknown>;
-  domainActions: Array<Record<string, unknown>>;
+  domainActions: Array<Record<string, unknown> & { impact?: J4StepImpact }>;
   rollbackActions: Array<Record<string, unknown>>;
   reversible: boolean;
 };
@@ -566,23 +1132,23 @@ export type JEmergencyData = {
 };
 
 export type JEmergencyActions = {
-  reloadJEmergency: () => Promise<void>;
+  reloadJEmergency: () => Promise<JEmergencyData>;
   toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string, context?: { triggerBasis?: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   emergencyDisableJ1: (keys: string[], reason: string, operator?: string, context?: { triggerBasis: string; regulatoryContext: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   updateJ1Sla: (paramKey: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
-  updateJ1AutoRule: (ruleId: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
+  updateJ1AutoRule: (ruleId: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<string>;
   confirmJ1AutoTrigger: (key: string, incidentId: string, decision: "keep_disabled" | "recommend_restore", reason: string, commandKey?: string) => Promise<void>;
   updateJ2Country: (countryCode: string, status: "blocked" | "limited" | "allowed", expectedStatus: "blocked" | "limited" | "allowed", triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
-  replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
-  updateJ2Endpoint: (endpointKey: string, mode: "explicit" | "derived", countries: string[], expectedMode: "explicit" | "derived", expectedCountries: string[], reason: string, commandKey?: string) => Promise<void>;
-  updateJ2EdgeJudge: (source: string, expectedSource: string, reason: string, commandKey?: string) => Promise<void>;
-  emergencyBlockJ2: (countries: string[], triggerBasis: string, reason: string, commandKey?: string) => Promise<void>;
+  replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
+  updateJ2Endpoint: (endpointKey: string, mode: "explicit" | "derived", countries: string[], expectedMode: "explicit" | "derived", expectedCountries: string[], reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
+  updateJ2EdgeJudge: (source: string, expectedSource: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
+  emergencyBlockJ2: (countries: string[], triggerBasis: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
   loadJ3TamperPage: (window: "24h" | "7d" | "30d", page: number, pageSize: number) => Promise<TamperOverview>;
-  updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string) => Promise<void>;
+  updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string, context?: TamperAlertConfig) => Promise<void>;
   createJ3Report: (window: "24h" | "7d" | "30d", reason: string, commandKey?: string) => Promise<TamperReport>;
-  createJ4Playbook: (body: J4PlaybookCreateInput, reason: string, commandKey?: string) => Promise<void>;
-  updateJ4Playbook: (code: string, body: J4PlaybookUpdateInput, reason: string, commandKey?: string) => Promise<void>;
-  drillJ4Playbook: (code: string, reason: string, commandKey?: string) => Promise<void>;
+  createJ4Playbook: (body: J4PlaybookCreateInput, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
+  updateJ4Playbook: (code: string, body: J4PlaybookUpdateInput, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
+  drillJ4Playbook: (code: string, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
   executeJ4Playbook: (
     code: string,
     emergency: boolean,
@@ -590,9 +1156,9 @@ export type JEmergencyActions = {
     confirmation: { triggerBasis: string; triggerContext: string; stepConfirmations: J4StepConfirmationInput[] },
     commandKey?: string,
   ) => Promise<void>;
-  cancelJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string) => Promise<void>;
-  resumeJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string) => Promise<void>;
-  rollbackJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string) => Promise<void>;
+  cancelJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
+  resumeJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
+  rollbackJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
 };
 
 function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
@@ -646,8 +1212,8 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
   const coverageRatio = requiredNum(coverage.coverageRatio, "coverage.coverageRatio");
   const redlinePct = requiredNum(coverage.redlinePct, "coverage.redlinePct");
   const yellowLinePct = requiredNum(coverage.yellowLinePct, "coverage.yellowLinePct");
-  const valuationReliable = typeof coverage.valuationReliable === "boolean" ? coverage.valuationReliable : undefined;
-  const recoveryAllowedByServer = typeof coverage.recoveryAllowedByServer === "boolean" ? coverage.recoveryAllowedByServer : undefined;
+  const valuationReliable = requiredBool(coverage.valuationReliable, "coverage.valuationReliable");
+  const recoveryAllowedByServer = requiredBool(coverage.recoveryAllowedByServer, "coverage.recoveryAllowedByServer");
   if (coverageRatio < 0 || redlinePct < 0 || yellowLinePct < 0 || yellowLinePct <= redlinePct) {
     contractError("coverage.thresholds");
   }
@@ -733,7 +1299,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     tamperCluster: { kind: "number", mode: "advisory", adjustable: false },
     regulatoryDirective: { kind: "text", mode: "manual", adjustable: false },
   };
-  const autoRules = autoRuleRows.map((row, index) => {
+  const autoRules = autoRuleRows.map<AutoRuleRow>((row, index) => {
     const id = autoRuleIds[index];
     const expected = expectedRuleSemantics[id];
     const kind = requiredText(row.kind, `killSwitch.autoRules.${index}.kind`);
@@ -743,9 +1309,52 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     if (!expected || kind !== expected.kind || mode !== expected.mode || adjustable !== expected.adjustable) {
       contractError(`killSwitch.autoRules.${index}.semantics`);
     }
+    const { thresholdSource } = row;
+    if (thresholdSource !== undefined && thresholdSource !== "DEFAULT" && thresholdSource !== "CONFIGURED") {
+      contractError(`killSwitch.autoRules.${index}.thresholdSource`);
+    }
     requiredText(row.configKey, `killSwitch.autoRules.${index}.configKey`);
-    if (kind === "number") {
+    let autoDisableCondition: AutoRuleRow["autoDisableCondition"];
+    let tamperAdvisory: AutoRuleRow["tamperAdvisory"];
+    const { action, metric, comparator, target } = row;
+    if (action === "autoDisable") {
+      const withdraw = id === "withdrawSurge" && metric === "bankRunRatioPct" && comparator === ">=" && target === "withdraw";
+      const exchange = id === "maturityGap" && metric === "reconciliationGapUsdt" && comparator === ">" && target === "exchange";
+      if (!withdraw && !exchange) contractError(`killSwitch.autoRules.${index}.condition`);
+      autoDisableCondition = { action, metric, comparator, target,
+        actualThreshold: requiredNum(row.actualThreshold, `killSwitch.autoRules.${index}.actualThreshold`) };
+    } else if (action === "advisory") {
+      const { window, scope, classification, autoDisable } = row;
+      const available = requiredBool(row.available, `killSwitch.autoRules.${index}.available`);
+      const unknownReason = available ? null : "TAMPER_ALERT_THRESHOLD_INVALID";
+      if (id !== "tamperCluster" || metric !== "tamperAccountEventCount" || comparator !== ">=" || target !== "account"
+        || window !== "24h" || scope !== "PER_ACCOUNT" || classification !== "TAMPER_ACCOUNT_MONITOR" || autoDisable !== false
+        || row.unknownReason !== unknownReason || (!available && row.actualThreshold !== null)) {
+        contractError(`killSwitch.autoRules.${index}.advisory`);
+      }
+      const actualThreshold = available ? requiredNum(row.actualThreshold, `killSwitch.autoRules.${index}.actualThreshold`) : null;
+      tamperAdvisory = { action, metric, comparator, target, window, scope, classification, autoDisable, available, unknownReason, actualThreshold };
+    } else if (action !== undefined) {
+      contractError(`killSwitch.autoRules.${index}.action`);
+    }
+    if (kind === "number" && !autoDisableCondition && !tamperAdvisory) {
       requiredNum(threshold.replaceAll(",", ""), `killSwitch.autoRules.${index}.thr`);
+    }
+    let manualDisableContract: AutoRuleRow["manualDisableContract"];
+    if (row.manualDisable !== undefined) {
+      const field = `killSwitch.autoRules.${index}.manualDisable`;
+      if (id !== "regulatoryDirective" || row.manualDisable !== true || row.autoDisable !== false) {
+        contractError(field);
+      }
+      manualDisableContract = {
+        manualDisable: row.manualDisable,
+        autoDisable: row.autoDisable,
+        command: requiredText(row.manualDisableCommand, `${field}.command`),
+        permission: requiredText(row.manualDisablePermission, `${field}.permission`),
+        requiredInputs: requiredStringArray(row.manualDisableRequiredInputs, `${field}.requiredInputs`),
+        requiredHeaders: requiredStringArray(row.manualDisableRequiredHeaders, `${field}.requiredHeaders`),
+        conditionalInputs: requiredStringArray(row.manualDisableConditionalInputs, `${field}.conditionalInputs`),
+      };
     }
     return {
       id,
@@ -759,13 +1368,17 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       unit: str(row.unit),
       mode: expected.mode,
       adjustable,
+      thresholdSource,
       refNote: str(row.refNote),
       refTitle: str(row.refTitle),
+      autoDisableCondition,
+      tamperAdvisory,
+      manualDisableContract,
     };
   });
   return {
     activeGateCount,
-    activeGates,
+    activeGates: [...activeGates].sort((a, b) => byGateDisplayOrder(a.key, b.key)),
     retiredGates: rows<Record<string, unknown>>(data.retiredGates),
     coverage: {
       coverageRatio,
@@ -789,10 +1402,18 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
   };
 }
 
+/** The backend serializes BigDecimal amounts as decimal strings; keep every digit. */
+function requiredDecimalText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) {
+    throw new Error(`J_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return value;
+}
+
 function normalizeGeo(raw: unknown): GeoBlockOverview {
   const data = rec(raw);
   const edge = rec(data.edge);
-  const normalizeCountries = (value: unknown, field: string) => requiredRows<Record<string, unknown>>(value, field).map((row, index) => ({
+  const normalizeCountries = (value: unknown, field: string) => requiredRecordRows(value, field).map((row, index) => ({
     cc: requiredText(row.cc, `${field}.${index}.cc`),
     name: requiredText(row.name, `${field}.${index}.name`),
     reason: str(row.reason),
@@ -800,11 +1421,11 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
     operator: str(row.operator),
     updatedAt: str(row.updatedAt),
     activeUsers: requiredNum(row.activeUsers, `${field}.${index}.activeUsers`),
-    walletUsdt: requiredNum(row.walletUsdt, `${field}.${index}.walletUsdt`),
+    walletUsdt: requiredDecimalText(row.walletUsdt, `${field}.${index}.walletUsdt`),
   }));
-  const countryOptionsRaw = requiredRows<Record<string, unknown>>(data.countryOptions, "geo.countryOptions");
+  const countryOptionsRaw = requiredRecordRows(data.countryOptions, "geo.countryOptions");
   if (countryOptionsRaw.length === 0) contractError("geo.countryOptions.empty");
-  const edgeSourcesRaw = requiredRows<Record<string, unknown>>(edge.sources, "geo.edge.sources");
+  const edgeSourcesRaw = requiredRecordRows(edge.sources, "geo.edge.sources");
   if (edgeSourcesRaw.length === 0) contractError("geo.edge.sources.empty");
   return {
     blocked: normalizeCountries(data.blocked, "geo.blocked"),
@@ -815,7 +1436,7 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
       label: requiredText(row.label, `geo.countryOptions.${index}.label`),
       source: requiredText(row.source, `geo.countryOptions.${index}.source`),
       activeUsers: requiredNum(row.activeUsers, `geo.countryOptions.${index}.activeUsers`),
-      walletUsdt: requiredNum(row.walletUsdt, `geo.countryOptions.${index}.walletUsdt`),
+      walletUsdt: requiredDecimalText(row.walletUsdt, `geo.countryOptions.${index}.walletUsdt`),
     })),
     endpoints: requiredRows<Record<string, unknown>>(data.endpoints, "geo.endpoints").map((row, index) => {
       const endpoint = str(row.endpoint);
@@ -877,7 +1498,7 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
       afterValue: str(row.afterValue),
       createdAt: str(row.createdAt),
     })),
-    stats: rec(data.stats),
+    stats: { ...rec(data.stats), totalHits: requiredNum(rec(data.stats).totalHits, "geo.stats.totalHits") },
     sources: strArray(data.sources),
   };
 }
@@ -892,8 +1513,10 @@ function normalizeTrendWindow(value: unknown, field: string): TamperTrendWindow 
 function normalizeTamper(raw: unknown): TamperOverview {
   const data = rec(raw);
   const trend = rec(data.trend);
-  const alertConfig = rec(data.alertConfig);
+  const alertConfig = normalizeTamperAlertConfig(data.alertConfig);
   const accountPage = rec(data.accountPage);
+  const thresholdUnavailable = alertConfig.threshold === null;
+  if (thresholdUnavailable && (accountPage.total !== null || accountPage.pages !== null)) contractError("accountPage.thresholdUnavailable");
   const coverage = rec(data.coverage);
   const window = requiredText(data.window, "tamper.window");
   if (window !== "24h" && window !== "7d" && window !== "30d") contractError("tamper.window");
@@ -920,6 +1543,8 @@ function normalizeTamper(raw: unknown): TamperOverview {
     })),
     accounts: requiredRows<Record<string, unknown>>(data.accounts, "tamper.accounts").map((row, index) => {
       const userCode = str(row.userCode, str(row.userNo));
+      if (row.fedToK4 == null) throw new Error("J3_RISK_SCORE_RECEIPT_UNAVAILABLE");
+      if (row.b5Triggered == null) throw new Error("J3_RISK_ALERT_RECEIPT_UNAVAILABLE");
       return {
         userCode,
         userNo: userCode,
@@ -927,6 +1552,11 @@ function normalizeTamper(raw: unknown): TamperOverview {
         cnt: requiredNum(row.count, `tamper.accounts.${index}.count`),
         k4: str(row.k4),
         last: str(row.last),
+        lastOccurredAt: (() => {
+          const value = requiredText(row.lastOccurredAt, `tamper.accounts.${index}.lastOccurredAt`);
+          if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) contractError(`tamper.accounts.${index}.lastOccurredAt`);
+          return value;
+        })(),
         paths: strArray(row.paths),
         cluster: str(row.cluster),
         fedToK4: requiredBool(row.fedToK4, `tamper.accounts.${index}.fedToK4`),
@@ -941,8 +1571,8 @@ function normalizeTamper(raw: unknown): TamperOverview {
     accountPage: {
       page: requiredNum(accountPage.page, "accountPage.page"),
       pageSize: requiredNum(accountPage.pageSize, "accountPage.pageSize"),
-      total: requiredNum(accountPage.total, "accountPage.total"),
-      pages: requiredNum(accountPage.pages, "accountPage.pages"),
+      total: thresholdUnavailable ? null : requiredNum(accountPage.total, "accountPage.total"),
+      pages: thresholdUnavailable ? null : requiredNum(accountPage.pages, "accountPage.pages"),
       hasPrev: requiredBool(accountPage.hasPrev, "accountPage.hasPrev"),
       hasNext: requiredBool(accountPage.hasNext, "accountPage.hasNext"),
     },
@@ -962,39 +1592,53 @@ function normalizeTamper(raw: unknown): TamperOverview {
       }
       return { status, registeredCount, activeCount, registeredPaths, activePaths, missingPaths };
     })(),
-    alertConfig: (() => {
-      const threshold = requiredNum(alertConfig.threshold, "alertConfig.threshold");
-      const effectiveThreshold = requiredNum(alertConfig.effectiveThreshold, "alertConfig.effectiveThreshold");
-      const sevenDayAlertAccounts = requiredNum(alertConfig.sevenDayAlertAccounts, "alertConfig.sevenDayAlertAccounts");
-      const rawPreview = rec(alertConfig.sevenDayPreviewByThreshold);
-      const previewEntries = Object.entries(rawPreview);
-      const expectedKeys = Array.from({ length: 100 }, (_, index) => String(index + 1));
-      if (previewEntries.length !== expectedKeys.length
-        || expectedKeys.some((key) => !Object.prototype.hasOwnProperty.call(rawPreview, key))) {
-        contractError("alertConfig.sevenDayPreviewByThreshold.keys");
-      }
-      const sevenDayPreviewByThreshold = Object.fromEntries(previewEntries.map(([key, value]) => {
-        const count = requiredNum(value, `alertConfig.sevenDayPreviewByThreshold.${key}`);
-        if (!Number.isInteger(count) || count < 0) contractError(`alertConfig.sevenDayPreviewByThreshold.${key}`);
-        return [key, count];
-      }));
-      if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100
-        || !Number.isInteger(effectiveThreshold) || effectiveThreshold < threshold
-        || !Number.isInteger(sevenDayAlertAccounts) || sevenDayAlertAccounts < 0
-        || sevenDayPreviewByThreshold[String(threshold)] !== sevenDayAlertAccounts) {
-        contractError("alertConfig.consistency");
-      }
-      return {
-        threshold,
-        label: requiredText(alertConfig.label, "alertConfig.label"),
-        feedK4: requiredBool(alertConfig.feedK4, "alertConfig.feedK4"),
-        effectiveThreshold,
-        effectiveLabel: requiredText(alertConfig.effectiveLabel, "alertConfig.effectiveLabel"),
-        sevenDayAlertAccounts,
-        sevenDayPreviewByThreshold,
-      };
-    })(),
+    alertConfig,
     sources: strArray(data.sources),
+  };
+}
+
+function normalizeTamperAlertConfig(raw: unknown): TamperOverview["alertConfig"] {
+  const alertConfig = rec(raw);
+  const feedK4 = requiredBool(alertConfig.feedK4, "alertConfig.feedK4");
+  const rawPreview = rec(alertConfig.sevenDayPreviewByThreshold);
+  const previewEntries = Object.entries(rawPreview);
+  const expectedKeys = Array.from({ length: 100 }, (_, index) => String(index + 1));
+  if (previewEntries.length !== expectedKeys.length
+    || expectedKeys.some((key) => !Object.prototype.hasOwnProperty.call(rawPreview, key))) {
+    contractError("alertConfig.sevenDayPreviewByThreshold.keys");
+  }
+  const sevenDayPreviewByThreshold = Object.fromEntries(previewEntries.map(([key, value]) => {
+    const count = requiredNum(value, `alertConfig.sevenDayPreviewByThreshold.${key}`);
+    if (!Number.isInteger(count) || count < 0) contractError(`alertConfig.sevenDayPreviewByThreshold.${key}`);
+    return [key, count];
+  }));
+  if (alertConfig.available === false) {
+    if (alertConfig.unknownReason !== "TAMPER_ALERT_THRESHOLD_INVALID"
+      || [alertConfig.threshold, alertConfig.label, alertConfig.effectiveThreshold, alertConfig.effectiveLabel, alertConfig.sevenDayAlertAccounts]
+        .some(value => value !== null)) contractError("alertConfig.thresholdUnavailable");
+    return {
+      available: false, unknownReason: alertConfig.unknownReason,
+      threshold: null, label: null, effectiveThreshold: null, effectiveLabel: null, sevenDayAlertAccounts: null,
+      feedK4, sevenDayPreviewByThreshold,
+    };
+  }
+  const threshold = requiredNum(alertConfig.threshold, "alertConfig.threshold");
+  const effectiveThreshold = requiredNum(alertConfig.effectiveThreshold, "alertConfig.effectiveThreshold");
+  const sevenDayAlertAccounts = requiredNum(alertConfig.sevenDayAlertAccounts, "alertConfig.sevenDayAlertAccounts");
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100
+    || !Number.isInteger(effectiveThreshold) || effectiveThreshold < threshold
+    || !Number.isInteger(sevenDayAlertAccounts) || sevenDayAlertAccounts < 0
+    || sevenDayPreviewByThreshold[String(threshold)] !== sevenDayAlertAccounts) {
+    contractError("alertConfig.consistency");
+  }
+  return {
+    threshold,
+    label: requiredText(alertConfig.label, "alertConfig.label"),
+    feedK4,
+    effectiveThreshold,
+    effectiveLabel: requiredText(alertConfig.effectiveLabel, "alertConfig.effectiveLabel"),
+    sevenDayAlertAccounts,
+    sevenDayPreviewByThreshold,
   };
 }
 
@@ -1025,9 +1669,105 @@ function normalizeTamperReport(raw: unknown, expectedWindow: "24h" | "7d" | "30d
   };
 }
 
+/** 6c8eb9ae/91adf9aa: counts describe target members or notifications, never affected users.
+ * An absent contract is the legacy backend, distinct from an explicit unavailable impact. */
+function normalizeJ4StepImpact(value: unknown): J4StepImpact | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) contractError("sop.step.impact");
+  const row = value as Record<string, unknown>;
+  if (!row.scope || typeof row.scope !== "object" || Array.isArray(row.scope)) contractError("sop.step.impact.scope");
+  const scope = row.scope as Record<string, unknown>;
+  if (row.available !== false || row.estimatedUsers !== null || row.actualAffectedUsers !== null
+    || typeof row.reason !== "string" || !["NO_AUTHORITATIVE_IMPACT_COUNT", "TARGET_SCOPE_ONLY", "NOTIFICATION_COUNT_ONLY"].includes(row.reason)
+    || typeof scope.type !== "string" || !["killswitch", "country", "user", "cluster", "campaign", "disclosure", "unknown"].includes(scope.type)
+    || typeof scope.value !== "string"
+    || scope.targetUserCount !== undefined && (typeof scope.targetUserCount !== "number" || !Number.isSafeInteger(scope.targetUserCount) || scope.targetUserCount < 0)
+    || row.actualNotifications !== null && (typeof row.actualNotifications !== "number" || !Number.isSafeInteger(row.actualNotifications) || row.actualNotifications < 0)) {
+    contractError("sop.step.impact");
+  }
+  return {
+    available: false,
+    reason: row.reason as J4StepImpact["reason"],
+    scope: { type: scope.type as J4StepImpact["scope"]["type"], value: scope.value,
+      ...(scope.targetUserCount !== undefined ? { targetUserCount: scope.targetUserCount as number } : {}) },
+    estimatedUsers: null,
+    actualAffectedUsers: null,
+    actualNotifications: row.actualNotifications as number | null,
+  };
+}
+
+function normalizeSopPlaybook(raw: unknown): Playbook {
+  const row = rec(raw);
+  const sequence = requiredRecordRows(row.sequence, "sop.playbook.sequence").map((step) => ({
+    domain: requiredText(step.domain, "sop.step.domain"),
+    dom: requiredText(step.domain, "sop.step.domain"),
+    action: str(step.action),
+    ax: str(step.action),
+    approve: requiredBool(step.approve, "sop.step.approve"),
+    ref: step.ref == null ? null : str(step.ref),
+    impact: normalizeJ4StepImpact(step.impact),
+  }));
+  const emergency = requiredBool(row.emergency, "sop.playbook.emergency");
+  return {
+    code: requiredText(row.code, "sop.playbook.code"),
+    name: requiredText(row.name, "sop.playbook.name"),
+    scene: requiredText(row.scene, "sop.playbook.scene"),
+    emergency,
+    emer: emergency,
+    sla: requiredText(row.sla, "sop.playbook.sla"),
+    state: str(row.state, "todo"),
+    owner: str(row.owner),
+    lastDrill: str(row.lastDrill),
+    sequence,
+    seq: sequence,
+    notifyCampaignNo: str(row.notifyCampaignNo),
+    notifyTemplate: str(row.notifyTemplate),
+    rollback: str(row.rollback),
+    drillRequired: requiredBool(row.drillRequired, "sop.playbook.drillRequired"),
+    draft: requiredBool(row.draft, "sop.playbook.draft"),
+    version: str(row.version) || undefined,
+    executionReady: row.executionReady == null ? undefined : requiredBool(row.executionReady, "sop.playbook.executionReady"),
+    drillFresh: row.drillFresh == null ? undefined : requiredBool(row.drillFresh, "sop.playbook.drillFresh"),
+    drillEvidence: row.drillEvidence == null ? undefined : requiredBool(row.drillEvidence, "sop.playbook.drillEvidence"),
+    campaignReady: row.campaignReady == null ? undefined : requiredBool(row.campaignReady, "sop.playbook.campaignReady"),
+    readinessReason: str(row.readinessReason),
+  };
+
+}
+
+function normalizeSopExecution(raw: unknown): SopExecution {
+  const row = rec(raw);
+  const executionGeneration = row.executionGeneration;
+  if (executionGeneration !== undefined && (typeof executionGeneration !== "number"
+    || !Number.isSafeInteger(executionGeneration) || executionGeneration < 0)) contractError("sop.execution.executionGeneration");
+  return {
+    timestamp: requiredText(row.timestamp, "sop.execution.timestamp"),
+    ts: requiredText(row.timestamp, "sop.execution.timestamp"),
+    code: requiredText(row.code, "sop.execution.code"),
+    name: str(row.name),
+    trigger: str(row.trigger),
+    trig: str(row.trigger),
+    mode: requiredText(row.mode, "sop.execution.mode"),
+    steps: requiredStringArrayAllowEmpty(row.steps, "sop.execution.steps"),
+    operator: str(row.operator),
+    roleGate: str(row.roleGate),
+    executionId: str(row.executionId),
+    executionGeneration,
+    rollbackStatus: str(row.rollbackStatus),
+    rollbackAt: str(row.rollbackAt),
+    rollbackReason: str(row.rollbackReason),
+    notificationDispatch: rec(row.notificationDispatch),
+    domainActions: requiredRecordRows(row.domainActions, "sop.execution.domainActions").map((action) => ({
+      ...action, impact: normalizeJ4StepImpact(action.impact),
+    })),
+    rollbackActions: row.rollbackActions == null ? [] : requiredRecordRows(row.rollbackActions, "sop.execution.rollbackActions"),
+    reversible: requiredBool(row.reversible, "sop.execution.reversible"),
+  };
+}
+
 function normalizeSop(raw: unknown): SopOverview {
   const data = rec(raw);
-  const actionOptions = rows<Record<string, unknown>>(data.actionOptions).map((row) => {
+  const actionOptions = requiredRecordRows(data.actionOptions, "sop.actionOptions").map((row) => {
     const domain = str(row.domain).toUpperCase();
     const ref = row.ref == null ? null : str(row.ref);
     const canonical = ref === "withdraw"
@@ -1058,7 +1798,7 @@ function normalizeSop(raw: unknown): SopOverview {
     || (item.domain === "K1" && item.ref === "cluster-freeze:{target}")
     || (item.domain === "I3" && item.ref === "campaign-notify")
     || (item.domain === "I5" && item.ref === "disclosure-publish:{target}"));
-  const rollbackOptions = rows<Record<string, unknown>>(data.rollbackOptions).map((row) => {
+  const rollbackOptions = requiredRecordRows(data.rollbackOptions, "sop.rollbackOptions").map((row) => {
     const label = str(row.label, str(row.value));
     const scene = str(row.scene, "通用");
     const riskLevel = str(row.riskLevel, "MEDIUM");
@@ -1073,66 +1813,13 @@ function normalizeSop(raw: unknown): SopOverview {
     };
   }).filter((item) => item.value === "root-cause-standard");
   return {
-    contractVersion: str(data.contractVersion),
+    contractVersion: requiredText(data.contractVersion, "sop.contractVersion"),
     stats: rec(data.stats),
-    scenes: strArray(data.scenes),
+    scenes: requiredStringArrayAllowEmpty(data.scenes, "sop.scenes"),
     actionOptions,
     rollbackOptions,
-    playbooks: rows<Record<string, unknown>>(data.playbooks).map((row) => {
-      const sequence = rows<Record<string, unknown>>(row.sequence).map((step) => ({
-        domain: str(step.domain),
-        dom: str(step.domain),
-        action: str(step.action),
-        ax: str(step.action),
-        approve: bool(step.approve),
-        ref: step.ref == null ? null : str(step.ref),
-      }));
-      const emergency = bool(row.emergency);
-      return {
-        code: str(row.code),
-        name: str(row.name),
-        scene: str(row.scene),
-        emergency,
-        emer: emergency,
-        sla: str(row.sla),
-        state: str(row.state, "todo"),
-        owner: str(row.owner),
-        lastDrill: str(row.lastDrill),
-        sequence,
-        seq: sequence,
-        notifyCampaignNo: str(row.notifyCampaignNo),
-        notifyTemplate: str(row.notifyTemplate),
-        rollback: str(row.rollback),
-        drillRequired: bool(row.drillRequired, true),
-        draft: bool(row.draft),
-        version: str(row.version) || undefined,
-        executionReady: bool(row.executionReady),
-        drillFresh: bool(row.drillFresh),
-        drillEvidence: row.drillEvidence == null ? undefined : bool(row.drillEvidence),
-        campaignReady: bool(row.campaignReady),
-        readinessReason: str(row.readinessReason),
-      };
-    }),
-    executions: rows<Record<string, unknown>>(data.executions).map((row) => ({
-      timestamp: str(row.timestamp),
-      ts: str(row.timestamp),
-      code: str(row.code),
-      name: str(row.name),
-      trigger: str(row.trigger),
-      trig: str(row.trigger),
-      mode: str(row.mode),
-      steps: strArray(row.steps),
-      operator: str(row.operator),
-      roleGate: str(row.roleGate),
-      executionId: str(row.executionId),
-      rollbackStatus: str(row.rollbackStatus),
-      rollbackAt: str(row.rollbackAt),
-      rollbackReason: str(row.rollbackReason),
-      notificationDispatch: rec(row.notificationDispatch),
-      domainActions: rows<Record<string, unknown>>(row.domainActions),
-      rollbackActions: rows<Record<string, unknown>>(row.rollbackActions),
-      reversible: bool(row.reversible),
-    })),
+    playbooks: requiredRecordRows(data.playbooks, "sop.playbooks").map(normalizeSopPlaybook),
+    executions: requiredRecordRows(data.executions, "sop.executions").map(normalizeSopExecution),
     sources: strArray(data.sources),
   };
 }
@@ -1212,21 +1899,30 @@ export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   toggleJ1KillSwitch: (key, enabled, reason, context, commandKey) => apiRequest(`/kill-switches/${encodeURIComponent(key)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ enabled: enabled ? "enabled" : "disabled", ...context }, reason)) }).then(() => undefined),
   emergencyDisableJ1: (keys, reason, operator, context, commandKey) => apiRequest("/kill-switches/emergency-disable", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ keys, ...context }, reason, operator)) }).then(() => undefined),
   updateJ1Sla: (paramKey, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
-  updateJ1AutoRule: (ruleId, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
+  updateJ1AutoRule: async (ruleId, value, expectedValue, reason, commandKey) => {
+    const response = await apiRequest<unknown>(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, {
+      method: "PATCH",
+      headers: commandKey ? { "Idempotency-Key": commandKey } : undefined,
+      body: JSON.stringify(withReason({ value, expectedValue }, reason)),
+    });
+    const updated = rec(rec(response).updated);
+    if (updated.ruleId !== ruleId || typeof updated.value !== "string") throw new EmergencyOutcomeUncertainError();
+    return updated.value;
+  },
   confirmJ1AutoTrigger: (key, incidentId, decision, reason, commandKey) => apiRequest(`/kill-switches/auto-confirmations/${encodeURIComponent(key)}`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ incidentId, decision }, reason)) }).then(() => undefined),
   updateJ2Country: (countryCode, status, expectedStatus, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/countries/${encodeURIComponent(countryCode)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, expectedStatus, triggerBasis }, reason)) }).then(() => undefined),
-  replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }).then(() => undefined),
-  updateJ2Endpoint: (endpointKey, mode, countries, expectedMode, expectedCountries, reason, commandKey) => apiRequest(`/geo-block/endpoints/${encodeURIComponent(endpointKey)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ mode, countries, expectedMode, expectedCountries }, reason)) }).then(() => undefined),
-  updateJ2EdgeJudge: (source, expectedSource, reason, commandKey) => apiRequest("/geo-block/edge-judge", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ source, expectedSource }, reason)) }).then(() => undefined),
-  emergencyBlockJ2: (countries, triggerBasis, reason, commandKey) => apiRequest("/geo-block/emergency-blocks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ countries, triggerBasis }, reason)) }).then(() => undefined),
+  replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey, context) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }, context).then(() => undefined),
+  updateJ2Endpoint: (endpointKey, mode, countries, expectedMode, expectedCountries, reason, commandKey, context) => apiRequest(`/geo-block/endpoints/${encodeURIComponent(endpointKey)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ mode, countries, expectedMode, expectedCountries }, reason)) }, context).then(() => undefined),
+  updateJ2EdgeJudge: (source, expectedSource, reason, commandKey, context) => apiRequest("/geo-block/edge-judge", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ source, expectedSource }, reason)) }, context).then(() => undefined),
+  emergencyBlockJ2: (countries, triggerBasis, reason, commandKey, context) => apiRequest("/geo-block/emergency-blocks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ countries, triggerBasis }, reason)) }, context).then(() => undefined),
   loadJ3TamperPage: fetchJTamperOverview,
-  updateJ3AlertConfig: (threshold, feedK4, expectedThreshold, expectedFeedK4, reason, commandKey) => apiRequest("/tamper/alert-config", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ threshold, feedK4, expectedThreshold, expectedFeedK4 }, reason)) }).then(() => undefined),
+  updateJ3AlertConfig: (threshold, feedK4, expectedThreshold, expectedFeedK4, reason, commandKey, context) => apiRequest("/tamper/alert-config", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ threshold, feedK4, expectedThreshold, expectedFeedK4 }, reason)) }, undefined, context).then(() => undefined),
   createJ3Report: (window, reason, commandKey) => apiRequest("/tamper/reports", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ window }, reason)) }).then((raw) => normalizeTamperReport(raw, window)),
-  createJ4Playbook: (body, reason, commandKey) => apiRequest("/sop/playbooks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateJ4Playbook: (code, body, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  drillJ4Playbook: (code, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/drills`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  createJ4Playbook: (body, reason, commandKey, context) => apiRequest("/sop/playbooks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }, undefined, undefined, context).then(() => undefined),
+  updateJ4Playbook: (code, body, reason, commandKey, context) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }, undefined, undefined, context).then(() => undefined),
+  drillJ4Playbook: (code, reason, commandKey, context) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/drills`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({}, reason)) }, undefined, undefined, context).then(() => undefined),
   executeJ4Playbook: (code, emergency, reason, confirmation, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency, ...confirmation }, reason)) }).then(() => undefined),
-  cancelJ4Playbook: (code, executionId, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/cancel`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }).then(() => undefined),
-  resumeJ4Playbook: (code, executionId, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/resume`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }).then(() => undefined),
-  rollbackJ4Playbook: (code, executionId, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/rollback`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }).then(() => undefined),
+  cancelJ4Playbook: (code, executionId, reason, commandKey, context) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/cancel`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }, undefined, undefined, context).then(() => undefined),
+  resumeJ4Playbook: (code, executionId, reason, commandKey, context) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/resume`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }, undefined, undefined, context).then(() => undefined),
+  rollbackJ4Playbook: (code, executionId, reason, commandKey, context) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/rollback`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }, undefined, undefined, context).then(() => undefined),
 };

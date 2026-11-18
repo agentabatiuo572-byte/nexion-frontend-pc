@@ -11,6 +11,7 @@ export type ToastKind = "success" | "info" | "warn" | "error";
 
 export interface Toast {
   id: string;
+  key?: string;
   kind: ToastKind;
   title: string;
   description?: string;
@@ -36,6 +37,12 @@ interface UIStore {
   toasts: Toast[];
   pushToast: (t: Omit<Toast, "id" | "durationMs"> & { durationMs?: number }) => string;
   dismissToast: (id: string) => void;
+  pauseToast: (id: string) => void;
+  resumeToast: (id: string) => void;
+  dismissToasts: () => void;
+  dialogs: string[];
+  openDialog: (id: string) => void;
+  closeDialog: (id: string) => void;
 
   confirmQueue: ConfirmInternal[];
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
@@ -44,21 +51,48 @@ interface UIStore {
 
 let toastSeq = 0;
 let confirmSeq = 0;
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const useUI = create<UIStore>((set, get) => ({
   toasts: [],
 
   pushToast: (t) => {
+    if (t.key) {
+      for (const old of get().toasts) if (old.key === t.key) get().dismissToast(old.id);
+    }
     const id = `tst-${++toastSeq}`;
-    const durationMs = t.durationMs ?? 3200;
+    const durationMs = t.durationMs ?? 3000;
     set((s) => ({ toasts: [...s.toasts, { ...t, id, durationMs }] }));
     if (durationMs > 0) {
-      setTimeout(() => get().dismissToast(id), durationMs);
+      toastTimers.set(id, setTimeout(() => get().dismissToast(id), durationMs));
     }
     return id;
   },
 
-  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  dismissToast: (id) => {
+    get().pauseToast(id);
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+  pauseToast: (id) => {
+    clearTimeout(toastTimers.get(id));
+    toastTimers.delete(id);
+  },
+  resumeToast: (id) => {
+    get().pauseToast(id);
+    const toast = get().toasts.find((item) => item.id === id);
+    if (toast && toast.durationMs > 0) toastTimers.set(id, setTimeout(() => get().dismissToast(id), toast.durationMs));
+  },
+  dismissToasts: () => {
+    for (const timer of toastTimers.values()) clearTimeout(timer);
+    toastTimers.clear();
+    set({ toasts: [] });
+  },
+  dialogs: [],
+  openDialog: (id) => {
+    get().dismissToasts();
+    set((s) => ({ dialogs: [...s.dialogs, id] }));
+  },
+  closeDialog: (id) => set((s) => ({ dialogs: s.dialogs.filter((dialog) => dialog !== id) })),
 
   confirmQueue: [],
 
@@ -85,7 +119,7 @@ export const toast = {
   warn: (title: string, description?: string) =>
     useUI.getState().pushToast({ kind: "warn", title, description }),
   error: (title: string, description?: string) =>
-    useUI.getState().pushToast({ kind: "error", title, description, durationMs: 4500 }),
+    useUI.getState().pushToast({ kind: "error", title, description }),
 };
 
 export const confirm = (opts: ConfirmOptions): Promise<boolean> =>

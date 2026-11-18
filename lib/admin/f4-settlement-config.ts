@@ -29,6 +29,18 @@ const BACKEND_KEY_TO_INPUT: Record<string, F4SettlementConfigIssue> = {
   "F.pool.settleCron": { key: "settleCron", label: "结算时间" },
 };
 
+/** 920c2c19 restricts new saves; existing schedule reads retain their original semantics. */
+export function f4WeeklyCronIssue(configured: string): string | undefined {
+  const fields = configured.trim().split(/\s+/);
+  if (fields.length === 5) fields.unshift("0");
+  if (fields.length !== 6) return "F4_SETTLE_CRON_INVALID";
+  const weekly = fields.slice(0, 3).every(value => /^\d+$/.test(value))
+    && ["*", "?"].includes(fields[3]) && fields[4] === "*"
+    && /^(?:[0-7]|MON|TUE|WED|THU|FRI|SAT|SUN)$/i.test(fields[5]);
+  if (!weekly) return "F4_SETTLE_CRON_WEEKLY_REQUIRED";
+  if (Number(fields[0]) > 59 || Number(fields[1]) > 59 || Number(fields[2]) > 23) return "F4_SETTLE_CRON_INVALID";
+}
+
 /**
  * Settlement readiness is server-authoritative. The browser deliberately does not reimplement
  * Spring CronExpression or the Java money/rate parsers; it only explains missing values while

@@ -1,6 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+
 import { fillBlankContentLanguage } from "./content-language-rules";
 
 export type ExperienceSource = "official" | "unavailable";
@@ -45,8 +46,9 @@ export interface PlatformExperienceConfig {
   appDownload: ExperienceDownload;
   homeNewcomerTasksEnabled: boolean;
   homeWeeklyPromoEnabled: boolean;
-  interfaceLanguages?: readonly InterfaceLanguageCode[] | null;
-  operatingLanguages?: readonly OperatingLanguageCode[] | null;
+  /** Omitted on older systems. Null means the stored list is invalid and must be selected again. */
+  interfaceLanguages?: InterfaceLanguageCode[] | null;
+  operatingLanguages?: OperatingLanguageCode[] | null;
   ready: boolean;
   sources: string[];
   updatedAt?: string;
@@ -68,7 +70,6 @@ export function recommendedExperienceChannels(): ExperienceChannel[] {
 }
 
 interface ApiResult<T> { code: number; message?: string; data?: T; }
-const EXPERIENCE_CONFIG_PATH = "/api/admin/platform/config/experience";
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-platform-experience-commands-v1" });
 
 function strictUrl(value: unknown, required: boolean, allowHttp: boolean, allowFragment = false): string {
@@ -91,48 +92,54 @@ function optionalChannelText(value: unknown): string | null | undefined {
   return value;
 }
 
-function strictInterfaceLanguages(value: unknown): InterfaceLanguageCode[] {
+function strictInterfaceLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): InterfaceLanguageCode[] {
   const known: readonly string[] = INTERFACE_LANGUAGES.map((language) => language.code);
   if (!Array.isArray(value) || new Set(value).size !== value.length || value.some((code) => !known.includes(code))
-    || INTERFACE_LANGUAGES.some((language) => language.base && !value.includes(language.code))) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+    || INTERFACE_LANGUAGES.some((language) => language.base && !value.includes(language.code))) throw new Error(errorCode);
   return INTERFACE_LANGUAGES.map((language) => language.code).filter((code) => value.includes(code));
 }
 
+export function isOperatingLanguageList(value: unknown): value is OperatingLanguageCode[] {
+  return Array.isArray(value) && new Set(value).size === value.length && value.includes("en")
+    && value.every((code) => OPERATING_LANGUAGE_CODES.includes(code));
+}
+
 function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): OperatingLanguageCode[] {
-  // B26: en is required and the list comes in contract order (en, zh, vi); another order is malformed, not equivalent.
-  const ordered = Array.isArray(value) ? OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code)) : [];
-  if (!Array.isArray(value) || !ordered.includes("en") || ordered.length !== value.length
-    || ordered.some((code, index) => value[index] !== code)) throw new Error(errorCode);
+  if (!isOperatingLanguageList(value)) throw new Error(errorCode);
+  const ordered = OPERATING_LANGUAGE_CODES.filter((code) => value.includes(code));
+  if (ordered.some((code, index) => code !== value[index])) throw new Error(errorCode);
   return ordered;
 }
 
-class PlatformExperienceRequestError extends Error {
-  readonly resultUnconfirmed: boolean;
+export function changedOperatingLanguages(
+  value: PlatformExperienceConfig["operatingLanguages"],
+  baseline: readonly OperatingLanguageCode[] | null | undefined,
+): OperatingLanguageCode[] | undefined {
+  if (!value || baseline === undefined) return undefined;
+  return baseline && value.length === baseline.length && baseline.every((code) => value.includes(code)) ? undefined : value;
+}
 
-  constructor(
-    public readonly status: number,
-    public readonly apiCode: number | undefined,
-    public readonly apiMessage: string | undefined,
-  ) {
-    const resultUnconfirmed = apiMessage === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || apiMessage === "IDEMPOTENCY_RESULT_UNKNOWN";
-    const message = resultUnconfirmed
-      ? "保存结果未确认，请保持输入不变，稍后再次保存核对。"
-      : apiMessage === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
-        ? apiMessage
-        : formatAdminApiError(apiMessage, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${status}`);
+class PlatformExperienceRequestError extends Error {
+  constructor(public readonly status: number, public readonly apiCode: number | undefined, message: string, public readonly apiMessage?: string) {
     super(message);
     this.name = "PlatformExperienceRequestError";
-    this.resultUnconfirmed = resultUnconfirmed;
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await guardedFetch(path, { ...init, cache: "no-store" });
+async function parseResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!response.ok || !body || body.code !== 0) {
-    throw new PlatformExperienceRequestError(response.status, body?.code, body?.message);
+    const message = body?.message === "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
+      ? "PLATFORM_EXPERIENCE_VERSION_CONFLICT"
+      : formatAdminApiError(body?.message, `PLATFORM_EXPERIENCE_REQUEST_FAILED_${response.status}`);
+    throw new PlatformExperienceRequestError(response.status, body?.code, message, body?.message);
   }
   return body.data as T;
+}
+
+async function request<T>(init?: RequestInit): Promise<T> {
+  const response = await guardedFetch("/api/admin/platform/config/experience", { ...init, cache: "no-store" });
+  return parseResponse<T>(response);
 }
 
 function normalize(raw: unknown): PlatformExperienceConfig {
@@ -141,7 +148,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
   const share = root.share && typeof root.share === "object" && !Array.isArray(root.share) ? root.share as Record<string, unknown> : null;
   const download = share?.appDownload && typeof share.appDownload === "object" && !Array.isArray(share.appDownload) ? share.appDownload as Record<string, unknown> : null;
   const channels = Array.isArray(share?.channels) ? share.channels : [];
-  if (!share || !download || !Number.isSafeInteger(Number(root.version)) || !Array.isArray(channels)
+  if (!share || !download || (typeof root.version !== "number" || !Number.isSafeInteger(root.version) || root.version < 0) || !Array.isArray(channels)
     || typeof root.homeNewcomerTasksEnabled !== "boolean"
     || typeof root.homeWeeklyPromoEnabled !== "boolean") throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   const source = String(download.source ?? "unavailable").trim() as ExperienceSource;
@@ -151,7 +158,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     : null;
   const notes = { zh: String(releaseNotes?.zh ?? ""), en: String(releaseNotes?.en ?? "") };
   const version = String(download.version ?? "").trim();
-  if (source !== "unavailable" && (!version || !notes.zh.trim() || !notes.en.trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  if (source !== "unavailable" && (!version || !notes.en.trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   if (source === "unavailable" && [download.officialUrl, download.iosUrl, download.androidUrl, download.apkUrl, version, notes.zh, notes.en]
     .some((value) => String(value ?? "").trim())) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   return {
@@ -189,11 +196,12 @@ function normalize(raw: unknown): PlatformExperienceConfig {
 }
 
 export async function fetchPlatformExperienceConfig() {
-  return normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
+  return normalize(await request<unknown>());
 }
 
 export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]> {
-  const raw = await request<unknown>("/api/admin/platform/config/operating-languages");
+  const response = await guardedFetch("/api/admin/platform/config/operating-languages", { cache: "no-store" });
+  const raw = await parseResponse<unknown>(response);
   if (!raw || typeof raw !== "object" || !("operatingLanguages" in raw)) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   return strictOperatingLanguages(raw.operatingLanguages);
 }
@@ -202,23 +210,19 @@ export function getRequiredContentLanguages(): Promise<readonly OperatingLanguag
   return fetchOperatingLanguages().catch(() => OPERATING_LANGUAGE_CODES);
 }
 
-export async function updatePlatformExperienceConfig(
-  config: PlatformExperienceConfig,
-  reason: string,
-  operator = "",
+export async function platformExperienceBody(
+  config: PlatformExperienceConfig, reason: string, operator = "", operatingLanguages?: readonly OperatingLanguageCode[],
 ) {
   if (!Number.isSafeInteger(config.version) || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("A3_REASON_LENGTH_INVALID");
-  const submittedInterfaceLanguages = config.interfaceLanguages === null ? ["en"] : config.interfaceLanguages;
-  const submittedOperatingLanguages = config.operatingLanguages === undefined
-    ? undefined
-    : strictOperatingLanguages(config.operatingLanguages ?? ["en"], "PLATFORM_OPERATING_LANGUAGES_INVALID");
+  if (config.interfaceLanguages === null) throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_INVALID");
+  if (config.operatingLanguages === null && operatingLanguages === undefined) throw new Error("PLATFORM_OPERATING_LANGUAGES_INVALID");
   let appDownload = config.appDownload;
   if (appDownload.source === "official") {
     for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
-      try { strictUrl(appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
+      try { strictUrl(config.appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
       catch { throw new Error(`${label}需填写有效的 HTTPS 地址，不能包含空格或账号密码${field === "officialUrl" ? "，支持 #download 等页面锚点" : "或页面锚点"}。`); }
     }
-    const required = submittedOperatingLanguages ?? await getRequiredContentLanguages();
+    const required = operatingLanguages ?? await getRequiredContentLanguages();
     const { en, zh } = appDownload.releaseNotes;
     const releaseNotes = { en, zh: fillBlankContentLanguage(required, "zh", { text: en }, { text: zh }).text };
     if (!appDownload.version.trim() || !releaseNotes.zh.trim() || !releaseNotes.en.trim()) {
@@ -228,36 +232,49 @@ export async function updatePlatformExperienceConfig(
   } else if (appDownload.source !== "unavailable") {
     throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
-  const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload, reason: reason.trim(), operator };
-  if (submittedInterfaceLanguages) body.interfaceLanguages = submittedInterfaceLanguages;
-  if (submittedOperatingLanguages) body.operatingLanguages = submittedOperatingLanguages;
+  return {
+    expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels,
+    appDownload, reason: reason.trim(), operator,
+    ...(config.interfaceLanguages === undefined ? {} : {
+      interfaceLanguages: strictInterfaceLanguages(config.interfaceLanguages, "PLATFORM_EXPERIENCE_LANGUAGES_INVALID"),
+    }),
+    ...(operatingLanguages === undefined ? {} : {
+      operatingLanguages: strictOperatingLanguages(operatingLanguages, "PLATFORM_OPERATING_LANGUAGES_INVALID"),
+    }),
+  };
+}
+
+export async function updatePlatformExperienceConfig(
+  config: PlatformExperienceConfig, reason: string, operator = "", operatingLanguages?: readonly OperatingLanguageCode[],
+) {
+  const body = await platformExperienceBody(config, reason, operator, operatingLanguages);
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
   const idempotencyKey = commandAttempts.resolve(slot, fingerprint, () => `a3-experience-${crypto.randomUUID()}`);
   try {
-    const response = await request<unknown>(EXPERIENCE_CONFIG_PATH, {
+    const response = await request<unknown>({
       method: "PUT",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(body),
     });
     const saved = normalize(response);
-    if (submittedInterfaceLanguages && saved.interfaceLanguages?.join() !== submittedInterfaceLanguages.join()) {
+    if (body.interfaceLanguages && saved.interfaceLanguages?.join() !== body.interfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
     }
-    if (submittedOperatingLanguages && saved.operatingLanguages?.join() !== submittedOperatingLanguages.join()) {
-      throw new Error("PLATFORM_OPERATING_LANGUAGES_NOT_SAVED");
-    }
-    if (appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== appDownload.releaseNotes.en
-      || saved.appDownload.releaseNotes.zh !== appDownload.releaseNotes.zh)) {
+    if (body.operatingLanguages && saved.operatingLanguages?.join() !== body.operatingLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
     }
+    if (body.appDownload.source === "official" && (saved.appDownload.releaseNotes.en !== body.appDownload.releaseNotes.en
+      || saved.appDownload.releaseNotes.zh !== body.appDownload.releaseNotes.zh)) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
     commandAttempts.forget(slot);
     return saved;
   } catch (cause) {
-    if (cause instanceof PlatformExperienceRequestError && !cause.resultUnconfirmed && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
+    if (cause instanceof PlatformExperienceRequestError && !isIdempotencyOutcomeOpen(cause.apiMessage) && !outcomeStaysUnknown(cause.status, cause.apiCode)) {
       commandAttempts.forget(slot);
     }
     // Keep the key on an uncertain result; editing the form/version makes a new fingerprint.
     throw cause;
   }
 }
+
+export { normalize as parsePlatformExperienceConfig };

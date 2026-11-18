@@ -1,3 +1,4 @@
+import { parseE6DecimalJson } from "./e6-decimal";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
   parseE5DevicePage,
@@ -25,9 +26,9 @@ export interface E5MonthlyTarget {
   cycleIndex: number;
   cycleStartAt: string;
   cycleEndAt: string;
-  creditedUsdt: number;
-  rangeLowUsdt: number | null;
-  rangeHighUsdt: number | null;
+  creditedUsdt: number | string;
+  rangeLowUsdt: number | string | null;
+  rangeHighUsdt: number | string | null;
   capacityPct: number;
   targetActive: boolean;
   configChangedInCycle: boolean;
@@ -54,10 +55,13 @@ export interface E5Device {
   maxDevicesPerUser: number;
   state: E5DeviceState;
   rawStatus: string;
+  ownershipStatus: string | null;
   runtimeStatus: string;
   hashrate: number;
   dailyUsdt: number | null;
   dailyNex: number | null;
+  dailyUsdtText?: string | null;
+  dailyNexText?: string | null;
   monthlyTarget: E5MonthlyTarget | null;
   activeTaskNo: string;
   heartbeatAt: string;
@@ -78,9 +82,34 @@ export interface E5Device {
   slot: string;
 }
 
-export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number }
+/** userDeviceSlotNo proves effective ownership; system pause reasons are never cleared by batch resume. */
+/** Known backend pause codes are translated; operator-written reasons stay readable. */
+export function pausedReasonText(reason: string) {
+  const labels: Record<string, string> = { ORDER_REFUND: "订单已退款", PROMOTION_REFUND: "赠送来源订单已退款", DEVICE_PAUSED: "设备已暂停", PHONE_OFFLINE: "手机离线", PHONE_LOW_BATTERY: "手机电量不足", deactivate: "运营取消激活", unbind: "运营解绑" };
+  return labels[reason] ?? (/^[A-Z][A-Z0-9_]+$/.test(reason) ? "已暂停，原始原因请核对技术信息" : reason);
+}
+
+export function canResumeE5UserDevicesFrom(device: E5Device) {
+  const reason = device.pausedReason.trim().toUpperCase();
+  return device.slotNo !== null && reason !== "" && ![
+    "ORDER_REFUND", "USER_DEACTIVATED", "PHONE_REPLACED", "PHONE_OFFLINE",
+    "PHONE_LOW_BATTERY", "UNBIND", "DEACTIVATE", "REPLACE", "RECYCLE",
+  ].includes(reason);
+}
+
+/** Explicit ownership takes precedence over the merged UNBOUND projection; absent ownership keeps the legacy rule. */
+export function canActivateE5Device(device: Pick<E5Device, "simState" | "rawStatus" | "ownershipStatus">, force = false) {
+  const raw = device.rawStatus.trim().toUpperCase();
+  if (device.ownershipStatus === null) {
+    if (device.simState === "UNBOUND" || raw === "UNBOUND") return false;
+  } else if (device.ownershipStatus !== "OWNED") return false;
+  return force ? ["INVENTORY", "DEACTIVATED", "INACTIVE", "UNBOUND"].includes(raw) : raw === "INVENTORY";
+}
+
+export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number; errorRetry: number; legacyPending: number; waitingConfig: number }
 export interface E5DeviceQuery {
   keyword?: string;
+  userId?: string;
   simState?: string;
   source?: string;
   productCode?: string;
@@ -118,6 +147,7 @@ interface BackendDevice {
   productTier?: string | null;
   productCode?: string | null;
   status?: string | null;
+  ownershipStatus?: string | null;
   hostingLabel?: string | null;
   sourceChannel?: string | null;
   simState?: E5SimState | null;
@@ -221,7 +251,7 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?
   if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
     throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey);
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => path.startsWith("/phones") ? parseE6DecimalJson(text) : JSON.parse(text)).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (commandKey && outcomeStaysUnknown(response.status, result?.code)) {
@@ -230,7 +260,10 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?
         commandKey,
       );
     }
-    throw new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`)), {
+      httpStatus: response.status, apiCode: result?.code,
+      status: response.ok && result && result.code >= 400 && result.code < 500 ? result.code : response.status, backendMessage: result?.message ?? "",
+    });
   }
   if (commandKey && result.data == null) {
     throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey);
@@ -245,12 +278,15 @@ function queryString(query: E5DeviceQuery) {
     const value = query[key]?.trim();
     if (value && value !== "all") params.set(key, value);
   }
+  if (query.userId?.trim()) params.set("userId", query.userId.trim());
   params.set("pageNum", String(query.pageNum ?? 1));
   params.set("pageSize", String(query.pageSize ?? 10));
   return `?${params}`;
 }
 
 export function mapE5Device(row: BackendDevice): E5Device {
+  if (row.ownershipStatus != null && typeof row.ownershipStatus !== "string") throw new Error("E5_DEVICE_PAGE_CONTRACT_INVALID");
+  const ownershipStatus = row.ownershipStatus?.trim().toUpperCase() || null;
   const deviceId = toNumber(row.id);
   const identity = parseE5DeviceIdentity(row.instanceNo, row.name, deviceId);
   const userId = text(row.userId);
@@ -284,15 +320,17 @@ export function mapE5Device(row: BackendDevice): E5Device {
     maxDevicesPerUser: row.maxDevicesPerUser ?? 6,
     state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate, row.activatedAt, row.deactivatedAt),
     rawStatus: text(row.status, "UNKNOWN"),
+    ownershipStatus,
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
     hashrate: toNumber(row.hashrate),
     dailyUsdt: dailyRate.dailyUsdt,
+      dailyUsdtText: row.dailyUsdt == null ? null : String(row.dailyUsdt), dailyNexText: row.dailyNex == null ? null : String(row.dailyNex),
     dailyNex: dailyRate.dailyNex,
     monthlyTarget: row.monthlyTarget == null ? null : {
       ...row.monthlyTarget,
-      creditedUsdt: Number(row.monthlyTarget.creditedUsdt),
-      rangeLowUsdt: row.monthlyTarget.rangeLowUsdt == null ? null : Number(row.monthlyTarget.rangeLowUsdt),
-      rangeHighUsdt: row.monthlyTarget.rangeHighUsdt == null ? null : Number(row.monthlyTarget.rangeHighUsdt),
+      creditedUsdt: row.monthlyTarget.creditedUsdt,
+      rangeLowUsdt: row.monthlyTarget.rangeLowUsdt,
+      rangeHighUsdt: row.monthlyTarget.rangeHighUsdt,
       capacityPct: Number(row.monthlyTarget.capacityPct),
     },
     activeTaskNo: text(row.activeTaskNo, "—"),
@@ -343,10 +381,11 @@ export async function fetchE5Observability(): Promise<E5Observability> {
   return parseE5Observability(await e5Request<unknown>("/observability"));
 }
 
-export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string) {
+export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string, originalCommandKey?: string) {
   const action = force ? "force-activate" : "activate";
   const body = { reason, operator };
-  const saved = await e5StableDeviceCommand(
+  const request = (commandKey: string) => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey });
+  const saved = originalCommandKey ? await request(originalCommandKey) : await e5StableDeviceCommand(
     `e5-device:${deviceId}:${action}`,
     JSON.stringify(body),
     commandKey => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
@@ -355,13 +394,15 @@ export async function activateE5Device(deviceId: number, force: boolean, reason:
       idempotencyKey: commandKey,
     }),
   );
+  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作返回的内容对不上，结果未知。", originalCommandKey);
   return mapDevices([saved])[0];
 }
 
-export async function deactivateE5Device(deviceId: number, unbind: boolean, reason: string, operator: string) {
+export async function deactivateE5Device(deviceId: number, unbind: boolean, reason: string, operator: string, originalCommandKey?: string) {
   const action = unbind ? "unbind" : "deactivate";
   const body = { reason, operator };
-  const saved = await e5StableDeviceCommand(
+  const request = (commandKey: string) => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey });
+  const saved = originalCommandKey ? await request(originalCommandKey) : await e5StableDeviceCommand(
     `e5-device:${deviceId}:${action}`,
     JSON.stringify(body),
     commandKey => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
@@ -370,12 +411,19 @@ export async function deactivateE5Device(deviceId: number, unbind: boolean, reas
       idempotencyKey: commandKey,
     }),
   );
+  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作返回的内容对不上，结果未知。", originalCommandKey);
   return mapDevices([saved])[0];
 }
 
-export async function setE5UserDevicesPaused(userId: number, paused: boolean, reason: string, operator: string) {
+export async function setE5UserDevicesPaused(userId: number, paused: boolean, reason: string, operator: string, originalCommandKey?: string) {
   const action = paused ? "pause" : "resume";
   const body = { userId, reason, operator };
+  if (originalCommandKey) {
+    const result = await e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: originalCommandKey });
+    if (result.userId !== userId || !Number.isSafeInteger(result.changedCount) || result.changedCount < 0 || result.paused !== paused)
+      throw new E5OutcomeUncertainError("用户设备操作返回的内容对不上，结果未知。", originalCommandKey);
+    return result;
+  }
   return e5StableDeviceCommand(
     `e5-user:${userId}:${action}`,
     JSON.stringify(body),
@@ -402,7 +450,7 @@ export async function proposeLegacyUnknownCancellation(candidate: LegacyUnknownC
       method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey,
     });
     if (!ticket || typeof ticket.id !== "string" || !ticket.id.trim())
-      throw new E5OutcomeUncertainError("提案提交结果未确认，请保持内容不变重试，或到 A2 核对原提案。", commandKey);
+      throw new E5OutcomeUncertainError("提案提交结果未知，请不要改内容，按原请求重试，或到「操作记录与审批」核对原提案。", commandKey);
     return ticket;
   });
 }

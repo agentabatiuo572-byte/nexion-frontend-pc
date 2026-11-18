@@ -72,7 +72,7 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
       amplifies={false} reasonMin={8} reasonMax={200}
       completionCopy="仅提交 A2 提案，由另一管理员复核后执行；此处不会完成任务或发放收益。"
       detail={<div style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
-        <p>仅取消这条未确认旧任务，不产生 USDT/UVT 收益；原请求、journal 和恢复预算保留，不授予重放。</p>
+        <p>只取消这条结果未知的旧任务，不产生 USDT/UVT 收益；原请求、执行记录和恢复预算都保留，不会因此重新执行。</p>
         <dl className="ui-facts-grid"><dt>设备 / 用户</dt><dd>{selected.instanceNo} / {selected.ownerId}</dd>
           <dt>原任务 / 代际</dt><dd>{selected.taskNo} / {selected.requestGeneration}</dd>
           <dt>案件</dt><dd>{selected.caseId}</dd><dt>退出证据 SHA-256</dt><dd>{selected.proofSha}</dd>

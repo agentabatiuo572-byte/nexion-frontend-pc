@@ -48,18 +48,18 @@ export async function submitH2TrialApproval(
   const previous = pendingH2TrialApprovals(session.adminId).find((record) => record.sid === input.sid);
   if (input.op === "h2_trial_charge" || previous?.op === "h2_trial_charge") {
     if (mode !== "lookup" || previous?.op !== "h2_trial_charge") {
-      throw new Error("旧强制扣款已退役，仅可查询原申请，不能创建或重试提案。");
+      throw new Error("旧强制扣款已停用，只能查询原申请，不能新建或重试。");
     }
     const ticket = await fetchA2ProposalByKey(previous.commandKey, true);
     if (ticket && (!ticket.mine || ticket.obj !== previous.obj
         || ticket.action !== `${H2_TRIAL_ACTIONS[previous.op]} · ${previous.sid}`
         || ticket.operationCode !== previous.op || ticket.retiredOperation !== true)) {
-      throw new Error("审批回执与原操作不符，原命令已保留，请到操作记录核对。");
+      throw new Error("查到的审批单和原操作对不上，原记录继续保留，请到操作记录核对。");
     }
     return ticket;
   }
   if (mode === "lookup" && !previous) return null;
-  if (mode === "retry" && !previous) throw new Error("原审批命令已处理，请刷新后核对结果。");
+  if (mode === "retry" && !previous) throw new Error("原审批申请已处理，请刷新后核对结果。");
   const original = previous ?? { ...input, reason };
   const action = `${H2_TRIAL_ACTIONS[original.op]} · ${original.sid}`;
   const key = previous?.commandKey ?? createA2CommandKey(original.op);
@@ -67,7 +67,7 @@ export async function submitH2TrialApproval(
     attempts.remember(slot, key, original);
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
-      throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
 
@@ -80,7 +80,7 @@ export async function submitH2TrialApproval(
     }
     if (!ticket && mode === "lookup") return null;
     if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原命令已过期，暂未查到审批单。请继续核对原操作。", key);
+      throw new A2OutcomeUncertainError("原请求已过期，还没查到审批单。请继续核对原操作。", key);
     }
   }
 
@@ -107,7 +107,7 @@ export async function submitH2TrialApproval(
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批命令仍待确认，请查询原操作。", key);
+      throw new A2OutcomeUncertainError("原审批申请还没有结果，请查询原结果。", key);
     }
     if (!isA2OutcomeUncertainError(error)
         && (!previous || !(error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))))) {
@@ -117,7 +117,7 @@ export async function submitH2TrialApproval(
   }
   if (!ticket.mine || ticket.obj !== original.obj || ticket.action !== action
       || (ticket.operationCode && ticket.operationCode !== original.op)) {
-    throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+    throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
   }
   attempts.forget(slot, key);
   return ticket;

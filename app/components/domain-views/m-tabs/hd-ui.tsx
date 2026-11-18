@@ -128,18 +128,24 @@ export function HDSelect({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+  // 展开时第一次 Esc 只收起选择器。Radix 弹窗和抽屉在 document 捕获阶段就处理 Esc，这里要在 window 上先接住。
+  useEffect(() => {
+    if (!open) return;
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || !ref.current?.contains(event.target as Node)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      ref.current.querySelector<HTMLButtonElement>("button[aria-haspopup]")?.focus();
+    };
+    window.addEventListener("keydown", onEscape, true);
+    return () => window.removeEventListener("keydown", onEscape, true);
+  }, [open]);
   function keyboard(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented) return;
     const trigger = ref.current?.querySelector<HTMLButtonElement>("button[aria-haspopup]");
     if (!trigger || trigger.disabled || trigger.matches(":disabled")) return;
     const expanded = trigger.getAttribute("aria-expanded") === "true";
-    if (event.key === "Escape" && expanded) {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-      trigger.focus();
-      return;
-    }
     if (event.key === "Tab") {
       if (expanded) setOpen(false);
       return;

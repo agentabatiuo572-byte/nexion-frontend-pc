@@ -1,6 +1,7 @@
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { displayAdminError } from "./error-messages";
+import { isExplicitRejection } from "./explicit-rejection";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
@@ -22,6 +23,11 @@ export function pendingSessionRevocationApproval(adminId: number, userId: number
   return attempts.list().find((record) => record.fingerprint === `${adminId}:${userId}`);
 }
 
+/** 这个操作人还没确认结果的全部退出全部设备审批（账户操作页的待确认条用）。 */
+export function listSessionRevocationApprovals(adminId: number) {
+  return attempts.list().filter((record) => record.fingerprint.startsWith(`${adminId}:`));
+}
+
 export async function proposeSessionRevocation(
   session: AdminSession,
   userId: number | string,
@@ -40,7 +46,7 @@ export async function proposeSessionRevocation(
     attempts.remember(slot, key, original);
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
-      throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
 
@@ -49,10 +55,10 @@ export async function proposeSessionRevocation(
     try {
       ticket = await fetchA2ProposalByKey(key);
     } catch (error) {
-      throw new Error(`原操作结果尚未确认，暂时无法查询审批单。${displayAdminError(error)} 请稍后重试原操作。操作编号：${key}`);
+      throw new Error(`原操作结果未知，暂时查不到审批单。${displayAdminError(error)} 请稍后再查。`);
     }
     if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原命令已过期，暂未查到审批单。请继续核对原操作。", key);
+      throw new A2OutcomeUncertainError("原请求已过期，还没查到审批单。请继续核对原操作。", key);
     }
   }
   try {
@@ -72,17 +78,19 @@ export async function proposeSessionRevocation(
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批命令仍待确认，请重试原操作。", key);
+      throw new A2OutcomeUncertainError("原审批申请还没有结果，请按原请求重试。", key);
     }
-    if (!isA2OutcomeUncertainError(error)
-        && (!previous || !(error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))))) {
-      attempts.forget(slot, key);
-    }
+    // 新提交被确定拒绝时丢号；重试的是保留下来的原命令时，只有后端明确拒绝（isExplicitRejection，且不是 404）才清，
+    // 限流、超时、幂等层要求核查这些都说明不了原命令的结果，记录和对象锁留着（R3）。安全与登录设备也用这里，只会更严。
+    const forget = previous
+      ? isExplicitRejection(error) && !(error instanceof Error && "status" in error && Number(error.status) === 404)
+      : isExplicitRejection(error);
+    if (forget) attempts.forget(slot, key);
     throw error;
   }
   if (!ticket.mine || ticket.obj !== original.userId
       || (ticket.operationCode && ticket.operationCode !== "c2_session_revoke_all")) {
-    throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
+    throw new A2OutcomeUncertainError("审批单和原操作对不上，请到操作记录核对。", key);
   }
   attempts.forget(slot, key);
   return ticket;

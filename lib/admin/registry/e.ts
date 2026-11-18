@@ -28,7 +28,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   },
   {
     path: "/devices/ops",
-    summary: "查看商城设备的运行状态、来源、本月收益和当前任务，管理激活、停用与解绑。",
+    summary: "查看用户设备的运行状态、来源、本月收益和当前任务，管理激活、停用与解绑。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

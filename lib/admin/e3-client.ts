@@ -1,12 +1,16 @@
+import { f4Decimal } from "./f4-money";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason, operatorTimestamp } from "@/lib/admin/e-operator-display";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { formatAdminApiError, displayAdminReadError, guardedFetch } from "@/lib/admin/error-messages";
+import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason } from "@/lib/admin/e-operator-display";
 
 export interface E3Stats {
-  averageAgeMonths: number;
+  averageAgeMonths: number | null;
   cliffDeviceCount: number;
+  earlyDeviceCount: number;
+  midDeviceCount: number;
   tradeinMonthCount: number;
-  tradeinDiscountUsdt: number;
+  tradeinDiscountUsdt: string;
   k2ArbitrageHits: number;
 }
 
@@ -41,6 +45,8 @@ interface BackendE3Overview {
 interface BackendTradeinOverview {
   averageAgeMonths?: number | string | null;
   cliffDeviceCount?: number | string | null;
+  earlyDeviceCount?: number | string | null;
+  midDeviceCount?: number | string | null;
   tradeinMonthCount?: number | string | null;
   tradeinDiscountUsdt?: number | string | null;
   k2ArbitrageHits?: number | string | null;
@@ -120,15 +126,19 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-function toNumber(value: number | string | null | undefined, fallback = 0) {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : fallback;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-  return fallback;
+/** Non-null SQL statistics must be numeric; missing data is a protocol failure, not an empty fleet. */
+function toNumber(value: unknown, integer = false) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) throw new Error("E3_READ_MODEL_INVALID");
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || integer && (!Number.isSafeInteger(parsed) || parsed < 0)) throw new Error("E3_READ_MODEL_INVALID");
+  return parsed;
+}
+
+function amount(value: unknown): string {
+  if (typeof value !== "number" && typeof value !== "string") throw new Error("E3_READ_MODEL_INVALID");
+  const raw = String(value);
+  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) throw new Error("E3_READ_MODEL_INVALID");
+  return raw;
 }
 
 function text(value: string | number | null | undefined, fallback = "") {
@@ -171,20 +181,17 @@ function frontendParams(config: Record<string, string | number | null> | null | 
 
 function timeText(value: string | null | undefined) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (!Number.isNaN(date.getTime())) {
-    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-  }
-  return operatorTimestamp(value) === "未采集" ? "时间待核验" : operatorTimestamp(value);
+  // 24 小时内的记录只写「月-日 时:分」；时区写在列头。
+  return formatBusinessTimeCompact(value, "时间待核验").replace(/^\d{4}-/, "");
 }
 
 function fromTx(row: BackendTradeinTx): E3OperationMetric {
   return {
     nm: operatorE3OperationLabel(text(row.name || row.operation)),
     endpoint: text(row.endpoint, "POST /api/admin/devices/e3/tradein"),
-    ok: toNumber(row.successCount),
-    fail: toNumber(row.failureCount),
-    roll: toNumber(row.rollbackCount),
+    ok: toNumber(row.successCount, true),
+    fail: toNumber(row.failureCount, true),
+    roll: toNumber(row.rollbackCount, true),
     k: operatorE3OperationState(text(row.latestKind, "")),
     dot: text(row.latestStatus, "ok") === "fail" ? "fail" : "ok",
     ts: timeText(row.latestAt),
@@ -206,13 +213,17 @@ async function e3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  // Preserve the backend BigDecimal token before JSON.parse can round a large USDT sum.
+  const result = (await response.text().then(raw => JSON.parse(raw.replace(
+    /("tradeinDiscountUsdt"\s*:\s*)(\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"',
+  ))).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `E3_REQUEST_FAILED_${response.status}`));
+    const failure = formatAdminApiError(result?.message, `E3_REQUEST_FAILED_${response.status}`);
+    throw new Error(!init?.method || init.method === "GET" ? displayAdminReadError(failure) : failure);
   }
 
   return result.data as T;
@@ -224,20 +235,35 @@ export async function fetchE3Snapshot(): Promise<E3Snapshot> {
     e3Request<BackendTradeinOverview>("/e3/tradein/overview"),
   ]);
 
+  if (!overview || !overview.config || typeof overview.config !== "object" || Array.isArray(overview.config)
+    || !tradein || !Array.isArray(tradein.txStats)) throw new Error("E3_READ_MODEL_INVALID");
   return {
     params: frontendParams(overview.config),
     stats: {
-      averageAgeMonths: toNumber(tradein.averageAgeMonths),
-      cliffDeviceCount: toNumber(tradein.cliffDeviceCount),
-      tradeinMonthCount: toNumber(tradein.tradeinMonthCount),
-      tradeinDiscountUsdt: toNumber(tradein.tradeinDiscountUsdt),
-      k2ArbitrageHits: toNumber(tradein.k2ArbitrageHits),
+      averageAgeMonths: tradein.averageAgeMonths === null ? null : toNumber(tradein.averageAgeMonths),
+      cliffDeviceCount: toNumber(tradein.cliffDeviceCount, true),
+      earlyDeviceCount: toNumber(tradein.earlyDeviceCount, true),
+      midDeviceCount: toNumber(tradein.midDeviceCount, true),
+      tradeinMonthCount: toNumber(tradein.tradeinMonthCount, true),
+      tradeinDiscountUsdt: amount(tradein.tradeinDiscountUsdt),
+      k2ArbitrageHits: toNumber(tradein.k2ArbitrageHits, true),
     },
-    operations: (tradein.txStats ?? []).map(fromTx),
+    operations: tradein.txStats.map(fromTx),
   };
 }
 
+/** New config writes only; missing retired fields and original-request recovery remain readable. */
+export function validateE3ConfigWrite(key: string, value: string) {
+  if (["taskLockS1", "taskLockPro", "taskLockRack", "taskLock.s1", "taskLock.pro", "taskLock.rack"].includes(toBackendKey(key))) {
+    throw new Error("E3_CONFIG_KEY_RETIRED");
+  }
+  if (!["E.tradein.maxDevicesPerOrder", "tradeinMaxDevicesPerOrder", "maxDevicesPerOrder"].includes(key)) return;
+  const decimal = f4Decimal(value.trim().replace(/[%,]/g, ""));
+  if (decimal === null || !/^1(?:\.0*)?$/.test(decimal)) throw new Error("E3_TRADEIN_SINGLE_DEVICE_ONLY");
+}
+
 export async function updateE3Param(key: string, value: string, reason: string, operator: string) {
+  validateE3ConfigWrite(key, value);
   const overview = await e3Request<BackendE3Overview>("/e3/config", {
     method: "PATCH",
     body: JSON.stringify({ key: toBackendKey(key), value: toBackendValue(key, value), reason, operator }),
@@ -247,6 +273,7 @@ export async function updateE3Param(key: string, value: string, reason: string, 
 }
 
 export async function updateE3Params(values: Record<string, string>, reason: string, operator: string) {
+  for (const [key, value] of Object.entries(values)) validateE3ConfigWrite(key, value);
   let latest: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) {
     latest = await updateE3Param(key, value, reason, operator);

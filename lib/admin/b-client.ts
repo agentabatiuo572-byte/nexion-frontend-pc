@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { f4Decimal } from "@/lib/admin/f4-money";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
@@ -25,6 +26,7 @@ export interface BLedger {
   reserveUsd: number;
   liabilitiesUsd: number;
   valuationReliable: boolean;
+  redlineBreached: boolean;
   coverageRatio: number;
   redlinePct: number;
   healthyPct: number;
@@ -36,13 +38,14 @@ export interface BLedger {
   queueBacklogUsd: number;
   avgRiskScore: number;
   coverageSeries: number[];
+  coverageSeriesPoints?: Array<{ at: string; coverageRatio: string; backcast: boolean }>;
   coverageSeriesIntervalHours: number | null;
   accounts: BLedgerAccount[];
   prev: {
     reserveUsd: number;
     netFlow24hUsd: number;
-    queueBacklogCount: number;
-    avgRiskScore: number;
+    queueBacklogCount: number | null;
+    avgRiskScore: number | null;
   };
 }
 
@@ -93,7 +96,7 @@ export interface BRhythm {
 }
 
 export interface BRiskRadar {
-  gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string }>;
+  gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string; unset?: boolean }>;
   trippedGateCount: number;
   feed: Array<{ sev: "p0" | "p1" | "p2" | "p3"; t: string; m: string; href: string }>;
   pressureSeries: number[];
@@ -134,6 +137,7 @@ const EMPTY_LEDGER: BLedger = {
   reserveUsd: 0,
   liabilitiesUsd: 0,
   valuationReliable: false,
+  redlineBreached: false,
   coverageRatio: 0,
   redlinePct: 0,
   thresholdVersion: null,
@@ -150,8 +154,8 @@ const EMPTY_LEDGER: BLedger = {
   prev: {
     reserveUsd: 0,
     netFlow24hUsd: 0,
-    queueBacklogCount: 0,
-    avgRiskScore: 0,
+    queueBacklogCount: null,
+    avgRiskScore: null,
   },
 };
 
@@ -308,11 +312,21 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   const prev = requiredRow(raw.prev, "dualLedger.prev");
   const coverageSeries = requiredArr<unknown>(snapshot.coverageSeries, "dualLedger.snapshot.coverageSeries")
     .map((item, index) => requiredNum(item, `dualLedger.snapshot.coverageSeries.${index}`));
+  const coverageSeriesPoints = snapshot.coverageSeriesPoints === undefined ? undefined
+    : requiredArr<unknown>(snapshot.coverageSeriesPoints, "dualLedger.snapshot.coverageSeriesPoints").map((item, index) => {
+      const field = `dualLedger.snapshot.coverageSeriesPoints.${index}`;
+      const point = requiredRow(item, field);
+      const coverageRatio = requiredText(point.coverageRatio, `${field}.coverageRatio`);
+      if (typeof point.at !== "string" || !point.at.trim() || typeof point.backcast !== "boolean"
+        || !/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(coverageRatio)) throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+      return { at: point.at, coverageRatio, backcast: point.backcast };
+    });
   const intervalHours = snapshot.coverageSeriesIntervalHours;
   return {
     reserveUsd,
     liabilitiesUsd,
-    valuationReliable: snapshot.valuationReliable === undefined || requiredBool(snapshot.valuationReliable, "dualLedger.snapshot.valuationReliable"),
+    valuationReliable: requiredBool(snapshot.valuationReliable, "dualLedger.snapshot.valuationReliable"),
+    redlineBreached: requiredBool(snapshot.redlineBreached, "dualLedger.snapshot.redlineBreached"),
     coverageRatio: requiredNum(snapshot.coverageRatio, "dualLedger.snapshot.coverageRatio"),
     redlinePct: requiredNum(snapshot.redlinePct, "dualLedger.snapshot.redlinePct"),
     healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),
@@ -324,14 +338,15 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     queueBacklogUsd,
     avgRiskScore: requiredNum(snapshot.avgRiskScore, "dualLedger.snapshot.avgRiskScore"),
     coverageSeries,
+    coverageSeriesPoints,
     coverageSeriesIntervalHours: typeof intervalHours === "number" && Number.isSafeInteger(intervalHours) && intervalHours > 0
       ? intervalHours : null,
     accounts,
     prev: {
       reserveUsd: requiredNum(prev.reserveUsd, "dualLedger.prev.reserveUsd"),
       netFlow24hUsd: requiredNum(prev.netFlow24hUsd, "dualLedger.prev.netFlow24hUsd"),
-      queueBacklogCount: requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
-      avgRiskScore: requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
+      queueBacklogCount: prev.queueBacklogCount == null ? null : requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
+      avgRiskScore: prev.avgRiskScore == null ? null : requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
     },
   };
 }
@@ -443,6 +458,8 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
         on: state === "missing" ? true : state === "on",
         state,
         configKey: text(item.configKey, ""),
+        // 没有配置行时后端发 default_off，业务按关闭处理（KillSwitchState 失败关闭），页面写「已关停」，原因放问号。
+        unset: rawState === "default_off",
       };
     }),
     trippedGateCount: requiredNum(raw.trippedGateCount, "riskRadar.trippedGateCount"),
@@ -546,9 +563,14 @@ function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
   dashboardSubscribers.get(sessionKey)?.forEach((subscriber) => subscriber(dashboard));
 }
 
+function readBDomainResponse(response: Response) {
+  return response.text().then(raw => JSON.parse(raw.replace(/("coverageRatio"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+    (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
+}
+
 export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
   const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
@@ -579,7 +601,7 @@ export async function acknowledgeBDomainAlert(
     body: JSON.stringify({ reason, operator }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
@@ -609,7 +631,7 @@ export async function updateB5BankRunThresholds(
     body: JSON.stringify({ ...values, reason, operator }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     throw new Error(formatAdminApiError(result?.message, `B5_BANKRUN_${response.status}`));
@@ -648,6 +670,7 @@ export function useBDomainDashboard(enabled = true) {
       inflightDashboards.set(sessionKey, task);
       const next = await task;
       setSnapshot({ sessionKey, data: next });
+      return next;
     } catch (err) {
       setError(displayAdminError(err));
     } finally {

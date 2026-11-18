@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
 
 type ApiResult<T> = {
   code?: number;
@@ -15,6 +16,10 @@ export type OpsDashboardAlert = {
   level: "high" | "mid" | "low";
   title: string;
   hint: string;
+  /** 待补录的项数，只有 J1-AUTO-CONFIRM 带。 */
+  count?: number;
+  /** 没有开启的业务键，只有 J1-KILL-STATE 带。 */
+  closedKeys?: string[];
 };
 
 const J1_ALERT_GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
@@ -44,7 +49,7 @@ function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
   };
 }
 
-export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
+async function readKillSwitchAlerts() {
   // 所有已登录运营账号读取最小化告警快照；不暴露 J1 配置与控制权限。
   const response = await guardedFetch("/api/admin/emergency/kill-switches/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
@@ -100,29 +105,47 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
   if (new Set(pending.map((row) => row.key)).size !== pending.length) {
     throw new Error("J1_ALERTS_CONTRACT_INVALID:autoConfirmations.keys");
   }
+  return { gates, pending };
+}
+
+/** 提现总开关现在开着吗。没设置也算关（后端失败关闭）。 */
+export async function fetchWithdrawalGateOpen() {
+  const { gates } = await readKillSwitchAlerts();
+  return gates.find((gate) => gate.key === "withdraw")?.enabled === true;
+}
+
+export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
+  const { gates, pending } = await readKillSwitchAlerts();
   const alerts: OpsDashboardAlert[] = [];
-  const disabled = gates.filter((gate) => !gate.enabled);
+  const disabled = gates.filter((gate) => !gate.enabled && !UNAVAILABLE_GATES[gate.key]);
   if (disabled.length > 0) {
     const emergencyCount = disabled.filter((gate) => gate.emergency).length;
-    alerts.push(normalizeAlert({
-      id: "J1-KILL-STATE",
-      domain: "J",
-      level: emergencyCount > 0 ? "high" : "mid",
-      title: `已关停的业务 ${disabled.length} 个`,
-      hint: disabled.map((gate) => gate.name).join("、"),
-    }, alerts.length));
+    // 这个接口分不出「已关停」和「未设置」，两种业务都用不了，统一写没有开启，细分看风险与开关。
+    alerts.push({
+      ...normalizeAlert({
+        id: "J1-KILL-STATE",
+        domain: "J",
+        level: emergencyCount > 0 ? "high" : "mid",
+        title: `没有开启的业务 ${disabled.length} 个`,
+        hint: disabled.map((gate) => gate.name).join("、"),
+      }, alerts.length),
+      closedKeys: disabled.map((gate) => gate.key),
+    });
   }
   const overdue = pending.filter((row) => row.overdue === true).length;
   if (pending.length > 0) {
-    alerts.push(normalizeAlert({
-      id: "J1-AUTO-CONFIRM",
-      domain: "J",
-      level: overdue > 0 ? "high" : "mid",
-      title: `自动关停待补录 ${pending.length} 项`,
-      hint: overdue > 0
-        ? `已有 ${overdue} 项逾期，请马上去「紧急停用开关」补录`
-        : "请在截止时间前去「紧急停用开关」补录处理结论",
-    }, alerts.length));
+    alerts.push({
+      ...normalizeAlert({
+        id: "J1-AUTO-CONFIRM",
+        domain: "J",
+        level: overdue > 0 ? "high" : "mid",
+        title: `自动关停待补录 ${pending.length} 项`,
+        hint: overdue > 0
+          ? `已有 ${overdue} 项逾期，请马上去「紧急停用开关」补录`
+          : "请在截止时间前去「紧急停用开关」补录处理结论",
+      }, alerts.length),
+      count: pending.length,
+    });
   }
   return alerts;
 }
@@ -166,6 +189,8 @@ export async function fetchC2HighRiskAlerts(): Promise<OpsDashboardAlert[]> {
 type J1DutyAlertSnapshot = {
   alerts: OpsDashboardAlert[];
   error: string | null;
+  /** 第一次读取有结果了。还没读完时不能当成没有告警。 */
+  settled?: boolean;
 };
 
 const EMPTY_J1_DUTY_ALERT_SNAPSHOT: J1DutyAlertSnapshot = { alerts: [], error: null };
@@ -179,17 +204,18 @@ function publishJ1DutyAlertSnapshot(snapshot: J1DutyAlertSnapshot) {
   j1DutyAlertSubscribers.forEach((subscriber) => subscriber(snapshot));
 }
 
-async function refreshJ1DutyAlerts() {
+export async function refreshJ1DutyAlerts() {
   const requestSequence = ++j1DutyAlertRequestSequence;
   try {
     const alerts = await fetchOpsDashboardAlerts();
     if (requestSequence !== j1DutyAlertRequestSequence) return;
-    publishJ1DutyAlertSnapshot({ alerts, error: null });
+    publishJ1DutyAlertSnapshot({ alerts, error: null, settled: true });
   } catch (error: unknown) {
     if (requestSequence !== j1DutyAlertRequestSequence) return;
     publishJ1DutyAlertSnapshot({
       alerts: [],
       error: "紧急停用告警加载失败，请稍后重试",
+      settled: true,
     });
   }
 }

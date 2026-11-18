@@ -1,17 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { fetchDeviceRankConfig, updateDeviceRankConfig } from "@/lib/admin/device-rank-client";
+/**
+ * 设备预估排名：独立的一套设置（自己的读取、版本和保存），和主配置的五块分开放，冲突和结果未知的提醒也分开。
+ * 档位表一行一档，占比带比例条，合计是不是 100% 写在表尾。
+ */
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { Plus, RefreshCw, Trophy } from "lucide-react";
+import { BlockState, Button, Change, Explain, Fact, Input, Notice, NumberInput, Panel, RatioBar, Segments, StatusTag, Table, TableMessage, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { fetchDeviceRankConfig, prepareDeviceRankConfig, updateDeviceRankConfig } from "@/lib/admin/device-rank-client";
 import { deviceRankConfigError, type DeviceRankConfig, type DeviceRankTierDraft } from "@/lib/admin/device-rank-config";
+import { canRetryH9Command, pendingH9Command, queryH9Command, type H9Command } from "@/lib/admin/h9-command";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundClosureModal, settledText } from "../fund-command-check";
+import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
+import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
+import type { RankSnapshot } from "./h9-overview";
+import { AppPreview, ConfirmFacts, H9RecoveryNotice, h9Status, ModuleToolbar, count, saveIssueKind, type SaveIssueKind } from "./h9-parts";
 
 const tierDrafts = (config: DeviceRankConfig): DeviceRankTierDraft[] => config.tiers.map((tier) => ({
   name: tier.name, sharePct: String(tier.sharePct), minTops: String(tier.minTops), maxTops: String(tier.maxTops),
 }));
 
-export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
+const tierText = (tier: DeviceRankConfig["tiers"][number]) => `${tier.sharePct}% · ${count(tier.minTops)}–${count(tier.maxTops)} TOPS`;
+
+export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: RankSnapshot) => void }) {
   const canWrite = ctx.can("growth_h9_write");
+  const [, syncPending] = useReducer(n => n + 1, 0);
+  const pending = pendingH9Command("rank");
+  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<H9Command | null>(null);
+  const ready = useRef(false);
   const [data, setData] = useState<DeviceRankConfig | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [rows, setRows] = useState<DeviceRankTierDraft[]>([]);
@@ -19,78 +42,233 @@ export function H9DeviceRank({ ctx }: { ctx: HCtx }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
+  /** 上次保存失败按哪种写：只决定提醒的位置和颜色。 */
+  const [issue, setIssue] = useState<{ kind: SaveIssueKind; change: string; at: number } | null>(null);
   const accept = (next: DeviceRankConfig) => {
-    setData(next); setEnabled(next.enabled); setRows(tierDrafts(next)); setError(""); setConflict(false);
+    setData(next); setEnabled(next.enabled); setRows(tierDrafts(next)); setError(""); setConflict(false); setIssue(null);
+    onData({ state: "ready", config: next });
   };
   const load = useCallback(async () => {
+    ready.current = false;
+    ctx.openActionConfirm(null);
     setLoading(true);
+    const original = pendingH9Command("rank");
+    if (original) {
+      try {
+        const receipt = await queryH9Command("rank", original);
+        setOutcomes(all => ({ ...all, [original.commandKey]: { receipt } }));
+        if (eCommandSettled(receipt)) ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
+      } catch (cause) {
+        setOutcomes(all => ({ ...all, [original.commandKey]: { error: displayAdminError(cause) } }));
+      }
+      syncPending();
+    }
     try { accept(await fetchDeviceRankConfig()); }
-    catch (cause) { setData(null); setError(cause instanceof Error ? cause.message : "配置读取失败，请重试。"); }
+    catch (cause) { setData(null); setError(cause instanceof Error ? cause.message : "配置读取失败，请重试。"); onData({ state: "failed" }); }
     finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { syncPending(); void load(); }, [load]);
+  ready.current = !!data && !loading && !saving && !conflict && !pending;
   const tiers = rows.map((row) => ({ name: row.name.trim(), sharePct: h9DraftNumber(row.sharePct), minTops: h9DraftNumber(row.minTops), maxTops: h9DraftNumber(row.maxTops) }));
   const validation = deviceRankConfigError(enabled, tiers);
   const dirty = !!data && (enabled !== data.enabled || JSON.stringify(tiers) !== JSON.stringify(data.tiers));
-  const locked = !canWrite || !data || loading || saving || conflict;
+  const locked = !canWrite || !data || loading || saving || conflict || !!pending;
   const change = (index: number, key: keyof DeviceRankTierDraft, value: string) => setRows((current) => current.map((row, i) => i === index ? { ...row, [key]: value } : row));
   const save = () => {
     if (locked || !data || validation || !dirty) return;
     const submitted = { version: data.version, enabled, tiers };
+    // 只比较占比和上下界（按顺序），不比较名称：和后端 sameDistribution 同一个口径，只用来写确认框里的一句。
+    const sameDistribution = tiers.length === data.tiers.length && tiers.every((tier, index) => tier.sharePct === data.tiers[index].sharePct
+      && tier.minTops === data.tiers[index].minTops && tier.maxTops === data.tiers[index].maxTops);
+    const diff: DiffRow[] = [
+      { key: "enabled", label: "状态", before: data.enabled ? "已开启" : "已关闭", after: enabled ? "已开启" : "已关闭" },
+      ...Array.from({ length: Math.max(tiers.length, data.tiers.length) }, (_, index): DiffRow[] => {
+        const before = data.tiers[index];
+        const after = tiers[index];
+        const name = after?.name || before?.name || `第 ${index + 1} 档`;
+        if (!before) return [{ key: `tier-${index}`, label: `新增 · ${name}`, before: "没有", after: tierText(after!) }];
+        if (!after) return [{ key: `tier-${index}`, label: `删除 · ${name}`, before: tierText(before), after: "删除" }];
+        return [
+          { key: `tier-${index}-name`, label: `第 ${index + 1} 档名称`, before: before.name, after: after.name },
+          { key: `tier-${index}-share`, label: `${name} · 占比`, before: `${before.sharePct}%`, after: `${after.sharePct}%` },
+          { key: `tier-${index}-tops`, label: `${name} · 算力`, before: `${count(before.minTops)}–${count(before.maxTops)} TOPS`, after: `${count(after.minTops)}–${count(after.maxTops)} TOPS` },
+        ];
+      }).flat(),
+    ];
+    const changed = diff.filter((row) => row.before !== row.after);
+    const changeText = changed.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (changed.length > 2 ? `；等 ${changed.length} 项` : "");
+    const impactText = enabled ? "保存后 App 按新档位给用户估一个设备排名（参考，不是真实榜单），不影响真实算力、收益和奖励。"
+      : tiers.length ? "保存后 App 不再显示设备排名，改为占位说明；档位保留，下次开启照用。" : "保存后 App 不再显示设备排名，改为占位说明；档位全部清空，下次开启要重新填。";
+    let command: H9Command | undefined;
     ctx.openActionConfirm({ briefKind: "config",
+      getPendingReason: () => command && pendingH9Command("rank")?.commandKey === command.commandKey ? command.original?.reason : undefined,
       action: "保存设备预估排名", reasonMin: 8, reasonMax: 200,
-      completionCopy: "保存后马上生效，并记入操作记录。",
-      detail: <>
-        <div>状态：{data.enabled ? "已开启" : "已关闭"} → {enabled ? "开启" : "关闭"}；配置版本 v{data.version}。</div>
-        {tiers.map((tier, index) => <div key={index}>{tier.name}：{tier.sharePct}%，{tier.minTops}–{tier.maxTops} TOPS</div>)}
-        <div>在线设备数取自「首页数字增长」。改了档位分布会重新生成参考；只开关不会。不影响真实算力、收益和奖励。</div>
-      </>,
+      title: "保存设备预估排名",
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      confirmLabel: "确认保存",
+      statedBrief: { impact: impactText, check: "核对档位占比合计 100% 和算力范围，理由写清调整依据。" },
+      reasonPlaceholder: "例如：运营活动安排、工单号",
+      facts: <ConfirmFacts rows={diff} rest="没改的档" facts={<>
+        <Fact k="排名设置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
+        <Fact k="参考样本">{sameDistribution ? "不变（只改了开关或名称）" : "按新的档位分布重新生成"}</Fact>
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
+      detail: "在线设备数取自首页数字增长。排名是独立的一套设置，不受本页其他块的保存影响。",
       run: async (reason) => {
+        const recovering = !!command && pendingH9Command("rank")?.commandKey === command.commandKey;
+        if (!recovering && !ready.current) throw new Error("H9_CURRENT_READ_REQUIRED");
+        command ??= prepareDeviceRankConfig(submitted, reason, {
+          module: "rank", title: "保存设备预估排名", action: "保存设备预估排名", impact: impactText, change: changeText,
+          rows: diff.map(row => ({ key: String(row.key), label: String(row.label), before: String(row.before), after: String(row.after) })),
+          extraFacts: [{ label: "参考样本", value: sameDistribution ? "不变（只改了开关或名称）" : "按新的档位分布重新生成" }],
+        });
+        ready.current = false;
         setSaving(true);
         try {
-          const saved = await updateDeviceRankConfig(submitted, reason);
-          accept(saved);
-          ctx.toast(`设备预估排名已保存 · 版本 v${saved.version}`);
+          const saved = await updateDeviceRankConfig(command, recovering);
+          if (recovering) { ctx.openActionConfirm(null); await load(); }
+          else accept(saved);
+          ctx.toast(`设备预估排名已保存 · 版本 v${saved.version}`, "success");
         } catch (cause) {
-          const status = (cause as { status?: number })?.status;
-          setConflict(status === 409);
-          setError(status === 409 ? "设置刚被别人改过，请刷新后重新修改。" : `${cause instanceof Error ? cause.message : "保存结果暂未确认。"} 请刷新核对是否已生效；直接重试不会重复保存。`);
+          const unresolved = pendingH9Command("rank");
+          const kind = unresolved ? "unknown" : saveIssueKind(cause, ["DEVICE_RANK_VERSION_CONFLICT"], recovering);
+          setConflict(kind === "conflict");
+          setIssue({ kind, change: changeText, at: command.createdAt });
+          setError(cause instanceof Error ? cause.message : "保存没有得到确定结果。");
+          if (!unresolved) {
+            command = undefined;
+            if (recovering) { ctx.openActionConfirm(null); await load(); }
+          }
           throw cause;
-        } finally { setSaving(false); }
+        } finally { setSaving(false); syncPending(); }
       },
     });
   };
-  return <section className="l-card h9-editor" aria-label="设备预估排名" style={{ marginBottom: 24 }}>
-    <div className="l-h"><span className="ttl">设备预估排名</span><span className="sub">{data ? `已保存：${data.enabled ? "开启" : "关闭"} · v${data.version}` : "未加载"}</span></div>
-    <div className="l-b">
-      <p className="htint">按「首页数字增长」的在线设备数和下方档位，给用户算一个估计排名，用户手机按自己的算力参与比较。这不是真实榜单，不影响收益和奖励。</p>
-      <div className="h9-help">在线设备数要在 1–1000 万台之间，否则 App 显示「排名暂不可用」。</div>
-      {loading && <p role="status">设备预估排名配置加载中…</p>}
-      {error && <p className="htint danger" role="alert">{error}</p>}
+
+  const shareTotal = tiers.reduce((sum, tier) => sum + (Number.isFinite(tier.sharePct) ? Math.round(tier.sharePct * 100) : 0), 0) / 100;
+  const shareGap = Number((100 - shareTotal).toFixed(2));
+  const saveBlock = pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : loading ? "正在读取最新数据，读完再保存" : saving ? undefined : conflict ? issue?.kind === "conflict" ? "排名设置已被别人改过，先刷新这一块" : "这次保存没得到确定结果，先刷新这一块" : !dirty ? "没有改动" : validation || undefined;
+  const note = loading ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : validation ? validation : "有改动，还没保存";
+  const refresh = <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} disabled={loading || saving} onClick={() => void load()}>刷新这一块</Button>;
+
+  const recover = (record: H9Command) => {
+    const original = record.original;
+    if (!original) return;
+    const display = original.display;
+    ctx.openActionConfirm({ briefKind: "config", action: display.action, title: display.title,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原请求重试",
+      statedBrief: { impact: display.impact, check: "核对档位占比合计 100% 和算力范围，理由写清调整依据。" },
+      detail: "在线设备数取自首页数字增长。排名是独立的一套设置，不受本页其他块的保存影响。",
+      getPendingReason: () => pendingH9Command("rank")?.commandKey === record.commandKey ? original.reason : undefined,
+      blockedReason: !canRetryH9Command(record) ? RETRY_EXPIRED_TEXT : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined,
+      facts: <ConfirmFacts rows={display.rows} facts={<>
+        <Fact k="排名设置版本"><Change from={`v${original.expectedVersion}`} to={`v${original.expectedVersion + 1}`} /></Fact>
+        {display.extraFacts?.map(fact => <Fact key={fact.label} k={fact.label}>{fact.value ?? <Change from={fact.before} to={fact.after} />}</Fact>)}
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
+      run: async () => {
+        ready.current = false;
+        setSaving(true);
+        try {
+          const saved = await updateDeviceRankConfig(record, true);
+          ctx.openActionConfirm(null);
+          await load();
+          ctx.toast(`设备预估排名已保存 · 版本 v${saved.version}`, "success");
+        } catch (cause) {
+          if (!pendingH9Command("rank")) { ctx.openActionConfirm(null); await load(); }
+          throw cause;
+        } finally { setSaving(false); syncPending(); }
+      },
+    });
+  };
+  const issueNotice = pending ? <H9RecoveryNotice explain={<>
+        <p>{DIRECT_RECOVERY_INTRO}</p>
+        {error && <p>{error}</p>}
+      </>} rows={[{ key: pending.commandKey, name: "设备预估排名", change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
+        status: h9Status(pending, outcomes[pending.commandKey], canWrite),
+        tech: <TechInfo commandKey={pending.commandKey} receipt={receiptOf(outcomes[pending.commandKey])} />,
+        actions: <>
+          <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原结果</Button>
+          {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
+          <Button size="sm" disabled={saving} disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
+            onClick={() => recover(pending)}>按原请求重试</Button>
+        </> }]} />
+    : issue?.kind === "conflict"
+      ? <Notice tone="warn" title="保存没成功：排名设置已被别人改过" action={<Button size="sm" disabled={loading} onClick={() => void load()}>刷新这一块</Button>}>这次没有保存。刷新读到最新值后再改，避免盖掉别人的设置。</Notice>
+      : issue?.kind === "rejected"
+        ? <Notice tone="danger" title="保存被拒">{error} 这次没有保存，按原因改好后再保存。</Notice> : null;
+
+  return <section className="h9-rank" aria-label="设备预估排名">
+    {issueNotice}
+    {closing && <FundClosureModal label={"设备预估排名"} createdAt={closing.createdAt}
+      offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
+      facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(outcomes[closing.commandKey]), "记录保留")}</Fact>}
+      onClose={() => setClosing(null)} onSubmit={async evidence => {
+        const record = closing;
+        const receipt = await queryH9Command("rank", record, evidence);
+        setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
+        setClosing(null);
+        syncPending();
+        if (eCommandSettled(receipt)) {
+          ctx.toast(settledText({ status: receipt!.originalStatus }), "success");
+          ctx.openActionConfirm(null);
+          await load();
+        } else ctx.toast(CLOSURE_KEPT_TEXT, "warn");
+      }} />}
+    <Panel title="设备预估排名" icon={Trophy} tone="role-4" sub={data ? `排名设置 v${data.version} · 单独保存` : undefined}
+      explain="独立的一套设置：自己的版本、自己保存，不受本页其他块影响。App 用首页数字增长的在线设备数和这里的档位估一个排名；这不是真实榜单，不影响收益和奖励。">
+      {loading && !data && <BlockState state="loading" title="设备预估排名读取中…" />}
+      {!loading && !data && <BlockState state="error" title="设备预估排名读取失败" detail={`${error} 这一块看不到也改不了，其余五块不受影响。`} onRetry={() => void load()} />}
       {data && <>
-        <label className="h9-switch"><input type="checkbox" role="switch" aria-label="启用设备预估排名" checked={enabled} disabled={locked} onChange={(event) => setEnabled(event.target.checked)} /><span>启用设备预估排名<span className="h9-help">保存后生效</span></span></label>
-        <div className="h9-table-wrap"><table className="l-tbl">
-          <thead><tr><th>档位名称</th><th>占比（%）</th><th>最低算力（TOPS）</th><th>最高算力（TOPS）</th><th>操作</th></tr></thead>
-          <tbody>{rows.map((row, index) => <tr key={index}>
-            {(["name", "sharePct", "minTops", "maxTops"] as const).map((key) => <td key={key}><input className="l-inp" style={{ width: "100%", minWidth: key === "name" ? 120 : 90 }} type="text" inputMode={key === "name" ? "text" : "decimal"} aria-label={`第${index + 1}档${{ name: "名称", sharePct: "占比", minTops: "最低算力", maxTops: "最高算力" }[key]}`} value={row[key]} disabled={locked} onChange={(event) => change(index, key, event.target.value)} /></td>)}
-            <td><button className="l-btn sm" aria-label={`删除第${index + 1}档`} disabled={locked} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>删除</button></td>
-          </tr>)}</tbody>
-        </table></div>
-        <div className="h9-help">最多 20 档，名称 1–60 字；占比最多两位小数且合计 100%；算力范围为 0–1000000000 TOPS，最多六位小数。关闭时允许空档位。</div>
-        {validation && <p className="ferr" role="alert">{validation}</p>}
-        {!canWrite && <p>你只能查看。</p>}
+        <AppPreview where="App 首页 · 网络脉搏" explain="App 拿系统记录的手机算力和这些档位比，估一个名次（参考，不是真实榜单）。在线设备不在 1–10,000,000 台之间时显示「暂不可用」；没有手机算力时显示「未排名」。">
+          <div className="h9-rank-state">
+            <StatusTag tone={data.enabled ? "ok" : "neutral"}>{data.enabled ? "已开启" : "已关闭"}</StatusTag>
+            <span>{data.enabled ? `App 按 ${data.tiers.length} 档分布给用户估设备排名` : "App 显示占位，说明排名没有开启"}</span>
+          </div>
+        </AppPreview>
+        <div className="h9-rank-switch">
+          <span className="h9-rank-switch-label">状态<Explain label="状态的说明" content="保存后生效。关闭时可以没有档位；开启时至少 1 档。" /></span>
+          <Segments label="启用设备预估排名" value={enabled ? "on" : "off"} onChange={(value) => { if (!locked) setEnabled(value === "on"); }}
+            items={[{ value: "on", label: "开启", disabled: locked }, { value: "off", label: "关闭", disabled: locked }]} />
+        </div>
+        <Table label="排名档位" className="h9-tiers">
+          <thead><tr><Th>档位名称</Th><Th>占比</Th><Th>最低算力</Th><Th>最高算力</Th>{canWrite && <Th align="right">操作</Th>}</tr></thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const share = h9DraftNumber(row.sharePct);
+              return <Tr key={index}>
+                <Td><Input aria-label={`第${index + 1}档${"名称"}`} value={row.name} disabled={locked} onChange={(event) => change(index, "name", event.target.value)} /></Td>
+                <Td><span className="h9-share">
+                  {Number.isFinite(share) && share >= 0 && share <= 100 && <RatioBar compact quiet label="占比" value={share} total={100} valueText={`占 ${share}%`} tone="role-4" />}
+                  <NumberInput aria-label={`第${index + 1}档${"占比"}`} unit="%" min={0} max={100} inputMode="decimal" value={row.sharePct} disabled={locked} onChange={(event) => change(index, "sharePct", event.target.value)} />
+                </span></Td>
+                <Td><NumberInput aria-label={`第${index + 1}档${"最低算力"}`} unit="TOPS" min={0} max={1_000_000_000} inputMode="decimal" value={row.minTops} disabled={locked} onChange={(event) => change(index, "minTops", event.target.value)} /></Td>
+                <Td><NumberInput aria-label={`第${index + 1}档${"最高算力"}`} unit="TOPS" min={0} max={1_000_000_000} inputMode="decimal" value={row.maxTops} disabled={locked} onChange={(event) => change(index, "maxTops", event.target.value)} /></Td>
+                {canWrite && <Td align="right"><Button size="sm" variant="ghost" aria-label={`删除第${index + 1}档`} disabled={locked} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>删除</Button></Td>}
+              </Tr>;
+            })}
+            {rows.length === 0 && <TableMessage columns={canWrite ? 5 : 4}>还没有档位。关闭时可以没有档位；开启前至少加 1 档。</TableMessage>}
+            {rows.length > 0 && <Tr>
+              <Td><b>合计</b></Td>
+              <Td><span className="h9-share-total">
+                <b>{shareTotal.toFixed(2)}%</b>
+                {shareTotal === 100 ? <StatusTag tone="ok">等于 100%</StatusTag> : <StatusTag tone="warn">{shareGap > 0 ? `还差 ${shareGap}%` : `多了 ${-shareGap}%`}</StatusTag>}
+              </span></Td>
+              <Td /><Td />{canWrite && <Td />}
+            </Tr>}
+          </tbody>
+        </Table>
+        <p className="h9-band-rule">最多 20 档，名称 1–60 字；占比最多两位小数、合计 100%；算力 0–1,000,000,000 TOPS，<span className="rd-keep">最多六位小数，最低不大于最高。</span></p>
       </>}
-    </div>
-    <div className="l-h" style={{ borderTop: "1px solid var(--border)", borderBottom: 0 }}>
-      <span className="sub">单独保存，不受本页其他设置影响。</span><div className="r">
-        <button className="l-btn sm" disabled={loading || saving} onClick={() => void load()}>刷新</button>
-        {canWrite && <>
-          <button className="l-btn sm" disabled={locked || rows.length >= 20} onClick={() => setRows((current) => [...current, { name: "", sharePct: "", minTops: "", maxTops: "" }])}>添加档位</button>
-          <button className="l-btn sm" disabled={locked || !dirty} onClick={() => data && accept(data)}>放弃改动</button>
-          <button className="l-btn mc" disabled={locked || !dirty || !!validation} onClick={save}>{saving ? "保存中…" : "保存设备预估排名"}</button>
+      <ModuleToolbar note={note} tone={dirty && validation ? "warn" : undefined}>
+        {refresh}
+        {canWrite && data && <>
+          <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={rows.length >= 20 ? "最多 20 档" : undefined} disabled={locked} onClick={() => setRows((current) => [...current, { name: "", sharePct: "", minTops: "", maxTops: "" }])}>添加档位</Button>
+          <Button size="sm" disabled={locked || !dirty} onClick={() => data && accept(data)}>放弃改动</Button>
+          <Button variant="primary" size="sm" loading={saving} loadingText="保存中…" disabledReason={saving ? undefined : saveBlock} disabled={!canWrite || !data} onClick={save}>保存设备预估排名</Button>
         </>}
-      </div>
-    </div>
+      </ModuleToolbar>
+    </Panel>
   </section>;
 }
-

@@ -1,3 +1,5 @@
+import { eventBacklogMetric } from "@/lib/admin/event-backlog-metric";
+
 export type A5RegistryRow = {
   canonicalKey: string;
   displayName: string;
@@ -121,7 +123,8 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
       ownerCode: text(row.ownerCode, `rows[${index}].ownerCode`),
       ownerLabel: text(row.ownerLabel, `rows[${index}].ownerLabel`),
       ownerRoute,
-      currentValue: healthSnapshot ? "实时状态不可用" : currentValue,
+      currentValue: healthSnapshot ? "实时状态不可用" : canonicalKey === "admin.health.event_pipeline"
+        ? eventBacklogMetric(currentValue, { backlogCount: row.backlogCount, oldestSeconds: row.oldestSeconds, auditLinkUnresolvedCount: row.auditLinkUnresolvedCount }) : currentValue,
       valueType: text(row.valueType, `rows[${index}].valueType`),
       unit: text(row.unit, `rows[${index}].unit`, true),
       source: text(row.source, `rows[${index}].source`),

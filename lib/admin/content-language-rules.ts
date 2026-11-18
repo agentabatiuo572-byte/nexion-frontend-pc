@@ -57,3 +57,31 @@ export function englishCopyHint(language: "zh" | "vi"): string {
   const name = language === "zh" ? "中文" : "越南语";
   return `这是英文副本，App ${name}下会显示英文。请改成${name}。`;
 }
+
+export function mapSingleContentText(
+  texts: Record<OperatingLanguageCode, string>,
+  required: readonly OperatingLanguageCode[],
+  mode: "edit" | "submit",
+) {
+  const transform = mode === "edit" ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  const en = { text: texts.en };
+  return {
+    en: en.text,
+    zh: transform(required, "zh", en, { text: texts.zh }).text,
+    vi: transform(required, "vi", en, { text: texts.vi }).text,
+  };
+}
+
+export type LocalizedTitleBody = Record<`${"title" | "body"}${"En" | "Zh" | "Vi"}`, string>;
+
+export function mapContentTitleBody(
+  copy: LocalizedTitleBody,
+  required: readonly OperatingLanguageCode[],
+  mode: "edit" | "submit",
+): LocalizedTitleBody {
+  const transform = mode === "edit" ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  const en = { title: copy.titleEn, body: copy.bodyEn };
+  const zh = transform(required, "zh", en, { title: copy.titleZh, body: copy.bodyZh });
+  const vi = transform(required, "vi", en, { title: copy.titleVi, body: copy.bodyVi });
+  return { titleEn: en.title, bodyEn: en.body, titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body };
+}

@@ -14,6 +14,7 @@ import {
   type SupportSla,
   type SupportTicket,
 } from "./data";
+import { Button, Facts, Fact } from "@/app/components/rd";
 import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
@@ -173,7 +174,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const canWriteM1 = isSuperAdmin || Boolean(authorities?.includes("service_m1_write"));
   const canManageSupportSeats = canWriteM1 && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
   const seatAssignmentAgents = useMemo(
-    () => supportAgents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true),
+    () => supportAgents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true && !agent.busy),
     [supportAgents],
   );
   const assignableAgents = useMemo(
@@ -398,7 +399,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                       <button
                         type="button"
                         className="btn btn-sec btn-sm"
-                        disabled={!l.agent.assignmentEligible || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
+                        disabled={!l.agent.assignmentEligible || l.agent.busy || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
                         title={isDedicatedSupportAgent(l.agent) ? "给此专属客服绑定服务用户" : "只有专属客服可以绑定服务用户"}
                         onClick={() => {
                           setAssignAgent(l.agent);
@@ -526,7 +527,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       onClose();
     } catch {
       setWriteOutcomeUnknown(true);
-      ctx.toast("写入结果未确认,请使用同一命令重试");
+      ctx.toast("保存结果未知，请按原请求重试");
     } finally {
       commandInFlightRef.current = false;
       setSaving(null);
@@ -561,7 +562,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       onClose();
     } catch {
       setWriteOutcomeUnknown(true);
-      ctx.toast("写入结果未确认,请使用同一命令重试");
+      ctx.toast("保存结果未知，请按原请求重试");
     } finally {
       commandInFlightRef.current = false;
       setSaving(null);
@@ -601,7 +602,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       {writeOutcomeUnknown && (
         <div className="itint" role="alert" style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 13 }}>写入失败或结果未知,输入已保留。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>结果还没确认，请直接重试（不会重复执行）；要改别的，请取消后重新打开。</div>
+          <p className="rd-note">结果未知，请按原请求重试（不会重复执行）；要改别的，请取消后重新打开。</p>
         </div>
       )}
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
@@ -652,10 +653,9 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
 
 export function SupportSeatRoleModal({ canManage, onClose }: { ctx: MCtx; operatorName: string; currentRole: string; currentAdminId: number; agents: MSupportAgent[]; canManage: boolean; onClose: () => void }) {
   const canManageQualifications = useAdminAuth(state => Boolean(canManage && state.session && ["super", "superadmin"].includes(state.session.role) && state.session.authorities.includes("platform_a1_read") && canAccessResolvedPath(resolveVisibleDomains(state.session), "/platform/rbac")));
-  return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button>}>
-    <p>人工接待统一由专属客服负责。接待资格和主管资格由超级管理员在「运营账号与权限」里设置。</p>
-    {canManageQualifications && <Link className="btn btn-pri btn-sm" href="/platform/rbac">前往账号管理</Link>}
-    <p className="sub">资格调整后，已有会话、客户资料和绑定关系保留。</p>
+  return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<><Button onClick={onClose}>关闭</Button>{canManageQualifications && <a className="rd-btn" data-variant="primary" href="/platform/rbac"><span className="rd-btn-face">前往账号管理</span></a>}</>}>
+    <Facts><Fact k="人工接待身份">专属客服</Fact><Fact k="资格设置入口">运营账号与权限</Fact><Fact k="可设置的操作者">超级管理员</Fact></Facts>
+    <p className="rd-note">资格调整后，已有会话、客户资料和绑定关系保留。</p>
   </Modal>;
 }
 
@@ -687,7 +687,7 @@ function SeatAssignmentModal({
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const agent = agents.find((row) => String(row.adminId) === agentAdminId) ?? agents[0] ?? null;
-  const agentCanAssign = agent?.assignmentEligible === true;
+  const agentCanAssign = agent?.assignmentEligible === true && !agent.busy;
   const allActiveAssignments = useMemo(
     () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
       .filter((row) => row.status === "ACTIVE"),

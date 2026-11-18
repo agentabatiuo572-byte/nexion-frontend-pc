@@ -31,6 +31,8 @@ export function TabGroup<T extends string | number>({
   itemStyle,
   itemTitle,
   itemDataTestId,
+  itemId,
+  itemControls,
   orientation = "horizontal",
   children,
 }: {
@@ -51,6 +53,9 @@ export function TabGroup<T extends string | number>({
   itemStyle?: (value: T, selected: boolean) => CSSProperties | undefined;
   itemTitle?: (value: T, selected: boolean) => string | undefined;
   itemDataTestId?: string;
+  /** 页签自己的 id 和它管的内容面板 id，给 tabpanel 互相指。 */
+  itemId?: (value: T) => string | undefined;
+  itemControls?: (value: T) => string | undefined;
   orientation?: "horizontal" | "vertical";
   children: (value: T, selected: boolean) => ReactNode;
 }) {
@@ -87,6 +92,8 @@ export function TabGroup<T extends string | number>({
             key={String(item)}
             type="button"
             role="tab"
+            id={itemId?.(item)}
+            aria-controls={itemControls?.(item)}
             aria-selected={selected}
             tabIndex={item === focusValue ? 0 : -1}
             disabled={disabled?.(item) ?? false}

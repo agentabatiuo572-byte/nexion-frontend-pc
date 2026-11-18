@@ -62,7 +62,7 @@ export interface OpsSku {
   /** 每件算力点：计入团队等级与配额，下单时记入订单。 */
   computePoints?: number;
   dailyEarn: number;
-  dailyEarnNEX: number;
+  dailyEarnNEX: number | null;
   monthlyTargetUsdt?: number;
   monthlyTargetBandPct?: number;
   /** Explicit write intent; absence of the target fields preserves the approved target. */

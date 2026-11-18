@@ -1,3 +1,4 @@
+import { parseE6DecimalJson } from "./e6-decimal";
 import { fetchPoolTasks, type PhonePoolTask } from "./task-pool-client";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsTask } from "@/lib/admin/platform-types";
@@ -197,7 +198,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(parseE6DecimalJson).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
@@ -238,7 +239,7 @@ async function e2ConfigRequest<T>(path: string, init?: RequestInit & { idempoten
   if (init?.body) headers.set("Content-Type", "application/json");
   if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   const response = await guardedFetch(`/api/admin/config/${path}`, { ...init, headers, cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(parseE6DecimalJson).catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `E2_CONFIG_REQUEST_FAILED_${response.status}`));
   }
@@ -261,18 +262,6 @@ export async function fetchE2TaskPricing(): Promise<E2TaskPricingSnapshot> {
     })),
     teaser: (raw.teaser ?? []).map((row) => ({ ...row, vram: toNumber(row.vram), dailyPotential: toNumber(row.dailyPotential) })),
   };
-}
-
-export async function updateE2TaskPricing(
-  patch: Partial<Pick<E2TaskPricingClass, "taskClass" | "minReward" | "maxReward" | "minVRAM" | "enabled">> & { queueSaturation?: number; expectedRevision?: string },
-  reason: string,
-  operator: string,
-) {
-  return e2ConfigRequest<{ effectiveAt: string; taskPricing: E2TaskPricingSnapshot }>("task-pricing", {
-    method: "PUT",
-    body: JSON.stringify({ ...patch, minVram: patch.minVRAM, minVRAM: undefined, reason, operator }),
-    idempotencyPrefix: "e2-task-pricing",
-  });
 }
 
 function toTaskPayload(task: OpsTask, reason: string, operator: string) {

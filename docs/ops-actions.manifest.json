@@ -31,7 +31,7 @@
     "B4": ["OPS-B-09", "OPS-B-10"],
     "B5": ["OPS-B-11", "OPS-B-12", "OPS-B-13", "OPS-B-14", "OPS-B-16"],
     "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35", "OPS-C-36", "OPS-C-38"],
-    "C2": ["OPS-C-01", "OPS-C-02a"],
+    "C2": ["OPS-C-01", "OPS-C-02a", "OPS-C-10", "OPS-C-39"],
     "C3": ["OPS-C-03", "OPS-C-21"],
     "C5": ["OPS-C-18", "OPS-C-37", "OPS-C-38"],
     "C6": ["OPS-C-20"],
@@ -76,7 +76,7 @@
     "J2": ["OPS-J-02", "OPS-J-07"],
     "J3": ["OPS-J-03", "OPS-J-08"],
     "J4": ["OPS-J-04", "OPS-J-05"],
-    "K1": ["OPS-K-01", "OPS-K-18"],
+    "K1": ["OPS-K-01", "OPS-K-01d", "OPS-K-18"],
     "K2": ["OPS-K-02"],
     "K3": ["OPS-K-03"],
     "K4": ["OPS-K-04", "OPS-K-19", "OPS-K-20"],
@@ -170,9 +170,9 @@
       "object": "平台维护公告开关",
       "action": "开启/关闭维护公告",
       "status": "built",
-      "view": "a-tabs/a3-config.tsx",
+      "view": "a-tabs/a3-page.tsx",
       "batch": "done",
-      "restAction": "updateA3FeatureFlag",
+      "restAction": "useA3Commands",
       "note": "A3 当前只开放后端已登记且有真实运行时消费者的横切开关；维护公告通过版本校验、理由、幂等和 A2 审计生效"
     },
     {
@@ -181,9 +181,9 @@
       "object": "平台横切参数",
       "action": "调整全球限流上限",
       "status": "built",
-      "view": "a-tabs/a3-config.tsx",
+      "view": "a-tabs/a3-page.tsx",
       "batch": "done",
-      "restAction": "updateA3Parameter",
+      "restAction": "useA3Commands",
       "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
@@ -192,13 +192,13 @@
       "object": "提现强审参数",
       "action": "调整提现加强审核金额",
       "status": "built",
-      "view": "a-tabs/a3-config.tsx",
+      "view": "a-tabs/a3-page.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {
           "type": "pc-runtime",
-          "file": "app/components/domain-views/a-tabs/a3-config.tsx",
-          "positivePatterns": ["提现加强审核金额", "updateA3Parameter"],
+          "file": "app/components/domain-views/a-tabs/a3-page.tsx",
+          "positivePatterns": ["提现强审门槛", "commands.send"],
           "negativePatterns": ["服务端权威契约未完成"]
         }
       ],
@@ -481,7 +481,19 @@
       "status": "built",
       "view": "c-tabs/c2-actions.tsx + c5-security.tsx",
       "batch": "P1",
-      "restAction": "revokeUserSessions"
+      "restAction": "proposeSessionRevocation",
+      "note": "C2 通过审批申请撤销用户会话，domain C / op c2_session_revoke_all；C5 同用撤销审批入口（旧 revokeUserSessions 已无页面调用）"
+    },
+    {
+      "id": "OPS-C-39",
+      "domain": "C",
+      "object": "账户代看与名单(C2)",
+      "action": "开始或结束代看、维护黑白名单",
+      "status": "built",
+      "view": "c-tabs/c2-actions.tsx",
+      "batch": "done",
+      "restActions": ["startUserImpersonation", "terminateUserImpersonation", "upsertUserAccountList", "removeUserAccountList"],
+      "note": "审批映射 c2_impersonate_start / c2_impersonate_terminate / c2_blocklist_upsert / c2_blocklist_remove，沿用现有授权与命令恢复"
     },
     {
       "id": "OPS-C-11",
@@ -627,12 +639,12 @@
       "id": "OPS-C-24",
       "domain": "C",
       "object": "用户支付方式(C1)",
-      "action": "向受试用保护的支付方式发送换绑通知",
+      "action": "核对和恢复历史换绑通知原命令",
       "status": "built",
       "view": "_console/users/search/[id]/page.tsx",
       "batch": "done",
       "restAction": "notifyUserPaymentMethodRebind",
-      "note": "用户详情页调用真实后端命令；服务端具备幂等、版本校验、通知入队和审计"
+      "note": "2026-11-07：已移除新发起按钮和确认框。当前试用无需绑卡；已有结果未知记录仍可查询、按原命令重试和恢复，沿用权限与 24 小时限制。通知入队不代表手机送达。"
     },
     {
       "id": "OPS-C-25",
@@ -688,18 +700,17 @@
     {
       "id": "OPS-D-08",
       "domain": "D",
-      "object": "充值渠道/PSP",
-      "action": "渠道启停/调费率/调最小额与单笔上限/主备PSP切换(均操作确认)",
+      "object": "充值渠道",
+      "action": "渠道启停/调费率/调单笔上限(均操作确认)",
       "status": "built",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "P1",
       "restActions": [
         "updateD1TopupChannelEnabled",
         "updateD1TopupChannelFee",
-        "updateD1TopupChannelMin",
-        "updateD1TopupChannelMax",
-        "switchD1Psp"
-      ]
+        "updateD1TopupChannelMax"
+      ],
+      "note": "2026-11-04 国际卡渠道行、最小额调整和主备 PSP 切换已随旧充值通道退役；当前只管理 vietqr/hdpay 渠道行，最低充值额在订单付款配置"
     },
     {
       "id": "OPS-D-09",
@@ -740,37 +751,32 @@
     {
       "id": "OPS-D-11",
       "domain": "D",
-      "object": "BIN风控",
-      "action": "锁卡/解锁/手动锁段(普通确认即时止血+强制原因)",
-      "status": "built",
+      "object": "BIN风控旧入口",
+      "action": "旧 BIN/IP/设备锁定与解锁已退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
-      "batch": "P1",
-      "note": "D.bin.<i>/D.bin.manual.<seg>;锁卡热力喂 K1 支付工具维度;解锁必须写原因(PRD D1④)",
-      "restActions": [
-        "createD1BinLock",
-        "setD1BinLock"
-      ]
+      "batch": "done",
+      "reason": "国际卡业务已正式退役，后端已禁止新卡支付授权，当前 App 不再产生卡失败记录；PC 锁定界面、客户端函数和代理路径均已删除。"
     },
     {
       "id": "OPS-D-12",
       "domain": "D",
-      "object": "拒付处置",
-      "action": "退款追回(操作确认+幂等;三连原子:追回入账+fee_buffer扣回+终身入金核减)",
-      "status": "built",
+      "object": "拒付处置旧入口",
+      "action": "旧国际卡拒付追回已退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
-      "batch": "P0",
-      "note": "D.chargeback.<id>;cumulativeDepositUsdt 同事务核减防拒付后保留 trade-in 资格(PRD D1⑦)",
-      "restAction": "refundD1Chargeback"
+      "batch": "done",
+      "reason": "产品未上线，没有历史拒付；后端已禁止新卡支付授权，当前 App 不再产生卡交易。PC 追回界面、客户端函数和代理路径均已删除，通用退款与 Cregis 退款不受影响。"
     },
     {
       "id": "OPS-D-13",
       "domain": "D",
-      "object": "刷卡风控参数",
-      "action": "3DS强验线/同卡重试上限/锁卡时长(操作确认,实时生效)",
-      "status": "built",
+      "object": "刷卡风控参数旧入口",
+      "action": "旧 3DS 门槛、同卡重试上限与锁卡时长调整已退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
-      "batch": "P1",
-      "restAction": "updateD1CardRisk"
+      "batch": "done",
+      "reason": "国际卡业务已正式退役，后端已禁止新卡支付授权；PC 参数界面、客户端函数和代理路径均已删除，overview 响应字段暂按契约保留。"
     },
     {
       "id": "OPS-D-14",
@@ -1378,7 +1384,7 @@
       "id": "OPS-H-03",
       "domain": "H",
       "object": "试用引擎",
-      "action": "调TrialConfig参数",
+      "action": "调整现行 TrialConfig 参数（目录 14 项；旧邀请及延长参数不提供新保存入口）",
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P1",
@@ -1388,13 +1394,12 @@
       "id": "OPS-H-04",
       "domain": "H",
       "object": "试用引擎",
-      "action": "强制取消/触发扣款",
+      "action": "强制取消试用提交审批；历史扣款只核查",
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P2",
       "restActions": [
-        "h2_trial_cancel",
-        "h2_trial_charge"
+        "h2_trial_cancel"
       ]
     },
     {
@@ -1420,7 +1425,7 @@
           "negativePatterns": ["ZoneId.systemDefault", "TimeZone.getDefault"]
         }
       ],
-      "note": "地区映射由正常 H3/A2 提案发布，固定越南 fallback，首次边界复制实际旧实例，后续版本 CAS 保留生效边界。源码接线及 tests/h3-weekly-region-policy-contract.test.mjs 的真实组件回调验证已通过；后端行为证据为 src/test/java/ffdd/opsconsole/growth/application/WeeklyRegionPolicyReplayTest.java。仅登记代码实现与隔离验证，不代表 TEST 已发布、策略已激活或现场 A2 验收完成。"
+      "note": "地区映射由正常 H3/A2 提案发布，固定越南 fallback，首次边界复制实际旧实例，后续版本 CAS 保留生效边界。源码接线已通过；后端行为证据为 src/test/java/ffdd/opsconsole/growth/application/WeeklyRegionPolicyReplayTest.java。仅登记代码实现与隔离验证，不代表 TEST 已发布、策略已激活或现场 A2 验收完成。"
     },
     {
       "id": "OPS-H-06",
@@ -1597,11 +1602,11 @@
       "id": "OPS-I-05",
       "domain": "I",
       "object": "风险披露(I5)",
-      "action": "发布新版/归档",
+      "action": "新增、编辑或删除披露草稿",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "P1",
-      "note": "合规披露版本激活",
+      "note": "草稿保存不改变 App 当前公开版本；发布封存与映射生效另行审批。",
       "restActions": [
         "createI5DisclosureVersion",
         "updateI5DisclosureVersion",
@@ -1657,21 +1662,23 @@
       "id": "OPS-I-09",
       "domain": "I",
       "object": "披露版本(I5)",
-      "action": "发布新版(风控 操作员 · 风控 lead·超管 执行门槛 · 触发 critical re-ack)",
+      "action": "提交披露版本发布审批（批准后仅封存，不切换 App 当前版本）",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "done",
-      "restAction": "i5_disclosure_publish"
+      "restAction": "i5_disclosure_publish",
+      "note": "发布批准只封存内容；另行批准切换版本或适用国家才使新旧国家用户原确认失效，并生成紧急级通知。不确认不影响任何操作。"
     },
     {
       "id": "OPS-I-10",
       "domain": "I",
       "object": "受限动作范围(I5)",
-      "action": "调整范围(操作确认 + edit;缩小=放松合规拦截要写依据)",
+      "action": "提交受限动作配置审批（当前无受限动作，App 不强制确认）",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "done",
-      "restAction": "i5_gate_adjust"
+      "restAction": "i5_gate_adjust",
+      "note": "保留配置与审批入口，不据此承诺 App 执行确认拦截；历史近 7 天拦截总数在折叠内，地区数在抽屉。"
     },
     {
       "id": "OPS-I-11",
@@ -1728,16 +1735,17 @@
     {
       "id": "OPS-J-01",
       "domain": "J",
-      "object": "Kill-Switch 5闸",
-      "action": "熔断/恢复/应急批量(操作确认)",
+      "object": "J1 业务开关（四项可用，质押暂不可用）",
+      "action": "单项或批量关停即时执行；恢复提交应急审批",
       "status": "built",
       "view": "j-view.tsx",
       "batch": "done",
-      "note": "设计稿 port:5 闸矩阵(前端 4 + withdraw;Premium/NEXv2 已下线);单闸熔断恒走常规轨(对齐 PRD §15:单闸仅 J1-MD1 熔断/J1-MD2 恢复);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 emergency=true(A2 高亮+SLA 压缩+I3 升级)仅用于侧栏批量应急关停 J1-MD3,A2 标记 J.killswitch.<key>.emergency",
+      "note": "2026-11-07：提现、创世节点、兑换、试用四项可用；质押卡保留但暂不可用，排除新关停、恢复、批量勾选及在线计数。既有审批、结果未知和补录保留。恢复经 createA2OperationProposal 提交，另一位有权超管批准后生效，资金业务批准时重查覆盖率；关停及补录沿原接口。",
       "restActions": [
         "toggleJ1KillSwitch",
         "emergencyDisableJ1",
-        "confirmJ1AutoTrigger"
+        "confirmJ1AutoTrigger",
+        "createA2OperationProposal"
       ]
     },
     {
@@ -1859,13 +1867,13 @@
     {
       "id": "OPS-K-01d",
       "domain": "K",
-      "object": "K1 收益释放参数(SPEC-7)",
-      "action": "7 参数调整(理由必填 8-200 + 幂等命令号):正常释放槽/待审起点/冻结建议线(账号数)/观察窗口/在线证明时长/释放模式/首号绑定",
-      "status": "built",
+      "object": "K1 收益审核规则(K1-A09)",
+      "action": "审核起点/锁定起点：收紧直接保存，放宽按后端要求再次确认后提交审批",
+      "status": "pending",
       "view": "k-view.tsx",
-      "batch": "P0",
-      "note": "合并底账 ADMIN-MERGE-BASELINE-20260804 §二#5 恢复(主人 2026-08-06 拍板):与整簇冻结分开的放行细调。enum/boolean 下拉禁自由输入;范围限值 k-client 单源(读校验与弹窗共用);releaseParams 契约缺席时卡片 fail-closed 不给编辑入口;命令号走共享 pending store(scope 含参数键)。后端契约约束:①releaseParams 七键必须原子上线——灰度期整字段缺席(前端落 []),禁发部分数组(非精确七键会被前端判 K1_RESPONSE_INVALID 整页拒);②跨字段不变量「待审起点 ≤ 重复账号冻结线」由服务端校验,前端只管单键范围;③冻结线语义=建议(主人拍板 2026-08-06):达线仅生成人工冻结建议,收益自动落锁定桶只由超槽熔断触发,人工冻结簇后新增收益才锁。",
-      "restAction": "updateK1ReleaseParam"
+      "batch": "BUG-286",
+      "note": "仅两个有效阈值可调，pending≤freeze；manual_only固定展示、退役四项不建票。K/k1_release_param以release_param/key单目标锁，服务端绑定完整旧态，另一超管批准才生效。保存完整提案原请求及独立原键，POST后GET原键确认待审批；本人无全局A2读权也可查询终态，未知不换键、24小时后只查，过期权威查无经确认才解除。旧后端直接成功及收紧直写保留。逻辑已接，候选真实HTTP/隔离库与界面验收仍待协调人，不据类型/构建声明整体完成。",
+      "restActions": ["updateK1ReleaseParam", "k1_release_param", "fetchA2ProposalByKey"]
     },
     {
       "id": "OPS-K-01c",
@@ -2415,7 +2423,7 @@
       "object": "流动性预测(B2)",
       "action": "查看到期结构、缺口与预测窗口",
       "status": "readonly",
-      "view": "_console/overview/liquidity/page.tsx",
+      "view": "components/domain-views/d-tabs/d3-treasury.tsx",
       "reason": "服务端权威预测结果只读；预测配置由 OPS-B-06 管理"
     },
     {
@@ -2424,9 +2432,9 @@
       "object": "流动性预测配置(B2)",
       "action": "调整预测窗口和告警参数",
       "status": "built",
-      "view": "_console/overview/liquidity/page.tsx",
+      "view": "components/domain-views/d-tabs/d3-treasury.tsx",
       "batch": "done",
-      "restAction": "updateB2ForecastConfig"
+      "restAction": "updateD3ForecastConfig"
     },
     {
       "id": "OPS-B-07",
@@ -2530,16 +2538,12 @@
     {
       "id": "OPS-D-21",
       "domain": "D",
-      "object": "VietQR 到账凭证(D1)",
-      "action": "从 PC 登记到账凭证并进入对账",
-      "status": "built",
+      "object": "VietQR 到账凭证旧入口(D1)",
+      "action": "旧人工银行回单登记已退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
-      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；回单图片先走财务专用上传并一次性绑定登记单，失败与结果未知路径均保持失败关闭",
-      "restActions": [
-        "uploadD1VietQrReceiptEvidence",
-        "registerD1VietQrReceipt"
-      ]
+      "reason": "后端已禁止新建人工转账单，产品未上线且没有历史回单；PC 登记界面、客户端函数和代理路径均已删除。回单图片上传继续服务 HDPay 人工确认入账，见 OPS-D-29。"
     },
     {
       "id": "OPS-D-22",
@@ -2797,9 +2801,9 @@
       "object": "流动性负债导出(B2)",
       "action": "下载服务端生成的负债 CSV",
       "status": "built",
-      "view": "_console/overview/liquidity/page.tsx",
+      "view": "components/domain-views/d-tabs/d3-treasury.tsx",
       "batch": "done",
-      "restAction": "downloadB2LiabilitiesCsv"
+      "restAction": "downloadD3Csv"
     },
     {
       "id": "OPS-B-16",
@@ -2815,17 +2819,15 @@
     {
       "id": "OPS-D-23",
       "domain": "D",
-      "object": "VietQR 收款账户池与路由配置(D1)",
-      "action": "创建/更新收款账户、限额、启停、容差、过期与轮换参数",
+      "object": "银行卡支付参数(D1)",
+      "action": "调整单笔上限",
       "status": "built",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
       "restActions": [
-        "updateD1VietQrConfig",
-        "createD1VietQrAccount",
-        "updateD1VietQrAccount"
+        "updateD1VietQrConfig"
       ],
-      "note": "本行只签服务端账户池和配置生命周期；真实银行账号可用显式测试夹具验收，正式 Provider 动态二维码/签名回调不在本行冒充完成"
+      "note": "2026-11-04 收款账户池、容差、回单宽限和轮换策略的编辑入口已随人工银行转账退役；后端仍要求整组配置必填，这些字段按读回值原样提交"
     },
     {
       "id": "OPS-F-20",
@@ -2910,12 +2912,12 @@
       "id": "OPS-E-17",
       "domain": "E",
       "object": "AI 任务定价配置面(E2)",
-      "action": "保存并回读六类任务奖励区间、最低显存与 Kill/恢复配置",
-      "status": "built",
+      "action": "旧六类任务定价写入口已退役",
+      "status": "readonly",
       "view": "e-tabs/e2-tasks.tsx",
       "batch": "done",
-      "restAction": "updateE2TaskPricing",
-      "note": "服务端配置持久化、回读、审计与 outbox 已完成；生产派发/路由消费、可信完成证明和隔离 Sandbox 已由 OPS-E-18 完成"
+      "reason": "E2 改版决定 A07/A08/A09/A12 已下线：PC 不再提供旧六类任务定价写入，客户端写函数和 BFF PUT 放行已删除。GET/HEAD 只读兼容保留，当前 E2 页面不再调用；后端60305188已移除PUT映射，通过原安全过滤后返回HTTP/code 405、METHOD_NOT_ALLOWED，同路径GET及device_e2_read保留。E2-BE-01已交付。",
+      "note": "沿用 OPS-D-11/12/13 的 readonly 退役留痕格式；当前任务池运行时能力仍由 OPS-E-18 登记"
     },
     {
       "id": "OPS-E-18",
@@ -2991,12 +2993,12 @@
     {
       "id": "OPS-D-24",
       "domain": "D",
-      "object": "VietQR 对账状态机(D1)",
-      "action": "匹配孤儿回单、确认入账、按实收核销和登记退回",
-      "status": "built",
+      "object": "VietQR 对账状态机旧入口(D1)",
+      "action": "旧回单匹配入账、按实收核销和登记退回已退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
-      "restAction": "reconcileD1VietQr"
+      "reason": "后端已禁止新建人工转账单，产品未上线且没有历史回单；PC 五队列、处置动作、客户端函数和代理路径均已删除。HDPay 人工确认和通用差异核销是独立现行能力。"
     },
     {
       "id": "OPS-G-16",
@@ -3284,10 +3286,11 @@
       "id": "OPS-I-19",
       "domain": "I",
       "object": "风险披露法域与矩阵(I5)",
-      "action": "法域创建/编辑/状态/删除及法域×版本矩阵配置/归档",
+      "action": "维护适用地区；版本映射切换、状态及归档删除提交审批",
       "status": "built",
-      "view": "i-tabs/i4-trust.tsx",
+      "view": "i-tabs/i5-disclosures.tsx",
       "batch": "done",
+      "note": "版本或适用国家批准变更后，旧确认失效并生成紧急级通知。App 仅供主动阅读确认，不确认不影响任何操作。",
       "restActions": [
         "createI5Jurisdiction",
         "updateI5Jurisdiction",
@@ -3300,12 +3303,13 @@
     {
       "id": "OPS-K-18",
       "domain": "K",
-      "object": "K1 收益人工释放",
-      "action": "按释放条目执行人工放行并回读",
-      "status": "built",
+      "object": "K1 受保护收益(K1-A11)",
+      "action": "人工放行：后端明确要求审批后再次确认，另一超管批准才放行原收益",
+      "status": "pending",
       "view": "k-tabs/k1-multiaccount.tsx",
-      "batch": "done",
-      "restAction": "manualReleaseK1Entry"
+      "batch": "BUG-286",
+      "note": "K/k1_earnings_release仅传values.entryNo，目标earnings_release/entryNo；毛额/已追回/净额完整before由服务端绑定，PC只显示列表可读净额。未知不自动重发或转审批，保存完整原body/key，本人原键查询、待审批对象锁、终态重读收益列表与过期只查已接。批准只改变原entry状态，不由PC重发直放；既有账户组/冻结/钱包提现约束保留。候选真实HTTP/隔离库与界面验收待协调人。",
+      "restActions": ["manualReleaseK1Entry", "k1_earnings_release", "fetchA2ProposalByKey"]
     },
     {
       "id": "OPS-K-19",
@@ -3572,7 +3576,7 @@
           "negativePatterns": ["return ApiResult\\.ok\\(Map\\.of\\(\"status\", \"ACTIVE\"\\)\\)", "catch \\(Exception[^)]*\\)[\\s\\S]{0,120}TRIAL_STARTED"]
         }
       ],
-      "note": "Production：UniApp 的 trial state/start/cancel/redeem 全部经真实 API 严格解析，服务端持久状态机与幂等/版本规则决定终态；拒绝或网络失败不生成本地成功。"
+      "note": "Production：UniApp 的 trial state/start/cancel/convert 经真实 API 严格解析；购买须用户主动确认，旧 redeem 扣款已退役。生命周期由服务端决定，拒绝或网络失败不生成本地成功。"
     },
     {
       "id": "OPS-H-20",
@@ -3827,15 +3831,10 @@
             "type": "pc-runtime",
             "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
             "positivePatterns": ["manualCreditD1BankOrder\\(order\\.intentNo", "receivedVnd: order\\.payableVnd", "vietQrActionEvidenceRef\\(business\\?\\.evidenceAssetId\\)"]
-          },
-          "behaviorTest": {
-            "type": "test-runtime",
-            "file": "tests/d1-bank-orders.test.mjs",
-            "positivePatterns": ["BANK_MANUAL_CREDIT_CONFIRMED", "BANK_MANUAL_EDITED_UNKNOWN_BLOCKED", "confirmation\\.run\\(reason, undefined, business\\)"]
           }
         }
       ],
-      "note": "真实 PC producer/UI 与隔离行为测试已接线；保留 pending，等待 Root 实际 D1 页面、服务端资金/证据/版本与自动人工竞态闭环后才可改 built。不是供应商通知成功，也不以测试夹具代替实际入账。"
+      "note": "真实 PC producer/UI 已接线；保留 pending，等待 Root 实际 D1 页面、服务端资金/证据/版本与自动人工竞态闭环后才可改 built。不是供应商通知成功，也不以测试夹具代替实际入账。"
     },
     {
       "id": "OPS-D-30",
@@ -3879,15 +3878,10 @@
             "type": "pc-runtime",
             "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
             "positivePatterns": ["retryD1PendingBankOrderCommand\\(commandKey\\)", "人工入账已重试", "adminAuthLifecycleEpoch\\(\\)\\)\\} /\\>"]
-          },
-          "behaviorTest": {
-            "type": "test-runtime",
-            "file": "tests/d1-bank-orders.test.mjs",
-            "positivePatterns": ["BANK_MANUAL_ORIGINAL_KEY_RECOVERED", "BANK_MANUAL_RETRY_STALE_OWNER_BLOCKED", "runtime\\.actualOrderRetry\\(\"original-owner-A-command\"\\)"]
           }
         }
       ],
-      "note": "原号恢复与 owner/epoch/Cookie 的实际源链和隔离异步行为测试已接线；真实资金未知/重登恢复及 D1 页面闭环尚待 Root，保持 pending。原 body/key 不得改体重铸，已确认同单不能第二次入账。"
+      "note": "原号恢复与 owner/epoch/Cookie 的实际源链已接线；真实资金未知/重登恢复及 D1 页面闭环尚待 Root，保持 pending。原 body/key 不得改体重铸，已确认同单不能第二次入账。"
     },
     {
       "id": "OPS-G-18",

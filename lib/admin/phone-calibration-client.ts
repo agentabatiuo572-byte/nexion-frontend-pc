@@ -35,7 +35,7 @@ export interface PhonePreview {
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 const nonnegative = (n: unknown): n is number => finite(n) && n >= 0;
 const object = (n: unknown): n is Record<string, unknown> => !!n && typeof n === "object" && !Array.isArray(n);
-function invalid(): never { throw new Error("手机校准配置响应异常，请刷新后重试。"); }
+function invalid(): never { throw new Error("手机校准配置读取异常，请刷新后重试。"); }
 
 export function phoneProposalError(proposal: PhonePolicyProposal): string | null {
   if (!Number.isSafeInteger(proposal.expectedRevision) || proposal.expectedRevision < 0

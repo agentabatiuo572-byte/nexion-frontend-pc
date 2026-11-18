@@ -1,7 +1,8 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isK1LocalIsoDateTime } from "@/lib/admin/k1-date-contract";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import type { A3PlatformParam } from "@/lib/admin/a3-client";
 
 type ApiResult<T> = {
@@ -63,10 +64,20 @@ export class K1OutcomeUncertainError extends Error {
   }
 }
 
+/** 后端明确拒绝。409 的具体原因由 reasonCode 区分（审批、对象锁或版本冲突）。 */
+export class K1RequestError extends Error {
+  constructor(message: string, readonly status: number, readonly reasonCode?: string) {
+    super(message);
+    this.name = "K1RequestError";
+  }
+}
+
 async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const isWrite = !!init?.method && init.method !== "GET";
+  const isK1ApprovalWrite = isWrite && (path.startsWith("/multi-account/params/") || path.startsWith("/multi-account/release-params/")
+    || /^\/multi-account\/releases\/[^/]+\/manual$/.test(path));
   const commandKey = init?.commandKey ?? newK1CommandKey();
   if (isWrite && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", commandKey);
   let res: Response;
@@ -80,7 +91,14 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   try {
     const text = await res.text();
     if (!text) throw new Error("RISK_RESPONSE_BODY_MISSING");
-    payload = JSON.parse(text) as ApiResult<T>;
+    // BigDecimal JSON tokens must survive before JSON.parse can round them.
+    payload = JSON.parse(path === "/arbitrage/overview"
+      ? text.replace(/("amountRaw"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : path.startsWith("/multi-account/releases?")
+        ? text.replace(/("(?:amount|grossAmount|recoveredAmount|netAmount)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : text) as ApiResult<T>;
+    if (isK1ApprovalWrite && (!payload || typeof payload !== "object" || Array.isArray(payload)
+      || payload.code !== undefined && !Number.isInteger(payload.code))) throw new Error("K1_WRITE_RESULT_INVALID");
   } catch (error) {
     if (isWrite) {
       throw new K1OutcomeUncertainError(
@@ -90,23 +108,29 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     }
     throw error;
   }
-  if (isWrite && res.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+  if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message))) {
     throw new K1OutcomeUncertainError(formatAdminApiError(payload.message, "RISK_REQUEST_OUTCOME_UNKNOWN"), commandKey);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    // 5xx 不是「确定失败」:后端可能已经落库,弃号重试会变成第二条命令(统一口径见
-    // outcome-classification.ts)。只有 4xx / 2xx 业务码非 0 才确定这次没生效。
-    if (isWrite && outcomeStaysUnknown(res.status, payload.code)) {
+    const status = (isK1ApprovalWrite || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
+    const failure = new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
+    // General 5xx remain unknown; the shared verdict recognises only K3's exact
+    // write-before-mutation 503. Upstream unknown signals have already taken precedence.
+    if (isWrite && outcomeStaysUnknown(res.status, payload.code) && !isExplicitRejection(failure)) {
       throw new K1OutcomeUncertainError(
         formatAdminApiError(payload.message, `RISK_REQUEST_OUTCOME_UNKNOWN_${res.status}`), commandKey);
     }
-    throw new Error(formatAdminApiError(payload.message, `RISK_API_${res.status}`));
+    throw failure;
+  }
+  if (isK1ApprovalWrite && payload.code !== 0) throw new K1OutcomeUncertainError("K1_WRITE_RESULT_INVALID", commandKey);
+  if (isWrite && (path.startsWith("/withdraw-rules") || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && payload.code !== 0) {
+    throw new K1OutcomeUncertainError(path.startsWith("/scoring/") ? "K4_WRITE_RESULT_INVALID" : path.startsWith("/arbitrage/") ? "K2_WRITE_RESULT_INVALID" : "K3_WRITE_RESULT_INVALID", commandKey);
   }
   return payload.data as T;
 }
 
-function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, operator: currentAdminOperator(), reason };
+function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = currentAdminOperator()) {
+  return { ...body, operator, reason };
 }
 
 function rec(value: unknown): Record<string, unknown> {
@@ -219,11 +243,18 @@ export type K1WhitelistRow = { cidr: string; note: string; operator: string; exp
 export type K1ProtectedEntry = {
   entryNo: string;
   userId: number;
+  userNo: string | null;
   clusterId: string;
   sourceType: string;
   sourceRef: string;
   asset: "USDT" | "UVT";
-  amount: number;
+  amount: string;
+  /** Optional on the previous backend; preserve new BigDecimal tokens without rounding. */
+  grossAmount?: string;
+  recoveredAmount?: string;
+  netAmount?: string;
+  sourceEnvironment?: string;
+  status?: string;
   bucket: "pending_review" | "bonus_locked";
   createdAt: string;
 };
@@ -242,9 +273,23 @@ export type MultiAccountOverview = {
   sources: string[];
 };
 
+export type K2StructuredFacts = {
+  amounts?: { currency: "USDT" | "UVT"; amountRaw: string | null }[];
+  settledCount?: number | null;
+  blockedCount?: number | null;
+  blockedCountAvailable?: boolean;
+  blockedCountBasis?: string;
+  amountBasis?: string;
+  cellMeaning?: string;
+  trialStartEventCount?: number;
+  trialCellMeaning?: string;
+  trialEventBasis?: string;
+};
+
 export type K2Row = {
   rowId: string;
   rid: string;
+  structured?: K2StructuredFacts;
   viewKey: string;
   clusterId?: string;
   cluster?: string;
@@ -257,6 +302,7 @@ export type K2Row = {
   version: number;
   clusterStatus?: string;
   clusterVersion?: number;
+  pendingApproval?: { action: string | null; submittedBy: string | null; submittedAt: string | null } | null;
 };
 export type K2ViewGroup = { key: string; label: string; sub: string; head: string[]; note: string; rows: K2Row[] };
 export type K2Stat = { key: string; name: string; value: string; sub: string; tone: string };
@@ -265,6 +311,9 @@ export type ArbitrageOverview = {
   domain: "K2";
   stats: K2Stat[];
   params: KRiskParam[];
+  welcomeGiftScopeSupported?: Record<string, boolean>;
+  paramScopeStatus?: Record<string, { retired: true; requiresScopeChange: true; reason: "K2_WELCOME_GIFT_SCOPE_RETIRED" }>;
+  otpInitializationRequired: Record<string, boolean>;
   views: K2ViewGroup[];
   sources?: string[];
 };
@@ -297,6 +346,26 @@ export type K3Rule = {
   version: number;
 };
 export type K3RouteCount = { key: RuleAction; label: string; count: number; n: number; color: string };
+export type K3Coverage =
+  | { coverageRatio: number; redlinePct: number; reliable: true; redlineBreached: boolean }
+  | { coverageRatio: null; redlinePct: null; reliable: false; redlineBreached: null };
+
+/** Legacy K3 overviews omit coverage. Keep the existing authorised B1 read for those backends. */
+export async function fetchK3Coverage(signal?: AbortSignal): Promise<K3Coverage> {
+  const response = await guardedFetch("/api/admin/treasury/coverage", { cache: "no-store", signal });
+  const payload: ApiResult<unknown> = await response.json();
+  if (!response.ok || payload.code !== 0) throw new Error(formatAdminApiError(payload.message, "COVERAGE_UNAVAILABLE"));
+  const data = requiredK3Record(payload.data, "coverage");
+  const decimal = (value: unknown) => (typeof value === "number" || typeof value === "string" && value.trim() !== "")
+    && Number.isFinite(Number(value)) ? Number(value) : null;
+  const ratio = decimal(data.valuedCoverageRatio), redline = decimal(data.redLine);
+  // redlineBreached uses exact B1 amounts, rather than the rounded display ratio.
+  const reliable = data.valuationReliable === true && ratio !== null && ratio >= 0 && redline !== null && redline > 0
+    && typeof data.redlineBreached === "boolean";
+  return reliable
+    ? { coverageRatio: ratio!, redlinePct: redline!, reliable: true, redlineBreached: data.redlineBreached as boolean }
+    : { coverageRatio: null, redlinePct: null, reliable: false, redlineBreached: null };
+}
 export type K3DryRunResult = {
   batchNo: string;
   status: "COMPLETED" | string;
@@ -307,15 +376,22 @@ export type K3DryRunResult = {
   hitCountsByRule: Record<string, number>;
   routeCounts: K3RouteCount[];
   completedAt: string;
+  completedAtZone?: string;
+  completedAtOffset?: string;
 };
 export type K3Hit = {
   withdrawalNo: string;
   userNo: string;
   amount: string;
+  amountValue?: string | null;
+  currency?: string | null;
+  amountSource?: string | null;
   ruleId: string;
   dimension: string;
   action: RuleAction;
   reason: string;
+  /** Current joined rule condition, not the condition captured when the hit occurred. */
+  conditionText?: string | null;
   timeText: string;
 };
 export type WithdrawRuleOverview = {
@@ -324,6 +400,7 @@ export type WithdrawRuleOverview = {
   routeCounts: K3RouteCount[];
   routeTotal: number;
   hits: AdminPage<K3Hit>;
+  coverage?: K3Coverage;
   sources?: string[];
 };
 
@@ -386,6 +463,27 @@ export type K4ModelDraftInput = {
 };
 export type K4Distribution = { band: string; rangeText: string; count: number; percentage: number; color: string; tone: string };
 export type K4Override = { userNo: string; modelScore: number; overrideScore: number; reason: string; operator: string; timeText: string; active: boolean };
+export type K4WithdrawalEvidence = {
+  source: string;
+  amountBasis: string;
+  capturedAt: string;
+  timeZone: string;
+  statusFilter: string;
+  baselineDivisorDays: number;
+  windows: Record<"24h" | "7d" | "baseline", { fromInclusive: string; toExclusive: string | null }>;
+  assets: Array<{
+    currency: string;
+    count24h: number;
+    amount24h: string;
+    count7d: number;
+    amount7d: string;
+    baselineCount: number;
+    baselineAmount: string;
+    baselineDailyCount: string;
+    baselineDailyAmount: string;
+    max24h: string | null;
+  }>;
+};
 export type K4Contribution = {
   dimKey: K4DimensionKey;
   name: string;
@@ -394,6 +492,8 @@ export type K4Contribution = {
   subScore: number;
   weightPct: number;
   points: number;
+  /** Captured withdrawal inputs; absent/null on old score history. Never rebuilt from evidence. */
+  structured?: K4WithdrawalEvidence | null;
 };
 export type K4ScoreHistory = {
   modelVersion: number;
@@ -430,11 +530,11 @@ export type K4UserOption = {
   overridden: boolean;
 };
 export type ScoringOverview = {
-  model: K4Model;
+  model: K4Model | null;
   draft: K4Model | null;
   modelHistory: K4Model[];
   dimensions: K4Dimension[];
-  config: K4Config;
+  config: K4Config | null;
   distribution: K4Distribution[];
   totalUsers: number;
   recomputePending: number;
@@ -444,15 +544,16 @@ export type ScoringOverview = {
 
 export type K4WithdrawalAlert = {
   id: string;
+  userNo: string | null;
   domain: "K4";
   level: "critical";
   title: string;
   hint: string;
   withdrawalNo: string;
-  riskScore: number;
-  priority: string;
-  modelVersion: string;
-  scoreAsOf: string;
+  riskScore: number | null;
+  priority: string | null;
+  modelVersion: string | null;
+  scoreAsOf: string | null;
   read: boolean;
   createdAt: string;
 };
@@ -471,10 +572,10 @@ export type KRiskData = {
 
 export type KRiskActions = {
   reloadKRisk: (query?: KRiskOverviewQuery) => Promise<MultiAccountOverview | void>;
-  updateK1Param: (key: string, value: string, reason: string, commandKey?: string) => Promise<void>;
-  updateK1ReleaseParam: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
-  fetchK1ProtectedEntries: () => Promise<K1ProtectedEntry[]>;
-  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string) => Promise<void>;
+  updateK1Param: (key: string, value: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
+  updateK1ReleaseParam: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string, operator?: string) => Promise<void>;
+  fetchK1ProtectedEntries: (userId?: number) => Promise<K1ProtectedEntry[]>;
+  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   updateK1ClusterStatus: (clusterId: string, status: ClusterStatus, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string) => Promise<void>;
@@ -852,7 +953,7 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
   return { serverCanonical: true, domain: "K1", lastSuccessfulCheckAt, registrationParams, stats, params, releaseParams: currentReleaseParams, clusters, whitelist, sources };
 }
 
-export async function updateK1RegistrationParam(param: A3PlatformParam, value: string, reason: string, commandKey: string) {
+export async function updateK1RegistrationParam(param: Pick<A3PlatformParam, "key" | "value">, value: string, reason: string, commandKey: string) {
   await apiRequest("/multi-account/registration-params", {
     method: "PATCH", commandKey,
     body: JSON.stringify(withReason({ kind: "param", flagKey: param.key, value, expectedValue: param.value }, reason)),
@@ -884,8 +985,8 @@ const K2_REQUIRED_SOURCES = [
 
 function validateK2ParamValue(key: string, value: string): boolean {
   if (key === "trialCycleThreshold") {
-    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(7|14|30|60)\s*天$/);
-    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10;
+    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(\d+)\s*天$/);
+    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10 && Number(match[3]) >= 7 && Number(match[3]) <= 60;
   }
   if (key === "welcomeGiftAnomalyThreshold") {
     const match = value.match(/^(>=|>)\s*(\d+)\s*笔\s*\/\s*(实体|账户簇|手机号|设备)$/);
@@ -906,6 +1007,13 @@ function validateK2ParamValue(key: string, value: string): boolean {
   if (key === "otpGate.otpTtlSeconds") return numeric >= 60 && numeric <= 900 && numeric % 60 === 0;
   if (key === "captchaGate.afterSends") return numeric >= 0 && numeric <= 50;
   return false;
+}
+
+/** New writes only; the shared historical parser and original command sender keep all four scopes. */
+export function validateK2ParamWrite(key: string, value: string) {
+  if (key === "welcomeGiftAnomalyThreshold" && /\/\s*(手机号|设备)$/.test(value.trim())) {
+    throw new Error("K2_WELCOME_GIFT_SCOPE_RETIRED");
+  }
 }
 
 function invalidK2Response(path: string): never {
@@ -1015,16 +1123,55 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
           invalidK2Response(`${rowPath}.clusterStatus`);
         }
         const clusterId = row.clusterId == null ? "" : requiredK2String(row.clusterId, `${rowPath}.clusterId`, true);
-        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 3);
+        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 5);
+        let pendingApproval: K2Row["pendingApproval"];
+        if (row.pendingApproval === null) pendingApproval = null;
+        else if (row.pendingApproval !== undefined) {
+          const pending = requiredK2Record(row.pendingApproval, `${rowPath}.pendingApproval`);
+          pendingApproval = {
+            action: pending.action === null ? null : requiredK2String(pending.action, `${rowPath}.pendingApproval.action`),
+            submittedBy: pending.submittedBy === null ? null : requiredK2String(pending.submittedBy, `${rowPath}.pendingApproval.submittedBy`),
+            submittedAt: pending.submittedAt === null ? null : requiredK2String(pending.submittedAt, `${rowPath}.pendingApproval.submittedAt`),
+          };
+        }
+        let structured: K2StructuredFacts | undefined;
+        if (row.structured !== undefined) {
+          const factsPath = `${rowPath}.structured`;
+          const facts = requiredK2Record(row.structured, factsPath);
+          structured = {};
+          if (facts.amounts !== undefined) {
+            structured.amounts = requiredK2Array(facts.amounts, `${factsPath}.amounts`).map((value, index) => {
+              const amountPath = `${factsPath}.amounts[${index}]`;
+              const amount = requiredK2Record(value, amountPath);
+              if (amount.currency !== "USDT" && amount.currency !== "UVT") invalidK2Response(`${amountPath}.currency`);
+              const amountRaw = amount.amountRaw === null ? null : requiredK2String(amount.amountRaw, `${amountPath}.amountRaw`);
+              if (amountRaw !== null && !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(amountRaw)) invalidK2Response(`${amountPath}.amountRaw`);
+              return { currency: amount.currency as "USDT" | "UVT", amountRaw };
+            });
+          }
+          for (const key of ["settledCount", "blockedCount"] as const) {
+            if (facts[key] !== undefined) structured[key] = facts[key] === null ? null : requiredK2Integer(facts[key], `${factsPath}.${key}`);
+          }
+          if (facts.trialStartEventCount !== undefined) structured.trialStartEventCount = requiredK2Integer(facts.trialStartEventCount, `${factsPath}.trialStartEventCount`);
+          if (facts.blockedCountAvailable !== undefined) {
+            if (typeof facts.blockedCountAvailable !== "boolean") invalidK2Response(`${factsPath}.blockedCountAvailable`);
+            structured.blockedCountAvailable = facts.blockedCountAvailable as boolean;
+          }
+          for (const key of ["blockedCountBasis", "amountBasis", "cellMeaning", "trialCellMeaning", "trialEventBasis"] as const) {
+            if (facts[key] !== undefined) structured[key] = requiredK2String(facts[key], `${factsPath}.${key}`);
+          }
+        }
         return {
           rowId,
           rid: rowId,
+          structured,
           viewKey: rowViewKey,
           clusterId,
           cluster: clusterId || undefined,
           cells: requiredK2StringArray(row.cells, `${rowPath}.cells`),
           level,
           lvl: level,
+          pendingApproval,
           actions,
           acts: actions,
           disposition,
@@ -1041,7 +1188,46 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
   if (views.length !== K2_VIEW_KEYS.length || K2_VIEW_KEYS.some((key) => !viewKeys.has(key))) invalidK2Response("arbitrage.views");
   const sources = requiredK2StringArray(data.sources, "arbitrage.sources");
   if (K2_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK2Response("arbitrage.sources");
-  return { serverCanonical: true, domain: "K2", stats, params, views, sources };
+  const initialization = requiredK2Record(data.otpInitializationRequired, "arbitrage.otpInitializationRequired");
+  const otpInitializationRequired: Record<string, boolean> = {};
+  for (const key of K2_PARAM_KEYS.slice(3)) {
+    if (typeof initialization[key] !== "boolean") invalidK2Response(`arbitrage.otpInitializationRequired.${key}`);
+    otpInitializationRequired[key] = initialization[key] as boolean;
+  }
+  let welcomeGiftScopeSupported: Record<string, boolean> | undefined;
+  if (data.welcomeGiftScopeSupported !== undefined) {
+    const supported = requiredK2Record(data.welcomeGiftScopeSupported, "arbitrage.welcomeGiftScopeSupported");
+    welcomeGiftScopeSupported = {};
+    for (const scope of ["实体", "账户簇", "手机号", "设备"]) {
+      if (typeof supported[scope] !== "boolean") invalidK2Response(`arbitrage.welcomeGiftScopeSupported.${scope}`);
+      welcomeGiftScopeSupported[scope] = supported[scope] as boolean;
+    }
+  }
+  let paramScopeStatus: ArbitrageOverview["paramScopeStatus"];
+  if (data.paramScopeStatus !== undefined) {
+    paramScopeStatus = {};
+    for (const [key, value] of Object.entries(requiredK2Record(data.paramScopeStatus, "arbitrage.paramScopeStatus"))) {
+      const status = requiredK2Record(value, `arbitrage.paramScopeStatus.${key}`);
+      if (key !== "welcomeGiftAnomalyThreshold" || status.retired !== true || status.requiresScopeChange !== true
+        || status.reason !== "K2_WELCOME_GIFT_SCOPE_RETIRED") invalidK2Response(`arbitrage.paramScopeStatus.${key}`);
+      paramScopeStatus[key] = { retired: true, requiresScopeChange: true, reason: "K2_WELCOME_GIFT_SCOPE_RETIRED" };
+    }
+  }
+  return { serverCanonical: true, domain: "K2", stats, params, welcomeGiftScopeSupported, paramScopeStatus, otpInitializationRequired, views, sources };
+}
+
+/** A serialized K2 write is retained before sending, including the original operator and reason. */
+export type K2CommandRequest = { path: string; method: "PATCH" | "POST"; body: string };
+
+export async function executeK2Command(request: K2CommandRequest, commandKey: string): Promise<void> {
+  const result = await apiRequest<Record<string, unknown>>(request.path, { method: request.method, body: request.body, commandKey });
+  const valid = result && Number.isInteger(result.version) && Number(result.version) >= 0
+    && (request.method === "PATCH"
+      ? typeof result.key === "string" && request.path === `/arbitrage/params/${encodeURIComponent(result.key)}`
+        && typeof result.value === "string" && validateK2ParamValue(result.key, result.value)
+      : typeof result.rowId === "string" && request.path.startsWith(`/arbitrage/rows/${encodeURIComponent(result.rowId)}/`)
+        && typeof result.disposition === "string" && ["account_flagged", "gift_blocked", "leaderboard_flagged", "cluster_frozen"].includes(result.disposition));
+  if (!valid) throw new K1OutcomeUncertainError("K2_WRITE_RESULT_INVALID", commandKey);
 }
 
 const K3_RESPONSE_INVALID = "K3_RESPONSE_INVALID";
@@ -1117,6 +1303,27 @@ function requiredK3Page<T>(
   return normalized;
 }
 
+function normalizeK3Rule(row: Record<string, unknown>, path: string): K3Rule {
+  const ruleId = requiredK3String(row.ruleId, `${path}.ruleId`);
+  const dimension = requiredK3String(row.dimension, `${path}.dimension`);
+  const conditionText = requiredK3String(row.conditionText, `${path}.conditionText`);
+  const action = requiredK3RuleAction(row.action, `${path}.action`);
+  return {
+    ruleId,
+    id: ruleId,
+    dimension,
+    dim: dimension,
+    conditionText,
+    cond: conditionText,
+    action,
+    act: action,
+    state: requiredK3RuleState(row.state, `${path}.state`),
+    builtIn: requiredK3Boolean(row.builtIn, `${path}.builtIn`),
+    priority: requiredK3Integer(row.priority, `${path}.priority`, 1, 100),
+    version: requiredK3Integer(row.version, `${path}.version`, 0),
+  };
+}
+
 function normalizeK3(raw: unknown): WithdrawRuleOverview {
   const data = requiredK3Record(raw, "withdrawRules");
   const dimensions = requiredK3Array(data.dimensions, "withdrawRules.dimensions").map((item, index) => {
@@ -1136,26 +1343,7 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
       version: requiredK3Integer(row.version, `${path}.version`, 0),
     };
   });
-  const rules = requiredK3Page(data.rules, "withdrawRules.rules", (row, path): K3Rule => {
-    const ruleId = requiredK3String(row.ruleId, `${path}.ruleId`);
-    const dimension = requiredK3String(row.dimension, `${path}.dimension`);
-    const conditionText = requiredK3String(row.conditionText, `${path}.conditionText`);
-    const action = requiredK3RuleAction(row.action, `${path}.action`);
-    return {
-      ruleId,
-      id: ruleId,
-      dimension,
-      dim: dimension,
-      conditionText,
-      cond: conditionText,
-      action,
-      act: action,
-      state: requiredK3RuleState(row.state, `${path}.state`),
-      builtIn: requiredK3Boolean(row.builtIn, `${path}.builtIn`),
-      priority: requiredK3Integer(row.priority, `${path}.priority`, 1, 100),
-      version: requiredK3Integer(row.version, `${path}.version`, 0),
-    };
-  });
+  const rules = requiredK3Page(data.rules, "withdrawRules.rules", normalizeK3Rule);
   const routeCounts = requiredK3Array(data.routeCounts, "withdrawRules.routeCounts").map((item, index) => {
     const path = `withdrawRules.routeCounts[${index}]`;
     const row = requiredK3Record(item, path);
@@ -1176,17 +1364,37 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
     withdrawalNo: requiredK3String(row.withdrawalNo, `${path}.withdrawalNo`),
     userNo: requiredK3String(row.userNo, `${path}.userNo`),
     amount: requiredK3DisplayText(row.amount ?? row.amountText, `${path}.amount`),
+    amountValue: row.amountValue === undefined || row.amountValue === null ? row.amountValue : requiredK3String(row.amountValue, `${path}.amountValue`),
+    currency: row.currency === undefined || row.currency === null ? row.currency : requiredK3String(row.currency, `${path}.currency`),
+    amountSource: row.amountSource === undefined || row.amountSource === null ? row.amountSource : requiredK3String(row.amountSource, `${path}.amountSource`),
     ruleId: requiredK3String(row.ruleId, `${path}.ruleId`),
     dimension: requiredK3String(row.dimension, `${path}.dimension`),
     action: requiredK3RuleAction(row.action, `${path}.action`),
     reason: requiredK3String(row.reason, `${path}.reason`, true),
+    conditionText: row.conditionText == null ? row.conditionText : requiredK3String(row.conditionText, `${path}.conditionText`, true),
     timeText: requiredK3String(row.timeText, `${path}.timeText`),
   }));
   const sources = data.sources === undefined
     ? undefined
     : requiredK3Array(data.sources, "withdrawRules.sources").map((value, index) =>
       requiredK3String(value, `withdrawRules.sources[${index}]`));
-  return { dimensions, rules, routeCounts, routeTotal, hits, sources };
+  let coverage: K3Coverage | undefined;
+  if (data.coverage !== undefined) {
+    const row = requiredK3Record(data.coverage, "withdrawRules.coverage");
+    const reliable = requiredK3Boolean(row.reliable, "withdrawRules.coverage.reliable");
+    if (reliable) {
+      if (typeof row.coverageRatio !== "number" || !Number.isFinite(row.coverageRatio) || row.coverageRatio < 0
+        || typeof row.redlinePct !== "number" || !Number.isFinite(row.redlinePct) || row.redlinePct <= 0)
+        invalidK3Response("withdrawRules.coverage");
+      coverage = { coverageRatio: row.coverageRatio, redlinePct: row.redlinePct, reliable: true,
+        redlineBreached: requiredK3Boolean(row.redlineBreached, "withdrawRules.coverage.redlineBreached") };
+    } else {
+      if (row.coverageRatio !== null || row.redlinePct !== null || row.redlineBreached !== null)
+        invalidK3Response("withdrawRules.coverage");
+      coverage = { coverageRatio: null, redlinePct: null, reliable: false, redlineBreached: null };
+    }
+  }
+  return { dimensions, rules, routeCounts, routeTotal, hits, sources, coverage };
 }
 
 const K4_RESPONSE_INVALID = "K4_RESPONSE_INVALID";
@@ -1334,9 +1542,9 @@ function normalizeK4OverridePage(value: unknown): AdminPage<K4Override> {
   };
 }
 
-function normalizeK4(raw: unknown): ScoringOverview {
+export function normalizeK4(raw: unknown): ScoringOverview {
   const data = requiredK4Record(raw, "scoring");
-  const model = normalizeK4Model(data.model, "model", "active");
+  const model = data.model === null ? null : normalizeK4Model(data.model, "model", "active");
   const draft = data.draft == null ? null : normalizeK4Model(data.draft, "draft", "draft");
   const modelHistory = requiredK4Array(data.modelHistory, "modelHistory")
     .map((value, index) => normalizeK4Model(value, `modelHistory[${index}]`));
@@ -1347,7 +1555,7 @@ function normalizeK4(raw: unknown): ScoringOverview {
     if (seen.has(dimKey)) invalidK4Response(`dimensions[${index}].dimKey`);
     seen.add(dimKey);
     const weightPct = requiredK4Integer(row.weightPct, `dimensions[${index}].weightPct`, 0, 100);
-    if (weightPct !== model.weights[dimKey]) invalidK4Response(`dimensions[${index}].weightPct`);
+    if (model && weightPct !== model.weights[dimKey]) invalidK4Response(`dimensions[${index}].weightPct`);
     return {
       dimKey,
       name: requiredK4String(row.name, `dimensions[${index}].name`),
@@ -1355,7 +1563,7 @@ function normalizeK4(raw: unknown): ScoringOverview {
       weightPct,
     };
   });
-  if (dimensions.length !== K4_DIMENSION_KEYS.length || K4_DIMENSION_KEYS.some((key) => !seen.has(key))) invalidK4Response("dimensions");
+  if (model && (dimensions.length !== K4_DIMENSION_KEYS.length || K4_DIMENSION_KEYS.some((key) => !seen.has(key)))) invalidK4Response("dimensions");
   const distribution = requiredK4Array(data.distribution, "distribution").map((value, index) => {
     const row = requiredK4Record(value, `distribution[${index}]`);
     return {
@@ -1378,17 +1586,58 @@ function normalizeK4(raw: unknown): ScoringOverview {
     draft,
     modelHistory,
     dimensions,
-    config: {
+    config: model ? {
       inputSources: model.inputSources,
       bandLowMax: model.bandLowMax,
       bandHighMin: model.bandHighMin,
       autoEscalateScore: model.autoEscalateScore,
-    },
+    } : null,
     distribution,
     totalUsers,
     recomputePending,
     overrides,
     overrideActive,
+  };
+}
+
+function normalizeK4WithdrawalEvidence(value: unknown, path: string): K4WithdrawalEvidence | null {
+  if (value == null) return null;
+  const row = requiredK4Record(value, path);
+  const windows = requiredK4Record(row.windows, `${path}.windows`);
+  const decimal = (value: unknown, field: string) => {
+    if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) invalidK4Response(field);
+    return value;
+  };
+  return {
+    source: requiredK4String(row.source, `${path}.source`),
+    amountBasis: requiredK4String(row.amountBasis, `${path}.amountBasis`),
+    capturedAt: requiredK4String(row.capturedAt, `${path}.capturedAt`),
+    timeZone: requiredK4String(row.timeZone, `${path}.timeZone`),
+    statusFilter: requiredK4String(row.statusFilter, `${path}.statusFilter`),
+    baselineDivisorDays: requiredK4Integer(row.baselineDivisorDays, `${path}.baselineDivisorDays`, 1),
+    windows: Object.fromEntries((["24h", "7d", "baseline"] as const).map(key => {
+      const window = requiredK4Record(windows[key], `${path}.windows.${key}`);
+      return [key, {
+        fromInclusive: requiredK4String(window.fromInclusive, `${path}.windows.${key}.fromInclusive`),
+        toExclusive: window.toExclusive === null ? null : requiredK4String(window.toExclusive, `${path}.windows.${key}.toExclusive`),
+      }];
+    })) as K4WithdrawalEvidence["windows"],
+    assets: requiredK4Array(row.assets, `${path}.assets`).map((value, index) => {
+      const field = `${path}.assets[${index}]`;
+      const asset = requiredK4Record(value, field);
+      return {
+        currency: requiredK4String(asset.currency, `${field}.currency`),
+        count24h: requiredK4Integer(asset.count24h, `${field}.count24h`, 0),
+        amount24h: decimal(asset.amount24h, `${field}.amount24h`),
+        count7d: requiredK4Integer(asset.count7d, `${field}.count7d`, 0),
+        amount7d: decimal(asset.amount7d, `${field}.amount7d`),
+        baselineCount: requiredK4Integer(asset.baselineCount, `${field}.baselineCount`, 0),
+        baselineAmount: decimal(asset.baselineAmount, `${field}.baselineAmount`),
+        baselineDailyCount: decimal(asset.baselineDailyCount, `${field}.baselineDailyCount`),
+        baselineDailyAmount: decimal(asset.baselineDailyAmount, `${field}.baselineDailyAmount`),
+        max24h: asset.max24h === null ? null : decimal(asset.max24h, `${field}.max24h`),
+      };
+    }),
   };
 }
 
@@ -1402,11 +1651,12 @@ function normalizeK4Contributions(value: unknown, path: string, modelScore: numb
     return {
       dimKey,
       name: requiredK4String(row.name, `${path}[${index}].name`),
-      evidence: typeof row.evidence === "string" ? row.evidence.trim() : invalidK4Response(`${path}[${index}].evidence`),
+      evidence: typeof row.evidence === "string" ? row.evidence : invalidK4Response(`${path}[${index}].evidence`),
       hit: requiredK4Boolean(row.hit, `${path}[${index}].hit`),
       subScore: requiredK4Integer(row.subScore, `${path}[${index}].subScore`, 0, 100),
       weightPct: requiredK4Integer(row.weightPct, `${path}[${index}].weightPct`, 0, 100),
       points: requiredK4Integer(row.points, `${path}[${index}].points`, 0, 100),
+      structured: normalizeK4WithdrawalEvidence(row.structured, `${path}[${index}].structured`),
     };
   });
   if (contributions.length !== K4_DIMENSION_KEYS.length
@@ -1417,7 +1667,7 @@ function normalizeK4Contributions(value: unknown, path: string, modelScore: numb
   return contributions;
 }
 
-function normalizeK4User(raw: unknown): K4User {
+export function normalizeK4User(raw: unknown): K4User {
   const data = requiredK4Record(raw, "scoreUser");
   const modelScore = requiredK4Integer(data.modelScore, "scoreUser.modelScore", 0, 100);
   const effectiveScore = requiredK4Integer(data.effectiveScore, "scoreUser.effectiveScore", 0, 100);
@@ -1526,17 +1776,33 @@ function normalizeK3DryRun(raw: unknown): K3DryRunResult {
     ])),
     routeCounts,
     completedAt: requiredK3String(data.completedAt, "withdrawRules.dryRun.completedAt"),
+    completedAtZone: data.completedAtZone === undefined ? undefined : requiredK3String(data.completedAtZone, "withdrawRules.dryRun.completedAtZone"),
+    completedAtOffset: data.completedAtOffset === undefined ? undefined : requiredK3String(data.completedAtOffset, "withdrawRules.dryRun.completedAtOffset"),
   };
 }
 
 function normalizeK3DryRunForWrite(raw: unknown, commandKey: string): K3DryRunResult {
   try {
-    return normalizeK3DryRun(raw);
-  } catch (error) {
+    const result = normalizeK3DryRun(raw);
+    if (result.status !== "COMPLETED" || result.routeCounts.reduce((total, route) => total + route.count, 0) !== result.evaluatedWithdrawals) invalidK3Response("withdrawRules.dryRun.result");
+    return result;
+  } catch {
     throw new K1OutcomeUncertainError(
-      error instanceof Error ? error.message : "K3_DRY_RUN_RESULT_INVALID",
+      "K3_WRITE_RESULT_INVALID",
       commandKey,
     );
+  }
+}
+
+/** K3 recovery sends the saved JSON verbatim, including the original operator and reason. */
+export type K3CommandRequest = { method: "POST" | "PATCH"; path: string; body: string };
+export async function executeK3Command(request: K3CommandRequest, commandKey: string): Promise<K3DryRunResult | void> {
+  const value = await apiRequest(request.path, { method: request.method, body: request.body, commandKey });
+  if (request.path === "/withdraw-rules/dry-runs") return normalizeK3DryRunForWrite(value, commandKey);
+  try {
+    normalizeK3Rule(requiredK3Record(value, "withdrawRules.write"), "withdrawRules.write");
+  } catch {
+    throw new K1OutcomeUncertainError("K3_WRITE_RESULT_INVALID", commandKey);
   }
 }
 
@@ -1562,11 +1828,67 @@ export async function fetchK4ScoringOverview(query: K4PaginationQuery = {}): Pro
 }
 
 export async function fetchK4WithdrawalAlerts(): Promise<K4WithdrawalAlertOverview> {
-  return apiRequest("/scoring/withdrawal-alerts");
+  const raw = requiredK4Record(await apiRequest("/scoring/withdrawal-alerts"), "alerts");
+  if (raw.source !== "nx_k4_withdrawal_alert_receipt") invalidK4Response("alerts.source");
+  const alerts = requiredK4Array(raw.alerts, "alerts.alerts").map((value, index): K4WithdrawalAlert => {
+    const path = `alerts.alerts[${index}]`;
+    const row = requiredK4Record(value, path);
+    if (row.domain !== "K4" || row.level !== "critical") invalidK4Response(path);
+    return {
+      id: requiredK4String(row.id, `${path}.id`), domain: "K4", level: "critical",
+      title: requiredK4String(row.title, `${path}.title`), hint: requiredK4String(row.hint, `${path}.hint`),
+      userNo: nullableK4String(row.userNo, `${path}.userNo`),
+      withdrawalNo: requiredK4String(row.withdrawalNo, `${path}.withdrawalNo`),
+      riskScore: row.riskScore === null ? null : requiredK4Integer(row.riskScore, `${path}.riskScore`, 0, 100),
+      priority: nullableK4String(row.priority, `${path}.priority`),
+      modelVersion: nullableK4String(row.modelVersion, `${path}.modelVersion`),
+      scoreAsOf: nullableK4String(row.scoreAsOf, `${path}.scoreAsOf`),
+      read: requiredK4Boolean(row.read, `${path}.read`), createdAt: requiredK4String(row.createdAt, `${path}.createdAt`),
+    };
+  });
+  return { alerts, source: "nx_k4_withdrawal_alert_receipt" };
 }
 
-export async function markK4WithdrawalAlertRead(eventId: string): Promise<void> {
-  await apiRequest(`/scoring/withdrawal-alerts/${encodeURIComponent(eventId)}/read`, { method: "POST" });
+export async function markK4WithdrawalAlertRead(eventId: string, commandKey = newK1CommandKey()): Promise<void> {
+  const value = await apiRequest(`/scoring/withdrawal-alerts/${encodeURIComponent(eventId)}/read`, { method: "POST", commandKey });
+  // K4WithdrawalAlertService.markRead returns only eventId and read; it has no command replay.
+  const receipt = rec(value);
+  if (receipt.eventId !== eventId || receipt.read !== true) throw new K1OutcomeUncertainError("K4_WRITE_RESULT_INVALID", commandKey);
+}
+
+/** Replay the stored bytes. A valid receipt confirms the original write, never the current read. */
+export type K4CommandRequest = { method: "POST" | "PUT"; path: string; body: string };
+export async function executeK4Command(request: K4CommandRequest, commandKey: string): Promise<void> {
+  const value = await apiRequest(request.path, { method: request.method, body: request.body, commandKey });
+  try {
+    const input = JSON.parse(request.body) as Record<string, unknown>;
+    if (request.path.startsWith("/scoring/model/")) {
+      const receipt = normalizeK4(value);
+      if (!receipt.model || (request.path === "/scoring/model/publish" ? receipt.draft !== null : receipt.draft === null)) invalidK4Response("write.model");
+    } else if (request.path === "/scoring/users/recompute") {
+      const receipt = requiredK4Record(value, "write.batch");
+      const count = requiredK4Integer(receipt.count, "write.batch.count", 0, 1000);
+      const users = requiredK4Array(receipt.users, "write.batch.users");
+      if (count !== users.length) invalidK4Response("write.batch.count");
+      const seen = new Set<string>();
+      for (const value of users) {
+        const row = requiredK4Record(value, "write.batch.user");
+        const userNo = requiredK4String(row.userNo, "write.batch.userNo");
+        if (seen.has(userNo) || row.modelVersion !== input.expectedModelVersion) invalidK4Response("write.batch.user");
+        seen.add(userNo);
+        requiredK4Integer(row.before, "write.batch.before", 0, 100);
+        requiredK4Integer(row.after, "write.batch.after", 0, 100);
+      }
+    } else {
+      // OpsRiskService.overrideScore/recomputeScore return repository views with history=[].
+      const receipt = normalizeK4User(value);
+      const userNo = decodeURIComponent(request.path.split("/")[3]);
+      if (receipt.userNo !== userNo || receipt.rowVersion !== Number(input.expectedVersion) + 1
+          || (request.path.endsWith("/override") ? !receipt.overridden || receipt.effectiveScore !== input.score : receipt.overridden)) invalidK4Response("write.user");
+    }
+  } catch {
+    throw new K1OutcomeUncertainError("K4_WRITE_RESULT_INVALID", commandKey);
+  }
 }
 
 const k2ActionMap: Record<string, string> = {
@@ -1581,39 +1903,58 @@ const k2ActionMap: Record<string, string> = {
 };
 
 export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
-  updateK1Param: (key, value, reason, commandKey) => apiRequest(`/multi-account/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
-  updateK1ReleaseParam: (key, value, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) }).then(() => undefined),
-  fetchK1ProtectedEntries: async () => {
-    const data = requiredK1Record(await apiRequest("/multi-account/releases?limit=200"), "multiAccount.releases");
+  updateK1Param: (key, value, reason, commandKey, operator) => apiRequest(`/multi-account/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason, operator)) }).then(() => undefined),
+  updateK1ReleaseParam: (key, value, expectedVersion, reason, commandKey, operator) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason, operator)) }).then(() => undefined),
+  fetchK1ProtectedEntries: async (userId) => {
+    const query = new URLSearchParams({ limit: "200" });
+    if (userId !== undefined) query.set("userId", String(userId));
+    const data = requiredK1Record(await apiRequest(`/multi-account/releases?${query}`), "multiAccount.releases");
     if (data.serverCanonical !== true) invalidK1Response("multiAccount.releases.serverCanonical");
     return requiredK1Array(data.items, "multiAccount.releases.items").map((value, index) => {
       const path = `multiAccount.releases.items[${index}]`;
       const row = requiredK1Record(value, path);
       const asset = requiredK1String(row.asset, `${path}.asset`);
       const bucket = requiredK1String(row.bucket, `${path}.bucket`);
+      const amount = requiredK1String(row.amount, `${path}.amount`);
       if (asset !== "USDT" && asset !== "UVT") invalidK1Response(`${path}.asset`);
       if (bucket !== "pending_review" && bucket !== "bonus_locked") invalidK1Response(`${path}.bucket`);
+      if (!/^(?=[\d.]*[1-9])(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(amount)) invalidK1Response(`${path}.amount`);
+      const snapshot: Pick<K1ProtectedEntry, "grossAmount" | "recoveredAmount" | "netAmount" | "sourceEnvironment" | "status"> = {};
+      for (const field of ["grossAmount", "recoveredAmount", "netAmount"] as const) {
+        if (row[field] === undefined) continue;
+        const amount = requiredK1String(row[field], `${path}.${field}`);
+        if (!/^(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(amount)) invalidK1Response(`${path}.${field}`);
+        snapshot[field] = amount;
+      }
+      for (const field of ["sourceEnvironment", "status"] as const) {
+        if (row[field] !== undefined) snapshot[field] = requiredK1String(row[field], `${path}.${field}`);
+      }
       return {
         entryNo: requiredK1String(row.entryNo, `${path}.entryNo`),
         userId: requiredK1Integer(row.userId, `${path}.userId`, 1),
+        userNo: row.userNo == null ? null : requiredK1String(row.userNo, `${path}.userNo`),
         clusterId: requiredK1String(row.clusterId, `${path}.clusterId`),
         sourceType: requiredK1String(row.sourceType, `${path}.sourceType`),
         sourceRef: requiredK1String(row.sourceRef, `${path}.sourceRef`),
         asset,
-        amount: requiredK1Number(row.amount, `${path}.amount`, Number.MIN_VALUE),
+        amount,
+        ...snapshot,
         bucket,
         createdAt: requiredK1String(row.createdAt, `${path}.createdAt`),
       } as K1ProtectedEntry;
     });
   },
-  manualReleaseK1Entry: (entryNo, reason, commandKey) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
-    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason)),
+  manualReleaseK1Entry: (entryNo, reason, commandKey, operator) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
+    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason, operator)),
   }).then(() => undefined),
   updateK1ClusterStatus: (clusterId, status, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ status, expectedVersion }, reason)) }).then(() => undefined),
   updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   upsertK1Whitelist: (cidr, note, reason, expireText, commandKey) => apiRequest("/multi-account/whitelist", { method: "POST", commandKey, body: JSON.stringify(withReason({ cidr, note, expireText }, reason)) }).then(() => undefined),
   disableK1Whitelist: (cidr, reason, commandKey) => apiRequest("/multi-account/whitelist", { method: "PATCH", commandKey, body: JSON.stringify(withReason({ cidr }, reason)) }).then(() => undefined),
-  updateK2Param: (key, value, expectedVersion, reason, commandKey) => apiRequest(`/arbitrage/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) }).then(() => undefined),
+  updateK2Param: async (key, value, expectedVersion, reason, commandKey) => {
+    if (!commandKey) validateK2ParamWrite(key, value);
+    await apiRequest(`/arbitrage/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) });
+  },
   executeK2Action: (rowId, action, expectedVersion, clusterExpectedVersion, reason, commandKey) => {
     const mapped = k2ActionMap[action] || action;
     return apiRequest(`/arbitrage/rows/${encodeURIComponent(rowId)}/${encodeURIComponent(mapped)}`, {

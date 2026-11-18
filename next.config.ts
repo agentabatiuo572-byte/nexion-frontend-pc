@@ -80,6 +80,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/overview/liquidity",
+        destination: "/finance/pool?tab=due&maturity=7d",
+        permanent: false,
+      },
+      {
         source: "/growth/milestones",
         destination: "/growth/daily",
         permanent: false,

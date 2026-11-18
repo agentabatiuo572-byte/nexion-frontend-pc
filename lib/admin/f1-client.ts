@@ -1,18 +1,28 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import type { F1PolicyValues } from "./f1-policy-change";
+import { f3SpilloverState } from "./f3-policy";
+import { f4Decimal, f4MonthlyCap } from "./f4-money";
+import { readF4VoteProjection } from "./f4-vote-projection";
+import type { F4AmbassadorMetricBasis } from "./f-overview-contract";
+export type { F4AmbassadorMetricBasis } from "./f-overview-contract";
+import type { BusinessZone } from "./business-time";
 import {
   assertF1Overview,
   assertF2Overview,
   assertF3Overview,
   assertF4Overview,
+  assertF4MaterialPacket,
   assertF5Overview,
+  assertF5ActionAvailability,
+  F5_KINDS,
+  F5_STATUSES,
 } from "@/lib/admin/f-overview-contract";
 
 interface ApiResult<T> {
@@ -82,6 +92,7 @@ interface BackendOverview {
 }
 
 interface BackendCoverage {
+  reliable?: boolean;
   coverageRatio?: number | string | null;
   redlinePct?: number | string | null;
 }
@@ -99,6 +110,8 @@ interface BackendF2UnilevelRate {
   level?: string | null;
   usdtPct?: number | string | null;
   nexReward?: number | string | null;
+  usdtPctMissing?: boolean;
+  nexRewardMissing?: boolean;
   label?: string | null;
   direct?: boolean | string | null;
   configKey?: string | null;
@@ -129,6 +142,7 @@ interface BackendF2PolicyParam {
 }
 
 interface BackendF2Overview {
+  payoutStatistics?: F2PayoutStatistic[];
   sevenLayerRevision?: number | string;
   metrics?: BackendF2Metric[] | null;
   unilevelRates?: BackendF2UnilevelRate[] | null;
@@ -150,7 +164,11 @@ interface BackendF3Metric {
   configKey?: string | null;
 }
 
-interface BackendF3Settlement {
+interface BackendF3Settlement extends Partial<F3SettlementReview> {
+  trackARaw?: string | null;
+  trackBRaw?: string | null;
+  matchAmountRaw?: string | null;
+  todayPaidRaw?: string | null;
   ownerUserId?: number | string | null;
   user?: string | null;
   settlementDate?: string | null;
@@ -164,6 +182,10 @@ interface BackendF3Settlement {
 }
 
 interface BackendF3Formula {
+  trackARaw?: string | null;
+  trackBRaw?: string | null;
+  matchAmountRaw?: string | null;
+  todayPaidRaw?: string | null;
   user?: string | null;
   trackA?: number | string | null;
   trackB?: number | string | null;
@@ -174,6 +196,7 @@ interface BackendF3Formula {
 }
 
 interface BackendF3DailyCap {
+  h1BinaryDailyCap?: string | number | null;
   currentLabel?: string | null;
   windowLabel?: string | null;
   nextTrigger?: string | null;
@@ -183,6 +206,7 @@ interface BackendF3DailyCap {
 }
 
 interface BackendF3Config {
+  paused?: boolean | null;
   threshold?: string | null;
   matchRate?: string | null;
   spillover?: string | null;
@@ -194,10 +218,12 @@ interface BackendF3Config {
   residualSub?: string | null;
 }
 
-interface BackendF3Overview {
+interface BackendF3Overview extends F3RawAmounts {
+  statistics?: F3Statistics;
   metrics?: BackendF3Metric[] | null;
   formula?: BackendF3Formula | null;
   settlements?: BackendF3Settlement[] | null;
+  blockedAttempts?: F3BlockedSettlementAttempt[];
   maxTrackGmv?: number | string | null;
   participantCount?: number | string | null;
   blockedCount?: number | string | null;
@@ -232,6 +258,7 @@ interface BackendF4QuotaRow {
   unlockMode?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
+  monthlyQuota?: string | null;
   tight?: boolean | string | null;
 }
 
@@ -247,6 +274,7 @@ interface BackendF4Podium {
   tip?: string | null;
   className?: string | null;
   memberUserId?: number | string | null;
+  computePoints?: number | null;
 }
 
 interface BackendF4QuotaUsage { id?: number | string | null; quotaCode?: string | null; productNo?: string | null; userId?: number | string | null; orderNo?: string | null; quantity?: number | string | null; status?: string | null; occurredAt?: string | null }
@@ -305,6 +333,7 @@ interface BackendF4LeadershipPoolOverview {
   ambassadorBudgetCapLabel?: string | null;
   ambassadorKolBudgetPct?: number | string | null;
   ambassadorNextQuotaReviewDate?: string | null;
+  ambassadorMetricBasis?: F4AmbassadorMetricBasis;
   leaderboardPeriods?: unknown;
   leaderboardPoolLabel?: string | null;
   leaderboardParticipantCount?: number | string | null;
@@ -360,7 +389,16 @@ interface BackendF5Filter {
   label: string;
 }
 
-interface BackendF5CommissionEvent {
+export interface F5ActionAvailability {
+  canUnlock?: boolean;
+  unlockBlockedReason?: string | null;
+  canReverse?: boolean;
+  reverseBlockedReason?: string | null;
+  groupStatus?: string;
+}
+
+interface BackendF5CommissionEvent extends F5ActionAvailability {
+  unlockAt?: number | null;
   settlementNo?: string | null;
   sourceRef?: string | null;
   sourceDeviceId?: string | null;
@@ -418,8 +456,8 @@ interface BackendF5Pagination {
 }
 
 interface BackendF5CommissionAuditOverview {
-  pendingCalculations?: F5PendingCalculation[];
-  pendingCalculationCount?: number | string;
+  pendingCalculations: F5PendingCalculation[];
+  pendingCalculationCount: number | string;
   summary: BackendF5Summary;
   commissionKinds: BackendF5CommissionKind[];
   commissionFilters: BackendF5Filter[];
@@ -430,6 +468,7 @@ interface BackendF5CommissionAuditOverview {
   nextCursor?: string | number | null;
   total?: number | string | null;
   anomalies?: Record<string, unknown>[] | null;
+  layerRatioComparisons?: F5LayerRatioComparison[];
   coolingPolicy?: Record<string, unknown>[] | null;
   operationHistory?: Record<string, unknown>[] | null;
   activeSuspensions?: Record<string, unknown>[] | null;
@@ -521,6 +560,8 @@ export interface F1RewardPayout {
   rankCode: string;
   rewardType: string;
   amount: number;
+  /** 后端给的金额原文，显示用；amount 已转成数字，会丢小数位。 */
+  amountText: string;
   voucherId: string;
   skuId: string;
   customLabel: string;
@@ -561,8 +602,12 @@ export interface F2Metric {
 
 export interface F2UnilevelRate {
   l: string;
-  usdt: number;
-  nex: number;
+  usdt: number | null;
+  nex: number | null;
+  usdtText: string | null;
+  nexText: string | null;
+  usdtPctMissing?: boolean;
+  nexRewardMissing?: boolean;
   ui: string;
   direct: boolean;
   configKey: string;
@@ -591,7 +636,26 @@ export interface F2PolicyParam {
   unit?: string;
 }
 
+export interface F2PayoutStatistic {
+  currency: "USDT" | "UVT";
+  available: boolean;
+  window: string;
+  statusScope: string;
+  allStatusAmountRaw: string | null;
+  allStatusEventCount: number | null;
+  paidOrSettledStatuses: string[];
+  paidOrSettledAmountRaw: string | null;
+  paidOrSettledEventCount: number | null;
+  paidStatuses?: string[];
+  paidAmountRaw?: string | null;
+  paidEventCount?: number | null;
+  statusMarkerOnly: boolean;
+  cashSettlementTimeAvailable: boolean;
+  basis: string;
+}
+
 export interface F2RatesOverview {
+  payoutStatistics?: F2PayoutStatistic[];
   sevenLayerRevision: number | null;
   metrics: F2Metric[];
   unilevel: F2UnilevelRate[];
@@ -613,7 +677,37 @@ export interface F3Metric {
   configKey: string;
 }
 
-export interface F3Settlement {
+export interface F3SettlementReview {
+  settlementNo: string | null;
+  residualTrackARaw: string | null;
+  residualTrackBRaw: string | null;
+  residualAmountUsdt: string | null;
+  residualPolicy: string | null;
+  settlementMode: string | null;
+  proposerName: string | null;
+  approverName: string | null;
+  a2OperationId: string | null;
+}
+
+export interface F3BlockedSettlementAttempt {
+  settlementNo: string;
+  blockedAt: string;
+  ownerUserId: string | null;
+  /** Same server-owned user code as the settlement list; older responses may omit it. */
+  user?: string | null;
+  settlementDate: string | null;
+  reason: string | null;
+  settlementMode: string | null;
+  a2OperationId: string | null;
+  proposerName: string | null;
+  approverName: string | null;
+}
+
+export interface F3Settlement extends F3SettlementReview {
+  aRaw?: string | null;
+  bRaw?: string | null;
+  matchRaw?: string | null;
+  todayRaw?: string | null;
   ownerUserId: number;
   user: string;
   settlementDate: string;
@@ -627,6 +721,10 @@ export interface F3Settlement {
 }
 
 export interface F3Formula {
+  trackARaw?: string | null;
+  trackBRaw?: string | null;
+  matchAmountRaw?: string | null;
+  todayPaidRaw?: string | null;
   user: string;
   trackA: number;
   trackB: number;
@@ -637,6 +735,7 @@ export interface F3Formula {
 }
 
 export interface F3DailyCap {
+  amountUsdt: string | null;
   currentLabel: string;
   windowLabel: string;
   nextTrigger: string;
@@ -656,6 +755,7 @@ export interface F3DailyCap {
 export const F3_GV_RESET_PARAM_KEY = ["F", "binary", "gvResetCron"].join(".");
 
 export interface F3BinaryConfig {
+  paused?: boolean | null;
   threshold: string;
   matchRate: string;
   spillover: string;
@@ -667,10 +767,25 @@ export interface F3BinaryConfig {
   residualSub: string;
 }
 
-export interface F3BinaryOverview {
+export interface F3RawAmounts {
+  monthlyMatchedUsdRaw?: string | null;
+  dailyMatchUsdRaw?: string | null;
+  maxDailyCapUsdRaw?: string | null;
+  maxTrackGmvRaw?: string | null;
+  residualPoolUsdRaw?: string | null;
+}
+
+export type F3Statistics = { basis: string } & Record<"participantCount" | "blockedCount" | "monthlyMatchedUsd" | "dailyMatchUsd" | "autoPlacement7dCount" | "maxDailyCapUsd" | "maxTrackGmv" | "residualPoolUsd" | "settlements" | "h1BinaryDailyCap", {
+  source: string; aggregate: string; field: string; filter: string; window: string; status: string; distinct: boolean;
+}>;
+
+export interface F3BinaryOverview extends F3RawAmounts {
+  statistics?: F3Statistics;
   metrics: F3Metric[];
   formula: F3Formula;
   settlements: F3Settlement[];
+  /** null means the backend does not provide this read, distinct from no blocked attempts. */
+  blockedAttempts: F3BlockedSettlementAttempt[] | null;
   maxTrackGmv: number;
   participantCount: number;
   blockedCount: number;
@@ -706,6 +821,7 @@ export interface F4QuotaRow {
   criteriaKnown: boolean;
   current: number;
   cap: number;
+  monthlyQuota?: string | null;
   tight: boolean;
 }
 
@@ -725,6 +841,7 @@ export interface F4Podium {
 
 export interface F4LeaderboardPeriod {
   poolUsd: number;
+  poolUsdText?: string;
   participantCount: number;
   topN: number;
   timezone: "Asia/Shanghai";
@@ -732,6 +849,34 @@ export interface F4LeaderboardPeriod {
   podium: F4Podium[];
 }
 export type F4LeaderboardPeriods = Partial<Record<"today" | "week" | "month" | "all", F4LeaderboardPeriod>>;
+
+export interface F4ComputePointPodium extends F4Podium { computePoints: number }
+export interface F4ComputePointPeriod extends Omit<F4LeaderboardPeriod, "podium"> {
+  rankingMetric: "COMPUTE_POINTS";
+  minComputePoints: number;
+  businessTimezone: string;
+  fromInclusive: string | null;
+  toExclusive: string | null;
+  podium: F4ComputePointPodium[];
+}
+export type F4ComputePointPeriods = Partial<Record<"today" | "week" | "month" | "all", F4ComputePointPeriod>>;
+
+export type F4PayoutPeriod = "today" | "week" | "month" | "allTime";
+export interface F4LeaderboardPayoutPreview {
+  period: F4PayoutPeriod; periodKey: string; paused: boolean; alreadySettled: boolean;
+  available: boolean; reason: string; rankingMetric: "COMPUTE_POINTS";
+  prizePoolUsdt: string; minComputePoints: string; topN: number; top1MaxPct: string; top5MaxPct: string;
+  // Not returned when the pool is absent; absence must not be turned into zero.
+  candidateCount?: number; rankedCount?: number; paidCount?: number;
+  amountBeforeCaps?: string; payableAmount?: string; reducedByCaps?: string;
+  rows: { rank: number; userId: number; userNo: string; computePoints: string;
+    amountBeforeCaps: string; amount: string; limitedBy: ("top1MaxPct" | "top5MaxPct")[] }[];
+}
+export interface F4LeaderboardDisqualificationReadiness {
+  period: "week"; periodKey: string; rankingMetric: "COMPUTE_POINTS"; minComputePoints: string;
+  rows: { rank: number; memberUserId: number; userNo: string; computePoints: string;
+    disqualificationAvailable: boolean; riskEvidenceRef: string; reason: string }[];
+}
 
 export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
 export type F4AmbassadorBucket = "venue" | "kol" | "print" | "dev";
@@ -786,6 +931,10 @@ export interface F4AmbassadorReviewInput {
   missingKinds?: string[];
 }
 export class F4MaterialReviewNotAppliedError extends Error {
+  readonly status = 409;
+  readonly httpStatus = 409;
+  readonly apiCode = 409;
+  get backendMessage() { return this.code; }
   constructor(message: string, public readonly code: "MATERIAL_REVISION_STALE" | "APPLICATION_NOT_PENDING") {
     super(message); this.name = "F4MaterialReviewNotAppliedError";
   }
@@ -837,6 +986,7 @@ export interface F4Config {
 }
 
 export interface F4LeadershipPoolOverview {
+  settlementZone?: BusinessZone | null;
   configVersion: string;
   settlementConfigStatus: "READY" | "HOLD";
   settlementConfigUnavailableKey: string;
@@ -844,11 +994,13 @@ export interface F4LeadershipPoolOverview {
   metrics: F4Metric[];
   weeklyInjectedUsd: number;
   currentWeekPoolUsd: number | null;
+  currentWeekPoolAmount?: string | null;
   weeklyGmvUsd: number;
   poolRatio: string;
   poolRatioValue: number;
   monthlyCapLabel: string;
   monthlyCapUsd: number;
+  monthlyCapAmount?: string | null;
   participantCount: number;
   topN: number;
   topSharePct: number;
@@ -872,7 +1024,10 @@ export interface F4LeadershipPoolOverview {
   ambassadorBudgetCapLabel: string;
   ambassadorKolBudgetPct: number;
   ambassadorNextQuotaReviewDate: string;
+  ambassadorMetricBasis?: F4AmbassadorMetricBasis;
   leaderboardPeriods?: F4LeaderboardPeriods;
+  /** Point rankings await the page's point labels/units; never feed them to USDT slots. */
+  leaderboardComputePointPeriods?: F4ComputePointPeriods;
   leaderboardPoolLabel: string;
   leaderboardParticipantCount: number;
   leaderboardFraudHitCount: number;
@@ -890,7 +1045,7 @@ export interface F4LeadershipPoolOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number };
+  coverage?: { coverageRatio: number; redlinePct: number; reliable?: boolean; coverageRatioText?: string; redlinePctText?: string };
   sources: string[];
 }
 
@@ -916,24 +1071,26 @@ export interface F5CommissionFilter {
   lbl: string;
 }
 
-export interface F5CommissionEvent {
+export interface F5CommissionEvent extends F5ActionAvailability {
+  /** Grouped reads project settlement release_at; the shifted network event deadline is not returned. */
+  unlockAt?: number;
   settlementNo?: string;
   sourceRef?: string;
   sourceDeviceId?: string;
   policyVersion?: number;
-  basisUsdt?: number;
-  nexUsdtPrice?: number;
-  amountUSDT?: number;
-  amountNEX?: number;
-  recoveryPendingUSDT?: number;
-  recoveryPendingNEX?: number;
+  basisUsdt?: string;
+  nexUsdtPrice?: string;
+  amountUSDT?: string;
+  amountNEX?: string;
+  recoveryPendingUSDT?: string;
+  recoveryPendingNEX?: string;
   reversalRecorded?: boolean;
   id: string;
   eventId: number;
   kind: string;
   user: string;
   userId: number;
-  amt: number;
+  amt: string;
   cur: string;
   sourceUserId?: number;
   layer?: number;
@@ -957,12 +1114,12 @@ export interface F5PendingCalculation {
   sourceRef: string;
   sourceUserName: string;
   basisUsdt: number | string;
-  amountUSDT: 0;
-  amountNEX: 0;
+  amountUSDT: number | string;
+  amountNEX: number | string;
   nexUsdtPrice: null;
   status: "waiting_calculation";
-  unlockAt: string | null;
-  ts: string;
+  unlockAt: number | null;
+  ts: number | null;
 }
 
 export interface F5CommissionQuery {
@@ -978,12 +1135,27 @@ export interface F5CommissionQuery {
 export interface F5Anomaly {
   id: string;
   type: string;
+  currency?: string;
   commissionId: string;
   userId: string;
   evidence: string;
   relatedKCluster: string;
   status: string;
 }
+
+export type F5LayerRatioComparison = {
+  currency: string;
+  available: true;
+  reason: null;
+  layers: Array<{ layer: number; actualPct: string; theoreticalPct: string; deviation: string }>;
+} | {
+  currency: string;
+  available: false;
+  reason: "F5_LAYER_RATIO_THEORY_UNAVAILABLE" | "F5_LAYER_RATIO_LAYER_UNAVAILABLE" | "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE";
+  layers: null;
+  theoreticalPct: null;
+  deviation: null;
+};
 
 export interface F5CoolingPolicy {
   kind: string;
@@ -998,7 +1170,7 @@ export interface F5OperationHistory {
   resultCommissionId: string;
   userId: string;
   kinds: string;
-  amount: number;
+  amount: string | null;
   currency: string;
   evidenceRef: string;
   reason: string;
@@ -1038,13 +1210,14 @@ export interface F5CommissionAuditOverview {
   nextCursor: string;
   total: number;
   anomalies: F5Anomaly[];
+  layerRatioComparisons?: F5LayerRatioComparison[];
   coolingPolicy: F5CoolingPolicy[];
   operationHistory: F5OperationHistory[];
   activeSuspensions: Array<{ userId: string; kind: string; reason: string; operator: string; updatedAt: string }>;
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number };
+  coverage?: { coverageRatio: number; redlinePct: number; reliable?: boolean; coverageRatioText: string; redlinePctText: string; redlineBreached: boolean };
   sources: string[];
 }
 
@@ -1161,11 +1334,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
   const skuOptions = data?.skuOptions ?? [];
   // coverage 可选:后端 ranks() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验)。
   const rawCoverage = data?.coverage;
-  const coverage = rawCoverage
-    ? {
-        coverageRatio: toNumber(rawCoverage.coverageRatio),
-        redlinePct: toNumber(rawCoverage.redlinePct),
-      }
+  const coverage = rawCoverage?.coverageRatio != null && rawCoverage.redlinePct != null
+    && Number.isFinite(Number(rawCoverage.coverageRatio)) && Number.isFinite(Number(rawCoverage.redlinePct))
+    ? { coverageRatio: Number(rawCoverage.coverageRatio), redlinePct: Number(rawCoverage.redlinePct) }
     : undefined;
   return {
     rows,
@@ -1225,6 +1396,8 @@ function normalizePayoutPage(data: Record<string, unknown> | null | undefined): 
         rankCode: asText(row.rankCode),
         rewardType: asText(row.rewardType),
         amount: toNumber(row.amount),
+        // 后端给的金额原文：转成数字再显示会丢小数位（F1-B04），页面显示用这一份。
+        amountText: asScalarText(row.amount),
         voucherId: asText(row.voucherId),
         skuId: asText(row.skuId),
         customLabel: asText(row.customLabel),
@@ -1252,18 +1425,25 @@ function queryString(params: object) {
 }
 
 function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2RatesOverview {
-  const metrics = (data?.metrics ?? []).map((item) => ({
-    id: asText(item.id, "metric"),
-    name: asText(item.label, "指标"),
-    value: asText(item.value, "-"),
-    sub: asText(item.sub, ""),
-    tone: asText(item.tone, ""),
-    configKey: asText(item.configKey, ""),
-  }));
+  const metrics = (data?.metrics ?? []).map((item) => {
+    const statistic = data?.payoutStatistics?.find(row => row.currency === (item.id === "weeklyUsdtRoyalty" ? "USDT" : item.id === "weeklyNexPayout" ? "UVT" : ""));
+    return {
+      id: asText(item.id, "metric"),
+      name: asText(item.label, "指标"),
+      value: statistic ? statistic.allStatusAmountRaw ?? "—" : asText(item.value, "-"),
+      sub: asText(item.sub, ""),
+      tone: asText(item.tone, ""),
+      configKey: asText(item.configKey, ""),
+    };
+  });
   const unilevel = (data?.unilevelRates ?? []).map((item) => ({
     l: asText(item.level, "L?"),
-    usdt: toNumber(item.usdtPct),
-    nex: toNumber(item.nexReward),
+    usdt: item.usdtPctMissing === true || item.usdtPct === null ? null : toNumber(item.usdtPct),
+    nex: item.nexRewardMissing === true || item.nexReward === null ? null : toNumber(item.nexReward),
+    usdtText: item.usdtPctMissing === true || item.usdtPct === null ? null : String(item.usdtPct),
+    nexText: item.nexRewardMissing === true || item.nexReward === null ? null : String(item.nexReward),
+    usdtPctMissing: item.usdtPctMissing,
+    nexRewardMissing: item.nexRewardMissing,
     ui: asText(item.label, ""),
     direct: toBoolean(item.direct),
     configKey: asText(item.configKey, ""),
@@ -1293,6 +1473,7 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
     };
   });
   return {
+    payoutStatistics: data?.payoutStatistics,
     sevenLayerRevision: data?.sevenLayerRevision === undefined ? null : toNumber(data.sevenLayerRevision),
     metrics,
     unilevel,
@@ -1313,15 +1494,27 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
 }
 
 function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3BinaryOverview {
-  const metrics = (data?.metrics ?? []).map((item) => ({
-    id: asText(item.id, "metric"),
-    name: asText(item.label, "指标"),
-    value: asText(item.value, "-"),
-    sub: asText(item.sub, ""),
-    tone: asText(item.tone, ""),
-    configKey: asText(item.configKey, ""),
-  }));
+  const metrics = (data?.metrics ?? []).map((item) => {
+    const raw = item.id === "todayBalanceMatch" ? data?.dailyMatchUsdRaw : item.id === "residualPool" ? data?.residualPoolUsdRaw : undefined;
+    return {
+      id: asText(item.id, "metric"),
+      name: asText(item.label, "指标"),
+      value: raw === undefined ? asText(item.value, "-") : raw ?? "—",
+      sub: asText(item.sub, ""),
+      tone: asText(item.tone, ""),
+      configKey: asText(item.configKey, ""),
+    };
+  });
   const settlements = (data?.settlements ?? []).map((item) => ({
+    settlementNo: item.settlementNo ?? null,
+    residualTrackARaw: item.residualTrackARaw ?? null,
+    residualTrackBRaw: item.residualTrackBRaw ?? null,
+    residualAmountUsdt: item.residualAmountUsdt ?? null,
+    residualPolicy: item.residualPolicy ?? null,
+    settlementMode: item.settlementMode ?? null,
+    proposerName: item.proposerName ?? null,
+    approverName: item.approverName ?? null,
+    a2OperationId: item.a2OperationId ?? null,
     ownerUserId: toNumber(item.ownerUserId),
     user: asText(item.user, "usr_unknown"),
     settlementDate: asText(item.settlementDate, ""),
@@ -1330,15 +1523,21 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     b: toNumber(item.trackB),
     match: toNumber(item.matchAmount),
     today: toNumber(item.todayPaid),
+    aRaw: item.trackARaw, bRaw: item.trackBRaw, matchRaw: item.matchAmountRaw, todayRaw: item.todayPaidRaw,
     state: asText(item.state, "-"),
     tone: asText(item.tone, ""),
   }));
   const formula = data?.formula ?? {};
   const dailyCap = data?.dailyCap ?? {};
   const config = data?.config ?? {};
+  if (config.paused !== undefined && config.paused !== null && typeof config.paused !== "boolean") throw new Error("F3_RESPONSE_INVALID:config.paused");
   return {
+    monthlyMatchedUsdRaw: data?.monthlyMatchedUsdRaw, dailyMatchUsdRaw: data?.dailyMatchUsdRaw,
+    maxDailyCapUsdRaw: data?.maxDailyCapUsdRaw, maxTrackGmvRaw: data?.maxTrackGmvRaw, residualPoolUsdRaw: data?.residualPoolUsdRaw,
+    statistics: data?.statistics,
     metrics,
     formula: {
+      trackARaw: formula.trackARaw, trackBRaw: formula.trackBRaw, matchAmountRaw: formula.matchAmountRaw, todayPaidRaw: formula.todayPaidRaw,
       user: asText(formula.user),
       trackA: toNumber(formula.trackA),
       trackB: toNumber(formula.trackB),
@@ -1348,6 +1547,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       settlePeriod: asText(formula.settlePeriod),
     },
     settlements,
+    blockedAttempts: data?.blockedAttempts ?? null,
     maxTrackGmv: toNumber(data?.maxTrackGmv, Math.max(1, ...settlements.flatMap((row) => [row.a, row.b]))),
     participantCount: toNumber(data?.participantCount),
     blockedCount: toNumber(data?.blockedCount),
@@ -1355,6 +1555,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     autoPlacement7dCount: toNumber(data?.autoPlacement7dCount),
     dailyMatchUsd: toNumber(data?.dailyMatchUsd),
     dailyCap: {
+      amountUsdt: dailyCap.h1BinaryDailyCap == null ? null : asScalarText(dailyCap.h1BinaryDailyCap),
       currentLabel: asText(dailyCap.currentLabel),
       windowLabel: asText(dailyCap.windowLabel),
       nextTrigger: asText(dailyCap.nextTrigger),
@@ -1366,7 +1567,8 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       threshold: asText(config.threshold),
       matchRate: asText(config.matchRate),
       spillover: asText(config.spillover),
-      spilloverEnabled: toBoolean(config.spilloverEnabled),
+      spilloverEnabled: f3SpilloverState(config.spillover ?? undefined) === true,
+      paused: config.paused,
       gvResetCron: asText(config.gvResetCron),
       settlePeriod: asText(config.settlePeriod),
       residualPolicy: asText(config.residualPolicy),
@@ -1376,9 +1578,9 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 binary() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // binary() 的可空 B1 快照不补0；配置护栏在批准执行，实际结算仍按当时金额复核。
+    coverage: data?.coverage && finiteDashboardNumber(data.coverage.coverageRatio) !== null && finiteDashboardNumber(data.coverage.redlinePct) !== null
+      ? { coverageRatio: Number(data.coverage.coverageRatio), redlinePct: Number(data.coverage.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1403,22 +1605,26 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     && Number.isSafeInteger(value) && value >= minimum;
   const label = (value: unknown): boolean => typeof value === "string"
     && /^\$-?\d[\d,]*(?:\.\d+)?$/.test(value);
-  const frozen = paused && data?.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true
+  const snapshotReady = paused && data?.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true
     && typeof data.leaderboardSnapshotId === "string" && !!data.leaderboardSnapshotId.trim()
-    && typeof data.leaderboardSnapshotAt === "string" && Number.isFinite(Date.parse(data.leaderboardSnapshotAt))
-    && integer(data.leaderboardParticipantCount) && label(data.leaderboardPoolLabel)
+    && typeof data.leaderboardSnapshotAt === "string" && Number.isFinite(Date.parse(data.leaderboardSnapshotAt));
+  const legacyFrozen = snapshotReady && integer(data.leaderboardParticipantCount) && label(data.leaderboardPoolLabel)
     && Array.isArray(data.podium) && data.podium.every((row) => row && integer(row.rank, 1) && row.rank <= 3
       && integer(row.memberUserId, 1) && typeof row.userId === "string" && !!row.userId.trim()
       && label(row.gmvLabel) && typeof row.tip === "string" && typeof row.className === "string");
   const leaderboardPeriods: F4LeaderboardPeriods = {};
-  if ((!paused || frozen) && data?.leaderboardPeriods && typeof data.leaderboardPeriods === "object") {
+  const leaderboardComputePointPeriods: F4ComputePointPeriods = {};
+  if ((!paused || snapshotReady) && data?.leaderboardPeriods && typeof data.leaderboardPeriods === "object") {
     const rawPeriods = data.leaderboardPeriods as Record<string, unknown>;
     for (const period of ["today", "week", "month", "all"] as const) {
       const raw = rawPeriods[period];
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
+      const points = row.rankingMetric === "COMPUTE_POINTS";
+      if (paused && !legacyFrozen && !points) continue;
       const max = period === "today" ? 20 : period === "week" ? 50 : 100;
-      if (typeof row.poolUsd !== "number" || !Number.isFinite(row.poolUsd) || row.poolUsd < 0
+      const poolUsd = finiteDashboardNumber(row.poolUsd);
+      if (poolUsd === null || poolUsd < 0
         || !integer(row.participantCount) || row.participantCount > max
         || !integer(row.topN) || row.topN > row.participantCount
         || row.timezone !== "Asia/Shanghai" || typeof row.snapshotAt !== "string" || !Number.isFinite(Date.parse(row.snapshotAt))
@@ -1426,11 +1632,23 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
         || !Array.isArray(row.podium) || row.podium.length > Math.min(3, row.participantCount)
         || !row.podium.every((item, index) => item && item.rank === index + 1
           && integer(item.memberUserId, 1) && typeof item.userId === "string" && !!item.userId.trim()
-          && label(item.gmvLabel) && typeof item.tip === "string" && typeof item.className === "string")) continue;
-      leaderboardPeriods[period] = { poolUsd: row.poolUsd, participantCount: row.participantCount,
+          && (points ? integer(item.computePoints, 1) && typeof item.gmvLabel === "string" : label(item.gmvLabel))
+          && typeof item.tip === "string" && typeof item.className === "string")) continue;
+      if (points) {
+        if (!integer(row.minComputePoints) || typeof row.businessTimezone !== "string" || !row.businessTimezone.trim()
+          || !(row.fromInclusive === null || typeof row.fromInclusive === "string" && !!row.fromInclusive.trim())
+          || !(row.toExclusive === null || typeof row.toExclusive === "string" && !!row.toExclusive.trim())) continue;
+        leaderboardComputePointPeriods[period] = { rankingMetric: "COMPUTE_POINTS", minComputePoints: row.minComputePoints,
+          businessTimezone: row.businessTimezone, fromInclusive: row.fromInclusive, toExclusive: row.toExclusive,
+          poolUsd, poolUsdText: f4Decimal(String(row.poolUsd)) ?? undefined, participantCount: row.participantCount,
+          topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4ComputePointPodium[] };
+        continue;
+      }
+      leaderboardPeriods[period] = { poolUsd, poolUsdText: f4Decimal(String(row.poolUsd)) ?? undefined, participantCount: row.participantCount,
         topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4Podium[] };
     }
   }
+  const frozen = legacyFrozen || snapshotReady && Object.keys(leaderboardComputePointPeriods).length === 4;
   const metrics = (data?.metrics ?? []).map((item) => ({
     id: asText(item.id, "metric"),
     name: asText(item.label, "指标"),
@@ -1450,6 +1668,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     criteriaKnown: quotaCriteriaKnown(row),
     current: toNumber(row.current),
     cap: toNumber(row.cap),
+    monthlyQuota: row.monthlyQuota,
     tight: toBoolean(row.tight),
   }));
   const ambassadorBands = (data?.ambassadorBands ?? []).map((row) => ({
@@ -1470,7 +1689,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     businessReview: row.businessReview, financeReview: row.financeReview, missingKinds: row.missingKinds,
     approvalBlockers: row.approvalBlockers, legacyApproved: row.legacyApproved,
   }));
-  const podium = (paused && !frozen ? [] : data?.podium ?? []).map((row) => ({
+  const podium = (paused && !frozen ? [] : data?.podium ?? []).filter(row => row.computePoints === undefined).map((row) => ({
     rank: toNumber(row.rank),
     userId: asText(row.userId, "usr_unknown"),
     gmvLabel: asText(row.gmvLabel, "-"),
@@ -1497,11 +1716,13 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     metrics,
     weeklyInjectedUsd: toNumber(data?.weeklyInjectedUsd),
     currentWeekPoolUsd: finiteDashboardNumber(data?.currentWeekPoolUsd),
+    currentWeekPoolAmount: data?.currentWeekPoolUsd == null ? null : f4Decimal(data.currentWeekPoolUsd),
     weeklyGmvUsd: toNumber(data?.weeklyGmvUsd),
     poolRatio: asText(data?.poolRatio, asText(config.poolRatio)),
     poolRatioValue: toNumber(data?.poolRatioValue),
     monthlyCapLabel: asText(data?.monthlyCapLabel, asText(config.monthlyCap)),
     monthlyCapUsd: toNumber(data?.monthlyCapUsd),
+    monthlyCapAmount: f4MonthlyCap(data?.configValues?.["F.pool.monthlyCap"] ?? ""),
     participantCount: toNumber(data?.participantCount),
     topN: toNumber(data?.topN),
     topSharePct: toNumber(data?.topSharePct),
@@ -1528,7 +1749,9 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     ambassadorBudgetCapLabel: asText(data?.ambassadorBudgetCapLabel),
     ambassadorKolBudgetPct: toNumber(data?.ambassadorKolBudgetPct),
     ambassadorNextQuotaReviewDate: asText(data?.ambassadorNextQuotaReviewDate),
+    ambassadorMetricBasis: data?.ambassadorMetricBasis,
     leaderboardPeriods,
+    leaderboardComputePointPeriods,
     leaderboardPoolLabel: asText(data?.leaderboardPoolLabel, asText(config.leaderboardPoolUsd)),
     leaderboardParticipantCount: toNumber(data?.leaderboardParticipantCount),
     leaderboardFraudHitCount: toNumber(data?.leaderboardFraudHitCount),
@@ -1541,9 +1764,10 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 leadershipPool() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // 41a552fa rechecks approved payouts before writing. Missing values never become zero.
+    coverage: finiteDashboardNumber(data?.coverage?.coverageRatio) !== null && finiteDashboardNumber(data?.coverage?.redlinePct) !== null
+      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct), reliable: data!.coverage!.reliable === true,
+        coverageRatioText: f4Decimal(data!.coverage!.coverageRatio!) ?? undefined, redlinePctText: f4Decimal(data!.coverage!.redlinePct!) ?? undefined }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1574,7 +1798,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       kind: asText(item.kind, "network"),
       user: asText(item.user, userId > 0 ? `U${String(userId).padStart(8, "0")}` : "usr_unknown"),
       userId,
-      amt: toNumber(item.amount),
+      amt: f4Decimal(item.amount!)!,
       cur: asText(item.currency, "USDT"),
       sourceUserId: item.sourceUserId == null ? undefined : toNumber(item.sourceUserId),
       layer: item.layer == null ? undefined : toNumber(item.layer),
@@ -1588,18 +1812,32 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       version: toNumber(item.version),
       frozenFromStatus: optionalText(item.frozenFromStatus),
       ledgerBizNo: optionalText(item.ledgerBizNo),
+      unlockAt: item.unlockAt ?? undefined,
       settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
       policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
-      basisUsdt: item.basisUsdt == null ? undefined : toNumber(item.basisUsdt), nexUsdtPrice: item.nexUsdtPrice == null ? undefined : toNumber(item.nexUsdtPrice),
-      amountUSDT: item.amountUSDT == null ? undefined : toNumber(item.amountUSDT), amountNEX: item.amountNEX == null ? undefined : toNumber(item.amountNEX),
-      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : toNumber(item.recoveryPendingUSDT), recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : toNumber(item.recoveryPendingNEX),
+      basisUsdt: item.basisUsdt == null ? undefined : f4Decimal(item.basisUsdt)!, nexUsdtPrice: item.nexUsdtPrice == null ? undefined : f4Decimal(item.nexUsdtPrice)!,
+      amountUSDT: item.amountUSDT == null ? undefined : f4Decimal(item.amountUSDT)!, amountNEX: item.amountNEX == null ? undefined : f4Decimal(item.amountNEX)!,
+      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : f4Decimal(item.recoveryPendingUSDT)!, recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : f4Decimal(item.recoveryPendingNEX)!,
       reversalRecorded: item.reversalRecorded ?? undefined,
+      canUnlock: item.canUnlock, unlockBlockedReason: item.unlockBlockedReason,
+      canReverse: item.canReverse, reverseBlockedReason: item.reverseBlockedReason, groupStatus: item.groupStatus,
     };
   });
   const pagination = data.pagination;
+  const coverageRatioText = data.coverage?.coverageRatio == null ? null : f4Decimal(data.coverage.coverageRatio);
+  const redlinePctText = data.coverage?.redlinePct == null ? null : f4Decimal(data.coverage.redlinePct);
+  let coverage: F5CommissionAuditOverview["coverage"];
+  if (coverageRatioText !== null && redlinePctText !== null) {
+    const [ratioWhole, ratioFraction = ""] = coverageRatioText.split(".");
+    const [redlineWhole, redlineFraction = ""] = redlinePctText.split(".");
+    const scale = Math.max(ratioFraction.length, redlineFraction.length);
+    coverage = { coverageRatio: Number(coverageRatioText), redlinePct: Number(redlinePctText), reliable: data.coverage?.reliable,
+      coverageRatioText, redlinePctText,
+      redlineBreached: BigInt(ratioWhole + ratioFraction.padEnd(scale, "0")) < BigInt(redlineWhole + redlineFraction.padEnd(scale, "0")) };
+  }
   return {
-    pendingCalculations: data.pendingCalculations ?? [],
-    pendingCalculationCount: data.pendingCalculationCount == null ? 0 : toNumber(data.pendingCalculationCount),
+    pendingCalculations: data.pendingCalculations,
+    pendingCalculationCount: toNumber(data.pendingCalculationCount),
     summary: {
       monthlyCommissionSpendLabel: summary.monthlyCommissionSpendLabel,
       coolingBalanceLabel: summary.coolingBalanceLabel,
@@ -1630,12 +1868,14 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     anomalies: (data?.anomalies ?? []).map((item) => ({
       id: asText(item.id, "AN-UNKNOWN"),
       type: asText(item.type, "unknown"),
+      currency: item.currency as string | undefined,
       commissionId: asText(item.commissionId, ""),
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       evidence: asText(item.evidence, ""),
       relatedKCluster: asText(item.relatedKCluster, ""),
       status: asText(item.status, "open"),
     })),
+    layerRatioComparisons: data.layerRatioComparisons,
     coolingPolicy: (data?.coolingPolicy ?? []).map((item) => ({
       kind: asText(item.kind, ""),
       days: toNumber(item.days),
@@ -1646,9 +1886,9 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       operationType: asText(item.operationType, ""),
       sourceCommissionId: asText(item.sourceCommissionId, ""),
       resultCommissionId: asText(item.resultCommissionId, ""),
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       kinds: asText(item.kinds, ""),
-      amount: toNumber(item.amount),
+      amount: item.amount == null ? null : f4Decimal(String(item.amount)),
       currency: asText(item.currency, ""),
       evidenceRef: asText(item.evidenceRef, ""),
       reason: asText(item.reason, ""),
@@ -1656,7 +1896,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       createdAt: asText(item.createdAt, ""),
     })),
     activeSuspensions: (data?.activeSuspensions ?? []).map((item) => ({
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       kind: asText(item.kind, ""),
       reason: asText(item.reason, ""),
       operator: asText(item.operator, ""),
@@ -1665,10 +1905,8 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 commissions() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
-      : undefined,
+    // Ungrouped unlocks and reissues require a reliable execution-time snapshot.
+    coverage,
     sources: data?.sources ?? [],
   };
 }
@@ -1718,7 +1956,39 @@ async function f1Request<T>(
   let result: ApiResult<T> | null = null;
   let bodyUnreadable = false;
   try {
-    result = (await response.json()) as ApiResult<T>;
+    if (path.startsWith("/reward-payouts") && !isWrite) {
+      const raw = await response.text();
+      // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.
+      result = JSON.parse(raw.replace(/("amount"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (/^\/ambassador-applications\/\d+\/materials(?:\/review)?$/.test(path)) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:budgetUsdt|recognizedBudgetUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (/^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:prizePoolUsdt|minComputePoints|computePoints|top1MaxPct|top5MaxPct|amountBeforeCaps|amount|payableAmount|reducedByCaps)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (path === "/leadership-pool/vote-projection" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:poolUsd|perVoteUsd|totalVotes)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (path === "/leadership-pool" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd|coverageRatio|redlinePct|monthlyQuota)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (/^\/rates(?:\?|$)/.test(path) && !isWrite) {
+      const raw = await response.text();
+      // Keep each rate/coefficient lexeme; missing flags remain independent booleans.
+      result = JSON.parse(raw.replace(/("(?:usdtPct|nexReward|allStatusAmountRaw|paidOrSettledAmountRaw|paidAmountRaw)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else if (path === "/binary" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:h1BinaryDailyCap|monthlyMatchedUsdRaw|dailyMatchUsdRaw|maxDailyCapUsdRaw|maxTrackGmvRaw|residualPoolUsdRaw|trackARaw|trackBRaw|matchAmountRaw|todayPaidRaw|residualTrackARaw|residualTrackBRaw|residualAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else if (path.startsWith("/commissions") && !isWrite) {
+      const raw = await response.text();
+      // Keep each monetary JSON lexeme before binary floating point can round it.
+      result = JSON.parse(raw.replace(/("(?:usdt|nex|amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX|coverageRatio|redlinePct|actualPct|theoreticalPct|deviation)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`)) as ApiResult<T>;
+    } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
   }
@@ -1739,6 +2009,7 @@ async function f1Request<T>(
     // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
     // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
     if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
+      || (path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
       || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true) {
       throw new F1OutcomeUncertainError(
         formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
@@ -1773,7 +2044,12 @@ async function f1Request<T>(
       && (reviewConflict === "MATERIAL_REVISION_STALE" || reviewConflict === "APPLICATION_NOT_PENDING")) {
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
-    throw new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    if (/^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+      status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
+      backendMessage: result?.message, reasonCode: result?.message,
+    });
+    throw error;
   }
 
   return result.data as T;
@@ -1817,6 +2093,132 @@ export async function fetchF4LeadershipPoolOverview() {
   const data = await f1Request<unknown>("/leadership-pool");
   assertF4Overview(data);
   return normalizeF4Overview(data as BackendF4LeadershipPoolOverview);
+}
+
+export async function fetchF4VoteProjection() {
+  return readF4VoteProjection(await f1Request<unknown>("/leadership-pool/vote-projection"));
+}
+
+/** Both new reads validate only their HTTP boundary; money stays in its original decimal text. */
+function f4LeaderboardRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return value as Record<string, unknown>;
+}
+function f4LeaderboardDecimal(value: unknown): string {
+  if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return value;
+}
+function f4LeaderboardCount(value: unknown, minimum = 0): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return value;
+}
+
+export async function fetchF4LeaderboardPayoutPreview(period: F4PayoutPeriod, periodKey?: string): Promise<F4LeaderboardPayoutPreview | null> {
+  const query = new URLSearchParams({ period });
+  if (periodKey !== undefined) query.set("periodKey", periodKey);
+  let data: unknown;
+  try { data = await f1Request<unknown>(`/leadership-pool/payout-preview?${query}`); }
+  catch (error) { if ((error as { status?: number }).status === 404) return null; throw error; }
+  const row = f4LeaderboardRecord(data);
+  if (row.period !== period || typeof row.periodKey !== "string" || !row.periodKey
+    || typeof row.paused !== "boolean" || typeof row.alreadySettled !== "boolean"
+    || typeof row.available !== "boolean" || typeof row.reason !== "string"
+    || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  const preview: F4LeaderboardPayoutPreview = {
+    period, periodKey: row.periodKey, paused: row.paused, alreadySettled: row.alreadySettled,
+    available: row.available, reason: row.reason, rankingMetric: "COMPUTE_POINTS",
+    prizePoolUsdt: f4LeaderboardDecimal(row.prizePoolUsdt), minComputePoints: f4LeaderboardDecimal(row.minComputePoints),
+    topN: f4LeaderboardCount(row.topN, 1), top1MaxPct: f4LeaderboardDecimal(row.top1MaxPct), top5MaxPct: f4LeaderboardDecimal(row.top5MaxPct),
+    rows: row.rows.map(value => {
+      const entry = f4LeaderboardRecord(value);
+      if (typeof entry.userNo !== "string" || !entry.userNo || !Array.isArray(entry.limitedBy)
+        || !entry.limitedBy.every(cap => cap === "top1MaxPct" || cap === "top5MaxPct")) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+      return { rank: f4LeaderboardCount(entry.rank, 1), userId: f4LeaderboardCount(entry.userId, 1), userNo: entry.userNo,
+        computePoints: f4LeaderboardDecimal(entry.computePoints), amountBeforeCaps: f4LeaderboardDecimal(entry.amountBeforeCaps),
+        amount: f4LeaderboardDecimal(entry.amount), limitedBy: entry.limitedBy as ("top1MaxPct" | "top5MaxPct")[] };
+    }),
+  };
+  if (row.reason !== "F4_LEADERBOARD_POOL_NOT_CONFIGURED") {
+    preview.candidateCount = f4LeaderboardCount(row.candidateCount);
+    preview.rankedCount = f4LeaderboardCount(row.rankedCount);
+    preview.paidCount = f4LeaderboardCount(row.paidCount);
+    preview.amountBeforeCaps = f4LeaderboardDecimal(row.amountBeforeCaps);
+    preview.payableAmount = f4LeaderboardDecimal(row.payableAmount);
+    preview.reducedByCaps = f4LeaderboardDecimal(row.reducedByCaps);
+  }
+  return preview;
+}
+
+export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): Promise<F4LeaderboardDisqualificationReadiness | null> {
+  let data: unknown;
+  try { data = await f1Request<unknown>(`/leadership-pool/disqualification-readiness?${new URLSearchParams({ limit: String(limit) })}`); }
+  catch (error) { if ((error as { status?: number }).status === 404) return null; throw error; }
+  const row = f4LeaderboardRecord(data);
+  if (row.period !== "week" || typeof row.periodKey !== "string" || !row.periodKey
+    || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+  return { period: "week", periodKey: row.periodKey, rankingMetric: "COMPUTE_POINTS", minComputePoints: f4LeaderboardDecimal(row.minComputePoints),
+    rows: row.rows.map(value => {
+      const entry = f4LeaderboardRecord(value);
+      if (typeof entry.userNo !== "string" || !entry.userNo || typeof entry.disqualificationAvailable !== "boolean"
+        || typeof entry.riskEvidenceRef !== "string" || typeof entry.reason !== "string") throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
+      return { rank: f4LeaderboardCount(entry.rank, 1), memberUserId: f4LeaderboardCount(entry.memberUserId, 1), userNo: entry.userNo,
+        computePoints: f4LeaderboardDecimal(entry.computePoints), disqualificationAvailable: entry.disqualificationAvailable,
+        riskEvidenceRef: entry.riskEvidenceRef, reason: entry.reason };
+    }) };
+}
+
+/** Current reward facts for approval review; never a snapshot of the proposal or an execution preview. */
+export type F5CommissionRecord = F5ActionAvailability & {
+  commissionId: string;
+  eventId: number;
+  userId: number;
+  user: string;
+  kind: string;
+  amount: string;
+  currency: string;
+  status: string;
+  version: number;
+  amountUSDT?: string;
+  amountNEX?: string;
+};
+export type F5CommissionRead = { status: "found"; record: F5CommissionRecord } | { status: "not-found" };
+
+export async function fetchF5CommissionByBusinessId(commissionId: string): Promise<F5CommissionRead> {
+  const id = commissionId.trim().toUpperCase();
+  if (!/^CM-\d+$/.test(id)) throw new Error(formatAdminApiError("COMMISSION_ID_INVALID", "COMMISSION_ID_INVALID"));
+  let data: unknown;
+  try { data = await f1Request<unknown>(`/commissions/${encodeURIComponent(id)}`); }
+  catch (error) {
+    const failure = error as { httpStatus?: number; apiCode?: number; reasonCode?: string };
+    if (failure.httpStatus === 404 && failure.apiCode === 404 && failure.reasonCode === "COMMISSION_EVENT_NOT_FOUND") return { status: "not-found" };
+    throw error;
+  }
+  // This endpoint uses eventView, as does the list. Validate the facts consumed here once at the read boundary.
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:commission");
+  const row = data as Record<string, unknown>;
+  assertF5ActionAvailability(row);
+  if (typeof row.commissionId !== "string" || !/^CM-\d+$/.test(row.commissionId)
+    || typeof row.eventId !== "number" || !Number.isSafeInteger(row.eventId) || row.eventId <= 0
+    || row.commissionId !== `CM-${row.eventId}` || BigInt(row.commissionId.slice(3)) !== BigInt(id.slice(3))
+    || typeof row.userId !== "number" || !Number.isSafeInteger(row.userId) || row.userId <= 0
+    || row.user !== `U${String(row.userId).padStart(8, "0")}`
+    || typeof row.kind !== "string" || !F5_KINDS.includes(row.kind)
+    || typeof row.currency !== "string" || !["USDT", "UVT"].includes(row.currency)
+    || typeof row.status !== "string" || ![...F5_STATUSES, "unknown"].includes(row.status)
+    || typeof row.version !== "number" || !Number.isSafeInteger(row.version) || row.version < 0) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:commission");
+  const amounts: { amount: string; amountUSDT?: string; amountNEX?: string } = { amount: "" };
+  for (const key of ["amount", "amountUSDT", "amountNEX"] as const) {
+    if (key !== "amount" && row[key] == null) continue;
+    const value = row[key];
+    const decimal = typeof value === "string" ? f4Decimal(value) : null;
+    if (decimal === null || decimal.startsWith("-")) throw new Error(`F5_OVERVIEW_RESPONSE_INVALID:commission.${key}`);
+    amounts[key] = decimal;
+  }
+  return { status: "found", record: { commissionId: row.commissionId, eventId: row.eventId, userId: row.userId,
+    user: row.user as string, kind: row.kind, currency: row.currency, status: row.status, version: row.version, ...amounts,
+    canUnlock: row.canUnlock as boolean | undefined, unlockBlockedReason: row.unlockBlockedReason as string | null | undefined,
+    canReverse: row.canReverse as boolean | undefined, reverseBlockedReason: row.reverseBlockedReason as string | null | undefined,
+    groupStatus: row.groupStatus as string | undefined } };
 }
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {
@@ -1871,28 +2273,35 @@ export async function fetchF4AmbassadorPolicy() {
 }
 
 export async function fetchF4AmbassadorMaterials(applicationId: number) {
-  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials`);
+  const packet = await f1Request<unknown>(`/ambassador-applications/${applicationId}/materials`);
+  assertF4MaterialPacket(packet);
+  return packet as unknown as F4AmbassadorMaterialPacket;
 }
 
 export async function reviewF4AmbassadorMaterials(applicationId: number, input: F4AmbassadorReviewInput, commandKey: string) {
-  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials/review`, {
+  const packet = await f1Request<unknown>(`/ambassador-applications/${applicationId}/materials/review`, {
     method: "POST", stableIdempotencyKey: commandKey, expectsData: true, body: JSON.stringify(input),
   });
+  try { assertF4MaterialPacket(packet); }
+  catch { throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey); }
+  return packet as unknown as F4AmbassadorMaterialPacket;
 }
 
 export async function updateF4AmbassadorPolicy(
   policy: F4AmbassadorPolicyUpdate,
   reason: string,
   operator: string,
+  originalCommandKey?: string,
 ) {
-  const fingerprint = JSON.stringify([policy, operator]);
-  return f1StableWrite("f4-ambassador-policy", fingerprint, async (commandKey) =>
+  const fingerprint = JSON.stringify([policy, reason, operator]);
+  const write = async (commandKey: string) =>
     normalizeF4AmbassadorPolicy(await f1Request<unknown>("/ambassador-policy", {
       method: "PUT",
       stableIdempotencyKey: commandKey,
       expectsData: true,
       body: JSON.stringify({ ...policy, reason, operator }),
-    })));
+    }));
+  return originalCommandKey ? write(originalCommandKey) : f1StableWrite("f4-ambassador-policy", fingerprint, write);
 }
 
 export interface F5ExportReceipt {
@@ -2048,13 +2457,14 @@ export async function updateF5AnomalyConfig(
   layerRatioAnomalyPct: number,
   reason: string,
   operator: string,
+  commandKey: string,
 ) {
-  return f1StableWrite("f5-anomaly-config", JSON.stringify([commissionAnomalySigma, layerRatioAnomalyPct, operator]),
-    (commandKey) => f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
-      method: "PUT",
-      body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
-      stableIdempotencyKey: commandKey,
-    }));
+  return f1Request<{ operationNo: string; commissionAnomalySigma: number; layerRatioAnomalyPct: number }>("/commissions/anomaly-config", {
+    method: "PUT",
+    body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
+    stableIdempotencyKey: commandKey,
+    expectsData: true,
+  });
 }
 
 export async function updateF1VRankThreshold(rank: string, field: string, value: string, reason: string, operator: string) {
@@ -2068,18 +2478,18 @@ export async function updateF1VRankThreshold(rank: string, field: string, value:
 }
 
 /** F1's confirmation owns the durable original body and key; do not mint another key here. */
-export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string, operator: string, commandKey: string) {
+export async function writeF1VRankPolicy(values: F1PolicyValues, reason: string, operator: string, commandKey: string, expectedRevision?: string) {
   const base = `/ranks/${encodeURIComponent(values.rank)}`;
   const threshold = values.action === "threshold";
   const path = threshold ? `${base}/thresholds/${encodeURIComponent(values.field!)}`
     : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`;
   const data = await f1Request<unknown>(path, {
     method: threshold ? "PATCH" : values.action === "reward_add" ? "POST" : values.action === "reward_remove" ? "DELETE" : "PUT",
-    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), reason, operator }),
+    body: JSON.stringify({ ...(threshold ? { value: values.value } : values.reward), expectedRevision, reason, operator }),
     stableIdempotencyKey: commandKey, expectsData: true,
   });
   try { assertF1Overview(data); }
-  catch { throw new F1OutcomeUncertainError("操作结果不完整，请按原操作重试核对。", commandKey); }
+  catch { throw new F1OutcomeUncertainError("操作结果不完整，请按原请求重试核对。", commandKey); }
   return normalizeOverview(data as BackendOverview);
 }
 

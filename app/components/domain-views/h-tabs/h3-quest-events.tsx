@@ -9,7 +9,7 @@ import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rul
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
-  type H4EventOverviewPresentation,
+  type H4EventCapabilities,
   fetchH3WeeklyRegionPolicy,
   h3WeeklyRegionPolicyParams,
   validateH3WeeklyRegionMappings,
@@ -54,14 +54,15 @@ import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/a
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import type { EventRuleReadback } from "@/lib/admin/event-rules-client";
 import { eventRuleMissingLabel } from "@/lib/admin/event-rule-form";
-import H4EventRules, { type EventRuleSnapshot } from "./h4-event-rules";
+import H4EventRules from "./h4-event-rules";
+type EventRuleSnapshot = { rule: EventRuleReadback; contentRevision: number };
 import H4GenesisRaffle from "./h4-genesis-raffle";
 
 type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
 
 type QuestTask = Record<string, any>;
-type QuestEvent = H4EventOverviewPresentation & {
+type QuestEvent = H4EventCapabilities & {
   id: string;
   name: string;
   kind?: string;
@@ -598,7 +599,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       return !value || value === english[key].trim();
     });
     const fallsBack = !!readiness && followsEnglish && !incomplete && !!english[field].trim()
-      && (field !== "rewardName" || (appUsesAuthoredRewardName && appRewardNames[locale] === english.rewardName));
+      && (field !== "rewardName" || (appUsesAuthoredRewardName && appRewardNames?.[locale] === english.rewardName));
     const rewardFromPreview = field === "rewardName" && !fallsBack;
     return { optional, required, current: followsEnglish ? "" : localized[field], stored: localized[field], fallsBack, rewardFromPreview, missing, incomplete };
   };
@@ -714,7 +715,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <div>当前：{displayed.trim() ? displayed : cell?.fallsBack ? "未填（App 显示英文）" : cell?.rewardFromPreview ? "未填（App 用奖项预览里的名称）" : "未填"}</div>
         <div className="tiny" style={{ marginTop: 4, color: "var(--ink-3)" }}>{hint}</div>
       </div>,
-      edit: { kind: "text", current: displayed, initialValue: clearable ? displayed : undefined, allowEmpty: clearable, disallowCurrent: clearable },
+      edit: { kind: "text", current: displayed, initialValue: clearable ? displayed : undefined, emptyOption: clearable ? "清空已存副本" : undefined, disallowCurrent: clearable },
       run: async (reason, value) => {
         if (value === undefined) return;
         if (entity === "event") {
@@ -1472,7 +1473,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               if (event) {
                 const rewardNames = (rule ?? event).appRewardNames;
                 const rewardLabels = EVENT_CONTENT_LOCALES.flatMap(locale => {
-                  const label = rewardNames[locale];
+                  const label = rewardNames?.[locale];
                   return label ? [`${LOCALE_LABEL[locale]} ${label}`] : [];
                 });
                 rows.push(
@@ -1978,7 +1979,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
         })}>查看结果</button>
       </div>)}
-      <H4EventRules ctx={ctx} rows={eventRules} confirmedRules={rulesByEvent} currentEventCodes={currentEventCodes} setSnapshot={setEventRuleSnapshot} contentRevision={eventContentRevision} />
+      <H4EventRules ctx={ctx} eventContent={model.contentLocales?.event} contentRefresh={eventContentRevision}
+        onRowsChange={(rows) => setEventRuleSnapshot((rows ?? []).map(rule => ({ rule, contentRevision: eventContentRevision })))} />
       <H4GenesisRaffle ctx={ctx} />
       <div className="two-col">
         <section className="l-card">

@@ -77,6 +77,8 @@ export function e1SkuInvalidFields(value: unknown): string[] {
   const invalid: string[] = [];
   if (typeof value.skuId !== "string" || value.skuId.trim() === "") invalid.push("skuId");
   if (typeof value.name !== "string" || value.name.trim() === "") invalid.push("name");
+  if (!isFiniteNumberLike(value.price) || Number(value.price) <= 0) invalid.push("price");
+  if (!["on", "off", "pending"].includes(value.status as never)) invalid.push("status");
   if (!["SERVER", "DEVICE", "SHARE"].includes(value.productType as never)) invalid.push("productType");
   if (!["FINITE", "UNLIMITED"].includes(value.inventoryMode as never)) invalid.push("inventoryMode");
   if (value.inventoryMode === "UNLIMITED" && (value.productType !== "SHARE" || value.stock != null)) {
@@ -109,7 +111,7 @@ export function e1SkuInvalidFields(value: unknown): string[] {
       if (value.derivedShareYieldMaxPct == null) invalid.push("derivedShareYieldMaxPct");
     }
   }
-  if (!isStringArray(value.allowedPoolCodes)) invalid.push("allowedPoolCodes");
+  if (!isStringArray(value.allowedPoolCodes) || (value.allowedPoolCodes as string[]).some(code => !["L1", "L2", "L3", "L4"].includes(code))) invalid.push("allowedPoolCodes");
   if (typeof value.datacenter === "string" && value.datacenter.length > 128) invalid.push("datacenter");
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) invalid.push("features");
   if (!validPurchaseGate(value.purchaseGate)) invalid.push("purchaseGate");

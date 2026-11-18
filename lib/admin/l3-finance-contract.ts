@@ -32,6 +32,13 @@ export type L3TreasurySnapshot = Pick<
   "coverage" | "liabilities" | "maturity7" | "maturity30"
 >;
 
+type L3CoverageValuation = {
+  valuationReliable: boolean;
+  valuationStatus: "AVAILABLE" | "VALUATION_UNAVAILABLE";
+  valuedCoverageRatio: number | null;
+  valuedNetExposureUsdt: string | null;
+};
+
 function fail(field: string): never {
   throw new Error(`L3_FINANCE_PROTOCOL_INVALID:${field}`);
 }
@@ -134,7 +141,7 @@ function assertConsecutiveDaily(value: unknown, days: number, field: string) {
  * function validates source identity, cardinality and cross-source arithmetic
  * before the view mapper is allowed to format anything.
  */
-export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceRawContract {
+export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceRawContract & { coverage: Record<string, unknown> & L3CoverageValuation } {
   const revenuePeriod = period(input.revenue.period, "revenue.period");
   if (input.revenue.serverAuthoritative !== true) fail("revenue.serverAuthoritative");
   const revenueRows = list(input.revenue.streams, "revenue.streams");
@@ -174,20 +181,43 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
   const yellowLine = number(input.coverage.yellowLine, "coverage.yellowLine");
   if (yellowLine < redLine) fail("coverage.thresholdOrder");
   close(number(input.coverage.netExposureUsdt, "coverage.netExposureUsdt", -Number.MAX_VALUE), reserve - liability, "coverage.netExposureUsdt");
+  // Older reads and any flag other than true cannot establish a reliable valuation.
+  const coverageReliable = input.coverage.valuationReliable === true;
+  let valuedCoverageRatio: number | null = null;
+  let valuedNetExposureUsdt: string | null = null;
+  if (coverageReliable) {
+    if (input.coverage.valuationStatus !== "AVAILABLE") fail("coverage.valuationStatus");
+    valuedCoverageRatio = number(input.coverage.valuedCoverageRatio, "coverage.valuedCoverageRatio");
+    if (valuedCoverageRatio !== input.coverage.coverageRatio) fail("coverage.valuedCoverageRatio");
+    const amount = input.coverage.valuedNetExposureUsdt;
+    if (typeof amount !== "string" || !/^-?\d+(?:\.\d+)?$/.test(amount)) fail("coverage.valuedNetExposureUsdt");
+    close(number(Number(amount), "coverage.valuedNetExposureUsdt", -Number.MAX_VALUE), reserve - liability, "coverage.valuedNetExposureUsdt");
+    valuedNetExposureUsdt = amount;
+  }
   if (!text(input.coverage.source, "coverage.source").includes("B1")) fail("coverage.source");
-  const coverageSeries = list(input.coverage.series, "coverage.series");
-  if (coverageSeries.length < 2) fail("coverage.series.length");
-  coverageSeries.forEach((row, index) => {
-    const item = record(row, `coverage.series[${index}]`);
-    text(item.period, `coverage.series[${index}].period`);
-    number(item.coverageRatio, `coverage.series[${index}].coverageRatio`);
-  });
-  list(input.coverage.breaches, "coverage.breaches");
+  // 7c5df3b9 retires these fields; old receipts may still contain their original history.
+  if (input.coverage.series !== undefined) {
+    const coverageSeries = list(input.coverage.series, "coverage.series");
+    if (coverageSeries.length < 2) fail("coverage.series.length");
+    coverageSeries.forEach((row, index) => {
+      const item = record(row, `coverage.series[${index}]`);
+      text(item.period, `coverage.series[${index}].period`);
+      number(item.coverageRatio, `coverage.series[${index}].coverageRatio`);
+    });
+  }
+  if (input.coverage.breaches !== undefined) list(input.coverage.breaches, "coverage.breaches");
 
   if (integer(input.liabilities.hardLiabilityCategoryCount, "liabilities.hardLiabilityCategoryCount") !== 9) {
     fail("liabilities.hardLiabilityCategoryCount");
   }
   if (input.liabilities.trialShadowIncluded !== false) fail("liabilities.trialShadowIncluded");
+  const reliable = input.liabilities.valuationReliable;
+  if (typeof reliable !== "boolean"
+    || input.liabilities.valuationStatus !== (reliable ? "AVAILABLE" : "VALUATION_UNAVAILABLE")) {
+    fail("liabilities.valuationReliable");
+  }
+  const valuedTotal = nullableNumber(input.liabilities.valuedTotalUsdt, "liabilities.valuedTotalUsdt");
+  if (reliable ? valuedTotal === null : valuedTotal !== null) fail("liabilities.valuedTotalUsdt");
   const liabilityRows = list(input.liabilities.breakdown, "liabilities.breakdown");
   if (liabilityRows.length !== LIABILITY_CATEGORIES.size) fail("liabilities.breakdown.length");
   const seenLiabilities = new Set<string>();
@@ -200,10 +230,23 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
     text(item.source, `liabilities.breakdown[${index}].source`);
     const share = number(item.share, `liabilities.breakdown[${index}].share`);
     if (share > 1) fail(`liabilities.breakdown[${index}].share`);
-    return sum + number(item.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`);
+    const amount = number(item.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`);
+    const valuedAmount = nullableNumber(item.valuedAmountUsdt, `liabilities.breakdown[${index}].valuedAmountUsdt`);
+    const valuedShare = nullableNumber(item.valuedShare, `liabilities.breakdown[${index}].valuedShare`);
+    if (!reliable && category === "nex_v2_future") {
+      if (valuedAmount !== null) fail(`liabilities.breakdown[${index}].valuedAmountUsdt`);
+    } else {
+      if (valuedAmount === null) fail(`liabilities.breakdown[${index}].valuedAmountUsdt`);
+      close(valuedAmount, amount, `liabilities.breakdown[${index}].valuedAmountUsdt`);
+    }
+    if (reliable ? valuedShare === null || valuedShare > 1 : valuedShare !== null) {
+      fail(`liabilities.breakdown[${index}].valuedShare`);
+    }
+    return sum + amount;
   }, 0);
   close(number(input.liabilities.totalUsdt, "liabilities.totalUsdt"), liabilitySum, "liabilities.totalUsdt");
   close(liability, liabilitySum, "coverage.liabilityCrossSource");
+  if (valuedTotal !== null) close(valuedTotal, liabilitySum, "liabilities.valuedTotalUsdt");
 
   if (text(input.maturity7.window, "maturity7.window") !== "7d") fail("maturity7.window");
   if (text(input.maturity30.window, "maturity30.window") !== "30d") fail("maturity30.window");
@@ -211,7 +254,12 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
   assertConsecutiveDaily(input.maturity30.daily, 30, "maturity30.daily");
   number(input.maturity7.reserveCoverDays, "maturity7.reserveCoverDays");
   number(input.maturity30.reserveCoverDays, "maturity30.reserveCoverDays");
+  for (const [field, maturity] of [["maturity7", input.maturity7], ["maturity30", input.maturity30]] as const) {
+    if (typeof maturity.trialStressIncluded !== "boolean") fail(`${field}.trialStressIncluded`);
+    number(maturity.cumulativeUsdt, `${field}.cumulativeUsdt`);
+  }
 
   record(input.overview, "overview");
-  return input;
+  return { ...input, coverage: { ...input.coverage, valuationReliable: coverageReliable,
+    valuationStatus: coverageReliable ? "AVAILABLE" : "VALUATION_UNAVAILABLE", valuedCoverageRatio, valuedNetExposureUsdt } };
 }

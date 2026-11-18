@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
+import { Select } from "@/app/components/rd";
 import {
   STANDBY_POOL_LABEL,
   TRANSFER_TIMEOUT_MINS,
@@ -276,7 +277,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [profilePeek, setProfilePeek] = useState(false); // 窄屏右栏抽屉开关
   const openFullProfile = () => {
     setProfilePeek(true);
-    toast("客户信息已在右侧客服档案面板展示");
+    toast("客户信息已在右侧客服档案面板展示", "info");
   };
   const [pushSkus, setPushSkus] = useState<PushSku[]>([]);
   const [pushSkuLoading, setPushSkuLoading] = useState(true);
@@ -310,7 +311,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (loaded) {
       setShowIdlePolicy(true);
     } else {
-      toast("超时策略加载失败，请稍后重试");
+      toast("超时策略加载失败，请稍后重试", "error");
     }
   };
 
@@ -326,7 +327,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     try {
       const updated = await updateMConversationTimeoutPolicy(idlePolicy, input, commandKey);
       setIdlePolicy(updated);
-      toast("会话超时策略已更新，仅之后新建会话段生效；待回复不会自动结束，专属归属保持不变。");
+      toast("会话超时策略已更新，仅之后新建会话段生效；待回复不会自动结束，专属归属保持不变。", "success");
       return true;
     } catch (error) {
       setIdlePolicyError(displayAdminError(error));
@@ -489,7 +490,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 
   const commitM3Write = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
     if (writeInFlight.current) {
-      toast("操作正在提交,请稍候");
+      toast("操作正在提交,请稍候", "info");
       return false;
     }
     if (!canWriteM3 || !conversationsAvailable) return false;
@@ -497,7 +498,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     setWritePending(true);
     try {
       const succeeded = await write();
-      if (succeeded) toast(successMessage);
+      if (succeeded) toast(successMessage, "success");
       return succeeded;
     } finally {
       writeInFlight.current = false;
@@ -522,7 +523,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (!selected) return;
     const submission=m3ReplySubmission(replyDraft,selected.id);
     if (!submission) {
-      toast("回复需要正文");
+      toast("回复需要正文", "warn");
       return;
     }
     const { recipient, body }=submission;
@@ -672,7 +673,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (succeeded) {
       setShowInitiate(false);
       if (!conversationNo) {
-        toast("会话已发起，但暂时拿不到会话编号，请刷新后从会话列表进入");
+        toast("会话已发起，但暂时拿不到会话编号，请刷新后从会话列表进入", "warn");
         return;
       }
       selectConvo(conversationNo);
@@ -733,7 +734,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const archiveAllResolved = async () => {
     const targets = convos.filter((c) => c.status === "resolved" && !c.archived);
     if (targets.length === 0) {
-      toast("没有可归档的已解决会话");
+      toast("没有可归档的已解决会话", "info");
       return;
     }
     await commitM3Write(
@@ -748,13 +749,13 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const addNote = async (text: string): Promise<boolean> => {
     if (!selected?.profile || !text.trim() || !canWriteM3 || !conversationsAvailable) return false;
     const succeeded = await ctx.addCustomerNote(selected.id, text.trim());
-    if (succeeded) toast("客户备注已保存");
+    if (succeeded) toast("客户备注已保存", "success");
     return succeeded;
   };
   const removeNote = async (noteId: string): Promise<boolean> => {
     if (!selected?.profile || !canWriteM3 || !conversationsAvailable) return false;
     const succeeded = await ctx.removeCustomerNote(selected.id, noteId);
-    if (succeeded) toast("客户备注已删除");
+    if (succeeded) toast("客户备注已删除", "success");
     return succeeded;
   };
   const addCustomerTag = async (tag: string): Promise<boolean> => {
@@ -762,7 +763,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const t = tag.trim();
     if (selected.profile.customTags.includes(t)) return false;
     const succeeded = await ctx.addCustomerTag(selected.id, t);
-    if (succeeded) toast(`已加标签「${t}」`);
+    if (succeeded) toast(`已加标签「${t}」`, "success");
     return succeeded;
   };
   const removeCustomerTag = async (tag: string): Promise<boolean> => {
@@ -776,9 +777,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const path = accountActionPath(label, selected.profile.uid);
     if (path) {
       router.push(path);
-      toast(`已跳转到「${label}」页面，请在那里处理`);
+      toast(`已跳转到「${label}」页面，请在那里处理`, "info");
     } else {
-      toast(`请到对应页面完成「${label}」，这里不代为提交`);
+      toast(`请到对应页面完成「${label}」，这里不代为提交`, "info");
     }
     setQuick(null);
   };
@@ -803,9 +804,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
             const adminPath = ctaHrefToAdminPath(m.ctaHref!);
             if (adminPath) {
               router.push(adminPath);
-              toast(`已跳转「${hrefLabel(m.ctaHref!)}」对应管理页核对`);
+              toast(`已跳转「${hrefLabel(m.ctaHref!)}」对应管理页核对`, "info");
             } else {
-              toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`);
+              toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`, "info");
             }
           },
         }
@@ -880,11 +881,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               </button>
             ))}
           </div>
-          <select className="inp" aria-label="会话类别" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as ConvCategory)}>
-            <option value="all">全部类别</option>
-            <option value="advisor">专属顾问</option>
-            <option value="support">客服会话</option>
-          </select>
+          <Select aria-label="会话类别" value={typeFilter} onChange={(value) => setTypeFilter(value as ConvCategory)} options={[{ value: "all", label: "全部类别" }, { value: "advisor", label: "专属顾问" }, { value: "support", label: "客服会话" }]} />
           <div className="m3-fallback-bar">
             <span className="m3-fallback-lab"><Icon name="clock" size={13} />转入超时回落备勤池</span>
             <span className="dim2" style={{ fontSize: 11, marginLeft: "auto", marginRight: 8 }}>{fallbackOn ? "超时自动回落" : "关 · 持续等待"}</span>

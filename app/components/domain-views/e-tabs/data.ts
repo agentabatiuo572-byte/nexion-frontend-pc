@@ -4,6 +4,7 @@
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import type { StateTone } from "@/app/components/rd";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 
@@ -12,14 +13,85 @@ import { skuBaseRateText } from "@/lib/admin/operator-copy";
 export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5", E6: "E6" };
 
 export const ORDER_FLOW = ["placed", "paid", "provisioning", "activated"];
-// design-kit Badge tone 映射(订单状态)。
-export const ostate: Record<string, string> = { placed: "neutral", paid: "info", provisioning: "cyan", activated: "ok", inventory: "ok", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err", chargeback: "err" };
+// 订单状态的颜色：进行中蓝，已交付绿，失败红，已结束灰（VS-20、VS-24）。
+export const ORDER_STATE_TONE: Record<string, StateTone> = { placed: "progress", paid: "progress", provisioning: "progress", activated: "ok", inventory: "ok", refunded: "done", cancelled: "done", expired: "done", payment_failed: "danger", provisioning_failed: "danger", chargeback: "danger" };
 // 终态中文标签。
 const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", inventory: "已入库", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
 export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "状态未知";
 
-// E-13 补建终态可选值(为缺失终态的订单手动落定;真后台由订单状态机校验后写入)。
-export const TERMINAL_STATES = ["payment_failed", "expired", "provisioning_failed", "chargeback"] as const;
+// 筛选值是后端订单进度契约，不可改。11 个状态分 4 组（ST-68），分组只管显示和读取，不改枚举。
+export const ORDER_STATE_GROUPS = [
+  { value: "flow", label: "进行中", tone: "progress", allLabel: "全部进行中状态", states: ["placed", "paid", "provisioning"] },
+  { value: "delivered", label: "已交付", tone: "ok", allLabel: "全部已交付状态", states: ["activated", "inventory"] },
+  { value: "failed", label: "失败", tone: "danger", allLabel: "全部失败状态", states: ["payment_failed", "provisioning_failed", "chargeback"] },
+  { value: "closed", label: "已结束", tone: "done", allLabel: "全部已结束状态", states: ["expired", "refunded", "cancelled"] },
+] as const satisfies readonly { value: string; label: string; tone: StateTone; allLabel: string; states: readonly string[] }[];
+export const ORDER_STATES: readonly string[] = ORDER_STATE_GROUPS.flatMap((group) => group.states);
+
+export interface E4Query {
+  group: "all" | (typeof ORDER_STATE_GROUPS)[number]["value"];
+  state: string;
+  keyword: string;
+  page: number;
+  pageSize: number;
+}
+export const E4_PAGE_SIZES = [10, 20, 50, 100] as const;
+/** 已结束的状态：抽屉的终态判断和流程表共用，和标题同一个状态来源。 */
+export const ORDER_FINAL_STATES: readonly string[] = ["payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"];
+/** 把金额展开成整数和小数两段，科学计数（1.5e-7）也展开，收到几位小数就留几位。 */
+function amountParts(value: number | string) {
+  const [digits, exponent = "0"] = String(value).replace(/^-/, "").split("e");
+  const [whole, fraction = ""] = digits.split(".");
+  const shift = Number(exponent);
+  if (shift < 0) return { whole: "0", fraction: "0".repeat(-shift - 1) + whole + fraction };
+  if (shift > 0) return { whole: (whole + fraction).padEnd(whole.length + shift, "0"), fraction: "" };
+  return { whole, fraction };
+}
+export const orderAmountDigits = (value: number | string | null) => value === null ? 0 : amountParts(value).fraction.length;
+/**
+ * 订单金额明细写接口的全部小数，至少 digits 位，币种是 USDT（TX-19、TX-20）。列表、抽屉、确认框都用这个。
+ * 不用 toLocaleString：它的小数位有上限，位数超了不是舍入成别的数，就是抛错。
+ */
+export const orderAmount = (value: number | string | null, digits = 2) => {
+  if (value === null) return "—";
+  const { whole, fraction } = amountParts(value);
+  return `${String(value).startsWith("-") ? "-" : ""}${whole.replace(/\B(?=(\d{3})+$)/g, ",")}.${fraction.padEnd(digits, "0")}`;
+};
+export const orderMoney = (value: number | string | null) => `${orderAmount(value)} USDT`;
+export const E4_DEFAULT_QUERY: E4Query = { group: "all", state: "", keyword: "", page: 1, pageSize: 10 };
+export const e4GroupStates = (group: E4Query["group"]): readonly string[] => ORDER_STATE_GROUPS.find((item) => item.value === group)?.states ?? [];
+
+/** 查询状态从网址读，不合法的参数按默认值（ST-23）。 */
+export function e4QueryFromUrl(params: Pick<URLSearchParams, "get"> | null): E4Query {
+  const read = (name: string) => params?.get(name)?.trim() ?? "";
+  const state = ORDER_STATES.includes(read("state")) ? read("state") : "";
+  const group = ORDER_STATE_GROUPS.find((item) => item.value === read("group"))?.value ?? "all";
+  const page = Number(read("page"));
+  const pageSize = Number(read("pageSize"));
+  return {
+    group,
+    state: group === "all" || e4GroupStates(group).includes(state) ? state : "",
+    keyword: read("q"),
+    page: Number.isSafeInteger(page) && page > 0 ? page : E4_DEFAULT_QUERY.page,
+    pageSize: E4_PAGE_SIZES.some((size) => size === pageSize) ? pageSize : E4_DEFAULT_QUERY.pageSize,
+  };
+}
+
+/** 查询状态写网址，替换方式，不加浏览器历史。只动这页的参数，默认值不写。 */
+export function writeE4QueryToUrl(query: E4Query) {
+  const params = new URLSearchParams(window.location.search);
+  const entries: [string, string | number, string | number][] = [
+    ["group", query.group, E4_DEFAULT_QUERY.group], ["state", query.state, ""], ["q", query.keyword, ""],
+    ["page", query.page, E4_DEFAULT_QUERY.page], ["pageSize", query.pageSize, E4_DEFAULT_QUERY.pageSize],
+  ];
+  for (const [name, value, fallback] of entries) {
+    if (value === fallback) params.delete(name);
+    else params.set(name, String(value));
+  }
+  const search = params.toString();
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+}
+
 // 非终态(仍流转,允许按状态机落定失败终态);placed 另允许「取消订单」。
 export const NON_TERMINAL = new Set(["placed", "paid", "provisioning"]);
 
@@ -83,12 +155,23 @@ export function joinGpu(model: string, count: string): string | undefined {
   const value = model.trim();
   return value ? count.trim() ? `${Number(count)}× ${value}` : value : undefined;
 }
+/** Matches the backend's legacy on-sale maintenance exception; never supplies missing values. */
+export function isLegacyOnSaleMaintenance(f: SkuForm, existing?: OpsSku): boolean {
+  if (!existing || existing.status !== "on" || supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)) return false;
+  const unchangedAmount = (draft: string, stored: number | string | null | undefined) => stored == null
+    ? !draft.trim() : !!draft.trim() && Number(draft) === Number(stored);
+  const pools = new Set(existing.allowedPoolCodes ?? []);
+  return unchangedAmount(f.monthlyTargetUsdt, existing.monthlyTargetUsdt)
+    && unchangedAmount(f.monthlyTargetBandPct, existing.monthlyTargetBandPct)
+    && pools.size === new Set(f.allowedPoolCodes).size && f.allowedPoolCodes.every(code => pools.has(code));
+}
+
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
   if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (existing && !supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)
-      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== existing.monthlyTargetUsdt
-        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== existing.monthlyTargetBandPct)) return SKU_MODEL_UNRECOGNIZED_REASON;
+      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== (existing.monthlyTargetUsdt == null ? undefined : Number(existing.monthlyTargetUsdt))
+        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== (existing.monthlyTargetBandPct == null ? undefined : Number(existing.monthlyTargetBandPct)))) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
   if (supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType)) {
@@ -125,7 +208,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedPoolCodes: s.allowedPoolCodes ?? [],
     price: str(s.price), computePoints: str(s.computePoints),
-    dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX),
+    dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX ?? undefined),
     shareYieldMin: s.monthlyTargetUsdt == null ? str(s.shareYieldMin) : "", shareYieldMax: s.monthlyTargetUsdt == null ? str(s.shareYieldMax) : "",
     monthlyTargetUsdt: str(s.monthlyTargetUsdt), monthlyTargetBandPct: str(s.monthlyTargetBandPct),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",

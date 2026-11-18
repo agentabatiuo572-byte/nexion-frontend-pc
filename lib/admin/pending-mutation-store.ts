@@ -1,39 +1,21 @@
 /**
- * 幂等键(Idempotency-Key)待定命令的共享持久化存储。
- *
- * 背景:高敏动作提交后若网络结果未知(超时 / 上游 outcome=unknown),运营必须用**同一个**
- * 命令号重试,后端才能去重。命令号只存在内存(模块级 Map / useState / useRef)时,刷新页面即
- * 丢失,重试会铸新命令号 → 重复入账 / 重复操作。sessionStorage 让命令号跨刷新存活。
- *
- * 单源:**凡是持有可复用命令号的面**都走本模块,禁止再复制一份内存态实现。
- *
- * 🔴 覆盖范围要说实话(2026-08-06 收尾审计纠正):本模块并**不**覆盖全后台。
- *   全仓约 33 个模块会发出 Idempotency-Key,其中只有登记在
- *   `scripts/pending-idempotency-key-sentinel.mjs` MIGRATED 台账里的那些真正持有**可复用**的号;
- *   其余(a1/a3/a4/a6/a7/b/e1–e6/f1/h/l/m/media)每次调用现铸新号 ——
- *   它们的「结果未知重试」目前**给不出同号**,属交接文档「任务 A」的迁移范围。
- *   谁读到这段别再默认「全站已保号」:那正是这轮审计纠正的表述。
- * 机器门:`scripts/pending-idempotency-key-sentinel.mjs`(全仓扫内存态幂等键 + 台账)。
- *
- * 作用域说明:
- * - sessionStorage 而非 localStorage —— 命令号是「本次会话本次操作」的凭据,跨标签页 / 跨天
- *   复用只会让过期命令号打到后端;24h TTL 是第二道保险(**从首次尝试起算的硬上限,重试不续期**,
- *   否则客户端记录会活过后端那个固定 24h 窗,窗外复用给的是虚假的去重信心)。
- * - sessionStorage 不可用时(隐私模式 / 配额满)自动降级为本页内存,并 console.warn 一次;
- *   降级期间同会话重试仍复用同号,只是刷新即丢。
- * - 一个 storageKey 可承载多个动作族,由调用方给 fingerprint 加命名空间前缀区分
- *   (见 c3-adjust:submit| / review| / reverse|),不要为每个动作族各建一个 storageKey。
- * - fingerprint 必须把「动作类型 + 目标对象 id」编码进去,否则不同目标会撞 key,把别人的
- *   操作误判成重复提交而吞掉。
+ * One sessionStorage journal per command family. Originals belong to their
+ * authenticated submitter and survive logout, expiry and account switching.
+ * Every store operation filters ownership before exposing or changing a row.
  */
 
 export const PENDING_MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
+/** OP-96：过了接口的重试时限，原号不能再用，记录不删。解除只在后端明确拒绝后才有。 */
+export const RETRY_EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对。";
+export const isRetryExpired = (record: { expiresAt: number }) => Date.now() >= record.expiresAt;
 
 export interface PendingMutationRecord {
   fingerprint: string;
   commandKey: string;
   createdAt: number;
   expiresAt: number;
+  /** Authenticated submitter, stamped on every capture; page metadata cannot override it. */
+  commandOwnerId?: number;
 }
 
 /** 记录里除四个公共字段之外的调用方自定义元数据(如 d-client 的 base/path/method/body)。 */
@@ -51,7 +33,7 @@ export interface PendingMutationStore<T extends PendingMutationRecord> {
   isDurablyStored(fingerprint: string, commandKey: string): boolean;
   /** 命令已收敛，丢弃该 fingerprint；迁移或独立回查可指定只删除原 commandKey。 */
   forget(fingerprint: string, commandKey?: string): void;
-  /** 当前仍有效的全部记录(已剔除过期 / 结构非法项)。 */
+  /** Current submitter's usable records; unreadable/unattributed evidence stays stored. */
   list(): T[];
 }
 
@@ -66,147 +48,52 @@ function isBaseRecord(value: unknown, commandKey: string, now: number, retainExp
     && Number.isFinite(record.createdAt)
     && Number.isFinite(record.expiresAt)
     && (retainExpiredRecords
-      ? Number.isSafeInteger(record.createdAt) && record.createdAt >= 0
-        && Number.isSafeInteger(record.expiresAt) && record.expiresAt > record.createdAt
+      ? Number.isSafeInteger(record.createdAt) && record.createdAt >= 0 && record.expiresAt > record.createdAt
       : record.expiresAt > now);
 }
 
-/**
- * 这张 sessionStorage 表是不是本模块写的命令号表?
- *
- * 🔴 **按记录形状判,不按键名判**(2026-08-06)。键名会漂:全仓 30 个面里
- * `nexgrid-admin-d1-uncertain-commands-v1` 是另一种前缀,`nexion-admin-h9-public-stats-attempt`
- * 干脆既没有 `commands` 也没有版本后缀 —— 任何「按名字匹配」的谓词都会整张漏掉它们,
- * 而且将来新增一把键就又漏一张,没人会记得回来改谓词。四字段签名不会漂。
- */
-function isPendingCommandTable(raw: string | null): boolean {
-  if (!raw) return false;
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-    const rows = Object.entries(parsed);
-    if (!rows.length) return false;
-    // 空表不算(没什么可泄漏的);非空表要求**每一行**都是命令号记录 —— 只要有一行不是,
-    // 就说明这不是本模块的表,宁可不清也不能误删别人的数据。
-    return rows.every(([commandKey, value]) => {
-      const record = value as Partial<PendingMutationRecord> | null;
-      return !!record && typeof record === "object"
-        && record.commandKey === commandKey
-        && typeof record.fingerprint === "string" && record.fingerprint.length > 0
-        && Number.isFinite(record.createdAt) && Number.isFinite(record.expiresAt);
-    });
-  } catch {
-    return false;
-  }
+/** Last authenticated identity in this tab, never proof of a legacy row's maker. */
+const COMMAND_OWNER_KEY = "nexion-admin-command-owner";
+let currentCommandOwner: number | undefined;
+
+function adminId(value: unknown): number | undefined {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^[1-9]\d*$/.test(value))) return undefined;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 }
 
-/**
- * 清掉本次会话残留的**全部**在途命令号,返回清掉的表数(供调用方记日志 / 测试断言)。
- *
- * 何时必须调用:**登出 / 换操作员**。命令号是「谁在什么时候提交了哪条命令」的凭据,
- * 换人不清 = 同一个 tab 里 B 登录后复用 A 的命令号 → 后端按幂等回放 A 的提案:
- * B 的操作被静默吞掉,而审计轨记在 A 头上(操作被吞 + 归属错位,两个都是高敏事故)。
- *
- * ponytail: 各 store 实例的内存镜像由 resetAdminSession 之后的整页 reload 一并清掉
- *           (JS 上下文重建);单靠本函数清不掉别人的闭包,也不该为此建一份全局注册表。
- */
-/**
- * 命令号的归属人标记(与命令号表同放 sessionStorage,逐 tab)。
- * 存的是稳定唯一身份(adminId),不是显示名 —— 显示名会重名、会改。
- */
-const COMMAND_OWNER_KEY = "nexion-admin-command-owner";
+/** Only the journal's authenticated stamp proves ownership; unstamped evidence stays hidden. */
+function commandOwner(value: unknown): number | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return adminId((value as PendingMutationRecord).commandOwnerId);
+}
 
-/** Legacy records without their own admin ID need the authenticated tab's durable owner. */
+/** Page-owned actor fields remain request metadata, never journal visibility proof. */
+export function isPendingCommandOwnedBy(value: unknown, ownerId: string | number | undefined = currentCommandOwner): boolean {
+  const owner = adminId(ownerId);
+  return owner !== undefined && owner === currentCommandOwner && commandOwner(value) === owner;
+}
+
 export function hasPersistedPendingCommandOwner(ownerId: string): boolean {
   try {
-    return typeof window !== "undefined" && window.sessionStorage.getItem(COMMAND_OWNER_KEY) === ownerId;
+    return currentCommandOwner !== undefined && adminId(ownerId) === currentCommandOwner && typeof window !== "undefined"
+      && window.sessionStorage.getItem(COMMAND_OWNER_KEY) === ownerId;
   } catch { return false; }
 }
 
-/**
- * 归属标记的内存兜底。
- *
- * 🔴 没有它,本模块的两处改动会**互相抵消**(2026-08-06 第四轮验收 P1-B,实测复现):
- * 存储可读不可写(隐私模式 / 配额满)时,标记永远写不进去 → 每次会话续期都读到「无标记」
- * → 判成换人 → 保守清扫 → 代次推进 → 内存镜像作废 →
- * **同一个人自己的定时续期把自己的在途命令号清掉了** = 重试铸新号 = 重复打款。
- * 「写不下标记」是环境问题,不是换人,不能让它被误判成换人。
- */
-let memoryOwner: string | null = null;
-
-/**
- * 认领本 tab 的在途命令号:换人才清,会话断开不清。返回清掉的表数。
- *
- * 🔴 触发条件是**身份变了**,不是「会话结束了」(2026-08-06 第三轮独立验收 2×P0)。
- *   先前挂在 signOut / resetAdminSession 上,两头都错:
- *   ① 漏:A 没点退出直接按 F5,而 cookie 已换成 B —— 刷新后前端状态为空,
- *      「换人才清」的守卫短路,B 复用 A 的全部命令号;
- *   ② **误伤(本包自己引入的新缺陷)**:会话端点抖一下,console-shell 的 catch 里
- *      signOut() 把**同一个人**的在途命令号全清了 —— 他重新登录再重试必然铸新号 = 重复打款。
- *      而「会话过期后重新登录再重试」正是最典型的重试场景。
- *   身份判据一处到位,顺带解决「显示名重名判不出换人」。
- *
- *   marker 缺失时**保守清扫**:归属不明的命令号不能给下一个人用。
- *   (升级后首次加载会命中一次,属一次性过渡。)
- */
+/** Set visibility from the authenticated session; never sweep or attribute stored evidence. */
 export function claimPendingCommandOwner(ownerId: string): number {
-  // ownerId 取不到(后端回包畸形)时:**既不清也不改标记**,直接放行。
-  // 看起来与下面「归属不明就清」相反,其实同向 —— 这里不写标记,前一个人的标记原样留着,
-  // 等下一次拿到正常 adminId 时照样比得出换人。反过来若在这里清,一旦某次回包畸形,
-  // 每次刷新都会清空,「命令号跨刷新存活」对所有人当场失效(静默的灾难)。
-  // 判据:失败模式的代价不对称 —— 这里放行只在「回包畸形 + 同 tab 换人」同时发生时才漏,
-  // 而清扫会在单一条件下毁掉整个机制。
-  // "undefined" / "null" / "NaN" 是**字符串化事故**,不是身份:当成没有身份处理,
-  // 否则两个不同的畸形会话会共用同一个归属(第四轮验收 P1-A)。
-  if (typeof window === "undefined" || !ownerId
-    || ["undefined", "null", "NaN"].includes(ownerId)) return 0;
-  let persisted: string | null = null;
-  try {
-    persisted = window.sessionStorage.getItem(COMMAND_OWNER_KEY);
-  } catch {
-    return 0; // 存储整个不可读 = 本来也没有跨会话残留可清
-  }
-  // 存储里没有就看内存兜底:标记写不进去(配额满)不等于换了人。
-  const previous = persisted ?? memoryOwner;
-  if (previous === ownerId) return 0;
-  const cleared = clearPendingCommandRecords();
-  memoryOwner = ownerId;
-  try {
-    window.sessionStorage.setItem(COMMAND_OWNER_KEY, ownerId);
-  } catch { /* 写不下就靠上面的内存兜底,本页内不会再被误判成换人 */ }
-  return cleared;
+  currentCommandOwner = adminId(ownerId);
+  if (currentCommandOwner === undefined || typeof window === "undefined") return 0;
+  try { window.sessionStorage.setItem(COMMAND_OWNER_KEY, ownerId); }
+  catch { /* Identity still gates this page when the marker cannot be written. */ }
+  return 0;
 }
 
-/**
- * 清扫代次。每清一次 +1;各 store 实例读到代次变了就作废自己的内存镜像。
- *
- * 🔴 没有它,清扫会被**同步复活**(2026-08-06 独立验收 P0-2,非竞态而是必然序列):
- * `d-client` / `user360-client` 在同一个同步块里先 resetAdminSession() 清空存储、
- * 后 pendingMutations.forget() —— forget 走 readAll(内存还有货、存储已空)再整表 writeAll
- * 写回,刚清掉的命令号原样复活。原设计假设「内存镜像由随后的整页 reload 一并清掉」,
- * 而这条假设被本仓自己的调用点推翻了(reload 发生在这段同步代码之后,退出按钮更是压根不 reload)。
- */
-let clearGeneration = 0;
-
-export function clearPendingCommandRecords(storage?: Storage): number {
-  // 代次先推进:哪怕下面读存储失败(隐私模式),各实例的内存镜像也必须作废 ——
-  // 降级态下内存就是唯一真源,不作废等于换人后照样复用前一个人的号。
-  clearGeneration += 1;
-  const target = storage ?? (typeof window === "undefined" ? undefined : window.sessionStorage);
-  if (!target) return 0;
-  try {
-    // 先收集再删:边遍历边 removeItem 会让 key(i) 的索引塌陷,漏掉一半。
-    const doomed: string[] = [];
-    for (let index = 0; index < target.length; index += 1) {
-      const key = target.key(index);
-      if (key && isPendingCommandTable(target.getItem(key))) doomed.push(key);
-    }
-    doomed.forEach((key) => target.removeItem(key));
-    return doomed.length;
-  } catch {
-    // 存储不可读 = 本来就没持久化任何命令号,没有残留可清。
-    return 0;
-  }
+/** End access to originals, retaining both durable evidence and the memory fallback. */
+export function clearPendingCommandRecords(): number {
+  currentCommandOwner = undefined;
+  return 0;
 }
 
 export function createPendingMutationStore<T extends PendingMutationRecord = PendingMutationRecord>(options: {
@@ -214,8 +101,8 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   storageKey: string;
   ttlMs?: number;
   /** Keep valid expired evidence for query-only recovery; never authorizes replay. */
-  retainExpiredRecords?: boolean;
-  /** 公共字段之外的结构校验(元数据字段)。返回 false 的记录读取时即被剔除。 */
+  retainExpiredRecords?: boolean | ((record: T) => boolean);
+  /** Validate metadata before use; rejected rows stay stored as unreadable evidence. */
   isValidRecord?: (value: T) => boolean;
 }): PendingMutationStore<T> {
   const { storageKey, ttlMs = PENDING_MUTATION_TTL_MS, isValidRecord, retainExpiredRecords = false } = options;
@@ -234,15 +121,6 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
    */
   const memory = new Map<string, T>();
   let degradedNotified = false;
-  let seenGeneration = clearGeneration;
-
-  /** 清扫发生过 → 本实例的内存镜像连同它兜的那份记录一起作废(见 clearGeneration 注释)。 */
-  function dropMemoryIfCleared() {
-    if (seenGeneration === clearGeneration) return;
-    seenGeneration = clearGeneration;
-    memory.clear();
-  }
-
   function noteDegraded(action: string) {
     // 只喊一次:提交路径上每次读写都喊会把 console 淹掉,反而盖住问题。
     // ponytail: 只到 console —— 把降级态透到每个调用方的 UI 要改 30 个消费面,越出本包;
@@ -256,7 +134,14 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   }
 
   function usable(value: unknown, commandKey: string, now: number): value is T {
-    return isBaseRecord(value, commandKey, now, retainExpiredRecords) && (!isValidRecord || isValidRecord(value as T));
+    return isBaseRecord(value, commandKey, now, !!retainExpiredRecords) && (!isValidRecord || isValidRecord(value as T))
+      && (typeof retainExpiredRecords !== "function" || (value as T).expiresAt > now || retainExpiredRecords(value as T));
+  }
+
+  /** 旧版本这几张表不限期，到期时间超出安全整数。记录要留着核对，重试时限收回到首次尝试 + TTL（OP-96）。 */
+  function capped(record: T): T {
+    const retain = typeof retainExpiredRecords === "function" ? retainExpiredRecords(record) : retainExpiredRecords;
+    return retain && record.expiresAt > record.createdAt + ttlMs ? { ...record, expiresAt: record.createdAt + ttlMs } : record;
   }
 
   function syncMemory(value: Record<string, T>) {
@@ -265,34 +150,26 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   }
 
   function readAll(): Record<string, T> {
-    dropMemoryIfCleared();
-    const now = Date.now();
     // 内存打底、存储覆盖:存储可用时两者本就一致;存储不可用时内存是唯一真源。
     const current: Record<string, T> = {};
     for (const [commandKey, record] of memory) {
-      if (usable(record, commandKey, now)) current[commandKey] = record;
+      current[commandKey] = record;
     }
-    let persistedCount: number | null = null;
     if (typeof window !== "undefined") {
       try {
         const parsed = JSON.parse(window.sessionStorage.getItem(storageKey) ?? "{}") as Record<string, T>;
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          persistedCount = Object.keys(parsed).length;
           for (const [commandKey, record] of Object.entries(parsed)) {
-            if (usable(record, commandKey, now)) current[commandKey] = record;
+            current[commandKey] = record;
           }
-        } else {
-          persistedCount = 0;
         }
       } catch {
         noteDegraded("读取");
       }
     }
     syncMemory(current);
-    // 存储里有过期 / 坏形记录被剪掉,或降级期间攒下的记录终于能落盘 → 回写对齐。
-    if (persistedCount !== null && persistedCount !== Object.keys(current).length) {
-      writeAll(current);
-    }
+    // Preserve every raw row, including foreign, expired and unattributed legacy
+    // evidence. Parsing a journal never settles a command or rewrites its bytes.
     return current;
   }
 
@@ -307,13 +184,21 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
     }
   }
 
+  function visible(record: T, commandKey: string): boolean {
+    return isPendingCommandOwnedBy(record) && usable(record, commandKey, Date.now());
+  }
+
   return {
     get(fingerprint) {
-      return Object.values(readAll()).find((value) => value.fingerprint === fingerprint)?.commandKey;
+      return Object.entries(readAll()).find(([key, value]) => visible(value, key) && value.fingerprint === fingerprint)?.[0];
     },
     remember(fingerprint, commandKey, extra) {
       const persisted = readAll();
       const previous = persisted[commandKey];
+      if (currentCommandOwner === undefined) throw new Error("ADMIN_AUTH_REQUIRED");
+      // A later session cannot rewrite a saved original, including through a stale callback.
+      if (previous && !isPendingCommandOwnedBy(previous)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+      if (extra && "commandOwnerId" in extra && adminId(extra.commandOwnerId) !== currentCommandOwner) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
       // 🔴 TTL 是**从首次尝试起的硬上限,不滑动续期**(2026-08-06 修正)。
       //    后端幂等窗固定 24h 且从第一次请求起算(开发落地规格 §0.4,运营不可调)。
       //    上一版每次 remember 都 `Date.now() + ttl`,连续重试能让客户端记录活过后端窗口 ——
@@ -325,6 +210,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
       //   类型层今天挡得住 TS 调用方,但探针实测确实能覆盖 —— 顺序本身就该免疫。
       persisted[commandKey] = {
         ...(extra as object | undefined),
+        commandOwnerId: currentCommandOwner,
         fingerprint,
         commandKey,
         createdAt,
@@ -334,20 +220,24 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
     },
     forget(fingerprint, onlyCommandKey) {
       const persisted = readAll();
+      let changed = false;
       Object.entries(persisted).forEach(([commandKey, value]) => {
-        if (value.fingerprint === fingerprint && (onlyCommandKey === undefined || commandKey === onlyCommandKey)) delete persisted[commandKey];
+        if (visible(value, commandKey) && value.fingerprint === fingerprint && (onlyCommandKey === undefined || commandKey === onlyCommandKey)) {
+          delete persisted[commandKey];
+          changed = true;
+        }
       });
-      writeAll(persisted);
+      if (changed) writeAll(persisted);
     },
     isDurablyStored(fingerprint, commandKey) {
       if (typeof window === "undefined") return false;
       try {
         const record = JSON.parse(window.sessionStorage.getItem(storageKey) ?? "{}")[commandKey] as T | undefined;
-        return !!record && record.fingerprint === fingerprint && usable(record, commandKey, Date.now());
+        return !!record && record.fingerprint === fingerprint && visible(record, commandKey);
       } catch { return false; }
     },
     list() {
-      return Object.values(readAll());
+      return Object.entries(readAll()).filter(([key, record]) => visible(record, key)).map(([, record]) => capped(record));
     },
   };
 }
@@ -366,7 +256,15 @@ export interface SlotAttemptStore {
   isDurablyStored(slot: string, inputFingerprint: string, commandKey: string): boolean;
   /** 命令已收敛,丢弃该槽位。 */
   forget(slot: string, commandKey?: string): void;
+  /** 当前仍未收敛的尝试,页面刷新后据此恢复「结果未知」提示。 */
+  list(): SlotAttemptRecord[];
 }
+
+/**
+ * 同一个 storageKey 只有一个实例。内存副本是实例级的：两页各建一份时，一边删了，
+ * 另一边的 list() 会用内存副本把记录写回 sessionStorage（资金储备和旧可用资金页共用预测记录）。
+ */
+const slotStores = new Map<string, SlotAttemptStore>();
 
 /**
  * 「一个槽位同时只有一次在途尝试」的命令号存储。
@@ -377,15 +275,21 @@ export interface SlotAttemptStore {
  * 为什么不直接把输入指纹拼进 fingerprint:那样旧尝试会留到 TTL 到期。运营改了值再改回来时会
  * 复用那个可能已被后端消费掉的命令号,让一次真实的新操作被当成重复提交静默吞掉。
  */
-export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number }): SlotAttemptStore {
-  const store = createPendingMutationStore<SlotAttemptRecord>({
+export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number; retainExpiredRecords?: boolean | ((record: SlotAttemptRecord) => boolean) }, pendingStore?: PendingMutationStore<SlotAttemptRecord>): SlotAttemptStore {
+  const existing = slotStores.get(options.storageKey);
+  if (existing) return existing;
+  const store = pendingStore ?? createPendingMutationStore<SlotAttemptRecord>({
     ...options,
     isValidRecord: (record) => typeof record.inputFingerprint === "string" && record.inputFingerprint.length > 0,
   });
-  return {
-    peek: store.get,
+  // A shared legacy reader may retain more evidence than a writable slot accepts.
+  const list = pendingStore ? () => store.list().filter(record => record.inputFingerprint.length > 0
+    && (record.expiresAt > Date.now() || (typeof options.retainExpiredRecords === "function"
+      ? options.retainExpiredRecords(record) : options.retainExpiredRecords === true))) : store.list;
+  const slotStore: SlotAttemptStore = {
+    peek: pendingStore ? slot => list().find(record => record.fingerprint === slot)?.commandKey : store.get,
     resolve(slot, inputFingerprint, mint) {
-      const saved = store.list().find((record) => record.fingerprint === slot);
+      const saved = list().find((record) => record.fingerprint === slot);
       if (saved?.inputFingerprint === inputFingerprint) {
         store.remember(slot, saved.commandKey, { inputFingerprint });
         return saved.commandKey;
@@ -400,7 +304,7 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
       try {
         const parsed = JSON.parse(window.sessionStorage.getItem(options.storageKey) ?? "{}") as Record<string, unknown>;
         const record = parsed?.[commandKey] as Partial<SlotAttemptRecord> | undefined;
-        return !!record
+        return isPendingCommandOwnedBy(record) && !!record
           && record.commandKey === commandKey
           && record.fingerprint === slot
           && record.inputFingerprint === inputFingerprint
@@ -412,5 +316,8 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
       }
     },
     forget: store.forget,
+    list,
   };
+  slotStores.set(options.storageKey, slotStore);
+  return slotStore;
 }

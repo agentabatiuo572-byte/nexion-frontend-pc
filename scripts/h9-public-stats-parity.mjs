@@ -31,7 +31,7 @@
  *       (旧 `H9_BAND_MAX = 8`)也红 —— 后台比权威侧更严时,一张合法的表会把整页锁成不可保存。
  *   C3. 分位表**单档 tops 下限**随前端:前端 `network-rank.ts` 判非法的门槛 = `H9_BAND_TOPS_MIN`,
  *       且面板必须真的用共享常量与共享校验(判据打在**剥掉 import 后的用途位**,一行悬空
- *       import 不算接上;行为级等价另由 tests/h9-public-stats-contract.test.mjs 钉死)。
+ *       import 不算接上)。
  *   F. **默认(种子)值三处一致**(规格 ⑦):规格 ③「默认」列 ↔ 前端 `mock/platform-config.ts` 种子。
  *      fleetDevices 在种子里是锚常量,故经 `lib/platform-stats.ts` 间接取值——种子里写字面量本身
  *      就是把单源变双源(前端另有 platform_stats_anchor 哨兵守那条)。
@@ -40,9 +40,12 @@
  * 另:任一侧解析出 0 个字段即红 —— 空集全过是哨兵最常见的假绿。
  *
  * 用法:node scripts/h9-public-stats-parity.mjs
+ * NEXION_APP_REF=origin/test 可核对已发布 App，避免把共享 clone 当前检出的旧分支当作目标版本。
+ * 不设时仍检查 App 工作树；旧分支真的缺字段时继续报错。
  */
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "./lib/strip-comments.mjs";
 import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
@@ -50,6 +53,7 @@ import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-wor
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC = path.join(ROOT, "docs", "PRD", "specs-snapshot-20260807", "FEAT-HOME02-network-pulse-configurable.md");
 const APP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
+const APP_REF = process.env.NEXION_APP_REF;
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNI_TYPES = path.join(APP_ROOT, "src", "store", "config-types.ts");
 const UNI_RANK = path.join(APP_ROOT, "src", "lib", "network-rank.ts");
@@ -64,6 +68,13 @@ const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable"
 const failures = [];
 
 function read(file, label) {
+  if (APP_REF && file.startsWith(APP_ROOT + path.sep)) {
+    const relative = path.relative(APP_ROOT, file).split(path.sep).join("/");
+    const result = spawnSync("git", ["-C", APP_ROOT, "show", `${APP_REF}:${relative}`], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+    if (result.status === 0) return result.stdout;
+    failures.push(`${label} 在 App ${APP_REF} 读取失败:${relative}`);
+    return "";
+  }
   if (!fs.existsSync(file)) {
     failures.push(`${label} 不存在:${file}(判据失效,不能当通过)`);
     return "";
@@ -400,7 +411,7 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  `✓ H9 对外公布数据 — 前端/后台字段 ${adminKeys.size} 键双向相等 · 规格 ③ ${specRows.size} 字段在代码两侧均存在(删除向)· `
+  `✓ H9 对外公布数据 (App ${APP_REF ?? "工作树"}) — 前端/后台字段 ${adminKeys.size} 键双向相等 · 规格 ③ ${specRows.size} 字段在代码两侧均存在(删除向)· `
   + `运营控制项 ${fieldKeys.size} 个全覆盖 · 值域与规格 ③ 逐字段相等(后台 ${specRanges.size} 条 + 前端注释 ${uniDocs.size} 字段)· `
   + `分位表档数与 tops 下限随权威侧 · 共享校验/常量在面板用途位接线 ${PANEL_WIRING.length} 处 · `
   + `默认种子与规格 ③ 逐键相等(${specRows.size} 行)· 位置栈接线齐(nav/registry/FOLD↔RO/分支/代理白名单)· `

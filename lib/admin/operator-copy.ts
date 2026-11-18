@@ -1,5 +1,11 @@
+import { AUDIT_ACTION_NAMES } from "./audit-action-names";
 import { nexGridBrandText } from "./brand-copy.ts";
 import type { OpsSku } from "./platform-types";
+
+/** G4 收益计算基数的后端英文公式（默认值和运营照写的同一格式）：数字照原文带过来，只换成中文读法。 */
+export const DIV_BASE_FORMULA = /platform daily volume \* (\d+(?:\.\d+)?)% \/ (\d+) slots/g;
+export const DIV_BASE_TEXT = "平台每日交易量 × $1% ÷ $2 节点";
+export const divBaseFormulaText = (text: string) => text.replace(DIV_BASE_FORMULA, DIV_BASE_TEXT);
 
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
@@ -11,7 +17,7 @@ export function operatorCopyText(value: string): string {
     .replace(/锁仓本息其他/g, "其他锁定金额及奖励")
     .replace(/Tier\s*(\d+)/g, "第 $1 档")
     .replace(/TGE 10% · halve every 6 months/g, "初始发放 10%，每 6 个月减半")
-    .replace(/platform daily volume \* 0\.1% \/ 1000 slots/g, "平台每日成交额 × 0.1% ÷ 1000 个节点")
+    .replace(DIV_BASE_FORMULA, DIV_BASE_TEXT)
     .replace(/Pro \/ Rack 月度库存/g, "专业设备 / 机柜设备月度库存")
     .replace(/Lucky Spin/g, "幸运转盘")
     .replace(/Lucky最高倍率/g, "幸运奖励最高倍率")
@@ -38,6 +44,7 @@ export function operatorCopyText(value: string): string {
     .replace(/commission\.paid/g, "奖励发放")
     .replace(/market\.curve_advanced/g, "行情曲线推进")
     .replace(/\bOG\b/g, "早期持有人")
+    .replace(/已成熟注册 cohort/g, "注册满 7 天的人数")
     .replace(/\bcohort\b/gi, "同批用户")
     .replace(/\bPII\b/g, "个人敏感信息")
     .replace(/\bBI\b/g, "数据分析")
@@ -48,7 +55,7 @@ export function operatorCopyText(value: string): string {
     .replace(/\buserId\b/g, "用户编号")
     .replace(/落审计/g, "记录操作日志")
     .replace(/注册→进 store/g, "注册后浏览商城")
-    .replace(/Day7 app\.dau ÷ 注册 同批用户/g, "注册后第8天活跃人数 ÷ 同批注册人数")
+    .replace(/Day7 app\.dau ÷ 注册 同批用户/g, "注册后第 7 天活跃人数 ÷ 同批注册人数")
     .replace(/\bBalance Match\b/g, "团队平衡奖励")
     .replace(/Cloud Share/g, "云端共享份额")
     .replace(/server cron/g, "服务器定时任务")
@@ -97,6 +104,7 @@ export function operatorCopyText(value: string): string {
     .replace(/\bDiamond\b/g, "钻石档")
     .replace(/\bstaking\b/gi, "质押")
     .replace(/\bGenesis\b/g, "创世节点")
+    .replace(/创世节点 售罄速度/g, "创世节点售罄速度")
     .replace(/\bTrial\b/g, "试用业务")
     .replace(/\bqueue\b/gi, "待处理队列")
     .replace(/\bKPI\b/g, "关键指标")
@@ -111,7 +119,9 @@ export function operatorCopyText(value: string): string {
     .replace(/\bfamily\b/g, "事件类别")
     .replace(/OTHER\s*\/\s*UNREGISTERED/g, "其他及未登记类型")
     .replace(/Day0 接入/g, "首笔收益到账")
-    .replace(/Day7 留存/g, "注册后第8天的活跃率")
+    .replace(/Day7 留存/g, "注册后第 7 天的活跃率")
+    .replace(/L4→L5 推广(?!率)/g, "设备持有者邀请好友的比例")
+    .replace(/Nova 推送点击/g, "站内通知点击率")
     .replace(/幂等键/g, "防重复提交编号")
     .replace(/冷归档/g, "长期归档")
     .replace(/用户画像/g, "用户资料")
@@ -150,12 +160,28 @@ export function monthlyTargetEstimateText(sku: Pick<OpsSku, "monthlyTargetUsdt" 
 
 export function skuBaseRateText(sku: OpsSku): string | undefined {
   return sku.monthlyTargetUsdt != null
-    ? `${monthlyTargetEstimateText(sku)} · ${sku.dailyEarnNEX.toLocaleString()} UVT/天`
+    ? `${monthlyTargetEstimateText(sku)} · ${sku.dailyEarnNEX == null ? "— · 未填写" : sku.dailyEarnNEX.toLocaleString()} UVT/天`
     : sku.baseRate;
+}
+
+/** Only the server supplies account names. Keep the original object alongside it for display. */
+export function a2ObjectText(row: { obj: string; objDisplayName?: string }): string {
+  return row.objDisplayName && row.objDisplayName !== row.obj ? `${row.objDisplayName}（${row.obj}）` : row.obj;
 }
 
 /** A2 动作名的运营显示名。原值仍用于查找待审批申请（f-view F2 启用状态），这里只换显示。 */
 export function a2ActionText(action: string): string {
   return action.replace("A1_SUPER_ADMIN_BREAK_GLASS_RECOVERED", "服务器恢复超级管理员")
+    // 有些申请的动作名存的是操作记录的代码（例如 A6 启停角色），显示成和操作记录一样的中文。
+    .replace(/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+(?= · |$)/, code => AUDIT_ACTION_NAMES[code] ?? code)
+    // A1 建单时动作名带「(A1)」，名称和 A1 页面上的按钮叫法统一。
+    .replace(/\s*\(A1\)$/, "")
+    .replace(/^禁用账号(?= · |$)/, "停用账号")
+    .replace(/^强制登出(?= · |$)/, "撤销全部登录")
+    .replace(/^变更角色(?= · |$)/, "改角色")
+    .replace(/^编辑账号(?= · |$)/, "编辑资料")
+    .replace(/^运营账号重置密码$/, "重置密码")
+    .replace(/^RBAC 授权调整$/, "调整角色授权")
+    .replace(/^RBAC 动作登记$/, "登记动作权限")
     .replace(/七层结算(启用|暂停|恢复)/g, "团队购买奖励结算$1");
 }

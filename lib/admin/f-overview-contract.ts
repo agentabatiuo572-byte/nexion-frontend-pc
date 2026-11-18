@@ -1,6 +1,20 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
+import { f4Decimal } from "./f4-money";
 
 type JsonRecord = Record<string, unknown>;
+
+// Schema for 06d5874c metadata, never a fallback for missing server facts.
+const F4_AMBASSADOR_METRIC_BASIS = {
+  source: "nx_team_ambassador_application", period: "ALL_TIME", timeFilter: "NONE", excludedDeleted: true,
+  metrics: {
+    ambassadorPendingCount: { aggregation: "COUNT", statusFilter: "PENDING", unit: "APPLICATION" },
+    ambassadorBudgetApprovedLabel: { aggregation: "SUM", field: "requested_budget_usdt", statusFilter: "APPROVED", currency: "USDT", amountBasis: "APPLICATION_REQUESTED_BUDGET", isPaidAmount: false },
+    ambassadorBudgetCapLabel: { aggregation: "SUM", field: "requested_budget_usdt", statusFilter: "ALL", currency: "USDT", amountBasis: "APPLICATION_REQUESTED_BUDGET", isBudgetCap: false },
+    ambassadorKolBudgetPct: { aggregation: "MAX", field: "kol_budget_pct", statusFilter: "ALL" },
+    ambassadorNextQuotaReviewDate: { aggregation: "MIN", field: "event_date", statusFilter: "PENDING", isQuarterPlan: false },
+  },
+} as const;
+export type F4AmbassadorMetricBasis = typeof F4_AMBASSADOR_METRIC_BASIS;
 
 export const F5_KIND_LABELS: Record<string, string> = {
   direct_purchase: "好友购买奖励", direct_device_earning: "好友设备收益奖励",
@@ -81,15 +95,22 @@ function isValidLocalDateTime(value: string): boolean {
 
 function moneySnapshot(value: unknown, field: string) {
   const snapshot = record(value, "F5", field);
+  const amounts = { usdt: "", nex: "" };
+  for (const key of ["usdt", "nex"] as const) {
+    const raw = snapshot[key];
+    if (typeof raw !== "string" && typeof raw !== "number") invalid("F5", `${field}.${key}`);
+    const amount = f4Decimal(raw);
+    if (amount === null || amount.startsWith("-")) invalid("F5", `${field}.${key}`);
+    amounts[key] = amount;
+  }
   return {
-    usdt: nonNegative(snapshot.usdt, "F5", `${field}.usdt`),
-    nex: nonNegative(snapshot.nex, "F5", `${field}.nex`),
+    ...amounts,
     count: nonNegativeInteger(snapshot.count, "F5", `${field}.count`),
   };
 }
 
-function expectedMoneyLabel(snapshot: { usdt: number; nex: number }) {
-  return `USDT ${snapshot.usdt.toFixed(2)} · UVT ${snapshot.nex.toFixed(2)}`;
+function expectedMoneyLabel(snapshot: { usdt: string; nex: string }) {
+  return `USDT ${snapshot.usdt} · UVT ${snapshot.nex}`;
 }
 
 function domain(row: JsonRecord, expected: string) {
@@ -135,7 +156,14 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   ranks.forEach((value, index) => {
     const rank = record(value, "F1", `vrankRows[${index}]`);
     text(rank.label, "F1", `vrankRows[${index}].label`);
-    finite(rank.pop, "F1", `vrankRows[${index}].pop`);
+    nonNegativeInteger(rank.pop, "F1", `vrankRows[${index}].pop`);
+    for (const field of ["selfBuy", "teamGv", "directRefs", "legCount", "votes"]) {
+      nonNegativeInteger(rank[field], "F1", `vrankRows[${index}].${field}`);
+    }
+    text(rank.legRank, "F1", `vrankRows[${index}].legRank`);
+    nonNegative(rank.peerBonusRate, "F1", `vrankRows[${index}].peerBonusRate`);
+    if (typeof rank.visible !== "boolean" || typeof rank.unilevelDepth !== "string"
+        || typeof rank.policyRevision !== "string" || !/^[0-9a-f]{64}$/.test(rank.policyRevision)) invalid("F1", `vrankRows[${index}]`);
     if (!Array.isArray(rank.rewards)) invalid("F1", `vrankRows[${index}].rewards`);
   });
   object(row, "rewards", "F1");
@@ -146,13 +174,42 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   object(row, "skuLabels", "F1");
   const leadership = object(row, "leadership", "F1");
   array(leadership, "ranks", "F1");
-  object(row, "configValues", "F1");
+  for (const field of ["unlockRank", "topN", "topConcentrationPct", "totalMembers", "qualifiers"]) nonNegativeInteger(leadership[field], "F1", `leadership.${field}`);
+  const config = object(row, "configValues", "F1");
+  Object.entries(config).forEach(([key, value]) => { if (typeof value !== "string") invalid("F1", `configValues.${key}`); });
   sources(row, "F1");
 }
 
 export function assertF2Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F2");
   domain(row, "F2");
+  if (row.payoutStatistics !== undefined) {
+    const currencies = new Set<string>();
+    array(row, "payoutStatistics", "F2").forEach((value, index) => {
+      const path = `payoutStatistics[${index}]`;
+      const statistic = record(value, "F2", path);
+      const currency = text(statistic.currency, "F2", `${path}.currency`);
+      if (!["USDT", "UVT"].includes(currency) || currencies.has(currency)) invalid("F2", `${path}.currency`);
+      currencies.add(currency);
+      for (const key of ["available", "statusMarkerOnly", "cashSettlementTimeAvailable"]) if (typeof statistic[key] !== "boolean") invalid("F2", `${path}.${key}`);
+      for (const key of ["window", "statusScope", "basis"]) text(statistic[key], "F2", `${path}.${key}`);
+      const statuses = array(statistic, "paidOrSettledStatuses", "F2");
+      if (statuses.length !== 2 || statuses[0] !== "PAID" || statuses[1] !== "SETTLED") invalid("F2", `${path}.paidOrSettledStatuses`);
+      if (statistic.paidStatuses !== undefined || statistic.paidAmountRaw !== undefined || statistic.paidEventCount !== undefined) {
+        const paidStatuses = array(statistic, "paidStatuses", "F2");
+        if (paidStatuses.length !== 1 || paidStatuses[0] !== "PAID") invalid("F2", `${path}.paidStatuses`);
+        if (statistic.paidAmountRaw !== null && (typeof statistic.paidAmountRaw !== "string" || f4Decimal(statistic.paidAmountRaw) === null || statistic.paidAmountRaw.startsWith("-"))) invalid("F2", `${path}.paidAmountRaw`);
+        if (statistic.paidEventCount !== null) nonNegativeInteger(statistic.paidEventCount, "F2", `${path}.paidEventCount`);
+        if (statistic.available === false && (statistic.paidAmountRaw !== null || statistic.paidEventCount !== null)) invalid("F2", `${path}.paidUnavailable`);
+      }
+      for (const key of ["allStatusAmountRaw", "paidOrSettledAmountRaw"]) {
+        if (statistic[key] !== null && (typeof statistic[key] !== "string" || f4Decimal(statistic[key]) === null || statistic[key].startsWith("-"))) invalid("F2", `${path}.${key}`);
+      }
+      for (const key of ["allStatusEventCount", "paidOrSettledEventCount"]) if (statistic[key] !== null) nonNegativeInteger(statistic[key], "F2", `${path}.${key}`);
+      if (statistic.available === false && ["allStatusAmountRaw", "allStatusEventCount", "paidOrSettledAmountRaw", "paidOrSettledEventCount"].some(key => statistic[key] !== null)) invalid("F2", `${path}.unavailable`);
+    });
+    if (currencies.size !== 2) invalid("F2", "payoutStatistics.currencies");
+  }
   if (row.sevenLayerRevision !== undefined) {
     const revision = nonNegativeInteger(row.sevenLayerRevision, "F2", "sevenLayerRevision");
     if (!Number.isSafeInteger(revision)) invalid("F2", "sevenLayerRevision");
@@ -176,13 +233,20 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
     stringFields(metric, ["sub", "tone", "configKey"], path);
   });
   const rates = array(row, "unilevelRates", "F2");
-  // 未配置可显式为空；已有七层必须完整，不能把缺失费率归零。
-  if (rates.length) uniqueCodes(rates, "F2", "unilevelRates", Array.from({ length: 7 }, (_, index) => `L${index + 1}`), "level");
+  // The backend can return a subset of existing rows; preserve the missing rows.
+  const levels = new Set<string>();
   rates.forEach((value, index) => {
     const path = `unilevelRates[${index}]`;
     const rate = record(value, "F2", path);
-    nonNegative(rate.usdtPct, "F2", `${path}.usdtPct`);
-    nonNegative(rate.nexReward, "F2", `${path}.nexReward`);
+    const level = text(rate.level, "F2", `${path}.level`);
+    if (!/^L[1-7]$/.test(level) || levels.has(level)) invalid("F2", `${path}.level`);
+    levels.add(level);
+    // Explicit null is missing, while an absent field is still a bad contract.
+    if (rate.usdtPct !== null) nonNegative(rate.usdtPct, "F2", `${path}.usdtPct`);
+    if (rate.nexReward !== null) nonNegative(rate.nexReward, "F2", `${path}.nexReward`);
+    for (const field of ["usdtPctMissing", "nexRewardMissing"]) {
+      if (rate[field] !== undefined && typeof rate[field] !== "boolean") invalid("F2", `${path}.${field}`);
+    }
     stringFields(rate, ["label", "configKey", "nexConfigKey"], path);
     booleanFields(rate, ["direct"], path);
   });
@@ -211,11 +275,59 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
 export function assertF3Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F3");
   domain(row, "F3");
-  array(row, "metrics", "F3");
-  object(row, "formula", "F3");
-  array(row, "settlements", "F3");
-  object(row, "dailyCap", "F3");
-  object(row, "config", "F3");
+  const rawAmounts = (item: JsonRecord, fields: string[], path: string) => {
+    for (const field of fields) {
+      const amount = item[field];
+      if (amount !== undefined && amount !== null && (typeof amount !== "string" || f4Decimal(amount) === null || amount.startsWith("-"))) invalid("F3", `${path}.${field}`);
+    }
+  };
+  rawAmounts(row, ["monthlyMatchedUsdRaw", "dailyMatchUsdRaw", "maxDailyCapUsdRaw", "maxTrackGmvRaw", "residualPoolUsdRaw"], "data");
+  if (row.statistics !== undefined) {
+    const statistics = object(row, "statistics", "F3");
+    text(statistics.basis, "F3", "statistics.basis");
+    for (const key of ["participantCount", "blockedCount", "monthlyMatchedUsd", "dailyMatchUsd", "autoPlacement7dCount", "maxDailyCapUsd", "maxTrackGmv", "residualPoolUsd", "settlements", "h1BinaryDailyCap"]) {
+      const statistic = object(statistics, key, "F3");
+      for (const field of ["source", "aggregate", "field", "filter", "window", "status"]) text(statistic[field], "F3", `statistics.${key}.${field}`);
+      if (typeof statistic.distinct !== "boolean") invalid("F3", `statistics.${key}.distinct`);
+    }
+  }
+  const strings = (value: JsonRecord, keys: string[], path: string) => {
+    for (const key of keys) if (typeof value[key] !== "string") invalid("F3", `${path}.${key}`);
+  };
+  array(row, "metrics", "F3").forEach((value, index) => {
+    strings(record(value, "F3", `metrics[${index}]`), ["id", "label", "value", "sub", "tone"], `metrics[${index}]`);
+  });
+  const formula = object(row, "formula", "F3");
+  rawAmounts(formula, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], "formula");
+  strings(formula, ["user", "matchRate", "threshold", "settlePeriod"], "formula");
+  for (const key of ["trackA", "trackB", "matchAmount"]) finite(formula[key], "F3", `formula.${key}`);
+  array(row, "settlements", "F3").forEach((value, index) => {
+    const settlement = record(value, "F3", `settlements[${index}]`);
+    rawAmounts(settlement, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], `settlements[${index}]`);
+    rawAmounts(settlement, ["residualTrackARaw", "residualTrackBRaw", "residualAmountUsdt"], `settlements[${index}]`);
+    for (const key of ["settlementNo", "residualPolicy", "settlementMode", "proposerName", "approverName", "a2OperationId"]) {
+      if (settlement[key] !== undefined && settlement[key] !== null && typeof settlement[key] !== "string") invalid("F3", `settlements[${index}].${key}`);
+    }
+    strings(settlement, ["user", "settlementDate", "cohort", "state", "tone"], `settlements[${index}]`);
+    for (const key of ["ownerUserId", "trackA", "trackB", "matchAmount", "todayPaid"]) finite(settlement[key], "F3", `settlements[${index}].${key}`);
+  });
+  if (row.blockedAttempts !== undefined) {
+    array(row, "blockedAttempts", "F3").forEach((value, index) => {
+      const attempt = record(value, "F3", `blockedAttempts[${index}]`);
+      for (const key of ["settlementNo", "blockedAt"]) text(attempt[key], "F3", `blockedAttempts[${index}].${key}`);
+      if (attempt.user !== undefined && attempt.user !== null) text(attempt.user, "F3", `blockedAttempts[${index}].user`);
+      for (const key of ["ownerUserId", "settlementDate", "reason", "settlementMode", "a2OperationId", "proposerName", "approverName"]) {
+        if (attempt[key] !== null && typeof attempt[key] !== "string") invalid("F3", `blockedAttempts[${index}].${key}`);
+      }
+    });
+  }
+  const cap = object(row, "dailyCap", "F3");
+  strings(cap, ["currentLabel", "windowLabel", "nextTrigger", "nextLabel", "currentPhase"], "dailyCap");
+  nonNegativeInteger(cap.currentMonth, "F3", "dailyCap.currentMonth");
+  if (cap.h1BinaryDailyCap !== null) nonNegative(cap.h1BinaryDailyCap, "F3", "dailyCap.h1BinaryDailyCap");
+  const config = object(row, "config", "F3");
+  strings(config, ["threshold", "matchRate", "spillover", "gvResetCron", "settlePeriod", "residualPolicy", "residualPool", "residualSub"], "config");
+  if (typeof config.spilloverEnabled !== "boolean") invalid("F3", "config.spilloverEnabled");
   for (const field of [
     "maxTrackGmv",
     "participantCount",
@@ -227,42 +339,142 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
     finite(row[field], "F3", field);
   }
   common(row, "F3");
+  strings(row.configValues as JsonRecord, Object.keys(row.configValues as JsonRecord), "configValues");
+  if (row.coverage != null) {
+    const coverage = object(row, "coverage", "F3");
+    for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] !== null) finite(coverage[key], "F3", `coverage.${key}`);
+  }
 }
 
 export function assertF4Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F4");
   domain(row, "F4");
   array(row, "metrics", "F4");
-  array(row, "quotaRows", "F4");
+  array(row, "quotaRows", "F4").forEach((value, index) => {
+    const item = record(value, "F4", `quotaRows[${index}]`);
+    positiveInteger(item.id, "F4", `quotaRows[${index}].id`);
+    for (const key of ["current", "cap"]) nonNegativeInteger(item[key], "F4", `quotaRows[${index}].${key}`);
+    if (item.monthlyQuota !== undefined && item.monthlyQuota !== null
+      && (typeof item.monthlyQuota !== "string" || !/^\d+$/.test(item.monthlyQuota) || !Number.isSafeInteger(Number(item.monthlyQuota)))) invalid("F4", `quotaRows[${index}].monthlyQuota`);
+  });
+  array(row, "quotaUsages", "F4").forEach((value, index) => {
+    const item = record(value, "F4", `quotaUsages[${index}]`);
+    for (const key of ["id", "userId", "quantity"]) positiveInteger(item[key], "F4", `quotaUsages[${index}].${key}`);
+    text(item.status, "F4", `quotaUsages[${index}].status`);
+  });
+  array(row, "ambassadorApplications", "F4").forEach((value, index) => {
+    const item = record(value, "F4", `ambassadorApplications[${index}]`);
+    positiveInteger(item.id, "F4", `ambassadorApplications[${index}].id`);
+    nonNegative(item.requestedBudgetUsd, "F4", `ambassadorApplications[${index}].requestedBudgetUsd`);
+    text(item.status, "F4", `ambassadorApplications[${index}].status`);
+  });
   array(row, "ambassadorBands", "F4");
+  if (row.ambassadorMetricBasis !== undefined) {
+    const basis = object(row, "ambassadorMetricBasis", "F4");
+    for (const key of ["source", "period", "timeFilter", "excludedDeleted"] as const) {
+      if (basis[key] !== F4_AMBASSADOR_METRIC_BASIS[key]) invalid("F4", `ambassadorMetricBasis.${key}`);
+    }
+    const metrics = object(basis, "metrics", "F4");
+    for (const [key, expected] of Object.entries(F4_AMBASSADOR_METRIC_BASIS.metrics)) {
+      const metric = object(metrics, key, "F4");
+      for (const [field, expectedValue] of Object.entries(expected)) {
+        if (metric[field] !== expectedValue) invalid("F4", `ambassadorMetricBasis.metrics.${key}.${field}`);
+      }
+    }
+  }
   array(row, "podium", "F4");
   const votes = array(row, "voteWeights", "F4");
   votes.forEach((value, index) => {
     const vote = record(value, "F4", `voteWeights[${index}]`);
     text(vote.v, "F4", `voteWeights[${index}].v`);
-    positiveInteger(vote.votes, "F4", `voteWeights[${index}].votes`);
+    nonNegativeInteger(vote.votes, "F4", `voteWeights[${index}].votes`);
   });
   object(row, "config", "F4");
   common(row, "F4");
+  for (const field of ["configVersion", "settlementConfigUnavailableKey", "settlementConfigUnavailableReason", "monthlyCapLabel", "nextSettlementAt"]) {
+    if (typeof row[field] !== "string") invalid("F4", field);
+  }
+  if (!["READY", "HOLD"].includes(String(row.settlementConfigStatus))) invalid("F4", "settlementConfigStatus");
+  if (row.currentWeekPoolUsd !== null) nonNegative(row.currentWeekPoolUsd, "F4", "currentWeekPoolUsd");
+  for (const field of ["weeklyInjectedUsd", "weeklyGmvUsd", "monthlyCapUsd", "participantCount", "topN", "topSharePct", "unlockRank", "quotaMonthlyStockTotal", "quotaMonthlyStockUsed", "quotaMonthlyStockRemaining", "ambassadorPendingCount", "leaderboardFraudHitCount"]) nonNegative(row[field], "F4", field);
+  for (const [key, value] of Object.entries(row.configValues as JsonRecord)) {
+    if (typeof value !== "string") invalid("F4", `configValues.${key}`);
+  }
+  if (row.coverage != null) {
+    const coverage = object(row, "coverage", "F4");
+    if (coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") invalid("F4", "coverage.reliable");
+    for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] != null) finite(coverage[key], "F4", `coverage.${key}`);
+  }
+}
+
+export function assertF4MaterialPacket(value: unknown): asserts value is JsonRecord {
+  const row = record(value, "F4", "materials");
+  positiveInteger(row.applicationId, "F4", "materials.applicationId");
+  nonNegativeInteger(row.materialRevision, "F4", "materials.materialRevision");
+  nonNegative(row.budgetUsdt, "F4", "materials.budgetUsdt");
+  if (row.bucket !== null && !["venue", "kol", "print", "dev"].includes(String(row.bucket))) invalid("F4", "materials.bucket");
+  if (!["NOT_SUBMITTED", "PENDING", "NEEDS_MORE", "PASSED"].includes(String(row.materialState))) invalid("F4", "materials.materialState");
+  if (typeof row.statement !== "string" || row.eventDate !== null && typeof row.eventDate !== "string") invalid("F4", "materials.text");
+  for (const key of ["canSubmit", "canReviewBusiness", "canReviewFinance", "canProposeApproval", "canApprove", "legacyApproved"]) {
+    if (typeof row[key] !== "boolean") invalid("F4", `materials.${key}`);
+  }
+  for (const key of ["missingKinds", "approvalBlockers", "proposalBlockers"]) array(row, key, "F4").forEach(item => text(item, "F4", `materials.${key}`));
+  array(row, "requirements", "F4").forEach(value => {
+    const item = record(value, "F4", "materials.requirement");
+    text(item.kind, "F4", "materials.requirement.kind");
+    text(item.label, "F4", "materials.requirement.label");
+    if (typeof item.required !== "boolean") invalid("F4", "materials.requirement.required");
+  });
+  array(row, "attachments", "F4").forEach(value => {
+    const item = record(value, "F4", "materials.attachment");
+    for (const key of ["fileId", "kind", "name", "contentType"]) text(item[key], "F4", `materials.attachment.${key}`);
+    nonNegativeInteger(item.sizeBytes, "F4", "materials.attachment.sizeBytes");
+  });
+  for (const [index, value] of [row.businessReview, row.financeReview, ...array(row, "reviewHistory", "F4")].entries()) {
+    const review = record(value, "F4", "materials.review");
+    if (!["PENDING", "PASSED", "NEEDS_MORE"].includes(String(review.status))) invalid("F4", "materials.review.status");
+    for (const key of ["reviewerLabel", "reviewedAt", "reason"]) if (review[key] !== null && typeof review[key] !== "string") invalid("F4", `materials.review.${key}`);
+    if (review.verifiedAttendees != null) nonNegativeInteger(review.verifiedAttendees, "F4", "materials.review.verifiedAttendees");
+    if (review.recognizedBudgetUsdt != null) nonNegative(review.recognizedBudgetUsdt, "F4", "materials.review.recognizedBudgetUsdt");
+    if (index >= 2) {
+      positiveInteger(review.materialRevision, "F4", "materials.review.materialRevision");
+      if (review.stage !== "BUSINESS" && review.stage !== "FINANCE") invalid("F4", "materials.review.stage");
+      if (review.status !== "PASSED" && review.status !== "NEEDS_MORE") invalid("F4", "materials.review.status");
+      if (typeof review.reason !== "string") invalid("F4", "materials.review.reason");
+    }
+  }
+}
+
+/** Shared by the list and exact business-id read, before either projection is consumed. */
+export function assertF5ActionAvailability(event: JsonRecord) {
+  for (const [available, reason] of [["canUnlock", "unlockBlockedReason"], ["canReverse", "reverseBlockedReason"]]) {
+    if (event[available] === undefined) continue;
+    if (typeof event[available] !== "boolean") invalid("F5", available);
+    if (event[available]) {
+      if (event[reason] !== null) invalid("F5", reason);
+    } else text(event[reason], "F5", reason);
+  }
+  if (event.groupStatus !== undefined && typeof event.groupStatus !== "string") invalid("F5", "groupStatus");
 }
 
 export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F5");
   domain(row, "F5");
-  if (row.pendingCalculations !== undefined || row.pendingCalculationCount !== undefined) {
-    const pending = array(row, "pendingCalculations", "F5");
-    const pendingCount = nonNegativeInteger(row.pendingCalculationCount, "F5", "pendingCalculationCount");
-    if (pendingCount < pending.length) invalid("F5", "pendingCalculationCount");
-    const ids = new Set<string>();
-    pending.forEach((value, index) => {
-      const item = record(value, "F5", `pendingCalculations[${index}]`);
-      for (const key of ["id", "settlementNo", "sourceRef", "sourceUserName", "ts"]) text(item[key], "F5", key);
-      if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || positiveInteger(item.layer, "F5", "layer") !== 1) invalid("F5", `pendingCalculations[${index}].relation`);
-      nonNegative(item.basisUsdt, "F5", "basisUsdt");
-      if (item.unlockAt !== null && (typeof item.unlockAt !== "string" || !Number.isFinite(Date.parse(item.unlockAt)))) invalid("F5", "unlockAt");
-      ids.add(String(item.id));
-    });
-  }
+  const pending = array(row, "pendingCalculations", "F5");
+  const pendingCount = nonNegativeInteger(row.pendingCalculationCount, "F5", "pendingCalculationCount");
+  if (pendingCount !== pending.length) invalid("F5", "pendingCalculationCount");
+  const ids = new Set<string>();
+  pending.forEach((value, index) => {
+    const item = record(value, "F5", `pendingCalculations[${index}]`);
+    for (const key of ["id", "settlementNo", "sourceRef"]) text(item[key], "F5", key);
+    if (typeof item.sourceUserName !== "string") invalid("F5", "sourceUserName");
+    if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || positiveInteger(item.layer, "F5", "layer") !== 1) invalid("F5", `pendingCalculations[${index}].relation`);
+    nonNegative(item.basisUsdt, "F5", "basisUsdt");
+    for (const key of ["ts", "unlockAt"]) {
+      if (item[key] !== null && (typeof item[key] !== "number" || !Number.isSafeInteger(item[key]) || item[key] < 0 || !Number.isFinite(new Date(item[key]).getTime()))) invalid("F5", key);
+    }
+    ids.add(String(item.id));
+  });
   const summary = object(row, "summary", "F5");
   const spend = moneySnapshot(summary.monthlyCommissionSpend, "summary.monthlyCommissionSpend");
   const cooling = moneySnapshot(summary.coolingBalance, "summary.coolingBalance");
@@ -307,6 +519,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const eventIds: number[] = [];
   events.forEach((value, index) => {
     const event = record(value, "F5", `commissionEvents[${index}]`);
+    assertF5ActionAvailability(event);
     for (const field of ["commissionId", "kind", "user", "currency", "settledAt", "status", "cooldownLabel", "state", "auditKey"]) {
       text(event[field], "F5", `commissionEvents[${index}].${field}`);
     }
@@ -317,6 +530,10 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     nonNegativeInteger(event.coolingDaysLeft, "F5", `commissionEvents[${index}].coolingDaysLeft`);
     const cooldownPercent = nonNegativeInteger(event.cooldownPercent, "F5", `commissionEvents[${index}].cooldownPercent`);
     nonNegativeInteger(event.version, "F5", `commissionEvents[${index}].version`);
+    if (event.unlockAt != null && (typeof event.unlockAt !== "number" || !Number.isSafeInteger(event.unlockAt) || event.unlockAt < 0 || !Number.isFinite(new Date(event.unlockAt).getTime()))) invalid("F5", "unlockAt");
+    for (const key of ["basisUsdt", "nexUsdtPrice", "amountUSDT", "amountNEX", "recoveryPendingUSDT", "recoveryPendingNEX"]) {
+      if (event[key] != null) nonNegative(event[key], "F5", key);
+    }
     const kind = text(event.kind, "F5", `commissionEvents[${index}].kind`);
     const currency = text(event.currency, "F5", `commissionEvents[${index}].currency`);
     const status = text(event.status, "F5", `commissionEvents[${index}].status`);
@@ -374,10 +591,44 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const requestCursor = cursor(pagination.requestCursor, "pagination.requestCursor");
   const topCursor = cursor(row.nextCursor, "nextCursor");
   const nestedCursor = cursor(pagination.nextCursor, "pagination.nextCursor");
-  array(row, "anomalies", "F5");
+  array(row, "anomalies", "F5").forEach((value, index) => {
+    const anomaly = record(value, "F5", `anomalies[${index}]`);
+    if (anomaly.currency !== undefined && !["USDT", "UVT"].includes(text(anomaly.currency, "F5", `anomalies[${index}].currency`))) invalid("F5", `anomalies[${index}].currency`);
+  });
+  if (row.layerRatioComparisons !== undefined) {
+    array(row, "layerRatioComparisons", "F5").forEach((value, index) => {
+      const path = `layerRatioComparisons[${index}]`;
+      const comparison = record(value, "F5", path);
+      const currency = text(comparison.currency, "F5", `${path}.currency`);
+      if (!["USDT", "UVT"].includes(currency)) invalid("F5", `${path}.currency`);
+      if (comparison.available === false) {
+        if (!["F5_LAYER_RATIO_THEORY_UNAVAILABLE", "F5_LAYER_RATIO_LAYER_UNAVAILABLE", "F5_LAYER_RATIO_SAMPLE_UNAVAILABLE"].includes(text(comparison.reason, "F5", `${path}.reason`))
+          || comparison.layers !== null || comparison.theoreticalPct !== null || comparison.deviation !== null) invalid("F5", path);
+      } else if (comparison.available === true) {
+        if (currency !== "USDT" || comparison.reason !== null) invalid("F5", path);
+        array(comparison, "layers", "F5").forEach((value, layerIndex) => {
+          const layerPath = `${path}.layers[${layerIndex}]`;
+          const layer = record(value, "F5", layerPath);
+          positiveInteger(layer.layer, "F5", `${layerPath}.layer`);
+          for (const key of ["actualPct", "theoreticalPct", "deviation"]) {
+            if (typeof layer[key] !== "string" || f4Decimal(layer[key]) === null) invalid("F5", `${layerPath}.${key}`);
+          }
+        });
+      } else invalid("F5", `${path}.available`);
+    });
+  }
   array(row, "coolingPolicy", "F5");
   array(row, "operationHistory", "F5");
-  array(row, "activeSuspensions", "F5");
+  array(row, "activeSuspensions", "F5").forEach((value, index) => {
+    const suspension = record(value, "F5", `activeSuspensions[${index}]`);
+    positiveInteger(suspension.userId, "F5", `activeSuspensions[${index}].userId`);
+    if (!F5_KINDS.includes(text(suspension.kind, "F5", `activeSuspensions[${index}].kind`))) invalid("F5", "activeSuspensions.kind");
+  });
+  if (row.coverage != null) {
+    const coverage = object(row, "coverage", "F5");
+    if (coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") invalid("F5", "coverage.reliable");
+    for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] != null) finite(coverage[key], "F5", `coverage.${key}`);
+  }
   const total = nonNegativeInteger(row.total, "F5", "total");
   if (text(pagination.mode, "F5", "pagination.mode") !== "server-cursor"
       || defaultPageSize > maxPageSize

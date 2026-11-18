@@ -6,23 +6,41 @@
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { L2FunnelQuery, L3FinanceQuery, L4OperationsQuery, LBiActions, LBiData } from "@/lib/admin/l-client";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
+  /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
+  title?: ReactNode;
   briefKind: OperatorBriefKind;
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;
   reasonMin?: number;
   reasonMax?: number;
+  measureReason?: (reason: string) => number;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   completionCopy?: string;
+  confirmLabel?: string;
+  /** 不能撤回、放出高敏数据的确认传 danger：确认按钮危险色、标题前红底图标。 */
+  confirmTone?: "primary" | "danger";
+  /** 生效标签，只在 RdPage 里显示。 */
+  effect?: ReactNode;
+  /** 理由框的占位，按场景写（TX-11）。 */
+  reasonPlaceholder?: string;
+  statedBrief?: { impact: string; check: string };
+  /** 做决定要核对的事实，常显在理由上面。 */
+  facts?: ReactNode;
+  /** 传了以后提交中锁住理由，保证显示的就是提交的。 */
+  getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
 export type LCtx = {
-  toast: (s: string) => void;
+  toast: (s: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
+  closeActionConfirm?: () => void;
   biData?: LBiData | null;
   biLoading?: boolean;
   biError?: string | null;

@@ -6,12 +6,13 @@
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
  * 各页读写统一走后端 user360/admin-users 接口;冻结、模拟登录、资产调整和安全参数都以服务端返回为准。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./c-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { C1Search, C1HeaderActions, type C1ExportQuery } from "./c-tabs/c1-search";
+import { C1Search } from "./c-tabs/c1-search";
 import { C2Actions } from "./c-tabs/c2-actions";
 import { C3Adjust } from "./c-tabs/c3-adjust";
 import { C5Security } from "./c-tabs/c5-security";
@@ -19,6 +20,8 @@ import { C6Regrisk } from "./c-tabs/c6-regrisk";
 import type { CCtx, ConfirmReq, ActionConfirmReq } from "./c-tabs/types";
 
 const FOLD: Record<string, string> = { C1: "C1", C2: "C2", C3: "C3", C5: "C5", C6: "C6" };
+/** 已改版的页：包 RdPage，页头由页面自己写。 */
+const REDESIGNED = ["C1", "C2", "C3", "C5", "C6"];
 
 
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -26,46 +29,62 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "C1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [c1ExportQuery, setC1ExportQuery] = useState<C1ExportQuery | null>(null);
+  const currentTab = useRef(tab);
+  currentTab.current = tab;
+  useEffect(() => { setActionConfirm(null); setCf(null); }, [tab]);
 
   const ctx: CCtx = {
     toast: setToast,
-    openActionConfirm: setActionConfirm,
-    openConfirm: setCf,
+    openActionConfirm: req => { if (currentTab.current === tab) setActionConfirm(req); },
+    openConfirm: req => { if (currentTab.current === tab) setCf(req); },
+    closeConfirms: () => { if (currentTab.current === tab) { setActionConfirm(null); setCf(null); } },
   };
 
-  const right = tab === "C1" ? <C1HeaderActions ctx={ctx} query={c1ExportQuery} /> : null;
+  const page = (
+    <>
+      {!REDESIGNED.includes(tab) && <DomainHeader {...meta} />}
 
-  return (
-    <div className="dkpage cdom">
-      <DomainHeader {...meta} right={right} />
-
-      {tab === "C1" && <C1Search ctx={ctx} onExportQueryChange={setC1ExportQuery} />}
+      {tab === "C1" && <C1Search ctx={ctx} />}
       {tab === "C2" && <C2Actions ctx={ctx} />}
       {tab === "C3" && <C3Adjust ctx={ctx} />}
       {tab === "C5" && <C5Security ctx={ctx} />}
       {tab === "C6" && <C6Regrisk ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
+          coverage={mc.coverage}
+          coverageCheck={mc.coverageCheck}
+          coverageLead={mc.coverageLead}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          businessFormRevision={mc.businessFormRevision}
           completionCopy={mc.completionCopy}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           getPendingReason={mc.getPendingReason}
-          onClose={() => setActionConfirm(null)}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          blockedReason={mc.blockedReason}
+          statedBrief={mc.statedBrief}
+          facts={mc.facts}
+          confirmTone={mc.confirmTone}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          onClose={() => { if (currentTab.current === tab) setActionConfirm(null); }}
           onConfirm={async (reason, newValue, businessValue) => {
             const succeeded = await mc.run(reason, newValue, businessValue);
-            if (succeeded !== false) setActionConfirm(null);
+            if (currentTab.current === tab && succeeded !== false) setActionConfirm(null);
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal req={cf} onClose={() => { if (currentTab.current === tab) setCf(null); }} />}
       {toastNode}
-    </div>
+    </>
   );
+
+  return REDESIGNED.includes(tab) ? <RdPage className="cdom">{page}</RdPage> : <div className="dkpage cdom">{page}</div>;
 }

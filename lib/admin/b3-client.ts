@@ -94,7 +94,7 @@ export interface B3Dashboard {
 
 export class B3OutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string) {
-    super(`本次视图保存结果未知，可能已经生效。请先刷新核对；如需按原输入重试，将继续使用同一请求号：${commandKey}`);
+    super("视图保存结果未知，可能已经生效。请先刷新核对；按原请求重试不会重复保存。");
     this.name = "B3OutcomeUnknownError";
   }
 }
@@ -165,9 +165,10 @@ export async function saveB3View(
 
 export async function exportB3Cohort(filters: B3Filters) {
   const response = await guardedFetch(`/api/admin/funnel/export${query(filters)}`, { cache: "no-store" });
-  if (!response.ok) {
+  const contentType = response.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
+  if (!response.ok || contentType !== "text/csv" || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)) resetAdminSession();
     throw new Error(formatAdminApiError(result?.message, "B3_EXPORT_FAILED"));
   }
   const blob = await response.blob();
@@ -176,12 +177,13 @@ export async function exportB3Cohort(filters: B3Filters) {
   return { blob, fileName: matched ? decodeURIComponent(matched[1]) : "b3-funnel.csv" };
 }
 
-export function useB3Funnel(filters: B3Filters, stage: string) {
+export function useB3Funnel(filters: B3Filters, stage: string, enabled = true) {
   const [data, setData] = useState<B3Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
     setError(null);
     try {
@@ -192,7 +194,7 @@ export function useB3Funnel(filters: B3Filters, stage: string) {
     } finally {
       setLoading(false);
     }
-  }, [filters.cohort, filters.phase, filters.ref, stage]);
+  }, [filters.cohort, filters.phase, filters.ref, stage, enabled]);
 
   useEffect(() => {
     void reload();

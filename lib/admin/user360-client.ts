@@ -1,4 +1,4 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -8,6 +8,7 @@ import { normalizeC3Adjustment } from "@/lib/admin/c3-adjustment-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { supportRequest, supportObject, parseSupportId } from "./m-support-client.ts";
+import { parseUserLatestFunds, preserveUserFundAmounts, type UserLatestFundActivity } from "./user-latest-funds-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -155,6 +156,14 @@ export interface UserRegistrationRiskStats extends JsonRecord {
   captchaTemporarilyDisabled?: boolean | null;
   captchaRestoreAt?: string | null;
   captchaRemainingSeconds?: number | string | null;
+  otpIncludesRegistration?: boolean | null;
+  otpCountsSuccessfulSends?: boolean | null;
+  captchaTriggeredProducerFound?: boolean | null;
+  countsUseBusinessDay?: boolean | null;
+  stuffingClusters7dIsCredentialStuffing?: boolean | null;
+  stuffingClusters7dCountsMultiAccountThresholdHits?: boolean | null;
+  stuffingClusters7dCountsFirstInsertedOnly?: boolean | null;
+  stuffingClusters7dIncludesAllDispositions?: boolean | null;
 }
 
 export interface UserRegistrationRiskParam extends JsonRecord {
@@ -192,6 +201,9 @@ export interface UserRegistrationRiskOverview extends JsonRecord {
   k1Path?: string | null;
   sources?: string[] | null;
   redlines?: string[] | null;
+  captchaAlwaysScenes?: Array<"REGISTER" | "LOGIN" | "RESET"> | null;
+  h5RegisterCaptcha?: boolean | null;
+  h5RegisterMissingDeviceCaptcha?: boolean | null;
 }
 
 export interface UserSecurityQuery {
@@ -265,6 +277,22 @@ export interface UserAccountActionOverview extends JsonRecord {
   totalImpersonations?: number | string | null;
   sources?: string[] | null;
   redlines?: string[] | null;
+}
+
+export type UserAccountActionStatus = "ACTIVE" | "FROZEN" | "BANNED" | "RESTRICTED" | "DISABLED";
+/** Deliberately excludes risk, wallet, contact and login projections. */
+export interface UserAccountActionRow extends JsonRecord {
+  id: number;
+  userNo: string;
+  nickname: string | null;
+  status: UserAccountActionStatus;
+  registeredAt: string | null;
+  freezeSource: string | null;
+  freezeSourceRef: string | null;
+  freezeReason: string | null;
+  freezeOperator: string | null;
+  frozenAt: string | null;
+  d2FrozenWithdrawalCount: number;
 }
 
 export interface UserAccountActionContext extends JsonRecord {
@@ -400,6 +428,9 @@ export interface User360Section {
   effectiveScore?: number | string | null;
   bandLabel?: string | null;
   exchangeRows?: JsonRecord[] | null;
+  // financial 分区：汇总按币种的取值和每个字段的完整性（OpsUser360Service financialSection）
+  byCurrency?: JsonRecord[] | null;
+  totalsStatus?: string | null;
   failedPushCount?: number | string | null;
   flags?: JsonRecord[] | null;
   members?: JsonRecord[] | null;
@@ -419,6 +450,10 @@ export interface User360Section {
 }
 
 export interface User360Detail extends JsonRecord {
+  latestDeposit?: UserLatestFundActivity | null;
+  latestWithdrawal?: UserLatestFundActivity | null;
+  latestDepositStatus?: "READY" | "ERROR";
+  latestWithdrawalStatus?: "READY" | "ERROR";
   profile?: User360Profile | null;
   security?: JsonRecord | null;
   sessions?: JsonRecord[] | null;
@@ -544,6 +579,7 @@ export class UsersRequestError extends Error {
     public readonly status: number,
     public readonly code: string | undefined,
     message: string,
+    public readonly businessStatus?: number,
   ) {
     super(message);
     this.name = "UsersRequestError";
@@ -611,7 +647,7 @@ function requireC3Detail(value: unknown): UserAssetAdjustmentDetail {
 
 export class UsersOutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string) {
-    super(`本次操作结果未知，可能已经生效。请先刷新核对；如需重试，请保持当前表单并使用同一操作重试。请求号：${commandKey}`);
+    super("结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。");
     this.name = "UsersOutcomeUnknownError";
   }
 }
@@ -620,7 +656,7 @@ export function isUsersRequestNotFound(error: unknown) {
   return error instanceof UsersRequestError && error.status === 404;
 }
 
-async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string }) {
+async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; requireReadableOutcome?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -655,17 +691,25 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     }
     throw error;
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => {
+    const exact = path.endsWith("/360") ? preserveUserFundAmounts(text) : text;
+    return JSON.parse(path.startsWith("/profiles")
+      ? exact.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : exact);
+  }).catch(() => null)) as ApiResult<T> | null;
+  const authFailure = isAdminAuthFailure(response.status, result?.message);
+  if (authFailure) resetAdminSession();
+  // C6 first-send rejection classification needs a readable business verdict.
+  // A bare/malformed 4xx must not discard the saved original request.
+  if (init?.requireReadableOutcome && (!result || typeof result.code !== "number" || !Number.isFinite(result.code))) {
+    throw new UsersOutcomeUnknownError(headers.get("Idempotency-Key")!);
+  }
 
   if (!response.ok || !result || result.code !== 0) {
-    const authFailure = isAdminAuthFailure(response.status, result?.message);
-    if (authFailure) {
-      resetAdminSession();
-    }
     const commandKey = headers.get("Idempotency-Key");
     // 话术与命令号去留同口径:5xx 保住了号,提示也必须说「结果未知」而不是「失败」,
     // 否则运营会换个入口重做一遍(第三轮验收 P1-6)。
-    if (commandKey && (result?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+    if (commandKey && (isIdempotencyOutcomeOpen(result?.message)
       || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
       throw new UsersOutcomeUnknownError(commandKey);
@@ -679,11 +723,12 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     // classification-ok:这里的 5xx 判定只挑**错误文案**(不把后端原始消息透给运营),
     // 不参与「命令号要不要丢」的归类 —— 归类在上面一条,走共享谓词。
     const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
-    throw new UsersRequestError(
+    throw Object.assign(new UsersRequestError(
       response.status,
       serverMessage,
       formatAdminApiError(serverMessage, `USERS_REQUEST_FAILED_${response.status}`),
-    );
+      result?.code,
+    ), { reasonCode: serverMessage });
   }
 
   if (mutationFingerprint) pendingUserMutations.forget(mutationFingerprint);
@@ -691,7 +736,8 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
 }
 
 export async function fetchUser360(userKey: string) {
-  return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  return { ...detail, ...parseUserLatestFunds(detail) };
 }
 
 export async function fetchSupportCustomerFullProfile(customerId: string, signal?: AbortSignal): Promise<User360Detail> {
@@ -707,8 +753,8 @@ export async function fetchSupportCustomerFullProfile(customerId: string, signal
         else if (status !== "READY") detail[key] = { sourceStatus: status === "ERROR" ? "ERROR" : "UNKNOWN" };
       }
     }
-    return detail;
-  }, { signal });
+    return { ...detail, ...parseUserLatestFunds(detail) };
+  }, { signal, transformResponseText: preserveUserFundAmounts });
 }
 
 export type NotificationTimeEvidence = {
@@ -722,7 +768,7 @@ export type NotificationTimeEvidence = {
 };
 
 function normalizeNotificationTimeEvidence(value: unknown, notificationId: number): NotificationTimeEvidence {
-  const invalid = () => { throw new Error("通知证据响应无效，请重试"); };
+  const invalid = () => { throw new Error("通知证据读取异常，请重试"); };
   const validDate = (date: unknown): date is string => {
     if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date)) return false;
     const parsed = new Date(date.replace(" ", "T") + "Z");
@@ -907,6 +953,21 @@ export async function fetchUserAccountActionOverview() {
   return requireC2Overview(await usersRequest<unknown>("/account-actions/overview"));
 }
 
+export async function fetchUserAccountActionPage(status: UserAccountActionStatus = "FROZEN", pageNum = 1, pageSize = 20): Promise<UserPage<UserAccountActionRow>> {
+  const raw = await usersRequest<PageResult<unknown>>(`/account-actions/accounts${queryString({ status, pageNum, pageSize })}`);
+  const page = normalizeAuthoritativePage(raw, pageNum, pageSize);
+  const records = page.records.map(value => {
+    if (!isJsonRecord(value) || !Number.isSafeInteger(value.id) || Number(value.id) < 1
+      || typeof value.userNo !== "string" || !value.userNo.trim() || value.status !== status
+      || !Number.isSafeInteger(value.d2FrozenWithdrawalCount) || Number(value.d2FrozenWithdrawalCount) < 0) return c2ResponseInvalid();
+    for (const key of ["nickname", "registeredAt", "freezeSource", "freezeSourceRef", "freezeReason", "freezeOperator", "frozenAt"]) {
+      if (value[key] !== null && typeof value[key] !== "string") return c2ResponseInvalid();
+    }
+    return value as UserAccountActionRow;
+  });
+  return { ...page, records };
+}
+
 export async function fetchUserAccountActionAccount(userKey: string) {
   return usersRequest<User360Profile>(`/account-actions/accounts/${encodeURIComponent(userKey)}`);
 }
@@ -975,7 +1036,12 @@ export async function exportUserProfilesCsv(
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`));
+    // 带上 HTTP 状态和接口码，页面才分得清明确拒绝和结果未知（OP-91）。HTTP 2xx 却回了 JSON 错误时，状态取接口的 code。
+    throw new UsersRequestError(
+      response.ok ? Number(result?.code) || 0 : response.status,
+      result?.message ?? undefined,
+      formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`),
+    );
   }
 
   return {
@@ -1085,8 +1151,8 @@ function c6ResponseInvalid(): never {
 }
 
 function c6Numeric(value: unknown) {
-  return (typeof value === "number" && Number.isFinite(value))
-    || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+  return (typeof value === "number" || typeof value === "string" && value.trim() !== "")
+    && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
 }
 
 function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
@@ -1101,12 +1167,28 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
     || (value.captchaAfterSends as number) > 50
     || !c6Numeric(value.configVersion)) return c6ResponseInvalid();
   const stats = value.stats;
+  // Optional on older backends; absence remains unknown rather than a false scope flag.
+  for (const key of ["otpIncludesRegistration", "otpCountsSuccessfulSends", "captchaTriggeredProducerFound", "countsUseBusinessDay",
+    "stuffingClusters7dIsCredentialStuffing", "stuffingClusters7dCountsMultiAccountThresholdHits", "stuffingClusters7dCountsFirstInsertedOnly", "stuffingClusters7dIncludesAllDispositions"]) {
+    if (stats[key] != null && typeof stats[key] !== "boolean") return c6ResponseInvalid();
+  }
+  for (const key of ["h5RegisterCaptcha", "h5RegisterMissingDeviceCaptcha"]) {
+    if (value[key] != null && typeof value[key] !== "boolean") return c6ResponseInvalid();
+  }
+  if (value.captchaAlwaysScenes != null && (!Array.isArray(value.captchaAlwaysScenes)
+    || value.captchaAlwaysScenes.some(scene => !["REGISTER", "LOGIN", "RESET"].includes(scene)))) return c6ResponseInvalid();
   for (const key of ["otpToday", "captchaTriggeredToday", "lockedShort", "lockedLong", "locked", "stuffingClusters7d", "captchaRemainingSeconds"]) {
     if (!c6Numeric(stats[key])) return c6ResponseInvalid();
   }
   if (typeof stats.captchaTemporarilyDisabled !== "boolean" || typeof stats.captchaRestoreAt !== "string") {
     return c6ResponseInvalid();
   }
+  // state() may retain an expired ISO deadline before the recovery scheduler
+  // clears it. No window / malformed persisted window becomes "", false, 0.
+  const deadline = stats.captchaRestoreAt;
+  if (deadline !== "" && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(deadline) || !Number.isFinite(Date.parse(deadline)))
+    || stats.captchaTemporarilyDisabled !== (Number(stats.captchaRemainingSeconds) > 0)
+    || stats.captchaTemporarilyDisabled && deadline === "") return c6ResponseInvalid();
   if (!value.params.every((param) => isJsonRecord(param)
     && typeof param.group === "string"
     && typeof param.key === "string"
@@ -1156,6 +1238,7 @@ export async function updateUserRegistrationRiskParam(
     method: "PATCH",
     body: JSON.stringify({ value, reason, operator, expectedVersion }),
     idempotencyKey: stableIdempotencyKey,
+    requireReadableOutcome: true,
   });
 }
 
@@ -1215,25 +1298,6 @@ export async function createUserAssetAdjustment(
   input: CreateUserAssetAdjustmentInput,
 ) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/asset-adjustments`, {
-    method: "POST",
-    body: JSON.stringify({
-      asset: input.asset,
-      direction: input.direction,
-      amount: input.amount,
-      reasonCode: input.reasonCode,
-      reason: input.reason,
-      evidenceRef: input.evidenceRef,
-      operator: input.operator,
-    }),
-    idempotencyKey: input.idempotencyKey,
-  });
-}
-
-export async function requestLargeUserAssetAdjustment(
-  userId: number | string,
-  input: CreateUserAssetAdjustmentInput,
-) {
-  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/asset-adjustment-requests`, {
     method: "POST",
     body: JSON.stringify({
       asset: input.asset,
@@ -1320,20 +1384,21 @@ export async function executeUserDeviceTradein(
   const result = (await response.json().catch(() => null)) as ApiResult<JsonRecord> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    if (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    if (isIdempotencyOutcomeOpen(result?.message)
+      || response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new UsersOutcomeUnknownError(commandKey);
     }
-    throw new Error(formatAdminApiError(result?.message, `C2_DEVICE_COMMAND_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `C2_DEVICE_COMMAND_FAILED_${response.status}`)), { status: response.status, reasonCode: result?.message });
   }
   return result.data as JsonRecord;
 }
 
-export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string) {
+export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string, commandKey?: string) {
   return usersRequest<User360Profile>(`/profiles/${encodeURIComponent(String(userId))}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, reasonCode, reason, operator }),
-    idempotencyPrefix: "c2-user-status",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-status" }),
   });
 }
 
@@ -1368,11 +1433,11 @@ export async function revokeUserSessions(userId: number | string, reason: string
   });
 }
 
-export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15) {
+export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15, commandKey?: string) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/impersonations`, {
     method: "POST",
     body: JSON.stringify({ ttlMinutes, reasonCode, reason, operator }),
-    idempotencyPrefix: "c2-user-impersonation-start",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-impersonation-start" }),
   });
 }
 
@@ -1388,27 +1453,27 @@ export async function fetchImpersonationReadonlyView(accessToken: string, page =
   return normalizeC2ReadonlySessionTimes(result.data);
 }
 
-export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string) {
+export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserImpersonationSession>(`/impersonations/${encodeURIComponent(sessionNo)}/terminate`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-user-impersonation-end",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-user-impersonation-end" }),
   });
 }
 
-export async function upsertUserAccountList(userId: number | string, kind: "ALLOW" | "BLOCK", reason: string, operator: string, expiresAt?: string | null) {
+export async function upsertUserAccountList(userId: number | string, kind: "ALLOW" | "BLOCK", reason: string, operator: string, expiresAt?: string | null, commandKey?: string) {
   return usersRequest<UserAccountListEntry>("/account-lists", {
     method: "POST",
     body: JSON.stringify({ userId, kind, reason, operator, expiresAt: expiresAt ?? null }),
-    idempotencyPrefix: "c2-account-list-upsert",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-account-list-upsert" }),
   });
 }
 
-export async function removeUserAccountList(userId: number | string, reason: string, operator: string) {
+export async function removeUserAccountList(userId: number | string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserAccountListEntry>(`/account-lists/${encodeURIComponent(String(userId))}/remove`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-account-list-remove",
+    ...(commandKey ? { idempotencyKey: commandKey } : { idempotencyPrefix: "c2-account-list-remove" }),
   });
 }
 

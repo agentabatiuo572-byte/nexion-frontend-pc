@@ -1,9 +1,9 @@
 # PAY-HDPAY-COMMERCE-DIRECT-CHECKOUT-SRS-v1（已废止，仅作历史记录）
 
 > **状态：RETIRED（2026-09-03）**
-> 本草案不得作为现行需求、接口或验收依据。现行产品裁决是：HDPay 仅用于
-> 钱包充值；商城订单只能由 NexGrid 钱包余额支付。余额不足时阻止购买并引导
-> 用户充值，充值到账后再通过 `POST /api/orders/{orderNo}/pay` 扣钱包并激活设备。
+> 本草案不得作为现行需求、接口或验收依据。订单直付的现行版本是
+> [D1 订单直付费用与异常核验](FEAT-PURCHASE-PAYMENT-OPERATIONS-20261031.md) 和
+> [App 购买付款流程](FEAT-APP-PURCHASE-PAYMENT-FLOW-20261031.md)。
 > 历史 `COMMERCE_ORDER` 字段只用于识别、隔离和人工复核旧会话，禁止新建、
 > 提交或结算。以下正文完整保留，仅供审计决策演变，不代表可实现能力。
 

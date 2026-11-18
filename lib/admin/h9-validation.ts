@@ -21,6 +21,15 @@ export const H9_BAND_MIN = 2;
 /** 单档算力档位下限,与前端 `network-rank.ts` 的 `band.tops < 0` 判据同值(0 合法)。 */
 export const H9_BAND_TOPS_MIN = 0;
 
+/** Backend validHomeDisplay strips trailing zeros and permits at most two decimal places. */
+export function h9MoneyPrecisionValid(value: number | string): boolean {
+  const [mantissa, exponent = "0"] = String(value).trim().toLowerCase().split("e");
+  const digits = mantissa.replace(/[.+-]/g, "");
+  if (/^0+$/.test(digits)) return true;
+  const trailingZeros = digits.length - digits.replace(/0+$/, "").length;
+  return Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent) - trailingZeros) <= 2;
+}
+
 /** 分位表单行的表单草稿(输入框原文,未解析)。 */
 export type H9BandDraft = { tops: string; cumPct: string };
 

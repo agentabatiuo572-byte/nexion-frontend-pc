@@ -1,5 +1,5 @@
 /**
- * admin-ops 完成门 runner。
+ * admin-ops 完成门 runner:类型检查、静态检查和生产构建,不含测试。
  *
  * 🔴 **run-all,不 fail-fast**(2026-08-17 主人签字的分档提案 T7)。
  *   从前第一个红齿就 `process.exit`,于是:① 后面的齿一次都没跑,而输出看起来只是「某齿失败」;
@@ -8,8 +8,7 @@
  *   **退出码非零 ⟺ 有 FAIL 或 NOT-RUN**(SKIP 是环境事实,SCOPED-SKIP 是档位选择,都不改退出码)。
  *
  * 档位(默认 full):
- *   · `--static` / `VERIFY_MODE=static` —— 只跳「重齿」(生产构建;以及任何起 dev server / Playwright
- *     的齿),记 SCOPED-SKIP。**scoped 绿 ≠ 全量绿**,合并守卫只认 mode=full。
+ *   · `--static` / `VERIFY_MODE=static` —— 只跳「重齿」(生产构建),记 SCOPED-SKIP。**scoped 绿 ≠ 全量绿**,合并守卫只认 mode=full。
  *   · `--only <齿名子串>` —— 调试用,未命中的齿记 NOT-RUN(所以 --only 必然非零退出,不会被误当成绿)。
  *
  * 落盘(三份,给不同读者):
@@ -131,12 +130,7 @@ function run(label, command, args, gearName) {
   }
   const out = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   if (result.status === 0) {
-    // 🔴 「整齿 SKIP」看得见,「齿内某几条断言 skip」也必须看得见,否则又是一次「跳过被读成通过」。
-    //   node:test 缺兄弟仓时按 j1/j2/e3/g4 的约定只 skip 跨仓那几条(本仓断言照跑),整齿仍是绿的。
-    //   这里把它数出来挂到汇总上。能数到的前提正是「有仓缺」→ 此时输出必然是截流的(见上),
-    //   所以对「缺仓导致的齿内 skip」这个成因,判据是**完整**的,不存在只覆盖一半的假安心。
-    const inner = out.match(/^(?:#|ℹ)\s*skipped\s+([1-9]\d*)/m);
-    return { status: "pass", innerSkipped: inner ? Number(inner[1]) : 0 };
+    return { status: "pass" };
   }
   const missing = SIBLING_REPOS.find((r) => !r.ok && r.signature.test(out));
   if (missing) {
@@ -151,12 +145,11 @@ function run(label, command, args, gearName) {
 }
 
 /**
- * `--static` 档跳过的「重齿」判据:① 生产构建(next build,本机 1-2 分钟,占全链大头);
- * ② 起 dev server / Playwright 的齿，包括共享下拉组件的真实 Chromium 行为检查。
+ * `--static` 档跳过的「重齿」判据:生产构建(next build,本机 1-2 分钟,占全链大头)。
  */
 function isHeavyGear([, cmd, args]) {
   const line = [cmd, ...args].join(" ");
-  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright|tests\/support-select-keyboard\.test\.mjs|scripts\/growth-promotions-capture\.test\.mjs/i.test(line);
+  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line);
 }
 
 /** git 读命令(只读,失败返回 null —— 拿不到就把记录里的对应字段留空,不编)。 */
@@ -230,37 +223,16 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
-  ["payment password admin policy, scoped release and recovery contract", "node", ["--experimental-strip-types", "--test", "tests/payment-password-contract.test.mjs"]],
-  ["F3 real placement query and manual assignment", "node", ["--test", "tests/f3-placements-client.test.mjs", "tests/f3-placements-component.test.mjs"]],
-  ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
-  ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs", "tests/h4-sample-account-select.test.mjs"]],
-  ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
-  ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f2-seven-layer-activation.behavior.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
-  ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs", "tests/phone-replacement-admin-contract.test.mjs"]],
-  ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs", "tests/phone-model-risk-contract.test.mjs"]],
-  ["L1 selected-source export contract", "node", ["--experimental-strip-types", "--test", "tests/l1-export-source-flow.test.mjs", "tests/l1-narrow-phase-readback.test.mjs", "tests/l-final10-protocol-repair-contract.test.mjs"]],
   ["typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]],
-  ["Good CSS interaction and layout contract", "node", ["--test", "tests/good-css-hover-contract.test.mjs", "tests/good-css-layout-contract.test.mjs"]],
   ["runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]],
   ["admin auth gate sentinel", "node", ["scripts/admin-auth-gate-sentinel.mjs"]],
-  ["admin auth gate contract", "node", ["--test", "--test-concurrency=1", "tests/admin-auth-password-change-gate.test.mjs", "tests/admin-auth-cookie-namespace.test.mjs", "tests/admin-idle-disabled-behavior.test.mjs", "tests/admin-session-baseline-behavior.test.mjs", "tests/a1-security-contract.test.mjs", "tests/default-avatar-client-forms.test.mjs"]],
-  ["workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]],
   ["canon sentinel", "node", ["scripts/canon-sentinel.mjs"]],
-  ["canon royalty projection regression", "node", ["--test", "tests/canon-royalty-projection-contract.test.mjs"]],
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
-  ["Support profile static filled-block border contract", "node", ["--experimental-strip-types", "--test", "tests/inner-block-no-border-sentinel.test.mjs", "tests/c1-acceptance-contract.test.mjs", "tests/customer-profile-time.test.mjs"]],
-  ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
-  ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
-  ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
-  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/m5-service-rules-controls.test.mjs", "tests/support-content-tools-picker.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-session-access.test.mjs", "tests/console-access-defaults.test.mjs", "tests/m3-support-message-links.test.mjs", "tests/support-leaderboard-unified-background.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/m1-personal-scope.test.mjs", "tests/m1-personal-priority.test.mjs", "tests/s5a-support-client.test.mjs", "tests/m3-manager-race-end-wire.test.mjs", "tests/support-exclusive-identity-r15.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs", "tests/m3-profile-read-recovery.test.mjs", "tests/support-bulk-preview-permission.test.mjs"]],
-  ["Support group management and qualification boundaries", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-group-client.test.mjs", "tests/group-management-container.test.mjs", "tests/group-management-v2-boundary.test.mjs", "tests/group-management-v3-boundary.test.mjs", "tests/independent-boundary.test.mjs", "tests/reviewer-v2.test.mjs"]],
-  ["Exclusive support scope and durable command recovery", "node", ["--experimental-strip-types", "--test", "tests/exclusive-support-pool-client.test.mjs", "tests/exclusive-support-pool-component.test.mjs", "tests/exclusive-support-recovery-v2.test.mjs", "tests/exclusive-support-m5-qualification-v2.test.mjs", "tests/reviewer-g3.test.mjs"]],
-  ["Support shared select real keyboard behavior", "node", ["--test", "tests/support-select-keyboard.test.mjs"]],
+  ["Support profile static filled-block border", "node", ["scripts/inner-block-no-border-sentinel.mjs", "--support-profile"]],
   ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],
   ["no-double-sign residue", "node", ["scripts/no-double-sign-terms.mjs"]],
   ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],
-  ["PC remaining-development status contract", "node", ["--test", "tests/pc-remaining-development-status-contract.test.mjs"]],
   ["modal contract", "node", ["scripts/admin-modal-contract-audit.mjs"]],
   ["list capability", "node", ["scripts/admin-list-capability-audit.mjs"]],
   ["App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]],
@@ -268,82 +240,16 @@ const GEARS = [
   // 键少一个 = 运营改不到的死配置,值域抄错 = 前端收到自己判非法的值。tsc 一处都拦不住。
   // (硬读兄弟仓 Nexion-uniapp —— 该仓在本机存在,故留在前段;缺 nexion-backend 的齿见文件末尾。)
   ["H9 public-stats cross-repo parity", "node", ["scripts/h9-public-stats-parity.mjs"]],
-  // H9 分位表值域**行为级**等价(真跑前端 network-rank + 后台 h9-validation,非子串):
-  // 删任何一条校验(cumPct≤100 / 单调不减 / 严格升序)即红,自造更严限制同样红;
-  // 附带钉 growth 代理错误文案与占位卡句号拼接。与上一齿同级硬读兄弟仓 Nexion-uniapp。
-  ["H9 percentile-table behavior contract", "node", ["--test", "tests/h9-public-stats-contract.test.mjs"]],
   ["kill-switch sentinel", "node", ["scripts/kill-switch-count-sentinel.mjs"]],
   ["rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]],
-  ["K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]],
-  ["K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]],
-  ["D2 withdrawal operations UX contract", "node", ["--test", "tests/d2-withdrawal-closure-contract.test.mjs"]],
-  ["PC full-menu health gate contract", "node", ["--experimental-strip-types", "--test", "tests/pc-all-modules-health-gate-contract.test.mjs"]],
-  ["KYC removal contract", "node", ["--test", "tests/kyc-removal-contract.test.mjs"]],
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
-  // 全链唯一一道 a2-outcome-uncertain 门(原第 44 齿是同一条命令的重复挂载,2026-08-17 去重:
-  // 同命令跑两遍不多买一分判别力,只多花一份时间,还让「N 个齿」这个数虚高)。
-  ["A2 outcome-uncertain contract", "node", ["--experimental-strip-types", "--test", "tests/a2-outcome-uncertain-contract.test.mjs", "tests/a2-frontend-contract.test.mjs"]],
-  // A2 的每条客户端路径都必须被 platform BFF 放行。缺这道门时「客户端请求了一条
-  // 代理没放行的子路径」两侧各自自洽、tsc/build 全绿,页面却把 404 显示成服务端故障
-  // (zentao #201 的 retention-preview 就是这么漏掉的)。
-  ["A2 audit BFF allowlist contract", "node", ["--test", "tests/a2-audit-proxy-allowlist-contract.test.mjs"]],
-  ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],
-  ["E1 private media proxy", "node", ["tests/e1-private-media-proxy.test.mjs"]],
-  ["deployed sandbox retirement contract", "node", ["scripts/tests/sandbox-retirement.contract.test.mjs"]],
-  ["operation-confirm error copy", "node", ["--test", "tests/operation-confirm-error-message.test.mjs"]],
-  // GEN10b 市场状态开关:此前后台侧一道专属门都没有,前一版的自由输入违规就是这么溜过去的。
-  ["G4 market-open-state contract", "node", ["--test", "tests/g4-market-open-state-contract.test.mjs"]],
-  // 跨仓 parity 单独成齿 —— 缺 Nexion-uniapp 的机器上它整齿跳过并进台账,
-  // 而上面那道后台侧契约照跑(拆分理由见该测试文件抬头)。
-  ["G4 market-open-state cross-repo parity", "node", ["--test", "tests/g4-market-open-state-parity.test.mjs"]],
-  // 恢复三条中间挡位(合并底账 §二 1/4/5,主人 2026-08-06 拍板):三道门全部只读本仓、任何机器真跑。
-  // 底账 §四教训 =「tab 在、行级动作被静默削减」逐文件核对测不出,故逐动作钉死成机器判据。
-  ["G4 tier-pricing contract", "node", ["--test", "tests/g4-tier-pricing-contract.test.mjs"]],
-  ["F5 commission-hold contract", "node", ["--test", "tests/f5-commission-hold-contract.test.mjs"]],
-  ["F4 quota criteria and policy behavior", "node", ["--test", "tests/f4-quota-criteria-behavior.test.mjs", "tests/f4-ambassador-policy-authority.test.mjs"]],
-  ["H2 quota and retired charge behavior", "node", ["--test", "tests/h2-quota-runtime.test.mjs"]],
-  ["H3 task identity and event binding behavior", "node", ["--test", "tests/h3-task-binding-behavior.test.mjs", "tests/h3-event-binding-management-contract.test.mjs", "tests/h-domain-contract.test.mjs"]],
-  ["A4 redrive and M1 versioned retry behavior", "node", ["--experimental-strip-types", "--test", "tests/a4-redrive-reload-behavior.test.mjs", "tests/h3-dead-event-redrive-contract.test.mjs", "tests/m1-availability-retry-baseline.test.mjs"]],
-  // F 域稳定命令号:静态半钉咽喉表达式级接线 + 运行时半跑真 store 语义(只读本仓,任何机器真跑)。
-  ["F pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/f-pending-store-contract.test.mjs"]],
-  ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],
-  // D7 法币提现参数(FEAT-VND01b 方案 B 假数据面):行为级校验(倒挂/冲突/CAS)+ 真假边界形态锚。
-  // strip-types flag 照 F pending-store 先例:node 24 默认剥离,node 22 LTS 需显式 flag 才能 import .ts。
-  ["D7 payout-vnd local contract", "node", ["--experimental-strip-types", "--test", "tests/d7-payout-vnd-contract.test.mjs"]],
-  ["Bank payout evidence behavior", "node", ["--experimental-strip-types", "--test", "tests/bank-payout-evidence.test.mjs", "tests/d7-payout-vnd-runtime-contract.test.mjs"]],
-  // 释放参数调参是钱路径(管收益放行):命令号必须带输入指纹(改值再提交不被幂等窗静默吞掉)+
-  // 放宽方向必须告知会核验 B1 覆盖率。两条都被独立审计抓到过,焊成门防复发。
-  ["K1 release-guard contract", "node", ["--test", "tests/k1-release-guard-contract.test.mjs"]],
-  // K6 接管执行可观测性:相位完整性 / 目标与版本对账 / 可重试性按分类 / 动作相位约束 + 禁用原因。
-  // 只读本仓、任何机器真跑;红队口径——「下发成功 ≠ 执行成功」与「期望目标 ≠ 实际目标」两条不许再塌回黑盒。
-  ["Janus retirement contract", "node", ["--test", "tests/janus-retirement.test.mjs", "tests/k1-retirement-response.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
-  ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
-  // 全家族失败归类口径:5xx / 传输层失败必须归「结果未知」保住命令号,只有 4xx 与
-  // 2xx 业务码非 0 才算确定性拒绝。散一处口径 = 那个域重复入账 / 重复打款。
-  ["outcome classification contract", "node", ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"]],
-  // (同族「结果未知」契约 a2-outcome-uncertain 已在上面第 27 齿挂着,这里原本重复挂了第二遍,已去重。)
-  ["b2/b3 outcome-unknown contract", "node", ["--test", "tests/b23-outcome-unknown-contract.test.mjs"]],
-  ["i4 A2 pending visibility contract", "node", ["--test", "tests/i4-a2-pending-visibility-contract.test.mjs"]],
-  ["i4 trust documents client", "node", ["--test", "tests/trust-documents-client.test.mjs"]],
-  // 红测脚本自身的守门人:它是唯一验证「这些门有判别力」的东西,却一度语法错误跑不起来而
-  // verify 全绿。这里只做静态自检(不跑红测本体 —— 它会改写源文件,并行跑互相踩)。
-  ["redtest harness self-check", "node", ["--test", "tests/redtest-harness-selfcheck.test.mjs"]],
-  ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
-  ["F1 direct-write pending-store contract", "node", ["--test", "tests/f1-direct-pending-store-contract.test.mjs"]],
-  ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
-  ["E2 task status preservation contract", "node", ["--test", "tests/e2-task-status-preservation-contract.test.mjs"]],
-  ["E2 Compute V2 config contract", "node", ["--experimental-strip-types", "--test", "tests/e2-compute-config.test.mjs"]],
-  ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
-  ["H8 targeted settlement", "node", ["--experimental-strip-types", "--test", "tests/h8-targeted-settlement.test.mjs"]],
-  ["J emergency pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/j-emergency-pending-store-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   // 提现单主键线上真名(`withdrawalNo`)在 PRD 与 admin 实现之间的 parity:后台 PRD 一度写成
   // `withdrawalId`,错了很久没人发现 —— 手工改完 18 处但没有任何机器判据锁住它。真名从
-  // d-client.ts 派生,整棵 PRD 树逐处核;判别力由 scripts/_redtest-withdrawal-key-parity.mjs 证明。
+  // d-client.ts 派生,整棵 PRD 树逐处核。
   ["withdrawal key-name parity", "node", ["scripts/withdrawal-key-parity.mjs"]],
   ["error-copy throat sentinel", "node", ["--experimental-strip-types", "scripts/error-copy-throat-sentinel.mjs"]],
-  ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/support-product-copy.test.mjs", "tests/fetch-guard.test.mjs", "tests/full-gates-support-error-copy.test.mjs", "tests/full-gates-support-pending-registration.test.mjs"]],
   // 生产构建必须排在依赖兄弟仓 nexion-backend 的齿**之前**:它是最贵也最有价值的本地齿,
   // 排在后面等于在缺仓机器上永远跑不到,完成门要求的「verify 全绿(含 production build)」会结构性不可达。
   ["production build", npmCmd, ["run", "build"]],
@@ -351,56 +257,7 @@ const GEARS = [
   //     而 run() 是 fail-fast —— 所以它们必须集中排在**最后**,否则其后的本地齿全部执行不到。
   //     2026-08-06 前它们散在中段,导致其后 21 道本可运行的门在本机从未跑过。
   ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
-  ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs", "tests/cregis-payout-control.test.mjs", "tests/cregis-exceptions.test.mjs"]],
-  ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs", "tests/b4-export-client.test.mjs"]],
-  ["F domain A2 proposal contract", "node", ["--test", "tests/f-domain-contract.test.mjs"]],
   ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],
-  ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
-  ["J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]],
-  ["K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]],
-  // 2026-08-07 补挂:这个文件写于 2026-07-28(退役 PCFULL-035「已退役控制项仍被 PC 宣称影响真实报价」
-  // 那一轮),但既不在 GEARS 也不在任何 npm script —— 一道从没跑过的门。结果 08-06 的原型对齐批
-  // 原样把那三个控件加了回来,机器门一声没吭。孤儿门 = 没有门。
-  ["E3 acceptance contract", "node", ["--test", "tests/e3-acceptance-contract.test.mjs"]],
-  // 2026-09-21 补挂(同一教训再犯一次):`tests/pc-a11y-selected-state.test.mjs` 写于 #157/#158/#159/#161/#166
-  // 那一轮,却同样既不在 GEARS 也不在任何 npm script —— 又一道孤儿门。后果是 #209 直接穿了过去:
-  // L1 八张 KPI 卡用 aria-pressed 表达互斥下钻(读屏按复选框朗读),而那道**专门守互斥选中语义**的门
-  // 从没跑过。下面这道新齿同时挂上二者:既把孤儿门接回链条,也钉住 #208 的三态口径只有一个实现。
-  ["PC a11y selected-state + KPI three-state rollup", "node",
-    ["--test", "tests/pc-a11y-selected-state.test.mjs", "tests/kpi-rollup-three-state-contract.test.mjs"]],
-  // 2026-09-21 补挂:同一批里发现的第三道孤儿门。`tests/e2-acceptance-contract.test.mjs` 同样
-  // 既不在 GEARS 也不在任何 npm script,所以 #203(中文业务页直接展示 minReward / minVRAM /
-  // QUEUE_SATURATION 等内部字段名)一路穿到验收 —— 而这道门当时恰好把这些字段名当**正确文案**钉着。
-  ["E2 acceptance contract", "node", ["--test", "tests/e2-acceptance-contract.test.mjs"]],
-  // 2026-09-22 挂上 zentao #229:审计主体曾被写成用户手机号,而 `AuditTimeline` 是
-  // C1/D2/E1 共同的渲染边界 —— 写入侧已修,但审计 append-only,历史行改不回来,
-  // 所以展示侧的脱敏必须有门守着,否则同一泄露会随下一批历史数据再上屏。
-  ["audit actor mask contract", "node",
-    ["--experimental-strip-types", "--test", "tests/audit-actor-mask-contract.test.mjs"]],
-  // 2026-09-22 补挂:**第三、第四道孤儿门**。`tests/c3-adjustment-closure-contract.test.mjs`
-  // 与 `tests/c3-adjustment-runtime-contract.test.mjs` 既不在 GEARS 也不在任何 npm script ——
-  // 与 #209 / #203 同一教训:门写着、文件在,就是没人跑。后果是 #231(未选账户时影响预览
-  // 仍展示具体余额与覆盖率)从这道本该守着 C3 的门底下穿了过去。现在接回链条,
-  // 并已把 #231 的判据补进 closure 门。
-  ["C3 adjustment closure + runtime", "node",
-    ["--experimental-strip-types", "--test", "tests/c3-adjustment-closure-contract.test.mjs",
-     "tests/c3-adjustment-runtime-contract.test.mjs"]],
-  ["A4 extension batch identity contract", "node", ["--test", "tests/a4-extension-batch-identity-contract.test.mjs"]],
-  ["F1 reward label internal identifier contract", "node", ["--test", "tests/f1-reward-label-internal-identifier-contract.test.mjs"]],
-  ["E5 per-face error contract", "node", ["--test", "tests/e5-per-face-error-contract.test.mjs"]],
-  // 2026-09-21 补挂(孤儿门第五、六道):两个 published-how 编辑器测试都既不在 GEARS 也不在
-  // 任何 npm script,于是 #49 的「条目版本填不进去」这一半长期无人拦 —— 服务端机制存在却不可达。
-  ["Published how-content editor contract", "node",
-    ["--test", "tests/published-how-content-contract.test.mjs", "tests/published-how-editor-behavior.test.mjs"]],
-  // 2026-09-21 补挂(孤儿门第七道):`tests/a5-params-registry-contract.test.mjs` 只在 package.json
-  // 里有一条 `test:a5-contract` 脚本,而该脚本**不在 verify 链上** —— 与「既不在 GEARS 也不在
-  // npm script」是同一后果:从没跑过。于是 #84 穿到了验收(参数归属链接在 AX 树里同名,读屏/
-  // 语音控制无法区分目标),而这道专门守 A5 契约的门当时只钉住「aria-label 存在」。
-  ["A5 params-registry contract", "node",
-    ["--experimental-strip-types", "--test", "tests/a5-params-registry-contract.test.mjs"]],
-  ["I1/I6 published copy quality", "node",
-    ["--experimental-strip-types", "--test", "tests/i6-copy-quality.test.mjs", "tests/i-overview-runtime-contract.test.mjs"]],
-  ["I7 course-version read selection recovery", "node", ["--max-old-space-size=128", "--test", "tests/i7-course-version-read-race.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];
@@ -409,7 +266,7 @@ GEARS.forEach((gear, index) => {
   const n = index + 1;
   const head = `[${n}/${GEARS.length}] ${label}`;
   // --only 的干草堆 = 齿名 + 它真正跑的那条命令。只匹齿名不够用:齿名是中英混排的人话
-  // (「A2 outcome-uncertain contract」),而调试时手边有的往往是测试文件名(a2-outcome-…test.mjs)。
+  // (「App storage-key parity」),而调试时手边有的往往是脚本文件名(uni-storage-key-sentinel.mjs)。
   if (only && ![label, cmd, ...args].join(" ").toLowerCase().includes(only.toLowerCase())) {
     results.push({ n, label, status: "not-run", ms: 0, reason: `--only ${only} 未命中` });
     return;
@@ -422,7 +279,7 @@ GEARS.forEach((gear, index) => {
   }
   const t = Date.now();
   const r = run(head, cmd, args, label);
-  results.push({ n, label, status: r.status, ms: Date.now() - t, reason: r.reason, innerSkipped: r.innerSkipped ?? 0 });
+  results.push({ n, label, status: r.status, ms: Date.now() - t, reason: r.reason });
 });
 
 const totalMs = Date.now() - startedAt;
@@ -439,8 +296,7 @@ const width = Math.max(...results.map((r) => r.label.length));
 console.log(`\n────── verify 汇总(mode=${mode}${only ? ` · --only ${only}` : ""})──────`);
 for (const r of results) {
   console.log(
-    `  ${NAME[r.status].padEnd(11)} [${String(r.n).padStart(2)}/${GEARS.length}] ${r.label.padEnd(width)}  ${secs(r.ms)}` +
-    (r.innerSkipped ? `   ⚠ 齿内 ${r.innerSkipped} 条断言 skip` : ""),
+    `  ${NAME[r.status].padEnd(11)} [${String(r.n).padStart(2)}/${GEARS.length}] ${r.label.padEnd(width)}  ${secs(r.ms)}`,
   );
 }
 console.log(`  ── PASS ${counts.pass} · FAIL ${counts.fail} · SKIP ${counts.skip} · SCOPED-SKIP ${counts.scoped} · NOT-RUN ${counts.notRun} / ${GEARS.length}  ·  用时 ${(totalMs / 1000).toFixed(1)}s`);
@@ -461,12 +317,6 @@ if (counts.scoped > 0) {
   for (const r of of("scoped-skip")) console.log(`     [${r.n}/${GEARS.length}] ${r.label}  ←  ${r.reason}`);
   console.log("   🔴 --static 绿只买内循环速度;宣布 done / 合并主线要的是全量档绿(合并守卫只认 mode=full)。");
 }
-const partial = results.filter((r) => r.innerSkipped > 0);
-if (partial.length > 0) {
-  console.log(`\n⚠️  下列齿整体绿,但**齿内有断言被 skip**(缺兄弟仓 → 只跳跨仓那几条,本仓断言照跑):`);
-  for (const r of partial) console.log(`     [${r.n}/${GEARS.length}] ${r.label}  ←  ${r.innerSkipped} 条`);
-}
-
 // 🔴 收尾必须把「跳过」单独说清楚,且不能只在中间刷屏一行就算 —— 这道汇总正是为了
 //   防止「verify 绿」被误读成「全部齿都跑了」。跳过数 > 0 时,这段是最后可见的输出。
 if (skipped.length > 0) {

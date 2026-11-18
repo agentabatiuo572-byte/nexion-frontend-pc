@@ -16,8 +16,9 @@ function isSafePart(value: string | undefined) {
   return !!value && value.trim().length > 0 && !value.includes("..") && !value.includes("/") && !value.includes("\\");
 }
 
-function backendPath(parts: string[]) {
+function backendPath(parts: string[], method: string) {
   if (!parts.length) return null;
+  if (parts.join("/") === "geo-block/hit-summary") return method === "GET" ? "/api/admin/emergency/geo-block/hit-summary" : null;
   const allowedHeads = new Set(["kill-switches", "geo-block", "tamper", "sop"]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
@@ -26,7 +27,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const targetPath = backendPath(path, request.method);
   if (!targetPath) return jsonError(404, "EMERGENCY_ROUTE_NOT_FOUND");
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());

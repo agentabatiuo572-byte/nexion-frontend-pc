@@ -13,7 +13,8 @@ async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const original = path.length === 1 && path[0] === "investigations";
   const discovery = path.length === 2 && path[0] === "investigations" && path[1] === "by-command-key";
-  if (!original && !discovery) return error(404, "COMMAND_ROUTE_NOT_FOUND");
+  const receiptStatus = path.length === 2 && path[0] === "investigations" && path[1] === "receipt-status";
+  if (!original && !discovery && !receiptStatus) return error(404, "COMMAND_ROUTE_NOT_FOUND");
   if (request.method !== "GET" && !(original && request.method === "POST")) {
     return error(405, "COMMAND_METHOD_NOT_ALLOWED");
   }
@@ -24,7 +25,7 @@ async function proxy(request: Request, context: RouteContext) {
   if (!token) return error(401, "ADMIN_AUTH_REQUIRED");
 
   const write = request.method === "POST";
-  const suffix = discovery ? "/by-command-key" : "";
+  const suffix = discovery ? "/by-command-key" : receiptStatus ? "/receipt-status" : "";
   const target = `${process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110"}/api/admin/commands/investigations${suffix}${new URL(request.url).search}`;
   try {
     const upstream = await fetch(target, {

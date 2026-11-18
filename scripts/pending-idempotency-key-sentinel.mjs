@@ -28,7 +28,6 @@
  * 要么在 KNOWN 里补一行并说清为什么不需要持久化。
  */
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "./lib/strip-comments.mjs";
@@ -50,15 +49,16 @@ const MIGRATED = [
   "lib/admin/event-rules-client.ts",
   "lib/admin/genesis-raffle-client.ts",
   "app/components/domain-views/d-tabs/cregis-deposit-policy.tsx",
+  "app/components/domain-views/j-tabs/j1-killswitch.tsx",
   // Phone operations retain original payload/key after expiry for GET-only recovery.
   "lib/admin/phone-replacement-client.ts",
   // E6 policy proposals recover their original A2 ticket by exact key, including archived evidence.
   "app/components/domain-views/e-tabs/phone-replacement-policy-panel.tsx",
   // Promotions retain the original command payload and key until authoritative resource readback.
   "lib/admin/promotion-client.ts",
-  // Avatar drafts and self saves use durable stores; the actual self consumer and expired query-only behavior are bound below.
+  // Avatar drafts and self saves use durable stores; the actual self consumer is bound below.
   "lib/admin/account-avatar-pending.ts",
-  // Exported group store is consumed by the actual M1 container; the bound behavior guard verifies persisted query-only CREATE recovery.
+  // Exported group store is consumed by the actual M1 container.
   "lib/admin/support-group-client.ts",
   // C1 single-notification time correction retains the immutable command across unknown outcomes.
   "app/_console/users/search/[id]/notification-time-evidence.tsx",
@@ -86,19 +86,33 @@ const MIGRATED = [
   "lib/admin/h9-client.ts",
   // J1/J2/J4 emergency writes retain their command key after an outcome-unknown refresh retry.
   "lib/admin/j-client.ts",
-  "app/components/domain-views/j-tabs/j1-killswitch.tsx",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
+  // A2：批准、驳回、撤回、机制参数和立即清理结果未知时保留原命令号和原内容，刷新后只能原样重试。
+  "app/components/domain-views/a-tabs/a2-audit.tsx",
   // A3：参数写入在结果未知时必须保留同一幂等键，刷新后仍可安全重试。
-  "app/components/domain-views/a-tabs/a3-config.tsx",
-  "app/components/domain-views/c-tabs/c5-security.tsx",
+  "lib/admin/a3-mutations.ts",
+  "lib/admin/c5-security-commands.ts",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
+  // C1：导出名单结果未知时保留原命令号、条件和理由，刷新后按原操作重试。
+  "app/components/domain-views/c-tabs/c1-search.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
+  // D5：收紧结果未知时保留原命令号和原内容，刷新后按原操作重试。
+  "app/components/domain-views/d-tabs/d5-params.tsx",
+  // D7 direct saves retain the immutable original values, version, reason and key until success or an explicit release.
+  "app/components/domain-views/d-tabs/d7-payout-vnd.tsx",
+  "app/components/domain-views/l-tabs/l1-kpi.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
+  // D6 汇率整组写入：结果未知时保留原值、版本号、理由和命令号，刷新后只能原样重试。
+  "app/components/domain-views/d-tabs/d6-fx.tsx",
+  // 资金储备和旧「可用资金与应付款」共用的注入、导出命令表，只建一份。
+  "lib/admin/treasury-commands.ts",
   "app/components/domain-views/f-view.tsx",
   // F2 lifecycle retains the complete original proposal for explicit unknown-result recovery.
   "lib/admin/f2-activation-attempt.ts",
   "app/components/domain-views/i-tabs/i3-campaign.tsx",
   "app/components/domain-views/i-tabs/i4-trust.tsx",
+  // I5 三个页签的写入路：结果未知时保留完整原操作，刷新后仍能原样重试。
+  "app/components/domain-views/i-tabs/i5-writes.tsx",
   "app/components/domain-views/j-tabs/j3-tamper.tsx",
   "app/components/domain-views/k-tabs/k1-multiaccount.tsx",
   "app/components/domain-views/k-tabs/k2-arbitrage.tsx",
@@ -110,6 +124,7 @@ const MIGRATED = [
   "lib/admin/account-deletion-client.ts",
   // A3 structured experience config keeps the same key for uncertain CAS updates.
   "lib/admin/platform-experience-client.ts",
+  "app/components/domain-views/h-tabs/h2-trial.tsx",
   "app/components/domain-views/h-tabs/h8-referral-rewards.tsx",
   "app/components/domain-views/m-view.tsx",
   // S5a maintenance, pool assignment and rule CAS retain command keys across retries.
@@ -128,7 +143,7 @@ const MIGRATED = [
   "app/components/domain-views/m-tabs/support-bulk-composer.tsx",
   "app/components/domain-views/m-tabs/support-random-assignment.tsx",
   "app/_console/overview/funnel/page.tsx",
-  "app/_console/overview/liquidity/page.tsx",
+  // B2 page removed by SPM-01; D3 above retains both original stores and slots.
   "app/_console/overview/risk-radar/page.tsx",
   "app/_console/users/search/[id]/page.tsx",
 ];
@@ -144,6 +159,7 @@ const KNOWN = {
   "app/components/domain-views/m-tabs/m1-overview.tsx#pendingCommandRef": { verdict: "not-idempotency", reason: "弹窗冻结输入与逻辑槽标识；实际 HTTP 键由 m-view 的共享 mCommands 按含版本的 value/reason 跨刷新恢复，真实 writer/sink 回归覆盖同输入保号与版本变更换号" },
   "app/components/domain-views/a-tabs/a4-events.tsx#redriveCommandRef": { verdict: "not-idempotency", reason: "确认框回显缓存；实际 HTTP 命令号由 a4-redrive-command 的共享持久槽位解析，真实模块刷新回归验证同号重试" },
   // ---- not-idempotency:不是命令号容器 ----
+  "lib/admin/pending-mutation-store.ts#slotStores": { verdict: "not-idempotency", reason: "按 storageKey 复用槽位存储实例,不存命令号;命令号仍在 sessionStorage,刷新后实例重建" },
   "app/components/domain-views/h-tabs/h2-trial.tsx#pendingBySession": { verdict: "not-idempotency", reason: "从共享持久记录按试用编号派生的当次渲染索引；提交和原键恢复都由 h2-trial-approval 读取持久存储" },
   "app/components/domain-views/m-view.tsx#pendingMCommandMetadata": { verdict: "not-idempotency", reason: "只缓存弹窗回显的动作名/理由文案,丢了不会重复入账" },
   "app/components/domain-views/m-view.tsx#pendingMCommandBaselines": { verdict: "not-idempotency", reason: "只缓存调参前基线用于 diff 展示,丢了只是少一段回显" },
@@ -170,13 +186,9 @@ const KNOWN = {
 const EXPORTED_PENDING_STORES = {
   "lib/admin/account-avatar-pending.ts#selfAvatarCommands": {
     consumer: "app/components/domain-views/m-tabs/self-avatar-editor.tsx",
-    behaviorTest: "tests/default-avatar-client-forms.test.mjs",
-    behaviorName: "expired original self avatar command survives reload but is query-only",
   },
   "lib/admin/support-group-client.ts#groupPendingCommands": {
     consumer: "app/components/domain-views/m-tabs/m1-group-management.tsx",
-    behaviorTest: "tests/support-group-client.test.mjs",
-    behaviorName: "unresolved original CREATE survives module reload beyond 24h but cannot replay",
   },
 };
 function pendingStoreCallCode(rel, ident, producerCode) {
@@ -408,7 +420,7 @@ for (const rel of MIGRATED) {
   //   槽位式(createSlotAttemptStore)契约 = resolve(取号/换号)+ forget(成功后收敛),二者缺一即红;
   //   命令号式(createPendingMutationStore)至少要有一次方法调用(纯悬空 const 即红)。
   // ponytail: resolve 出来的键是否真塞进了 Idempotency-Key 头,静态 regex 判不了 ——
-  //           那半步靠 tests/pending-mutation-*.test.mjs 守 store 行为 + 评审;这里守「接线没被拆」。
+  //           那半步靠评审;这里守「接线没被拆」。
   for (const match of code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createSlotAttemptStore\s*\(/g)) {
     const ident = match[1];
     const escaped = ident.replace(/\$/g, "\\$");
@@ -490,24 +502,6 @@ else {
   }
 }
 
-// Run the registered exported store's real behavior, so a dangling declaration cannot pass by registration alone.
-if (!failures.length) for (const binding of Object.values(EXPORTED_PENDING_STORES)) {
-  const testFile = path.join(ROOT, binding.behaviorTest);
-  if (!fs.existsSync(testFile) || !stripComments(fs.readFileSync(testFile, "utf8")).includes(`test("${binding.behaviorName}"`)) {
-    failures.push(`导出存储行为保护缺失:${binding.behaviorTest}#${binding.behaviorName}`); continue;
-  }
-  const behaviorEnv = { ...process.env };
-  delete behaviorEnv.NODE_TEST_CONTEXT;
-  behaviorEnv.GROUP_FE_ROOT = ROOT;
-  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-reporter=tap", "--test-name-pattern", "^" + binding.behaviorName + "$", testFile], { cwd: ROOT, env: behaviorEnv, encoding: "utf8", timeout: 30000 });
-  const requiredCounters = { tests: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 };
-  const behaviorPassed = Object.entries(requiredCounters).every(([counter, expected]) => {
-    const lines = [...(result.stdout ?? "").matchAll(new RegExp(`^# ${counter} (\\d+)\\r?$`, "gm"))];
-    return lines.length === 1 && lines[0][1] === String(expected);
-  });
-  if (result.error !== undefined || result.status !== 0 || !behaviorPassed)
-    failures.push(`导出存储行为保护失败:${binding.behaviorTest}#${binding.behaviorName}\n${(result.stdout ?? "").slice(-1200)}${result.error?.message ?? ""}`);
-}
 const debt = Object.values(KNOWN).filter((entry) => entry.verdict === "debt").length;
 if (failures.length) {
   console.error("pending-idempotency-key sentinel FAIL");

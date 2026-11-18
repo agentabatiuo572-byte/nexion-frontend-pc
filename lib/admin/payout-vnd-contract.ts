@@ -1,14 +1,15 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 
+/** 8 项的名字、单位和范围，和后端 PayoutVndConfigService.validOperationalValues 一致。金额单位是 USDT，接口键名里的 Usd 不改。 */
 export const PAYOUT_VND_FIELDS = {
   sellSpreadPct: { label: "卖出点差", unit: "%", min: 0, max: 3, step: 0.01 },
-  quoteTtlMinWithdraw: { label: "出金报价有效期", unit: "分钟", min: 1, max: 60, step: 1, integer: true },
+  quoteTtlMinWithdraw: { label: "提现报价有效期", unit: "分钟", min: 1, max: 60, step: 1, integer: true },
   requoteTolerancePct: { label: "重报价偏差阈值", unit: "%", min: 0, max: 10, step: 0.1 },
   feeRatePct: { label: "提现费率", unit: "%", min: 0, max: 5, step: 0.1 },
-  feeMinUsd: { label: "最低收费", unit: "USD", min: 0, max: 1000, step: 0.5 },
-  feeMaxUsd: { label: "单笔封顶", unit: "USD", min: 0, max: 1000, step: 0.5 },
-  minAmountUsd: { label: "单笔下限", unit: "USD", min: 0, max: 10000, step: 1 },
-  maxAmountUsd: { label: "单笔上限", unit: "USD", min: 1, max: 100000, step: 1 },
+  feeMinUsd: { label: "最低手续费", unit: "USDT", min: 0, max: 1000, step: 0.5 },
+  feeMaxUsd: { label: "手续费封顶", unit: "USDT", min: 0, max: 1000, step: 0.5 },
+  minAmountUsd: { label: "单笔最低金额", unit: "USDT", min: 0, max: 10000, step: 1 },
+  maxAmountUsd: { label: "单笔最高金额", unit: "USDT", min: 1, max: 100000, step: 1 },
 } as const;
 
 export type PayoutVndWritableField = keyof typeof PAYOUT_VND_FIELDS;
@@ -113,9 +114,50 @@ export function normalizePayoutVndConfig(value: unknown): PayoutVndConfig {
   };
 }
 
+/** 十进制数按 10^scale 放大成整数，不经过浮点乘法。 */
+function scaledDecimal(value: number): { units: bigint; scale: number } {
+  const text = String(value).includes("e") ? value.toFixed(12) : String(value);
+  const [whole, fraction = ""] = text.split(".");
+  const trimmed = fraction.replace(/0+$/, "");
+  return { units: BigInt(`${whole}${trimmed}`), scale: trimmed.length };
+}
+
+// 编译目标是 ES2017，不能写 BigInt 字面量，常数用 BigInt() 造。
+const pow10 = (exponent: number) => BigInt(`1${"0".repeat(exponent)}`);
+const TWO = BigInt(2);
+const TEN = BigInt(10);
+const HUNDRED = BigInt(100);
+const BASIS = BigInt(10_000);
+const MICRO = BigInt(1_000_000);
+/** 正数 n / d 四舍五入（HALF_UP）。 */
+const halfUp = (n: bigint, d: bigint) => (TWO * n + d) / (TWO * d);
+
+/**
+ * 价格都用百万分之一越南盾（micro）表示，全程整数运算。
+ * 买入价同后端 VietnamPaymentPolicy.quoteRate：点差换成基点四舍五入，算到 8 位小数后取整到十位。
+ * 卖出价同后端 BankWithdrawalPricing.calculate：基准价 ×（1 − 卖出点差），保留 6 位小数向下截断，不取整（闸门 2 第 10 条）。
+ */
 export function derivePayoutVndRates(config: Pick<PayoutVndConfig, "baseRateVndPerUsdt" | "buySpreadPct" | "sellSpreadPct">) {
-  return {
-    buy: Math.round(config.baseRateVndPerUsdt * (1 + config.buySpreadPct / 100) / 10) * 10,
-    sell: Math.round(config.baseRateVndPerUsdt * (1 - config.sellSpreadPct / 100) / 10) * 10,
-  };
+  const base = scaledDecimal(config.baseRateVndPerUsdt);
+  const buySpread = scaledDecimal(config.buySpreadPct);
+  const sellSpread = scaledDecimal(config.sellSpreadPct);
+  const basisPoints = halfUp(buySpread.units * HUNDRED, pow10(buySpread.scale));
+  const raw8 = halfUp(base.units * (BASIS + basisPoints) * pow10(8), pow10(base.scale) * BASIS);
+  const buy = halfUp(raw8, TEN * pow10(8)) * TEN * MICRO;
+  const sell = (base.units * (HUNDRED * pow10(sellSpread.scale) - sellSpread.units) * MICRO)
+    / (pow10(base.scale) * HUNDRED * pow10(sellSpread.scale));
+  return { buy, sell, spread: buy - sell };
+}
+
+/** 后端 PayoutVndConfigService.isInverted 用未取整的价格：卖出价 ≥ 买入价，等于两个点差加起来不大于 0。 */
+export function isPayoutVndInverted(buySpreadPct: number, sellSpreadPct: number) {
+  return buySpreadPct + sellSpreadPct <= 0;
+}
+
+/** micro 越南盾写成「25,643.8」：千分位，小数按实际精度，不补零不舍入。 */
+export function vndText(micro: bigint) {
+  const negative = micro < BigInt(0);
+  const abs = negative ? -micro : micro;
+  const fraction = (abs % MICRO).toString().padStart(6, "0").replace(/0+$/, "");
+  return `${negative ? "-" : ""}${(abs / MICRO).toLocaleString("en-US")}${fraction ? `.${fraction}` : ""}`;
 }

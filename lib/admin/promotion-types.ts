@@ -1,5 +1,6 @@
 // Generated from the reviewed promotion OpenAPI; run scripts/generate-promotion-types.mjs.
-// Source SHA256: 882d781b4edd81ea74250b8a47ce31ecdc0e1f38b35592acf5d643ae49ba1888
+// Localized contracts synced from backend 7ad56246; other reviewed PC projections are retained.
+// Baseline source SHA256: 882d781b4edd81ea74250b8a47ce31ecdc0e1f38b35592acf5d643ae49ba1888
 export type Id = string;
 export type EvidenceRef = (Id) | (string);
 export type Hash = string;
@@ -26,7 +27,19 @@ export type AuthoredPolicyContent = (NonLocalizedPolicyContent) | ({ "kind": "DE
 export type PolicyContent = StoredPolicyContent;
 export type NonLocalizedPolicyContent = ({ "kind": "FIRST_PURCHASE"; "executorCode": "PROMOTION_FIRST_PURCHASE_V1"; "mode": "FIRST_ELIGIBLE_ORDER" | "FIRST_ELIGIBLE_UNIT"; "restoreAfterRefund": boolean }) | ({ "kind": "DEVICE_AUDIENCE"; "executorCode": "PROMOTION_DEVICE_AUDIENCE_V1"; "sources": Array<"ORDER" | "PROMOTION_GIFT">; "states": Array<"ACTIVE" | "ONLINE">; "excludeExpired": true; "excludePhoneAndTrial": true }) | ({ "kind": "SETTLEMENT"; "executorCode": "EXISTING_ORDER_MATURITY_V1"; "nativeContract": NativeRef; "requiresPaid": true; "requiresNoRefundHold": true; "requiresNoFreeze": true }) | ({ "kind": "STACKING"; "executorCode": "PROMOTION_STACKING_V1"; "voucher": "ALLOW" | "DENY"; "bundleDiscount": "ALLOW" | "DENY"; "existingH8": "ALLOW" | "DENY"; "existingReferral": "ALLOW" | "DENY"; "samePurchaseUnit": "EXCLUSIVE" }) | ({ "kind": "QUOTE"; "executorCode": "PROMOTION_QUOTE_V1"; "ttlSeconds": number; "payByRule": "MIN_ORDER_DEADLINE_ACTIVITY_END" }) | ({ "kind": "AUTHORIZATION"; "executorCode": "PROMOTION_AUTHORIZATION_V1"; "approvalCapability": "growth_promotion_approve"; "publishCapability": "growth_promotion_publish"; "separateMakerChecker": boolean; "scope": "PROMOTION_ONLY"; "nativeContract": NativeRef });
 export type PolicyDraft = { "content": AuthoredPolicyContent; "reason": string; "evidenceRefs": Array<EvidenceRef> };
-export type Policy = { "policyId": Id; "version": Revision; "revision": Revision; "contentHash": Hash; "state": "DRAFT" | "APPROVED" | "REVOKED"; "content": StoredPolicyContent; "approvalRef": (ExternalId) | (null); "approvedBy": (Id) | (null); "approvedAt": (Time) | (null); "fixture": boolean; "fixtureRunId": (Id) | (null); "resolvedDeviceRights": (ResolvedDeviceRights) | (null) };
+export type PolicyApprover = { id: number; displayName: string | null; username: string | null };
+export type RefundPolicyExecution = {
+  basis: string;
+  walletRecovery: string;
+  deviceRecovery: string;
+  insufficientRecovery: string;
+  negativeBalance: boolean;
+  crossAssetDeduction: boolean;
+  terminalState: string;
+  manualReviewAppliesTo: string;
+  unknownEvidence: string;
+};
+export type Policy = { "policyId": Id; "version": Revision; "revision": Revision; "contentHash": Hash; "state": "DRAFT" | "APPROVED" | "REVOKED"; "content": StoredPolicyContent; "approvalRef": (ExternalId) | (null); "approvedBy": (Id) | (null); approvedByAdmin?: PolicyApprover | null; execution?: RefundPolicyExecution; "approvedAt": (Time) | (null); "fixture": boolean; "fixtureRunId": (Id) | (null); "resolvedDeviceRights": (ResolvedDeviceRights) | (null) };
 export type DayRange = { "minDays": (number) | (null); "maxDays": (number) | (null) };
 export type Audience = { "registrationAge": DayRange; "purchaseHistory": "ANY" | "NEVER_PAID" | "HAS_VALID_PURCHASE"; "devicePresence": "ANY" | "NONE" | "HAS_QUALIFYING_DEVICE"; "deviceAudiencePolicy": (PolicyRef) | (null); "rankIds": Array<Id>; "lastValidPurchaseAge": DayRange; "neverPurchased": boolean; "markets": Array<Id>; "sponsor": "ANY" | "REQUIRED" | "ABSENT" };
 export type RewardSpec = ({ "rewardRuleId": Id; "beneficiaryRole": Role; "type": "DEVICE"; "giftProductNo": Id; "quantity": Quantity; "deviceRightsProfile": PolicyRef }) | ({ "rewardRuleId": Id; "beneficiaryRole": Role; "type": "USDT" | "UVT"; "calculation": "FIXED"; "amount": PositiveAmount; "assetPolicy": PolicyRef }) | ({ "rewardRuleId": Id; "beneficiaryRole": "BUYER"; "type": "DISCOUNT_USDT"; "calculation": "FIXED"; "amount": PositiveAmount });

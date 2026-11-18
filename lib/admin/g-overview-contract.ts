@@ -9,6 +9,7 @@ const G4_PARAM_KEYS = new Set(["supply", "price", "dividend", "royalty", "divBas
 const G4_STATES = new Set(["minted", "held", "listed", "sold"]);
 const G7_PARAM_KEYS = new Set(["apy", "lockDays", "nurture", "lottery", "penalty", "presets"]);
 const G7_STATES = new Set(["pending_lock", "active", "mature_unclaimed", "claimed", "early_withdrawn"]);
+const G7_BREAKDOWN_STATES = new Set([...G7_STATES, "slashed", "refunded"]);
 
 function fail(module: string, path: string): never {
   throw new Error(`${module}_RESPONSE_INVALID:${path}`);
@@ -89,7 +90,7 @@ function validateG1Pool(value: unknown, index: number): void {
   const row = record(module, value, path);
   requiredKeys(module, row, path, [
     "product", "tierKey", "term", "termDays", "apy", "apyDisplay", "penalty", "penaltyDisplay",
-    "minStake", "minDisplayValue", "lockedUsd", "lockedDisplay", "enabled", "killed", "status",
+    "lockedUsd", "lockedDisplay", "enabled", "killed", "status",
     "statusLabel", "statusTone", "highYield",
   ]);
   text(module, row.product, `${path}.product`);
@@ -100,8 +101,9 @@ function validateG1Pool(value: unknown, index: number): void {
   text(module, row.apyDisplay, `${path}.apyDisplay`);
   numeric(module, row.penalty, `${path}.penalty`, 0, 100);
   text(module, row.penaltyDisplay, `${path}.penaltyDisplay`);
-  numeric(module, row.minStake, `${path}.minStake`);
-  text(module, row.minDisplayValue, `${path}.minDisplayValue`);
+  // Explicit null means the stored minimum is unavailable; missing or malformed fields still fail.
+  if (row.minStake !== null) numeric(module, row.minStake, `${path}.minStake`);
+  if (row.minDisplayValue !== null) text(module, row.minDisplayValue, `${path}.minDisplayValue`);
   numeric(module, row.lockedUsd, `${path}.lockedUsd`);
   text(module, row.lockedDisplay, `${path}.lockedDisplay`);
   bool(module, row.enabled, `${path}.enabled`);
@@ -110,6 +112,28 @@ function validateG1Pool(value: unknown, index: number): void {
   text(module, row.statusLabel, `${path}.statusLabel`);
   enumText(module, row.statusTone, `${path}.statusTone`, new Set(["ok", "bad", "warn", "dim"]));
   bool(module, row.highYield, `${path}.highYield`);
+}
+
+function validateG1Position(value: unknown, path: string): void {
+  const module = "G1";
+  const position = record(module, value, path);
+  requiredKeys(module, position, path, [
+    "positionNo", "userNo", "nickname", "tier", "amount", "lockedApy", "earlyPenalty",
+    "lockedAt", "unlockAt", "estimatedInterest", "status", "statusLabel", "statusTone", "note",
+  ]);
+  ["positionNo", "userNo", "tier", "amount", "lockedApy", "earlyPenalty", "lockedAt", "unlockAt",
+    "estimatedInterest", "status", "statusLabel", "statusTone"].forEach((key) => text(module, position[key], `${path}.${key}`));
+  text(module, position.nickname, `${path}.nickname`, true);
+  text(module, position.note, `${path}.note`, true);
+  if (position.storedStatus !== undefined) text(module, position.storedStatus, `${path}.storedStatus`);
+  for (const key of ["amountMissing", "estimatedInterestMissing"]) {
+    if (position[key] !== undefined) bool(module, position[key], `${path}.${key}`);
+  }
+}
+
+export function assertG1PositionContract<T>(value: T): T {
+  validateG1Position(value, "data.position");
+  return value;
 }
 
 function validateG1PositionGroup(value: unknown, index: number): void {
@@ -122,16 +146,7 @@ function validateG1PositionGroup(value: unknown, index: number): void {
   text(module, row.note, `${path}.note`, true);
   numeric(module, row.count, `${path}.count`);
   array(module, row.rows, `${path}.rows`).forEach((item, rowIndex) => {
-    const rowPath = `${path}.rows[${rowIndex}]`;
-    const position = record(module, item, rowPath);
-    requiredKeys(module, position, rowPath, [
-      "positionNo", "userNo", "nickname", "tier", "amount", "lockedApy", "earlyPenalty",
-      "lockedAt", "unlockAt", "estimatedInterest", "status", "statusLabel", "statusTone", "note",
-    ]);
-    ["positionNo", "userNo", "tier", "amount", "lockedApy", "earlyPenalty", "lockedAt", "unlockAt",
-      "estimatedInterest", "status", "statusLabel", "statusTone"].forEach((key) => text(module, position[key], `${rowPath}.${key}`));
-    text(module, position.nickname, `${rowPath}.nickname`, true);
-    text(module, position.note, `${rowPath}.note`, true);
+    validateG1Position(item, `${path}.rows[${rowIndex}]`);
   });
 }
 
@@ -161,18 +176,24 @@ export function assertG1OverviewContract<T>(value: T): T {
   return value;
 }
 
-function validateG2Order(module: string, value: unknown, path: string): void {
+export function validateG2Order(module: string, value: unknown, path: string): void {
   const row = record(module, value, path);
   requiredKeys(module, row, path, [
     "id", "userId", "userNo", "nickname", "countryCode", "exchangeNo", "fromAsset", "toAsset",
     "fromAmount", "toAmount", "rate", "status", "statusLabel", "statusTone", "directionLabel",
-    "amountUsdt", "gateReason", "etaLabel", "createdAt", "updatedAt",
+    "amountUsdt", "createdAt", "updatedAt",
   ]);
   text(module, String(row.id), `${path}.id`);
   numeric(module, row.userId, `${path}.userId`, 1);
   ["userNo", "exchangeNo", "fromAsset", "toAsset", "status", "statusLabel", "statusTone", "directionLabel",
     "createdAt"].forEach((key) => text(module, row[key], `${path}.${key}`));
-  ["nickname", "countryCode", "gateReason", "etaLabel", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
+  ["nickname", "countryCode", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
+  // The mapper's CASE expressions emit SQL NULL outside their matching state.
+  ["gateType", "gateReason"].forEach((key) => {
+    if (!(key in row)) fail(module, `${path}.${key}`);
+    if (row[key] !== null) text(module, row[key], `${path}.${key}`, true);
+  });
+  if (row.etaLabel != null) text(module, row.etaLabel, `${path}.etaLabel`, true);
   ["fromAmount", "toAmount", "rate", "amountUsdt"].forEach((key) => numeric(module, row[key], `${path}.${key}`));
 }
 
@@ -199,9 +220,18 @@ export function assertG2OverviewContract<T>(value: T): T {
     else numeric(module, row.value, `${path}.value`);
     bool(module, row.loosen, `${path}.loosen`);
     if (row.meterPct !== undefined && row.meterPct !== null) numeric(module, row.meterPct, `${path}.meterPct`);
+    if (row.pendingApproval !== undefined && typeof row.pendingApproval !== "boolean") fail(module, `${path}.pendingApproval`);
+    if (row.pendingOperationId !== undefined && row.pendingOperationId !== null) text(module, row.pendingOperationId, `${path}.pendingOperationId`);
   });
   if (capKeys.size !== G2_CAP_KEYS.size) fail(module, "data.caps");
   array(module, root.queue, "data.queue").forEach((row, index) => validateG2Order(module, row, `data.queue[${index}]`));
+  if (root.queueEstimate != null) {
+    const path = "data.queueEstimate";
+    const estimate = record(module, root.queueEstimate, path);
+    for (const key of ["hours", "copy", "copyZh", "copyVi"]) {
+      if (estimate[key] != null) text(module, estimate[key], `${path}.${key}`, true);
+    }
+  }
   const gates = record(module, root.gateDetails, "data.gateDetails");
   G2_GATE_KEYS.forEach((key) => {
     const path = `data.gateDetails.${key}`;
@@ -215,10 +245,29 @@ export function assertG2OverviewContract<T>(value: T): T {
   });
   const swap = record(module, root.swap, "data.swap");
   requiredKeys(module, swap, "data.swap", ["enabled", "status", "configKey", "linkedDomain"]);
+  if (!("blockedBy" in swap)) fail(module, "data.swap.blockedBy");
   bool(module, swap.enabled, "data.swap.enabled");
   enumText(module, swap.status, "data.swap.status", new Set(["enabled", "disabled"]));
   text(module, swap.configKey, "data.swap.configKey");
   if (swap.linkedDomain !== "J1") fail(module, "data.swap.linkedDomain");
+  if (swap.blockedBy !== null && swap.blockedBy !== "I5_DISCLOSURE_GATE") fail(module, "data.swap.blockedBy");
+  const disclosure = record(module, root.disclosureGate, "data.disclosureGate");
+  requiredKeys(module, disclosure, "data.disclosureGate", ["exchange"]);
+  if (typeof disclosure.exchange !== "boolean") fail(module, "data.disclosureGate.exchange");
+  if (root.emergencySwitch !== undefined) {
+    const switches = record(module, root.emergencySwitch, "data.emergencySwitch");
+    const path = "data.emergencySwitch.exchange";
+    const exchange = record(module, switches.exchange, path);
+    if (typeof exchange.available !== "boolean") fail(module, `${path}.available`);
+    if (exchange.available ? typeof exchange.enabled !== "boolean" : exchange.enabled !== null) fail(module, `${path}.enabled`);
+    if (exchange.sourceKey !== null) enumText(module, exchange.sourceKey, `${path}.sourceKey`, new Set(["killswitch.exchange", "emergency.killswitch.exchange"]));
+    if (exchange.available) {
+      if (exchange.sourceKey === null) fail(module, `${path}.sourceKey`);
+      if (exchange.unavailableReason !== null) fail(module, `${path}.unavailableReason`);
+    } else {
+      enumText(module, exchange.unavailableReason, `${path}.unavailableReason`, new Set(["MISSING", "INVALID"]));
+    }
+  }
   array(module, root.geoBlocked, "data.geoBlocked").forEach((item, index) => {
     const path = `data.geoBlocked[${index}]`;
     const geo = record(module, item, path);
@@ -317,7 +366,13 @@ export function assertG7OverviewContract<T>(value: T): T {
   text(module, capacity.source, "data.g4Capacity.source");
   const params = array(module, root.params, "data.params");
   if (params.length !== 0 && params.length !== G7_PARAM_KEYS.size) fail(module, "data.params");
-  params.forEach((param, index) => validateParam(module, param, `data.params[${index}]`, G7_PARAM_KEYS, ["newOnly", "b1RedlineTriggered"]));
+  params.forEach((param, index) => {
+    const path = `data.params[${index}]`;
+    validateParam(module, param, path, G7_PARAM_KEYS, ["newOnly", "b1RedlineTriggered"]);
+    const row = param as JsonRecord;
+    if (row.pendingApproval !== undefined && typeof row.pendingApproval !== "boolean") fail(module, `${path}.pendingApproval`);
+    if (row.pendingOperationId !== undefined && row.pendingOperationId !== null) text(module, row.pendingOperationId, `${path}.pendingOperationId`);
+  });
   const phaseGate = record(module, root.phaseGate, "data.phaseGate");
   requiredKeys(module, phaseGate, "data.phaseGate", ["key", "label", "value", "linkedDomain", "readonly"]);
   ["key", "label", "value"].forEach((key) => text(module, phaseGate[key], `data.phaseGate.${key}`));
@@ -328,7 +383,9 @@ export function assertG7OverviewContract<T>(value: T): T {
     const path = `data.statusBreakdown[${index}]`;
     const status = record(module, item, path);
     requiredKeys(module, status, path, ["status", "label", "count", "principalUsd", "principalDisplay", "tone"]);
-    enumText(module, String(status.status).toLowerCase(), `${path}.status`, G7_STATES);
+    // The fixed lifecycle still has five states, but the historical breakdown
+    // also contains SLASHED / REFUNDED (StakingMapper.repurchaseStatusBreakdown).
+    enumText(module, String(status.status).toLowerCase(), `${path}.status`, G7_BREAKDOWN_STATES);
     text(module, status.label, `${path}.label`);
     numeric(module, status.count, `${path}.count`);
     numeric(module, status.principalUsd, `${path}.principalUsd`);

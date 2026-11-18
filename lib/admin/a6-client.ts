@@ -19,6 +19,11 @@ export type A6RoleSummary = {
   status: number;
   builtin: boolean;
   adminCount: number;
+  /** Stored bindings, matching the role detail; absent on older backends. */
+  permissionCount?: number;
+  menuGrantCount?: number;
+  /** Distinct enabled, undeleted bound accounts; independent of the role's status and MFA. */
+  enabledAdminCount?: number;
 };
 
 export type A6RoleOverview = { roles: A6RoleSummary[]; total: number };
@@ -32,11 +37,14 @@ export type A6RoleDetail = {
   builtin: boolean;
   permissionCodes: string[];
   menuIds: number[];
+  legacyNonReadPermissionCodes?: string[];
 };
 
 export type A6RoleCreateInput = { roleCode: string; roleName: string; remark?: string; status?: number };
 export type A6RoleUpdateInput = { roleName?: string; remark?: string };
 export type A6GrantsPayload = { permissionCodes: string[]; menuIds: number[] };
+export type A6GrantsSnapshot = { expectedPermissionCodes: string[]; expectedMenuIds: number[] };
+export type A6GrantsRequest = A6GrantsPayload & A6GrantsSnapshot;
 
 function normalizeOverview(raw: unknown): A6RoleOverview {
   return strictA6Overview(raw) as A6RoleOverview;
@@ -59,7 +67,7 @@ async function a6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
   const uncertain = () => new Error(
-    "请求结果暂未确认，已填写的内容还在；请直接重试，不会重复执行。");
+    "结果未知，已填写的内容还在；请直接重试，不会重复执行。");
   // 传输层失败(断网 / 超时)是「结果未知」的头号场景:原来抛裸错误,调用方与操作员都只看到「失败」。
   let response: Response;
   try {
@@ -135,7 +143,7 @@ export async function deleteA6Role(roleId: number, reason: string, operator: str
   return ticket;
 }
 
-export async function proposeA6RoleGrants(roleId: number, payload: A6GrantsPayload, reason: string, operator: string, stableKey?: string): Promise<A2ProposalTicket> {
+export async function proposeA6RoleGrants(roleId: number, payload: A6GrantsRequest, reason: string, operator: string, stableKey?: string): Promise<A2ProposalTicket> {
   const raw = await a6Request<unknown>(`/roles/${encodeURIComponent(roleId)}/grants`, {
     method: "PUT",
     body: JSON.stringify({ ...payload, reason, operator }),

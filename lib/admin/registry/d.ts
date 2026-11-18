@@ -13,12 +13,12 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/withdrawals",
-    summary: "审核提现申请，查看风险评分和触发的规则。大额提现先看兑付覆盖率；银行提现以支付商付款成功为完成。",
+    summary: "审核用户提现，先看风险和兑付覆盖率。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance/pool",
-    summary: "查看可用储备、九类应付款、预计到期金额和资金安全等级。补充储备须上传真实凭证。",
+    summary: "查看可用储备、九类应付款、预计到期金额和资金安全等级。补充储备须填写真实凭证号。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -28,7 +28,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/params",
-    summary: "设置每日提现次数、可提比例、网络费、UVT 抵扣、小额免审和到账时限。放宽限制前先看兑付覆盖率；随运营阶段变化的设置在「运营阶段设置」修改。",
+    summary: "设置提现次数、比例、网络费和到账时效。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -38,7 +38,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/payout-vnd",
-    summary: "设置越南盾银行提现的参数，汇率沿用「汇率设置」。银行提现通过 HDPay 审核和付款。",
+    summary: "设置银行卡提现的报价、手续费和单笔限额。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

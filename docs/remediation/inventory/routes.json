@@ -45,8 +45,9 @@
         "routeKind": "static"
       },
       {
-        "route": "/overview/liquidity",
-        "file": "app/(console)/overview/liquidity/page.tsx",
+        "route": "/finance/pool?tab=due&maturity=7d",
+        "compatibilitySource": "/overview/liquidity",
+        "file": "app/components/domain-views/d-tabs/d3-treasury.tsx",
         "source": "app/page.tsx",
         "routeKind": "static"
       },
@@ -119,9 +120,10 @@
         "source": "lib/nav/console-nav.ts"
       },
       {
-        "route": "/overview/liquidity",
+        "route": "/finance/pool?tab=due&maturity=7d",
+        "compatibilitySource": "/overview/liquidity",
         "id": "B2",
-        "status": "flagship",
+        "status": "merged-into-D3",
         "source": "lib/nav/console-nav.ts"
       },
       {

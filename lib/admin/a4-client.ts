@@ -1,9 +1,11 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { normalizeOutboxDiagnostics, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
+import { normalizeOutboxDeadLetters, normalizeOutboxDiagnostics, nullableA4UserNo, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import type { AdminSession } from "@/lib/store/admin-auth";
+import { isExplicitRejection } from "./explicit-rejection";
+import { OutcomeUnknownError } from "./outcome-classification";
 
 interface ApiResult<T> {
   code: number;
@@ -24,6 +26,7 @@ export type A4Stats = {
 export type A4EventDetailRow = {
   item: string;
   desc: string;
+  displayName?: string | null;
 };
 
 export type A4EventFamily = {
@@ -60,13 +63,16 @@ export type A4KpiFormula = {
 export type A4DomainItem = {
   name: string;
   n: boolean;
+  displayName?: string | null;
 };
 
 export type A4DomainExtensionBatch = {
   id: string;
   title: string;
   state: "done" | "inprogress" | "pending" | "scheduled" | "registered";
-  proposer: string;
+  proposer?: string | null;
+  producerReference?: string | null;
+  consumerReference?: string | null;
   impact: string;
   newDomains: A4DomainItem[];
   details: A4EventDetailRow[];
@@ -75,6 +81,9 @@ export type A4DomainExtensionBatch = {
 export type A4SchemaRegistration = {
   eventName: string;
   ownerDomain: string;
+  displayName?: string | null;
+  ownerDisplayName?: string | null;
+  producerReference?: string | null;
   familyKey: string;
   producer: string;
   consumers: string;
@@ -93,6 +102,7 @@ export type A4Overview = {
   registeredDomains: string[];
   pendingDomains: string[];
   sunsetDomains: string[];
+  domainDisplayNames?: Record<string, string>;
   commonFields: A4CommonField[];
   dimensionParams: A4DimensionParam[];
   kpiFormulas: A4KpiFormula[];
@@ -103,6 +113,7 @@ export type A4Overview = {
 
 export type A4RetentionExecution = {
   retentionMonths: number;
+  /** Execution time; the retention cutoff is stored separately in the backend audit, not in this view. */
   evaluatedAt: string;
   lockAcquired: boolean;
   archivedRows: number;
@@ -131,6 +142,12 @@ function requiredText(value: unknown, field: string) {
   return value.trim();
 }
 
+function optionalLabel(value: unknown, field: string): string | null | undefined {
+  if (value == null) return value;
+  if (typeof value !== "string") invalid(field);
+  return value.trim() || null;
+}
+
 function requiredCount(value: unknown, field: string) {
   const text = requiredText(value, field);
   const count = Number(text);
@@ -143,13 +160,14 @@ function requiredNumber(value: unknown, field: string) {
   return value;
 }
 
-function requiredBoolean(value: unknown, field: string) {
-  if (typeof value !== "boolean") invalid(field);
+function requiredInteger(value: unknown, field: string) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) invalid(field);
   return value;
 }
 
-function textOrFallback(value: unknown, field: string, fallback: string) {
-  return value == null ? fallback : requiredText(value, field);
+function requiredBoolean(value: unknown, field: string) {
+  if (typeof value !== "boolean") invalid(field);
+  return value;
 }
 
 function lifecycleState(value: unknown): A4SchemaRegistration["lifecycleState"] {
@@ -163,18 +181,21 @@ function normalizeSchemaRegistration(row: Record<string, unknown>): A4SchemaRegi
   return {
     eventName: requiredText(row.eventName, "schemaRegistrations.eventName"),
     ownerDomain: requiredText(row.ownerDomain, "schemaRegistrations.ownerDomain"),
+    displayName: optionalLabel(row.displayName, "schemaRegistrations.displayName"),
+    ownerDisplayName: optionalLabel(row.ownerDisplayName, "schemaRegistrations.ownerDisplayName"),
+    producerReference: optionalLabel(row.producerReference, "schemaRegistrations.producerReference"),
     familyKey: requiredText(row.familyKey, "schemaRegistrations.familyKey"),
     producer: requiredText(row.producer, "schemaRegistrations.producer"),
     consumers: requiredText(row.consumers, "schemaRegistrations.consumers"),
     // A valid existing schema may have no custom property rows yet. The exact
     // lookup must still allow its first controlled property to be added.
-    properties: textOrFallback(row.properties, "schemaRegistrations.properties", "暂无自定义字段"),
+    properties: row.properties == null ? "" : typeof row.properties === "string" ? row.properties.trim() : invalid("schemaRegistrations.properties"),
     serverAuthoritative: requiredBoolean(row.serverAuthoritative, "schemaRegistrations.serverAuthoritative"),
     samplingPolicy: requiredText(row.samplingPolicy, "schemaRegistrations.samplingPolicy"),
     version: requiredText(row.version, "schemaRegistrations.version"),
     updatedAt: requiredText(row.updatedAt, "schemaRegistrations.updatedAt"),
     lifecycleState: lifecycleState(row.lifecycleState),
-    lifecycleVersion: requiredNumber(row.lifecycleVersion, "schemaRegistrations.lifecycleVersion"),
+    lifecycleVersion: requiredInteger(row.lifecycleVersion, "schemaRegistrations.lifecycleVersion"),
   };
 }
 
@@ -207,6 +228,7 @@ function normalizeDetail(row: Record<string, unknown>): A4EventDetailRow {
   return {
     item: requiredText(row.item, "eventDetail.item"),
     desc: requiredText(row.desc, "eventDetail.desc"),
+    displayName: optionalLabel(row.displayName, "eventDetail.displayName"),
   };
 }
 
@@ -234,9 +256,15 @@ function normalizeBatch(row: Record<string, unknown>): A4DomainExtensionBatch {
     id: requiredText(row.id, "domainExtension.id"),
     title: requiredText(row.title, "domainExtension.title"),
     state: normalizeBatchState(row.state),
-    proposer: requiredText(row.proposer, "domainExtension.proposer"),
+    proposer: optionalLabel(row.proposer, "domainExtension.proposer"),
+    producerReference: optionalLabel(row.producerReference, "domainExtension.producerReference"),
+    consumerReference: optionalLabel(row.consumerReference, "domainExtension.consumerReference"),
     impact: requiredText(row.impact, "domainExtension.impact"),
-    newDomains: requiredRows(row.newDomains, "domainExtension.newDomains", (item) => ({ name: requiredText(item.name, "domainExtension.domain"), n: requiredBoolean(item.n, "domainExtension.newDomainFlag") })),
+    newDomains: requiredRows(row.newDomains, "domainExtension.newDomains", (item) => ({
+      name: requiredText(item.name, "domainExtension.domain"),
+      n: requiredBoolean(item.n, "domainExtension.newDomainFlag"),
+      displayName: optionalLabel(item.displayName, "domainExtension.displayName"),
+    })),
     details: requiredRows(row.details, "domainExtension.details", normalizeDetail),
   };
 }
@@ -246,6 +274,8 @@ function normalizeOverview(raw: unknown): A4Overview {
   if (!Object.keys(data).length) invalid("root");
   const stats = rec(data.stats);
   if (!Object.keys(stats).length) invalid("stats");
+  const labels = data.domainDisplayNames;
+  if (labels != null && (typeof labels !== "object" || Array.isArray(labels))) invalid("domainDisplayNames");
   const overview: A4Overview = {
     stats: {
       todayEvents: requiredCount(stats.todayEvents, "stats.todayEvents"),
@@ -260,10 +290,12 @@ function normalizeOverview(raw: unknown): A4Overview {
     registeredDomains: requiredNonEmptyStrings(data.registeredDomains, "registeredDomains"),
     pendingDomains: requiredStrings(data.pendingDomains, "pendingDomains"),
     sunsetDomains: requiredStrings(data.sunsetDomains, "sunsetDomains"),
+    domainDisplayNames: labels == null ? undefined : Object.fromEntries(Object.entries(labels).map(([code, label]) =>
+      [code, requiredText(label, `domainDisplayNames.${code}`)])),
     commonFields: requiredNonEmptyRows(data.commonFields, "commonFields", (row) => ({ key: requiredText(row.key, "commonFields.key"), name: requiredText(row.name, "commonFields.name"), sub: requiredText(row.sub, "commonFields.sub"), value: requiredText(row.value, "commonFields.value") })),
     dimensionParams: requiredNonEmptyRows(data.dimensionParams, "dimensionParams", (row) => ({ key: requiredText(row.key, "dimensionParams.key"), name: requiredText(row.name, "dimensionParams.name"), sub: requiredText(row.sub, "dimensionParams.sub"), value: requiredText(row.value, "dimensionParams.value"), locked: requiredBoolean(row.locked, "dimensionParams.locked") })),
     kpiFormulas: requiredNonEmptyRows(data.kpiFormulas, "kpiFormulas", (row) => ({ n: requiredNumber(row.n, "kpiFormulas.n"), kpi: requiredText(row.kpi, "kpiFormulas.kpi"), formula: requiredText(row.formula, "kpiFormulas.formula") })),
-    schemaRegistrations: requiredNonEmptyRows(data.schemaRegistrations, "schemaRegistrations", normalizeSchemaRegistration),
+    schemaRegistrations: requiredRows(data.schemaRegistrations, "schemaRegistrations", normalizeSchemaRegistration),
     domainExtensions: requiredNonEmptyRows(data.domainExtensions, "domainExtensions", normalizeBatch),
     guardrails: requiredNonEmptyStrings(data.guardrails, "guardrails"),
   };
@@ -292,9 +324,17 @@ async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPref
   });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
+  if (init?.stableIdempotencyKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || result?.message?.startsWith("IDEMPOTENCY_") || !result || !Number.isInteger(result.code))) {
+    throw new OutcomeUnknownError("A4_MUTATION_OUTCOME_UNKNOWN");
+  }
+
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw new Error(formatAdminApiError(result?.message, `A4_REQUEST_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A4_REQUEST_FAILED_${response.status}`)), {
+      status: response.ok && typeof result?.code === "number" && result.code !== 0 ? result.code : response.status,
+      httpStatus: response.status, apiCode: result?.code, reasonCode: result?.message,
+    });
   }
 
   return result.data as T;
@@ -308,6 +348,10 @@ export async function fetchA4OutboxDiagnostics(filters: OutboxFilters, cursor = 
   return normalizeOutboxDiagnostics(await a4Request<unknown>(`/events/outbox-diagnostics?${outboxDiagnosticsQuery(filters, cursor)}`, { method: "GET" }));
 }
 
+export async function fetchA4OutboxDeadLetters() {
+  return normalizeOutboxDeadLetters(await a4Request<unknown>("/events/outbox-dead-letters", { method: "GET" }));
+}
+
 /** Read one known schema by exact event name; this deliberately is not a registry search/list API. */
 export async function fetchA4SchemaRegistration(eventName: string): Promise<A4SchemaRegistration> {
   return normalizeSchemaRegistration(rec(await a4Request<unknown>(
@@ -317,13 +361,13 @@ export async function fetchA4SchemaRegistration(eventName: string): Promise<A4Sc
 }
 
 export async function updateA4DimensionParam(paramKey: string, value: string, reason: string, stableIdempotencyKey?: string) {
-  await a4Request(`/events/params/${encodeURIComponent(paramKey)}`, {
+  const row = rec(await a4Request<unknown>(`/events/params/${encodeURIComponent(paramKey)}`, {
     method: "PATCH",
     body: JSON.stringify({ value, reason }),
     idempotencyPrefix: "a4-param",
     stableIdempotencyKey,
-  });
-  return fetchA4Overview();
+  }));
+  if (row.key !== paramKey || typeof row.value !== "string" || !row.value.trim()) invalid("param.result");
 }
 
 export type A4SchemaRegistrationInput = {
@@ -342,54 +386,108 @@ export type A4SchemaRegistrationInput = {
 
 type A4RegistryActor = Pick<AdminSession, "adminId" | "operator" | "username" | "role">;
 type A4RegistryProposal = Parameters<typeof createA2OperationProposal>[0];
-type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal };
+type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal; received?: boolean };
+const REGISTRY_STRING_FIELDS: Record<string, string[]> = {
+  a4_schema_register: ["eventName", "ownerDomain", "producer", "consumer", "propertyName", "propertyType", "samplingPolicy", "expectedVersion"],
+  a4_schema_property_add: ["eventName", "propertyName", "propertyType", "expectedVersion"],
+  a4_domain_extension_register: ["domainName", "eventName", "producer", "consumer"],
+};
 
 const registryAttempts = createPendingMutationStore<A4RegistryAttempt>({
   storageKey: "nexion-admin-a4-registry-proposals-v1",
   retainExpiredRecords: true,
-  isValidRecord: ({ input }) => input?.sourceDomain === "A4" && input.command?.domain === "A",
+  isValidRecord: ({ input }) => {
+    const op = input?.command?.op;
+    const fields = REGISTRY_STRING_FIELDS[op];
+    const params = input?.command?.params;
+    const flags = op === "a4_schema_register" ? ["pii", "serverAuthoritative"] : [];
+    return !!fields && !!params && typeof params === "object" && !Array.isArray(params)
+      && input.sourceDomain === "A4" && input.command.domain === "A" && input.type === "param"
+      && typeof input.action === "string" && typeof input.obj === "string" && input.obj === params.eventName
+      && typeof input.reason === "string" && typeof input.operator === "string" && typeof input.operatorRole === "string"
+      && input.beforeValue === "—" && input.afterValue === "—" && input.amplifies === false && input.sos === false && input.roleGate === "超管"
+      && input.target?.domain === "A" && input.target.id === input.obj
+      && input.target.type === (op === "a4_domain_extension_register" ? "a4_domain_extension" : "a4_event_schema")
+      && fields.every(key => typeof params[key] === "string") && flags.every(key => typeof params[key] === "boolean")
+      && Object.keys(params).every(key => fields.includes(key) || flags.includes(key));
+  },
 });
 
 export function pendingA4RegistryProposal(adminId: number) {
   return registryAttempts.list().find((row) => row.fingerprint === String(adminId));
 }
 
-async function postRegistryProposal(attempt: A4RegistryAttempt) {
+function validateRegistryTicket(ticket: Awaited<ReturnType<typeof createA2OperationProposal>>, attempt: A4RegistryAttempt) {
+  if (!ticket.mine || ticket.obj !== attempt.input.obj || ticket.operationCode !== attempt.input.command.op) {
+    throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
+  }
+  return ticket;
+}
+
+async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
+  if (Date.now() >= attempt.expiresAt) throw new OutcomeUnknownError("A4_ORIGINAL_QUERY_ONLY");
+  if (!registryAttempts.isDurablyStored(attempt.fingerprint, attempt.commandKey)) throw new Error("A4_ORIGINAL_STORAGE_FAILED");
+  let created = false;
   try {
-    const ticket = await createA2OperationProposal(attempt.input, attempt.commandKey, true);
+    const receipt = await createA2OperationProposal(attempt.input, attempt.commandKey, true, true);
+    created = true;
+    registryAttempts.remember(attempt.fingerprint, attempt.commandKey, { ...attempt, received: true });
+    const ticket = validateRegistryTicket(receipt, attempt);
+    // A replay proves the application was created, not its current approval state.
+    const current = retry ? await fetchA2ProposalByKey(attempt.commandKey, true, "a") : ticket;
+    if (!current) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
+    validateRegistryTicket(current, attempt);
     registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
-    return ticket;
+    return { ...current, a4CommandKey: attempt.commandKey };
   } catch (error) {
-    if (error instanceof Error && "backendMessage" in error
-        && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批单仍待确认，请稍后查询。", attempt.commandKey);
-    }
-    if (!isA2OutcomeUncertainError(error)) {
+    const failure = error as { status?: number; backendMessage?: string };
+    // The shared A2 client already applies isDeterministicRejection to first sends;
+    // only its non-uncertain backend rejection can discard a new proposal here.
+    if (!created && (retry ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+        && typeof failure.backendMessage === "string" && !failure.backendMessage.startsWith("IDEMPOTENCY_")
+        && failure.status !== undefined)) {
       registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
+      throw error;
     }
-    throw error;
+    // Keep this page out of the shared A2 modal branch which exposes command IDs.
+    throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN", { cause: error });
   }
 }
 
 export async function recoverA4RegistryProposal(adminId: number, retryOriginal = false) {
   const attempt = pendingA4RegistryProposal(adminId);
   if (!attempt) return null;
-  const ticket = await fetchA2ProposalByKey(attempt.commandKey);
+  const ticket = await fetchA2ProposalByKey(attempt.commandKey, true, "a");
   if (ticket) {
+    validateRegistryTicket(ticket, attempt);
     registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
-    return ticket;
+    return { ...ticket, a4CommandKey: attempt.commandKey };
   }
+  if (attempt.received) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
   if (!retryOriginal) return null;
   if (Date.now() >= attempt.expiresAt) {
-    throw new A2OutcomeUncertainError("原命令已过期。请继续查询原审批单。", attempt.commandKey);
+    throw new OutcomeUnknownError("A4_ORIGINAL_QUERY_ONLY");
   }
-  return postRegistryProposal(attempt);
+  return postRegistryProposal(attempt, true);
+}
+
+/** Call only after the operator confirms clearing an expired, authoritatively absent proposal. */
+export async function releaseExpiredA4RegistryProposal(adminId: number, commandKey: string) {
+  const attempt = pendingA4RegistryProposal(adminId);
+  if (!attempt || attempt.received || attempt.commandKey !== commandKey || Date.now() < attempt.expiresAt) throw new Error("A4_ORIGINAL_UNRESOLVED");
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
+  if (ticket) {
+    validateRegistryTicket(ticket, attempt);
+    registryAttempts.remember(attempt.fingerprint, commandKey, { ...attempt, received: true });
+    throw new Error("A4_ORIGINAL_UNRESOLVED");
+  }
+  registryAttempts.forget(attempt.fingerprint, commandKey);
 }
 
 async function submitRegistryProposal(actor: A4RegistryActor, action: string, op: string, type: string,
   params: Record<string, unknown> & { eventName: string }, reason: string) {
   const previous = pendingA4RegistryProposal(actor.adminId);
-  if (previous) throw new A2OutcomeUncertainError("请先查询上一次登记审批单。", previous.commandKey);
+  if (previous) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
   const input: A4RegistryProposal = {
     action, obj: params.eventName, beforeValue: "—", afterValue: "—",
     operator: actor.operator || actor.username, operatorRole: actor.role,
@@ -403,7 +501,7 @@ async function submitRegistryProposal(actor: A4RegistryActor, action: string, op
   const attempt = pendingA4RegistryProposal(actor.adminId);
   if (!attempt || !registryAttempts.isDurablyStored(fingerprint, commandKey)) {
     registryAttempts.forget(fingerprint, commandKey);
-    throw new Error("浏览器无法保存审批命令号，请允许会话存储后重试。");
+    throw new Error("A4_ORIGINAL_STORAGE_FAILED");
   }
   return postRegistryProposal(attempt);
 }
@@ -446,12 +544,14 @@ export async function transitionA4Lifecycle(
   reason: string,
   stableIdempotencyKey?: string,
 ) {
-  return a4Request(`/events/schema-registrations/${encodeURIComponent(eventName)}/lifecycle`, {
+  const row = rec(await a4Request<unknown>(`/events/schema-registrations/${encodeURIComponent(eventName)}/lifecycle`, {
     method: "POST",
     body: JSON.stringify({ targetState, expectedState, expectedVersion, reason }),
     idempotencyPrefix: "a4-lifecycle",
     stableIdempotencyKey,
-  });
+  }));
+  if (row.eventName !== eventName || row.state !== targetState || row.version !== expectedVersion + 1
+      || typeof row.updatedAt !== "string" || !row.updatedAt.trim()) invalid("lifecycle.result");
 }
 
 function normalizeRetentionExecution(value: unknown): A4RetentionExecution {
@@ -470,9 +570,9 @@ export async function fetchA4RetentionLatest(): Promise<A4RetentionExecution | n
   return response == null ? null : normalizeRetentionExecution(response);
 }
 
-export async function runA4RetentionNow(reason: string, commandKey: string): Promise<A4RetentionExecution> {
+export async function runA4RetentionNow(reason: string, commandKey: string, expectedRetentionMonths?: number): Promise<A4RetentionExecution> {
   return normalizeRetentionExecution(await a4Request<unknown>("/events/retention-runs", {
-    method: "POST", body: JSON.stringify({ reason }), stableIdempotencyKey: commandKey,
+    method: "POST", body: JSON.stringify({ reason, ...(expectedRetentionMonths === undefined ? {} : { expectedRetentionMonths }) }), stableIdempotencyKey: commandKey,
   }));
 }
 
@@ -482,6 +582,8 @@ export async function runA4RetentionNow(reason: string, commandKey: string): Pro
  * this function never accepts or sends the immutable event payload/source.
  */
 export type A4H3DeadOutboxRedrivePreview = {
+  // Optional only for original command snapshots saved before this read projection existed.
+  userNo?: string | null;
   eventId: string;
   eventType: string;
   status: "DEAD";
@@ -492,7 +594,7 @@ export type A4H3DeadOutboxRedrivePreview = {
   deliveryLastError: string | null;
 };
 
-export type A4H3DeadOutboxRedriveResult = Omit<A4H3DeadOutboxRedrivePreview, "status" | "deliveryStatus"> & {
+export type A4H3DeadOutboxRedriveResult = Omit<A4H3DeadOutboxRedrivePreview, "status" | "deliveryStatus" | "userNo"> & {
   status: "PENDING";
   deliveryStatus: "FAILED";
 };
@@ -505,9 +607,10 @@ function normalizeH3DeadOutboxPreview(value: unknown): A4H3DeadOutboxRedrivePrev
   const deliveryLastError = row.deliveryLastError == null ? null : requiredText(row.deliveryLastError, "h3DeadOutbox.deliveryLastError");
   if (!Number.isInteger(retryCount) || retryCount < 0 || !Number.isInteger(deliveryAttemptCount) || deliveryAttemptCount < 0) invalid("h3DeadOutbox.attemptCount");
   if (row.status !== "DEAD" || row.deliveryStatus !== "DEAD") invalid("h3DeadOutbox.deadState");
-  if (lastError != null && !/^[A-Z0-9_]{3,128}$/.test(lastError)) invalid("h3DeadOutbox.lastError");
-  if (deliveryLastError != null && !/^[A-Z0-9_]{3,128}$/.test(deliveryLastError)) invalid("h3DeadOutbox.deliveryLastError");
+  if (lastError != null && !/^[A-Z][A-Z0-9_:-]{0,127}$/.test(lastError)) invalid("h3DeadOutbox.lastError");
+  if (deliveryLastError != null && !/^[A-Z][A-Z0-9_:-]{0,127}$/.test(deliveryLastError)) invalid("h3DeadOutbox.deliveryLastError");
   return {
+    userNo: nullableA4UserNo(row.userNo),
     eventId: requiredText(row.eventId, "h3DeadOutbox.eventId"),
     eventType: requiredText(row.eventType, "h3DeadOutbox.eventType"),
     status: "DEAD",
@@ -521,7 +624,8 @@ function normalizeH3DeadOutboxPreview(value: unknown): A4H3DeadOutboxRedrivePrev
 
 function normalizeH3DeadOutboxRedriveResult(value: unknown): A4H3DeadOutboxRedriveResult {
   const row = rec(value);
-  const preview = normalizeH3DeadOutboxPreview({ ...row, status: "DEAD", deliveryStatus: "DEAD" });
+  // POST receipts have no authorized user projection, including replayed receipts.
+  const { userNo: _userNo, ...preview } = normalizeH3DeadOutboxPreview({ ...row, userNo: null, status: "DEAD", deliveryStatus: "DEAD" });
   if (row.status !== "PENDING" || row.deliveryStatus !== "FAILED") invalid("h3DeadOutbox.redrive.status");
   return { ...preview, status: "PENDING", deliveryStatus: "FAILED" };
 }

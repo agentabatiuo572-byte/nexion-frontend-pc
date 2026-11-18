@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
+import { ThemeToggle } from "@/app/components/rd/theme-switch";
 import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
 import { createTotpEnrollmentQrDataUrl } from "@/lib/admin/mfa-enrollment-qr";
@@ -201,25 +202,24 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   return (
     <div
       className="flex h-screen w-screen items-center justify-center p-6"
-      style={{ background: "var(--v5-bg)" }}
+      style={{ background: "var(--rd-bg)" }}
     >
+      <ThemeToggle floating />
       <form
         onSubmit={changingPassword ? handlePasswordChange : verifyingMfa ? handleMfaSubmit : handleSubmit}
         className="w-full max-w-sm rounded-[var(--admin-radius)] p-7"
         style={{
-          background: "var(--v5-surface)",
-          border: "1px solid var(--v5-border)",
-          boxShadow: "var(--v5-card-shadow-lift-strong)",
-        }}
+          background: "var(--rd-panel)",
+                  }}
       >
-        <span className="uvel-logo-mark uvel-logo-mark--login" aria-hidden>
-          <Image className="uvel-logo-mark__dark" src="/uvel-mark-dark.png" width={36} height={36} alt="" />
-          <Image className="uvel-logo-mark__light" src="/uvel-mark-light.png" width={36} height={36} alt="" />
+        <span className="uvel-logo-mark uvel-logo-mark--login rd-logo-dark" aria-hidden>
+          <Image src="/uvel-mark-dark.png" width={36} height={36} alt="" loading="eager" />
         </span>
-        <h1 className="font-display mt-4 text-[20px]" style={{ color: "var(--v5-ink)" }}>
+        <Image className="rd-logo-lockup" src="/uvel-lockup-on-light.png" width={103} height={36} alt="" aria-hidden loading="eager" />
+        <h1 className="font-display mt-4 text-[20px]" style={{ color: "var(--rd-text)" }}>
           {changingPassword ? "首次登录修改密码" : verifyingMfa ? "两步验证" : "UVEL 运营控制台登录"}
         </h1>
-        <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+        <p className="mt-1 text-[12.5px]" style={{ color: "var(--rd-text-3)" }}>
           {changingPassword
             ? `登录名 ${pendingLogin?.session.username ?? ""}`
             : verifyingMfa
@@ -229,40 +229,38 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
 
         {!changingPassword && !verifyingMfa ? (
           <>
-            <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+            <label className="mt-5 block text-[12px]" style={{ color: "var(--rd-text-3)" }}>
               账号
             </label>
             <div
               className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3"
               style={{
-                background: "var(--v5-surface-3)",
-                border: "1px solid var(--v5-border)",
-                color: "var(--v5-ink)",
+                background: "var(--rd-control)",
+                color: "var(--rd-text)",
               }}
             >
-              <UserRound size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+              <UserRound size={15} style={{ color: "var(--rd-text-3)" }} aria-hidden />
               <input
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
                 aria-label="账号"
                 className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
-                style={{ color: "var(--v5-ink)" }}
+                style={{ color: "var(--rd-text)" }}
               />
             </div>
 
-            <label className="mt-4 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+            <label className="mt-4 block text-[12px]" style={{ color: "var(--rd-text-3)" }}>
               密码
             </label>
             <div
               className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3"
               style={{
-                background: "var(--v5-surface-3)",
-                border: "1px solid var(--v5-border)",
-                color: "var(--v5-ink)",
+                background: "var(--rd-control)",
+                color: "var(--rd-text)",
               }}
             >
-              <LockKeyhole size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+              <LockKeyhole size={15} style={{ color: "var(--rd-text-3)" }} aria-hidden />
               <input
                 type="password"
                 value={password}
@@ -270,7 +268,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 autoComplete="current-password"
                 aria-label="密码"
                 className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
-                style={{ color: "var(--v5-ink)" }}
+                style={{ color: "var(--rd-text)" }}
               />
             </div>
           </>
@@ -282,7 +280,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
             {mfaChallenge?.mode === "ENROLL" && enrollmentQrDataUrl && (
               <div
                 className="mt-5 rounded-[9px] p-3 text-center text-[12px]"
-                style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-2)" }}
+                style={{ background: "var(--rd-control)", color: "var(--rd-text-2)" }}
               >
                 <p>打开 Google Authenticator，点击“+”并扫描二维码：</p>
                 <img
@@ -294,7 +292,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
               </div>
             )}
             {enrollmentUnavailable ? (
-              <div className="mt-5 rounded-[9px] p-3 text-[12px]" role="alert" style={{ background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)", color: "var(--v5-danger)" }}>
+              <div className="mt-5 rounded-[9px] p-3 text-[12px]" role="alert" style={{ background: "color-mix(in srgb, var(--rd-danger) 10%, transparent)", color: "var(--rd-danger)" }}>
                 <p>无法生成绑定信息，请返回登录页重新获取。</p>
                 <button type="button" onClick={restartEnrollment} className="mt-3 underline underline-offset-2">
                   返回登录重新获取
@@ -302,11 +300,11 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
               </div>
             ) : (
               <>
-                <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+                <label className="mt-5 block text-[12px]" style={{ color: "var(--rd-text-3)" }}>
                   一次性验证码
                 </label>
-                <div className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3" style={{ background: "var(--v5-surface-3)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
-                  <ShieldCheck size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+                <div className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3" style={{ background: "var(--rd-control)", color: "var(--rd-text)" }}>
+                  <ShieldCheck size={15} style={{ color: "var(--rd-text-3)" }} aria-hidden />
                   <input
                     inputMode="numeric"
                     pattern="[0-9]{6}"
@@ -323,18 +321,17 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
           </>
         ) : (
           <>
-            <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+            <label className="mt-5 block text-[12px]" style={{ color: "var(--rd-text-3)" }}>
               新密码
             </label>
             <div
               className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3"
               style={{
-                background: "var(--v5-surface-3)",
-                border: "1px solid var(--v5-border)",
-                color: "var(--v5-ink)",
+                background: "var(--rd-control)",
+                color: "var(--rd-text)",
               }}
             >
-              <LockKeyhole size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+              <LockKeyhole size={15} style={{ color: "var(--rd-text-3)" }} aria-hidden />
               <input
                 type="password"
                 value={newPassword}
@@ -342,21 +339,20 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 autoComplete="new-password"
                 aria-label="新密码"
                 className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
-                style={{ color: "var(--v5-ink)" }}
+                style={{ color: "var(--rd-text)" }}
               />
             </div>
-            <label className="mt-4 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+            <label className="mt-4 block text-[12px]" style={{ color: "var(--rd-text-3)" }}>
               确认新密码
             </label>
             <div
               className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3"
               style={{
-                background: "var(--v5-surface-3)",
-                border: "1px solid var(--v5-border)",
-                color: "var(--v5-ink)",
+                background: "var(--rd-control)",
+                color: "var(--rd-text)",
               }}
             >
-              <ShieldCheck size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+              <ShieldCheck size={15} style={{ color: "var(--rd-text-3)" }} aria-hidden />
               <input
                 type="password"
                 value={confirmPassword}
@@ -364,14 +360,14 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 autoComplete="new-password"
                 aria-label="确认新密码"
                 className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
-                style={{ color: "var(--v5-ink)" }}
+                style={{ color: "var(--rd-text)" }}
               />
             </div>
           </>
         )}
 
         {error && (
-          <p role="alert" aria-live="polite" className="mt-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)", color: "var(--v5-danger)" }}>
+          <p role="alert" aria-live="polite" className="mt-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ background: "color-mix(in srgb, var(--rd-danger) 10%, transparent)", color: "var(--rd-danger)" }}>
             {error}
           </p>
         )}
@@ -380,7 +376,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
           type="submit"
           disabled={submitting || enrollmentUnavailable}
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-[10px] py-2.5 text-[13.5px] font-medium transition-opacity hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
-          style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
+          style={{ background: "var(--rd-brand)", color: "var(--rd-text-on-brand)" }}
         >
           {submitting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <LogIn size={16} aria-hidden />}
           {changingPassword ? "确认修改并进入" : verifyingMfa ? "验证并进入" : "继续"}

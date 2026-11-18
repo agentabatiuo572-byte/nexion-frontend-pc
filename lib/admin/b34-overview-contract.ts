@@ -1,3 +1,4 @@
+import { H1_DIAL_LIMITS } from "./h1-dial-validation";
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 import { isConsecutiveDayLabels, isIncreasingIsoWeekLabels } from "./time-series-contract.ts";
 
@@ -257,6 +258,16 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
   if (monthOptions.length !== totalMonths || monthOptions.some((month, index) => month !== index + 1)) invalid("B4", "filters.monthOptions");
   const phaseOptions = strings(filters.phaseOptions, "B4", "filters.phaseOptions");
   if (phaseOptions.length !== B4_PHASES.length || phaseOptions.some((phase, index) => phase !== B4_PHASES[index])) invalid("B4", "filters.phaseOptions");
+  // Names are additive read metadata. Older backends omit them; an empty name stays unnamed.
+  for (const [field, name] of [["filters.phaseName", filters.phaseName], ["rhythm.currentPhaseName", rhythm.currentPhaseName]] as const) {
+    if (name != null && typeof name !== "string") invalid("B4", field);
+  }
+  if (filters.phaseNames !== undefined) {
+    const names = record(filters.phaseNames, "B4", "filters.phaseNames");
+    for (const [phase, name] of Object.entries(names)) {
+      if (!B4_PHASES.includes(phase as typeof B4_PHASES[number]) || (name !== null && typeof name !== "string")) invalid("B4", `filters.phaseNames.${phase}`);
+    }
+  }
 
   const distributions = new Map<string, JsonRecord[]>();
   for (const key of ["phaseDistribution", "monthDistribution", "distribution"]) {
@@ -265,6 +276,7 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
     for (const [index, row] of distribution.entries()) {
       const phase = text(row.phase, "B4", `${key}.${index}.phase`);
       if (!B4_PHASES.includes(phase as typeof B4_PHASES[number])) invalid("B4", `${key}.${index}.phase`);
+      if (row.phaseName != null && typeof row.phaseName !== "string") invalid("B4", `${key}.${index}.phaseName`);
       nonNegativeInteger(row.userCount, "B4", `${key}.${index}.userCount`);
       boolean(row.inScope, "B4", `${key}.${index}.inScope`);
     }
@@ -292,17 +304,21 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
     if (key === "complianceHoldEnabled") {
       boolean(dial.currentValue, "B4", `dials.${index}.currentValue`);
     } else if (["newUserBonusMultiplier", "inviteRewardMultiplier", "reinvestMultiplier", "questBonusMultiplier"].includes(key)) {
-      numberInRange(dial.currentValue, 1, 4, "B4", `dials.${index}.currentValue`);
+      const limits = H1_DIAL_LIMITS[key as keyof typeof H1_DIAL_LIMITS];
+      numberInRange(dial.currentValue, limits.min, limits.max, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawPenaltyFeeRate") {
-      numberInRange(dial.currentValue, 0, 100, "B4", `dials.${index}.currentValue`);
+      numberInRange(dial.currentValue, H1_DIAL_LIMITS.withdrawPenaltyFeeRate.min, H1_DIAL_LIMITS.withdrawPenaltyFeeRate.max, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawCooldownDays") {
       const days = nonNegativeInteger(dial.currentValue, "B4", `dials.${index}.currentValue`);
-      if (days > 90) invalid("B4", `dials.${index}.currentValue`);
+      if (days > H1_DIAL_LIMITS.withdrawCooldownDays.max) invalid("B4", `dials.${index}.currentValue`);
     } else if (key === "binaryDailyCap") {
-      numberInRange(dial.currentValue, 0, 50_000, "B4", `dials.${index}.currentValue`);
+      numberInRange(dial.currentValue, H1_DIAL_LIMITS.binaryDailyCap.min, H1_DIAL_LIMITS.binaryDailyCap.max, "B4", `dials.${index}.currentValue`);
     }
     if (typeof dial.unit !== "string") invalid("B4", `dials.${index}.unit`);
     boolean(dial.v1Active, "B4", `dials.${index}.v1Active`);
+    if (dial.executionStatus !== undefined && dial.executionStatus !== "ACTIVE" && dial.executionStatus !== "RETIRED") {
+      invalid("B4", `dials.${index}.executionStatus`);
+    }
   }
 
   const pivot = record(data.nextPivot, "B4", "nextPivot");

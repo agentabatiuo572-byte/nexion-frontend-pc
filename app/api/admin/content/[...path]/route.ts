@@ -47,11 +47,29 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  if (path.some((part) => part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox"))) {
+  // These are real I2 resource keys, not retired sandbox endpoints. Keep every other path guard.
+  const novaResourceKey = path[0] === "nova" && ["channels", "templates"].includes(path[1])
+    && (path.length === 3 || path.length === 4 && path[3] === "status") && /^[A-Za-z0-9_-]{2,64}$/.test(path[2]);
+  // I6's registered message/course identifiers may contain these substrings. Only the identifier segment is exempt.
+  const i6ResourceKey = path[0] === "i18n-learning" && (path[1] === "messages"
+    && /^[a-zA-Z0-9_.-]+$/.test(path[2] ?? "")
+    && (path.length === 3 || path.length === 4 && ["draft", "publish", "versions"].includes(path[3])
+      || path.length === 6 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4]) && path[5] === "rollback")
+    || path[1] === "courses" && /^[a-z0-9][a-z0-9-]{2,80}$/.test(path[2] ?? "")
+    && (path.length === 3 || path.length === 4 && ["draft", "publish", "archive", "reward", "versions"].includes(path[3])
+      || path.length === 5 && path[3] === "versions" && (/^v[1-9][0-9]{0,8}$/i.test(path[4]) || request.method === "GET" && path[4] === "next")
+      || path.length === 6 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4]) && ["publish", "rollback"].includes(path[5])));
+  if (path.some((part, index) => !((novaResourceKey || i6ResourceKey) && index === 2)
+    && (part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox")))) {
     return jsonError(410, "SANDBOX_RETIRED");
   }
   const targetPath = backendPath(path);
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
+  // bcf0125b: the existing trust-disclosure whitelist includes this I4 read.
+  // Authorization remains the backend's content_i4_read check, using the session token below.
+  if (path.length === 2 && path[0] === "trust-disclosure" && path[1] === "published-snapshot" && request.method !== "GET") {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
   if (path[0] === "support-workbench" && path[1] === "customers" && path[3] === "payment-password") {
     const payment = paymentPasswordSupportRoute(path);
     if (!payment) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
@@ -144,6 +162,14 @@ async function proxy(request: Request, context: RouteContext) {
       const disposition = upstream.headers.get("Content-Disposition");
       if (disposition) responseHeaders.set("Content-Disposition", disposition);
       return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+    }
+    if (publicLeaderboardAvatar && (!upstream.ok || upstreamType.split(";")[0].toLowerCase() === "application/json")) {
+      // M6 needs the actual permission, environment or version verdict, including
+      // method-security failures carried by an HTTP 200 JSON envelope.
+      return new Response(await upstream.text(), {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
     }
     if (attachmentContent) {
       if (!upstream.ok) return jsonError(upstream.status, "CONTENT_ATTACHMENT_READ_FAILED");

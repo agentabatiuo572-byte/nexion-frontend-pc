@@ -1,6 +1,7 @@
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
+import { isExplicitRejection } from "./explicit-rejection";
 
 const BASE = "/api/admin/content";
 const FILTERS = ["ALL", "WINDOW_ACTIVE", "ACTIVE", "DORMANT", "UNKNOWN", "TODO", "DUE", "WAITING_REPLY", "FIRST_CONTACT", "STOPPED"] as const;
@@ -61,7 +62,7 @@ export type SupportCustomer = {
   pendingThroughMessageId: number | null;
 };
 export type SupportCustomerDetail = SupportCustomer & { agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
-export type SupportMaintenanceRecord = { id: string; kind: string; occurredAt: string; state?: string };
+export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
 export type SupportMaintenanceHistory = { customerId: string; cycles: SupportMaintenanceRecord[]; executions: SupportMaintenanceRecord[]; totalCycles: number; totalExecutions: number; pageNum: number; pageSize: number };
 export type SupportBindingPoolItem = {
   customerId: string;
@@ -133,13 +134,23 @@ export type SupportMessageResult = { conversationNo: string };
 /** B15: who currently holds the customer session. Absent fields mean the backend has not shipped B15. */
 export type SupportSessionRole = "ADVISOR" | "SUPERVISOR" | "ADMIN";
 export type SupportSessionHolder = { adminId: number; name: string; role: SupportSessionRole };
-export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
-export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "总管理员" };
+export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; sessionRef: string | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
+export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "超级管理员" };
 /** Operator wording of an AGENT_SWITCH row; App/H5 show the name only. */
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
   return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";
 }
-export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; messageOperation?: "M3_CONVERSATION_INITIATE" | "M3_CONVERSATION_REPLY"; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null } | {
+  status: "REJECTED";
+  sent: false;
+  customerId: string;
+  operation: "M3_CONVERSATION_INITIATE" | "M3_CONVERSATION_REPLY";
+  idempotencyKey: string;
+  clientMessageId: string;
+  businessCode: number;
+  businessReason: string;
+  result?: never;
+};
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
   kind: "TEXT" | "IMAGE" | "SKU" | "LINK";
@@ -178,14 +189,26 @@ export class SupportClientError extends Error {
     this.data = data;
   }
 }
+/** Only use a denial from a read or write directed at the original customer or thread. */
+export function isSupportScopeDenial(error: unknown): boolean {
+  if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
+  const status = error.status === 200 ? error.apiCode : error.status;
+  return status === 403 || status === 404;
+}
+
+export function supportAssignmentChanged(error: unknown): boolean {
+  return error instanceof SupportClientError && (error.status === 409 || error.status === 200 && error.apiCode === 409)
+    && error.backendMessage === "SUPPORT_ASSIGNMENT_CHANGED";
+}
+
 export function isIndeterminateSupportError(error: unknown): boolean {
   return error instanceof SupportClientError && error.status === 409
     && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
 }
 
-/** The server read the request and said no: nothing was written, so the command can be released. */
+/** Authorization, throttling and indeterminate outcomes are not command verdicts. */
 export function isDefiniteSupportRefusal(error: unknown): error is SupportClientError {
-  return error instanceof SupportClientError && [400, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+  return error instanceof SupportClientError && isExplicitRejection(error);
 }
 /** BUG-121: the policy endpoint names why images are off; operators get that reason, not a storage guess. */
 export function supportAttachmentUnavailableText(reason: string | null): string {
@@ -375,12 +398,16 @@ function keyHeader(key: string): HeadersInit {
   if (key.length < 8 || key.length > 128) throw new Error("SUPPORT_IDEMPOTENCY_KEY_INVALID");
   return { "Idempotency-Key": key };
 }
-async function request<T>(path: string, parse: (value: unknown) => T, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, parse: (value: unknown) => T, init: RequestInit & { preserveUnknownOutcome?: boolean; transformResponseText?: (text: string) => string } = {}): Promise<T> {
+  const { transformResponseText, ...requestInit } = init;
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  const response = await guardedFetch(`${BASE}${path}`, { ...init, headers, cache: "no-store", credentials: "same-origin" });
+  const response = await guardedFetch(`${BASE}${path}`, { ...requestInit, headers, cache: "no-store", credentials: "same-origin" });
+  if (init.preserveUnknownOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+    throw new SupportClientError(503, undefined, "UPSTREAM_OUTCOME_UNKNOWN");
+  }
   const text = await response.text();
-  try { return parse(parseMContentApiEnvelope<unknown>(response.status, text, true)); }
+  try { return parse(parseMContentApiEnvelope<unknown>(response.status, transformResponseText ? transformResponseText(text) : text, true)); }
   catch (error) {
     if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
     throw error;
@@ -428,7 +455,7 @@ function sessionHold(value: unknown): SupportSessionHold {
   const state = enumValue(row.state, ["FREE", "MINE", "OTHER"] as const, "sessionHold.state");
   const holder = parseSupportSessionHolder(row.holder ?? null, "sessionHold.holder");
   if (state === "OTHER" && !holder) malformed("sessionHold.holder");
-  return { state, holder, lastSentAt: nullableTimestamp(row.lastSentAt, "sessionHold.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionHold.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionHold.endMinutes") };
+  return { state, holder, sessionRef: row.sessionRef == null ? null : nonempty(row.sessionRef, "sessionHold.sessionRef"), lastSentAt: nullableTimestamp(row.lastSentAt, "sessionHold.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionHold.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionHold.endMinutes") };
 }
 /** A send or start refused because someone else holds the session; carries that holder for the locked composer. */
 export function supportSessionBusy(error: unknown): SupportSessionHold | null {
@@ -436,7 +463,7 @@ export function supportSessionBusy(error: unknown): SupportSessionHold | null {
   try {
     const row = object(error.data, "sessionBusy");
     const holder = parseSupportSessionHolder(row.holder, "sessionBusy.holder");
-    return holder ? { state: "OTHER", holder, lastSentAt: nullableTimestamp(row.lastSentAt, "sessionBusy.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionBusy.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionBusy.endMinutes") } : null;
+    return holder ? { state: "OTHER", holder, sessionRef: row.sessionRef == null ? null : nonempty(row.sessionRef, "sessionBusy.sessionRef"), lastSentAt: nullableTimestamp(row.lastSentAt, "sessionBusy.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionBusy.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionBusy.endMinutes") } : null;
   } catch { return null; }
 }
 
@@ -476,7 +503,7 @@ export const supportClient = {
     (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
   sessionHold: (customerId: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold`, sessionHold, { signal }),
-  endSessionHold: (customerId: string, idempotencyKey: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", {}, idempotencyKey, signal)),
+  endSessionHold: (customerId: string, idempotencyKey: string, sessionRef: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", { sessionRef }, idempotencyKey, signal)),
   conversationState: (conversationNo: string, signal?: AbortSignal) => request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}`, (value) => {
     const row = object(object(value, "conversation.detail").conversation, "conversation");
     return { status: enumValue(row.status, ["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"] as const, "conversation.status"), version: count(row.version, "conversation.version") };
@@ -488,8 +515,8 @@ export const supportClient = {
       return {
         customerId: id(row.customerId, "maintenance.customerId"), pageNum: positive(row.pageNum, "maintenance.pageNum"), pageSize: positive(row.pageSize, "maintenance.pageSize"),
         totalCycles: count(row.totalCycles, "maintenance.totalCycles"), totalExecutions: count(row.totalExecutions, "maintenance.totalExecutions"),
-        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
-        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
+        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), agentAdminId: cycle.agentAdminId == null ? null : id(cycle.agentAdminId, "maintenance.cycle.agentAdminId"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
+        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), agentAdminId: execution.agentAdminId == null ? null : id(execution.agentAdminId, "maintenance.execution.agentAdminId"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
       };
     }, { signal: options.signal }),
   setMaintenance: (customerId: string, input: { enabled: boolean; reason: string; expectedVersion: number; expectedAssignmentId: string }, idempotencyKey: string, signal?: AbortSignal) =>
@@ -521,14 +548,35 @@ export const supportClient = {
     request("/support-agents/rules", rules, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "rules.expectedVersion") }, idempotencyKey, signal)),
   command: (key: string, signal?: AbortSignal) => request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value): SupportCommandResult => {
     const row = object(value, "command");
+    if (row.status === "REJECTED") {
+      if (row.sent !== false || row.idempotencyKey !== key.trim()
+        || !Number.isInteger(row.businessCode) || Number(row.businessCode) < 400 || Number(row.businessCode) >= 500) malformed("command.rejection");
+      const clientMessageId = nonempty(row.clientMessageId, "command.clientMessageId");
+      if (!/^[A-Za-z0-9_-]{8,128}$/.test(clientMessageId)) malformed("command.clientMessageId");
+      return {
+        status: "REJECTED", sent: false,
+        customerId: id(row.customerId, "command.customerId"),
+        operation: enumValue(row.operation, ["M3_CONVERSATION_INITIATE", "M3_CONVERSATION_REPLY"] as const, "command.operation"),
+        idempotencyKey: key.trim(), clientMessageId,
+        businessCode: row.businessCode as number,
+        businessReason: nonempty(row.businessReason, "command.businessReason"),
+      };
+    }
     const result = row.result === undefined ? undefined : object(row.result, "command.result");
     if (typeof row.operationId === "string" && typeof row.previewId === "string" && Array.isArray(row.customers) && ["RUNNING", "COMPLETED"].includes(String(row.status))) return { status: row.status === "COMPLETED" ? "SUCCEEDED" : "PENDING", result: row };
     const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");
-    if (result && result.code === 0) return { status, result: result.data };
+    if (result && result.code === 0) {
+      if (row.resultType === "M3_CONVERSATION_REPLY" || row.resultType === "M3_CONVERSATION_INITIATE") return { status, result: result.data, messageOperation: row.resultType };
+      return { status, result: result.data };
+    }
     if (result && typeof result.batchId === "string" && result.counts) return { status, result };
     if (typeof row.operationId === "string" && Array.isArray(row.customers)) return { status, result: row };
     if (result) malformed("command.result.code");
-    return { status };
+    const businessCode = row.businessCode;
+    if (businessCode != null && (!Number.isInteger(businessCode) || Number(businessCode) < -2147483648 || Number(businessCode) > 2147483647)) malformed("command.businessCode");
+    const businessReason = row.businessReason == null ? row.businessReason as null | undefined
+      : enumValue(row.businessReason, ["M3_TIMEOUT_POLICY_STALE", "M3_TIMEOUT_POLICY_UNCHANGED"] as const, "command.businessReason");
+    return { status, businessCode: businessCode as number | null | undefined, businessReason };
   }, { signal }),
   attachmentPolicy: (signal?: AbortSignal) => request("/conversations/attachments/policy", (value): SupportAttachmentPolicy => {
     const row = object(value, "attachment.policy");
@@ -569,6 +617,19 @@ export const supportClient = {
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
 };
+
+/** A completed idempotency entry can contain a business refusal with no conversation data. */
+export async function querySupportMessage(key: string, customerId?: string, conversationNo?: string): Promise<SupportCommandResult> {
+  const receipt = await supportClient.command(key);
+  if (receipt.status !== "SUCCEEDED") return receipt;
+  const expectedOperation = conversationNo ? "M3_CONVERSATION_REPLY" : "M3_CONVERSATION_INITIATE";
+  if (receipt.messageOperation !== expectedOperation || (!customerId && !conversationNo)) return { status: "UNKNOWN" };
+  const data = object(receipt.result, "command.message");
+  const target = id(data.userId, "command.message.userId");
+  const conversation = nonempty(data.conversationNo, "command.message.conversationNo");
+  if ((customerId && customerId !== target) || (conversationNo && conversationNo !== conversation)) return { status: "UNKNOWN" };
+  return receipt;
+}
 
 export type SupportUnboundPolicy = { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; defaultGroupName: string | null; version: number; updatedBy: string; reason: string; updatedAt: string };
 export type SupportUnboundPolicyUpdate = Pick<SupportUnboundPolicy, "alertMinutes" | "fallbackMinutes" | "defaultGroupId" | "reason"> & { expectedVersion: number };
@@ -628,19 +689,34 @@ const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
     reason: row.reason === null ? null : nonempty(row.reason, "welcome.reason"),
   };
 };
-function savedWelcome(value: unknown, input: SupportWelcomeUpdate): SupportWelcomeMessage {
-  const saved = welcomeMessage(value);
-  if (saved.version !== input.expectedVersion + 1) malformed("welcome.version");
-  if (saved.texts.en !== input.texts.en || saved.texts.zh !== input.texts.zh || saved.texts.vi !== input.texts.vi) malformed("welcome.texts");
-  return saved;
+function savedWelcome(value: unknown, input: SupportWelcomeUpdate) {
+  const result = welcomeMessage(value);
+  if (result.version !== input.expectedVersion + 1 || result.reason !== input.reason
+    || (["zh", "en", "vi"] as const).some(language => result.texts[language] !== input.texts[language])) malformed("welcome.receipt");
+  return result;
 }
 /** B16: the one welcome copy every new user receives in their support conversation right after registration. */
 export const supportWelcomeMessageClient = {
   read: (signal?: AbortSignal) => request("/support-agents/welcome-message", welcomeMessage, { signal }),
   update: (input: SupportWelcomeUpdate, idempotencyKey: string, signal?: AbortSignal) =>
     request("/support-agents/welcome-message", (value) => savedWelcome(value, input), json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
-  command: (idempotencyKey: string, input: SupportWelcomeUpdate) =>
-    readManagementCommand(idempotencyKey, "SUPPORT_WELCOME", (value) => savedWelcome(value, input)),
+};
+
+type M5RulesInput = Parameters<typeof supportClient.updateRules>[0];
+type M5WelcomeInput = Parameters<typeof supportWelcomeMessageClient.update>[0];
+function savedM5Rules(value: unknown, input: M5RulesInput) {
+  const result = rules(value);
+  if (result.version !== input.expectedVersion + 1
+    || (["dormantDays", "maintenanceDays", "activityWindowDays", "inheritanceMode", "maxInheritanceDepth", "unboundAssignmentMode"] as const)
+      .some(field => result[field] !== input[field])) malformed("rules.receipt");
+  return result;
+}
+/** M5-only receipt validation; other support pages keep their existing contracts. */
+export const m5ManagementClient = {
+  rules: (input: M5RulesInput, key: string) => request("/support-agents/rules", value => savedM5Rules(value, input), json("PUT", input, key)),
+  rulesCommand: (key: string, input: M5RulesInput) => readManagementCommand(key, "SUPPORT_RULES", value => savedM5Rules(value, input)),
+  welcome: (input: M5WelcomeInput, key: string) => request("/support-agents/welcome-message", value => savedWelcome(value, input), json("PUT", input, key)),
+  welcomeCommand: (key: string, input: M5WelcomeInput) => readManagementCommand(key, "SUPPORT_WELCOME", value => savedWelcome(value, input)),
 };
 
 export type SupportPersonalPhrase = { id: string; content: string };
@@ -655,13 +731,19 @@ export const supportPhraseClient = {
   remove: (phraseId: string) => request(`/support-workbench/phrases/${encodeURIComponent(id(phraseId, "phrase.id"))}`, phraseList, { method: "DELETE" }),
 };
 
-export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+export async function findSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem | null> {
   for (let pageNum = 1; ; pageNum++) {
     const result = await supportClient.bindingPool({ pageNum, pageSize: 100, keyword: customerId, groupId });
     const found = result.records.find(row => row.customerId === customerId);
     if (found) return found;
-    if (!result.records.length || pageNum * result.pageSize >= result.total) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+    if (!result.records.length || pageNum * result.pageSize >= result.total) return null;
   }
+}
+
+export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+  const current = await findSupportPoolCustomer(customerId, groupId);
+  if (!current) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+  return current;
 }
 
 export async function verifySupportTransfer(input: Parameters<typeof supportClient.transfer>[0], status: "SUCCEEDED" | "FAILED", groupId?: number): Promise<void> {

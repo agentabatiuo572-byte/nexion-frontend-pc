@@ -52,7 +52,8 @@ const PLAIN_LABELS: Record<string, string> = {
 };
 
 export function Gloss({ children }: { children: string }) {
-  const tip = GLOSSARY[children];
+  // 词条里有半角逗号，显示时换成全角；数字里的千分位不动。
+  const tip = GLOSSARY[children]?.replace(/,(?!\d)/g, "，");
   if (!tip) return <>{children}</>;
   const label = PLAIN_LABELS[children] ?? children;
   return <span className="gloss" data-tip={`${label}：${tip}`} role="note" aria-label={`${label}：${tip}`}>{label}</span>;

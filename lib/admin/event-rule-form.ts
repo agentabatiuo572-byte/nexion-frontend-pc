@@ -1,7 +1,54 @@
-import type { EventRuleView } from "./event-rules-client";
+import type { OperatingLanguageCode } from "./platform-experience-client";
+import type { EventRuleReadiness, EventRuleView } from "./event-rules-client";
+
+/** 开放活动、首次开启玩法前必须填的语言：拦截和页面文字共用这一份。 */
+export const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
+const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
+
+export type EventLocalizedContent = Record<string, Record<string, unknown>>;
+export type EventCopyReadiness = { missing: string[]; incomplete: string[] };
+
+export function validEventCopyReadiness(value: unknown): value is EventCopyReadiness {
+  const readiness = value as EventCopyReadiness | null;
+  return !!readiness && [readiness.missing, readiness.incomplete].every(paths => Array.isArray(paths)
+    && paths.every(path => typeof path === "string" && /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.test(path)));
+}
+
+export function eventLocalizedContentGaps(
+  content: EventLocalizedContent | undefined,
+  requiresRewardName = true,
+  readiness?: EventCopyReadiness,
+  required: readonly OperatingLanguageCode[] = EVENT_CONTENT_LOCALES,
+) {
+  const paths = readiness && new Set([...readiness.missing, ...readiness.incomplete]);
+  const fields = requiresRewardName ? EVENT_CONTENT_FIELDS : EVENT_CONTENT_FIELDS.slice(0, 2);
+  return EVENT_CONTENT_LOCALES.flatMap(locale => {
+    if (paths) return EVENT_CONTENT_FIELDS.filter(field => paths.has(`localized.${locale}.${field}`)).map(field => ({ locale, field }));
+    const gaps = fields.filter(field => {
+      const value = content?.[locale]?.[field];
+      return typeof value !== "string" || !value.trim();
+    });
+    if (!required.includes(locale) && gaps.length === fields.length) return [];
+    return gaps.map(field => ({ locale, field }));
+  });
+}
+
+export function eventRuleReadiness(
+  row: Pick<EventRuleView, "enabled" | "eventCode" | "readiness" | "appUsesAuthoredRewardName">,
+  content?: Record<string, EventLocalizedContent>,
+  required: readonly OperatingLanguageCode[] = EVENT_CONTENT_LOCALES,
+): EventRuleReadiness {
+  if (row.appUsesAuthoredRewardName !== undefined || row.enabled || !content) return row.readiness;
+  const localized = eventLocalizedContentGaps(content[row.eventCode], true, undefined, required);
+  const missing = [...new Set([...row.readiness.missing, ...localized.filter(gap => required.includes(gap.locale))
+    .map(({ locale, field }) => `localized.${locale}.${field}`)])];
+  const incomplete = [...new Set([...(row.readiness.incomplete ?? []), ...localized.filter(gap => !required.includes(gap.locale))
+    .map(({ locale, field }) => `localized.${locale}.${field}`)])];
+  return { ...row.readiness, ready: row.readiness.ready && !missing.length && !incomplete.length, missing, incomplete };
+}
 
 export interface EventRuleField { key: string; label: string; type?: "text" | "regions" | "weekdays" | "voucher"; integer?: boolean; }
-export const EVENT_KIND_LABELS: Record<string, string> = { discount: "限时优惠", seasonal: "节日促销", referral: "邀请挑战", onboarding: "新手任务", regional: "区域竞赛", boost: "奖励加成", wheel: "幸运转盘" };
+export const EVENT_KIND_LABELS: Record<string, string> = { discount: "限时特惠", seasonal: "季节活动", referral: "推荐有奖", onboarding: "新用户冲刺", regional: "区域 PK", boost: "加成活动", wheel: "幸运转盘" };
 export const EVENT_RULE_FIELDS: Record<string, EventRuleField[]> = {
   referral: [{ key: "targetInvites", label: "有效直接邀请好友数", integer: true }, { key: "windowDays", label: "参与期限（天）", integer: true }, { key: "giftProductNo", label: "赠送设备商品编号", type: "text" }, { key: "giftQuantity", label: "每人赠送设备数量", integer: true }, { key: "deviceBudget", label: "设备发放总量上限", integer: true }],
   onboarding: [{ key: "windowDays", label: "新用户参与期限（天）", integer: true }, { key: "minRank", label: "最低 V 等级", integer: true }, { key: "rewardNex", label: "每人 UVT 奖励" }, { key: "streakSavers", label: "每人补签卡数量", integer: true }, { key: "budgetNex", label: "UVT 发放预算" }],
@@ -29,16 +76,12 @@ export function parseEventRegions(text: string) {
   });
 }
 export function eventRuleMissingLabel(key: string): string {
-  if (key.startsWith("localized.")) {
-    const [, locale, field] = key.split(".");
-    const label = locale === "en" ? "英文" : locale === "zh" ? "中文" : locale === "vi" ? "越南语" : "英文和运营区域语言";
-    const name = field === "name" ? "名称" : field === "description" ? "说明" : field === "rewardName" ? "奖励名" : "文案";
-    return `活动${label}${name}（在活动内容区维护）`;
-  }
+  // 缺哪种语言在「既有活动」卡片和抽屉里逐格标出；这里合成一项，只指路。
+  if (key.startsWith("localized.")) return "活动在 App 上的文字（到「既有活动」页签补）";
   const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
   if (voucherIssue) return voucherIssue;
   const field = Object.values(EVENT_RULE_FIELDS).flat().find(field => field.key === key);
-  return field?.label ?? ({ startsAt: "开始时间", endsAt: "结束时间", locales: "英文和运营区域语言活动文案", promotion: "关联促销活动", allocation: "奖池分配规则", metric: "区域排名统计项目", "regions.countries": "参赛国家范围", regions: "参赛地区", wheel: "转盘奖池", rules: "玩法配置", stakingAppVisible: "请先在G1展示App质押功能" } as Record<string, string>)[key] ?? "参与条件或奖励配置";
+  return field?.label ?? ({ startsAt: "开始时间", endsAt: "结束时间", locales: "英文和运营区域语言活动文案", promotion: "关联促销活动", allocation: "奖池分配规则", metric: "区域排名统计项目", "regions.countries": "参赛国家范围", regions: "参赛地区", wheel: "转盘奖池", rules: "玩法配置", stakingAppVisible: "请先在「质押产品配置」让 App 显示质押" } as Record<string, string>)[key] ?? "参与条件或奖励配置";
 }
 
 export function eventRuleReadinessText(row: Pick<EventRuleView, "rulesLocked" | "endsAt" | "readiness">, now = Date.now()): string {

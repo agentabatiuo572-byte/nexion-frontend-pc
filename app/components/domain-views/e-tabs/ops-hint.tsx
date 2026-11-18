@@ -17,11 +17,12 @@ export function OpsHint({ children, label = "查看说明" }: { children: ReactN
     window.addEventListener("scroll", hide, true); window.addEventListener("resize", hide);
     return () => { window.removeEventListener("scroll", hide, true); window.removeEventListener("resize", hide); };
   }, [position]);
+  const popoverPosition = position ? { left: position.left, top: position.top, transform: position.above ? "translateY(-100%)" : undefined } : undefined;
   return <><button type="button" className="ops-hint" aria-label={label} aria-describedby={position ? id : undefined}
     onMouseEnter={event => show(event.currentTarget)} onMouseLeave={() => { if (!pinned) setPosition(null); }}
     onFocus={event => show(event.currentTarget)} onBlur={() => { setPinned(false); setPosition(null); }}
     onClick={event => { if (pinned) { setPinned(false); setPosition(null); } else { setPinned(true); show(event.currentTarget); } }}
     onKeyDownCapture={event => { if (event.key === "Escape") { event.stopPropagation(); setPinned(false); setPosition(null); } }}>ⓘ</button>
-    {position && createPortal(<div id={id} className="ops-hint-popover" role="tooltip" style={{ left: position.left, top: position.top, transform: position.above ? "translateY(-100%)" : undefined }}>{children}</div>, document.body)}
+    {position && createPortal(<div id={id} className="ops-hint-popover" role="tooltip" style={popoverPosition}>{children}</div>, document.body)}
   </>;
 }

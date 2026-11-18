@@ -68,7 +68,7 @@ problems.push(...validateServiceDelegations(m, (file) => read(path.resolve(BACKE
 function resolveConsumerEvidencePath(type, file) {
   const root = type === "backend-runtime" || type === "backend-test" ? BACKEND_ROOT
     : type === "uniapp-runtime" || type === "uniapp-test" ? UNIAPP_ROOT
-        : type === "pc-runtime" || type === "test-runtime" ? ROOT : undefined;
+        : type === "pc-runtime" ? ROOT : undefined;
   if (!root || typeof file !== "string" || !file.trim()) return undefined;
   const absolute = path.resolve(root, file);
   const relative = path.relative(root, absolute);

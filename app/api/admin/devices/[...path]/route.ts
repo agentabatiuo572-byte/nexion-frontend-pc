@@ -154,7 +154,7 @@ async function proxy(request: Request, context: RouteContext) {
       headers: responseHeaders,
     });
   } catch {
-    return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");
+    return jsonError(503, request.method === "GET" || request.method === "HEAD" ? "DEVICES_BACKEND_READ_UNAVAILABLE" : "DEVICES_BACKEND_UNAVAILABLE");
   }
 }
 

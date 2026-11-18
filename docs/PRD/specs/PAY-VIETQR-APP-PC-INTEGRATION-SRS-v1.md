@@ -1,8 +1,22 @@
 # PAY-VIETQR App × 后端 × PC 对接规格 v1
 
 > 日期：2026-07-25  
-> 状态：Implemented / Verified  
+> 状态：人工银行转账已退役（2026-11-04）；本文其余正文是历史实现记录  
 > 权威依据：`Nexion_运营控制后台_开发落地规格.md` D1/D3/D4/D6、`后台产品更新日志.md` 2026-07-25、App 一期对接契约
+
+## 现状（2026-11-04）
+
+人工银行转账已正式退役。后端不再新建人工转账单（`VIETQR_MANUAL_TOPUP_RETIRED`），App 的银行充值走 HDPay 托管支付；HDPay 未开启时不会回退到人工转账。PC 已删除回单登记、五队列处置和收款账户池；PC 代理不再转发 `/vietqr/accounts/**`、`/vietqr/receipts`、`/vietqr/reconciliations/:id/actions/*`，后端接口的关闭由后端单独处理。
+
+下列能力名字里带 VietQR，但仍是 HDPay 和资金账务的现行依赖：
+
+- `nx_vietqr_intent`：HDPay 充值单主记录。
+- `nx_vietqr_reconciliation`：HDPay 新单的 `APP-{intentNo}` 在途投影；`OPEN` 且 `received_vnd > 0` 的回单继续计入 D3 待核实入金。
+- `vietqr` 渠道开关和 `perTxLimitUsd`：控制 HDPay 充值；PC 显示为「银行卡支付」。其余配置字段不再有编辑入口，提交时按读回值原样带上。
+- `POST /api/admin/finance/vietqr/receipt-evidence`、`nx_vietqr_receipt_evidence`：HDPay 人工确认入账的回单图片，必须上传。
+- `GET /api/admin/finance/vietqr/overview`：页面只取 `config` 和 `asOf`。
+
+本文「PC 对账收紧」一节和 `MATCHED/ORPHAN/MISMATCH/LATE` 的人工处置规则已不再使用。旧回单登记曾在 2026-09-15 改为图片选填，后随登记入口一起退役；文中“登记前必须上传”不再适用。
 
 ## CAPABILITY
 
@@ -88,6 +102,8 @@ App 响应解析必须逐字段校验。畸形 2xx、未知状态、无效日期
 
 ### PC 对账收紧
 
+> 已退役（2026-11-04）：本节描述的 PC 回单处置已删除，保留作历史记录。
+
 D1 银行对账的五个用户视图必须同时显示“当前含义”和“下一步”，不能只暴露内部分类名：`INFLIGHT=待付款单`、`MATCHED=已匹配回单`、`ORPHAN=未找到付款单（原孤儿）`、`MISMATCH=信息不一致（原差额）`、`LATE=逾期 / 重复回单`。确定性业务拒绝后保留当前队列与表单上下文，不把列表清空成加载态；写操作已受理但列表回读失败时也保留旧快照，关闭本次确认弹窗，并明确提示先刷新核对、不要重复提交，不能让操作者在同一弹窗内再铸新请求号。账户不一致的 `MISMATCH` 禁止展示“按实收核销”，必须提示核对或退回；只有纯金额差异才能按实收核销。历史 intent 缺失分配账户时返回 `UNKNOWN`，页面按失败关闭显示“历史账户信息缺失”，不得误归为金额差异。
 
 - `MATCH_CREDIT`：已绑定回单只允许使用回单内的 canonical `intentNo`，请求不得改绑；仅 `ORPHAN` 可由财务指定目标 intent。如请求携 `userId`，必须与 intent 用户一致。
@@ -119,7 +135,7 @@ D1 银行对账的五个用户视图必须同时显示“当前含义”和“�
 
 ## NON-GOALS
 
-- 本阶段不接国际卡 PSP session、拒付/退款 UI。
+- 本阶段不接国际卡 PSP session、拒付/退款 UI。国际卡业务已于 2026-11-04 正式退役，PC 旧入口已删除。
 - 本阶段不伪造正式银行 VietQR 二维码；provider 未返回正式 payload 前，remote App 仅展示账号、金额和附言手工转账，mock 演示点阵不得出现在 remote。
 - 本阶段不接 TRC20/BEP20/ERC20 地址派发和链上监听。
 - 本阶段不实现 USDT 提现地址换绑挑战。

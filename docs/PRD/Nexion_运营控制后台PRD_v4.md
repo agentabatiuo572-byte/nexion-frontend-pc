@@ -42,3 +42,17 @@
 ⚠️ 另注:本仓那道 PRD 措辞检查是**按文件名模式**匹配的(`运营控制后台prd.*\.md`),
 对两份副本一视同仁 —— 所以权威副本里那句「hook 与门只认 canonical 文件」对它并不成立。
 真要让门只认权威副本,得改门的判据,不能只写在文档里。
+
+### 2026-11-15 J1 B38 受控核查
+
+2026-11-17 hd-sync26：本节 raw SUCCEEDED/过期拒绝的旧限制由[原命令业务回执与拒绝结案](原命令业务回执与拒绝结案-20261117.md)接续。新详细回执 businessState=SUCCEEDED 表明原业务码0，J1 单项和先全批校验、失败回滚的批量关停可确定收尾；业务 REJECTED 单独保留，只有完整回放明确拒绝或受控 CONFIRMED_REJECTED 才解除。拒绝不是未执行，newOperationAllowed 仍 false；旧后端没有新字段时保持原保护。现有面板的拒绝状态和结案选项交视觉接，数据层已提供严格资格函数，未添加产品句子。
+
+直接 J1 scopes 与 A2 恢复提案受 `AdminCommandOrigin.supported:77–82` 支持。发出前保存原 method/path/adminId/readAuthority，重试保留原来源，不从后来账号重建；查询纯读 `commands/investigations/by-command-key`，证据可交同一 `checkInvestigation`。仅 `CONFIRMED_SUCCEEDED` 或后端允许新操作的 `CONFIRMED_NOT_EXECUTED` 且未锁终态清记录并重读 J1；A2_COMMAND建单原回执属于已核实的成功白名单。2026-11-16 hd-patch-rcpt纠正：J1直写raw SUCCEEDED可存业务拒绝，不能结案；24h内原请求原号重试回放成功或明确拒绝才清，过期拒绝无权威解除通道。NOT_FOUND/FAILED/UNKNOWN/PROCESSING/错误均保留。旧记录缺 origin 不猜。依据 backend `04d11022` AdminCommandInvestigationService.discover/investigate/requireReader。现有解除说明、核查表单与独立恢复原请求重试入口由视觉补齐。2026-11-17 hd-vis-rcpt：查到「已处理」时行内标签「已处理」，写「后台已处理，看不出成没成」加下一步（24 小时内重试原请求确认；过期由有调查权限的超级管理员核查结案），过期后「已处理」「记为失败」「仍未知」都给核查结案入口。
+
+### 2026-11-15 K1 B38 核查
+
+K1 direct scopes 与处置提案 A2_COMMAND 均支持，初发保原method/path/adminId/readAuthority，重试不覆盖。checkInvestigation(record,evidence?) 查询/提交同一原命令，只认已证明成功或已确认未执行且允许新操作的未锁终态；其余保留，旧无origin不能核。终态后重读账户组/收益。现有本地解除改查询，证据/结果/交接人显示及 direct 常驻查询入口交视觉。出处 backend `04d11022` AdminCommandOrigin:57–82、AdminCommandInvestigationService.discover/investigate；OpsRiskService.idempotentK1。
+
+K1范围补核：`OpsRiskController.updateK1RegistrationParam:142–147` 委托 `OpsPlatformConfigService.updateK1RegistrationParam:119–122/updateParam:214–215`，真实scope为A3_PLATFORM_PARAM，不在supported。该类不连接受控核查，原本地处理保留。RiskReleaseParamsService.update:87为K1_RELEASE_PARAM、EarningsReleaseService.manualRelease:387为K1_EARNINGS_MANUAL_RELEASE，二者属于已支持K1前缀，但成功审计是否被allowedFact接受仍以服务端为准。
+
+2026-11-15 F03：K1 处置仍保留按原命令号严格查询当前审批单的入口，核本人、原对象、原动作及可选 operationCode，匹配即恢复；严格 A2_PROPOSAL_NOT_FOUND 才记录查无，查询失败不开放重试。有 A2 读权限的旧无 origin 记录同样可查询，不补造来源。B38 是补充，不取代原审批查询。

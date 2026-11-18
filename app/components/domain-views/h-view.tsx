@@ -10,15 +10,17 @@
  * amplifies 仅放大流出方向(放松 dial / 升奖励 / 升概率 / 升 NEX 奖励 / 降门槛 / 真实奖)。
  * 统一来源:后端 /api/admin/growth/* 读模型。
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import "./h-domain.css";
+import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import H1Phase from "./h-tabs/h1-phase";
 import H2Trial from "./h-tabs/h2-trial";
-import H3QuestEvents, { H4ActivityCenter } from "./h-tabs/h3-quest-events";
+import H3QuestTasks from "./h-tabs/h3-quest-tasks";
+import H4LegacyCenter from "./h-tabs/h4-legacy-center";
 import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
@@ -42,6 +44,9 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "H1", [meta.l2Id]);
   const [rhythm, setRhythm] = useState<H1RhythmOverview | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
+  // 页签自己关框时记下来：框关了才需要轻提示，框开着错误就写在框里。
+  const openConfirm = useRef<ActionConfirmReq | null>(null);
+  openConfirm.current = mc;
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const can = useCallback((authority: string) => {
     return access[1] === "superadmin" || access[1] === "super" || access.slice(2).includes(authority);
@@ -49,8 +54,10 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: HCtx = {
     toast: setToast,
-    openActionConfirm: setActionConfirm,
+    openActionConfirm: (req) => { openConfirm.current = req; setActionConfirm(req); },
+    confirmOpen: !!mc,
     openConfirm: setCf,
+    closeConfirm: (req) => setCf(current => !req || current === req ? null : current),
     can,
   };
 
@@ -58,47 +65,62 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     ? <span className="f-live"><span className="dot" />{`${rhythm.currentPhase} · 第 ${rhythm.currentMonth}/${rhythm.totalMonths} 月 · ${describeH1Schedule(rhythm.schedule)}`}</span>
     : null;
 
-  return (
-    <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>
-      {tab !== "H4" && <DomainHeader {...meta} right={right} />}
+  const page = (
+    <>
+      {tab !== "H4" && tab !== "H2" && tab !== "H1" && tab !== "H3" && tab !== "H5" && tab !== "H7" && tab !== "H8" && tab !== "H9" && <DomainHeader {...meta} right={right} />}
+
 
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
-      {tab === "H3" && <H3QuestEvents ctx={ctx} />}
-      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}
+      {tab === "H3" && <H3QuestTasks ctx={ctx} />}
+      {tab === "H4" && <H4Promotions ctx={ctx} legacy={(section, go) => <H4LegacyCenter ctx={ctx} section={section} onSection={go} />} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} briefKind={mc.briefKind}
           action={mc.action}
+          title={mc.title}
           detail={mc.detail}
-          content={mc.content}
-          blockedReason={mc.blockedReason}
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          facts={mc.facts}
+          content={mc.content}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          reasonPolicyOptional={mc.reasonPolicyOptional}
           inlineApproval={mc.inlineApproval}
           reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
-          getPendingReason={mc.inlineApproval ? mc.getPendingReason : undefined}
+          getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
+          blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
+          getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
-          onClose={() => setActionConfirm(null)}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
               await mc.run(reason, newValue, businessValue);
-              setActionConfirm(null);
+              setActionConfirm(current => current === mc ? null : current);
             } catch (error) {
-              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
+              // 错误只写在框里，不再弹同一句（S01）；页签自己把框关了时才用轻提示告诉运营。
+              if (tab !== "H2" && openConfirm.current !== mc) setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal key={cf.formKey} req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
       {toastNode}
-    </div>
+    </>
   );
+  if (tab === "H2" || tab === "H1" || tab === "H3" || tab === "H4" || tab === "H5" || tab === "H7" || tab === "H8" || tab === "H9") return <RdPage className="hdom">{page}</RdPage>;
+
+  return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }

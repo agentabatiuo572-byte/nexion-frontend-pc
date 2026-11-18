@@ -69,7 +69,7 @@
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
 | A1 运营账号 & RBAC | `platform_a1_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W/H：SUPER_ADMIN；CONFIG_ADMIN 仅账号生命周期 | ALL；授权更新与账号启停分权，禁止自授予 |
-| A2 审计 & 操作确认 | `platform_a2_read` | 全角色按本域证据、AUDITOR 全量；FINANCE_LEAD 只读 D 域与精确本人 E4 原单 | W：有本域发起权；H：目标动作独立执行人；主管的待批读取不新增批准权 | 本人原键按原业务权限找回；无关票拒绝；AUDITOR MASKED 全量；审计不可改 |
+| A2 操作记录与审批 | `platform_a2_read` | 有菜单及读权者按服务端域范围；FINANCE/FINANCE_LEAD仅D，RISK C/K、GROWTH E/H、CONTENT I、SUPPORT本人、超管/审计全域 | 决定须operation_approve再按工单分别核批准/驳回；撤回proposal_create，导出export，机制/清理write | 已知规则精确判断；未知类型/摘要不足保留入口并提示后端批准时核业务权，待B44。E5增长委托仅两类且仍须批准权；退款金额未读到禁批准/原重试；本地解除不替后端结案 |
 | A2 未知操作结果核查（后端） | 原业务读权；结案须 `platform_a2_unknown_investigate` | 原操作者按当前业务范围读回执；有权超管按原业务范围核查 | HIGH：仅真实有效 SUPER_ADMIN；财务／风控不可结案 | 绑定原对象／动作／请求及权威证据；不新增付款／退款权，不重放；证据不足保持锁定 |
 | A3 系统配置 | `platform_a3_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；H：SUPER_ADMIN | ALL；单例写加全局锁、版本、快照和恢复 |
 | A4 埋点事件体系 | `platform_a4_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR；域 Owner 看本域 | W：CONFIG_ADMIN；schema 发布 H：SUPER_ADMIN | 域级；历史事件不可改，schema 只新增 revision |
@@ -77,7 +77,7 @@
 | A6 角色管理 | `platform_a6_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | H：SUPER_ADMIN | ALL；禁止编辑 SUPER_ADMIN 使其失控，禁止自批 |
 | A7 菜单管理 | `platform_a7_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | W：CONFIG_ADMIN；根菜单/删除 H：SUPER_ADMIN | ALL；父子、角色授权和路由完整性保护 |
 | A8 权限字典 | `platform_a8_read` | SUPER_ADMIN、CONFIG_ADMIN、AUDITOR | H：SUPER_ADMIN | ALL；permission code 发布后不可改语义，只能停用/新建 |
-| A9 开发者访问审批 | `developer_access_read` | 按当前会话读取授权 | 批准 / 驳回 / 撤销分别核对动作权限 | 全局申请。动作受申请状态约束。本人同一申请、动作和状态的审批结果未确认时，核对原命令显示原备注并沿用原键。 |
+| A9 开发者访问审批 | `developer_access_read` | 按当前会话读取授权 | 批准 / 驳回 / 撤销分别核对动作权限 | 全局申请。动作受申请状态约束。本人同一申请的操作结果未知时，按保存的原动作、原状态、原备注和原键恢复；当前列表状态变化不阻断原请求回放。超过24小时保留证据、不重发。 |
 
 A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名称和备注填写理由并确认后「立即生效」，保留操作记录；角色启停、授权和删除提交到「操作记录与审批」，由另一位管理员「批准后生效」。页头和确认框按实际路径说明，本次不改变审批流程。切换角色时详情只属于当前选中角色；加载中或失败时不提供旧角色的操作，失败明确提示并可重试。
 
@@ -108,7 +108,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 
 状态另行约束：待审批仅可批准 / 驳回，已批准仅可撤销，已驳回 / 已撤销 / 已过期均无写操作。备注入口和提交处理共用逐动作权限判断，服务端继续逐接口鉴权；不改变权限目录或默认角色授权。
 
-审批提交遇到断网、超时或收不到响应时，按结果未确认处理。原操作者在同一申请、动作和原状态下进入「核对原审批」，沿用原 `expectedStatus`、备注和 `Idempotency-Key` 核对结果。服务端明确拒绝时，按返回的认证、权限或业务错误处理（BUG-337）。
+审批提交遇到断网、超时或收不到响应时，按结果未确认处理。原操作者从页面结果未知记录恢复原操作，沿用保存的原 `expectedStatus`、完整请求体、备注和 `Idempotency-Key`，不要求当前列表仍处于原状态；先确认原请求持久保存才发送。首次提交明确拒绝释放新号；保留原请求的重试只有明确业务拒绝才解除，认证/权限/限流及未收敛幂等响应继续留证。24小时后只读核对当前申请，列表状态不证明原命令归属，也不能自动解除（2026-11-15，R1；历史BUG-337）。
 
 ### 3.2 B 总览驾驶舱（5）
 
@@ -124,9 +124,9 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
-| C1 检索 & 画像 | `user_c1_read` | RISK、FINANCE、GROWTH、SUPPORT、AUDITOR | W：GROWTH 仅脱敏名单；X：AUDITOR/FINANCE_LEAD | REGION/MASKED；手机号、邮箱、证件按字段权限 |
-| C2 账户操作 | `user_c2_read` | RISK、SUPPORT、AUDITOR | W：RISK；H：冻结/解冻/模拟登录由 RISK lead 或 SUPER_ADMIN | REGION；模拟登录独立权限、限时、全程审计 |
-| C3 余额 & 资产调整 | `user_c3_read` | FINANCE、FINANCE_LEAD、RISK、SUPPORT、AUDITOR | 发起：FINANCE/SUPPORT；批准/冲正：FINANCE_LEAD | MASKED；账本不删除，发起人与执行人隔离 |
+| C1 查找用户与查看资料 | `user_c1_read`；详情 `user_c1hub_read` | RISK、FINANCE、FINANCE_LEAD、GROWTH、SUPPORT、AUDITOR（超管沿种子） | X：`user_c1_export`，默认 SUPER_ADMIN/GROWTH/AUDITOR；RISK 默认无导出，财务主管不因角色继承得到导出 | MASKED；有权导出时 SUPER_ADMIN/RISK/AUDITOR 15 列、其余 9 列；风险读权独立，余额及设备按实际返回裁剪；未知导出锁新申请 |
+| C2 账户操作 | 处置／视图／名单 `user_c2_read`；注销 `user_c1_read` | 内置 SUPER_ADMIN、RISK、AUDITOR；FINANCE/FINANCE_LEAD/SUPPORT/GROWTH 无 C2 入口 | 冻结／恢复、查看起止、名单各按精确码；全设备退出认 C2 或 C5 退出码加 A2 提案权；注销只认 `user_c1_write`，无超管前端绕过 | 全设备退出由另一有权超管批准；财务冻结兼容提案须现有授权，原重试还须 proposal_create；信任名单只记录，不放宽检查；冻结来源阻断及只读会话限时保留 |
+| C3 余额与资产调整 | `user_c3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR（超管沿种子）；SUPPORT 无权 | 发起 `user_c3_adjust_create`：FINANCE ≤500、FINANCE_LEAD/超管 ≤10,000 USDT 等值；批准／驳回 `user_c3_adjust_approve`、冲正 `user_c3_adjust_reverse`：FINANCE_LEAD/超管 | USDT/UVT；原调整全部待另一人批准，不能自批；B43 迁移移除 SUPPORT 全部 C3 码和菜单；旧大额请求接口退役（410），页面无入口；冲正一次直接反向执行，不查覆盖率，余额不得为负 |
 | C4 KYC 合规台账 | `user_c4_read` | RISK、FINANCE、SUPPORT、AUDITOR | W：RISK；X：监管导出专权 | REGION/MASKED；证件影像默认不可下载 |
 | C5 安全 & 会话 | `user_c5_read` | RISK、SUPPORT、AUDITOR | W：RISK；H：强退/MFA 重置/设备解绑 | REGION；会话 token 永不回显 |
 | C6 注册/登录风控 | `user_c6_read` | RISK、GROWTH、AUDITOR | W：RISK；增长只读 | ALL/REGION；OTP/滑块阈值不归增长修改 |
@@ -135,12 +135,12 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
-| D1 充值对账中心 | `finance_d1_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | W/H：FINANCE_LEAD；风险锁：RISK；PSP 切换：SUPER_ADMIN | ALL；银行账号只显尾号，密文不回传 |
+| D1 充值与收款对账 | `finance_d1_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | W/H：FINANCE_LEAD；风险锁：RISK；PSP 切换：SUPER_ADMIN | ALL；银行账号只显尾号，密文不回传 |
 | D2 提现审核队列 | `finance_d2_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | 审核：FINANCE；冻结：RISK；放行/退款/解冻：FINANCE_LEAD+对应风控门 | REGION/ALL；地址与 tx 敏感字段按需显示 |
 | D3 资金池水位仪表盘 | `finance_d3_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | W：FINANCE_LEAD（储备/处置命令） | ALL；读模型不直接改账 |
-| D4 账本/账单审计 | `finance_d4_read`；单用户 `finance_d4_user_read` | 平台：FINANCE、FINANCE_LEAD、RISK、AUDITOR；SUPPORT 仅已授权用户 | X：FINANCE_LEAD/AUDITOR；SUPPORT 无平台／导出／写权 | 两个用户账单／运行余额入口统一校验客服用户范围；MASKED；冲正为新流水 |
-| D5 提现参数配置 | `finance_d5_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | 写／审批沿独立权限；FINANCE_LEAD 可读待批与本人原单，不因读取增加批准权 | ALL；版本/CAS、可靠资金门槛、B1/H1 只读边界 |
-| D6 汇率牌价 | `finance_d6_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR、SUPER_ADMIN；GROWTH 拒绝 | 沿原管理权；需审批方向由另一有权超管批准，基准价上调两次资金检查 | ALL；整组方向、版本/CAS；锁价版本不可回写历史订单 |
+| D4 账本与账单核对 | `finance_d4_read`；单用户 `finance_d4_user_read` | 平台：FINANCE、FINANCE_LEAD、RISK、AUDITOR；SUPPORT 仅已授权用户 | X：FINANCE_LEAD/AUDITOR；SUPPORT 无平台／导出／写权 | 两个用户账单／运行余额入口统一校验客服用户范围；MASKED；冲正为新流水 |
+| D5 USDT 提现参数 | `finance_d5_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR | 写／审批沿独立权限；FINANCE_LEAD 可读待批与本人原单，不因读取增加批准权 | ALL；版本/CAS、可靠资金门槛、B1/H1 只读边界 |
+| D6 汇率设置 | `finance_d6_read` | FINANCE、FINANCE_LEAD、RISK、AUDITOR、SUPER_ADMIN；默认 GROWTH 无权 | 调整只认 `finance_d6_manage`；敏感方向另须 A2 提案权；批准／驳回须另一真实超管及 manage、operation_approve，批准时重核发起人现有资格 | 整组基准价上调或最终充值报价下降须审批；仅基准价上调提交／批准两查可靠覆盖率；CAS；旧单锁价不回写，本地解除不替后端结案 |
 
 ### 3.5 E 设备与商城（6）
 
@@ -149,7 +149,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | E1 商品目录 & 上架门 | `device_e1_read` | GROWTH、FINANCE、SUPPORT、AUDITOR | W：GROWTH；上架/删除 H：GROWTH lead | ALL；关联订单、券、奖励完整性保护 |
 | E2 收益 & 任务引擎 | `device_e2_read` | GROWTH、RISK、AUDITOR | W/H：GROWTH lead | ALL；规则版本只影响明确批次 |
 | E3 生命周期 & Trade-in | `device_e3_read` | GROWTH、SUPPORT、FINANCE、AUDITOR | W：GROWTH；回收恢复/抵扣规则 H | REGION；设备归属、实付价、累计产出不可伪造 |
-| E4 订单状态机 | `device_e4_read` | GROWTH、FINANCE、SUPPORT、AUDITOR；财务主管及超管按既有读权 | 普通动作沿原权限；退款发起：FINANCE_LEAD／有权 SUPER_ADMIN，GROWTH 不可；批准：另一有权 SUPER_ADMIN | REGION/QUEUE；本人不能批准；直接接口与服务不可绕过 A2；退款走账本 |
+| E4 订单进度 | `device_e4_read` | GROWTH、FINANCE、FINANCE_LEAD、SUPPORT、AUDITOR、SUPER_ADMIN 按既有读权 | 普通动作沿原码；退款入口及重试须 refund 加 A2 提案权，后端核真实超管或 FINANCE_LEAD 的有效退款授权来源；批准／驳回须另一真实超管及 approve、refund | 默认增长无退款，合法兼任不按主角色封堵；直退须真实 A2 上下文；普通任务已完成结算一次、未完成停止、已到账保留；运行未知不等于持久事实为 0 |
 | E5 设备运维 | `device_e5_read` | GROWTH、SUPPORT、RISK、AUDITOR | W：GROWTH/SUPPORT；force/unbind H | REGION；批量动作限制目标集与上限 |
 | E6 算力与设备配置 | `device_e6_read` | GROWTH、CONFIG_ADMIN、AUDITOR | W/H：GROWTH lead/CONFIG_ADMIN | ALL；App 投影版本、唯一六档、失败关闭 |
 
@@ -192,11 +192,13 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
 | I1 转化文案 A/B | `content_i1_read` | CONTENT、GROWTH、AUDITOR | W：CONTENT；采纳/发布 H：CONTENT lead | ALL；实验结论与发布分离 |
-| I2 Nova 推送运营 | `content_i2_read` | CONTENT、SUPPORT、AUDITOR | W：CONTENT；通道 kill H | ALL；禁用不抹历史送达 |
+| I2 消息推送 | `content_i2_read` | 以实际授权为准；种子 CONTENT 可写、AUDITOR 只读 | 全部16写要求 `content_i2_write`，直接执行，无独立 kill/审批门槛 | 全部频道；停用不删除已有通知 |
 | I3 通知 Campaign | `content_i3_read` | CONTENT、GROWTH、SUPPORT、AUDITOR | W：CONTENT；立即全量发送 H | REGION/ALL；已发送不可撤回 |
 | I4 信任中心 | `content_i4_read` | CONTENT、RISK、FINANCE、AUDITOR | 发布/回滚/下架 H：CONTENT lead+合规权限 | REGION；公开证明版本不可覆盖 |
 | I5 风险披露 | `content_i5_read` | CONTENT、RISK、FINANCE、AUDITOR | CONTENT 等独立有权者按原规则写／发布；RISK 仅只读 | JURISDICTION；风控不保留旧 draft 写、发布或开关权；版本确认和资金门禁联动 |
 | I6 i18n 文案 | `content_i6_read` | CONTENT、GROWTH、SUPPORT、AUDITOR | W：CONTENT；namespace 发布 H | locale/namespace；占位符等集、禁词门禁 |
+
+I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App「消息通知」的业务推送；Nova 智能问答已下线。路由 `/content/nova`、页面编号 I2、`/api/admin/content/nova/*` 接口、`content_i2_read` / `content_i2_write` 权限码和全部通道 key 均不变。
 
 ### 3.10 J 紧急与合规控制（4）
 
@@ -274,7 +276,7 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | RBAC-OPEN-001 | maker/checker 与“按执行门槛分流”的最终术语和角色模型 | 测试中使用独立发起人与执行人，禁止同人自批 |
 | RBAC-OPEN-002 | I 域历史 `MENU_CONTENT_I4/I5` 与导航 `I4/I5` 映射 | 新夹具按导航 code 等集授权，旧 code 仅做迁移兼容 |
 | RBAC-OPEN-003 | REGION 数据范围按注册地、KYC 辖区还是当前服务辖区 | 涉资金/合规时取更严格交集，待产品裁决 |
-| RBAC-OPEN-004 | SUPPORT 发起 C3 补偿的金额上限 | 未裁决前只允许发起，不允许批准或直接入账 |
+| RBAC-OPEN-004 | 旧 C3 迁移曾授 SUPPORT 读／发起，与 B30 种子不同 | 已由 B43 `20261108_b43_support_c3_scope.sql` 前向纠正：SUPPORT 全部 `user_c3_*` 权限和 C3 菜单绑定软删除，与 B30 种子一致；页面按实际码，不授新权 |
 | RBAC-OPEN-005 | K6 senior/admin 是否映射独立持久角色 | 未落角色前采用最小临时授权并设置到期时间 |
 
 ## 7. HANDOFF

@@ -16,6 +16,12 @@ export interface PhoneRiskStats {
 }
 export interface PhoneRiskOverview { settings: PhoneRiskSettings; stats: PhoneRiskStats }
 export type PhoneRiskUpdate = Omit<PhoneRiskSettings, "revision" | "updatedAt" | "updatedBy" | "reason"> & { reason: string };
+export type PhoneRiskReceipt = {
+  scope: "E6_PHONE_RISK_SETTINGS"; commandKey: string; originalMethod: "PUT"; originalPath: string;
+  originalTarget: "E.compute.phoneRisk.settings"; originalAdminId: string; requestHash: string;
+  status: "PROCESSING" | "UNKNOWN" | "FAILED" | "SUCCEEDED" | "CONFIRMED_SUCCEEDED" | "CONFIRMED_NOT_EXECUTED";
+  originalResponse: PhoneRiskOverview | null;
+};
 
 export const RISK_MODE_LABELS: Record<PhoneRiskMode, string> = { OFF: "关闭", OBSERVE: "观察", ENFORCE: "拦截" };
 /** Each check, its finding code and the modes it allows; display size and account churn are never enforced. */
@@ -39,7 +45,7 @@ export const RISK_CODE_LABELS: Record<string, string> = { ...Object.fromEntries(
 const MODES = new Set<PhoneRiskMode>(["OFF", "OBSERVE", "ENFORCE"]);
 const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-function invalid(): never { throw new Error("机型风控设置响应异常，请刷新后重试。"); }
+function invalid(): never { throw new Error("机型风控设置读取异常，请刷新后重试。"); }
 
 /** The settings themselves, without the reason a save also needs. */
 export function riskModeError(update: Omit<PhoneRiskUpdate, "reason">): string | null {
@@ -69,12 +75,12 @@ export function parsePhoneRiskOverview(value: unknown): PhoneRiskOverview {
 }
 
 /** A save whose response was lost may have been applied: say so instead of reporting a failure. */
-const UNKNOWN_SAVE = "保存结果暂不确定：设置可能已经生效。请关闭后点「刷新」核对版本号和当前设置，不要直接重复保存。";
+const UNKNOWN_SAVE = "结果未知，可能已经保存。原内容已保留，可以查询原结果，或按原请求重试，不会重复保存。";
 class PhoneRiskOutcomeUnknownError extends Error { constructor() { super(UNKNOWN_SAVE); } }
-async function request(method: "GET" | "PUT", body?: unknown, key?: string): Promise<unknown> {
+async function request(method: "GET" | "PUT", body?: unknown, key?: string, suffix = ""): Promise<unknown> {
   let response: Response;
   try {
-    response = await guardedFetch("/api/admin/config/phone-calibration/risk", {
+    response = await guardedFetch(`/api/admin/config/phone-calibration/risk${suffix}`, {
       method, cache: "no-store",
       ...(body === undefined ? {} : { headers: { "Content-Type": "application/json", "Idempotency-Key": key ?? "" }, body: JSON.stringify(body) }),
     });
@@ -85,11 +91,22 @@ async function request(method: "GET" | "PUT", body?: unknown, key?: string): Pro
   const envelope = await response.json().catch(() => null);
   if (method === "PUT" && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || !envelope || typeof envelope.code !== "number"
       || (!response.ok || envelope.code !== 0) && outcomeStaysUnknown(response.status, envelope.code))) throw new PhoneRiskOutcomeUnknownError();
-  if (!response.ok || !envelope || envelope.code !== 0) throw new Error(formatAdminApiError(envelope?.message, "机型风控设置读取失败"));
+  if (!response.ok || !envelope || envelope.code !== 0) throw Object.assign(new Error(formatAdminApiError(envelope?.message, "机型风控设置读取失败")), { httpStatus: response.status, apiCode: envelope?.code, status: response.ok && typeof envelope?.code === "number" ? envelope.code : response.status, backendMessage: envelope?.message });
   return envelope.data;
 }
 export async function fetchPhoneRisk(): Promise<PhoneRiskOverview> {
   return parsePhoneRiskOverview(await request("GET"));
+}
+/** Validates the original server binding; a live settings read is never a receipt. */
+export async function fetchPhoneRiskReceipt(commandKey: string, originalAdminId: number): Promise<PhoneRiskReceipt> {
+  const raw = await request("GET", undefined, undefined, `/receipts/by-key?${new URLSearchParams({ commandKey })}`);
+  if (!object(raw) || raw.scope !== "E6_PHONE_RISK_SETTINGS" || raw.commandKey !== commandKey
+    || raw.originalMethod !== "PUT" || raw.originalPath !== "/api/admin/config/phone-calibration/risk"
+    || raw.originalTarget !== "E.compute.phoneRisk.settings" || raw.originalAdminId !== String(originalAdminId)
+    || typeof raw.requestHash !== "string" || !/^[a-fA-F0-9]{64}$/.test(raw.requestHash)
+    || !["PROCESSING", "UNKNOWN", "FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(String(raw.status))) return invalid();
+  const originalResponse = raw.originalResponse === null ? null : parsePhoneRiskOverview(raw.originalResponse);
+  return { ...raw, originalResponse } as PhoneRiskReceipt;
 }
 /** Takes effect immediately; the revision rejects a save based on settings someone else changed meanwhile. */
 export async function savePhoneRisk(expectedRevision: number, update: PhoneRiskUpdate, key: string): Promise<PhoneRiskOverview> {

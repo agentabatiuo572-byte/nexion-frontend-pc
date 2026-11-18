@@ -16,7 +16,10 @@ function isNonEmpty(value: string | undefined) {
   return !!value && value.trim().length > 0;
 }
 
-function backendPath(parts: string[]) {
+function backendPath(parts: string[], method: string) {
+  if (method === "GET" && parts.length === 2 && parts[0] === "leadership-pool" && ["vote-projection", "payout-preview", "disqualification-readiness"].includes(parts[1])) {
+    return `/api/admin/teams/leadership-pool/${parts[1]}`;
+  }
   if (parts.length === 1 && parts[0] === "direct-referral-policy") {
     return "/api/admin/teams/direct-referral-policy";
   }
@@ -52,6 +55,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 2 && parts[0] === "leadership-pool" && parts[1] === "settle") {
     return "/api/admin/teams/leadership-pool/settle";
+  }
+  if (method === "GET" && parts.length === 2 && parts[0] === "commissions" && /^CM-\d+$/i.test(parts[1])) {
+    return `/api/admin/commissions/${encodeURIComponent(parts[1])}`;
   }
   if (parts.length === 1 && parts[0] === "commissions") {
     return "/api/admin/commissions";
@@ -144,7 +150,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const targetPath = backendPath(path, request.method);
 
   if (!targetPath) {
     return jsonError(404, "TEAMS_ROUTE_NOT_FOUND");

@@ -42,6 +42,22 @@ export function isDeterministicRejection(status: number, apiCode?: number | null
 }
 
 /**
+ * 幂等层仍在处理、记录状态丢失或原操作需要核查。即使 HTTP 为 409，也不能据此忘记原命令。
+ * 这里只列仍未收敛的明确业务码，不按 409 或 IDEMPOTENCY_ 前缀全收；CONFIRMED_* 已核查终态
+ * 不进入未知路径。保留命令不等于允许重新执行，原号查询和重试仍受页面及后端的门槛限制。
+ */
+export function isIdempotencyOutcomeOpen(message?: string | null): boolean {
+  return message === "IDEMPOTENCY_REQUEST_IN_PROGRESS"
+    || message === "IDEMPOTENCY_RESULT_UNKNOWN"
+    || message === "IDEMPOTENCY_CLAIM_STATE_LOST"
+    || message === "IDEMPOTENCY_SUCCESS_STATE_LOST"
+    || message === "IDEMPOTENCY_FAILURE_STATE_LOST"
+    || message === "IDEMPOTENCY_ORIGINAL_OPERATION_REQUIRES_INVESTIGATION"
+    || message === "IDEMPOTENCY_RETRY_CONFLICT"
+    || message === "IDEMPOTENCY_RECLAIM_CONFLICT";
+}
+
+/**
  * 这次 HTTP 失败之后,在途命令号必须保留吗?(= `!isDeterministicRejection`)
  *
  * 单独给一个名字是因为调用点读起来就是这个语义(「要不要 forget」),
@@ -49,4 +65,16 @@ export function isDeterministicRejection(status: number, apiCode?: number | null
  */
 export function outcomeStaysUnknown(status: number, apiCode?: number | null): boolean {
   return !isDeterministicRejection(status, apiCode);
+}
+
+/**
+ * 写请求结果未知:页面据此转成待确认,不当失败处理(OP-91)。消息和普通 Error 一样可直接显示。
+ * 给没有自带「结果未知」错误类型的 client 用(I 域内容、法律条款、公开内容)。
+ */
+export class OutcomeUnknownError extends Error {
+  readonly outcomeUnknown = true;
+}
+
+export function isOutcomeUnknownError(error: unknown): error is OutcomeUnknownError {
+  return error instanceof OutcomeUnknownError;
 }

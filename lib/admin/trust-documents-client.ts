@@ -1,4 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "./outcome-classification";
 
 export type TrustDocumentSlot = "whitepaper" | "incorporation" | "msb" | "ein";
 
@@ -40,10 +41,23 @@ interface ApiResult<T> { code: number; message?: string; data?: T }
 
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await guardedFetch(`/api/admin/content/trust-documents${path}`, { ...init, cache: "no-store" });
+  const write = init?.method === "POST";
+  const unknownMessage = path.endsWith("/restore-default")
+    ? "App 可能已经改回随系统发布的默认文件。"
+    : "上传结果未知，文件可能已经对外公开；请重新读取，核对文件指纹、大小和上传时间。";
+  let response: Response;
+  try { response = await guardedFetch(`/api/admin/content/trust-documents${path}`, { ...init, cache: "no-store" }); }
+  catch (error) { if (write) throw new OutcomeUnknownError(unknownMessage); throw error; }
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
-  if (!response.ok || !body || body.code !== 0 || body.data == null) {
-    throw new Error(formatAdminApiError(body?.message, `TRUST_DOCUMENT_REQUEST_FAILED_${response.status}`));
+  if (!body || !Number.isInteger(body.code) || body.message !== undefined && typeof body.message !== "string") {
+    throw write ? new OutcomeUnknownError(unknownMessage) : new Error("TRUST_DOCUMENT_RESPONSE_INVALID");
+  }
+  const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(body.message);
+  if (!response.ok || body.code !== 0 || body.data == null || unknown) {
+    const status = response.ok && body.code >= 400 && body.code < 500 ? body.code : response.status;
+    const message = formatAdminApiError(body.message, `TRUST_DOCUMENT_REQUEST_FAILED_${response.status}`);
+    const uncertain = write && (unknown || body.code >= 500 || !isDeterministicRejection(response.status, body.code) || response.ok && body.code === 0);
+    throw Object.assign(uncertain ? new OutcomeUnknownError(message) : new Error(message), { status, apiCode: body.code, reasonCode: body.message });
   }
   return body.data;
 }
@@ -56,7 +70,9 @@ export function normalizeTrustDocument(raw: unknown): TrustDocument {
   const row = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
   if (!row || !TRUST_DOCUMENT_SLOTS.includes(row.slot as TrustDocumentSlot) || !["DEFAULT", "UPLOADED"].includes(String(row.source))
       || typeof row.fileName !== "string" || !Number.isSafeInteger(row.sizeBytes) || !Number.isSafeInteger(row.pageCount)
-      || typeof row.sha256 !== "string") {
+      || Number(row.sizeBytes) <= 0 || Number(row.pageCount) < 1 || Number(row.pageCount) > 80
+      || typeof row.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(row.sha256)
+      || !["version", "language", "referenceNo", "verifyUrl", "updatedBy", "updatedAt"].every(key => row[key] == null || typeof row[key] === "string")) {
     throw new Error("TRUST_DOCUMENT_RESPONSE_INVALID");
   }
   return {
@@ -78,7 +94,9 @@ export function normalizeTrustDocument(raw: unknown): TrustDocument {
 export async function fetchTrustDocuments(): Promise<TrustDocument[]> {
   const data = await request<{ documents?: unknown }>("");
   if (!Array.isArray(data.documents)) throw new Error("TRUST_DOCUMENT_RESPONSE_INVALID");
-  return data.documents.map(normalizeTrustDocument);
+  const documents = data.documents.map(normalizeTrustDocument);
+  if (documents.length !== TRUST_DOCUMENT_SLOTS.length || new Set(documents.map(row => row.slot)).size !== TRUST_DOCUMENT_SLOTS.length) throw new Error("TRUST_DOCUMENT_RESPONSE_INVALID");
+  return documents;
 }
 
 export function trustDocumentPreviewHref(document: Pick<TrustDocument, "slot" | "sha256">) {
@@ -109,9 +127,13 @@ export async function uploadTrustDocument(current: TrustDocument, file: File, fi
 }
 
 export async function restoreTrustDocument(current: TrustDocument, reason: string, idempotencyKey: string) {
-  return normalizeTrustDocument(await request<unknown>(`/${current.slot}/restore-default`, {
+  return restoreTrustDocumentBody(current.slot, JSON.stringify({ reason: reason.trim(), expectedSha256: current.sha256 }), idempotencyKey);
+}
+
+export async function restoreTrustDocumentBody(slot: TrustDocumentSlot, body: string, idempotencyKey: string) {
+  return normalizeTrustDocument(await request<unknown>(`/${slot}/restore-default`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ reason: reason.trim(), expectedSha256: current.sha256 }),
+    body,
   }));
 }

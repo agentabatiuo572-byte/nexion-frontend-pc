@@ -11,16 +11,22 @@
  * 四道前置闸(H2):资格统一裁决 / 30 天冷却 / K2 循环阻断 / 扣款幂等。
  * 三道护栏(H4 转盘):概率合计 = 100、档位 ∈ [2,12]、真实奖过 B1 红线 → 422。
  */
+import type { ConfirmReq } from "../k-tabs/types";
 import type { DCtx } from "../d-tabs/types";
 import type { ActionConfirmReq as BaseActionConfirmReq } from "../k-tabs/types";
 import type { InlineOperationApproval } from "../design-kit";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type { ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type ActionConfirmReq = BaseActionConfirmReq & { inlineApproval?: InlineOperationApproval };
+export type ActionConfirmReq = BaseActionConfirmReq & { rebaseValue?: string; inlineApproval?: InlineOperationApproval; reasonPolicyOptional?: boolean };
 
-export type HCtx = Omit<DCtx, "openActionConfirm"> & {
+export type HCtx = Omit<DCtx, "openActionConfirm" | "toast"> & {
+  closeConfirm?: (req?: ConfirmReq) => void;
+  toast: (message: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq | null) => void;
+  /** Read-only: the shell's action confirm is open, so its error is already shown inside the dialog. */
+  confirmOpen?: boolean;
   /** UI convenience only; the backend remains the final authority boundary. */
   can: (authority: string) => boolean;
 };

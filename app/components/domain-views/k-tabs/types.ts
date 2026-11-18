@@ -1,18 +1,24 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
+  initialReason?: string;
   action: ReactNode;
+  /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
+  title?: ReactNode;
   detail: ReactNode;
   content?: ReactNode;
-  /** 当前页面不能完成这项操作（如需审批而本页没有审批入口）：常显原因并禁用确认按钮。 */
-  blockedReason?: ReactNode;
   /** 放大资金流出方向才挂(B1 覆盖率预检):解除误判 / 复审通过解冻 / 调阈值放宽 / 停用规则;冻结 / 驳回 / 确认违规不挂。 */
   amplifies?: boolean;
   coverage?: CoverageSnapshot;
+  /** 按该操作的真实路径说明覆盖率检查时机。 */
+  coverageCheck?: string;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  /** Refresh field constraints while retaining the mounted form inputs. */
+  businessFormRevision?: number;
   /** 与服务端理由长度约束保持一致；未指定时沿用共享弹窗的领域默认值。 */
   reasonMin?: number;
   reasonMax?: number;
@@ -21,6 +27,27 @@ export type ActionConfirmReq = {
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
+  inlineApproval?: InlineOperationApproval;
+  /** 生效标签，只在 RdPage 里显示。 */
+  effect?: ReactNode;
+  /** 确认按钮写动作，比如「确认放行」，默认「确认提交」。 */
+  confirmLabel?: string;
+  /** 这次不能再提交的原因：写在框里，确认按钮禁用。比如提交时发现单据已被别人处理。 */
+  blockedReason?: ReactNode;
+  /** 换了这个值，框按新内容重开，已填的理由清空（OP-97）。 */
+  formKey?: number;
+  /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。影响随业务字段变时传函数，参数是现在填的值。 */
+  statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string });
+  /** 做决定要核对的事实，常显在业务字段上面，比如收款网络和完整地址。改一个值的框可以传函数，随输入变（参数是填好的新值，没填好是 undefined）。 */
+  facts?: ReactNode | ((value?: string) => ReactNode);
+  /** 不能撤销的操作传 danger，确认按钮用危险色。 */
+  confirmTone?: "primary" | "danger";
+  /** 放大方向提示的开头，默认「这项操作会让平台多付钱」。 */
+  coverageLead?: ReactNode;
+  /** 理由框的占位，按场景写（TX-11）。 */
+  reasonPlaceholder?: string;
+  /** 紧急关停不能被规则服务挡住：理由规则读不到时按 reasonMin 继续（Q-06）。 */
+  reasonPolicyOptional?: boolean;
   /** 这项操作实际是什么；每个调用都必须声明，不按文字猜摘要。 */
   briefKind: OperatorBriefKind;
   /**
@@ -35,15 +62,37 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  /** Fixed operation intent retained by useHConflictDraft; not an editable input default. */
+  rebaseValue?: string;
+  /** Editable input restored only after the operator reviews a rejected first attempt. */
+  initialInputValue?: string;
+  initialReason?: string;
+  formKey?: number;
+  /** Opt-in for domains retaining the complete request after an unknown result. */
+  freezePendingInput?: boolean;
+  /** The caller replays its saved request, so current form validation must not block it. */
+  replayPendingInput?: boolean;
+  getPendingBlockReason?: () => string | undefined;
+  getPendingReason?: () => string | undefined;
+  /** 原覆盖分，恢复时只展示保存的输入。 */
+  getPendingValue?: () => string | undefined;
+  /** @deprecated Shared KConfirmModal ignores this field. Use getPendingBlockReason with freezePendingInput; I's wrapper maps the legacy field. */
+  blockedReason?: string;
   briefKind: OperatorBriefKind;
   action: ReactNode;
+  /** 框上写的短标题，不传就用 action（VS-101）。 */
+  title?: ReactNode;
   detail: ReactNode;
   content?: ReactNode;
   chips?: ConfirmChip[];
+  /** 这个操作自己声明的影响和提交前检查，传了就不按文字猜摘要（OP-51）。 */
+  statedBrief?: { impact: string; check: string };
+  /** 理由框的占位，按场景写（TX-11）；不传时用风控排查的那句。 */
+  reasonPlaceholder?: string;
+  /** 生效标签，只在 RdPage 里显示。 */
+  effect?: ReactNode;
   /** true = 原因必填(标记类 / 白名单 / 手动补触发)。 */
   reason?: boolean;
-  /** 理由框占位符；不传用默认风控示例。 */
-  reasonPlaceholder?: string;
   /** 可选输入框:传 options 时渲染 chips 勾选(枚举值不让手输,能勾选的不要手输铁律);不传则文本框(开放值如白名单网段 / 补触发 userId / 覆盖分)。 */
   input?: {
     label: string;
@@ -55,10 +104,21 @@ export type ConfirmReq = {
     min?: number;
     max?: number;
     step?: number;
+    /** 输入不对时的原因：失焦或点过确认后用橙黄写在输入框下，确认按钮禁用（PCN-37）。不传时只查非空。 */
+    validate?: (value: string) => string | undefined;
   };
+  /** 备注框旁的说明，替换「选填，最多 200 字」。内容不写入命令时写「选填，不会保存」（EX-18）。 */
+  remarkHint?: string;
   /** 调用方已展示错误时，共享确认不重复提示。 */
   errorHandled?: boolean | ((error: unknown) => boolean);
+  /**
+   * K 域的结果未知写法（K2、K4 传）：重新打开保存的原操作时标题和按钮写「重试原操作」「按原请求重试」，
+   * 提交后结果未知时框里留一条看得见的提示，理由框的字数范围写在框下。别的域不传，样子不变。
+   */
+  recoveryUi?: boolean;
   okLabel?: string;
+  /** 不能撤销的操作传 danger：确认按钮用危险色，标题用警告图标（VS-25）。 */
+  confirmTone?: "primary" | "danger";
   run: (reason: string, value?: string) => unknown | Promise<unknown>;
 };
 
@@ -66,7 +126,7 @@ export type KCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, unknown>;
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
-  toast: (s: string) => void;
+  toast: (s: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
   openConfirm: (req: ConfirmReq) => void;
   risk: KRiskData;

@@ -7,18 +7,35 @@
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
 import { businessZone } from "@/lib/admin/business-time";
-import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties, type FocusEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { useUI, type ToastKind } from "@/lib/store/ui";
+import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
+import { ToastHost } from "@/app/components/kit/toast-host";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy, trimStoredContent } from "@/lib/admin/content-language-rules";
-import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
+import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
+import { Check as RdCheck, CheckGroup as RdCheckGroup, Field as RdField } from "@/app/components/rd/field";
+import { Fold as RdFold } from "@/app/components/rd/fold";
+import { Button as RdButton, type ButtonVariant } from "@/app/components/rd/button";
+import { Select as RdSelect } from "@/app/components/rd/select";
+import { DiffField } from "@/app/components/rd/diff-list";
+import { Explain } from "@/app/components/rd/explain";
+import { Notice as RdNotice } from "@/app/components/rd/block-state";
+import { StatusTag as RdStatusTag } from "@/app/components/rd/status-tag";
+import { Modal as RdModal } from "@/app/components/rd/overlay";
+import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
+import { useRdSurface } from "@/app/components/rd/surface";
+import { KeepText } from "@/app/components/rd/keep-text";
+import { Input as RdInput } from "@/app/components/rd/filter-bar";
+import { Fact as RdFact, Facts as RdFacts } from "@/app/components/rd/facts";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -33,7 +50,7 @@ export type IconName =
   | "gauge" | "shield" | "users" | "wallet" | "radar" | "rhythm" | "box" | "tree"
   | "coin" | "doc" | "power" | "chart" | "search" | "bell" | "menu" | "chevron"
   | "check" | "x" | "alert" | "download" | "plus" | "filter" | "eye" | "lock"
-  | "arrow" | "flame" | "geo" | "clock" | "image";
+  | "arrow" | "flame" | "geo" | "clock" | "image" | "sliders";
 
 export function Icon({ name, size = 18, sw = 1.7 }: { name: IconName; size?: number; sw?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -66,6 +83,7 @@ export function Icon({ name, size = 18, sw = 1.7 }: { name: IconName; size?: num
     geo: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></>,
     clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></>,
     image: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="10" r="1.6" /><path d="M21 16l-5-5-7 7" /></>,
+    sliders: <><path d="M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3" /><path d="M14 3v4M8 10v4M16 17v4" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -106,9 +124,13 @@ export const Badge = ({ tone = "neutral", children }: { tone?: string; children:
   <span className={"badge-s " + tone}>{children}</span>
 );
 
-export const Btn = ({ variant, sm, children, ...rest }: { variant?: string; sm?: boolean; children: ReactNode } & AnyProps) => (
-  <button className={"btn " + (variant || "") + (sm ? " sm" : "")} {...rest}>{children}</button>
-);
+/* 改版页面里就是 rd 按钮，弹窗底栏和页面只有一套样子（DT-22）；旧页面不变。 */
+export const Btn = ({ variant, sm, children, ...rest }: { variant?: string; sm?: boolean; children: ReactNode } & AnyProps) => {
+  const surface = useRdSurface();
+  return surface
+    ? <RdButton variant={(variant || "secondary") as ButtonVariant} size={sm ? "sm" : "md"} {...rest}>{children}</RdButton>
+    : <button className={"btn " + (variant || "") + (sm ? " sm" : "")} {...rest}>{children}</button>;
+};
 
 export const Toggle = ({ on, danger, onClick }: { on?: boolean; danger?: boolean; onClick?: () => void }) => (
   <div className={"sw " + (on ? "on " : "") + (danger && on ? "danger-on" : "")} onClick={onClick} role="switch" aria-checked={!!on} />
@@ -338,7 +360,22 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-export function Modal({ title, icon, onClose, children, footer, wide, busy = false, className }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; className?: string }) {
+type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string; style?: CSSProperties;
+  /** 只在改版页面起作用：标题下的后果标签，和标题前图标底的颜色（VS-101、VS-106）。 */
+  sub?: ReactNode; tone?: "danger" | "neutral" };
+
+const legacy = ({ sub: _sub, tone: _tone, ...rest }: Omit<ModalProps, "icon">) => rest;
+
+/* 改版页面(RdPage 里)走 Radix 弹窗和新外观,能叠在新抽屉上;旧页面走原来的实现,行为不变。 */
+export function Modal({ icon, ...props }: ModalProps) {
+  const surface = useRdSurface();
+  return surface
+    ? <RdModal {...props} icon={icon && <Icon name={icon} size={16} />} />
+    : <LegacyModal {...legacy(props)} icon={icon} />;
+}
+
+function LegacyModal({ title, icon, onClose, children, footer, wide, busy = false, className }: Omit<ModalProps, "sub" | "tone">) {
+  const feedbackId = useDialogFeedback();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -368,6 +405,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
           <div className="spacer" />
           <button className="icon-btn" disabled={busy} onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
+        <ToastHost dialogId={feedbackId} />
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
       </div>
@@ -545,7 +583,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; multiline?: boolean; placeholder?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; allowEmpty?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -575,6 +613,15 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
+/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「原请求编号」（全站-结果未知叫法）。前面的话不变。 */
+function keepCommandKey(text: ReactNode): ReactNode {
+  if (typeof text !== "string") return text;
+  const at = Math.max(text.lastIndexOf("命令号："), text.lastIndexOf("请求号："));
+  const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
+  if (!key) return text;
+  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
+}
+
 function initEditValue(spec?: EditSpec | null): string {
   if (!spec) return "";
   const kind = spec.kind ?? "text";
@@ -583,6 +630,29 @@ function initEditValue(spec?: EditSpec | null): string {
   if (!current) return "";
   const options = spec.options ?? ["开启", "关闭"];
   return options.includes(current) ? current : "";
+}
+
+// Plain decimal inputs stay exact even beyond the precision of a JavaScript number.
+export function normalizeEditDecimal(raw: string): string | null {
+  const value = raw.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) return null;
+  const [whole, fraction = ""] = value.replace(/^[+-]/, "").split(".");
+  const integer = whole.replace(/^0+/, "") || "0";
+  const decimal = fraction.replace(/0+$/, "");
+  return `${value.startsWith("-") && (integer !== "0" || decimal) ? "-" : ""}${integer}${decimal ? "." + decimal : ""}`;
+}
+
+export function compareEditDecimals(left: string, right: string): number | undefined {
+  const a = normalizeEditDecimal(left), b = normalizeEditDecimal(right);
+  if (a === null || b === null) return undefined;
+  if (a === b) return 0;
+  const negative = a.startsWith("-");
+  if (negative !== b.startsWith("-")) return negative ? -1 : 1;
+  const [ai, af = ""] = a.replace(/^-/, "").split(".");
+  const [bi, bf = ""] = b.replace(/^-/, "").split(".");
+  const places = Math.max(af.length, bf.length);
+  const order = ai.length !== bi.length ? ai.length > bi.length : ai !== bi ? ai > bi : af.padEnd(places, "0") > bf.padEnd(places, "0");
+  return (order ? 1 : -1) * (negative ? -1 : 1);
 }
 
 // 用十进制整数校验步长，避免合法小数被浮点除法误拒；不舍入输入。
@@ -602,7 +672,7 @@ function isDecimalStepAligned(value: string, base: number, step: number): boolea
 
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
-  if (!value.trim()) return spec.kind === "text" && spec.allowEmpty === true;
+  if (!value.trim()) return false;
   if (spec.disabledOptions?.includes(value.trim())) return false;
   if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
@@ -613,10 +683,63 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
   if (spec.max !== undefined && numeric > spec.max) return false;
-  if (spec.disallowCurrent && numeric === Number(spec.current)) return false;
+  if (spec.disallowCurrent && compareEditDecimals(normalized, spec.current ?? "") === 0) return false;
   if (spec.step !== undefined && spec.step > 0
     && !isDecimalStepAligned(normalized, spec.min ?? 0, spec.step)) return false;
   return true;
+}
+
+/** 修改框里「现在」的值：选项写名字，数字加千分位；是数字时才带单位（「不设上限」后面不跟 USDT）。 */
+function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: string } {
+  const current = spec.current ?? "";
+  if (spec.displayCurrent !== undefined) return { text: spec.displayCurrent, unit: spec.unit };
+  const label = spec.optionLabels?.[current];
+  if (label !== undefined) return { text: label };
+  if (kind !== "number" || !/^-?\d+(\.\d+)?$/.test(current.trim())) return { text: current };
+  const [whole, fraction] = current.trim().split(".");
+  return { text: `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`, unit: spec.unit };
+}
+
+/** 数字框填错时写什么。范围全站写「1–90」「0–1,000,000」，不写开发词（TX-05）。 */
+function numberRangeText({ min, max, step, maxDecimals }: { min?: number; max?: number; step?: number; maxDecimals?: number }): string {
+  const num = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 20 });
+  const range = min != null && max != null ? `${num(min)}–${num(max)} 的`
+    : min != null ? `不小于 ${num(min)} 的`
+    : max != null ? `不大于 ${num(max)} 的`
+    : "有效的";
+  const decimals = maxDecimals != null ? `，最多 ${maxDecimals} 位小数` : step != null && step < 1 ? `，最多 ${String(step).split(".")[1]?.length} 位小数` : "";
+  return `${range}${step === 1 ? "整数" : "数字"}${decimals}`;
+}
+
+function editNumberError(spec: EditSpec): string {
+  return `请输入 ${numberRangeText(spec)}`.replace("请输入 不", "请输入不").replace("请输入 有效", "请输入有效");
+}
+
+type MultiFieldSpec = Extract<BusinessFormSpec, { kind: "multi-field" }>;
+
+/** 每个字段自己填得对不对，字段下和灰按钮的提示用同一句（VS-107）。跨字段的 feedback 已报错时不再报范围，同一件事只写一处（VS-105）。 */
+function multiFieldIssues(spec: MultiFieldSpec, state: BusinessFormValue): Record<string, string> {
+  const issues: Record<string, string> = {};
+  const feedback = spec.feedback?.(state);
+  spec.fields.filter((f) => !f.visibleWhen || (state[f.visibleWhen.key] ?? "") === f.visibleWhen.equals).forEach((f) => {
+    const raw = (state[f.key] ?? "").trim();
+    if (raw && f.minLength != null && raw.length < f.minLength) issues[f.key] = `${f.label}至少 ${f.minLength} 位`;
+    else if (raw && f.maxLength != null && raw.length > f.maxLength) issues[f.key] = `${f.label}最多 ${f.maxLength} 位`;
+    else if (raw && f.pattern) {
+      try {
+        if (!new RegExp(f.pattern).test(raw)) issues[f.key] = f.patternMessage ?? `${f.label}格式不对`;
+      } catch {
+        issues[f.key] = `${f.label}校验规则不可用`;
+      }
+    } else if (f.inputKind === "number" && !feedback?.invalid && raw) {
+      const n = Number(state[f.key]);
+      const off = raw && normalizeEditDecimal(raw) === null ? true : !Number.isFinite(n) ? true
+        : (f.min != null && n < f.min) || (f.max != null && n > f.max)
+          || (f.step != null && f.step > 0 && f.min != null && !isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step));
+      if (off) issues[f.key] = `${f.label}要填 ${numberRangeText(f)}`;
+    }
+  });
+  return issues;
 }
 
 export type BusinessFormSpec =
@@ -628,6 +751,8 @@ export type BusinessFormSpec =
       subject: string;
       channels?: string[];
       ticketHint?: string;
+      /** 只展示本次操作的授权事实，另由操作人声明已核实本人；不改变表单值或校验。 */
+      presentation?: "authorization-and-declaration";
       serverVerification?: {
         channel: string;
         ticket: string;
@@ -646,28 +771,28 @@ export type BusinessFormSpec =
       steps: { domain: string; action: string; ref: string; approve: boolean }[] }
   | { kind: "export-wizard"; mode?: "aggregate-only"; kpiStructuredRange?: boolean; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
-  | { kind: "localized-copy"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string }
-  | { kind: "copy-edit"; requiredLanguages: readonly OperatingLanguageCode[]; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
-  | { kind: "copy-create"; requiredLanguages: readonly OperatingLanguageCode[]; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
+  | { kind: "localized-copy"; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
+  | { kind: "copy-edit"; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
+  | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
   | { kind: "copy-version-option"; mode: "create" | "edit"; versionKey?: string; name?: string; description?: string; status?: string; sortOrder?: number; revision?: number }
   | { kind: "copy-experiment-create"; copies: CopyExperimentCopyOption[] }
   | { kind: "copy-experiment-start"; experimentId: string }
   | { kind: "copy-experiment-discard"; experimentId: string }
-  | { kind: "course-authoring"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit" | "version-create" | "version-edit"; rewardMin?: number; rewardMax?: number; categories?: string[]; formats?: string[]; levels?: string[]; durations?: string[];
+  | { kind: "course-authoring"; mode?: "create" | "edit" | "version-create" | "version-edit"; rewardMin?: number; rewardMax?: number; categories?: string[]; formats?: string[]; levels?: string[]; durations?: string[];
       current?: { slug: string; version?: string; category: string; format: string; difficulty: string; duration: string; reward: number; titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
         quizQuestions?: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
-        passScore?: number; retryLimit?: number; completionCondition?: string | null; rewardEvent?: string | null } }
+        passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string } }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
-  | { kind: "version-authoring"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope: string; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
-  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
-  | { kind: "disclosure-publish-review"; requiredLanguages: readonly OperatingLanguageCode[]; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentSummary?: { zh: string; vi: string; en: string }; targetSummary: { zh: string; vi: string; en: string }; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
+  | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]>; unchanged?: { version: string; countryCodes: string[] }; affected?: number }
+  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
-  | { kind: "trust-section-publish"; requiredLanguages: readonly OperatingLanguageCode[]; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
+  | { kind: "trust-section-publish"; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
       currentFields: { key: string; label: string; value: string }[];
       targetFields: { key: string; label: string; value: string }[] }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
@@ -677,7 +802,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -715,9 +840,9 @@ function compactText(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\s+([,，.。:：;；])/g, "$1").trim();
 }
 
-function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory: boolean, kind: OperatorBriefKind): BriefRow[] {
+function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory: boolean, kind: OperatorBriefKind, statedBrief?: { impact: string; check: string }): BriefRow[] {
   const actionText = compactText(plainText(action));
-  const stated = STATED_BRIEF[kind];
+  const stated = statedBrief ?? STATED_BRIEF[kind];
   if (stated) return [{ label: "要做什么", text: actionText }, { label: "影响", text: stated.impact }, { label: "提交前", text: stated.check }];
   const defaultCheck = hasEdit
     ? "核对新值和影响范围，理由写清依据或工单号。"
@@ -786,10 +911,53 @@ function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: bool
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind: OperatorBriefKind }) {
-  const brief = buildOperatorBrief(action, !!amplifies, !!hasEdit, auditSink === "local-history", kind)
-    .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind, stated }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind: OperatorBriefKind; stated?: { impact: string; check: string } }) {
+  const surface = useRdSurface();
+  const businessBrief = stated ?? STATED_BRIEF[kind];
+  const brief = buildOperatorBrief(action, !!amplifies, !!hasEdit, auditSink === "local-history", kind, stated)
+    .map((row) => row.label === "影响" && completionCopy && !businessBrief ? { ...row, text: completionCopy } : row);
+  if (!surface && businessBrief && completionCopy && completionCopy !== businessBrief.impact) brief.push({ label: "生效与复核", text: completionCopy });
   const detailText = compactText(plainText(detail));
+  // 业务后果与生效／批准资格分别常显；默认套话只留在详情，不占关键信息层。
+  if (surface) {
+    const impact = businessBrief?.impact;
+    return (
+      <div className="rd-operation-brief">
+        {impact && <p className="rd-operation-impact"><KeepText text={impact} /></p>}
+        {completionCopy && completionCopy !== impact && <p className="rd-operation-completion"><KeepText text={completionCopy} /></p>}
+        <details className="operator-brief rd-brief">
+          <summary>
+            <span className="rd-brief-head"><b>执行摘要</b></span>
+            <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
+          </summary>
+          <dl className="rd-brief-rows">
+            {brief.filter((row) => row.label !== "要做什么" && !(row.label === "影响" && (impact || completionCopy))).map((row) => <div key={row.label}><dt>{row.label}</dt><dd><KeepText text={row.text}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText></dd></div>)}
+            {detailText && detailText !== compactText(impact ?? "") && detailText !== compactText(completionCopy ?? "") && <div><dt>说明</dt><dd>{typeof detail === "string" ? <KeepText text={detail}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText> : <AutoGloss>{detail}</AutoGloss>}</dd></div>}
+          </dl>
+        </details>
+      </div>
+    );
+  }
+  const rows = (
+    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+      {brief.map((row) => (
+        <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
+          <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
+            <AutoGloss>{row.text}</AutoGloss>
+          </span>
+        </div>
+      ))}
+      {detailText && (
+        <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>说明</span>
+          <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
+            <AutoGloss>{detail}</AutoGloss>
+          </span>
+        </div>
+      )}
+    </div>
+  );
   return (
     <details className="tint brand operator-brief" style={{ marginBottom: 16, border: 0 }}>
       <summary
@@ -801,26 +969,7 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
           <span className="brief-open">收起 <span aria-hidden="true">▲</span></span>
         </span>
       </summary>
-      <div>
-        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-          {brief.map((row) => (
-            <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
-              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
-                <AutoGloss>{row.text}</AutoGloss>
-              </span>
-            </div>
-          ))}
-          {detailText && (
-            <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>说明</span>
-              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
-                <AutoGloss>{detail}</AutoGloss>
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+      <div>{rows}</div>
     </details>
   );
 }
@@ -833,39 +982,7 @@ const COURSE_FORMAT_LABELS: Record<string, string> = { Article: "图文", Video:
 const COURSE_LEVEL_LABELS: Record<string, string> = { Beginner: "入门", Intermediate: "进阶", Advanced: "高级" };
 const COURSE_STATUS_LABELS: Record<string, string> = { draft: "草稿", published: "已发布", archived: "已归档" };
 const DEFAULT_CAMPAIGN_TIERS = ["critical", "high", "normal", "low"];
-export const DISCLOSURE_LANGUAGE_SCOPE = "zh+vi+en";
-export const OPTIONAL_CONTENT_HINT = "选填，不填时 App 显示英文";
-export const CONTENT_LANGUAGE_LABELS = { en: "英文", zh: "中文", vi: "越南语" };
-const CONTENT_LANGUAGE_SUFFIX = { en: "En", zh: "Zh", vi: "Vi" } as const;
-
-function localizedFormKeys(spec: BusinessFormSpec | undefined, state: BusinessFormValue, language: OperatingLanguageCode): string[] {
-  if (spec?.kind === "copy-create" || spec?.kind === "copy-edit" || spec?.kind === "localized-copy") return [language];
-  if (spec?.kind === "version-authoring") return [language, ...(spec.chapters ?? []).flatMap((_, index) => [
-    `chapter.${index}.${language}Title`, `chapter.${index}.${language}Body`,
-  ])];
-  if (spec?.kind !== "course-authoring") return [];
-  const suffix = CONTENT_LANGUAGE_SUFFIX[language];
-  return [`title${suffix}`, `body${suffix}`, ...Array.from({ length: Number(state.quizCount) }, (_, index) => [
-    `quiz.${index}.question${suffix}`,
-    ...Array.from({ length: Number(state[`quiz.${index}.optionCount`]) }, (_, option) => `quiz.${index}.option.${option}.${language}`),
-  ]).flat()];
-}
-
-function mapLocalizedForm(spec: BusinessFormSpec | undefined, state: BusinessFormValue, mode: "load" | "submit"): BusinessFormValue {
-  if (!spec || !("requiredLanguages" in spec)) return state;
-  if (mode === "load" && spec.kind === "course-authoring") return state;
-  const englishKeys = localizedFormKeys(spec, state, "en");
-  if (englishKeys.length === 0) return state;
-  const english = englishKeys.map((key) => state[key] ?? "");
-  const localized = { ...state };
-  const transform = mode === "load" ? blankCopiedContentLanguage : fillBlankContentLanguage;
-  for (const language of ["zh", "vi"] as const) {
-    const keys = localizedFormKeys(spec, state, language);
-    const { values } = transform(spec.requiredLanguages, language, { values: english }, { values: keys.map((key) => state[key] ?? "") });
-    keys.forEach((key, index) => { localized[key] = values[index]; });
-  }
-  return localized;
-}
+const DEFAULT_LANGUAGE_SCOPES = ["zh+vi", "zh+vi+en"];
 
 function parseCopyAudience(audience?: string): { phaseMin: string; phaseMax: string; language: string; registrationDaysGt: string } {
   const raw = audience?.trim() ?? "";
@@ -910,10 +1027,6 @@ function parseSopSlaMinutes(raw?: string): number | null {
 }
 
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
-  return mapLocalizedForm(spec, initRawBusinessForm(spec), "load");
-}
-
-function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
   if (spec.kind === "mission-create") {
     return { category: "explore", actionRoute: "/pages/missions/missions" };
@@ -1003,16 +1116,6 @@ function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     const questions = current?.quizQuestions?.length ? current.quizQuestions : [{
       questionId: "q1", questionZh: "", questionEn: "", questionVi: "", optionsZh: ["", ""], optionsEn: ["", ""], optionsVi: ["", ""], correctOptionIndex: 0,
     }];
-    const courseLanguage = (language: OperatingLanguageCode) => {
-      const suffix = CONTENT_LANGUAGE_SUFFIX[language];
-      return {
-        ...Object.fromEntries(questions.map((question, index) => [`options.${index}`, question[`options${suffix}`] ?? []])),
-        copy: [current?.[`title${suffix}`] ?? "", current?.[`body${suffix}`] ?? "", ...questions.map((question) => question[`question${suffix}`] ?? "")],
-      } as Record<string, readonly string[]>;
-    };
-    const en = courseLanguage("en");
-    const zh = blankCopiedContentLanguage(spec.requiredLanguages, "zh", en, courseLanguage("zh"));
-    const vi = blankCopiedContentLanguage(spec.requiredLanguages, "vi", en, courseLanguage("vi"));
     const state: BusinessFormValue = {
       slug: current?.slug ?? "",
       version: current?.version ?? "v1",
@@ -1022,30 +1125,28 @@ function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       duration: current?.duration ?? spec.durations?.[0] ?? DEFAULT_COURSE_DURATIONS[0],
       reward: String(current?.reward ?? spec.rewardMin ?? 5),
       publishState: "draft",
-      titleZh: zh.copy[0],
-      titleEn: en.copy[0],
-      titleVi: vi.copy[0],
-      bodyZh: zh.copy[1],
-      bodyEn: en.copy[1],
-      bodyVi: vi.copy[1],
+      titleZh: current?.titleZh ?? "",
+      titleEn: current?.titleEn ?? "",
+      titleVi: current?.titleVi ?? "",
+      bodyZh: current?.bodyZh ?? "",
+      bodyEn: current?.bodyEn ?? "",
+      bodyVi: current?.bodyVi ?? "",
       quizCount: String(questions.length),
       passScore: String(current?.passScore ?? 60),
       retries: String(current?.retryLimit ?? 3),
-      completionCond: current?.completionCondition ?? "",
-      rewardEvent: current?.rewardEvent ?? "",
+      completionCond: current?.completionCondition ?? "quiz_passed",
+      rewardEvent: current?.rewardEvent ?? "quiz.passed",
     };
     questions.forEach((question, questionIndex) => {
-      const optionsZh = zh[`options.${questionIndex}`];
-      const optionsVi = vi[`options.${questionIndex}`];
       state[`quiz.${questionIndex}.id`] = question.questionId || `q${questionIndex + 1}`;
-      state[`quiz.${questionIndex}.questionZh`] = zh.copy[questionIndex + 2];
-      state[`quiz.${questionIndex}.questionEn`] = en.copy[questionIndex + 2];
-      state[`quiz.${questionIndex}.questionVi`] = vi.copy[questionIndex + 2];
+      state[`quiz.${questionIndex}.questionZh`] = question.questionZh;
+      state[`quiz.${questionIndex}.questionEn`] = question.questionEn;
+      state[`quiz.${questionIndex}.questionVi`] = question.questionVi ?? "";
       state[`quiz.${questionIndex}.optionCount`] = String(Math.max(2, question.optionsZh.length, question.optionsEn.length, question.optionsVi?.length ?? 0));
       for (let optionIndex = 0; optionIndex < Number(state[`quiz.${questionIndex}.optionCount`]); optionIndex += 1) {
-        state[`quiz.${questionIndex}.option.${optionIndex}.zh`] = optionsZh[optionIndex] ?? "";
+        state[`quiz.${questionIndex}.option.${optionIndex}.zh`] = question.optionsZh[optionIndex] ?? "";
         state[`quiz.${questionIndex}.option.${optionIndex}.en`] = question.optionsEn[optionIndex] ?? "";
-        state[`quiz.${questionIndex}.option.${optionIndex}.vi`] = optionsVi[optionIndex] ?? "";
+        state[`quiz.${questionIndex}.option.${optionIndex}.vi`] = question.optionsVi?.[optionIndex] ?? "";
       }
       state[`quiz.${questionIndex}.correctOptionIndex`] = String(question.correctOptionIndex ?? 0);
     });
@@ -1085,7 +1186,7 @@ function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return {
       version: spec.version ?? "",
       jurisdiction: spec.jurisdiction ?? "",
-      languageScope: spec.languageScope,
+      languageScope: spec.languageScope ?? spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
       effectiveDate: spec.effectiveDate ?? "",
       // I5 切换生效版本时要求重新确认；发布只封存内容。旧草稿也统一保存该要求。
       requiresReack: "true",
@@ -1213,7 +1314,7 @@ function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { active: spec.currentActive ?? "500", grace: spec.currentGrace ?? "200", expired: spec.currentExpired ?? "0" };
   }
   if (spec.kind === "multi-field") {
-    return Object.fromEntries(spec.fields.map((f) => [f.key, f.current ?? f.options?.[0] ?? ""]));
+    return Object.fromEntries(spec.fields.map((f) => [f.key, f.mustChoose ? "" : f.current ?? f.options?.[0] ?? ""]));
   }
   if (spec.kind === "weekly-task-edit") {
     return { cond: spec.currentCond ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "event", completionEvent: spec.currentCompletionEvent ?? "" };
@@ -1261,35 +1362,15 @@ function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   return { rollback: "", ack: "false" };
 }
 
+const DISCLOSURE_JURISDICTION_CODE = /^[A-Z][A-Z0-9_-]{1,15}$/;
+const DISCLOSURE_JURISDICTION_CODE_HELP = "以字母开头，2–16 位字母、数字、下划线或短横线";
+
 function missingBusinessFields(spec: BusinessFormSpec | undefined, state: BusinessFormValue): string[] {
   if (!spec) return [];
   const missing: string[] = [];
   const needs = (key: string, label: string) => {
     const names: Record<string,string> = { title: "标题", body: "正文", tier: "等级", audience: "受众", schedule: "时间安排", budget: "预算", no: "章节编号", description: "说明", structure: "内容结构", exportType: "导出类型", fields: "导出字段", piiLevel: "隐私信息级别", maskPolicy: "脱敏方式", recipient: "接收人", ticket: "关联工单", jurisdictionCode: "适用地区代码", jurisdictionName: "适用地区名称", jurisdiction: "适用地区", countryCodes: "适用国家/地区", version: "版本", languageScope: "语言范围", effectiveDate: "生效日期", requiresReack: "是否要求重新确认", zh: "中文正文", vi: "越南语正文", zhTitle: "中文标题", enTitle: "英文标题", viTitle: "越南语标题", zhBody: "中文正文", enBody: "英文正文", viBody: "越南语正文", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题" };
     if (!state[key]?.trim()) missing.push(label.replace(/\b[A-Za-z][A-Za-z0-9]*\b/g, (field) => names[field] ?? field));
-  };
-  const activeLanguages = "requiredLanguages" in spec ? OPERATING_LANGUAGE_CODES.filter((language) =>
-    spec.requiredLanguages.includes(language) || localizedFormKeys(spec, state, language).some((key) => state[key]?.trim())) : [];
-  const checkPlaceholders = (values: string[], label: string) => {
-    if (values.every((value) => value.trim()) && new Set(values.map((value) =>
-      [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join(","),
-    )).size > 1) missing.push(label);
-  };
-  const checkCopy = (placeholders: string[] = [], publish = false, maxLength?: number) => {
-    for (const language of activeLanguages) {
-      const label = `${CONTENT_LANGUAGE_LABELS[language]}文案`;
-      needs(language, label);
-      if (maxLength && (state[language] ?? "").trim().length > maxLength) missing.push(`${label}最多 ${maxLength} 字`);
-    }
-    checkPlaceholders(activeLanguages.map((language) => state[language] ?? ""), "已填写文案的占位符不一致");
-    for (const placeholder of placeholders) {
-      if (activeLanguages.some((language) => !state[language]?.includes(placeholder))) missing.push(`占位符 ${placeholder}`);
-    }
-    if (publish) missing.push(...i6CopyQualityIssues(
-      activeLanguages.includes("zh") ? state.zh ?? "" : "",
-      state.en ?? "",
-      activeLanguages.includes("vi") ? state.vi ?? "" : "",
-    ));
   };
   if (spec.kind === "role-select") {
     needs("role", "目标角色");
@@ -1301,16 +1382,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
   } else if (spec.kind === "localized-copy") {
     if (spec.mode === "create") needs("messageKey", "词条标识");
-    const english = state.en?.trim() ?? "";
-    for (const language of activeLanguages) {
-      const label = `${CONTENT_LANGUAGE_LABELS[language]}文案`;
-      const copy = trimStoredContent(state[language] ?? "");
-      needs(language, label);
-      if (Array.from(copy).length > 1024) missing.push(`${label}最多 1024 字`);
-      if (language !== "en" && copy && english) {
-        checkPlaceholders([english, copy], `${label}的占位符须与英文一致`);
-      }
-    }
+    needs("zh", "中文文案");
+    needs("en", "英文文案");
+    needs("vi", "越南语文案");
+    (spec.placeholders ?? []).forEach((ph) => {
+      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`占位符 ${ph}`);
+    });
   } else if (spec.kind === "copy-edit") {
     needs("version", "文案版本");
     needs("surface", "投放模块");
@@ -1321,11 +1398,17 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
     needs("versionNote", "版本说明");
+    needs("zh", "中文草稿");
+    needs("en", "英文草稿");
+    needs("vi", "越南语文案");
     if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("阶段范围");
     if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
-    checkCopy(spec.placeholders, state.saveMode === "发布生效", 1000);
+    (spec.placeholders ?? []).forEach((ph) => {
+      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
+    });
+    if (state.saveMode === "发布生效") missing.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
   } else if (spec.kind === "copy-create") {
     needs("copyKey", "文案标识");
     needs("description", "文案名称");
@@ -1338,11 +1421,17 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("trafficSplit", "分流比例");
     needs("version", "文案版本");
     needs("versionNote", "版本说明");
+    needs("zh", "中文文案");
+    needs("en", "英文文案");
+    needs("vi", "越南语文案");
     if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("阶段范围");
     if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
-    checkCopy(spec.placeholders, true, 1000);
+    (spec.placeholders ?? []).forEach((ph) => {
+      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
+    });
+    missing.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
   } else if (spec.kind === "copy-position-create") {
     needs("positionKey", "位置标识");
     needs("positionName", "位置名称");
@@ -1371,19 +1460,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "copy-experiment-start") {
     if (state.ack !== "true") missing.push("勾选启动确认");
   } else if (spec.kind === "course-authoring") {
-    Object.entries({ slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励" }).forEach(([key, label]) => needs(key, label));
-    for (const language of activeLanguages) {
-      const suffix = CONTENT_LANGUAGE_SUFFIX[language];
-      needs(`title${suffix}`, `${CONTENT_LANGUAGE_LABELS[language]}标题`);
-      needs(`body${suffix}`, `${CONTENT_LANGUAGE_LABELS[language]}正文`);
-    }
-    checkPlaceholders(activeLanguages.map((language) => state[`body${CONTENT_LANGUAGE_SUFFIX[language]}`] ?? ""), "课程正文占位符不一致");
-    const usesEnglishMainTitle = !activeLanguages.includes("zh");
-    const mainTitle = usesEnglishMainTitle ? state.titleEn : state.titleZh;
-    if (Array.from((mainTitle ?? "").trim()).length > 128) {
-      missing.push(usesEnglishMainTitle ? "中文未填时会用英文作主标题，英文标题请控制在 128 字内" : "中文主标题请控制在 128 字内");
-    }
-    for (const key of ["titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
+    ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, ({ slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文" } as Record<string, string>)[key] ?? "课程字段"));
+    for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
       if ((state[key] ?? "").trim().length > 1024) missing.push(`${({titleZh:"中文标题",titleEn:"英文标题",titleVi:"越南语标题",bodyZh:"中文正文",bodyEn:"英文正文",bodyVi:"越南语正文"} as Record<string,string>)[key] ?? "内容"} 最多 1024 字`);
     }
     if (spec.mode === "version-create" || spec.mode === "version-edit") {
@@ -1398,15 +1476,15 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isInteger(quizCount) || quizCount < 1) missing.push("至少一道测验题");
     for (let questionIndex = 0; questionIndex < quizCount; questionIndex += 1) {
       needs(`quiz.${questionIndex}.id`, `第 ${questionIndex + 1} 题标识`);
-      for (const language of activeLanguages) {
-        needs(`quiz.${questionIndex}.question${CONTENT_LANGUAGE_SUFFIX[language]}`, `第 ${questionIndex + 1} 题${CONTENT_LANGUAGE_LABELS[language]}题干`);
-      }
+      needs(`quiz.${questionIndex}.questionZh`, `第 ${questionIndex + 1} 题中文题干`);
+      needs(`quiz.${questionIndex}.questionEn`, `第 ${questionIndex + 1} 题英文题干`);
+      needs(`quiz.${questionIndex}.questionVi`, `第 ${questionIndex + 1} 题越南语题干`);
       const optionCount = Number(state[`quiz.${questionIndex}.optionCount`] || 0);
       if (!Number.isInteger(optionCount) || optionCount < 2) missing.push(`第 ${questionIndex + 1} 题至少两个选项`);
       for (let optionIndex = 0; optionIndex < optionCount; optionIndex += 1) {
-        for (const language of activeLanguages) {
-          needs(`quiz.${questionIndex}.option.${optionIndex}.${language}`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} ${CONTENT_LANGUAGE_LABELS[language]}`);
-        }
+        needs(`quiz.${questionIndex}.option.${optionIndex}.zh`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 中文`);
+        needs(`quiz.${questionIndex}.option.${optionIndex}.en`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 英文`);
+        needs(`quiz.${questionIndex}.option.${optionIndex}.vi`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 越南语`);
       }
       const correct = Number(state[`quiz.${questionIndex}.correctOptionIndex`]);
       if (!Number.isInteger(correct) || correct < 0 || correct >= optionCount) missing.push(`第 ${questionIndex + 1} 题正确选项`);
@@ -1415,6 +1493,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const retries = Number(state.retries);
     if (!Number.isInteger(passScore) || passScore < 1 || passScore > 100) missing.push("通过分数 1-100");
     if (!Number.isInteger(retries) || retries < 0 || retries > 10) missing.push("重试次数 0-10");
+    needs("completionCond", "完成条件");
+    needs("rewardEvent", "何时发奖");
   } else if (spec.kind === "campaign-edit") {
     ["title", "body", "tier", "audience", "schedule", "budget"].forEach((key) => needs(key, key));
     if (!Number.isFinite(Number(state.budget)) || Number(state.budget) < 0) missing.push("预算数值");
@@ -1434,35 +1514,28 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isInteger(sort) || sort < 0 || sort > 9999) missing.push("排序 0-9999");
     if (state.status && !["active", "archived"].includes(state.status)) missing.push("状态只能为启用 / 已归档");
   } else if (spec.kind === "version-authoring") {
-    ["version", "jurisdiction", "effectiveDate", "requiresReack"].forEach((key) => needs(key, key));
-    if (state.jurisdiction !== spec.jurisdiction) missing.push("适用地区版本尚未加载");
-    activeLanguages.forEach((language) => needs(language, `${CONTENT_LANGUAGE_LABELS[language]}正文`));
-    checkPlaceholders(activeLanguages.map((language) => state[language] ?? ""), "披露正文占位符不一致");
+    ["version", "jurisdiction", "languageScope", "effectiveDate", "requiresReack", "zh", "vi"].forEach((key) => needs(key, key));
+    if (state.languageScope?.includes("en")) needs("en", "英文正文");
     if ((spec.chapters ?? []).length !== 7) missing.push("完整 7 章节");
     (spec.chapters ?? []).forEach((_chapter, index) => {
-      needs(`chapter.${index}.no`, `第 ${index + 1} 章编号`);
-      const chapterTexts = activeLanguages.map((language) => {
-        const title = `chapter.${index}.${language}Title`;
-        const body = `chapter.${index}.${language}Body`;
-        needs(title, `第 ${index + 1} 章${CONTENT_LANGUAGE_LABELS[language]}标题`);
-        needs(body, `第 ${index + 1} 章${CONTENT_LANGUAGE_LABELS[language]}正文`);
-        return `${state[title] ?? ""}${state[body] ?? ""}`;
-      });
-      checkPlaceholders(chapterTexts, `第 ${index + 1} 章占位符不一致`);
+      ["no", "zhTitle", "viTitle", "zhBody", "viBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
+      if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
     });
   } else if (spec.kind === "disclosure-jurisdiction") {
-    needs("code", "适用地区代码");
-    needs("name", "适用地区名称");
-    if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
+    needs("code", "适用范围代码");
+    needs("name", "适用范围名称");
+    if (spec.mode === "edit" && state.name?.trim() === spec.name) missing.push("名称没有改动");
+    if (!DISCLOSURE_JURISDICTION_CODE.test((state.code ?? "").trim().toUpperCase())) missing.push(DISCLOSURE_JURISDICTION_CODE_HELP);
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
-    for (const language of spec.requiredLanguages) {
-      if (spec.targetChapters.some((chapter) => !chapter[language].trim() || !chapter[`${language}Body`].trim())) missing.push(`七章${CONTENT_LANGUAGE_LABELS[language]}完整内容`);
-    }
+    if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
-    if (state.bilingualConfirmed !== "true") missing.push("总文和七章必填语言核对");
+    if (state.bilingualConfirmed !== "true") missing.push("七章中越英内容核对");
   } else if (spec.kind === "disclosure-matrix") {
-    ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
+    needs("jurisdictionCode", "适用范围");
+    needs("version", "已发布版本");
+    needs("countryCodes", "适用国家/地区");
+    if (spec.unchanged && state.version === spec.unchanged.version && (state.countryCodes ?? "") === [...spec.unchanged.countryCodes].sort().join(",")) missing.push("版本或适用国家没有改动");
   } else if (spec.kind === "trust-section-authoring") {
     ["version", "description", "structure"].forEach((key) => needs(key, key));
     if (!/^v[1-9][0-9]{0,8}$/.test(state.version ?? "")) missing.push("版本号格式（如 v6）");
@@ -1481,9 +1554,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
     if (spec.requireDataSource) needs("dataSource", "财务/UVT数据来源");
-    const required = validateTrustSectionTrilingualFields(spec.targetFields, spec.requiredLanguages);
-    if (!required.valid) missing.push(`必填语言字段不完整：${required.missing.join("、")}`);
-    if (state.bilingualConfirmed !== "true") missing.push("必填语言核对");
+    const trilingual = validateTrustSectionTrilingualFields(spec.targetFields);
+    if (!trilingual.valid) missing.push(`中越英字段不完整：${trilingual.missing.join("、")}`);
+    if (state.bilingualConfirmed !== "true") missing.push("中越英三语确认");
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
   } else if (spec.kind === "identity-verify") {
@@ -1557,19 +1630,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
     spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
-    spec.fields.filter(isVisible).forEach((field) => {
-      const raw = (state[field.key] ?? "").trim();
-      if (!raw) return;
-      if (field.minLength != null && raw.length < field.minLength) missing.push(`${field.label} 至少 ${field.minLength} 位`);
-      if (field.maxLength != null && raw.length > field.maxLength) missing.push(`${field.label} 最多 ${field.maxLength} 位`);
-      if (field.pattern) {
-        try {
-          if (!new RegExp(field.pattern).test(raw)) missing.push(field.patternMessage ?? `${field.label} 格式不正确`);
-        } catch {
-          missing.push(`${field.label} 校验规则不可用`);
-        }
-      }
-    });
+    missing.push(...Object.values(multiFieldIssues(spec, state)));
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
       if (!target) return;
@@ -1580,7 +1641,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (spec.requireAnyChange) {
       const normalize = (field: (typeof spec.fields)[number], raw: string | undefined) => {
         const value = (raw ?? "").trim();
-        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return String(Number(value));
+        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return normalizeEditDecimal(value) ?? value;
         return value;
       };
       const changed = spec.fields.filter(isVisible).some((field) =>
@@ -1589,17 +1650,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
     const nums = spec.fields.filter((f) => isVisible(f) && f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
     const hasInvalidNumber = nums.some(({ n }) => !Number.isFinite(n));
-    if (hasInvalidNumber) {
-      missing.push("数值字段须为有效数字");
-    } else {
-      nums.forEach(({ f, n }) => {
-        if (f.min != null && n < f.min) missing.push(`${f.label} 须 ≥ ${f.min}`);
-        if (f.max != null && n > f.max) missing.push(`${f.label} 须 ≤ ${f.max}`);
-        if (f.step != null && f.step > 0 && f.min != null) {
-          if (!isDecimalStepAligned(String(state[f.key]).trim(), f.min, f.step)) missing.push(`${f.label} 须按 ${f.step} 递增`);
-        }
-      });
-    }
+    if (hasInvalidNumber) missing.push("数值字段须为有效数字");
     if (!hasInvalidNumber && spec.ascending) {
       for (let i = 1; i < nums.length; i++) {
         if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
@@ -1731,7 +1782,12 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   return undefined;
 }
 
-export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+export function BusinessFormBlock({ spec, value, attempted = false, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; /** 点过提交：multi-field 的校验提示刚打开不报，失焦或点过提交才报（VS-107）。 */ attempted?: boolean; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+  // 改版页面里必填写星号（CP-52），不写红色的「· 必填」。
+  const surface = useRdSurface();
+  const formId = useId();
+  const [formLeft, setFormLeft] = useState(false);
+  const [leftFields, setLeftFields] = useState<Record<string, boolean>>({});
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
@@ -1745,37 +1801,22 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     latestValueRef.current = next;
     onChange(next);
   };
-  const localizedRequirements = new Map<string, boolean>();
-  if ("requiredLanguages" in spec) {
-    for (const language of OPERATING_LANGUAGE_CODES) {
-      for (const key of localizedFormKeys(spec, value, language)) localizedRequirements.set(key, spec.requiredLanguages.includes(language));
-    }
-  }
-  const englishCopyKeys = new Map<string, "zh" | "vi">();
-  if ("requiredLanguages" in spec) {
-    const englishKeys = localizedFormKeys(spec, value, "en");
-    for (const language of ["zh", "vi"] as const) {
-      const keys = localizedFormKeys(spec, value, language);
-      if (spec.requiredLanguages.includes(language) && keys.length === englishKeys.length
-        && isEnglishCopy({ values: englishKeys.map((key) => value[key] ?? "") }, { values: keys.map((key) => value[key] ?? "") })) englishCopyKeys.set(keys[0], language);
-    }
-  }
-  const copyHint = (key: string) => {
-    const language = englishCopyKeys.get(key);
-    return language ? <span className="tiny" data-proof="english-copy-hint" style={{ color: "var(--warning)", marginTop: 4 }}>{englishCopyHint(language)}</span> : null;
-  };
+  // 改版页面用 rd 下拉，和框里别的控件同高同样子；旧页面仍是原生下拉（CP-57）。
+  const choice = ({ label, proof, current, disabled, onValue, options }: { label: string; proof?: string; current: string; disabled?: boolean; onValue: (next: string) => void; options: readonly { value: string; label: ReactNode; disabled?: boolean }[] }) => surface
+    ? <RdSelect aria-label={label} data-proof={proof} value={current} disabled={disabled} onChange={onValue} options={options} />
+    : <select className="fld" aria-label={label} data-proof={proof} value={current} disabled={disabled} onChange={(event) => onValue(event.target.value)}>{options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</select>;
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
-      <span>{label}{localizedRequirements.get(key) && " *"}</span>
-      <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={localizedRequirements.get(key) === false ? OPTIONAL_CONTENT_HINT : placeholder} />
-      {copyHint(key)}
+      <span>{label}</span>
+      <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const input = (key: string, label: string, placeholder: string, type = "text", maxLength?: number) => (
+  const input = (key: string, label: ReactNode, placeholder: string, type = "text", maxLength?: number) => surface ? (
+    <RdField label={label}>{(control) => <RdInput {...control} type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />}</RdField>
+  ) : (
     <label className="field" style={{ marginBottom: 0 }}>
-      <span>{label}{localizedRequirements.get(key) && " *"}</span>
-      <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={localizedRequirements.get(key) === false ? OPTIONAL_CONTENT_HINT : placeholder} />
-      {copyHint(key)}
+      <span>{label}</span>
+      <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
   const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void, unavailableLabel?: string) => {
@@ -1783,13 +1824,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
     const displayOption = (option: string) => ({ UVT: "UVT", uvt: "UVT", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
+    const choiceOptions = [
+      ...(unavailableLabel && !options.includes(current) ? [{ value: current, label: unavailableLabel, disabled: true }] : []),
+      ...(options.length === 0 ? [{ value: "", label: "暂无可选项" }] : options.map((o) => ({ value: o, label: typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o) }))),
+    ];
+    const onValue = (next: string) => onValueChange ? onValueChange(next) : set(key, next);
+    if (surface) return <RdField label={label}>{(control) => <RdSelect {...control} aria-label={label} data-proof={proof} value={current} disabled={options.length === 0} onChange={onValue} options={choiceOptions} />}</RdField>;
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => onValueChange ? onValueChange(e.target.value) : set(key, e.target.value)}>
-        {unavailableLabel && !options.includes(current) && <option value={current} disabled>{unavailableLabel}</option>}
-        {options.length === 0 ? <option value="">暂无可选项</option> : options.map((o) => <option key={o} value={o}>{typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o)}</option>)}
-      </select>
+      {choice({ label, proof, current, disabled: options.length === 0, onValue, options: choiceOptions })}
     </label>
     );
   };
@@ -1887,17 +1931,151 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       const next = (value[target.key] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
       return next.some((item) => !initial.includes(item));
     });
+    // 改版页面不写「填写设置」：框的标题已经说了，小标题和字段名叠在一起（VS-104）。
+    const legend = spec.title ?? (surface ? undefined : "填写设置");
+    const feedback = spec.feedback?.(value);
+    const issues = surface ? multiFieldIssues(spec, value) : {};
+    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft) ? feedback.message : undefined);
+    // 只有一项时占满一行，不留半边空。
+    const alone = surface && visibleFields.length === 1;
+    const fieldName = (f: (typeof spec.fields)[number]) => <>
+      {f.label}{surface ? f.required !== false ? <span className="rd-form-required" aria-hidden="true">*</span> : <span className="rd-form-hint">选填</span> : f.required !== false && <> <b style={{ color: "var(--v5-danger)" }}>· 必填</b></>}
+      {surface && f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}
+    </>;
+    const onFormBlur = (event: FocusEvent<HTMLDivElement>) => {
+      setFormLeft(true);
+      const key = event.target.id.startsWith(`${formId}-`) ? event.target.id.slice(formId.length + 1) : "";
+      if (key) setLeftFields((current) => current[key] ? current : { ...current, [key]: true });
+    };
+    // 改版页面：字段用 rd 的 Field 和控件画，名字、取值、校验和 id 与旧画法相同（VS-104、CP-52）。
+    if (surface) return (
+      <div className="rd-business-form" data-business-form="multi-field" onBlur={onFormBlur}>
+        {legend && <div className="rd-form-group-title">{legend}</div>}
+        <div className="rd-form-grid" data-cols={alone ? undefined : "2"} data-dense="">
+          {visibleFields.map((f) => {
+            const span = f.wide || alone ? { gridColumn: "1 / -1" } : undefined;
+            const id = `${formId}-${f.key}`;
+            const error = fieldError(f.key);
+            const help = f.help && !error ? (f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help) : undefined;
+            const warning = f.warning?.(value) ?? (f.warnAbove != null && Number(value[f.key]) > f.warnAbove ? f.warnText ?? `已超过 ${f.warnAbove} 的建议上限` : undefined);
+            if (f.inputKind === "multi-select") return <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>{multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}</div>;
+            if (f.inputKind === "checkbox") return (
+              <div key={f.key} className="rd-form-field" style={span}>
+                <RdCheck id={id} label={<>{f.label}{f.required === false && <span className="rd-form-hint">选填</span>}</>} explain={f.explain} help={help} required={f.required !== false} aria-required={f.required !== false} aria-invalid={error ? true : undefined} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
+                {warning && <div role="status" className="rd-form-warning">{warning}</div>}
+                {error && <div role="alert" className="rd-form-error">{error}</div>}
+              </div>
+            );
+            if (f.inputKind === "asset-upload") return (
+              <div key={f.key} className="rd-form-field" style={span}>
+                <label className="rd-form-label" htmlFor={id}>{f.label}{f.required !== false ? <span className="rd-form-required" aria-hidden="true">*</span> : <span className="rd-form-hint">选填</span>}{f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}</label>
+                <input
+                  id={id}
+                  className="rd-input rd-file-input"
+                  type="file"
+                  accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                  aria-label={f.label}
+                  required={f.required !== false}
+                  aria-required={f.required !== false}
+                  disabled={assetUploading[f.key]}
+                  ref={(input) => { assetInputs.current[f.key] = input; }}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                    if (!file) {
+                      onUploadStateChange(f.key, undefined);
+                      return;
+                    }
+                    if (!(f.accept ?? "image/jpeg,image/png,image/webp").split(",").includes(file.type) || file.size > 10 * 1024 * 1024) {
+                      onUploadStateChange(f.key, "failed");
+                      setAssetErrors((current) => ({ ...current, [f.key]: "请选择允许的图片格式，大小不超过 10 MB。" }));
+                      return;
+                    }
+                    onUploadStateChange(f.key, "uploading");
+                    setAssetUploading((current) => ({ ...current, [f.key]: true }));
+                    const upload = f.uploadPurpose === "vietqr-receipt"
+                      ? uploadD1VietQrReceiptEvidence(file)
+                      : uploadAdminMedia(file, {
+                          domain: f.uploadDomain ?? "shared",
+                          usage: f.uploadUsage ?? "general",
+                          entityType: "MEDIA_ASSET",
+                          operator: f.uploadOperator,
+                          uploadTarget: f.uploadTarget,
+                        });
+                    void upload.then((asset) => {
+                      set(f.key, asset.assetId);
+                      setAssetNames((current) => ({ ...current, [f.key]: file.name }));
+                      onUploadStateChange(f.key, undefined);
+                    }).catch((error) => {
+                      onUploadStateChange(f.key, "failed");
+                      setAssetErrors((current) => ({
+                        ...current,
+                        [f.key]: displayAdminError(error),
+                      }));
+                    }).finally(() => {
+                      setAssetUploading((current) => ({ ...current, [f.key]: false }));
+                    });
+                  }}
+                />
+                <div className="rd-form-help">
+                  {assetUploading[f.key] ? "正在上传并校验图片…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
+                </div>
+                {assetErrors[f.key] && <div role="alert" className="rd-form-error">{assetErrors[f.key]}</div>}
+                {!assetUploading[f.key] && (value[f.key] || assetNames[f.key] || assetErrors[f.key]) && (
+                  <div><RdButton size="sm" onClick={(event) => {
+                    event.preventDefault();
+                    set(f.key, "");
+                    setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                    setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                    if (assetInputs.current[f.key]) assetInputs.current[f.key]!.value = "";
+                    onUploadStateChange(f.key, undefined);
+                  }}>{f.required === false ? "移除图片" : "清除图片并重新上传"}</RdButton></div>
+                )}
+              </div>
+            );
+            return (
+              <div key={f.key} style={span}>
+                <RdField id={id} label={f.label} required={f.required !== false} hint={f.required === false ? "选填" : undefined} explain={f.explain} help={help} error={error}>
+                  {(control) => <>
+                    {f.inputKind === "select" ? (
+                      <RdSelect {...control} aria-label={f.label} required={f.required !== false} placeholder={f.mustChoose ? "请选择" : undefined}
+                        value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                        options={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o }))} />
+                    ) : f.inputKind === "number" ? (
+                      <RdNumberInput {...control} min={f.min} max={f.max} step={f.step} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                    ) : (
+                      <RdInput {...control} type={f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                    )}
+                    {warning && <div role="status" className="rd-form-warning">{warning}</div>}
+                  </>}
+                </RdField>
+              </div>
+            );
+          })}
+        </div>
+        {feedback?.message && (!feedback.invalid
+          ? <div role="status" className="rd-form-help">{feedback.message}</div>
+          // 填错是「要你处理」：橙黄，刚打开不报，失焦或点过提交才报（VS-107）。
+          : !feedback.field && (attempted || formLeft) && <div role="alert" className="rd-form-error">{feedback.message}</div>)}
+        {spec.hint && <div className="rd-form-help">{spec.hint}</div>}
+      </div>
+    );
     return (
-      <div className="field" data-business-form="multi-field">
-        <span className="bf-legend">{spec.title ?? "填写设置"}</span>
+      <div className="field" data-business-form="multi-field" onBlur={(event) => {
+        setFormLeft(true);
+        const key = event.target.id.startsWith(`${formId}-`) ? event.target.id.slice(formId.length + 1) : "";
+        if (key) setLeftFields((current) => current[key] ? current : { ...current, [key]: true });
+      }}>
+        {legend && <span className="bf-legend">{legend}</span>}
         <div className="grid g-2" style={{ gap: 10 }}>
           {visibleFields.map((f) => f.inputKind === "multi-select" ? (
             <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>
               {multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}
             </div>
           ) : f.inputKind === "asset-upload" ? (
-            <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
+            <label className="field" style={{ marginBottom: 0, ...(f.wide || alone ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
+              <span>{fieldName(f)}</span>
               <input
                 className="fld"
                 type="file"
@@ -1929,6 +2107,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                         usage: f.uploadUsage ?? "general",
                         entityType: "MEDIA_ASSET",
                         operator: f.uploadOperator,
+                          uploadTarget: f.uploadTarget,
                       });
                   void upload.then((asset) => {
                     set(f.key, asset.assetId);
@@ -1961,19 +2140,27 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               )}
             </label>
           ) : (
-            <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
-              {f.inputKind === "select" ? (
+            // htmlFor 写明：字段名里的提示图标也是按钮，不写的话 label 会连到它而不是输入框。
+            <label className="field" htmlFor={`${formId}-${f.key}`} style={{ marginBottom: 0, ...(f.wide || alone ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
+              <span>{fieldName(f)}</span>
+              {f.inputKind === "select" && surface ? (
+                <RdSelect id={`${formId}-${f.key}`} aria-label={f.label} required={f.required !== false} aria-invalid={fieldError(f.key) ? true : undefined} placeholder={f.mustChoose ? "请选择" : undefined}
+                  value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                  options={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o }))} />
+              ) : f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
-                <select className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                <select id={`${formId}-${f.key}`} className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                  {f.mustChoose && <option value="" disabled>请选择</option>}
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
                 </select>
               ) : f.inputKind === "checkbox" ? (
-                <input type="checkbox" required={f.required !== false} aria-required={f.required !== false} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
+                <input id={`${formId}-${f.key}`} type="checkbox" required={f.required !== false} aria-required={f.required !== false} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
               ) : (
-                <input className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" ? "datetime-local" : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                <input id={`${formId}-${f.key}`} className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} aria-invalid={surface && fieldError(f.key) ? true : undefined} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
-              {f.help && <span className="tiny muted">{f.help}</span>}
+              {/* 填错时错误顶替说明那一行（VS-103）；日期框的显示格式跟浏览器走，选好后用全站的 YYYY-MM-DD 回显一次（DT-14）。 */}
+              {f.help && !(surface && fieldError(f.key)) && <span className="tiny muted">{surface && f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help}</span>}
+              {surface && fieldError(f.key) && <span role="alert" className="rd-form-error">{fieldError(f.key)}</span>}
               {f.warning?.(value) && <span role="status" className="tiny" style={{ color: "var(--v5-warning)" }}>{f.warning(value)}</span>}
               {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
                 <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
@@ -1983,8 +2170,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             </label>
           ))}
         </div>
-        {spec.feedback && <div role="status" className={`tint ${spec.feedback(value).invalid ? "danger" : ""}`} style={{ marginTop: 10 }}>{spec.feedback(value).message}</div>}
-        {spec.hint && <div className="tint tiny" style={{ marginTop: 10 }}>{spec.hint}</div>}
+        {feedback?.message && (!surface
+          ? <div role="status" className={`tint ${feedback.invalid ? "danger" : ""}`} style={{ marginTop: 10 }}>{feedback.message}</div>
+          : !feedback.invalid
+            ? <div role="status" className="rd-form-help" style={{ marginTop: 8 }}>{feedback.message}</div>
+            // 填错是「要你处理」：橙黄，刚打开不报，失焦或点过提交才报（VS-107）。
+            : !feedback.field && (attempted || formLeft) && <div role="alert" className="rd-form-error" style={{ marginTop: 8 }}>{feedback.message}</div>)}
+        {spec.hint && <div className={surface ? "rd-form-help" : "tint tiny"} style={{ marginTop: surface ? 8 : 10 }}>{spec.hint}</div>}
       </div>
     );
   }
@@ -2045,9 +2237,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {spec.roles.map((r) => (
             <label key={r.key} className="field" style={{ marginBottom: 0 }}>
               <span>{r.label} 授权 · 当前 <span className="mono">{r.current}</span></span>
-              <select className="fld" data-proof={`permission-grant-${r.key}`} value={value[`grant.${r.key}`] ?? r.current} onChange={(e) => set(`grant.${r.key}`, e.target.value)}>
-                {grants.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
+              {choice({ label: `${r.label} 授权`, proof: `permission-grant-${r.key}`, current: value[`grant.${r.key}`] ?? r.current, onValue: (next) => set(`grant.${r.key}`, next), options: grants.map((g) => ({ value: g, label: g })) })}
             </label>
           ))}
         </div>
@@ -2065,9 +2255,6 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "localized-copy" || spec.kind === "copy-edit" || spec.kind === "copy-create") {
     const isManagedCopy = spec.kind === "copy-edit" || spec.kind === "copy-create";
-    const placeholders = spec.kind === "localized-copy"
-      ? [...new Set(value.en?.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])]
-      : spec.placeholders ?? [];
     const modules = isManagedCopy ? (spec.modules ?? []) : [];
     const moduleLabels = Object.fromEntries(modules.map((item) => [item.value, item.label]));
     const positions = isManagedCopy
@@ -2082,7 +2269,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form={spec.kind}>
-        <span className="bf-legend">文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
+        <span className="bf-legend">中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
         {spec.kind === "localized-copy" && spec.mode === "create" && (
           <div style={{ marginBottom: 10 }}>{input("messageKey", "词条", "如 home.hero.title")}</div>
         )}
@@ -2116,18 +2303,18 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         )}
         <div className="grid g-2" style={{ gap: 10 }}>
-          {textArea("en", "英文文案", "填写英文文案")}
-          {textArea("zh", "中文文案", "填写中文文案")}
-          {spec.kind === "localized-copy" && textArea("vi", "越南语文案", "填写越南语文案")}
-          {isManagedCopy && textArea("vi", "越南语文案", "填写越南语文案")}
+          {textArea("zh", "中文文案", "填写中文草稿")}
+          {textArea("en", "英文文案", "Fill English copy")}
+          {spec.kind === "localized-copy" && textArea("vi", "越南语文案", "Nhập nội dung tiếng Việt")}
+          {isManagedCopy && textArea("vi", "越南语文案", "Nhập nội dung tiếng Việt")}
         </div>
         {(spec.kind === "copy-edit" || spec.kind === "copy-create") && (
           <div style={{ marginTop: 10 }}>
             {textArea("versionNote", "版本说明", "本次修改的原因和预期效果", 2)}
           </div>
         )}
-        {placeholders.length > 0 && (
-          <div className="tint tiny" style={{ marginTop: 10 }}>必须包含的占位符：{placeholders.map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < placeholders.length - 1 ? "、" : ""}</span>)}</div>
+        {(spec.placeholders ?? []).length > 0 && (
+          <div className="tint tiny" style={{ marginTop: 10 }}>必须包含的占位符：{(spec.placeholders ?? []).map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < (spec.placeholders ?? []).length - 1 ? "、" : ""}</span>)}</div>
         )}
       </div>
     );
@@ -2230,9 +2417,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">创建文案对比测试</span>
         <label className="field" style={{ marginBottom: 10 }}>
           <span>选择文案</span>
-          <select className="fld" aria-label="选择文案" value={copy?.value ?? ""} onChange={(event) => changeCopy(event.target.value)}>
-            {spec.copies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
+          {choice({ label: "选择文案", current: copy?.value ?? "", onValue: changeCopy, options: spec.copies })}
         </label>
         <div className="itint" style={{ marginBottom: 10 }}>
           从同一文案的非草稿版本中至少选 2 个，分流比例加起来须为 100%。
@@ -2247,9 +2432,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               <div key={index} className="tint" data-proof={`experiment-variant-${index}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, alignItems: "end" }}>
                 <label className="field" style={{ marginBottom: 0 }}>
                   <span>变体 {String.fromCharCode(65 + index)} · 内容版本</span>
-                  <select className="fld" aria-label={`变体 ${String.fromCharCode(65 + index)} 内容版本`} value={currentVersion} onChange={(event) => set(`variantVersion.${index}`, event.target.value)}>
-                    {options.map((item) => <option key={item.value} value={item.value} disabled={item.value !== currentVersion && unavailable.has(item.value)}>{item.label}</option>)}
-                  </select>
+                  {choice({ label: `变体 ${String.fromCharCode(65 + index)} 内容版本`, current: currentVersion, onValue: (next) => set(`variantVersion.${index}`, next), options: options.map((item) => ({ value: item.value, label: item.label, disabled: item.value !== currentVersion && unavailable.has(item.value) })) })}
                 </label>
                 <label className="field" style={{ marginBottom: 0 }}>
                   <span>分流比例 · {split || 0}%</span>
@@ -2322,29 +2505,26 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     return (
       <div className="field" data-business-form="course-authoring">
         <span className="bf-legend">新建 / 编辑课程</span>
-        <div className="tint tiny" style={{ marginBottom: 10 }}>带 * 的语言必填。没带 * 的中文、越南语选填：标题、正文、题干和选项全部不填时 App 显示英文；填了任何一项就要全部填齐。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("slug", "课程标识", "learn-earn-basics")}
-          {spec.mode === "version-create" && input("version", "版本号", "v2")}
-          {spec.mode === "version-edit" && <label className="field" style={{ marginBottom: 0 }}><span>版本号</span><input className="fld" aria-label="版本号" value={`${value.version ?? ""} · 编辑中的草稿`} readOnly aria-readonly="true" /></label>}
+          {(spec.mode === "version-create" || spec.mode === "version-edit") && input("version", "版本号", "v2")}
           {select("category", "课程分类", spec.categories ?? DEFAULT_COURSE_CATEGORIES, COURSE_CATEGORY_LABELS)}
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
           {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
           {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
-          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, String(spec.rewardMin ?? 10), "number")}
+          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, "5", "number")}
           <div className="itint ok">保存为{COURSE_STATUS_LABELS.draft}，发布请回到课程列表操作。</div>
-          {input("titleEn", "英文标题", "英文课程标题", "text", 1024)}
-          {input("titleZh", "中文标题", "中文课程标题", "text", 1024)}
-          {input("titleVi", "越南语标题", "越南语课程标题", "text", 1024)}
+          {input("titleZh", "中文标题（最多 1024 字）", "课程标题", "text", 1024)}
+          {input("titleVi", "越南语标题（最多 1024 字）", "Tiêu đề khóa học", "text", 1024)}
+          {input("titleEn", "英语标题（最多 1024 字）", "Course title", "text", 1024)}
         </div>
-        <div className="tint tiny" style={{ marginTop: 6 }}>中文标题最多 128 字；中文不填时英文标题会用作中文标题，也要在 128 字内。其他标题和正文最多 1024 字。</div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {textArea("bodyEn", "英文正文", "英文课程正文", 4, 1024)}
-          {textArea("bodyZh", "中文正文", "中文课程正文", 4, 1024)}
-          {textArea("bodyVi", "越南语正文", "越南语课程正文", 4, 1024)}
+          {textArea("bodyZh", "中文正文（最多 1024 字）", "课程正文与完成条件", 4, 1024)}
+          {textArea("bodyVi", "越南语正文（最多 1024 字）", "Nội dung khóa học và điều kiện hoàn thành", 4, 1024)}
+          {textArea("bodyEn", "英语正文（最多 1024 字）", "Course body and completion criteria", 4, 1024)}
         </div>
         <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>测验与发奖（保存前须填写完整）</div>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>测验与发奖（发布前须填写完整）</div>
           {Array.from({ length: questionCount }, (_, questionIndex) => {
             const optionCount = Math.max(2, Number(value[`quiz.${questionIndex}.optionCount`] || 2));
             const addOption = () => onChange({ ...value,
@@ -2360,9 +2540,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               </div>
               <div className="grid g-2" style={{ gap: 10 }}>
                 {input(`quiz.${questionIndex}.id`, "题目标识", `q${questionIndex + 1}`)}
-                {input(`quiz.${questionIndex}.questionEn`, "英文题干", "英文题干")}
-                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "中文题干")}
-                {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "越南语题干")}
+                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "本课核心结论是什么？")}
+                {input(`quiz.${questionIndex}.questionEn`, "英文题干", "What is the key takeaway?")}
+                {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "Kết luận chính của bài học là gì?")}
                 {Array.from({ length: optionCount }, (_, optionIndex) => <Fragment key={optionIndex}>
                   <div className="field" style={{ gridColumn: "1 / -1", marginBottom: -4 }}>
                     <label className="row" style={{ gap: 8, cursor: "pointer", color: "var(--ink-2)" }}>
@@ -2375,9 +2555,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                       <b>设为正确答案：选项 {optionIndex + 1}</b>
                     </label>
                   </div>
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "英文选项")}
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "中文选项")}
-                  {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "越南语选项")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "请输入中文选项")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "Enter English option")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "Nhập lựa chọn tiếng Việt")}
                 </Fragment>)}
               </div>
               <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={addOption}>+ 添加选项</button>
@@ -2388,16 +2568,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
             {input("passScore", "通过分数（1-100）", "60", "number")}
             {input("retries", "最多重试次数（0-10）", "3", "number")}
+            {select("completionCond", "完成条件", ["quiz_passed", "all_questions_correct"], { quiz_passed: "达到通过分数", all_questions_correct: "全部答对" })}
+            {select("rewardEvent", "何时发奖", ["quiz.passed", "course.completed"], { "quiz.passed": "测验通过", "course.completed": "课程完成" })}
           </div>
-          {(spec.current?.completionCondition || spec.current?.rewardEvent) && (
-            <div className="itint" data-proof="course-retired-options" style={{ marginTop: 10 }}>
-              <div className="tiny" style={{ color: "var(--ink-3)", marginBottom: 6 }}>以下两项已停用，只显示这条记录的历史值，保存时原样保留，不能修改。用户按上面的通过分数判定是否通过。</div>
-              <div className="grid g-2" style={{ gap: 10 }}>
-                {spec.current?.completionCondition && <label className="field" style={{ marginBottom: 0 }}><span>完成条件（历史值）</span><input className="fld" aria-label="完成条件（历史值）" value={({ quiz_passed: "达到通过分数", all_questions_correct: "全部答对" } as Record<string, string>)[spec.current.completionCondition] ?? spec.current.completionCondition} readOnly aria-readonly="true" /></label>}
-                {spec.current?.rewardEvent && <label className="field" style={{ marginBottom: 0 }}><span>何时发奖（历史值）</span><input className="fld" aria-label="何时发奖（历史值）" value={({ "quiz.passed": "测验通过", "course.completed": "课程完成" } as Record<string, string>)[spec.current.rewardEvent] ?? spec.current.rewardEvent} readOnly aria-readonly="true" /></label>}
-              </div>
-            </div>
-          )}
           <div className="tint tiny" style={{ marginTop: 8 }}>同一用户在同一课程版本只发一次奖励；发奖失败会自动重试，仍失败则转人工处理。</div>
         </div>
       </div>
@@ -2464,10 +2637,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "version-authoring") {
     const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
+    const englishRequirement = value.languageScope?.includes("en") ? "必填" : "选填";
     return (
       <div className="field" data-business-form="version-authoring">
         <span className="bf-legend">新建 / 编辑披露草稿</span>
-        <div className="tint tiny" style={{ marginBottom: 10 }}>带 * 的语言必填。没带 * 的中文、越南语选填：总文和七章的标题、正文全部不填时 App 显示英文；填了任何一项就要全部填齐。发布时封存总文和七章。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>披露版本（系统自动编号）</span>
@@ -2478,26 +2651,26 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             onChange(updated);
             onSelectionChange?.(updated);
           })}
-          {select("languageScope", "语言范围", [spec.languageScope], { "zh+vi": "中文 + 越南语", [DISCLOSURE_LANGUAGE_SCOPE]: "英文 + 中文 + 越南语" })}
+          {select("languageScope", "语言范围", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES, { "zh+vi": "中文 + 越南语", "zh+vi+en": "中文 + 越南语 + 英语" })}
           {input("effectiveDate", "生效日期", "YYYY-MM-DD", "date")}
           {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {textArea("en", "英文总文", "填写英文披露总文", 4)}
-          {textArea("zh", "中文总文", "填写中文披露总文", 4)}
-          {textArea("vi", "越南语总文", "填写越南语披露总文", 4)}
+          {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
+          {textArea("vi", "越南语版本正文", "Nhập nội dung công bố bằng tiếng Việt", 4)}
+          {textArea("en", `英语版本正文（${englishRequirement}）`, "Fill English disclosure body", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
           <span className="bf-legend">章节内容（共 7 章）</span>
           {(spec.chapters ?? []).map((chapter, index) => <div className="card" key={`${chapter.no}-${index}`} style={{ padding: 10, marginTop: 8 }}>
             <b>第 {chapter.no} 章</b>
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
-              {input(`chapter.${index}.enTitle`, "英文标题", "请输入英文标题")}
               {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
-              {input(`chapter.${index}.viTitle`, "越南语标题", "请输入越南语标题")}
-              {textArea(`chapter.${index}.enBody`, "英文正文", "请输入英文正文", 3)}
+              {input(`chapter.${index}.viTitle`, "越南语标题", "Nhập tiêu đề tiếng Việt")}
+              {input(`chapter.${index}.enTitle`, `英语标题（${englishRequirement}）`, "English title")}
               {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
-              {textArea(`chapter.${index}.viBody`, "越南语正文", "请输入越南语正文", 3)}
+              {textArea(`chapter.${index}.viBody`, "越南语正文", "Nhập nội dung tiếng Việt", 3)}
+              {textArea(`chapter.${index}.enBody`, `英语正文（${englishRequirement}）`, "English body", 3)}
             </div>
           </div>)}
         </div>
@@ -2506,80 +2679,65 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   }
 
   if (spec.kind === "disclosure-jurisdiction") {
+    const codeError = spec.mode === "create" && (attempted || leftFields.code) && !DISCLOSURE_JURISDICTION_CODE.test((value.code ?? "").trim().toUpperCase()) ? DISCLOSURE_JURISDICTION_CODE_HELP : undefined;
     return (
-      <div className="field" data-business-form="disclosure-jurisdiction">
-        <span className="bf-legend">{spec.mode === "create" ? "新增适用地区" : "编辑适用地区"}</span>
-        <div className="grid g-2" style={{ gap: 10 }}>
-          <label className="field" style={{ marginBottom: 0 }}>
-            <span>适用地区代码</span>
-            <input
-              className="fld"
+      <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-jurisdiction">
+        <div className={surface ? "rd-form-grid" : "grid g-2"} data-cols={surface ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
+          <RdField label="适用范围代码" required={spec.mode === "create"} error={codeError}>
+            {(control) => <input
+              {...control}
+              className={surface ? "rd-input" : "fld"}
               value={value.code ?? ""}
               readOnly={spec.mode === "edit"}
               aria-readonly={spec.mode === "edit"}
               maxLength={16}
               placeholder="如 VN、US-FINCEN"
               onChange={(event) => set("code", event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
-            />
-          </label>
-          {input("name", "适用地区名称", "如 越南司法辖区")}
+              onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
+            />}
+          </RdField>
+          {surface ? <RdField label="适用范围名称" required>
+            {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="如 越南司法辖区" />}
+          </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
         </div>
-        <div className="tint tiny" style={{ marginTop: 10 }}>
-          地区代码创建后不能修改。
-        </div>
+        <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>代码创建后不能修改。</div>
       </div>
     );
   }
 
   if (spec.kind === "disclosure-publish-review") {
-    const reviewLanguages = [["en", "英文"], ["zh", "中文"], ["vi", "越南语"]] as const;
-    const reviewCopy = (copy: Record<"en" | "zh" | "vi", { title?: string; body: string }>) => {
-      const sameAsEnglish = (["zh", "vi"] as const).filter((language) => (copy[language].title ?? "").trim() === (copy.en.title ?? "").trim() && copy[language].body.trim() === copy.en.body.trim());
-      const own = reviewLanguages.filter(([language]) => language === "en" || !sameAsEnglish.includes(language as "zh" | "vi"));
-      return <>
-        <div className={`grid g-${own.length}`} style={{ gap: 8, marginTop: 6 }}>
-          {own.map(([language, label]) => <div key={language}><span className="tiny">{label}</span>{copy[language].title !== undefined && <div>{copy[language].title || `未填写${label}标题`}</div>}<div className="tiny">{copy[language].body || `未填写${label}正文`}</div></div>)}
-        </div>
-        {sameAsEnglish.length > 0 && <div className="tiny" style={{ marginTop: 6, color: "var(--ink-3)" }}>{sameAsEnglish.map((language) => language === "zh" ? "中文" : "越南语").join("、")}：同英文（App 显示英文）</div>}
-      </>;
+    const LANGUAGES = [["zh", "中文"], ["vi", "越南语"], ["en", "英语"]] as const;
+    const currentOf = (no: string) => spec.currentChapters.find((chapter) => chapter.no === no);
+    const fieldChanged = (target: typeof spec.targetChapters[number], lang: "zh" | "vi" | "en") => {
+      const current = currentOf(target.no);
+      return !current || current[lang] !== target[lang] || current[`${lang}Body`] !== target[`${lang}Body`];
     };
-    const chapterChangedLanguages = (target: (typeof spec.targetChapters)[number]) => {
-      const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
-      return reviewLanguages.filter(([language]) => !current || current[language] !== target[language] || current[`${language}Body`] !== target[`${language}Body`]).map(([, label]) => label);
-    };
-    const changed = spec.targetChapters.filter((target) => chapterChangedLanguages(target).length > 0);
-    const summaryChangedLanguages = reviewLanguages.filter(([language]) => spec.currentSummary?.[language] !== spec.targetSummary[language]).map(([, label]) => label);
+    const isChanged = (target: typeof spec.targetChapters[number]) => LANGUAGES.some(([lang]) => fieldChanged(target, lang));
+    const changed = spec.targetChapters.filter(isChanged);
+    // 改过的章排前面并展开，没改的收起（CP-48）。
+    const ordered = [...changed, ...spec.targetChapters.filter((target) => !isChanged(target))];
     return (
       <div className="field" data-business-form="disclosure-publish-review">
         <span className="bf-legend">发布前合规核对</span>
-        <div className="itint danger">
-          <b>{spec.jurisdiction} · {spec.currentVersion || "无生效版"} → {spec.targetVersion}</b>
-          <div style={{ marginTop: 6 }}>涉及用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
-          <div style={{ marginTop: 4 }}>本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：{spec.gatedActions.join("、") || "无"}</div>
+        <div className="rd-form-help">{spec.affected > 0 && spec.affected < 5 ? "涉及用户样本过小" : `涉及用户 ${spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 ${spec.pendingAck.toLocaleString("zh-CN")} 人`} · 已拦截 {spec.blocked.toLocaleString("zh-CN")} 次 <Explain label="这次审批会怎样" content={`本次只审批版本内容，App 上暂不变化。该版本正式用于地区后，用户须重新确认，期间受限的操作：${spec.gatedActions.join("、") || "无"}`} /></div>
+        <div className="rd-form-group-title">版本差异 · 共 {changed.length} / 7 章发生变化</div>
+        {ordered.map((target) => {
+          const current = currentOf(target.no);
+          const open = isChanged(target);
+          return <RdFold key={target.no} inset defaultOpen={open} title={`第 ${target.no} 章 · ${open ? "有修改" : "无变化"}`} summary={target.zh}>
+            <div className="rd-doc">
+              {LANGUAGES.map(([lang, name]) => <section key={lang}>
+                <h3>{name}{open && fieldChanged(target, lang) ? " · 已改" : ""} · {target[lang] || "未提供英语标题"}</h3>
+                <p>{target[`${lang}Body`] || "未提供英语正文"}</p>
+                {current && fieldChanged(target, lang) && <p className="rd-weak">现在：{current[lang]} {current[`${lang}Body`]}</p>}
+              </section>)}
+            </div>
+          </RdFold>;
+        })}
+        <div className="rd-form-stack" style={{ marginTop: 12 }}>
+          <RdCheck label={`确认发布适用地区为 ${spec.jurisdiction}`} checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} />
+          <RdCheck label="已核对七章中文、越南语和英语内容，与监管要求一致" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>
-          <b>版本差异</b> · 总文{summaryChangedLanguages.length > 0 ? "有修改" : "无变化"} · 七章中 {changed.length} 章有修改。发布会封存下面的总文和七章。
-        </div>
-        <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
-          <div className="card" data-proof="disclosure-summary-diff" style={{ padding: 10, marginTop: 8, borderColor: summaryChangedLanguages.length > 0 ? "var(--warning)" : undefined }}>
-            <b>总文 · {summaryChangedLanguages.length > 0 ? `有修改（${summaryChangedLanguages.join("、")}）` : "无变化"}</b>
-            {reviewCopy({ en: { body: spec.targetSummary.en }, zh: { body: spec.targetSummary.zh }, vi: { body: spec.targetSummary.vi } })}
-          </div>
-          {spec.targetChapters.map((target) => {
-            const changedLanguages = chapterChangedLanguages(target);
-            const isChanged = changedLanguages.length > 0;
-            return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
-              <b>第 {target.no} 章 · {isChanged ? `有修改（${changedLanguages.join("、")}）` : "无变化"}</b>
-              {reviewCopy({ en: { title: target.en, body: target.enBody }, zh: { title: target.zh, body: target.zhBody }, vi: { title: target.vi, body: target.viBody } })}
-            </div>;
-          })}
-        </div>
-        <label className="field" style={{ marginTop: 12 }}>
-          <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
-        </label>
-        <label className="field" style={{ marginTop: 6 }}>
-          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对总文和七章的必填语言（{spec.requiredLanguages.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}），与监管要求一致</span>
-        </label>
       </div>
     );
   }
@@ -2593,10 +2751,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       onChange({ ...value, countryCodes: Array.from(next).sort().join(",") });
     };
     return (
-      <div className="field" data-business-form="disclosure-matrix">
-        <span className="bf-legend">{spec.mode === "create" ? "为地区指定披露版本" : "修改地区的披露版本"}</span>
-        <div className="grid g-2" style={{ gap: 10 }}>
-          {select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+      <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-matrix">
+        {!surface && <span className="bf-legend">{spec.mode === "create" ? "为适用范围指定披露版本" : "修改适用范围的披露版本"}</span>}
+        <div className={surface ? "rd-form-grid" : spec.mode === "create" ? "grid g-2" : undefined} data-cols={surface && spec.mode === "create" ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
+          {spec.mode === "create" && select("jurisdictionCode", "适用范围", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
             const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
             onChange({
@@ -2608,19 +2766,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           })}
           {select("version", "已发布版本", spec.publishedVersionsByJurisdiction?.[value.jurisdictionCode ?? ""] ?? [])}
         </div>
-        <div style={{ marginTop: 10 }}>
-          <span className="bf-legend">适用国家/地区（可多选）</span>
-          <div className="seg-chips" style={{ marginTop: 6 }}>
-            {(spec.countryOptions ?? []).map((option) => <button
-              type="button"
-              key={option.value}
-              className={`seg-chip ${selectedCountries.has(option.value) ? "on" : ""}`}
-              onClick={() => toggleCountry(option.value)}
-            >{option.label}</button>)}
-          </div>
-          {(spec.countryOptions ?? []).length === 0 && <div className="tint tiny">暂无可选国家/地区</div>}
+        <div style={surface ? undefined : { marginTop: 10 }}>
+          <RdCheckGroup legend="适用国家/地区（可多选）" summary={`已选 ${selectedCountries.size} 个`}>
+            {(spec.countryOptions ?? []).map((option) => <RdCheck key={option.value} label={option.label} checked={selectedCountries.has(option.value)} onChange={() => toggleCountry(option.value)} />)}
+          </RdCheckGroup>
+          {(spec.countryOptions ?? []).length === 0 && <div className="rd-form-help">暂无可选国家/地区</div>}
         </div>
-          <div className="tint tiny" style={{ marginTop: 10 }}>提交后需审批，批准前当前生效的版本不变。</div>
+          {spec.unchanged && (value.version !== spec.unchanged.version || (value.countryCodes ?? "") !== [...spec.unchanged.countryCodes].sort().join(",")) && <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>{value.version !== spec.unchanged.version ? `版本 ${spec.unchanged.version} → ${value.version}。` : "适用国家有变化。"}批准后新旧国家的用户要重新确认，并收到通知{spec.affected && spec.affected >= 5 ? `，这个地区现有 ${spec.affected.toLocaleString("en-US")} 位用户` : ""}。</div>}
       </div>
     );
   }
@@ -2688,7 +2840,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         {spec.requireDataSource && input("dataSource", "财务/UVT数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
-          已逐项核对必填语言（{spec.requiredLanguages.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}），关键数字一致
+          已逐项核对中、越、英三语，关键数字一致
         </label>
       </div>
     );
@@ -2696,6 +2848,44 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "identity-verify") {
     const verified = spec.serverVerification;
+    if (spec.presentation === "authorization-and-declaration") return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div data-proof="sensitive-action-authorization">
+          <div className="rd-form-group-title">本次操作的授权</div>
+          <RdFacts>
+            <RdFact k="授权管理员">{verified?.verifiedBy || "—"}</RdFact>
+            <RdFact k="授权依据">{verified?.ticket || "—"}</RdFact>
+            <RdFact k="授权检查时间">{verified?.verifiedAt || "—"}</RdFact>
+          </RdFacts>
+        </div>
+        <RdCheckGroup legend="本人声明">
+          <div style={{ gridColumn: "1 / -1" }}>
+            <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
+              label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
+          </div>
+        </RdCheckGroup>
+      </div>
+    );
+    if (surface) return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div className="rd-form-group-title">先核实用户身份</div>
+        <RdNotice tone="warn" title={spec.subject}>完成全部核验后才能提交。</RdNotice>
+        {verified && <div data-proof="server-sensitive-action-verification">
+          <RdNotice tone="progress" title="已有核验记录，提交时会再次检查" />
+          <RdFacts><RdFact k="依据"><span data-mono="">{verified.ticket}</span></RdFact><RdFact k="核验人">{verified.verifiedBy || "—"}</RdFact><RdFact k="核验时间">{verified.verifiedAt}</RdFact><RdFact k="有效期至">{verified.expiresAt || "—"}</RdFact></RdFacts>
+        </div>}
+        {verified ? <div className="rd-form-grid" data-cols="2" data-dense="">
+          <RdField label="核验方式">{(control) => <RdInput {...control} value={value.channel ?? ""} readOnly aria-readonly="true" />}</RdField>
+          <RdField label="核验时间">{(control) => <RdInput {...control} value={value.verifiedAt ?? ""} readOnly aria-readonly="true" />}</RdField>
+          <div style={{ gridColumn: "1 / -1" }}><RdField label="核验依据">{(control) => <RdInput {...control} value={value.ticket ?? ""} readOnly aria-readonly="true" />}</RdField></div>
+        </div> : <div className="rd-form-grid" data-cols="2" data-dense="">
+          {select("channel", "核验方式", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+          {input("verifiedAt", "核验时间", "2026-06-18 14:30", "datetime-local")}
+          <div style={{ gridColumn: "1 / -1" }}>{input("ticket", "来源工单号", spec.ticketHint ?? "如 SEC-20260618-001")}</div>
+        </div>}
+        <RdCheck data-proof="identity-ack" label="我已通过上述方式核实是用户本人，不是他人冒充" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+      </div>
+    );
     return (
       <div className="field" data-business-form="identity-verify">
         <span className="bf-legend">先核实用户身份</span>
@@ -2762,9 +2952,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {spec.typeLocked ? (
             <label className="field" style={{ marginBottom: 0 }}>
               <span>类型（已发券，不可修改）</span>
-              <select className="fld" data-proof="voucher-type" disabled value={spec.currentType}>
-                <option value={spec.currentType}>{spec.currentType === "percent" ? "折扣" : "满减"}</option>
-              </select>
+              {choice({ label: "类型", proof: "voucher-type", current: spec.currentType ?? "", disabled: true, onValue: () => undefined, options: [{ value: spec.currentType ?? "", label: spec.currentType === "percent" ? "折扣" : "满减" }] })}
             </label>
           ) : select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减", percent: "折扣" })}
         </div>
@@ -2860,7 +3048,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "day-one-window") {
     return (
       <div className="field" data-business-form="day-one-window">
-        <span className="bf-legend">首日任务完成期限</span>
+        <span className="bf-legend">新手任务完成期限</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("activeHours", "全额奖励期限（小时）", "24", "number")}
           {input("graceHours", "宽限期限（小时）", "72", "number")}
@@ -2875,7 +3063,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "day-one-tri-reward") {
     return (
       <div className="field" data-business-form="day-one-tri-reward">
-        <span className="bf-legend">首日任务分档奖励</span>
+        <span className="bf-legend">新手任务分档奖励</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("active", "按时完成奖励(UVT)", "500", "number")}
           {input("grace", "宽限期奖励(UVT)", "200", "number")}
@@ -3539,10 +3727,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     );
   }
 
+  if (surface) return (
+    <div className="rd-business-form" data-business-form="destructive-reason">
+      <RdNotice tone="danger" title={spec.target}>{spec.impact}</RdNotice>
+      <RdCheck data-proof="destructive-ack" label="我已确认影响范围" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+    </div>
+  );
   return (
     <div className="field" data-business-form="destructive-reason">
       <span className="bf-legend">确认影响</span>
-      <div className="tint danger tiny" style={{ marginBottom: 10 }}>
+      <div className="tint danger tiny rd-destructive-impact" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
       <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
@@ -3557,6 +3751,9 @@ export type CoverageSnapshot = {
   coverageRatio: number;
   redlinePct: number;
   healthyPct?: number;
+  coverageRatioText?: string;
+  redlinePctText?: string;
+  redlineBreached?: boolean;
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
@@ -3575,6 +3772,8 @@ export type InlineOperationApproval = {
   recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
   retry?: () => Promise<void>;
   pending?: boolean;
+  /** Saved direct commands can expose the existing query and retry actions together. */
+  initialRecovery?: "lookup" | "retry";
   expired?: boolean;
   disabledReason?: string;
   compareEdit?: { rangeLabel?: string };
@@ -3582,18 +3781,32 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, blockedReason, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; content?: ReactNode; blockedReason?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+  const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
-  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const [draftReason, setReason] = useState(pendingReason ?? initialReason ?? "");
   const reason = pendingReason ?? draftReason;
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
+  // 原生数字框填坏时 value 是空串，只有 validity 分得清；有意清空是另一个状态（CP-54）。
+  const [numberBad, setNumberBad] = useState(false);
+  const [emptyChosen, setEmptyChosen] = useState(false);
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
+  useEffect(() => {
+    if (businessFormRevision !== undefined) setActiveBusinessForm(businessForm);
+  }, [businessForm, businessFormRevision]);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => getPendingBusinessValue?.() ?? initBusinessForm(businessForm));
   const [uploadStates, setUploadStates] = useState<Record<string, "uploading" | "failed" | undefined>>({});
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? "lookup" : null);
+  // 结果未知（原操作可能已生效）用警示色，红只给明确失败（VS-107）。
+  const [submitUnknown, setSubmitUnknown] = useState(false);
+  // 刚打开不报错：字段错误等失焦或点过提交才显示（DP-06）。
+  const [attempted, setAttempted] = useState(false);
+  const [reasonLeft, setReasonLeft] = useState(false);
+  const [editLeft, setEditLeft] = useState(false);
+  const [openedForm] = useState(() => JSON.stringify([newVal, businessValue]));
+  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? inlineApproval.initialRecovery ?? "lookup" : null);
   const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
   const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
   const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
@@ -3601,7 +3814,12 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
   const comparisonValueId = useId();
   const comparisonUnitId = useId();
   const selectionRequestRef = useRef(0);
+  // 提交失败的提示在正文最上方：长表单点完底栏按钮后它可能已滚出视野，出现时滚到看得见（已在视野里不动）。
+  const submitAlertRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (submitError) submitAlertRef.current?.scrollIntoView({ block: "nearest" }); }, [submitError]);
   const effectiveBriefKind = typeof briefKind === "function" ? briefKind(businessValue) : briefKind;
+  // 影响随业务字段变（比如名单有效期选长期还是指定日期），传函数时按现在填的值算。
+  const effectiveStatedBrief = typeof statedBrief === "function" ? statedBrief(businessValue) : statedBrief;
   const approval = approvalSpec ?? inlineApproval?.resolve(businessValue, newVal);
   const compareEdit = approval ? inlineApproval?.compareEdit : undefined;
   const compactFields = !!approval && inlineApproval?.fieldLayout === "compact";
@@ -3620,18 +3838,27 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
-  const currentNumber = spec?.current?.trim() ? Number(spec.current) : Number.NaN;
-  const newNumber = Number(newVal);
+  const decimalDirection = compareEditDecimals(newVal, spec?.current ?? "");
   const directionalAmplifies = typeof spec?.amplifiesWhen === "function"
     ? spec.amplifiesWhen(newVal)
     : typeof spec?.amplifiesWhen === "object"
     ? spec.current === spec.amplifiesWhen.from && newVal === spec.amplifiesWhen.to
-    : spec?.amplifiesWhen && newVal.trim() !== "" && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
-    ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
+    : spec?.amplifiesWhen && decimalDirection !== undefined
+    ? spec.amplifiesWhen === "increase" ? decimalDirection > 0 : decimalDirection < 0
+    : spec?.amplifiesWhen && !spec.current?.trim() && normalizeEditDecimal(newVal) === "0"
+    ? false
     : undefined;
   const effectiveAmplifies = (activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.amplifies?.(businessValue) : undefined) ?? directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
-  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
+  // F4 preserves the backend's raw ratio gate; ambassador budget checks also require reliability.
+  const coverageUnknown = coverageReliable === false;
+  const covBlocked = Boolean(effectiveAmplifies && ((coverage && (coverage.redlineBreached ?? coverage.coverageRatio < coverage.redlinePct)) || (coverageUnknown && coverageUnavailableBlocks)));
+  const coverageBlockText = coverageUnknown ? "兑付覆盖率暂时读不到，读到之前不能提交" : "兑付覆盖率低于红线，暂时无法提交";
+  const coverageRatioText = coverageUnknown || !coverage ? "—" : coverage.coverageRatioText !== undefined ? `${coverage.coverageRatioText}%` : fmtPct(coverage.coverageRatio);
+  const coverageRedlineText = coverageUnknown || !coverage ? "—" : coverage.redlinePctText !== undefined ? `${coverage.redlinePctText}%` : fmtConfigPct(coverage.redlinePct);
+  // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
+  // 业务后果与谁来批分别常显，放大资金提示用同一套警示样式。
+  const rdApproval = surface && !!approvalSpec && !approvalSpec.heading && !inlineApproval;
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
@@ -3650,25 +3877,40 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
   // Mirror the server's Unicode policy for immediate UX feedback. The backend remains
   // authoritative; whitespace, controls, zero-width formatting and standalone marks
   // cannot be used to pad an operation reason to the configured minimum.
-  const reasonLength = Array.from(reason.normalize("NFC")).filter((char) =>
-    !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char),
-  ).length;
-  const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
-  const reasonFeedback = !reasonOk && !retryApproval
-    ? reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `操作理由不能超过 ${reasonMax} 字。`
-    : undefined;
-  const reasonDescribedBy = inlineApproval?.dialogClassName && (compactFields || reasonFeedback || (reasonOk && reasonMax))
-    ? `${reasonFieldId}-length`
-    : undefined;
+  const visibleLength = visibleReasonLength(reason);
+  const reasonLength = measureReason ? measureReason(reason) : visibleLength;
+  const reasonOk = visibleLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
+  // 表单自己写了校验提示的，理由下面的清单不再写一遍（VS-105）。
+  const formFeedback = surface && activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.feedback?.(businessValue) : undefined;
+  // 已经写在字段下的不再列一遍。
+  const shownInFields = surface && activeBusinessForm?.kind === "multi-field" ? [...Object.values(multiFieldIssues(activeBusinessForm, businessValue)), ...(formFeedback?.invalid ? [formFeedback.message] : [])] : [];
+  const listedMissing = businessMissing.filter((message) => !shownInFields.includes(message));
   const submittedValue = spec?.submitEditValue
     ? newVal
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
-  const editValueOk = isEditValueValid(spec, newVal);
+  const editIssue = !emptyChosen && !numberBad && isEditValueValid(spec, newVal) ? spec?.validate?.(newVal) : undefined;
+  const editValueOk = !editIssue && (emptyChosen || (!numberBad && isEditValueValid(spec, newVal)));
+  const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
-  const canConfirm = retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
-    : !blockedReason && reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
-      && (!inlineApproval || !approvalRecovery || !!approval);
+  const canConfirm = !blockedReason && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason
+    : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
+      && (!inlineApproval || !approvalRecovery || !!approval));
+  const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
+  const showEditError = !surface || attempted || editLeft;
+  const reasonShort = visibleLength < reasonMin ? `还差 ${reasonMin - visibleLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
+  // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
+  const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : [
+    !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
+    covBlocked && coverageBlockText,
+    approval?.disabledReason,
+    inlineApproval?.disabledReason,
+    businessSelectionLoading && "正在加载",
+    uploadBlocked && "图片还没上传好",
+    !editValueOk && (editIssue ? editIssue : sameAsCurrent ? "和当前值一样，没有改动" : kind === "number" && (newVal.trim() || numberBad) ? editNumberError(spec!) : `填写${spec?.label ?? "新值"}`),
+    ...businessMissing.map((message) => message.replace(/。+$/, "")),
+    !reasonOk && (visibleLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
+  ].filter(Boolean);
   useEffect(() => {
     let active = true;
     setAuthoritativeReasonMin(null);
@@ -3680,25 +3922,39 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
         setAuthoritativeReasonMax(policy.maxChars);
       }
     }).catch(() => {
-      if (active) setReasonPolicyError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
+      if (!active) return;
+      if (reasonPolicyOptional) {
+        setAuthoritativeReasonMin(8);
+        setAuthoritativeReasonMax(200);
+      } else {
+        setReasonPolicyError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
+      }
     });
     return () => { active = false; };
-  }, []);
+  }, [reasonPolicyOptional]);
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitUnknown(false);
     try {
       if (retryApproval) await retryApproval();
-      else await onConfirm(reason.trim(), spec?.allowEmpty ? submittedValue : submittedValue || undefined, activeBusinessForm ? mapLocalizedForm(activeBusinessForm, businessValue, "submit") : undefined);
+      else await onConfirm(reason.trim(), submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
     } catch (error) {
+      // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
+      if (isPermissionDenied(error)) {
+        announcePermissionDenied();
+        onClose();
+        return;
+      }
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
-        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `提交结果暂未确认，可能已生成审批单。请查询原操作，或按原配置和理由重试。命令号：${error.commandKey}`);
+        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。命令号：${error.commandKey}`);
       } else {
-        setApprovalRecovery(null);
+        setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
+        setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
         setSubmitError(operationConfirmErrorMessage(error));
       }
     } finally {
@@ -3712,7 +3968,7 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
     try {
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
-        setSubmitError("暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+        setSubmitError(inlineApproval?.expired ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
       }
     } catch (error) {
       setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
@@ -3741,34 +3997,91 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
+  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
+  // 放大提示固定在关键信息层，先于所有填写项。
+  const coverageFirst = surface && (!approval || rdApproval);
+  // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
+  const shownFacts = typeof facts === "function" ? facts(editValueOk ? newVal : undefined) : facts;
+  const coverageInFacts = coverageFirst && !!shownFacts;
+  const checkCopy = rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck;
+  const coverageNotice = effectiveAmplifies && (
+    surface ? <div className="rd-confirm-funding">
+      <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
+        {(coverage || coverageUnknown) && <div className="rd-funding-coverage">
+          兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageUnknown && "，暂时读不到"}
+          <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
+        </div>}
+        {covBlocked && <p>{coverageUnknown ? "读到之前不能提交。" : "低于红线，暂时不能提交。"}</p>}
+        {!coverage && auditSink === "local-history" && <p>{checkCopy}本页暂不自动检查覆盖率，请自行确认资金影响。</p>}
+      </RdNotice>
+    </div> : <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
+      <span className="ico"><Icon name="alert" size={16} /></span>
+      <div className="tiny">
+        <b>{coverageLead}</b> · {checkCopy}
+        {coverage || coverageUnknown ? (
+          <>
+            兑付覆盖率 <b className="mono">{coverageRatioText}</b>
+            {coverageUnknown ? null : coverage && (coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
+              ? `，高于健康线 ${fmtConfigPct(coverage.healthyPct)}`
+              : coverage.coverageRatio > coverage.redlinePct
+                ? `，高于红线 ${coverageRedlineText}，请谨慎提交`
+                : coverage.coverageRatio === coverage.redlinePct
+                  ? `，正好在红线 ${coverageRedlineText}，请谨慎提交`
+                  : `，低于红线 ${coverageRedlineText}，提交会被拒绝`)}
+          </>
+        ) : auditSink === "local-history" ? (
+          <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
+        ) : null}
+      </div>
+    </div>
+  );
   return (
-    <Modal title={action} icon="shield" className={inlineApproval?.dialogClassName} onClose={handleClose} busy={!!(approval || inlineApproval) && submitting}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : spec ? "sliders" : "shield"} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={rdApproval ? effect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effect} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName].filter(Boolean).join(" ")} busy={submitting} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
-            {submitting ? "查询中…" : "查询原操作"}
+            {submitting ? "查询中…" : "查询原结果"}
           </Btn>
         )}
-        {!approvalOnlyLookup && (
-          <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
-            <Icon name="check" size={15} /> {blockedReason ? "需审批，暂不能在此提交" : submitting ? "提交中…" : pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : "确认提交"}
+        {!approvalOnlyLookup && (surface ? (
+          <RdButton variant={confirmTone} loading={submitting} loadingText="提交中…"
+            disabledReason={canConfirm || submitting ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
+            onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
+            {submitLabel}
+          </RdButton>
+        ) : (
+          <Btn variant={confirmTone} disabled={!canConfirm} onClick={() => void handleConfirm()}>
+            <Icon name="check" size={15} /> {submitting ? "提交中…" : submitLabel}
           </Btn>
-        )}
+        ))}
       </>}>
-      {!approval && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
-      {content}
-      {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
-      {inlineApproval?.disabledReason && <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>}
-      {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
-        <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
+      {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
+      <fieldset disabled={submitting} className="rd-contents" style={{ display: "contents" }}>
+      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+      {!surface && content}
+      {surface ? (blockedReason || submitError) && (
+        // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
+        <div className="rd-confirm-alert" ref={submitAlertRef}><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>
+      ) : blockedReason
+        ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
+        : submitError && <div className="alertbar warn" role="alert" ref={submitAlertRef} style={{ marginBottom: 16 }}>{submitError}</div>}
+      {inlineApproval?.disabledReason && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
+      {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原结果。</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原结果。</div>
       )}
-      {!reasonPolicyReady && !retryApproval && (
-        <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
+      {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
+        ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
+        : <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
-      {approval && <>
+      {rdApproval && approvalSpec?.disabledReason && <div className="rd-confirm-alert"><RdNotice tone="warn">{approvalSpec.disabledReason}</RdNotice></div>}
+      {rdApproval && approvalSpec?.comparison}
+      {approval && !rdApproval && <>
         {!approval.heading && approval.comparison && <div className="tint" style={{ marginBottom: 14 }}>{approval.comparison}</div>}
         <div className="alertbar warn" style={{ marginBottom: 14 }}>
           <span className="ico" style={{ color: "var(--operation-approval-icon, var(--warning))" }}><Icon name="alert" size={16} /></span>
@@ -3776,53 +4089,74 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
             <b style={{ color: "var(--warning)" }}>{approval.heading ?? "放宽配置 · 批准后生效"}</b>
             {!approval.heading && <>
               <div>{completionCopy}</div>
-              <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && "当前覆盖率低于红线，暂时无法提交。"}</div>
-              {coverage && <div>当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b> · 红线 <span className="mono">{coverage.redlinePct}%</span></div>}
+              <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && `${coverageBlockText}。`}</div>
+              {(coverage || coverageUnknown) && <div>兑付覆盖率 <b className="mono">{coverageRatioText}</b> · 红线 <span className="mono">{coverageRedlineText}</span>{coverageUnknown && !covBlocked && " · 暂时读不到"}</div>}
             </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
         {approval.heading ? <>
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
-          {coverage && <p className="operation-approval-coverage">当前覆盖率 <b>{coverage.coverageRatio}%</b> · 红线 <b>{coverage.redlinePct}%</b></p>}
+          {(coverage || coverageUnknown) && <p className="operation-approval-coverage">兑付覆盖率 <b>{coverageRatioText}</b> · 红线 <b>{coverageRedlineText}</b>{coverageUnknown && (covBlocked ? " · 暂时读不到，读到之前不能提交" : " · 暂时读不到")}</p>}
           {approval.comparison}
-        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} />}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+        {(approval.heading || compareEdit) && effectiveStatedBrief && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       </>}
-      {effectiveAmplifies && !approval && (
-        <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
-          <span className="ico"><Icon name="alert" size={16} /></span>
-          <div className="tiny">
-            <b>这项操作会让平台多付钱</b> · 提交时会先检查兑付覆盖率。
-            {coverage ? (
-              <>
-                当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
-                {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
-                  ? `，高于健康线 ${coverage.healthyPct}%`
-                  : coverage.coverageRatio > coverage.redlinePct
-                    ? `，高于红线 ${coverage.redlinePct}%，请谨慎提交`
-                    : coverage.coverageRatio === coverage.redlinePct
-                      ? `，正好在红线 ${coverage.redlinePct}%，请谨慎提交`
-                      : `，低于红线 ${coverage.redlinePct}%，提交会被拒绝`}
-              </>
-            ) : auditSink === "local-history" ? (
-              <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
-            ) : null}
-          </div>
-        </div>
-      )}
-      {completionCopy && !approval && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
+      {!surface && !approval && coverageNotice}
+      {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
+      {shownFacts && <div className="rd-confirm-facts">{shownFacts}{coverageInFacts && coverageNotice}</div>}
+      {coverageFirst && !shownFacts && coverageNotice}
+      {surface && content}
       {activeBusinessForm && (
-        <fieldset disabled={formLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        <fieldset disabled={formLocked} style={{ border: 0, padding: 0, marginInline: 0, minWidth: 0 }}>
         {inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
-          <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
+          <BusinessFormBlock spec={activeBusinessForm} value={businessValue} attempted={attempted} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
         )}
         </fieldset>
       )}
-      {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
+      {uploadBlocked && (surface
+        ? <div role="alert" className="rd-confirm-alert"><RdNotice tone="warn">{Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}</RdNotice></div>
+        : <div role="alert" className="itint" style={{ marginTop: 8 }}>
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
-      </div>}
-      {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>}
-      {spec && (
+      </div>)}
+      {businessSelectionLoading && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="progress">正在加载该地区的版本内容…</RdNotice></div>
+        : <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>)}
+      {spec && surface && !compareEdit && (
+        // 现在值、新值输入合成一块（VS-103）：范围只写在 hint，没改时不多写一句，确认按钮禁用并写原因。
+        <div className="rd-confirm-edit">
+          <DiffField
+            before={spec.current ? editCurrent(spec, kind).text : undefined}
+            beforeLabel={spec.currentLabel}
+            unit={editCurrent(spec, kind).unit}
+            label={spec.label ?? "改后"}
+            size={kind === "number" ? "key" : "body"}
+            stack={kind === "text" ? (spec.current?.length ?? 0) > 14 : kind !== "number" && opts.some((o) => { const text = spec.optionLabels?.[o] ?? o; return typeof text !== "string" || text.length > 10; })}
+            hint={spec.hint}
+            note={spec.preview && editValueOk ? spec.preview(newVal) : undefined}
+            error={retryApproval ? undefined
+              : showEditError && sameAsCurrent ? "新值和当前值一样，改了才能保存。"
+              : showEditError && editIssue ? editIssue
+              : showEditError && !editValueOk && kind === "number" && (newVal || numberBad) ? `${editNumberError(spec)}。`
+              : attempted && !editValueOk && !newVal.trim() && !numberBad ? `填写${spec.label ?? "新值"}。`
+              : undefined}
+          >
+            {(control) => kind === "select" || kind === "toggle" ? (
+              <div id={control.id} className="row wrap" role="group" aria-label="目标新值" aria-describedby={control["aria-describedby"]} style={{ gap: 8 }}>
+                {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={formLocked || spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
+              </div>
+            ) : <>
+              {kind === "number" ? (
+                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.inputStep ?? spec.step} value={newVal} disabled={formLocked || emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
+              ) : (
+                <input {...control} className="rd-input" aria-label="目标新值" type="text" disabled={formLocked} value={newVal} onChange={(e) => setNewVal(e.target.value)} onBlur={() => setEditLeft(true)} placeholder="输入新值" />
+              )}
+              {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
+            </>}
+          </DiffField>
+        </div>
+      )}
+      {spec && !(surface && !compareEdit) && (
         <div className={compareEdit ? "field tint" : "field"}>
           {!compareEdit && <span className="bf-legend">{spec.label ?? "新值"}{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>}
           {kind === "select" || kind === "toggle" ? (
@@ -3838,17 +4172,7 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
               </span>}
               {compareEdit && <span aria-hidden>→</span>}
               {compareEdit && <span className="muted">拟调整</span>}
-              {kind === "text" && spec.multiline ? <textarea
-                className="fld"
-                aria-label="目标新值"
-                aria-describedby={editDescribedBy}
-                rows={3}
-                disabled={formLocked}
-                value={newVal}
-                onChange={(e) => setNewVal(e.target.value)}
-                placeholder={spec.placeholder ?? "输入新值"}
-                style={{ width: "100%", resize: "vertical" }}
-              /> : <input
+              <input
                 className="fld"
                 aria-label="目标新值"
                 aria-describedby={editDescribedBy}
@@ -3859,84 +4183,68 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
                 disabled={formLocked}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
+                onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)}
+                onBlur={() => setEditLeft(true)}
                 placeholder={spec.current ? `输入新值（当前 ${spec.current}）` : "输入新值"}
                 style={{ maxWidth: compareEdit ? 140 : 240 }}
-              />}
+              />
               {comparisonUnit && <span className="muted tiny" id={unitDescriptionId}>{comparisonUnit}</span>}
+              {spec.emptyOption && <Chip tab sel={emptyChosen} onClick={() => { setEmptyChosen(!emptyChosen); setNewVal(""); setNumberBad(false); }}>{spec.emptyOption}</Chip>}
             </div>
           )}
-          {!editValueOk && !retryApproval && kind === "number" && newVal && (
-            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-              请输入 {(spec.maxDecimals !== undefined ? spec.min?.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: spec.maxDecimals }) : spec.min) ?? "允许范围"}～{(spec.maxDecimals !== undefined ? spec.max?.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: spec.maxDecimals }) : spec.max) ?? "允许上限"} 的有效数字{spec.maxDecimals !== undefined ? `，最多 ${spec.maxDecimals} 位小数` : ""}{spec.step ? `（步长 ${spec.step}）` : ""}。
-            </div>
+          {showEditError && !editValueOk && !retryApproval && kind === "number" && (newVal || numberBad) && !(surface && sameAsCurrent) && (
+            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>{editNumberError(spec)}。</div>
           )}
-          {!compareEdit && newVal && spec.current && (
+          {surface && attempted && !editValueOk && !newVal.trim() && !numberBad && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>填写{spec.label ?? "新值"}。</div>}
+          {surface && showEditError && sameAsCurrent && <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>新值和当前值一样，改了才能保存。</div>}
+          {surface && spec.hint && <div className="rd-form-help">{spec.hint}</div>}
+          {surface && spec.preview && editValueOk && <div className="rd-confirm-preview">{spec.preview(newVal)}</div>}
+          {!compareEdit && (newVal || emptyChosen) && spec.current && !sameAsCurrent && (!surface || editValueOk) && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
-              当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>
+              {surface ? "现在" : "当前"} <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → {surface ? "改后" : "新"} <span className="mono" style={{ color: "var(--brand)" }}>{emptyChosen ? spec.emptyOption : <>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</>}</span>
             </div>
           )}
         </div>
       )}
-      {blockedReason && <div className="alertbar warn" role="status" data-proof="confirm-blocked-reason" style={{ marginBottom: 16 }}>{blockedReason}</div>}
-      <div className="field">
-        <label htmlFor={reasonFieldId}>
-          {approval && !compactFields ? "变更理由" : "操作理由"}
-          {(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}
-          {compactFields ? <span className="muted"> 至少 {reasonMin} 字</span>
-            : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}
-        </label>
-        <textarea
-          id={reasonFieldId}
-          rows={3}
-          maxLength={reasonMax}
-          value={reason}
-          aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined}
-          aria-describedby={reasonDescribedBy}
-          disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : !!getPendingReason && (submitting || pendingReason !== undefined)}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder={compactFields ? "填写调整依据或工单号" : "例如：工单号、处理依据"}
-        />
-        {pendingReason !== undefined && <div className="tiny" style={{ marginTop: 7 }}>原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。</div>}
-        {compactFields && (
-          <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
-            {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
-            {reasonFeedback && <span style={{ color: "var(--warning)" }}>{reasonFeedback}</span>}
-          </div>
+      {surface && !approval && !coverageFirst && coverageNotice}
+      <div className={surface ? "field rd-reason-field" : "field"}>
+        {surface
+          ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span></label>
+          : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
+        {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
+        <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>
+          <textarea id={reasonFieldId} className={surface ? "rd-input rd-textarea" : undefined} rows={3} maxLength={measureReason ? undefined : reasonMax} value={reason} aria-invalid={surface && showReasonError ? true : undefined} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-range ${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
+          {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
+        </div>
+        {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
+        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>{surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
+        {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
+          {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
+          {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}
+        </div>}
+        {showReasonError && (surface || !compactFields) && (
+          <div id={`${reasonFieldId}-length`} className={surface ? "rd-form-error" : "tiny"} role={surface ? "alert" : undefined} style={surface ? undefined : { marginTop: 7, color: "var(--warning)" }}>{reasonShort}</div>
         )}
-        {!compactFields && reasonFeedback && (
-          <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            {reasonFeedback}
-          </div>
-        )}
-        {!compactFields && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
-        {businessMissing.length > 0 && (
-          <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            请检查以下内容： {businessMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
+        {!surface && !compactFields && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
+        {listedMissing.length > 0 && (!surface || attempted) && (
+          <div className={surface ? "rd-form-error" : "tiny"} style={surface ? undefined : { marginTop: 7, color: "var(--warning)" }}>
+            请检查以下内容： {listedMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{listedMissing.length > 4 ? "…" : ""}。
           </div>
         )}
       </div>
+      </fieldset>
     </Modal>
   );
 }
 
-/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast);hover 暂停自动消失,移开 2s 后再消失。 */
-export function useToast(): [ReactNode, (s: string) => void] {
-  const [toast, setToast] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!toast) return;
-    timerRef.current = setTimeout(() => setToast(null), 2800);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [toast]);
-  const node = toast ? (
-    <div
-      onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}
-      onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 2000); }}
-      style={{ position: "fixed", top: "calc(var(--admin-topbar-h) + 32px)", left: "50%", transform: "translateX(-50%)", zIndex: 200, width: "min(420px, calc(100vw - 40px))", justifyContent: "center", background: "var(--v5-surface-2)", color: "var(--v5-ink)", padding: "12px 20px", borderRadius: 11, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 9, boxShadow: "0 12px 36px rgba(0,0,0,.4)", border: "1px solid var(--v5-border-strong)" }}>
-      <span aria-hidden="true" style={{ flexShrink: 0 }}>ⓘ</span> {toast}
-    </div>
-  ) : null;
-  return [node, setToast];
+/* 页面没传提示类型时按这几种明确的说法判断，别的还是信息。页面都传 kind 后删掉。 */
+const TOAST_KIND_BY_WORDS: readonly (readonly [RegExp, ToastKind])[] = [[/结果未知/, "warn"], [/^已(?!.*但)/, "success"], [/失败|错误/, "error"], [/未确认|待确认|未完成|不能|无法|没有提交/, "warn"]];
+
+/* 保留旧调用契约，反馈交给根布局，页面/抽屉卸载后仍可见。第二个参数写提示类型（CP-70）：成功 success、失败 error、要人注意或结果未知 warn，其余 info。 */
+export function useToast(): [ReactNode, (s: string, kind?: ToastKind) => void] {
+  const key = useId();
+  const show = useCallback((title: string, kind?: ToastKind) => { useUI.getState().pushToast({ kind: kind ?? TOAST_KIND_BY_WORDS.find(([words]) => words.test(title))?.[1] ?? "info", title, key }); }, [key]);
+  return [null, show];
 }
 
 /* 跨域跳转 hook(对应设计稿 ctx.setActive(domainLetter)) */

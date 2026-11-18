@@ -50,8 +50,8 @@ const required = [
   },
   {
     // 2026-08-03 追平披露中心重写:草稿对象改 draftDisclosure/draftEditor,字段名去 draft. 前缀。
-    file: "app/components/domain-views/i-tabs/i4-trust.tsx",
-    snippets: ['kind: "version-authoring"', "draftDisclosure", "effectiveDate", "requiresReack", "languageScope"],
+    file: "app/components/domain-views/i-tabs/i5-disclosures.tsx",
+    snippets: ['data-business-form="version-authoring"', "VersionEditor", "effectiveDate", "requiresReack", "languageScope"],
   },
   {
     // 2026-08-03 追平 I6 重写:多语字段 camelCase 化(.title.zh → titleZh),教程草稿归 tutorial 动作区,发布态字段保名。
@@ -65,7 +65,6 @@ const forbidden = [
   { file: "app/components/domain-views/a-tabs/a1-accounts.tsx", pattern: /edit:\s*\{\s*kind:\s*"text"[\s\S]{0,160}M\/C\/R\/- × 7/, reason: "permission matrix cannot be free-text edit" },
   { file: "app/components/domain-views/i-tabs/i1-copy-ab.tsx", pattern: /editDraftV8\s*=\s*\(\)\s*=>\s*openConfirm/, reason: "copy draft edit must use businessForm" },
   { file: "app/components/domain-views/i-tabs/i3-campaign.tsx", pattern: /editDraft\s*=\s*\([^)]*\)\s*=>\s*openConfirm/, reason: "campaign draft edit must use businessForm" },
-  { file: "app/components/domain-views/i-tabs/i4-trust.tsx", pattern: /draftDisclosure\s*=\s*\(\)\s*=>\s*\n\s*openConfirm/, reason: "disclosure draft must use businessForm" },
   { file: "app/components/domain-views/i-tabs/i6-i18n.tsx", pattern: /editKeyDraft\s*=\s*\(\)\s*=>\s*\n\s*openConfirm/, reason: "i18n draft edit must use businessForm" },
   { file: "app/components/domain-views/i-tabs/i6-i18n.tsx", pattern: /newCrs\s*=\s*\(\)\s*=>\s*\n\s*openConfirm/, reason: "course create must use businessForm" },
   { file: "app/components/domain-views/e-view.tsx", pattern: /const delSku\s*=\s*async[\s\S]{0,260}confirm\(/, reason: "SKU delete must use operation modal with destructive-reason" },

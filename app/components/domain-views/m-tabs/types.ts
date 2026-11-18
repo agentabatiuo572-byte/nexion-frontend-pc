@@ -7,26 +7,35 @@
  */
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
+  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; /** 传了就把失败原因交给调用方，写在确认框里，不弹 toast。 */ onFailure?: (message: string) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
+  /** M5 recovery needs a fresh authoritative snapshot before another edit. */
+  refreshM5Content?: () => Promise<void>;
   /** A full content load is running; availability flags are not final yet. */
   contentLoading: boolean;
   /** Re-reads only the knowledge base. A full refresh rebuilds the open conversation and would close the picker. */
   refreshKnowledge: () => Promise<void>;
-  loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<void>;
-  invalidateScope: (conversationNo?: string, customerId?: string) => void;
+  refreshTemplates: () => Promise<void>;
+  loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<import("./data").SessionConvo | undefined>;
+  /** notice 是权限失效时给人看的话，放在这页顶部，不随会话和本组件重置。 */
+  invalidateScope: (conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string) => void;
+  /** 这类操作有没有过了 24 小时重试时限的待确认记录（OP-96）。 */
+  commandExpired: (part: string) => boolean;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   removeCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   addCustomerNote: (convoId: string, text: string) => Promise<boolean>;
-  removeCustomerNote: (convoId: string, noteId: string, reason?: string) => Promise<boolean>;
-  toast: (s: string) => void;
+  removeCustomerNote: (convoId: string, noteId: string, reason?: string, onFailure?: (message: string) => void) => Promise<boolean>;
+  toast: (s: string, kind?: ToastKind) => void;
   /** M5 未绑定策略的「等待分配提醒」分钟数；未读到时按 5 分钟。 */
   unboundAlertMinutes?: number;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq & { briefKind: import("../design-kit").OperatorBriefKind }) => void;
+  closeActionConfirm?: () => void;
+  actionConfirm?: import("../k-tabs/types").ActionConfirmReq | null;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;
 };

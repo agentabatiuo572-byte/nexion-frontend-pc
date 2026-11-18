@@ -1,12 +1,19 @@
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, BusinessFormSpec, EditSpec } from "../design-kit";
+import type { E4Query } from "./data";
 import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2YieldComparison } from "@/lib/admin/e2-client";
+import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
-import type { E4Order } from "@/lib/admin/e4-client";
+import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
+import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import type { FundCommandOrigin, FundCommandEvidence, FundCommandInvestigation, FundInvestigationAccess, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import type { createA2OperationProposal } from "@/lib/admin/a2-client";
 import type { E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
+import type { ToastKind } from "@/lib/store/ui";
 
 /**
  * E 域子视图共享类型。
@@ -68,6 +75,15 @@ export interface McSpec {
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
+  refundFacts?: { originalAmountUsdt: string | null; wholeOrderTerminal: true; promotionRecovery: "WHOLE_ORDER"; coveragePreview: "FULL_REFUND" };
+  title?: ReactNode;        // 框上的短标题；name 照旧记进操作记录
+  effect?: ReactNode;       // E4 确认框：生效标签、确认按钮文字、要核对的事实
+  confirmLabel?: string;
+  confirmTone?: "primary" | "danger";
+  coverageLead?: ReactNode;
+  facts?: ReactNode;
+  statedBrief?: { impact: string; check: string };
+  reasonPlaceholder?: string;
   deviceId?: number;        // E5 后端设备主键
   deviceNo?: string;        // E5 展示编号(instanceNo)
   deviceAction?: "activate" | "force-activate" | "deactivate" | "unbind";
@@ -75,14 +91,28 @@ export interface McSpec {
 }
 export type Mc = McSpec | null;
 
+/** E4 结果未确认的提案。原内容、理由和命令号一起存，重试只能原样发（OP-94）。 */
+export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0]; receivedTicketId?: string; creationConfirmed?: boolean; proposalStatus?: "pending" | "approved" | "rejected" | "withdrawn" | "expired" };
+
 /** 订单行(队列 / 状态机派生)。 */
-export type EOrder = E4Order;
+export interface EOrder {
+  id: string;
+  user: string;
+  sku: string;
+  amt: string | null;
+  refundAmountUsdt: string | null;
+  state: string;
+  dc: string;
+  age: string;
+  orderedAt?: string;
+  pendingApproval?: E4PendingApproval | null;
+}
 
 /** 子视图上下文:派生读 + 打开抽屉/操作确认 + toast。全部由 shell 注入,子视图无自有 store。 */
 export interface EViewCtx {
   pE: (k: string) => string;
   openActionConfirm: (m: McSpec) => void;
-  toast: (msg: string) => void;
+  toast: (msg: string, kind?: ToastKind) => void;
   // E1 商品目录 & 上架门
   canWriteE1: boolean;
   skus: OpsSku[];
@@ -110,6 +140,7 @@ export interface EViewCtx {
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)
   canWriteE3: boolean;
+  e3Proposals: ReturnType<typeof useE3Proposals>;
   e3Ready: boolean;
   e3Loading: boolean;
   e3Error: string | null;
@@ -122,21 +153,40 @@ export interface EViewCtx {
   orders: EOrder[];
   e4Loading: boolean;
   e4Error: string | null;
-  e4Page: number;
-  e4PageSize: number;
+  e4ReadBlock?: string;
   e4Total: number;
-  e4Filter: string;
-  e4Keyword: string;
-  setE4Page: (page: number) => void;
-  setE4PageSize: (pageSize: number) => void;
-  setE4Filter: (filter: string) => void;
-  setE4Keyword: (keyword: string) => void;
-  refreshE4: () => Promise<void>;
+  e4Query: E4Query;
+  e4KeywordInput: string;
+  e4Counts: Record<string, number> | null;
+  e4CountsFailed: boolean;
+  e4ReadAt: string;
+  updateE4Query: (patch: Partial<Omit<E4Query, "keyword">>) => void;
+  setE4KeywordInput: (keyword: string) => void;
+  clearE4Filters: () => void;
+  refreshE4: () => Promise<unknown>;
   orderState: (o: EOrder) => string;
-  isCancelled: (id: string) => boolean;
-  isRefunded: (id: string) => boolean;
-  terminalOf: (id: string) => string | undefined;
+  e4Pending: E4PendingCommand[];
+  e4ReceiptAttempts: { fingerprint: string; commandKey: string; orderNo: string }[];
+  checkE4Receipt: (record: EViewCtx["e4ReceiptAttempts"][number]) => Promise<void>;
+  e4PendingNotes: Record<string, string>;
+  e4InvestigationResults: Record<string, FundInvestigationOutcome>;
+  e4InvestigationAccess: (record: E4PendingCommand) => FundInvestigationAccess;
+  checkE4Investigation: (record: E4PendingCommand, evidence?: FundCommandEvidence) => Promise<FundCommandInvestigation | null>;
+  e4RetryRejected: string[];
+  e4Retrying: string;
+  retryE4Pending: (record: E4PendingCommand) => Promise<void>;
+  checkE4Pending: (record: E4PendingCommand) => Promise<void>;
+  canQueryE4: boolean;
+  /** 查过且明确查不到的命令号，只有这些才开放重试（OP-93）。 */
+  e4QueryMissing: string[];
+  e4ExpiredNotFound: string[];
+  releaseE4Pending: (record: E4PendingCommand) => void;
+  selOrder: EOrder | null;
+  e4Detail: E4OrderDetail | null;
+  e4DetailLoading: boolean;
+  e4DetailError: string | null;
   openOrder: (o: EOrder) => void;
+  closeOrder: () => void;
   // E5 设备管理（E6 手机复用相同动作和权限）
   canReadE5: boolean;
   canWriteE5: boolean;

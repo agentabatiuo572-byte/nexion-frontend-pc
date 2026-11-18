@@ -1,7 +1,7 @@
 /* ============================================================================
    域 B 总览驾驶舱 — B2/B3/B4/B5 共享页面 chrome(端口自设计稿 b-chrome.css)。
    作用域 .bpage,与 globals .dkpage 共享组件类(.card/.btn/.dot/.muted/.alertbar…)组合。
-   token 走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*),双主题安全。
+   token 走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*)。
    去除设计稿的 B1-B5 分段导航(.b-nav)与 server-canonical pill(.b-live)——
    导航由 console 外壳承载,实时状态由全局顶栏 SyncChip 承载,避免重复。
    各页另在 co-located <route>.css 写自己的 signature 图表布局。
@@ -68,3 +68,93 @@
 /* ---- 页脚洞察行 ---- */
 .bpage .b-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
 .bpage .b-foot b { color: var(--ink-3); font-weight: 600; }
+
+/* 今日概览 */
+/* 今日概览版面。颜色、字号、圆角只用 --rd-*，组件样式在 rd.css。 */
+.cc-meta { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cc-meta a { color: var(--rd-text-2); }
+.cc-meta-item { display: inline-flex; align-items: center; gap: 4px; }
+
+/* 「今天」面板：结论句是头，下面是待处理和资金安全，一屏只有一个焦点（06 审查 4、12）。经营数据是面板下面单独一组。 */
+.cc-brief { padding: 0; }
+.cc-brief > .rd-conclusion { border-radius: var(--rd-radius-panel) var(--rd-radius-panel) 0 0; }
+.cc-brief > .rd-conclusion:last-child { border-radius: var(--rd-radius-panel); }
+.cc-brief > .rd-conclusion:not([data-alarm]) { background: none; }
+.cc-brief-body { display: flex; flex-direction: column; gap: 12px; padding: 12px var(--rd-panel-pad-x) var(--rd-panel-pad-y); border-top: 1px solid var(--rd-line); }
+.cc-lines { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.cc-lines > .cc-fundline { flex: 1 1 460px; width: auto; }  /* 两句都要一行写完，放不下就上下排 */
+.cc-pending .rd-panel-head { margin-bottom: 8px; }
+.cc-pending .rd-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.cc-pending .rd-todo-item + .rd-todo-item { margin-top: 0; }
+.cc-pending .rd-todo-item:only-child { grid-column: 1 / -1; }
+.cc-pending .rd-todo-row { height: 100%; }  /* 同一行两格等高 */
+.cc-pending .rd-todo-sub { white-space: normal; }  /* 两列窄时折行，审批详情这类长文字不切掉 */
+.cc-pending .rd-block-loading { display: flex; align-items: center; min-height: 48px; margin-top: 4px; padding: 0 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }  /* 读取中的占位和一行待处理一样高，读完不往下推 */
+.cc-pending-rest { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.cc-pending-rest a { color: var(--rd-text-2); }
+
+.cc-fundline { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); }
+.cc-fundline svg:first-child { flex: none; color: var(--tone, var(--rd-text-3)); }
+.cc-pending .cc-fundline { width: auto; min-height: 0; padding: 0; background: none; }
+.cc-fundline-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 4px 8px; border: 0; border-radius: var(--rd-radius-control); background: none; color: var(--rd-text-2); font: inherit; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); cursor: pointer; }
+.cc-fundline-toggle:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .cc-fundline-toggle:hover { background: var(--rd-hover); } }
+.cc-fundline-chevron { flex: none; color: var(--rd-text-3); transition: transform .15s; }
+.cc-fundline-chevron[data-open] { transform: rotate(180deg); }
+
+.cc-folds { display: flex; flex-direction: column; gap: 4px; }
+.cc-folds .rd-fold-summary { margin-left: 8px; text-align: left; }
+.cc-folds .rd-fold-actions { margin-left: auto; }
+.cc-folds .rd-fold-body { padding-left: 54px; }
+.cc-fold-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cc-sub { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+.cc-sub a { color: var(--rd-text-2); }
+.cc-line { margin: 0; color: var(--rd-text-2); }
+.cc-line[data-muted] { color: var(--rd-text-3); }
+.cc-names { display: flex; align-items: baseline; gap: var(--rd-space-3); color: var(--rd-text-3); }
+.cc-names > span { flex: none; }
+.cc-names ul { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.cc-num { font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.cc-num[data-tone] { color: var(--tone); }
+.cc-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 40px; }
+@media (max-width: 1100px) { .cc-cols { grid-template-columns: minmax(0, 1fr); } }
+.cc-link-button { padding: 0; border: 0; background: none; color: var(--rd-text-2); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.cc-link-button:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+
+/* 三个金额不再是卡片套卡片：直接放在面板上，用一条线分开（VS-72）。 */
+.cc-amounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cc-amounts[data-two] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cc-amount { display: flex; flex-direction: column; gap: 4px; padding: 4px 16px 4px 0; border-radius: var(--rd-radius-control); color: inherit; }
+.cc-amount + .cc-amount { padding-left: 16px; border-left: 1px solid var(--rd-line); border-radius: 0; }
+a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { a.cc-amount:hover { background: var(--rd-hover); } }
+.cc-amount-label { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.cc-amount-note { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+.cc-amount-value { font-variant-numeric: tabular-nums; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
+.cc-amount-value[data-tone] { color: var(--tone); }
+/* 浅色主题数字用正文色，身份靠图标底和图表（VS-14）。 */
+:root[data-theme="light"] :is(.cc-amount-value, .cc-num)[data-tone^="role-"] { color: var(--rd-text); }
+
+.cc-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.cc-list li { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 16px; }
+.cc-list[data-cols] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 40px; }
+@media (max-width: 1100px) { .cc-list[data-cols] { grid-template-columns: minmax(0, 1fr); } }
+.cc-list li > span:first-child { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
+/* 放在图旁边时，名字列按最长的名字，数字紧跟（VS-49）。 */
+.rd-figure-data .cc-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; }
+.rd-figure-data .cc-list li { grid-column: 1 / -1; grid-template-columns: subgrid; gap: 0 16px; }
+/* 没达标的指标：一行一条，线分隔，不做卡片。 */
+/* 条形列表一组行共用列：名字、条、金额各一列，金额右边线齐（ST-02）。 */
+.cc-bars .rd-barlist { grid-template-columns: max-content minmax(0, 1fr) max-content; column-gap: var(--rd-space-3); }
+.cc-bars .rd-barlist li { grid-column: 1 / -1; grid-template-columns: subgrid; }
+.cc-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; margin: 0; padding: 0; list-style: none; }
+@media (max-width: 1100px) { .cc-kpis { grid-template-columns: minmax(0, 1fr); } }
+.cc-kpi { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 4px 0; border: 0; border-top: 1px solid var(--rd-line); background: none; color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.cc-kpi:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .cc-kpi:hover { background: var(--rd-hover); } }
+.cc-kpi-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-kpi-target { flex: none; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.cc-gates-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; }
+.cc-gates { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; }
+.cc-gates li { display: inline-flex; align-items: center; gap: 8px; color: var(--rd-text); }
+

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "./error-messages";
 import { SupportClientError } from "./m-support-client";
-import { PENDING_MUTATION_TTL_MS, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
+import { PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
 import { canReplayGroupCommand } from "./support-group-client";
 
 export type SupportIntent<T> = PendingMutationRecord & { payload: T; denied?: boolean };
@@ -21,7 +21,7 @@ export function useSupportManagementCommand<T, R>(options: {
   write: (payload: T, key: string) => Promise<R>;
   query: (key: string, payload: T) => Promise<Receipt<R>>;
   onSuccess: (result: R, payload: T) => void;
-  onFailure: (payload: T) => void;
+  onFailure: (payload: T, failure: unknown) => void;
 }) {
   const { store, slot, canQuery, canWrite } = options;
   const [pending, setPending] = useState(() => store.list().find(row => row.fingerprint === slot));
@@ -51,7 +51,7 @@ export function useSupportManagementCommand<T, R>(options: {
       store.remember(slot, key, { payload: input });
       if (!store.isDurablyStored(slot, key)) {
         store.forget(slot, key);
-        setMessage("浏览器未能保存原操作，尚未提交。请恢复会话存储后重试。");
+        setMessage("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
         return;
       }
       command = store.list().find(row => row.commandKey === key);
@@ -74,11 +74,11 @@ export function useSupportManagementCommand<T, R>(options: {
         if (!current()) return;
         if (receipt.status === "FAILED") {
           store.forget(slot, commandKey); setPending(undefined);
-          options.onFailure(payload); setMessage("原操作已确认失败，请核对后重新提交。");
+          options.onFailure(payload, receipt); setMessage("原操作已确认失败，请核对后重新提交。");
           return;
         }
         if (receipt.status !== "SUCCEEDED") {
-          setMessage("原操作仍未确认，请稍后再查询。");
+          setMessage("原操作结果未知，请稍后再查询原结果。");
           return;
         }
         result = receipt.result;
@@ -96,15 +96,15 @@ export function useSupportManagementCommand<T, R>(options: {
       if (action === "query" && status === 404 && code === "SUPPORT_COMMAND_NOT_FOUND") {
         const restricted = denied || command.denied === true;
         setReceiptMissing(!restricted);
-        setMessage(restricted ? "尚未查到原操作回执，当前授权仍未确认，请稍后再查询。" : "尚未查到原操作回执。");
+        setMessage(restricted ? "还没查到原结果，授权结果未知，请稍后再查。" : "还没查到原结果。");
       } else if (action === "submit" && [400, 404, 409, 422].includes(status ?? 0) && code && !code.startsWith("IDEMPOTENCY_")) {
         store.forget(slot, commandKey); setPending(undefined);
-        options.onFailure(payload); setMessage(`本次操作未完成。${displayAdminError(error)}`);
+        options.onFailure(payload, error); const reason = displayAdminError(error); setMessage(reason.startsWith("操作未完成") ? reason : `本次操作未完成。${reason}`);
       } else if (forbidden) {
         store.remember(slot, commandKey, { payload, denied: true });
         setDenied(true); setMessage(deniedNotice);
       } else {
-        setMessage(action === "query" ? "暂时无法核对原操作，请稍后再查询。" : "本次提交结果待确认，请先查询原操作。");
+        setMessage(action === "query" ? "暂时查询不了原结果，请稍后再查。" : "结果未知，请先查询原结果。");
       }
     } finally {
       running.current = false;
@@ -112,7 +112,7 @@ export function useSupportManagementCommand<T, R>(options: {
     }
   }
 
-  const notice = expired ? `${message}原操作已超过 24 小时，只能继续查询。`
-    : canReplay ? `${message}可稍后再查或按原操作重试。` : message;
+  const notice = expired ? `${message}${RETRY_EXPIRED_TEXT}`
+    : canReplay ? `${message}可稍后再查或按原请求重试。` : message;
   return { pending, busy, message: notice, canReplay, denied, run };
 }

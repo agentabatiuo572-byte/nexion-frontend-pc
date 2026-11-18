@@ -111,7 +111,7 @@ export function parseE5DevicePage<T = UnknownRecord>(raw: unknown, phones = fals
 export function parseE5Overview<T = UnknownRecord>(raw: unknown): T {
   const message = "E5_OVERVIEW_CONTRACT_INVALID";
   const overview = object(raw, message);
-  for (const key of ["total", "running", "waitingActivation", "stopped"]) nonNegativeInteger(overview[key], message);
+  for (const key of ["total", "running", "waitingActivation", "stopped", "errorRetry", "legacyPending", "waitingConfig"]) nonNegativeInteger(overview[key], message);
   return raw as T;
 }
 

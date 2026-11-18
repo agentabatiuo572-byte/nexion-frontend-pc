@@ -13,7 +13,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/nova",
-    summary: "管理 Nova 消息频道、推送间隔、模板和触发事件。单个频道在这里启停，全部停用请到「紧急停用开关」。",
+    summary: "管发到 App 消息通知里的业务推送：频道、推送间隔、模板和真实素材。单个频道在这里启停。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -23,7 +23,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/trust",
-    summary: "编辑 App 信任中心的 6 个版块：财务数据、团队、UVT 介绍、徽章、审计和外部链接。财务数据和 UVT 介绍发布时须注明数据来源，并核对英文和运营区域语言。",
+    summary: "编辑 App 信任中心的 6 个版块：财务数据、团队、UVT 介绍、徽章、审计和外部链接。财务数据和 UVT 介绍发布时须注明数据来源，并核对英文。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

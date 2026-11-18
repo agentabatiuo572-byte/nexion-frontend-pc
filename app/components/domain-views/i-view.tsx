@@ -14,16 +14,16 @@ import "./i-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { fetchIContentOverviews, iContentActions, type IContentData } from "@/lib/admin/i-client";
-import { summarizePublishedI6Messages } from "@/lib/admin/i6-copy-quality";
-import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
 import { I3Campaign } from "./i-tabs/i3-campaign";
 import { I4Trust } from "./i-tabs/i4-trust";
+import { I5Disclosures } from "./i-tabs/i5-disclosures";
 import { I6I18n } from "./i-tabs/i6-i18n";
 import type { ConfirmReq, ICtx, ActionConfirmReq } from "./i-tabs/types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { RdPage } from "@/app/components/rd";
 
 const FOLD: Record<string, string> = {
   I1: "I1",
@@ -47,14 +47,10 @@ function contentErrorForTab(tab: string, content: IContentData) {
       ? "nova"
       : tab === "I3"
         ? "campaigns"
-        : tab === "I4" || tab === "I5"
-          ? "trustDisclosure"
-          : "i18nLearning";
+        : tab === "I4" ? "trustDisclosure"
+          : tab === "I5" ? "disclosures" : "i18nLearning";
   const error = content.errors?.[key];
   if (!error) return null;
-  if (tab === "I5" && error === "I4 返回数据格式异常，请刷新重试") {
-    return "I5 返回数据格式异常，请刷新重试";
-  }
   if (tab === "I5" && error === "I4 数据加载失败，请刷新重试") {
     return "I5 数据加载失败，请刷新重试";
   }
@@ -63,12 +59,11 @@ function contentErrorForTab(tab: string, content: IContentData) {
 
 // 页面上不显示 I1–I7 模块代号，只保留用户能看懂的原因。
 function contentErrorText(error: string) {
-  if (/^I\d 数据加载失败，请刷新重试$/.test(error)) return "请刷新重试。";
-  if (/^I\d 返回数据格式异常，请刷新重试$/.test(error)) return "收到的数据格式不对，请刷新重试。";
+  if (/^I\d 数据加载失败，请刷新重试$/.test(error)) return "暂时读不到，请稍后重试。";
   return error;
 }
 
-function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null, publishedCopyCount?: number) {
+function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null) {
   if (loading || error) return "";
   if (tab === "I1") {
     const stats = content.copyAb?.stats;
@@ -87,7 +82,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
     return stats ? `信任版块 ${countText(stats.managedSections)} 个` : "";
   }
   if (tab === "I5") {
-    const stats = content.trustDisclosure?.stats;
+    const stats = content.disclosures?.stats;
     if (!stats) return "";
     const coverage = stats.reackPct !== undefined
       ? `${stats.reackJurisdiction || "适用地区"} 已重新确认 ${stats.reackPct}% · 待确认 ${countText(stats.staleAckUsers)} 人`
@@ -96,7 +91,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
-    return stats && publishedCopyCount !== undefined ? `词条 ${countText(publishedCopyCount)} 条 · 上线课程 ${countText(stats.coursesOnline)} 门 · 本周发放 ${nexGridBrandText(stats.weeklyNexPayout)}` : "";
+    return stats ? `词条 ${countText(stats.managedKeys)} 条 · 上线课程 ${countText(stats.coursesOnline)} 门 · 本周发放 ${nexGridBrandText(stats.weeklyNexPayout)}` : "";
   }
   return "";
 }
@@ -106,10 +101,6 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "I1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
-  useEffect(() => {
-    if (tab === "I6") void getRequiredContentLanguages().then(setRequiredLanguages);
-  }, [tab]);
   const contentPermissionScope = useAdminAuth((state) => {
     const session = state.session;
     return [
@@ -196,18 +187,111 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: ICtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    activeActionConfirm: mc,
+    closeActionConfirm: (request) => setActionConfirm(current => !request || current === request ? null : current),
     openConfirm: setCf,
+    closeConfirm: (request) => setCf(current => !request || current === request ? null : current),
     content,
     actions,
     contentLoading,
     contentError,
   };
 
-  const publishedMessages = content.i18nLearning?.publishedMessages;
-  const publishedCoverage = useMemo(() => tab === "I6" && publishedMessages
-    ? summarizePublishedI6Messages(publishedMessages, requiredLanguages) : undefined, [tab, publishedMessages, requiredLanguages]);
-  const live = liveFromBackend(tab, content, contentLoading, contentError, publishedCoverage?.managedKeys);
+  const live = liveFromBackend(tab, content, contentLoading, contentError);
   const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
+
+  const overlays = (
+    <>
+      {mc && (
+        <OperationConfirmModal briefKind={mc.briefKind}
+          action={mc.action}
+          title={mc.title}
+          detail={mc.detail}
+          content={mc.content}
+          amplifies={mc.amplifies}
+          edit={mc.edit}
+          businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
+          facts={mc.facts}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
+          coverageCheck={mc.coverageCheck}
+          blockedReason={mc.blockedReason}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          initialReason={mc.initialReason}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
+          onBusinessSelectionChange={mc.onBusinessSelectionChange}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
+          onConfirm={async (reason, newValue, businessValue) => {
+            const succeeded = await mc.run(reason, newValue, businessValue);
+            if (succeeded !== false) setActionConfirm(current => current === mc ? null : current);
+          }}
+        />
+      )}
+      {cf && <KConfirmModal req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
+      {toastNode}
+    </>
+  );
+
+  if (tab === "I1") {
+    return (
+      <RdPage className="idom i1-page">
+        <I1CopyAb ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I2") {
+    return (
+      <RdPage className="idom">
+        <I2Nova ctx={{ ...ctx, contentError: contentError ? contentErrorText(contentError) : null }} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I3") {
+    return (
+      <RdPage className="idom i3-page">
+        <I3Campaign key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I4") {
+    return (
+      <RdPage className="idom i4-page">
+        <I4Trust key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I6") {
+    return (
+      <RdPage className="idom i6-page">
+        <I6I18n key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I5") {
+    return (
+      <RdPage className="idom">
+        <I5Disclosures ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
 
   return (
     <div className="dkpage idom">
@@ -228,35 +312,8 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {(!contentError || contentReadable) && tab === "I1" && <I1CopyAb ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I2" && <I2Nova ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
-      {(!contentError || contentReadable) && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
-      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} requiredLanguages={requiredLanguages} publishedCoverage={publishedCoverage} />}
 
-      {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
-          action={mc.action}
-          detail={mc.detail}
-          content={mc.content}
-          blockedReason={mc.blockedReason}
-          amplifies={mc.amplifies}
-          edit={mc.edit}
-          businessForm={mc.businessForm}
-          completionCopy={mc.completionCopy}
-          reasonMin={mc.reasonMin}
-          reasonMax={mc.reasonMax}
-          onBusinessSelectionChange={mc.onBusinessSelectionChange}
-          onClose={() => setActionConfirm(null)}
-          onConfirm={async (reason, newValue, businessValue) => {
-            const succeeded = await mc.run(reason, newValue, businessValue);
-            if (succeeded !== false) setActionConfirm(null);
-          }}
-        />
-      )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
-      {toastNode}
+      {overlays}
     </div>
   );
 }
