@@ -79,6 +79,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       const { customerId, conversationNo, cleared } = (event as CustomEvent<{ customerId?: string; conversationNo?: string; cleared?: { assignmentId?: string } }>).detail ?? {};
       if (!customerId && conversationNo) return;
       const assignmentId = cleared?.assignmentId;
+      if (assignmentId === "") return;
       let activeRecordAffected = false;
       for (const record of commands.list()) {
         if (record.actorId !== actorId || customerId && record.recipientIds && !record.recipientIds.includes(customerId)) continue;
@@ -174,7 +175,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       setIdentities(old => ({ ...old, ...Object.fromEntries(next.customers.filter(c => c.userNo).map(c => [c.id, { nickname: c.nickname ?? "客户", userNo: c.userNo! }])) }));
       if (!intent.advance) { setSelected(old => new Set([...old, ...next.customers.map(c => c.id)])); return; }
       const excluded = next.excluded.map(row => blocked.includes(row.id) ? { ...row, reason: "PENDING_MESSAGE" }
-        : previous?.excluded.find(old => old.id === row.id) ?? row);
+        : row);
       setSelection({ ...next, excluded });
       if (!next.count) setStep(1);
       if (!next.count) { setError("所选客户均被排除，请核对名单。已保留选择，可逐项移除或清空。"); return; }
@@ -238,8 +239,8 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     if (!recover && !original && selection) {
       const locks = pendingCustomers();
       if (selection.customers.some(c => blocksNewSend(locks, c.id))) {
-        const excludedIds = selection.excluded.map(c => c.id);
-        await generatePreview({ input: { filters: { ...filters, keyword: undefined }, customerIds: [...selection.customers.map(c => c.id), ...excludedIds], excludedIds, selectionMode: "CROSS_PAGE" }, advance: true }, selection);
+        const customerIds = [...selection.customers, ...selection.excluded].map(c => c.id);
+        await generatePreview({ input: { filters: { ...filters, keyword: undefined }, customerIds, excludedIds: [], selectionMode: "CROSS_PAGE" }, advance: true }, selection);
         return;
       }
     }

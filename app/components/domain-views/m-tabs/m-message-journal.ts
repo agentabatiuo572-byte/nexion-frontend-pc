@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { privateMessageRecovery, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
-import { fetchMConversationDetail, parseMConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { fetchMConversationDetail } from "@/lib/admin/m-client";
 import { isSupportScopeDenial, supportClient, isDefiniteSupportRefusal, SupportClientError, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import type { SessionConvo, SessionMsg } from "./data";
 
@@ -21,11 +21,41 @@ function changed() {
   listeners.forEach(listener => listener());
 }
 function createMessageJournal<T extends PendingMutationRecord>(options: Parameters<typeof createPendingMutationStore<T>>[0]) {
-  const store = createPendingMutationStore<T>(options);
+  const primary = options.storageKey, alternate = primary + ":redacted";
+  let storageKey = primary;
+  if (typeof window !== "undefined") {
+    try { if (sessionStorage.getItem(primary) === null && sessionStorage.getItem(alternate) !== null) storageKey = alternate; }
+    catch { /* The shared store supports in-memory reads when storage is disabled. */ }
+  }
+  let store = createPendingMutationStore<T>({ ...options, storageKey });
   return {
-    ...store,
+    list: () => store.list(),
     remember(...args: Parameters<typeof store.remember>) { store.remember(...args); changed(); },
     forget(...args: Parameters<typeof store.forget>) { store.forget(...args); changed(); },
+    isDurablyStored: (slot: string, key: string) => store.isDurablyStored(slot, key),
+    redact(record: T, fingerprint: string, extra: NonNullable<Parameters<typeof store.remember>[2]>) {
+      store.remember(fingerprint, record.commandKey, extra);
+      changed();
+      try {
+        const table = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
+        const original = table[record.commandKey];
+        if (!original || original.commandOwnerId !== record.commandOwnerId) return false;
+        const replacement = { ...extra, fingerprint, commandKey: record.commandKey, createdAt: record.createdAt,
+          expiresAt: record.expiresAt, commandOwnerId: record.commandOwnerId };
+        if (original.fingerprint === fingerprint && Object.entries(extra).every(([k, v]) => original[k] === v)
+          && Object.keys(original).every(field => field in replacement)) return true;
+        table[record.commandKey] = replacement;
+        const bytes = JSON.stringify(table);
+        const destination = storageKey === primary ? alternate : primary;
+        // Preserve the other raw rows, including timeout commands and other submitters.
+        sessionStorage.setItem(destination, bytes);
+        if (sessionStorage.getItem(destination) !== bytes) return false;
+        sessionStorage.removeItem(storageKey);
+        storageKey = destination;
+        store = createPendingMutationStore<T>({ ...options, storageKey });
+        return true;
+      } catch { return false; }
+    },
   };
 }
 
@@ -163,19 +193,6 @@ export function refusedMessage(cause: unknown, firstSubmission: boolean) {
   );
 }
 
-function redactDockRecovery(record: DockCommandRecord, locator: MessageLocator) {
-  const payload = JSON.stringify(locator);
-  const extra = { payload, conversationNo: record.conversationNo, readOnlyRecovery: true as const, ...(locator.customerId ? { customerId: locator.customerId } : {}) };
-  dockCommands.remember(record.fingerprint, record.commandKey, extra);
-  try {
-    if (JSON.parse(sessionStorage.getItem("nexion-admin-m-dock-pending-v1") ?? "{}")[record.commandKey]?.payload !== payload) {
-      sessionStorage.removeItem("nexion-admin-m-dock-pending-v1");
-      dockCommands.remember(record.fingerprint, record.commandKey, extra);
-    }
-  } catch { /* The in-memory record is already redacted. */ }
-  return dockCommands.isDurablyStored(record.fingerprint, record.commandKey);
-}
-
 export const dockDraftKey = (adminId: number, customerId: string, conversationNo: string, assignmentId?: string | null) =>
   `nexion-m-dock-draft:${adminId}:${customerId}:${conversationNo}:${assignmentId ?? ""}`;
 export const sendJournal = (slot: string) => slot.startsWith("dock|") ? dockCommands : pendingMessages;
@@ -266,7 +283,12 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
     const prior = previous.find(row => row.id === conversationId);
     const visible = snapshot.find(row => row.id === conversationId);
     let customerId = target.customerId ?? prior?.customerId ?? visible?.customerId;
-    const owner = target.ownerAdminId ?? prior?.ownerAdminId;
+    const owner = target.ownerAdminId ?? (assignmentId ? undefined : prior?.ownerAdminId);
+    if (visible && owner != null && visible.ownerAdminId != null && visible.ownerAdminId !== owner
+      && prior?.ownerAdminId === owner && prior.customerId === customerId) {
+      denied.push({ customerId, conversationId, assignmentId: assignmentId ?? "" });
+      return;
+    }
     if (conversationId && !visible) {
       try {
         let request = threads.get(conversationId);
@@ -276,8 +298,8 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
         customerId = detail.customerId;
       } catch (cause) {
         if (isSupportScopeDenial(cause)) {
-          denied.push({ customerId, conversationId });
-          return;
+          denied.push({ customerId, conversationId, assignmentId: assignmentId ?? "" });
+          if (!customerId) return;
         }
       }
     }
@@ -289,7 +311,7 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
       const detail = await request;
       if (detail.customerId !== customerId) return;
       if ((assignmentId && detail.assignmentId !== assignmentId) || (owner != null && detail.agentAdminId !== owner)) {
-        denied.push({ customerId, conversationId, assignmentId });
+        denied.push({ customerId, conversationId, assignmentId: assignmentId ?? "" });
       }
     } catch (error) {
       if (isSupportScopeDenial(error)) denied.push({ customerId, conversationId });
@@ -303,11 +325,10 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
   customerId ??= originalConversationId ? conversations.find(row => row.id === originalConversationId)?.customerId
     ?? entries.find(entry => entry.locator.conversationId === originalConversationId)?.locator.customerId : undefined;
   const revokeAll = !customerId && !originalConversationId;
-  const clearFirst = !commandKey || !originalConversationId;
   const affected = commandKey ? [] : conversations.filter(convo => revokeAll || convo.customerId === customerId).map(convo => convo.id);
   if (originalConversationId) affected.push(originalConversationId);
   for (const copy of failedDraftCopies.list()) {
-    if (copy.commandOwnerId !== adminId || assignmentId && copy.assignmentId !== assignmentId || commandKey && copy.commandKey !== commandKey) continue;
+    if (copy.commandOwnerId !== adminId || assignmentId !== undefined && copy.assignmentId !== assignmentId || commandKey && copy.commandKey !== commandKey) continue;
     if (revokeAll || customerId && copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
       if (copy.conversationId && !affected.includes(copy.conversationId)) affected.push(copy.conversationId);
       failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
@@ -315,88 +336,31 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
   }
   let error = "";
   for (const { row: record, locator, dock, reply, first } of entries) {
-    if (assignmentId && assignmentId !== (reply?.expectedAssignmentId ?? first?.assignmentId)) continue;
+    if (assignmentId !== undefined && assignmentId !== (reply?.expectedAssignmentId ?? first?.assignmentId ?? "")) continue;
     if (commandKey && record.commandKey !== commandKey) continue;
     const originalCustomer = originalCustomerId(locator, conversations);
     const matchesThread = locator.conversationId && affected.includes(locator.conversationId);
     if (!revokeAll && !(customerId && originalCustomer === customerId) && !matchesThread) continue;
     if (locator.conversationId && !affected.includes(locator.conversationId)) affected.push(locator.conversationId);
     locator.customerId = originalCustomer ?? (locator.conversationId === originalConversationId ? customerId : undefined);
-    if (dock) {
-      if (!dock.readOnlyRecovery || dock.customerId !== locator.customerId) {
-        if (!redactDockRecovery(dock, locator)) error = "浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。";
-      }
-      continue;
-    }
-    try {
-      const slot = recoveryKey(adminId, record.commandKey);
-      if (record.fingerprint === slot && record.payload === JSON.stringify(locator)) continue;
-      rememberPending(slot, record.commandKey, locator);
-      // Retry the smaller persisted row without deleting unrelated messages or legacy timeout commands.
-      if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) {
-        const persisted = JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}");
-        const original = persisted[record.commandKey];
-        if (!original || original.commandKey !== record.commandKey) throw new Error("Private recovery row unavailable");
-        persisted[record.commandKey] = { ...original, fingerprint: slot, payload: JSON.stringify(locator) };
-        try { sessionStorage.setItem("nexion-admin-m3-private-pending-v1", JSON.stringify(persisted)); }
-        catch {
-          // If even a smaller replacement is refused, erase private bodies and retain timeout lineage only.
-          let durable = false;
-          try {
-            const timeouts: Record<string, StoredMessage> = {};
-            for (const [key, value] of Object.entries(persisted)) {
-              const row = value as StoredMessage;
-              if (!/^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint)) continue;
-              const saved = JSON.parse(row.payload) as { key: string; policy: unknown; operator: string; input?: { warnMinutes: number; closeMinutes: number; reason: string } };
-              parseMConversationTimeoutPolicy(saved.policy);
-              if (saved.key !== key || row.commandKey !== key || !Number.isFinite(row.createdAt) || !Number.isFinite(row.expiresAt) || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key) || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("Timeout recovery row invalid");
-              timeouts[key] = row;
-            }
-            const preserveTimeouts = () => {
-              const target = JSON.parse(sessionStorage.getItem("nexion-admin-m3-timeout-pending-v1") || "{}");
-              for (const [key, row] of Object.entries(timeouts)) {
-                if (target[key] && JSON.stringify(target[key]) !== JSON.stringify(row)) throw new Error("Timeout recovery row conflict");
-                target[key] = row;
-              }
-              if (Object.keys(timeouts).length) sessionStorage.setItem("nexion-admin-m3-timeout-pending-v1", JSON.stringify(target));
-              const stored = JSON.parse(sessionStorage.getItem("nexion-admin-m3-timeout-pending-v1") || "{}");
-              return Object.keys(timeouts).length > 0 && Object.entries(timeouts).every(([key, row]) => JSON.stringify(stored[key]) === JSON.stringify(row));
-            };
-            try { preserveTimeouts(); } catch { /* Retry after privacy erasure frees quota. */ }
-            sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-            durable = preserveTimeouts();
-          } catch {
-            // Invalid metadata or blocked migration must never retain revoked private bodies.
-            sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-          }
-          error = durable ? "原消息内容已清除。结果确认前请不要刷新或关闭页面。" : "原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。";
-          continue;
-        }
-        if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) throw new Error("Private recovery row not stored");
-      }
-      if (!pendingMessages.isDurablyStored(slot, record.commandKey)) error = "浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。";
-    } catch {
-      try {
-        sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-        error = "原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。";
-      } catch {
-        error = "这台电脑上的旧消息没清理掉，相关会话先关着；请检查浏览器的存储设置后重试。";
-      }
-    }
+    const ok = dock
+      ? dockCommands.redact(dock, dock.fingerprint, { payload: JSON.stringify(locator), conversationNo: dock.conversationNo, customerId: locator.customerId, readOnlyRecovery: true })
+      : pendingMessages.redact(record, recoveryKey(adminId, record.commandKey), { payload: JSON.stringify(locator) });
+    if (!ok) error = "这台电脑上的旧消息没清理掉，相关会话先关着；请检查浏览器的存储设置后重试。";
   }
   const matchesDraft = (slot: string) => {
     const target = draftTarget(slot);
     return (revokeAll || Boolean(customerId && customerId === target.customerId) || Boolean(target.conversationId && affected.includes(target.conversationId)))
-      && (!assignmentId || !target.assignmentId || target.assignmentId === assignmentId);
+      && (assignmentId === undefined || !target.assignmentId || target.assignmentId === assignmentId);
   };
   try {
     const saved = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}") as Record<string, unknown>;
     for (const key of Object.keys(saved)) if (matchesDraft(key)) delete saved[key];
     sessionStorage.setItem(`nexion-m3-drafts:${adminId}`, JSON.stringify(saved));
     for (const key of Object.keys(sessionStorage)) {
-      if (key.startsWith(`nexion-m-dock-draft:${adminId}:`) && (!assignmentId || key.endsWith(`:${assignmentId}`) || key.endsWith(":")) && (revokeAll || customerId && key.startsWith(`nexion-m-dock-draft:${adminId}:${customerId}:`) || affected.some(id => key.includes(`:${id}:`)))) sessionStorage.removeItem(key);
+      if (key.startsWith(`nexion-m-dock-draft:${adminId}:`) && (assignmentId === undefined || key.endsWith(`:${assignmentId}`) || key.endsWith(":")) && (revokeAll || customerId && key.startsWith(`nexion-m-dock-draft:${adminId}:${customerId}:`) || affected.some(id => key.includes(`:${id}:`)))) sessionStorage.removeItem(key);
     }
     for (const key of Object.keys(sessionStorage)) if (key.startsWith(`nexion-m3-reply-targets:${adminId}:`) && matchesDraft(key.slice(`nexion-m3-reply-targets:${adminId}:`.length))) sessionStorage.removeItem(key);
   } catch { error = "私聊记录清理失败，请退出当前账号后重新登录。"; }
-  return { affected, customerId, clearFirst, revokeAll, error, matchesDraft, assignmentId };
+  return { affected, customerId, revokeAll, error, matchesDraft, assignmentId };
 }

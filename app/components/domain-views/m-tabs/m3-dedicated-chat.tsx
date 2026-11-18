@@ -13,7 +13,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
-import { fetchMConversationDetail, markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -31,14 +31,14 @@ import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-
 import { legacySupportDestination, supportEnhancements } from "@/lib/admin/m-support-enhancements";
 import { businessResultUnavailableText, RecoveryPanel, type RecoveryItem } from "../recovery-panel";
 import { m1CustomerCode } from "./m1-customer-code";
-import { scopedDraftSlot, identifySavedCustomer, supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
+import { scopedDraftSlot, identifySavedCustomer, supportLengthHint, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
 export { validCustomerId } from "./m-message-journal";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
 
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
-type SendFlight = { commandKey?: string; image?: { id: string; outcome: "unused" | "submitted" | "sent" } };
+type SendFlight = { commandKey?: string; newSubmission?: boolean; image?: { id: string; outcome: "unused" | "submitted" | "sent" } };
 type TimeoutInput = { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string };
 type TimeoutCommand = { key: string; input: TimeoutInput; policy: ConversationTimeoutPolicy; operator: string };
 
@@ -332,11 +332,13 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       refreshFlights(n => n + 1);
     }
   };
-  const [firstDetail, setFirstDetail] = useState<SupportCustomerDetail | null>(null);
+  const [firstRead, setFirstDetail] = useState<(SupportCustomerDetail & { revision: number }) | null>(null);
+  const firstDetail = firstRead?.revision === snapshotRevision ? firstRead : null;
   const [detailError, setDetailError] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailRetry, setDetailRetry] = useState(0);
-  const [profileDetail, setProfileDetail] = useState<SupportCustomerDetail | null>(null);
+  const [profileRead, setProfileDetail] = useState<(SupportCustomerDetail & { revision: number }) | null>(null);
+  const profileDetail = profileRead?.revision === snapshotRevision ? profileRead : null;
   const [profileError, setProfileError] = useState("");
   const [profileRetry, setProfileRetry] = useState(0);
   const [readError, setReadError] = useState("");
@@ -375,6 +377,18 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const canReviewAll = scopeMode === "MANAGED" || scopeMode === "ALL";
   const qualificationUnknown = scopeMode === undefined || session?.role !== "superadmin" && session?.role !== "super"
     && Boolean(session?.authorities?.includes("service_m1_read")) && ctx.pget("I.support.agentsAvailable") !== "1";
+  const lastAuthorizedSnapshot = useRef(snapshotRevision);
+  useLayoutEffect(() => {
+    if (!conversationsAvailable || qualificationUnknown || snapshotRevision === lastAuthorizedSnapshot.current) return;
+    lastAuthorizedSnapshot.current = snapshotRevision;
+    setRevokedIds(previous => {
+      const restored = all.filter(row => previous.has(row.id) && (canReviewAll || row.ownerAdminId === adminId));
+      if (!restored.length) return previous;
+      const next = new Set(previous);
+      for (const row of restored) next.delete(row.id);
+      return next;
+    });
+  }, [all, snapshotRevision, conversationsAvailable, qualificationUnknown, canReviewAll, adminId]);
   const qualificationRef = useRef(qualificationUnknown);
   if (qualificationRef.current !== qualificationUnknown) {
     qualificationRef.current = qualificationUnknown;
@@ -405,11 +419,15 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const requestedConvo = validCustomerId(requestedCustomerId) ? continuation?.customerId === requestedCustomerId
     ? visible.find(convo => convo.id === continuation.conversationNo) ?? null
     : customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
-  const savedSends = useMemo(() => qualificationUnknown ? [] : readSavedSends(adminId), [adminId, authEpoch, qualificationUnknown, messageRevision]);
+  const canQueryMessages = Boolean(session?.authorities.includes("service_m3_read"));
+  const savedSends = useMemo(() => canQueryMessages ? readSavedSends(adminId) : [], [adminId, authEpoch, messageRevision, canQueryMessages]);
   const failedCopies = useMemo(() => qualificationUnknown ? [] : failedDraftCopies.list().filter(copy => copy.commandOwnerId === adminId),
     [adminId, authEpoch, qualificationUnknown, messageRevision]);
   const originalCustomer = useCallback((locator: MessageLocator) => originalCustomerId(locator, visible), [visible]);
-  const recoveries = savedSends.filter(entry => !entry.reply && !entry.first);
+  const queryOnly = (entry: SavedSend) => qualificationUnknown || !conversationsAvailable || (!entry.reply && !entry.first)
+    || Boolean(entry.reply && !visible.some(row => row.id === entry.reply!.conversationId));
+  const awaitingFirstResponse = (entry: SavedSend) => [...flights.current.values()].some(flight => flight.newSubmission && flight.commandKey === entry.row.commandKey);
+  const recoveries = savedSends.filter(entry => queryOnly(entry) && !awaitingFirstResponse(entry));
   const selectedCustomer = visible.find(row=>row.id===selectedId)?.customerId;
   const originalSelection = savedSends.some(entry => entry.reply?.conversationId === selectedId)
     ? scoped.find(convo => convo.id === selectedId) : undefined;
@@ -608,7 +626,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const busy = flights.current.has(`${scopeIdentity}:${targetCustomer}`);
   const activeCustomerRef = useRef(targetCustomer);
   activeCustomerRef.current = targetCustomer;
-  const targetSends = savedSends.filter(entry => targetCustomer && originalCustomer(entry.locator) === targetCustomer);
+  const targetSends = savedSends.filter(entry => !queryOnly(entry) && targetCustomer && originalCustomer(entry.locator) === targetCustomer);
   const replyEntry = targetSends.find(entry => entry.reply && entry.reply.conversationId === selected?.id) ?? targetSends.find(entry => entry.reply);
   const firstEntry = targetSends.find(entry => entry.first);
   const [chosenCommand, setChosenCommand] = useState("");
@@ -624,7 +642,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const firstRecoveryText = firstPending && verifiedKeys.current?.has(firstPending.key) ? firstPending.body : "";
   const privateContentReady = !qualificationUnknown && conversationsAvailable && draftOwner === adminId
     && targetSends.every(entry => !(entry.first || entry.reply) || verifiedKeys.current?.has(entry.row.commandKey));
-  const otherSends = savedSends.filter(({ reply, first }) => first ? first !== firstPending
+  const otherSends = savedSends.filter(entry => !queryOnly(entry) && !awaitingFirstResponse(entry)).filter(({ reply, first }) => first ? first !== firstPending
     : reply && (reply !== pending || reply.conversationId !== selected?.id) && visible.some(convo => convo.id === reply.conversationId));
   const displayedIntent = privateContentReady ? pending?.intent ?? firstPending?.intent ?? intent : "SERVICE";
   const lockedTargets = privateContentReady ? firstPending?.replyTargets ?? pending?.message.replyTargets ?? [] : [];
@@ -671,7 +689,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     ? scopedDraftSlot(logicalSlot, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId) : "";
   const draftSlotRef = useRef(targetKey);
   draftSlotRef.current = targetKey;
-  const failedCopy = failedCopies.find(copy => conversationsAvailable && copy.customerId === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
+  const failedCopy = failedCopies.find(copy => conversationsAvailable && originalCustomerId(copy, visible) === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
   // Both explicit continuation and a refused send's automatic landing use the same draft rules.
   const carryContinuationDraft = useCallback((sourceKey: string, destinationKey: string, customerId: string) => {
@@ -696,9 +714,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [peerChangedDraft, selected?.id, selected?.customerId, selected?.detailReady, selected?.writeState, adminId, carryContinuationDraft]);
   const recoveryBlocksTarget = savedSends.some(entry => {
     const customerId = originalCustomer(entry.locator);
-    return !customerId || customerId === targetCustomer && !entry.reply && !entry.first;
+    return !customerId || customerId === targetCustomer && queryOnly(entry);
   });
   const writeAuthorized = !qualificationUnknown && canWriteM3 && !heldByOther && (selected ? selected.detailReady === true && selected.writeState?.canReply === true && closedCandidatesReady && (canSendTo(selected, adminId) || holdAllowsOther && canSendTo({ ...selected, ownerAdminId: adminId }, adminId)) && Boolean(currentProfileDetail?.assignmentId && currentProfileDetail.agentAdminId === selected.ownerAdminId) : Boolean(validCustomerId(requestedCustomerId) && closedCandidatesReady && firstDetail?.customerId === requestedCustomerId && firstDetail.assignmentId && (firstDetail.agentAdminId === adminId || holdAllowsOther)));
+  const retryAuthority = useRef({ writeAuthorized, assignment: draftAssignment?.assignmentId, activeKey });
+  retryAuthority.current = { writeAuthorized, assignment: draftAssignment?.assignmentId, activeKey };
   const writable = writeAuthorized && !recoveryBlocksTarget;
   // 没有本人客户、没有可分配的客服时入口直接禁用，不打开弹窗再说做不了。读不到不拦，弹窗里有失败和重试。
   // 结果跟着已有的更新走：会话快照、名册变了，或切回这个页面，都重读一次（ST-54）。
@@ -790,25 +810,26 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const revokeCustomer = useCallback((customerId?: string, authoritative = false, originalConversationId?: string, commandKey?: string, persisted?: ReturnType<typeof redactCustomerSends>, assignmentChanged = false) => {
     // A pending roster is not evidence that access was revoked. Server denials still clear immediately.
     if (qualificationUnknown && !authoritative) return;
-    if (!commandKey && !persisted?.assignmentId) {
+    if (!commandKey && persisted?.assignmentId === undefined) {
       scopeGeneration.current += 1; identityRef.current = `${authEpoch}:${adminId}:${scopeGeneration.current}`; setActionChecking(false);
     }
 
     const cleared = persisted ?? redactCustomerSends(adminId, all, customerId, originalConversationId, commandKey);
-    const { affected, clearFirst, revokeAll } = cleared;
+    const { affected, revokeAll } = cleared;
     customerId = cleared.customerId;
     if (cleared.error) setRecoveryError(cleared.error);
-    if (!commandKey && !cleared.assignmentId && !assignmentChanged) setRevokedIds((old) => new Set([...old, ...affected]));
-    if (!commandKey && !cleared.assignmentId) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
+    if (!commandKey && cleared.assignmentId === undefined && !assignmentChanged) setRevokedIds((old) => new Set([...old, ...affected]));
+    if (!commandKey && cleared.assignmentId === undefined) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
     setDrafts((old) => {
       if (revokeAll) return {};
       const next = { ...old };
       for (const slot of Object.keys(next)) if (cleared.matchesDraft(slot)) delete next[slot];
       return next;
     });
-    if (commandKey || cleared.assignmentId) {
-      if (commandKey === activeKey || cleared.matchesDraft(draftSlotRef.current)) {
+    if (commandKey || cleared.assignmentId !== undefined) {
+      if (commandKey && commandKey === activeKey || cleared.matchesDraft(draftSlotRef.current)) {
         clearAttachment(false); setContentChoice(null); setMaintenanceChosen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false);
+        setMetaTarget(""); setProfileDetail(null); setFirstDetail(null); setProfileRetry(n => n + 1); setDetailRetry(n => n + 1);
       }
       return;
     }
@@ -899,7 +920,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [targetKey, adminId, authEpoch, qualificationUnknown]);
   useEffect(() => {
     if(!adminId||!targetKey||metaTarget!==targetKey||qualificationUnknown)return;
-    try { sessionStorage.setItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`,JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent})); } catch { setSendError("回复范围无法保存在浏览器里，请在本页核对后操作。"); }
+    try {
+      const key = `nexion-m3-reply-targets:${adminId}:${targetKey}`;
+      if (selectedClosedIds.size || includeCurrentReply || intent === "MAINTENANCE") sessionStorage.setItem(key, JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent}));
+      else sessionStorage.removeItem(key);
+    } catch { setSendError("回复范围无法保存在浏览器里，请在本页核对后操作。"); }
   }, [targetKey,metaTarget,adminId,selectedClosedIds,includeCurrentReply,intent,qualificationUnknown]);
   useEffect(()=>{setListLimit(LIST_CHUNK);setArchiveIds(new Set());},[query,listTab,authEpoch]);
   useEffect(() => {
@@ -918,9 +943,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       identifySavedCustomer(adminId, row.commandKey, original.id, customerIdOf(original));
     }
   }, [adminId, conversationsAvailable, qualificationUnknown, savedSends, visible]);
-  const redactRecovery = useEffectEvent((customerId: string, conversationId: string | undefined, key: string) => {
-    ctx.invalidateScope(conversationId, customerId);
-  });
   const scanRecovery = useEffectEvent((scope: string, signal: AbortSignal) => {
     const requests = new Map<string, Promise<SupportCustomerDetail>>();
     for (const original of recoveryTargets) {
@@ -939,7 +961,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           return false;
         }
         if (!canReviewAll && detail.agentAdminId !== adminId) {
-          redactRecovery(customerId, conversationId, key);
+          ctx.invalidateScope(conversationId, customerId);
           return false;
         }
         if (conversationId && !visible.some(row => row.id === conversationId && row.customerId === customerId)) return false;
@@ -947,7 +969,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         setVerifiedRecovery(old => ({ scope, keys: new Set([...(old?.scope === scope ? old.keys : []), key]) }));
         return true;
       }, cause => {
-        if (current() && lostPermission(cause)) redactRecovery(customerId, conversationId, key);
+        if (current() && lostPermission(cause)) ctx.invalidateScope(conversationId, customerId);
         // A temporary failure leaves the original hidden until the next scope check.
         return false;
       });
@@ -1012,7 +1034,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         revokeCustomer(requestedCustomerId);
         return;
       }
-      setFirstDetail(result);
+      setFirstDetail({ ...result, revision: snapshotRevision });
     }).catch((cause: unknown) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current) return;
       if (lostPermission(cause)) {
@@ -1022,7 +1044,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     })
       .finally(() => { if (!controller.signal.aborted && requestStamp === identityRef.current) setDetailLoading(false); });
     return () => controller.abort();
-  }, [requestedCustomerId, requestedConvo, conversationsAvailable, qualificationUnknown, detailRetry, authEpoch, adminId, canReviewAll, revokeCustomer]);
+  }, [requestedCustomerId, requestedConvo, conversationsAvailable, qualificationUnknown, snapshotRevision, detailRetry, authEpoch, adminId, canReviewAll, revokeCustomer]);
   useEffect(() => {
     if (!selected?.customerId || !conversationsAvailable || qualificationUnknown) { setProfileDetail(null); return; }
     if (selectedUnbound) { setProfileDetail(null); setProfileError(""); return; }
@@ -1035,7 +1057,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         ctx.invalidateScope(selected.id, String(selected.customerId));
         return;
       }
-      setProfileDetail(detail);
+      setProfileDetail({ ...detail, revision: snapshotRevision });
     }).catch((cause: unknown) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current) return;
       if (lostPermission(cause)) {
@@ -1043,7 +1065,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       } else setProfileError(displayAdminError(cause));
     });
     return () => controller.abort();
-  }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, profileRetry, revokeCustomer, canReviewAll, adminId]);
+  }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, snapshotRevision, profileRetry, revokeCustomer, canReviewAll, adminId]);
 
   const select = (convo: SessionConvo, commandKey = "") => {
     setChosenCommand(commandKey);
@@ -1108,14 +1130,28 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
     if (result.status === "SUCCEEDED" || result.status === "FAILED" || result.status === "REJECTED") {
       if (useAdminAuth.getState().session?.adminId !== adminId) return result;
-      if (result.status === "REJECTED" && result.businessCode === 409 && result.businessReason === "SUPPORT_ASSIGNMENT_CHANGED") {
+      if (result.status === "REJECTED" && (result.businessCode === 409 && result.businessReason === "SUPPORT_ASSIGNMENT_CHANGED"
+        || result.businessCode === 404 && result.businessReason === "SUPPORT_CUSTOMER_NOT_FOUND"
+        || result.businessCode === 403 && result.businessReason === "SUPPORT_WRITE_FORBIDDEN")) {
         ctx.invalidateScope(locator.conversationId, customerId, undefined, row.commandKey);
         forgetSavedSend(row.fingerprint, row.commandKey);
         return result;
       }
       const original = reply ?? first;
       if (result.status !== "SUCCEEDED") closeRefusedText(row.commandKey, customerId);
-      const authorizedDraft = result.status === "SUCCEEDED" && mounted.current && verifiedKeys.current?.has(row.commandKey);
+      let authorizedDraft = Boolean(result.status === "SUCCEEDED" && mounted.current && verifiedKeys.current?.has(row.commandKey));
+      if (result.status !== "SUCCEEDED" && reply?.attachmentId && attachmentRef.current?.id === reply.attachmentId && customerId) {
+        try {
+          const detail = await supportClient.customerDetail(customerId);
+          if (useAdminAuth.getState().session?.adminId !== adminId) return result;
+          authorizedDraft = detail.customerId === customerId && detail.assignmentId === reply.expectedAssignmentId && (canReviewAll || detail.agentAdminId === adminId);
+          if (!authorizedDraft) ctx.invalidateScope(reply.conversationId, customerId, undefined, row.commandKey);
+        } catch (cause) {
+          if (useAdminAuth.getState().session?.adminId !== adminId) return result;
+          authorizedDraft = false;
+          if (isSupportScopeDenial(cause)) ctx.invalidateScope(reply.conversationId, customerId);
+        }
+      }
       if (useAdminAuth.getState().session?.adminId !== adminId) return result;
       if (!authorizedDraft && reply && originalView() && selected?.id === reply.conversationId) {
         if (reply.attachmentId && attachmentRef.current?.id === reply.attachmentId) clearAttachment(false);
@@ -1153,7 +1189,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (current.due === true) return true;
       if (!originalView()) return false;
       setMaintenanceChosen(false);
-      if (selected) setProfileDetail(current); else setFirstDetail(current);
+      if (selected) setProfileDetail({ ...current, revision: snapshotRevision }); else setFirstDetail({ ...current, revision: snapshotRevision });
       setSendError("这位客户的维护已经不到期了，这条没发出，原文已保留；可以改作服务回复发送。");
     } catch (cause) {
       if (identityRef.current === identity) setSendError(`暂时查不到维护是否到期：${displayAdminError(cause)} 这条没发出，原文已保留。`);
@@ -1193,6 +1229,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const retry = recovery ? pending : undefined;
     const retryFirst = recovery ? firstPending : undefined;
     const identity = identityRef.current;
+    flight.newSubmission = !recovery;
     if (activeEntry && recovery) {
       setSendError("");
       try {
@@ -1238,8 +1275,17 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           return;
         }
       }
-      const assignment = selected ? currentProfileDetail?.assignmentId : firstDetail?.assignmentId;
-      if (!originalView() || !writeAuthorized || !verifiedKeys.current?.has(activeEntry.row.commandKey) || assignment !== (retryFirst?.assignmentId ?? retry?.expectedAssignmentId)) {
+      if (!originalView() || !retryAuthority.current.writeAuthorized || !targetCustomer) return;
+      try {
+        const hold = await supportClient.sessionHold(targetCustomer);
+        if (!originalView() || !currentPage()) return;
+        if (hold.state === "OTHER") { lockFromBusy(targetCustomer, hold); return; }
+      } catch (cause) {
+        if (originalView() && currentPage()) setSendError(displayAdminError(cause));
+        return;
+      }
+      const authority = retryAuthority.current;
+      if (isRetryExpired(activeEntry.row) || !originalView() || !authority.writeAuthorized || authority.activeKey !== activeEntry.row.commandKey || !verifiedKeys.current?.has(activeEntry.row.commandKey) || authority.assignment !== (retryFirst?.assignmentId ?? retry?.expectedAssignmentId)) {
         setSendError("没查到原消息；先刷新会话、核对归属，再按原请求重试。");
         return;
       }
@@ -1263,7 +1309,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const slot = firstPendingKey(adminId, record.customerId);
       flight.commandKey = record.key;
       const stored = retryFirst ? pendingMessages.isDurablyStored(slot, record.key) : rememberPending(slot, record.key, record);
-      if (!stored) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
+      if (!stored) { if (!retryFirst) pendingMessages.forget(slot, record.key); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
       setSendError("");
       let conversationNo: string;
       try {
@@ -1357,7 +1403,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const slot = retry ? activeEntry!.row.fingerprint : replySlot(adminId, customerIdOf(selected));
     flight.commandKey = record.key;
     const stored = retry ? sendJournal(slot).isDurablyStored(slot, record.key) : rememberPending(slot, record.key, record);
-    if (!stored) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
+    if (!stored) { if (!retry) pendingMessages.forget(slot, record.key); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
     setSendError("");
     const input = activeEntry?.dockInput ?? { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
     try {
@@ -1466,7 +1512,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const detail = await supportClient.customerDetail(String(conversation.customerId));
       if(requestStamp!==identityRef.current)return false;
       if (detail.agentAdminId !== adminId || !detail.assignmentId) { ctx.invalidateScope(conversation.id, String(conversation.customerId), "这次操作没有执行：这位客户的归属变了。请回客户列表核对。"); setActionError("客户归属已变化，请刷新会话后重试。"); return false; }
-      if(conversation.id===activeConversationRef.current)setProfileDetail(detail);
+      if(conversation.id===activeConversationRef.current)setProfileDetail({ ...detail, revision: snapshotRevision });
       // waitingReply aggregates all customer history. The backend checks pending
       // replies for each selected conversation together with its versioned write.
       return true;
@@ -1619,7 +1665,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const archiveBatch = async () => {
     if(!archiveIds.size||actionChecking)return;
     const selectedCustomers=customerRows.filter(row=>archiveIds.has(row.id));
-    if (savedSends.some(entry => (entry.reply || entry.first) && selectedCustomers.some(row => row.customerId === originalCustomer(entry.locator)))) return;
+    const lockedCustomers = pendingSendCustomers(adminId, visible);
+    if (selectedCustomers.some(row => blocksNewSend(lockedCustomers, customerIdOf(row)))) { setActionError(MESSAGE_UNKNOWN); return; }
     const chosen=visible.filter(c=>selectedCustomers.some(row=>row.customerId===c.customerId)&&!c.archived&&c.ownerAdminId===adminId);
     if(selectedCustomers.length!==archiveIds.size){setActionError("所选会话范围已变化，请重新圈选。");return;}
     for(const c of chosen)if(!await checkActionReady(c))return;
@@ -1627,6 +1674,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const key=newKey();
     const requestStamp=identityRef.current;
     ctx.openActionConfirm({action:"批量归档",briefKind:"conversation",detail:`确认归档 ${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话。未处理客户消息不能归档。`,statedBrief:{impact:`${new Set(chosen.map(customerIdOf)).size} 位客户的全部对话从收件箱收起，消息和专属客服都不变。客户再发消息，对话会自动回到收件箱。`,check:"核对名单，有未回复消息的客户不能归档，理由写清依据或工单号。"},facts:<RecordList label="归档客户" records={selectedCustomers.map(row => ({ id: customerIdOf(row), value: rowName(row), reference: `U${customerIdOf(row).padStart(8, "0")}` }))} />,effect:<StatusTag tone="progress" filled>立即生效</StatusTag>,confirmLabel:"确认批量归档",reasonMin:8,reasonMax:200,run:async reason=>{const ok=await confirmWrite("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"批量归档已选会话",reason,commandKey:key},requestStamp);if(ok)setArchiveIds(new Set());return ok;}});
+    setArchiveMode(false);
   };
   const canReadTimeout = Boolean(session?.authorities?.includes("service_m3_read"));
   const canTimeout = (session?.role === "super" || session?.role === "superadmin") && Boolean(session?.authorities?.includes("service_m3_timeout_manage")) && !timeoutReadOnly;
@@ -1637,7 +1685,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const timeoutSlot = `nexion-m3-timeout:${adminId}`;
   const readTimeoutCommand = (): TimeoutCommand | null => {
     // Check persisted rows before the shared store can prune malformed records or fall back to memory.
-    if (typeof window !== "undefined") for (const key of ["nexion-admin-m3-private-pending-v1", "nexion-admin-m3-timeout-pending-v1"]) {
+    if (typeof window !== "undefined") for (const key of ["nexion-admin-m3-private-pending-v1", "nexion-admin-m3-private-pending-v1:redacted", "nexion-admin-m3-timeout-pending-v1"]) {
       const table = JSON.parse(window.sessionStorage.getItem(key) ?? "{}");
       if (!table || typeof table !== "object" || Array.isArray(table)) throw new Error("上次的修改记录读不到，暂时不能再改。");
       for (const [commandKey, row] of Object.entries(table)) {
@@ -1796,6 +1844,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   // 结果未知的消息：运营要知道的是哪条、发给谁、什么时候发的；不标是在主会话还是小窗发的。
   const customerLabel = (customerId?: string) => {
     const convo = customerId ? visible.find(row => String(row.customerId) === customerId) : undefined;
+    if (convo && visible.some(row => row.customerId !== customerId && rowName(row) === rowName(convo))) return `客户 ${m1CustomerCode(customerId!)}`;
     return convo ? rowName(convo) : customerId ? `客户 ${m1CustomerCode(customerId)}` : "客户待确认";
   };
   const openOtherSend = (entry: SavedSend) => {
@@ -1812,7 +1861,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const sendTech = (key: string) => <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{key}</span></Fact></Facts></Fold>;
   const pendingItems: RecoveryItem[] = [
     ...recoveries.map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt, object: customerLabel(originalCustomer(entry.locator)), tag: null,
-      line: entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
+      line: entry.first || entry.reply ? "只能查询结果" : entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
       actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原结果</Button> })),
     ...otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
@@ -1860,7 +1909,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const guideRole = !canWriteM3 ? "当前账号只能查看会话，不能发消息。" : scopeMode === "ALL" ? "当前账号是超级管理员：能看全部客户。别人没在接待时，可以用你自己的名字回复，不能记为联系维护；能修改超时策略。" : scopeMode === "MANAGED" ? "当前账号是客服主管：「我的客户」是你本人的客户，「组内其他客户」是负责组中除你本人名下以外的客户。别人没在接待时，可以用你自己的名字回复组内客户，不能记为联系维护；超时策略只能看。" : "当前账号是专属客服：只看得到、只能回复自己的客户；超时策略只能看。";
 
   // 菜单能进但不在客服范围内：后端拒绝的是这个账号，不是服务坏了（ST-38）。
-  if (scopeDenied) return <>
+  if (scopeDenied && !recoveries.length) return <>
     <PageHeader pageId="M3" title="专属会话" summary={summary} back={back} />
     {banner}
     <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
@@ -1884,6 +1933,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
     {!conversationsAvailable
       ? <Conclusion state="danger" action={<Button size="sm" onClick={() => void ctx.refreshConversations()}>重新连接</Button>}>{serviceStatus}</Conclusion>
+      : scopeDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
       : reviewScopeError
         ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => setScopeRetry(value => value + 1)}>重新核对范围</Button>}>{reviewScopeError}</Conclusion>
         : qualificationUnknown
@@ -1917,7 +1967,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             <Segments label="会话状态筛选" value={listTab} onChange={changeTab} items={frontTabs} />
             {moreTabs.length > 0 && <div className="m3s-more" data-on={moreOn ? "" : undefined}><Select aria-label="更多状态" required placeholder="更多" value={moreOn ? listTab : ""} onChange={value => changeTab(value as ListTab)} options={moreTabs.map(item => ({ value: item.value, label: <>{item.label}{item.count !== undefined && ` ${item.count}`}</> }))} /></div>}
           </div>
-          {archiveMode && <div className="m3s-batch"><span role="status">已选 {archiveIds.size} 位客户</span><Button size="sm" disabled={!archiveIds.size || actionChecking} onClick={() => void archiveBatch().then(() => setArchiveMode(false))}>归档已选 {archiveIds.size}</Button><Button size="sm" variant="ghost" onClick={() => { setArchiveMode(false); setArchiveIds(new Set()); }}>取消</Button></div>}
+          {archiveMode && <div className="m3s-batch"><span role="status">已选 {archiveIds.size} 位客户</span><Button size="sm" disabled={!archiveIds.size || actionChecking} onClick={() => void archiveBatch()}>归档已选 {archiveIds.size}</Button><Button size="sm" variant="ghost" onClick={() => { setArchiveMode(false); setArchiveIds(new Set()); }}>取消</Button></div>}
         </header>
         {pendingItems.length > 0 && <div className="m3s-pending"><RecoveryPanel label="发送结果未知的消息" title={`${pendingItems.length} 条消息发送结果未知`} explainLabel="这些消息怎么处理"
             explain={`发出后没收到明确结果的消息，查清前不能再给同一位客户发。「只能查询」：客户被转走或你的权限变了，原文和图片已从本机清除，只能查有没有发出，不能重发。时间为${zoneLabel}。`} items={pendingItems} /></div>}

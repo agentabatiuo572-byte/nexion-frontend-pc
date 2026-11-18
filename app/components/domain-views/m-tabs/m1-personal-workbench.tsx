@@ -191,6 +191,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     return true;
   }, [invalidateScope, sessionKey]);
   const latestDetailSuccess = useRef(new Map<string, number>());
+  const refreshAssignments = useRef(ctx.refreshConversations);
+  refreshAssignments.current = ctx.refreshConversations;
   const openDetail = useCallback(async (customerId: string) => {
     const generation = ++detailsGeneration.current;
     const actorKey = actorStamp();
@@ -206,7 +208,11 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       if (permission !== "agent") void readTransferTargets(next.agentAdminId, "MANAGED").then((targets) => { if (detailsGeneration.current === generation) setTransferInScope(targets !== null); }).catch(() => undefined);
     }
     catch (error) {
-      if (actorStamp() !== actorKey || (latestDetailSuccess.current.get(customerId) ?? 0) > generation) return;
+      if (actorStamp() !== actorKey) return;
+      if ((latestDetailSuccess.current.get(customerId) ?? 0) > generation) {
+        if (isSupportScopeDenial(error)) void refreshAssignments.current().catch(cause => setNotice(errorText(cause)));
+        return;
+      }
       if (!invalidateCustomerOnDenied(customerId, error) && detailsGeneration.current === generation) setDetailError(errorText(error));
     }
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
