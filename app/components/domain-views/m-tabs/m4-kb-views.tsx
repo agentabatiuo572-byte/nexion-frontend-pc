@@ -48,7 +48,7 @@ export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
   if (faq.surface === "Nova") {
     rows.push({ key: "nova", icon: Bot, who: "Nova 智能问答", reaches: false, note: "已下线，用户看不到" });
   } else if (APP_LANGUAGES.includes(faq.language)) {
-    const users = faq.language === "en-US" ? "界面是英语，或另外六种语言（App 按英语读取）的用户" : `界面是${languageName(faq.language)}的用户`;
+    const users = faq.language === "en-US" ? "界面是英语或另外六种语言的用户；这一分类没有越南语问答时，越南语用户也看到它" : `界面是${languageName(faq.language)}的用户`;
     rows.push({ key: "app", icon: Smartphone, who: "App 帮助中心", reaches: true, note: users });
   } else {
     rows.push({ key: "app", icon: Smartphone, who: "App 帮助中心", reaches: false, note: `App 现在只按中文、英语、越南语读取，${languageName(faq.language)}的问答用户看不到` });

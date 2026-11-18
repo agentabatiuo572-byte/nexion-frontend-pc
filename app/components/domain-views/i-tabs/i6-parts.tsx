@@ -6,7 +6,7 @@
  * initialBusinessValue、missingBusinessFields），提交时交给 i6-i18n 里原来的 coursePayload 拼请求，请求不变。
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { BookOpen, CircleSlash, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
+import { BookOpen, CircleSlash, EyeOff, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { i6Amount } from "@/lib/admin/i6-amount";
@@ -181,9 +181,11 @@ function appRewardText(value: string): string | null {
   return `${fixed.slice(0, -2)}.${fixed.slice(-2)}`;
 }
 
-export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, quizCount, passScore, retries, caption }: {
+export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, quizCount, passScore, retries, caption, hidden }: {
   lang: Lang; title: string; body: string; category: string; format: string; level: string; duration: string; reward: string;
   quizCount: number; passScore: string; retries: string; caption?: ReactNode;
+  /** 线上课程在这种语言下 App 不显示时，写不显示的原因。 */
+  hidden?: string;
 }) {
   const Icon = categoryIcon(category);
   const langLabel = LANGS.find((item) => item.key === lang)?.label ?? "";
@@ -192,6 +194,7 @@ export function AppCoursePreview({ lang, title, body, category, format, level, d
     <figure className="i6-phone" aria-label={`App 里这门课的样子（${langLabel}）`}>
       <div className="i6-phone-screen">
         <div className="i6-phone-bar"><span>学习课程</span><span className="i6-phone-lang">{langLabel}</span></div>
+        {hidden ? <div className="i6-phone-hidden" role="note"><EyeOff size={20} aria-hidden /><b>{langLabel}用户看不到这门课</b><span>{hidden}</span></div> : <>
         <div className="i6-phone-hero">
           <span className="i6-phone-icon" aria-hidden><Icon size={18} /></span>
           <span className="i6-phone-cat">{categoryLabel(category)} · {FORMAT_LABEL[format] ?? format} · {LEVEL_LABEL[level] ?? level}</span>
@@ -200,6 +203,7 @@ export function AppCoursePreview({ lang, title, body, category, format, level, d
         <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">{rewardText === null ? "没有奖励" : `学完得 ${rewardText} UVT`}</span></div>
         <p className="i6-phone-body" data-user-content="" data-empty={body.trim() ? undefined : ""}>{body.trim() ? nexGridBrandText(body) : `缺${langLabel}正文`}</p>
         <div className="i6-phone-quiz"><GraduationCap size={14} aria-hidden /><span>测验 {quizCount} 题</span><span>{passScore || "—"} 分及格</span><span>可重试 {retries || "—"} 次</span></div>
+        </>}
       </div>
       {caption && <figcaption className="i6-phone-caption">{caption}</figcaption>}
     </figure>
