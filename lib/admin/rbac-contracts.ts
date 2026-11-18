@@ -76,6 +76,7 @@ export function normalizeA6Detail(raw: unknown) {
     builtin: flag(row.builtin, message),
     permissionCodes: strings(row.permissionCodes, message),
     menuIds: ids(row.menuIds, message),
+    legacyNonReadPermissionCodes: row.legacyNonReadPermissionCodes === undefined ? undefined : strings(row.legacyNonReadPermissionCodes, message),
   };
 }
 

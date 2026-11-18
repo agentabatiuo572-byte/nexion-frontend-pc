@@ -19,6 +19,7 @@ import {
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
 import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
+import { fetchOperatingLanguages } from "@/lib/admin/platform-experience-client";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -549,6 +550,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
+        if (enabling && taskKind === "MISSION" && task.missionNames != null && !confirmation.current?.commandKey) {
+          const [raw, languages] = await Promise.all([fetchH3QuestEvents("tasks"), fetchOperatingLanguages()]);
+          const latest = parseH3Model(raw);
+          const names = [...latest.dayOneTasks, ...latest.weeklyTier1, ...latest.weeklyTier2]
+            .find((row) => row.taskCode === taskCode)?.missionNames;
+          if (names != null && languages.some((language) => names[language] === undefined)) throw new Error("H3_MISSION_NAMES_REQUIRED");
+        }
         await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}/status`, method: "PATCH", target: taskCode,
           body: { taskKind, targetStatus, expectedStatus: status }, before: status, after: targetStatus, success: `任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}` }, reason);
       },
