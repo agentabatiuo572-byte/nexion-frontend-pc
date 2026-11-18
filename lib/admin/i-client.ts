@@ -210,8 +210,16 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
       valid = message.messageKey === command.target
         && message.status === (command.operation === "message-draft" ? "draft" : command.operation === "message-archive" ? "archived" : "published")
         && message.version === (["message-draft", "message-rollback"].includes(command.operation) ? next : expected);
-    } else if (command.operation === "integrity-fix") valid = parseI6Issue(payload.data).code === command.original!.path.split("/")[3];
-    else if (["course-delete", "version-delete"].includes(command.operation)) valid = payload.data === null;
+    } else if (command.operation === "integrity-fix") {
+      const issue = parseI6Issue(payload.data);
+      valid = issue.code === decodeURIComponent(command.original.path.split("/")[3]);
+      if (issue.messageKey !== undefined) {
+        // Repair allocates under a lock and has no expectedVersion. A newer draft can intervene.
+        const previousVersion = Number(command.snapshot?.message?.version.slice(1));
+        valid = valid && issue.messageKey === command.target
+          && (!Number.isSafeInteger(previousVersion) || Number(issue.version.slice(1)) > previousVersion);
+      }
+    } else if (["course-delete", "version-delete"].includes(command.operation)) valid = payload.data === null;
     else if (["version-create", "version-draft"].includes(command.operation)) {
       const version = parseI6CourseVersion(payload.data);
       valid = version.courseId === command.target && version.version === command.version && version.status === "DRAFT"
@@ -1562,7 +1570,12 @@ export type I18nLearningStats = {
   weeklyNexPayout: string;
 };
 export type I18nNamespaceView = { ns: string; keys: number; coverage: number; variants: string; lastChange: string };
-export type I18nIntegrityIssueView = { code: string; kind: string; cnt: number; samples: string[]; status: string; repairedCount?: number };
+export type I18nIntegrityIssueView = {
+  code: string; kind: string; cnt: number; samples: string[]; status: string; repairedCount?: number;
+} & ({ messageKey?: undefined; version?: undefined } | { messageKey: string; version: string });
+export type I18nIntegrityFixInput = {
+  messageKey: string; zh: string; en: string; vi: string; translations?: Record<string, string>;
+};
 export type I18nHardcodedFindingView = { location: string; rawCopy: string; suggestedKey: string; status: string };
 export type I18nMessagePairView = {
   messageKey: string;
@@ -1714,7 +1727,7 @@ export type IContentActions = {
   archiveI6LocalizedMessage: (messageKey: string, expectedVersion: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   fetchI6MessageVersions: (messageKey: string) => Promise<I18nMessagePairView[]>;
   rollbackI6LocalizedMessage: (messageKey: string, targetVersion: string, expectedVersion: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
-  fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<I18nIntegrityIssueView>;
+  fixI6Integrity: (issueCode: string, body: I18nIntegrityFixInput, reason: string, snapshot?: I6CommandSnapshot) => Promise<I18nIntegrityIssueView>;
   createI6Course: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   fetchI7CourseVersions: (courseId: string) => Promise<LearningCourseVersionView[]>;

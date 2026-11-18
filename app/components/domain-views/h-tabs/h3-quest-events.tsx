@@ -759,7 +759,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     entity: "mission" | "event", code: string,
     field: "name" | "description" | "rewardName", locale: "en" | "zh" | "vi", source: string,
   ) => {
-    const current = localizedValue(entity, code, field, locale);
+    const expectedValue = model?.contentLocales?.[entity]?.[code]?.[locale]?.[field];
+    const current = text(expectedValue, "");
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       detail: entity === "event"
@@ -769,7 +770,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       run: async (reason, value) => {
         if (!value) return;
         apply(await (entity === "event"
-          ? updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason)
+          ? updateH4LocalizedContent(code, field, locale, value, expectedValue, reason)
           : updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason)));
         toast(`${source} ${locale.toUpperCase()} 文案已保存`);
       },

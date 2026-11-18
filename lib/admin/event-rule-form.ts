@@ -5,9 +5,18 @@ export const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
 const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
 
 export type EventLocalizedContent = Record<string, Record<string, unknown>>;
+export type EventCopyReadiness = { missing: string[]; incomplete: string[] };
 
-export function eventLocalizedContentGaps(content: EventLocalizedContent | undefined, requiresRewardName = true) {
+export function validEventCopyReadiness(value: unknown): value is EventCopyReadiness {
+  const readiness = value as EventCopyReadiness | null;
+  return !!readiness && [readiness.missing, readiness.incomplete].every(paths => Array.isArray(paths)
+    && paths.every(path => typeof path === "string" && /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.test(path)));
+}
+
+export function eventLocalizedContentGaps(content: EventLocalizedContent | undefined, requiresRewardName = true, readiness?: EventCopyReadiness) {
+  const paths = readiness && new Set([...readiness.missing, ...readiness.incomplete]);
   return EVENT_CONTENT_LOCALES.flatMap(locale => EVENT_CONTENT_FIELDS.filter(field => {
+    if (paths) return paths.has(`localized.${locale}.${field}`);
     if (field === "rewardName" && !requiresRewardName) return false;
     const value = content?.[locale]?.[field];
     return typeof value !== "string" || !value.trim();

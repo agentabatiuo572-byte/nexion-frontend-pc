@@ -1,7 +1,7 @@
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatAdminApiError, guardedFetch } from "./error-messages";
 
-export type DirectCommandReceiptState = "NOT_FOUND" | "UNKNOWN" | "PROCESSING" | "SUCCEEDED" | "REJECTED" | "FAILED";
+export type DirectCommandReceiptState = "NOT_FOUND" | "UNKNOWN" | "PROCESSING" | "SUCCEEDED" | "REJECTED" | "NOT_EXECUTED" | "FAILED";
 
 /** Read the owner's original command, including expired receipts; never replay a write or return its payload. */
 export async function fetchDirectCommandReceipt(scope: string, commandKey: string, actorId: number): Promise<DirectCommandReceiptState> {
@@ -28,6 +28,6 @@ export async function fetchDirectCommandReceipt(scope: string, commandKey: strin
   }
   if (!result.data || typeof result.data !== "object" || Array.isArray(result.data)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const { state } = result.data as { state?: unknown };
-  if (typeof state !== "string" || !["NOT_FOUND", "UNKNOWN", "PROCESSING", "SUCCEEDED", "REJECTED", "FAILED"].includes(state)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  if (typeof state !== "string" || !["NOT_FOUND", "UNKNOWN", "PROCESSING", "SUCCEEDED", "REJECTED", "NOT_EXECUTED", "FAILED"].includes(state)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   return state as DirectCommandReceiptState;
 }

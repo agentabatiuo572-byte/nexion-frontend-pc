@@ -2,6 +2,7 @@ import { h3QuestConfigWriteRefusal } from "./h3-contract";
 import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
 import { h4CommandRequest, markH4Read } from "./h4-mutations";
+import { validEventCopyReadiness, type EventCopyReadiness } from "./event-rule-form";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -372,6 +373,7 @@ export type H4EventCapabilities = H4AppRewardPresentation & {
   supported?: boolean | null;
   rewardCopyOnly?: boolean | null;
   hasRule?: boolean;
+  copyReadiness?: EventCopyReadiness;
 };
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
@@ -383,6 +385,7 @@ export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"):
       if (!event || typeof event !== "object" || Array.isArray(event)
         || [event.supported, event.rewardCopyOnly].some(value => value !== undefined && value !== null && typeof value !== "boolean")
         || event.hasRule !== undefined && typeof event.hasRule !== "boolean"
+        || event.copyReadiness !== undefined && !validEventCopyReadiness(event.copyReadiness)
         || !validH4AppRewardPresentation(event)) throw new Error("活动规则读取失败，请刷新后重试。");
     }
   }
@@ -877,12 +880,12 @@ export async function updateH4LocalizedContent(
   field: "name" | "description" | "rewardName",
   locale: "en" | "zh" | "vi",
   value: string,
-  expectedValue: string,
+  expectedValue: string | null | undefined,
   reason: string,
 ) {
   return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
-    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
+    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue ?? "__MISSING__") },
     `编辑 ${locale.toUpperCase()} 内容 · ${eventCode}`,
   );
 }

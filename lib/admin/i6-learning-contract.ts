@@ -65,6 +65,9 @@ export function parseI6Issue(value: unknown): I18nIntegrityIssueView {
   const row = object(value);
   texts(row, ["code", "kind", "status"]); strings(row.samples); natural(row.cnt);
   if (row.repairedCount != null) natural(row.repairedCount);
+  if (row.messageKey !== undefined || row.version !== undefined) {
+    if (typeof row.messageKey !== "string" || !row.messageKey || typeof row.version !== "string" || !/^v[1-9]\d*$/.test(row.version)) invalid();
+  }
   return row as I18nIntegrityIssueView;
 }
 
