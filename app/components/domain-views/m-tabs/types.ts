@@ -24,7 +24,7 @@ export type MCtx = {
   refreshTemplates: () => Promise<void>;
   loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<import("./data").SessionConvo | undefined>;
   /** notice 是权限失效时给人看的话，放在这页顶部，不随会话和本组件重置。 */
-  invalidateScope: (conversationNo?: string, customerId?: string, notice?: string) => void;
+  invalidateScope: (conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string) => void;
   /** 这类操作有没有过了 24 小时重试时限的待确认记录（OP-96）。 */
   commandExpired: (part: string) => boolean;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
