@@ -436,6 +436,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
   const [eventRuleSnapshot, setEventRuleSnapshot] = useState<EventRuleSnapshot[]>([]);
   const [eventContentRevision, setEventContentRevision] = useState(0);
+  const [onlyMissingCopy, setOnlyMissingCopy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const moduleLabel = section === "events" ? "活动中心" : "用户任务";
@@ -681,17 +682,36 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       && displayed.trim() !== "";
     const requiredEventCopy = "活动发布前须填写此语言的必填文案。";
     const computedRewardName = field === "rewardName" && !!event && !(rule ?? event).appUsesAuthoredRewardName;
+    const fieldLabels: Record<EventContentField, string> = { name: "名称", description: "说明", rewardName: "奖名" };
+    const languageLabel = LOCALE_LABEL[locale];
+    const filledSiblings = event && cell?.incomplete
+      ? (["name", "description", "rewardName"] as const).filter((sibling) => {
+        if (sibling === field) return false;
+        const value = rawLocalizedValue("event", code, sibling, locale).trim();
+        return value !== "" && value !== rawLocalizedValue("event", code, sibling, "en").trim();
+      }).map((sibling) => fieldLabels[sibling])
+      : [];
+    const hint = cell?.missing ? requiredEventCopy
+      : computedRewardName ? "App 奖励名以奖项预览为准，由服务端按实际奖励生成；这里的奖名供后台维护，不一定显示在 App。"
+      : clearable ? `选填。清空输入框后确认，会删除这一格译文；如果这是这门语言最后一格真译，其余跟随英文的副本也会一起清空。取消不保存。${cell?.rewardFromPreview ? "App 实际显示值见奖项预览。" : ""}`
+      : cell?.incomplete ? (filledSiblings.length
+        ? `${languageLabel}已填了${filledSiblings.join("、")}，${fieldLabels[field]}也要填；不提供${languageLabel}就把${languageLabel}${filledSiblings.join("、")}也清空。`
+        : `${languageLabel}已填了一部分，这一格也要填；不提供${languageLabel}就把同一活动的${languageLabel}文案全部清空。`)
+      : cell?.fallsBack ? "选填，不填时 App 显示英文。"
+      : cell?.required ? requiredEventCopy
+      : cell?.rewardFromPreview ? "选填。App 实际显示值见奖项预览。"
+      : optional ? "选填。"
+      : "任务启用前须补齐英文和运营区域语言的名称。";
+    const subject = event
+      ? (rawLocalizedValue("event", code, "name", "zh").trim() || rawLocalizedValue("event", code, "name", "en").trim() || code)
+      : taskTitleText(source);
     openActionConfirm({ briefKind: "config",
-      action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: cell?.missing ? requiredEventCopy
-        : computedRewardName ? "App 奖励名以奖项预览为准，由服务端按实际奖励生成；这里的奖名供后台维护，不一定显示在 App。"
-        : clearable ? `选填。清空输入框后确认，会删除这一格译文；如果这是这门语言最后一格真译，其余跟随英文的副本也会一起清空。取消不保存。${cell?.rewardFromPreview ? "App 实际显示值见奖项预览。" : ""}`
-        : cell?.incomplete ? "选填译文未填齐，请补齐此格。"
-        : cell?.fallsBack ? "选填，不填时 App 显示英文。"
-        : cell?.required ? requiredEventCopy
-        : cell?.rewardFromPreview ? "选填。App 实际显示值见奖项预览。"
-        : optional ? "选填。"
-        : "任务启用前须补齐英文和运营区域语言的名称。",
+      action: `编辑${languageLabel}${entity === "event" ? fieldLabels[field] : "任务名称"} · ${subject}`,
+      detail: hint,
+      content: <div className="itint" style={{ marginBottom: 12 }}>
+        <div>当前：{displayed.trim() ? displayed : cell?.fallsBack ? "未填（App 显示英文）" : cell?.rewardFromPreview ? "未填（App 用奖项预览里的名称）" : "未填"}</div>
+        <div className="tiny" style={{ marginTop: 4, color: "var(--ink-3)" }}>{hint}</div>
+      </div>,
       edit: { kind: "text", current: displayed, initialValue: clearable ? displayed : undefined, allowEmpty: clearable, disallowCurrent: clearable },
       run: async (reason, value) => {
         if (value === undefined) return;
@@ -709,7 +729,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const operator = currentAdminOperator();
     openConfirm({ briefKind: "config",
       action: `清空已存副本 · ${LOCALE_LABEL[locale]} · ${source}`,
-      detail: <>这一格存的是英文副本「{stored}」{field === "rewardName" && !(rulesByEvent.get(event.id) ?? event).appUsesAuthoredRewardName ? "，App 奖励名以奖项预览为准" : `，App 在${LOCALE_LABEL[locale]}下显示英文`}。清空后，这个活动在{LOCALE_LABEL[locale]}下跟随英文的副本会一起清空；活动开启时，空着的选填格仍会用英文补上，App 显示英文。</>,
+      detail: <>这一格存的是英文副本「{stored}」。清空后，这个活动的{LOCALE_LABEL[locale]}改为跟随英文显示{field === "rewardName" && !(rulesByEvent.get(event.id) ?? event).appUsesAuthoredRewardName ? "（奖名仍以奖项预览为准）" : ""}，同一语言的其余英文副本一起清空。</>,
+      reasonPlaceholder: `例如：${LOCALE_LABEL[locale]}改为跟随英文`,
       chips: [["记入操作记录", "done"]],
       reason: true,
       okLabel: "清空副本",
@@ -798,7 +819,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const targetStatus = status === "active" ? "paused" : "active";
     openConfirm({ briefKind: "config",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
-      action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
+      action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${taskTitleText(label)}`,
       detail: <>只能在启用和停用之间切换；已归档的任务不能恢复。{targetStatus === "active" && taskKind === "MISSION" ? "启用前会检查英文和运营区域语言的任务名称是否已填。" : ""}</>,
       chips: [["记入操作记录", "done"]],
       reason: true,
@@ -808,7 +829,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           const latest = await fetchH3QuestEvents("tasks") as H3Model;
           apply(latest);
           const missing = requiredLanguages.filter(locale => !rawLocalizedValue("mission", taskCode, "name", locale, latest).trim());
-          if (missing.length) throw new Error(`请先补齐任务的${missing.map(locale => LOCALE_LABEL[locale]).join("、")}名称，再启用。`);
+          if (missing.length) throw new Error(`请先在上方「App 运营内容」填写这个任务的${missing.map(locale => LOCALE_LABEL[locale]).join("、")}名称，再启用。`);
         }
         await applyMissionMutation(transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
         toast(`任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}`);
@@ -1363,10 +1384,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     .map(key => `${event.id} ${eventRuleMissingLabel(key)}`) ?? []);
   const summarize = (items: string[]) => items.slice(0, 6).join(" · ") + (items.length > 6 ? ` 等 ${items.length} 项` : "");
   const localizedNotice = [
-    localizedMissing.length && `必填文案缺失（开启或设为「进行中」前须补齐；已开启的活动请尽快补齐）：${summarize(localizedMissing)}`,
-    localizedIncomplete.length && `选填译文未填齐：${summarize(localizedIncomplete)}`,
-    unconfirmedEventCodes.length && `文案就绪尚未确认：${summarize(unconfirmedEventCodes)}`,
-  ].filter(Boolean).join("。");
+    localizedMissing.length && `${localizedMissing.length} 项必填文案未填，开启或设为「进行中」前须补齐；已开启的活动请尽快补齐。`,
+    localizedIncomplete.length && `选填译文未填齐 ${localizedIncomplete.length} 项：同一语言填了一部分，要么填齐，要么全部清空。`,
+    unconfirmedEventCodes.length && `${unconfirmedEventCodes.length} 个活动的文案就绪尚未确认：${summarize(unconfirmedEventCodes)}。`,
+  ].filter(Boolean);
+  const cellStatusStyle = (tone: "dim" | "danger" | "warning") => ({ background: "transparent", border: 0, padding: 0, cursor: "pointer", fontSize: 12, color: tone === "danger" ? "var(--danger)" : tone === "warning" ? "var(--warning)" : "var(--ink-3)", textAlign: "left" as const });
+  const cellValueStyle = { background: "transparent", border: 0, padding: 0, cursor: "pointer", fontSize: 12.5, color: "var(--ink)", textAlign: "left" as const };
 
   return (
     <>
@@ -1421,17 +1444,22 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <div className="l-h">
           <span className="ttl">App 运营内容</span>
           <span className="sub">{section === "events"
-            ? "· 活动名称和说明须填写英文及运营区域语言；奖名是否必填以服务端为准"
+            ? "· 活动名称和说明须填写英文及运营区域语言；奖名只有转盘活动和没有规则的非现金旧活动需要填写，其他活动 App 用奖项预览里的名称"
             : "· 首日和每周任务启用前须补齐英文和运营区域语言的名称；停用不检查"}</span>
         </div>
-        {section === "events" && localizedNotice && (
-          <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
-            {localizedNotice}
+        {section === "events" && localizedNotice.length > 0 && (
+          <div className="itint warn" role="status" style={{ marginBottom: 10, display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div>{localizedNotice.map(line => <div key={line}>{line}</div>)}</div>
+            {(localizedMissing.length > 0 || localizedIncomplete.length > 0) && (
+              <label className="row" style={{ gap: 6, fontSize: 12, whiteSpace: "nowrap", cursor: "pointer" }}>
+                <input type="checkbox" checked={onlyMissingCopy} onChange={(event) => setOnlyMissingCopy(event.target.checked)} />只看缺失和未填齐
+              </label>
+            )}
           </div>
         )}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 740 }}>
-            <thead><tr><th>内容</th><th>内容预览</th>{EVENT_CONTENT_LOCALES.map(language => <th key={language}>{LOCALE_LABEL[language]}{section === "tasks" && requiredLanguages.includes(language) ? " *" : ""}</th>)}</tr></thead>
+            <thead><tr><th>内容</th><th>内容预览</th>{EVENT_CONTENT_LOCALES.map(language => <th key={language}>{LOCALE_LABEL[language]}{requiredLanguages.includes(language) ? " *" : "（选填）"}</th>)}</tr></thead>
             <tbody>{localizedRows.flatMap((item) => {
               const rows: Array<{ field: EventContentField; source: string; label: string; preview?: string }> = [
                 { field: "name", source: item.label, label: item.code },
@@ -1449,7 +1477,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   { field: "rewardName", source: text(event.rewardName), label: `${item.code} · 奖项名称`, preview: rewardLabels.length ? `App 显示的奖励：${rewardLabels.join(" · ")}` : "App 奖励标签未提供" },
                 );
               }
-              return rows.map((row) => (
+              const visibleRows = section === "events" && onlyMissingCopy && event
+                ? rows.filter((row) => EVENT_CONTENT_LOCALES.some((language) => { const cell = eventContentCell(event, rule, row.field, language); return cell.missing || cell.incomplete; }))
+                : rows;
+              return visibleRows.map((row) => (
                 <tr key={`${item.entity}:${item.code}:${row.field}`}>
                   <td className="mono">{row.label}</td>
                   <td>{row.preview ?? taskTitleText(row.source)}</td>
@@ -1460,16 +1491,24 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                       return <td key={language}><span title="任务已归档，译文只读">{current || "未填写"}</span></td>;
                     }
                     const missing = cell?.missing, incomplete = cell?.incomplete;
+                    const missionRequired = !event && requiredLanguages.includes(language);
+                    const statusText = missing ? `缺${LOCALE_LABEL[language]} · 填写`
+                      : incomplete ? "未填齐 · 补齐"
+                      : event && !event.copyReadiness ? "未确认"
+                      : cell?.fallsBack ? "未填 · App 显示英文"
+                      : cell?.rewardFromPreview ? "未填 · 用奖项预览"
+                      : missionRequired ? "未填 · 启用前必填"
+                      : "未填";
                     return (
                       <td key={language}>
-                        <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
+                        <button disabled={!canModuleWrite || !item.code}
+                          style={current && !missing && !incomplete ? cellValueStyle : cellStatusStyle(missing ? "danger" : incomplete || missionRequired ? "warning" : "dim")}
                           aria-label={`${missing ? "填写（上线前必须补齐）" : current ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
                           onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event, rule)}>
-                          {missing ? "缺失" : incomplete ? "未填齐" : current || (event && !event.copyReadiness ? "未确认" : cell?.fallsBack ? "未填，App 显示英文" : cell?.rewardFromPreview ? "未填，见奖项预览" : "填写")}{cell?.required ? " *" : ""}
+                          {current && !missing && !incomplete ? current : statusText}
                         </button>
-                        {(missing || incomplete) && <span className="bdg warn" style={{ marginLeft: 6 }} title={missing ? "活动设为「进行中」前必须补齐这个语言" : "选填译文未填齐"}>{missing ? "缺" : "未齐"}</span>}
                         {event && cell && cell.optional && event.deleteState === "draft" && !cell.current && cell.stored.trim() !== "" && (
-                          <button className="l-btn sm" style={{ marginLeft: 6 }} disabled={!canModuleWrite}
+                          <button className="l-btn sm" style={{ marginLeft: 8 }} disabled={!canModuleWrite}
                             aria-label={`清空已存副本 ${row.label} ${LOCALE_LABEL[language]}`}
                             onClick={() => openClearEventCopy(event, row.field, language, row.label, cell.stored)}>清空副本</button>
                         )}

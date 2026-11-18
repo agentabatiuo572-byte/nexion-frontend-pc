@@ -71,7 +71,7 @@ export default function H4EventRules({ ctx, rows, confirmedRules, currentEventCo
     try { if (selected.kind === "regional") next.rules.regions = parseEventRegions(regions); }
     catch (cause) { setError(displayAdminError(cause)); return; }
     const base = selected;
-    ctx.openActionConfirm({ briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    ctx.openActionConfirm({ briefKind: "config", action: `${!next.enabled ? "保存关闭状态" : base.enabled ? "保存配置（保持开启）" : "保存并启用"} · ${base.eventCode}`,
       detail: <>更新本活动的参与条件、奖励及有效期。{!next.enabled ? "保存后活动为关闭状态，不发放新奖励。" : base.enabled ? "活动保持开启，符合条件的用户继续参与；保存时会检查配置与奖励预算。" : base.rulesLocked ? "开启过又关闭的活动不能重新开启，保存会被拒绝。" : ""}</>,
       blockedReason: next.enabled && !base.enabled && !base.rulesLocked ? "首次开启活动要审批，这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
       amplifies: next.enabled,

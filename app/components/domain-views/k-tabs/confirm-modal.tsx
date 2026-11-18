@@ -112,7 +112,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           onChange={(e) => setReason(e.target.value)}
           rows={2}
           maxLength={200}
-          placeholder={req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据"}
+          placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
           style={{
             width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
             padding: "8px 12px", color: "var(--ink)", fontSize: 12.5, outline: "none", resize: "vertical", fontFamily: "inherit",
