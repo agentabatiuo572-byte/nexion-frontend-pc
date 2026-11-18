@@ -799,7 +799,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         sub={taskPage ? `共 ${taskTotal} 份 · 每页 8 份${otherTasks.some((t) => reportScopeParts(t.scope).sub) ? ` · 时间为${businessZone().label}` : ""}` : undefined}
         explain={<>
           <p>各报表页和这页创建的导出都在这里，按状态排：待放行在最前，其次生成中、可下载、已过期、失败。</p>
-          <p>汇总和当前披露快照创建后直接可下载；脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载；团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」导出，只能在这里下载，不能重新发起。</p>
+          <p>汇总和当前披露快照创建后直接可下载；脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载；团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」导出时直接下载，这里只能再下载已生成的，不能重新发起。</p>
           <p>失败或过期的任务可以「重新发起」：用原来那份文件，不重新取数；含隐私的要再放行一次。</p>
         </>}>
         <div className="l5-list-tools">
@@ -872,7 +872,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const createPanel = (
     <div ref={createRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">新建导出</span>} explainLabel="新建导出" icon={FilePlus2} sub="三种出口，去向不同"
-        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出，都在上面任务列表里放行和下载。</p></>}>
+        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，放行后在上面任务列表下载；团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出时直接下载，任务列表里只能再下载。</p></>}>
         <div className="l5-create">
           <article className="l5-create-card" aria-labelledby="l5-create-agg">
             <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3><Explain label="汇总数据是什么" content="关键指标、转化与留存、财务、运营四类汇总，不含个人信息。创建那一刻取数，以后下载还是那一刻的数。" /></div>
@@ -951,7 +951,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       )}
       {refTab === "audit" && (
         <Panel {...refIds.panel("audit")} title="导出记录" icon={ScrollText} sub={`最近 50 条 · 时间为${businessZone().label}`}
-          explain={<><p>系统记下的导出：汇总、当前披露快照、8 类账单和用户名单导出，和「{pageName(AUDIT_PAGE, "操作记录与审批")}」是同一份记录。</p><p>只读，这页不写核查结果；「下载」一列只说明已记录，不能从这里下载文件。每次下载文件的记录不在这里，到「{pageName(AUDIT_PAGE, "操作记录与审批")}」查。</p></>}
+          explain={<><p>系统记下的导出：汇总、当前披露快照、8 类账单、团队树明细和用户名单导出，和「{pageName(AUDIT_PAGE, "操作记录与审批")}」是同一份记录。</p><p>只读，这页不写核查结果；「下载」一列只说明已记录，不能从这里下载文件。每次下载文件的记录不在这里，到「{pageName(AUDIT_PAGE, "操作记录与审批")}」查。</p></>}
           actions={auditError ? <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>重新加载</Button> : undefined}>
           <AuditTable rows={AUDIT_ROWS} loading={auditLoading} error={auditError} />
         </Panel>
