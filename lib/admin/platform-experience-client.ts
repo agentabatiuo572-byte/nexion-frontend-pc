@@ -45,9 +45,8 @@ export interface PlatformExperienceConfig {
   appDownload: ExperienceDownload;
   homeNewcomerTasksEnabled: boolean;
   homeWeeklyPromoEnabled: boolean;
-  /** Absent until the system supports switching interface languages; then it is never sent on save. */
-  interfaceLanguages?: InterfaceLanguageCode[];
-  operatingLanguages?: OperatingLanguageCode[];
+  interfaceLanguages?: readonly InterfaceLanguageCode[] | null;
+  operatingLanguages?: readonly OperatingLanguageCode[] | null;
   ready: boolean;
   sources: string[];
   updatedAt?: string;
@@ -172,8 +171,8 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     },
     homeNewcomerTasksEnabled: root.homeNewcomerTasksEnabled,
     homeWeeklyPromoEnabled: root.homeWeeklyPromoEnabled,
-    interfaceLanguages: root.interfaceLanguages === undefined ? undefined : strictInterfaceLanguages(root.interfaceLanguages),
-    operatingLanguages: root.operatingLanguages === undefined ? undefined : strictOperatingLanguages(root.operatingLanguages),
+    interfaceLanguages: root.interfaceLanguages == null ? root.interfaceLanguages : strictInterfaceLanguages(root.interfaceLanguages),
+    operatingLanguages: root.operatingLanguages == null ? root.operatingLanguages : strictOperatingLanguages(root.operatingLanguages),
     ready: Boolean(root.ready), sources: Array.isArray(root.sources) ? root.sources.map(String) : [], updatedAt: typeof root.updatedAt === "string" ? root.updatedAt : undefined,
   };
 }
@@ -181,6 +180,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
 export async function fetchPlatformExperienceConfig() {
   const config = normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
   if (config.operatingLanguages) requiredContentLanguages = Promise.resolve(config.operatingLanguages);
+  else if (config.operatingLanguages === null) requiredContentLanguages = undefined;
   return config;
 }
 
@@ -200,9 +200,10 @@ export async function updatePlatformExperienceConfig(
   operator = "",
 ) {
   if (!Number.isSafeInteger(config.version) || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("A3_REASON_LENGTH_INVALID");
+  const submittedInterfaceLanguages = config.interfaceLanguages === null ? ["en"] : config.interfaceLanguages;
   const submittedOperatingLanguages = config.operatingLanguages === undefined
     ? undefined
-    : strictOperatingLanguages(config.operatingLanguages, "PLATFORM_OPERATING_LANGUAGES_INVALID");
+    : strictOperatingLanguages(config.operatingLanguages ?? ["en"], "PLATFORM_OPERATING_LANGUAGES_INVALID");
   let appDownload = config.appDownload;
   if (appDownload.source === "official") {
     for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
@@ -220,7 +221,7 @@ export async function updatePlatformExperienceConfig(
     throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
   const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload, reason: reason.trim(), operator };
-  if (config.interfaceLanguages) body.interfaceLanguages = config.interfaceLanguages;
+  if (submittedInterfaceLanguages) body.interfaceLanguages = submittedInterfaceLanguages;
   if (submittedOperatingLanguages) body.operatingLanguages = submittedOperatingLanguages;
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
@@ -233,7 +234,7 @@ export async function updatePlatformExperienceConfig(
     });
     commandAttempts.forget(slot);
     const saved = normalize(response);
-    if (config.interfaceLanguages && saved.interfaceLanguages?.join() !== config.interfaceLanguages.join()) {
+    if (submittedInterfaceLanguages && saved.interfaceLanguages?.join() !== submittedInterfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
     }
     if (submittedOperatingLanguages && saved.operatingLanguages?.join() !== submittedOperatingLanguages.join()) {

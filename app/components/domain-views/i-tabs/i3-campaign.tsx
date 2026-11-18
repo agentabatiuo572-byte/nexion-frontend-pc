@@ -352,6 +352,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       toast(displayAdminError("VALIDATION_FAILED"));
       return;
     }
+    const englishOverride = editing?.translations?.en;
     const payload = {
       name: trimmedName,
       titleZh: zh.title,
@@ -363,6 +364,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       kind: form.kind,
       ctaHref: form.ctaHref,
       ...(ctaLabel ? { ctaLabel } : {}),
+      ...(englishOverride?.ctaLabel ? { translations: { ...editing?.translations, en: { ...englishOverride, ctaLabel: ctaLabel ?? "" } } } : {}),
       tier: form.tier,
       audienceTarget: targetFromForm(form),
       budget: Number(form.budget || 0),

@@ -12,10 +12,15 @@ import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLa
 import type { MSupportPermission } from "./m5-service-rules";
 
 type WelcomePayload = Parameters<typeof supportWelcomeMessageClient.update>[0];
-type WelcomeAttempt = { fingerprint: string; commandKey: string; expiresAt: number; payload: WelcomePayload };
+type WelcomeAttempt = { fingerprint: string; commandKey: string; expiresAt: number; payload: WelcomePayload; editedTexts?: Partial<SupportWelcomeTexts> };
 type WelcomePendingRecord = WelcomeAttempt & { createdAt: number; actorId: number };
-const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({ storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true, isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion) && row.payload.texts) });
 const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "English" }, { key: "vi", label: "Tiếng Việt" }];
+const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({
+  storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true,
+  isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion) && row.payload.texts
+    && (row.editedTexts === undefined || (row.editedTexts && typeof row.editedTexts === "object" && !Array.isArray(row.editedTexts)
+      && Object.entries(row.editedTexts).every(([key, text]) => typeof text === "string" && LANGUAGES.some((language) => language.key === key))))),
+});
 const MAX = 500;
 const EXPIRED = "上次保存已超过 24 小时，不能再按原操作重试。请查询上次结果，或加载最新内容核对后重新提交。";
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
@@ -33,12 +38,13 @@ function changedLanguages(before: SupportWelcomeTexts, after: SupportWelcomeText
   return LANGUAGES.map(({ key }) => key).filter((key) => before[key].trim() !== after[key].trim());
 }
 
-function welcomeDraft(texts: SupportWelcomeTexts, required: readonly OperatingLanguageCode[]): SupportWelcomeTexts {
+function welcomeDraft(texts: SupportWelcomeTexts, required: readonly OperatingLanguageCode[], editedTexts?: Partial<SupportWelcomeTexts>): SupportWelcomeTexts {
   const en = { text: texts.en };
   return {
     en: texts.en,
     zh: blankCopiedContentLanguage(required, "zh", en, { text: texts.zh }).text,
     vi: blankCopiedContentLanguage(required, "vi", en, { text: texts.vi }).text,
+    ...editedTexts,
   };
 }
 
@@ -58,7 +64,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [latest, setLatest] = useState<SupportWelcomeMessage | null>(null);
   const [readUnavailable, setReadUnavailable] = useState(false);
-  const [conflict, setConflict] = useState(false);
+  const [conflict, setConflict] = useState<WelcomeAttempt | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -76,7 +82,8 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       if (controller.signal.aborted) return;
       const pending = permission === "superadmin" ? welcomeCommands.list().find((row) => row.actorId === adminId) : undefined;
       setRequiredLanguages(required);
-      setCurrent(value); setDraft(welcomeDraft(pending?.payload.texts ?? value.texts, required)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
+      const source = pending && !pending.editedTexts ? pending.payload.texts : value.texts;
+      setCurrent(value); setDraft(welcomeDraft(source, required, pending?.editedTexts)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(null);
       setRetry(pending ?? null);
       setReason(pending?.payload.reason ?? "");
     }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
@@ -98,19 +105,22 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
   const canConfirm = editable && valid && changed.length > 0 && reasonOk;
 
   async function save() {
-    if (permission !== "superadmin" || (!canConfirm && !retry) || !current || !textsForSave || saving || !adminId) return;
+    if (permission !== "superadmin" || (!canConfirm && !retry) || !current || !draft || !textsForSave || saving || !adminId) return;
     if (retry && Date.now() >= retry.expiresAt) { setError(EXPIRED); return; }
     const actor = actorStamp();
     let command = retry;
     if (!command) {
       const payload = { expectedVersion: current.version, texts: textsForSave, reason: reason.trim() };
+      const editedTexts: Partial<SupportWelcomeTexts> = {};
+      for (const key of changedLanguages(welcomeDraft(current.texts, requiredLanguages), draft)) editedTexts[key] = draft[key];
       command = {
         fingerprint: `support-welcome:${JSON.stringify(payload)}`,
         commandKey: crypto.randomUUID(),
         expiresAt: Date.now() + PENDING_MUTATION_TTL_MS,
         payload,
+        editedTexts,
       };
-      welcomeCommands.remember(command.fingerprint, command.commandKey, { actorId: adminId, payload });
+      welcomeCommands.remember(command.fingerprint, command.commandKey, { actorId: adminId, payload, editedTexts });
     }
     setSaving(true); setError(""); setSaved(false);
     try {
@@ -125,21 +135,21 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       setError([400, 401, 403, 422].includes(status) ? errorText(cause) : "");
       if (status === 409 && !isIndeterminateSupportError(cause)) {
         welcomeCommands.forget(command.fingerprint, command.commandKey);
-        setRetry(null); setConflict(true); setConfirm(false);
+        setRetry(null); setConflict(command); setConfirm(false);
         try { const value = await supportWelcomeMessageClient.read(); if (actor === actorStamp()) setLatest(value); } catch { /* Keep the draft; the conflict notice offers an explicit reload. */ }
       } else if (![400, 401, 403, 422].includes(status)) {
         setRetry(command);
-      } else { welcomeCommands.forget(command.fingerprint, command.commandKey); setRetry(null); }
+      } else {
+        welcomeCommands.forget(command.fingerprint, command.commandKey); setRetry(null);
+        if (!command.editedTexts) { setLatest(current); setConflict(command); setConfirm(false); }
+      }
     } finally { setSaving(false); }
   }
 
   // Keep the languages this operator edited; take every other language from the latest saved version.
   function reviewLatest() {
-    if (!latest || !current || !draft) return;
-    const edited = changedLanguages(welcomeDraft(current.texts, requiredLanguages), draft);
-    const next = welcomeDraft(latest.texts, requiredLanguages);
-    for (const key of edited) next[key] = draft[key];
-    setCurrent(latest); setDraft(next); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
+    if (!latest || !conflict) return;
+    setCurrent(latest); setDraft(welcomeDraft(latest.texts, requiredLanguages, conflict.editedTexts)); setLatest(null); setConflict(null); setConfirm(false); setReason(""); setError("");
   }
 
   async function refreshLatest() {
@@ -162,12 +172,12 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       } else if (result.status === "FAILED") {
         welcomeCommands.forget(retry.fingerprint, retry.commandKey);
         setRetry(null); setError("上次保存没有成功，输入已保留；请检查后重新提交。");
+        if (!retry.editedTexts && current) { setLatest(current); setConflict(retry); setConfirm(false); }
       } else setError(Date.now() >= retry.expiresAt ? "查不到上次保存的结果。请加载最新内容核对后重新提交。" : "上次保存仍在处理中，请稍后再查，或按原操作重试。");
     } catch { if (actor === actorStamp()) setError("暂时查不到上次保存的结果，输入已保留。"); }
     finally { setSaving(false); }
   }
 
-  // The original operation can no longer be replayed: drop it, load the latest saved copy and keep the operator's texts as the draft.
   async function reloadAfterExpiry() {
     if (!retry || saving) return;
     const actor = actorStamp();
@@ -176,12 +186,16 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       const value = await supportWelcomeMessageClient.read();
       if (actor !== actorStamp()) return;
       welcomeCommands.forget(retry.fingerprint, retry.commandKey);
-      setCurrent(value); setDraft(welcomeDraft(retry.payload.texts, requiredLanguages)); setRetry(null); setReason(""); setConfirm(false); setError("");
+      if (retry.editedTexts) {
+        setCurrent(value); setDraft(welcomeDraft(value.texts, requiredLanguages, retry.editedTexts));
+      } else { setLatest(value); setConflict(retry); }
+      setRetry(null); setReason(""); setConfirm(false); setError("");
     } catch (cause) { if (actor === actorStamp()) setError(errorText(cause)); }
     finally { setSaving(false); }
   }
 
   const retryExpired = retry !== null && Date.now() >= retry.expiresAt;
+  const conflictBase = conflict && current?.version === conflict.payload.expectedVersion && conflict.editedTexts ? current.texts : conflict?.payload.texts;
   return (
     <div className="m-admin-panel m5-welcome-message" aria-label="新用户欢迎语">
       <h2>新用户欢迎语</h2>
@@ -198,7 +212,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
             <span id={`m5-welcome-${key}-count`} className={`m5-welcome-count${problem ? " invalid" : ""}`}>{problem ? `${problem} · ` : ""}{length}/{MAX}</span>
           </label>;
         })}
-        {conflict && <div className="m-admin-error" role="alert">欢迎语已被其他管理员修改。{latest ? `最新版本为 ${latest.version}，你编辑时为版本 ${current.version}。` : "还没取到最新内容。"}你的输入已保留。{latest && <ul>{changedLanguages(current.texts, latest.texts).map((key) => <li key={key}>{LANGUAGES.find((item) => item.key === key)?.label}：已被改为「{latest.texts[key]}」</li>)}</ul>}{latest ? <button type="button" className="btn btn-sec btn-sm" onClick={reviewLatest}>按最新内容重新核对</button> : <button type="button" className="btn btn-sec btn-sm" onClick={() => void refreshLatest()}>加载最新内容</button>}</div>}
+        {conflict && <div className="m-admin-error" role="alert">{conflict.editedTexts ? "欢迎语已被其他管理员修改。" : "无法确定旧提交中哪些语言由你编辑。请逐项核对原提交与最新内容，重新填写要修改的语言。"}{latest ? `最新版本为 ${latest.version}，你编辑时为版本 ${conflict.payload.expectedVersion}。` : "还没取到最新内容。"}{conflict.editedTexts && "你的输入已保留。"}{latest && conflictBase && <ul>{changedLanguages(conflictBase, latest.texts).map((key) => <li key={key}>{LANGUAGES.find((item) => item.key === key)?.label}：{conflict.editedTexts ? "已被改为" : `原提交「${conflictBase[key]}」，最新内容`}「{latest.texts[key]}」</li>)}</ul>}{latest ? <button type="button" className="btn btn-sec btn-sm" onClick={reviewLatest}>按最新内容重新核对</button> : <button type="button" className="btn btn-sec btn-sm" onClick={() => void refreshLatest()}>加载最新内容</button>}</div>}
         <div className="m-admin-toolbar">
           <span className="m-admin-muted">当前版本 {current.version} · {current.updatedAt ? `最近修改 ${formatBusinessTime(current.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}${current.updatedBy ? ` · ${current.updatedBy}` : ""}` : "尚未修改过"}{current.reason ? ` · 理由：${current.reason}` : ""}{saved ? " · 已保存" : ""}</span>
           {permission === "superadmin" && <button type="button" className="btn btn-pri btn-sm" disabled={retry ? false : !editable || !valid || changed.length === 0} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button>}

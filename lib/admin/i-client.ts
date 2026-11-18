@@ -23,7 +23,7 @@ const uncertainCommandKeys = createPendingMutationStore({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
 });
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, verifyReceipt?: (data: T) => void): Promise<T> {
   const headers = new Headers(init?.headers);
   const isWrite = !!init?.method && init.method !== "GET";
   const commandFingerprint = isWrite
@@ -49,7 +49,8 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
-  if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
+  if (!res.ok || (payload.code !== undefined && payload.code >= 400)
+    || (verifyReceipt && typeof payload.code === "number" && payload.code !== 0)) {
     // 本域早就是目标口径(只在确定性拒绝时弃号),2026-08-06 改接共享谓词统一来源:
     // 判据只此一处,别处再改口径时不会落下这一面。
     if (isWrite && !outcomeStaysUnknown(res.status, payload.code)) {
@@ -60,8 +61,13 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       : payload.message;
     throw new Error(formatAdminApiError(message, `CONTENT_API_${res.status}`));
   }
+  const data = payload.data as T;
+  if (verifyReceipt) {
+    if (payload.code !== 0) throw new Error(formatAdminApiError(undefined, `CONTENT_API_${res.status}`));
+    verifyReceipt(data);
+  }
   if (isWrite) uncertainCommandKeys.forget(commandFingerprint);
-  return payload.data as T;
+  return data;
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
@@ -214,7 +220,11 @@ export type NovaTemplateView = {
 
 type LocalizedTitleBody = Pick<NovaTemplateView, "titleEn" | "bodyEn" | "titleZh" | "bodyZh" | "titleVi" | "bodyVi">;
 type NovaTemplateWrite = LocalizedTitleBody & Record<string, unknown>;
-type NotificationCampaignWrite = LocalizedTitleBody & { ctaHref: string; ctaLabel?: string } & Record<string, unknown>;
+type NotificationCampaignWrite = LocalizedTitleBody & {
+  ctaHref: string;
+  ctaLabel?: string;
+  translations?: NotificationCampaignTranslations;
+} & Record<string, unknown>;
 
 export type LearningCourseVersionView = {
   courseId: string;
@@ -322,6 +332,8 @@ export type NotificationCampaignStats = {
   weeklySwipe: string;
 };
 
+type NotificationCampaignTranslations = Partial<Record<string, { title: string; body: string; ctaLabel: string }>>;
+
 export type NotificationCampaignRow = {
   id: string;
   name: string;
@@ -338,6 +350,7 @@ export type NotificationCampaignRow = {
   bodyVi: string;
   ctaLabel: string;
   ctaHref: string;
+  translations?: NotificationCampaignTranslations;
   swipeTo: string;
   budget?: number;
   audienceTarget: NotificationAudienceTarget;
@@ -713,10 +726,16 @@ function requireNovaCopyReceipt(saved: NovaTemplateView, submitted: NovaTemplate
 }
 
 function requireCampaignCopyReceipt(saved: NotificationCampaignRow, submitted: NotificationCampaignWrite) {
+  const label = submitted.ctaLabel ?? "";
   if (!saved || saved.bodyEn !== `${submitted.titleEn}\n${submitted.bodyEn}`
     || saved.bodyZh !== `${submitted.titleZh}\n${submitted.bodyZh}`
     || saved.bodyVi !== `${submitted.titleVi}\n${submitted.bodyVi}`
-    || saved.ctaHref !== submitted.ctaHref || saved.ctaLabel !== (submitted.ctaLabel ?? "")) {
+    || saved.ctaHref !== submitted.ctaHref || saved.ctaLabel !== label
+    || (saved.translations?.en?.ctaLabel || saved.ctaLabel) !== label
+    || (submitted.translations && Object.entries(submitted.translations).some(([language, copy]) => {
+      const actual = saved.translations?.[language];
+      return copy && (!actual || actual.title !== copy.title || actual.body !== copy.body || actual.ctaLabel !== copy.ctaLabel);
+    }))) {
     throw new Error("NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED");
   }
 }
@@ -743,8 +762,8 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2NovaChannel: (key, body, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI2NovaChannelStatus: (key, enabled, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ enabled }, reason)) }).then(() => undefined),
   deleteI2NovaChannel: (key, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI2Template: (body, reason) => apiRequest<NovaTemplateView>("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then((saved) => requireNovaCopyReceipt(saved, body)),
-  updateI2Template: (channel, body, reason) => apiRequest<NovaTemplateView>(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then((saved) => requireNovaCopyReceipt(saved, body)),
+  createI2Template: (body, reason) => apiRequest<NovaTemplateView>("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }, (saved) => requireNovaCopyReceipt(saved, body)).then(() => undefined),
+  updateI2Template: (channel, body, reason) => apiRequest<NovaTemplateView>(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, (saved) => requireNovaCopyReceipt(saved, body)).then(() => undefined),
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   updateI2Distribution: (items, expectedItems, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items, expectedItems }, reason)) }).then(() => undefined),
@@ -758,8 +777,8 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   previewI2SocialEvent: (language) => apiRequest<NovaSocialEventSampleView | null>(`/nova/social-events/sample?language=${encodeURIComponent(language)}`),
   updateI2SocialEventStatus: (id, status, reason) => apiRequest(`/nova/social-events/${id}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   deleteI2SocialEvent: (id, reason) => apiRequest(`/nova/social-events/${id}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI3Campaign: (body, reason) => apiRequest<NotificationCampaignRow>("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then((saved) => requireCampaignCopyReceipt(saved, body)),
-  updateI3CampaignDraft: (campaignNo, body, expectedRevision, reason) => apiRequest<NotificationCampaignRow>(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason({ ...body, expectedRevision }, reason)) }).then((saved) => requireCampaignCopyReceipt(saved, body)),
+  createI3Campaign: (body, reason) => apiRequest<NotificationCampaignRow>("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }, (saved) => requireCampaignCopyReceipt(saved, body)).then(() => undefined),
+  updateI3CampaignDraft: (campaignNo, body, expectedRevision, reason) => apiRequest<NotificationCampaignRow>(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason({ ...body, expectedRevision }, reason)) }, (saved) => requireCampaignCopyReceipt(saved, body)).then(() => undefined),
   estimateI3Audience: (target) => apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) }),
   scheduleI3Campaign: (campaignNo, scheduledAt, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt, expectedRevision }, reason)) }).then(() => undefined),
   sendI3CampaignNow: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now", expectedRevision }, reason)) }).then(() => undefined),

@@ -88,7 +88,14 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
 }
 
 function validateI3(moduleId: IModuleId, value: Record<string, unknown>) {
-  records(moduleId, value.campaigns);
+  for (const campaign of records(moduleId, value.campaigns)) {
+    if (campaign.translations !== undefined) {
+      for (const translation of Object.values(record(moduleId, campaign.translations))) {
+        const copy = record(moduleId, translation);
+        if (typeof copy.title !== "string" || typeof copy.body !== "string" || typeof copy.ctaLabel !== "string") fail(moduleId);
+      }
+    }
+  }
   records(moduleId, value.capRules);
   records(moduleId, value.swipeRoutes);
   const audienceCatalog = record(moduleId, value.audienceCatalog);
