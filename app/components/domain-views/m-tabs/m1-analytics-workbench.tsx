@@ -581,7 +581,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     </div>
     <div className="sa-personal-first-sources" aria-label="期间首充金额来源">{(["deposits", "purchases"] as const).map(source => <div key={source}><span>{source === "deposits" ? "充值首充" : "付费购机首充"} / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.firstSources.find(row => row.currency === currency)?.[source]} label={source === "deposits" ? `充值首充金额 ${nexGridBrandText(currency)}` : `付费购机首充金额 ${nexGridBrandText(currency)}`} onClick={() => setPeriodDetail(source === "deposits" ? "FIRST_DEPOSITS" : "FIRST_PURCHASES")} /></div>)}</div>
   </section>} /></div>}
-    {!isPersonal && section === "pool" && <M1SupervisorPool permission={leadPermission} />}
+    {!isPersonal && section === "pool" && <M1SupervisorPool permission={leadPermission} toast={ctx.toast} />}
     {!isPersonal && section === "team" && <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} actions={<SupportSeatRolesButton permission={leadPermission} ctx={ctx} />} onChanged={() => { teamChanged.current = true; controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onViewCustomers={(groupId, category) => {
       managementCustomerGroup.current = groupId;
       managementReturnQuery.current = changeAnalyticsQuery(queryState, { groupId, view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", category, agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL" });
