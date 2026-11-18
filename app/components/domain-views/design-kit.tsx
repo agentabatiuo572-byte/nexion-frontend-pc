@@ -3939,7 +3939,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     setSubmitUnknown(false);
     try {
       if (retryApproval) await retryApproval();
-      else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
+      else await onConfirm(reason.trim(), submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
     } catch (error) {
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
       if (isPermissionDenied(error)) {
