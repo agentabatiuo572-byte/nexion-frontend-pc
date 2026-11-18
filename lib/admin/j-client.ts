@@ -766,6 +766,15 @@ export type AutoRuleRow = {
     available: boolean;
     unknownReason: "TAMPER_ALERT_THRESHOLD_INVALID" | null;
   };
+  manualDisableContract?: {
+    manualDisable: true;
+    autoDisable: false;
+    command: string;
+    permission: string;
+    requiredInputs: string[];
+    requiredHeaders: string[];
+    conditionalInputs: string[];
+  };
 };
 
 export type KillSwitchStats = {
@@ -1312,6 +1321,22 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     if (kind === "number" && !autoDisableCondition && !tamperAdvisory) {
       requiredNum(threshold.replaceAll(",", ""), `killSwitch.autoRules.${index}.thr`);
     }
+    let manualDisableContract: AutoRuleRow["manualDisableContract"];
+    if (row.manualDisable !== undefined) {
+      const field = `killSwitch.autoRules.${index}.manualDisable`;
+      if (id !== "regulatoryDirective" || row.manualDisable !== true || row.autoDisable !== false) {
+        contractError(field);
+      }
+      manualDisableContract = {
+        manualDisable: row.manualDisable,
+        autoDisable: row.autoDisable,
+        command: requiredText(row.manualDisableCommand, `${field}.command`),
+        permission: requiredText(row.manualDisablePermission, `${field}.permission`),
+        requiredInputs: requiredStringArray(row.manualDisableRequiredInputs, `${field}.requiredInputs`),
+        requiredHeaders: requiredStringArray(row.manualDisableRequiredHeaders, `${field}.requiredHeaders`),
+        conditionalInputs: requiredStringArray(row.manualDisableConditionalInputs, `${field}.conditionalInputs`),
+      };
+    }
     return {
       id,
       nm: requiredText(row.nm, `killSwitch.autoRules.${index}.nm`),
@@ -1328,6 +1353,7 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
       refTitle: str(row.refTitle),
       autoDisableCondition,
       tamperAdvisory,
+      manualDisableContract,
     };
   });
   return {
