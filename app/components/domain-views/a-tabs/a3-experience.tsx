@@ -327,7 +327,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       </div>
     </Panel>
 
-    <Panel title="界面语言" icon={Languages} tone="role-3" sub={`${languages ? `开启 ${onLanguages.length} 种，共 ${INTERFACE_LANGUAGES.length} 种` : languages === null ? "App 里可选读不出" : "开关只能查看"} · 发布必填 ${operating === null ? "读不出" : operatingNames(requiredNow)}`}
+    <Panel title="界面语言" icon={Languages} tone="role-3" sub={`${languages ? `开启 ${onLanguages.length} 种，共 ${INTERFACE_LANGUAGES.length} 种` : languages === null ? "App 里可选 读不出" : "开关只能查看"} · 发布必填 ${operating === null ? "读不出" : operatingNames(requiredNow)}`}
       explain={<>
         <p>关闭后，用户在语言列表里看不到这种语言；正在用它的用户改用账号或手机系统的语言，都没开启时用英文。英文始终开启。</p>
         <p>App 下次读到配置后才变；重新开启后，用户原来选的语言会恢复。</p>
@@ -339,10 +339,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
             { key: "interfaceLanguages", on: languages !== null, bad: unreadable.interface, name: "App 里可选", impact: "修好前 App 读不到平台配置，新用户注册和切换语言会失败。" },
             { key: "operatingLanguages", on: operating !== null, bad: unreadable.operating, name: "发布时必填", impact: "修好前后台保存活动、公告、推送等内容会失败。" },
           ] as const).filter((list) => list.bad).map((list) => list.on
-            ? <Notice key={list.key} tone="progress" title={`正在重新勾选「${list.name}」，保存后才生效`}
-              action={canWrite && <Button size="sm" disabled={fieldsLocked} onClick={() => reselect(list.key, false)}>撤销</Button>}>
-              英文必选，其余语言逐个勾选。
-            </Notice>
+            ? <Notice key={list.key} tone="progress" title={`正在重新勾选「${list.name}」：英文必选，其余逐个勾选，保存后才生效`}
+              action={canWrite && <Button size="sm" disabled={fieldsLocked} onClick={() => reselect(list.key, false)}>撤销</Button>} />
             : <Notice key={list.key} tone="warn" title={`保存的「${list.name}」读不出，需要重新勾选后保存`}
               action={canWrite && <Button size="sm" disabled={fieldsLocked} onClick={() => reselect(list.key, true)}>重新勾选</Button>}>
               {list.impact}{canWrite ? "" : "请有修改权限的同事重新勾选。"}
@@ -405,7 +403,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       {error && <Notice tone="danger" title={original ? undefined : "没有保存"}>{error}</Notice>}
       <Facts>
         {!onlyOperating && <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>}
-        {unreadable.interface && config.interfaceLanguages && <Fact k="App 里可选"><Change from="读不出" to={INTERFACE_LANGUAGES.filter((language) => config.interfaceLanguages?.includes(language.code)).map((language) => language.zhName).join("、")} /></Fact>}
+        {unreadable.interface && config.interfaceLanguages && <Fact k="App 里可选"><Change from="读不出" to={operatingNames(config.interfaceLanguages)} /></Fact>}
         {operatingChanged && baseline?.operatingLanguages !== undefined && config.operatingLanguages && <Fact k="发布必填"><Change from={baseline.operatingLanguages ? operatingNames(baseline.operatingLanguages) : "读不出"} to={operatingNames(config.operatingLanguages)} /></Fact>}
         <Fact k="版本">v{config.version} → v{config.version + 1}</Fact>
         {!onlyOperating && <Fact k="官方下载">{unavailable ? "暂不提供（保存后清空安装链接、版本和说明）" : "官方渠道"}</Fact>}
