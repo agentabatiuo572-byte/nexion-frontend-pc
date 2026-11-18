@@ -149,22 +149,21 @@ export async function submitPaymentRelease(owner: number, port: PaymentSecurityP
   } as const;
   releases.remember(fingerprint, commandKey, original);
   if (!releases.isDurablyStored(fingerprint, commandKey)) { releases.forget(fingerprint, commandKey); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
-  await sendPaymentRelease({ ...original, fingerprint, commandKey });
-  return queryPaymentRelease(owner, port);
+  return await sendPaymentRelease({ ...original, fingerprint, commandKey }) ?? queryPaymentRelease(owner, port);
 }
 export async function retryPaymentRelease(owner: number, port: PaymentSecurityPort) {
   const row = pendingPaymentRelease(owner, port.userId);
   if (!row || row.portKey !== port.key || !isCompletePaymentRelease(row) || row.expiresAt <= Date.now()) throw new Error("此原解除只能从原入口查询，不能重发。");
   if (!releases.isDurablyStored(row.fingerprint, row.commandKey)) throw new Error("浏览器无法保存原操作，不能重发，请先查询结果。");
-  await sendPaymentRelease(row);
-  return queryPaymentRelease(owner, port);
+  return await sendPaymentRelease(row) ?? queryPaymentRelease(owner, port);
 }
 async function sendPaymentRelease(row: Omit<PendingPaymentRelease, "createdAt" | "expiresAt"> & PaymentReleaseOriginal) {
   try { await request(row.path, {}, row.commandKey, row.body); }
   catch (failure) {
     const rejectionCode = explicitRejectionCode(failure);
-    if (rejectionCode) releases.remember(row.fingerprint, row.commandKey, { ...row, rejectionCode, rejection: formatAdminApiError(rejectionCode, "原解除已被明确拒绝") });
-    throw failure;
+    if (!rejectionCode) throw failure;
+    releases.remember(row.fingerprint, row.commandKey, { ...row, rejectionCode, rejection: formatAdminApiError(rejectionCode, "原解除已被明确拒绝") });
+    return { status: "EXPLICIT_REJECTION", commandKey: row.commandKey } as const;
   }
 }
 export function releaseRejectedPaymentRelease(owner: number, port: PaymentSecurityPort, commandKey: string) {
@@ -179,7 +178,7 @@ export async function queryPaymentRelease(owner: number, port: PaymentSecurityPo
   if (row.portKey !== port.key) throw new Error("该用户在其他入口有结果未知的操作，请回原入口查询，期间不能重复解除。");
   const receipt = parsePaymentReleaseReceipt(await port.receipt(row.commandKey), row);
   if (receipt.status === "REJECTED") {
-    releases.remember(row.fingerprint, row.commandKey, { ...row, rejection: "本次解除未执行，请核对最新状态", currentVersion: receipt.record?.version ?? null });
+    releases.remember(row.fingerprint, row.commandKey, { ...row, rejection: "请核对最新状态。", currentVersion: receipt.record?.version ?? null });
   } else if (receipt.status === "APPLIED") {
     await port.detail(row.recordId);
     releases.forget(row.fingerprint, row.commandKey);
