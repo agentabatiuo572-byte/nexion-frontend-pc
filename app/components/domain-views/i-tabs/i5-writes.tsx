@@ -401,10 +401,8 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   const queryContent = async (record: I5Pending) => {
     setRecovering(record.commandKey);
     try {
-      if (record.readback && record.op.kind === "content") {
-        const call = record.op.call;
-        const body = call.fn === "createI5DisclosureVersion" ? call.args[1] : call.fn === "updateI5DisclosureVersion" ? call.args[2] : undefined;
-        await checkDisclosureDraftReadback(record.readback, body);
+      if (record.readback && "deleted" in record.readback) {
+        await checkDisclosureDraftReadback(record.readback);
         pendingWrites.forget(record.fingerprint, record.commandKey);
         sync();
         await onSettled(record);
@@ -421,7 +419,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       // 查到了但还没了结（仍未知、没有查到、记为失败等）：行上的标签和句子已按查到的换掉；这里换掉上一次「查询没有成功」的话。
       note(record, KEPT_NOTE);
       const expired = record.expiresAt <= Date.now();
-      const shown = fundRecoveryStatus({ outcome: { receipt }, expired, canRetry: !expired, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
+      const shown = fundRecoveryStatus({ outcome: { receipt }, expired, canRetry: !expired && !record.readback, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
       toast(`${shown.label}：${shown.line}`, "warn");
     } catch (cause) {
       setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
