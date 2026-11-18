@@ -44,9 +44,9 @@ export interface PlatformExperienceConfig {
   appDownload: ExperienceDownload;
   homeNewcomerTasksEnabled: boolean;
   homeWeeklyPromoEnabled: boolean;
-  /** Absent until the system supports switching interface languages. */
-  interfaceLanguages?: InterfaceLanguageCode[];
-  operatingLanguages?: OperatingLanguageCode[];
+  /** Omitted on older systems. Null means the stored list is invalid and must be selected again. */
+  interfaceLanguages?: InterfaceLanguageCode[] | null;
+  operatingLanguages?: OperatingLanguageCode[] | null;
   ready: boolean;
   sources: string[];
   updatedAt?: string;
@@ -90,10 +90,10 @@ function optionalChannelText(value: unknown): string | null | undefined {
   return value;
 }
 
-function strictInterfaceLanguages(value: unknown): InterfaceLanguageCode[] {
+function strictInterfaceLanguages(value: unknown, errorCode = "PLATFORM_EXPERIENCE_RESPONSE_INVALID"): InterfaceLanguageCode[] {
   const known: readonly string[] = INTERFACE_LANGUAGES.map((language) => language.code);
   if (!Array.isArray(value) || new Set(value).size !== value.length || value.some((code) => !known.includes(code))
-    || INTERFACE_LANGUAGES.some((language) => language.base && !value.includes(language.code))) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+    || INTERFACE_LANGUAGES.some((language) => language.base && !value.includes(language.code))) throw new Error(errorCode);
   return INTERFACE_LANGUAGES.map((language) => language.code).filter((code) => value.includes(code));
 }
 
@@ -108,11 +108,11 @@ function strictOperatingLanguages(value: unknown, errorCode = "PLATFORM_EXPERIEN
 }
 
 export function changedOperatingLanguages(
-  value: OperatingLanguageCode[] | undefined,
-  baseline: readonly OperatingLanguageCode[] | undefined,
+  value: PlatformExperienceConfig["operatingLanguages"],
+  baseline: readonly OperatingLanguageCode[] | null | undefined,
 ): OperatingLanguageCode[] | undefined {
-  if (!value || !baseline) return undefined;
-  return value.length === baseline.length && baseline.every((code) => value.includes(code)) ? undefined : value;
+  if (!value || baseline === undefined) return undefined;
+  return baseline && value.length === baseline.length && baseline.every((code) => value.includes(code)) ? undefined : value;
 }
 
 class PlatformExperienceRequestError extends Error {
@@ -185,8 +185,8 @@ function normalize(raw: unknown): PlatformExperienceConfig {
     },
     homeNewcomerTasksEnabled: root.homeNewcomerTasksEnabled,
     homeWeeklyPromoEnabled: root.homeWeeklyPromoEnabled,
-    interfaceLanguages: root.interfaceLanguages === undefined ? undefined : strictInterfaceLanguages(root.interfaceLanguages),
-    operatingLanguages: root.operatingLanguages === undefined ? undefined : strictOperatingLanguages(root.operatingLanguages),
+    interfaceLanguages: root.interfaceLanguages == null ? root.interfaceLanguages : strictInterfaceLanguages(root.interfaceLanguages),
+    operatingLanguages: root.operatingLanguages == null ? root.operatingLanguages : strictOperatingLanguages(root.operatingLanguages),
     ready: Boolean(root.ready), sources: Array.isArray(root.sources) ? root.sources.map(String) : [], updatedAt: typeof root.updatedAt === "string" ? root.updatedAt : undefined,
   };
 }
@@ -221,10 +221,14 @@ export function platformExperienceBody(
   } else if (config.appDownload.source !== "unavailable") {
     throw new Error("PLATFORM_EXPERIENCE_SOURCE_INVALID");
   }
+  if (config.interfaceLanguages === null) throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_INVALID");
+  if (config.operatingLanguages === null && operatingLanguages === undefined) throw new Error("PLATFORM_OPERATING_LANGUAGES_INVALID");
   return {
     expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels,
     appDownload: config.appDownload, reason: reason.trim(), operator,
-    ...(config.interfaceLanguages ? { interfaceLanguages: config.interfaceLanguages } : {}),
+    ...(config.interfaceLanguages === undefined ? {} : {
+      interfaceLanguages: strictInterfaceLanguages(config.interfaceLanguages, "PLATFORM_EXPERIENCE_LANGUAGES_INVALID"),
+    }),
     ...(operatingLanguages === undefined ? {} : {
       operatingLanguages: strictOperatingLanguages(operatingLanguages, "PLATFORM_OPERATING_LANGUAGES_INVALID"),
     }),
@@ -246,7 +250,7 @@ export async function updatePlatformExperienceConfig(
     });
     commandAttempts.forget(slot);
     const saved = normalize(response);
-    if (config.interfaceLanguages && saved.interfaceLanguages?.join() !== config.interfaceLanguages.join()) {
+    if (body.interfaceLanguages && saved.interfaceLanguages?.join() !== body.interfaceLanguages.join()) {
       throw new Error("PLATFORM_EXPERIENCE_LANGUAGES_NOT_SAVED");
     }
     if (body.operatingLanguages && saved.operatingLanguages?.join() !== body.operatingLanguages.join()) {

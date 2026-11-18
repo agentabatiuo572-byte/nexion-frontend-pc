@@ -112,9 +112,11 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         config: conflictDraft.current && current ? {
           ...current.config,
           version: next.version,
-          operatingLanguages: next.operatingLanguages && (
-            changedOperatingLanguages(current.config.operatingLanguages, current.baseline.operatingLanguages) ?? next.operatingLanguages
-          ),
+          interfaceLanguages: next.interfaceLanguages === null
+            && current.config.interfaceLanguages?.join() === current.baseline.interfaceLanguages?.join()
+            ? null : current.config.interfaceLanguages ?? next.interfaceLanguages,
+          operatingLanguages: next.operatingLanguages === undefined ? undefined
+            : changedOperatingLanguages(current.config.operatingLanguages, current.baseline.operatingLanguages) ?? next.operatingLanguages,
         } : next,
         baseline: next,
       }));

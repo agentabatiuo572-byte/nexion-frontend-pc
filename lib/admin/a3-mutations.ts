@@ -82,8 +82,8 @@ function validOriginal(value: unknown): value is A3Original {
           && ["textTemplate", "urlTemplate", "androidPackage", "iosScheme"].every(key => channel[key] == null || typeof channel[key] === "string"))
         && object(item.appDownload) && ["officialUrl", "iosUrl", "androidUrl", "apkUrl", "version", "source"].every(key => typeof (item.appDownload as Record<string, unknown>)[key] === "string")
         && object(item.appDownload.releaseNotes) && typeof item.appDownload.releaseNotes.zh === "string" && typeof item.appDownload.releaseNotes.en === "string"
-        && (item.interfaceLanguages === undefined || Array.isArray(item.interfaceLanguages) && item.interfaceLanguages.every(code => typeof code === "string"))
-        && (item.operatingLanguages === undefined || isOperatingLanguageList(item.operatingLanguages));
+        && (item.interfaceLanguages == null || Array.isArray(item.interfaceLanguages) && item.interfaceLanguages.every(code => typeof code === "string"))
+        && (item.operatingLanguages == null || isOperatingLanguageList(item.operatingLanguages));
       return form(value.config) && form(value.baseline);
     }
     case "docs": return !!parseDeveloperDocs(value.document) && !!parseDeveloperDocs(value.baseline) && ["DRAFT", "PUBLISHED"].includes(String(value.mode));
@@ -222,9 +222,9 @@ export function useA3Commands() {
         case "schedule": case "cancel": parseBusinessCalendar(data); break;
         case "experience": {
           const saved = parsePlatformExperienceConfig(data);
-          const { operatingLanguages } = JSON.parse(record.body) as { operatingLanguages?: unknown };
+          const { interfaceLanguages, operatingLanguages } = JSON.parse(record.body) as { interfaceLanguages?: unknown; operatingLanguages?: unknown };
           if (saved.version !== record.original.config.version + 1
-            || record.original.config.interfaceLanguages && saved.interfaceLanguages?.join() !== record.original.config.interfaceLanguages.join()
+            || interfaceLanguages !== undefined && JSON.stringify(saved.interfaceLanguages) !== JSON.stringify(interfaceLanguages)
             || operatingLanguages !== undefined && JSON.stringify(saved.operatingLanguages) !== JSON.stringify(operatingLanguages)) {
             throw new OutcomeUnknownError("A3_MUTATION_RESPONSE_UNREADABLE");
           }

@@ -37,7 +37,7 @@ export type J3ConfigBody = {
   operator: string; reason: string;
 };
 export type J3PendingCommand = SlotAttemptRecord & {
-  tamper: { path: "/tamper/alert-config"; method: "PUT"; body: string; input: J3ConfigBody; context: TamperOverview["alertConfig"]; commandOrigin?: FundCommandOrigin };
+  tamper: { path: "/tamper/alert-config"; method: "PUT"; body: string; input: J3ConfigBody; context: TamperAlertConfig; commandOrigin?: FundCommandOrigin };
 };
 export type J4CommandContext =
   | { kind: "create"; fields: Record<string, string> }
@@ -129,7 +129,7 @@ const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
           || typeof input.reason !== "string" || input.reason.trim().length < 8 || input.reason.length > 200
           || typeof input.operator !== "string") return false;
         const alertConfig = normalizeTamperAlertConfig(context);
-        if (alertConfig.threshold !== input.expectedThreshold || alertConfig.feedK4 !== input.expectedFeedK4) return false;
+        if (alertConfig.threshold === null || alertConfig.threshold !== input.expectedThreshold || alertConfig.feedK4 !== input.expectedFeedK4) return false;
         const origin = record.tamper.commandOrigin;
         if (origin !== undefined && (origin.originalMethod !== "PUT" || origin.originalPath !== "/api/admin/emergency/tamper/alert-config"
           || origin.readAuthority !== "emergency_j3_read" || typeof origin.originalAdminId !== "string" || !/^[1-9]\d*$/.test(origin.originalAdminId))) return false;
@@ -382,7 +382,7 @@ export function isEmergencyOutcomeUncertain(error: unknown) {
     || (error instanceof Error && error.name === "EmergencyOutcomeUncertainError");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext, tamperContext?: TamperOverview["alertConfig"], sopContext?: J4CommandContext): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext, tamperContext?: TamperAlertConfig, sopContext?: J4CommandContext): Promise<T> {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
@@ -937,10 +937,19 @@ export type TamperAccount = {
 export type TamperAccountPage = {
   page: number;
   pageSize: number;
-  total: number;
-  pages: number;
+  total: number | null;
+  pages: number | null;
   hasPrev: boolean;
   hasNext: boolean;
+};
+export type TamperAlertConfig = {
+  threshold: number;
+  label: string;
+  feedK4: boolean;
+  effectiveThreshold: number;
+  effectiveLabel: string;
+  sevenDayAlertAccounts: number;
+  sevenDayPreviewByThreshold: Record<string, number>;
 };
 export type TamperOverview = {
   window: "24h" | "7d" | "30d";
@@ -958,13 +967,15 @@ export type TamperOverview = {
     activePaths: string[];
     missingPaths: string[];
   };
-  alertConfig: {
-    threshold: number;
-    label: string;
+  alertConfig: TamperAlertConfig | {
+    available: false;
+    unknownReason: "TAMPER_ALERT_THRESHOLD_INVALID";
+    threshold: null;
+    label: null;
     feedK4: boolean;
-    effectiveThreshold: number;
-    effectiveLabel: string;
-    sevenDayAlertAccounts: number;
+    effectiveThreshold: null;
+    effectiveLabel: null;
+    sevenDayAlertAccounts: null;
     sevenDayPreviewByThreshold: Record<string, number>;
   };
   sources: string[];
@@ -1129,7 +1140,7 @@ export type JEmergencyActions = {
   updateJ2EdgeJudge: (source: string, expectedSource: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
   emergencyBlockJ2: (countries: string[], triggerBasis: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
   loadJ3TamperPage: (window: "24h" | "7d" | "30d", page: number, pageSize: number) => Promise<TamperOverview>;
-  updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string, context?: TamperOverview["alertConfig"]) => Promise<void>;
+  updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string, context?: TamperAlertConfig) => Promise<void>;
   createJ3Report: (window: "24h" | "7d" | "30d", reason: string, commandKey?: string) => Promise<TamperReport>;
   createJ4Playbook: (body: J4PlaybookCreateInput, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
   updateJ4Playbook: (code: string, body: J4PlaybookUpdateInput, reason: string, commandKey?: string, context?: J4CommandContext) => Promise<void>;
@@ -1493,8 +1504,10 @@ function normalizeTrendWindow(value: unknown, field: string): TamperTrendWindow 
 function normalizeTamper(raw: unknown): TamperOverview {
   const data = rec(raw);
   const trend = rec(data.trend);
-  const alertConfig = rec(data.alertConfig);
+  const alertConfig = normalizeTamperAlertConfig(data.alertConfig);
   const accountPage = rec(data.accountPage);
+  const thresholdUnavailable = alertConfig.threshold === null;
+  if (thresholdUnavailable && (accountPage.total !== null || accountPage.pages !== null)) contractError("accountPage.thresholdUnavailable");
   const coverage = rec(data.coverage);
   const window = requiredText(data.window, "tamper.window");
   if (window !== "24h" && window !== "7d" && window !== "30d") contractError("tamper.window");
@@ -1549,8 +1562,8 @@ function normalizeTamper(raw: unknown): TamperOverview {
     accountPage: {
       page: requiredNum(accountPage.page, "accountPage.page"),
       pageSize: requiredNum(accountPage.pageSize, "accountPage.pageSize"),
-      total: requiredNum(accountPage.total, "accountPage.total"),
-      pages: requiredNum(accountPage.pages, "accountPage.pages"),
+      total: thresholdUnavailable ? null : requiredNum(accountPage.total, "accountPage.total"),
+      pages: thresholdUnavailable ? null : requiredNum(accountPage.pages, "accountPage.pages"),
       hasPrev: requiredBool(accountPage.hasPrev, "accountPage.hasPrev"),
       hasNext: requiredBool(accountPage.hasNext, "accountPage.hasNext"),
     },
@@ -1570,16 +1583,14 @@ function normalizeTamper(raw: unknown): TamperOverview {
       }
       return { status, registeredCount, activeCount, registeredPaths, activePaths, missingPaths };
     })(),
-    alertConfig: normalizeTamperAlertConfig(alertConfig),
+    alertConfig,
     sources: strArray(data.sources),
   };
 }
 
 function normalizeTamperAlertConfig(raw: unknown): TamperOverview["alertConfig"] {
   const alertConfig = rec(raw);
-  const threshold = requiredNum(alertConfig.threshold, "alertConfig.threshold");
-  const effectiveThreshold = requiredNum(alertConfig.effectiveThreshold, "alertConfig.effectiveThreshold");
-  const sevenDayAlertAccounts = requiredNum(alertConfig.sevenDayAlertAccounts, "alertConfig.sevenDayAlertAccounts");
+  const feedK4 = requiredBool(alertConfig.feedK4, "alertConfig.feedK4");
   const rawPreview = rec(alertConfig.sevenDayPreviewByThreshold);
   const previewEntries = Object.entries(rawPreview);
   const expectedKeys = Array.from({ length: 100 }, (_, index) => String(index + 1));
@@ -1592,6 +1603,19 @@ function normalizeTamperAlertConfig(raw: unknown): TamperOverview["alertConfig"]
     if (!Number.isInteger(count) || count < 0) contractError(`alertConfig.sevenDayPreviewByThreshold.${key}`);
     return [key, count];
   }));
+  if (alertConfig.available === false) {
+    if (alertConfig.unknownReason !== "TAMPER_ALERT_THRESHOLD_INVALID"
+      || [alertConfig.threshold, alertConfig.label, alertConfig.effectiveThreshold, alertConfig.effectiveLabel, alertConfig.sevenDayAlertAccounts]
+        .some(value => value !== null)) contractError("alertConfig.thresholdUnavailable");
+    return {
+      available: false, unknownReason: alertConfig.unknownReason,
+      threshold: null, label: null, effectiveThreshold: null, effectiveLabel: null, sevenDayAlertAccounts: null,
+      feedK4, sevenDayPreviewByThreshold,
+    };
+  }
+  const threshold = requiredNum(alertConfig.threshold, "alertConfig.threshold");
+  const effectiveThreshold = requiredNum(alertConfig.effectiveThreshold, "alertConfig.effectiveThreshold");
+  const sevenDayAlertAccounts = requiredNum(alertConfig.sevenDayAlertAccounts, "alertConfig.sevenDayAlertAccounts");
   if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100
     || !Number.isInteger(effectiveThreshold) || effectiveThreshold < threshold
     || !Number.isInteger(sevenDayAlertAccounts) || sevenDayAlertAccounts < 0
@@ -1601,7 +1625,7 @@ function normalizeTamperAlertConfig(raw: unknown): TamperOverview["alertConfig"]
   return {
     threshold,
     label: requiredText(alertConfig.label, "alertConfig.label"),
-    feedK4: requiredBool(alertConfig.feedK4, "alertConfig.feedK4"),
+    feedK4,
     effectiveThreshold,
     effectiveLabel: requiredText(alertConfig.effectiveLabel, "alertConfig.effectiveLabel"),
     sevenDayAlertAccounts,
