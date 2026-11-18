@@ -143,6 +143,12 @@ function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
     for (const option of records(moduleId, value[key])) if (typeof option.value !== "string" || typeof option.label !== "string") fail(moduleId);
   }
   for (const key of ["templateStatuses", "sources"]) if (!array(moduleId, value[key]).every((item) => typeof item === "string")) fail(moduleId);
+  if (value.channelRuntimeSources !== undefined) {
+    for (const source of records(moduleId, value.channelRuntimeSources)) {
+      if (typeof source.channel !== "string" || typeof source.targeted !== "boolean"
+        || !array(moduleId, source.eventNames).every((name) => typeof name === "string")) fail(moduleId);
+    }
+  }
 }
 
 function validateNovaEvent(event: Record<string, unknown>) {

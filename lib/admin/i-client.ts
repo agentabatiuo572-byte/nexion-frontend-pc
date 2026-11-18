@@ -1300,6 +1300,7 @@ export type NovaOverview = {
   templateCtaOptions: NovaOptionView[];
   runtimeSourceOptions: NovaOptionView[];
   sources: string[];
+  channelRuntimeSources?: { channel: string; eventNames: string[]; targeted: boolean }[];
 };
 
 export type NotificationCampaignStats = {
