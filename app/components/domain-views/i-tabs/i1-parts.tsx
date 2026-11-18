@@ -196,7 +196,9 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
   const st = experimentState(state);
   const started = state !== "scheduled";
   const hasData = started && impressions !== null && impressions > 0;
-  const maxCvr = Math.max(0, ...variants.map((variant) => variant.cvr));
+  // 有每组人数时按这一组自己判断：0 人看到的组没有转化率，不写 0%；旧数据没有每组人数，按整个实验判断。
+  const shown = (variant: VariantView) => started && (variant.impressions === undefined ? hasData : variant.impressions > 0);
+  const maxCvr = Math.max(0, ...variants.filter(shown).map((variant) => variant.cvr));
   const axis = niceMax(maxCvr);
   const ticks = [{ value: 0, text: "0" }, { value: axis, text: `${axis}%` }];
   return (
@@ -205,6 +207,7 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
       <div className="i1-variants" data-count={Math.min(variants.length, 4)}>
         {variants.map((variant) => {
           const lead = leader === variant.name;
+          const seen = shown(variant);
           return (
             <section key={`${variant.name}-${variant.version}`} className="i1-variant" data-lead={lead ? "" : undefined} aria-label={`${variant.name} 组`}>
               <header className="i1-variant-head">
@@ -220,14 +223,14 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
                 <RatioBar quiet label="分流" value={variant.split} total={100} valueText={`${variant.split}%`} tone="role-3" />
                 <div>
                   <dt>转化率</dt>
-                  <dd className="i1-cvr" data-empty={hasData ? undefined : ""}>{hasData ? `${variant.cvr.toFixed(2)}%` : "—"}</dd>
+                  <dd className="i1-cvr" data-empty={seen ? undefined : ""}>{seen ? `${variant.cvr.toFixed(2)}%` : "—"}</dd>
                 </div>
-                {hasData
+                {seen
                   ? <ScaleBar quiet label="转化率" valueText={`${variant.cvr.toFixed(2)}%，刻度 0 到 ${axis}%`} max={axis} value={variant.cvr} fill ticks={ticks} tone="role-3" />
-                  : <span className="i1-weak">{started ? "还没有人看到" : "还没开始"}</span>}
+                  : <span className="i1-weak">{!started ? "还没开始" : variant.impressions === 0 && hasData ? "这组还没有人看到" : "还没有人看到"}</span>}
                 <div>
                   <dt>看到 / 转化</dt>
-                  <dd data-empty={variant.impressions == null ? "" : undefined}>{variant.impressions == null ? "—" : `${variant.impressions.toLocaleString()} / ${variant.conversions == null ? "—" : variant.conversions.toLocaleString()} 人`}</dd>
+                  <dd data-empty={variant.impressions == null ? "" : undefined} title={variant.impressions == null ? "这份数据没有每组人数" : undefined}>{variant.impressions == null ? "—" : `${variant.impressions.toLocaleString()} / ${variant.conversions == null ? "—" : variant.conversions.toLocaleString()} 人`}</dd>
                 </div>
               </dl>
             </section>

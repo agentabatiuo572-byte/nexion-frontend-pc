@@ -388,9 +388,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   };
   const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
   const highestVariantCvr = data?.stats.highestVariantCvrPct;
+  // 每组都有人数、却没有一组有人看到时，后端的最高值是 0 分母算出的 0%，页面写「—」。
+  const nobodySeen = (data?.experiments ?? []).every((row) => row.variants.every((variant) => variant.impressions === 0));
   const highestVariantCvrText = highestVariantCvr === undefined
     ? String(I1_STATS.topLift).replace(/^\+/, "")
-    : highestVariantCvr === null ? "—" : `${highestVariantCvr}%`;
+    : highestVariantCvr === null || nobodySeen ? "—" : `${highestVariantCvr}%`;
+  const exactImpressions = data?.stats.cumulativeExperimentImpressions;
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
     key: row.key,
     desc: row.desc,
@@ -1350,7 +1353,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     <div {...tabIds.panel("experiments")} className="rd-tab-pane i1-pane">
       <FilterBar scope={<Segments label="实验状态" value={expFlt} onChange={setExpFlt} items={EXP_FLT.map(([value, label]) => ({ value, label, count: expCount(value) }))} />}
         sort={<>
-          <span className="rd-filter-result">最高转化率 {highestVariantCvrText}<Explain label="最高转化率怎么算" content="所有实验里单独一组的最高转化率，不是相对原版的提升。" /></span>
+          <span className="rd-filter-result">最高转化率 {highestVariantCvrText}<Explain label="最高转化率怎么算" content={highestVariantCvrText === "—" ? "还没有哪一组有人看到，没有转化率可比。算的是所有实验里单独一组的最高转化率。" : "所有实验里单独一组的最高转化率，不是相对原版的提升。"} /></span>
           {canManageExperiments && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason ?? (EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : undefined)} onClick={createExperiment}>创建实验</Button>}
         </>} />
       {filteredExps.length === 0 && <BlockState state="empty" title={EXPS.length === 0 ? "还没有实验" : "这个状态下没有实验"} />}
@@ -1631,7 +1634,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         <Stat icon={MapPin} tone="role-2" label="文案位置" value={String(COPY_POSITION_ROWS.length)} unit="个" sub={`启用 ${activePositions}`} />
         <Stat icon={BookOpen} tone="role-2" label="文案" value={String(I1_STATS.managedCopies)} unit="条" sub={`已发布 ${publishedCount}`} explain="所有没删除的文案，不是位置数。" />
         <Stat icon={FlaskConical} tone="role-3" label="进行中实验" value={String(I1_STATS.runningExps)} unit="个" sub={scheduled.length ? `待启动 ${scheduled.length}` : undefined} />
-        <Stat icon={Eye} tone="role-3" label="累计看到" value={String(I1_STATS.weeklyExposures)} unit="人" explain="所有实验累计看到的人数之和，不限本周；这是约数。" />
+        {exactImpressions === undefined
+          ? <Stat icon={Eye} tone="role-3" label="累计看到" value={String(I1_STATS.weeklyExposures)} unit="人" explain="所有实验累计看到的人数之和，不限本周；这是约数。" />
+          : <Stat icon={Eye} tone="role-3" label="累计看到" value={exactImpressions.toLocaleString()} unit="人次" sub="各实验相加"
+            explain="各实验看到的人数相加，同一人参加几个实验就算几次。看到是用户被分进某一组、并记下已给他展示，不是点击或打开次数。" />}
       </StatBand>
       <PageTabs ids={tabIds} label="页面文案对比测试内容" value={tab} onChange={setTab} items={[
         { value: "positions", label: "文案位置" },
