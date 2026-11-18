@@ -2846,7 +2846,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRUST_SECTION_DRAFT_FIELDS_REQUIRED: "草稿的版本、说明、结构或内容不完整，请检查后再保存。",
   TRUST_SECTION_DRAFT_FIELDS_INVALID: "草稿说明或结构含不支持的内容，请使用安全的纯文本。",
   TRUST_SECTION_STRUCTURED_FIELDS_INVALID: "内容项的标识、名称或内容无效，或标识重复，请核对版块结构。",
-  TRUST_SECTION_FIELD_VALUE_TOO_LONG: "链接以外的每项内容最多 500 字，请缩短后重试。",
+  TRUST_SECTION_FIELD_VALUE_TOO_LONG: "每项内容最多 500 字，链接也算，请缩短后重试。",
   TRUST_SECTION_LINK_INVALID: "链接不符合安全规则，请使用有效的 HTTPS 地址或受支持的 App 内部路径。",
   TRUST_SECTION_FIELD_SCHEMA_UNAVAILABLE: "当前发布版缺少有效的版块结构，暂时不能保存草稿，请联系管理员核对。",
   TRUST_SECTION_FIELD_SCHEMA_MISMATCH: "草稿的内容项和当前发布版的结构不一致，请保留已有译文并核对全部内容项。",
@@ -3856,21 +3856,27 @@ function eventLocalizedMissingMessage(code: string, data: unknown): string | und
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
   const fieldLabels = { name: "名称", description: "说明", rewardName: "奖项名" };
-  const byLanguage = new Map<string, Set<string>>();
-  for (const item of [...missing, ...incomplete]) {
-    const key = typeof item === "string" ? item
-      : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
-        ? `localized.${item.locale}.${item.field}` : "";
-    const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
-    if (!match) continue;
-    const language = languageLabels[match[1] as keyof typeof languageLabels];
-    const fields = byLanguage.get(language) ?? new Set<string>();
-    fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
-    byLanguage.set(language, fields);
-  }
-  if (!byLanguage.size) return;
-  const labels = [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`);
-  return `还缺${labels.join("、")}。到「既有活动」页签，点这个活动卡片底部的「翻译没填」补齐。`;
+  const byLanguage = (items: unknown[]) => {
+    const grouped = new Map<string, Set<string>>();
+    for (const item of items) {
+      const key = typeof item === "string" ? item
+        : item && typeof item === "object" && "locale" in item && "field" in item && typeof item.locale === "string" && typeof item.field === "string"
+          ? `localized.${item.locale}.${item.field}` : "";
+      const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
+      if (!match) continue;
+      const language = languageLabels[match[1] as keyof typeof languageLabels];
+      const fields = grouped.get(language) ?? new Set<string>();
+      fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
+      grouped.set(language, fields);
+    }
+    return [...grouped];
+  };
+  // 必填语言没填（missing）必须补；选填语言只填了一部分（incomplete）要么填齐、要么全部留空。两类分开说。
+  const must = byLanguage(missing).map(([language, fields]) => `${language}${[...fields].join("、")}`);
+  const half = byLanguage(incomplete).map(([language, fields]) => `${language}只填了一半（缺${[...fields].join("、")}）`);
+  if (!must.length && !half.length) return;
+  const parts = [must.length ? `还缺${must.join("、")}` : "", half.length ? `${half.join("；")}，要么填齐、要么全空` : ""];
+  return `${parts.filter(Boolean).join("；")}。到「既有活动」卡片底部逐格补。`;
 }
 
 export function formatAdminApiError(
