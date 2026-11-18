@@ -8,7 +8,7 @@ import { PromotionApiError, promotionRead, promotionVersions } from '@/lib/admin
 import { PromotionRecheck } from './h4-promotion-conflict';
 import { promotionDraftChanges } from '@/lib/admin/promotion-conflict';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
-import { limitText } from '@/lib/admin/promotion-form';
+import { limitText, promotionDraftForRequest } from '@/lib/admin/promotion-form';
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from '@/lib/admin/business-time';
 import { PromotionBannerPreview } from './h4-promotion-banner';
 import { Button, Card, ConfirmCommand, Dialog, Field, Loading, Notice, ReadError, Stats, Summary, Table, Tag, amountText, formatTime, labelState, rewardText, promotionAssetText, text, zoneLabel } from './h4-promotion-ui';
@@ -264,7 +264,7 @@ function SimulationDialog({ activity, version, catalog, can, onClose, onResult }
     const [items, setItems] = useState<Item[]>([]), [sample, setSample] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
     const failedRead = useRef<{target: string; retry: () => Promise<void>} | null>(null);
     const run = async () => { setBusy(true); setError(null); try {
-        onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: version.draft, items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
+        onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: promotionDraftForRequest(version.draft), items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
     }
     catch (e) {
         failedRead.current = {target: '只读购买试算', retry: run};
