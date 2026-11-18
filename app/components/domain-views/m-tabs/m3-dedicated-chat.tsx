@@ -953,8 +953,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [recoveryScope, qualificationUnknown]);
   useEffect(() => {
     if (!privateContentReady) return;
-    if (!activeEntry?.dock && pending?.kind === "TEXT" && selected?.id === pending.conversationId) setDrafts(old => ({ ...old, [pending.conversationId]: pending.body }));
-    if (firstPending && !selected) setDrafts(old => ({ ...old, [`first:${firstPending.customerId}`]: firstPending.body }));
+    if (!activeEntry?.dock && pending?.kind === "TEXT" && selected?.id === pending.conversationId) setDrafts(old => old[pending.conversationId] ? old : { ...old, [pending.conversationId]: pending.body });
+    if (firstPending && !selected) setDrafts(old => old[`first:${firstPending.customerId}`] ? old : { ...old, [`first:${firstPending.customerId}`]: firstPending.body });
   }, [pending, firstPending, selected?.id, privateContentReady, activeEntry?.dock]);
   useEffect(() => { clearAttachment(); if (!peerChangedDraft || peerChangedDraft.identity !== identityRef.current || peerChangedDraft.customerId !== (selected?.customerId ?? requestedCustomerId ?? peerChangedDraft.customerId)) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
   useEffect(() => {
@@ -1035,6 +1035,35 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     clearAttachment(pending?.kind !== "IMAGE"); setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError("");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
+
+  // A POST can finish after this composer unmounts. Update the original slot on disk
+  // and notify whichever M3 instance currently owns the on-screen drafts.
+  const clearSubmittedDraft = (slot: string, body: string, originalDraft?: string) => {
+    if (useAdminAuth.getState().session?.adminId !== adminId) return;
+    try {
+      const storageKey = `nexion-m3-drafts:${adminId}`;
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
+      if (saved[slot] === body || originalDraft !== undefined && saved[slot] === originalDraft) {
+        delete saved[slot];
+        sessionStorage.setItem(storageKey, JSON.stringify(saved));
+      }
+    } catch { setRecoveryError("草稿保存不可用；当前输入仍保留在此页面。"); }
+    window.dispatchEvent(new CustomEvent("m3-draft-settled", { detail: { adminId, slot, body, originalDraft } }));
+  };
+  useLayoutEffect(() => {
+    const settled = (event: Event) => {
+      const sent = (event as CustomEvent<{ adminId: number; slot: string; body: string; originalDraft?: string }>).detail;
+      if (sent.adminId !== adminId) return;
+      setDrafts(previous => {
+        if (!previous[sent.slot] || previous[sent.slot] !== sent.body && previous[sent.slot] !== sent.originalDraft) return previous;
+        const next = { ...previous };
+        delete next[sent.slot];
+        return next;
+      });
+    };
+    window.addEventListener("m3-draft-settled", settled);
+    return () => window.removeEventListener("m3-draft-settled", settled);
+  }, [adminId]);
 
   const settleRetainedMessageRejection = (result: SupportCommandResult, slot: string, locator: MessageLocator | null) => {
     if (result.status !== "REJECTED") return false;
@@ -1142,7 +1171,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         forgetSavedSend(slot, record.key);
         if (result.status === "FAILED") { setSendError(MESSAGE_FAILED); return; }
         const draftSlot = pending ? pending.conversationId : `first:${firstPending!.customerId}`;
-        if (!activeEntry.dock) setDrafts(previous => ({ ...previous, [draftSlot]: previous[draftSlot] === record.body ? "" : previous[draftSlot] }));
+        if (!activeEntry.dock && pending?.kind !== "IMAGE") clearSubmittedDraft(draftSlot, record.body, record.originalDraft);
         if (originalView()) {
           if (pending?.kind === "IMAGE") clearAttachment(false);
           setMaintenanceChosen(false); setSelectedClosedIds(new Set()); setContentChoice(null);
@@ -1189,7 +1218,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         if (!due) return;
       }
       if (!retryFirst && !mayCapture()) return;
-      const record = retryFirst ?? { key: newKey(), clientMessageId: crypto.randomUUID(), body: draft.trim(), intent, customerId, assignmentId: firstDetail!.assignmentId!, version: firstDetail!.version, replyTargets: closedReplyTargets };
+      const record = retryFirst ?? { key: newKey(), clientMessageId: crypto.randomUUID(), body: draft.trim(), originalDraft: draft !== draft.trim() ? draft : undefined, intent, customerId, assignmentId: firstDetail!.assignmentId!, version: firstDetail!.version, replyTargets: closedReplyTargets };
       const slot = firstPendingKey(adminId, record.customerId);
       flight.commandKey = record.key;
       const stored = retryFirst ? pendingMessages.isDurablyStored(slot, record.key) : rememberPending(slot, record.key, record);
@@ -1234,7 +1263,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         forgetSavedSend(slot, record.key);
         window.dispatchEvent(new Event("support-todo-changed"));
         // The text is sent: drop it from the first-contact slot too, which may differ from the current target once the conversation is listed.
-        setDrafts((old) => { const next = { ...old }; delete next[`first:${record.customerId}`]; return next; });
+        clearSubmittedDraft(`first:${record.customerId}`, record.body, record.originalDraft);
         if (!originalView()) return;
         setContinuation(null); setHoldRetry((value) => value + 1);
         if (conversationNo && !refreshFailed) {
@@ -1305,7 +1334,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         ...closedReplyTargets,
       ];
       const message: SessionMsg = { ts: Date.now(), sender: "agent", agentName: session?.operator || session?.username || selected.owner, text: body, kind, attachmentId, skuId:kind==="SKU"&&contentChoice?.kind==="SKU"?contentChoice.skuId:undefined, linkTarget:kind==="LINK"&&contentChoice?.kind==="LINK"?contentChoice.linkTarget:undefined, intent, clientMessageId: crypto.randomUUID(), replyTargets: replyTargets.length ? replyTargets : undefined };
-      return { conversationId: selected.id, customerId: customerIdOf(selected), key: newKey(), body, intent, kind, attachmentId, message, expectedAssignmentId: currentProfileDetail!.assignmentId!, expectedStatus: currentStatus, expectedVersion: currentVersion };
+      return { conversationId: selected.id, customerId: customerIdOf(selected), key: newKey(), body, originalDraft: kind !== "IMAGE" && draft !== body ? draft : undefined, intent, kind, attachmentId, message, expectedAssignmentId: currentProfileDetail!.assignmentId!, expectedStatus: currentStatus, expectedVersion: currentVersion };
     })();
     const slot = retry ? activeEntry!.row.fingerprint : replySlot(adminId, customerIdOf(selected));
     flight.commandKey = record.key;
@@ -1371,7 +1400,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (ok) {
       window.dispatchEvent(new Event("support-todo-changed"));
       forgetSavedSend(slot, record.key);
-      if (!activeEntry?.dock && record.kind !== "IMAGE") setDrafts((old) => ({ ...old, [record.conversationId]: old[record.conversationId] === record.body ? "" : old[record.conversationId] }));
+      if (!activeEntry?.dock && record.kind !== "IMAGE") clearSubmittedDraft(record.conversationId, record.body, record.originalDraft);
       if (!originalView()) return;
       setProfileDetail(null); setProfileRetry((value) => value + 1); setHoldRetry((value) => value + 1);
       if (record.kind === "IMAGE") clearAttachment(false);
