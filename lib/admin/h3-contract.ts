@@ -109,7 +109,7 @@ export type H3Model = {
   monthlyMissions: H3Task[];
   taskMonitor: Array<{ label: string; note: string }>;
   taskContracts: H3TaskContract[];
-  promoBanner: Record<string, any> & { targetDailyAsset?: "USDT" | null };
+  promoBanner: Record<string, any> & { targetDailyAsset?: string | null };
   contentLocales: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly: Record<string, any>;
   eventBindings: H3QuestEventBinding[];
@@ -152,7 +152,9 @@ export function parseH3Model(value: unknown): H3Model {
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
   const banner = object(row.promoBanner);
-  if (banner.targetDailyAsset !== undefined && banner.targetDailyAsset !== null && banner.targetDailyAsset !== "USDT") {
+  const targetDailyAsset: unknown = banner.targetDailyAsset;
+  if (targetDailyAsset !== undefined && targetDailyAsset !== null
+    && (typeof targetDailyAsset !== "string" || !targetDailyAsset.trim())) {
     throw new Error("H3_RESPONSE_INVALID");
   }
   if (["promoBannerConfigurable", "promoBannerRetired", "promoBannerRetiredReason"].some(key => banner[key] !== undefined)

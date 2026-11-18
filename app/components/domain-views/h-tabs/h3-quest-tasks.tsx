@@ -1552,7 +1552,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
         <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
         <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : text(promo.targetDaily)}
-          sub={promo.targetDailyAsset ?? "没有币种"} />
+          sub={promo.targetDailyAsset === "USDT" ? promo.targetDailyAsset : "没有币种"} />
       </ConfigList>
     </Fold>
   );

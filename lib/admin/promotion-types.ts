@@ -25,15 +25,15 @@ export type PolicyContent = ({ "kind": "FIRST_PURCHASE"; "executorCode": "PROMOT
 export type PolicyDraft = { "content": PolicyContent; "reason": string; "evidenceRefs": Array<EvidenceRef> };
 export type PolicyApprover = { id: number; displayName: string | null; username: string | null };
 export type RefundPolicyExecution = {
-  basis: "WHOLE_ORDER_REFUND_CONFIRMED";
-  walletRecovery: "SAME_ASSET_AVAILABLE_BALANCE";
-  deviceRecovery: "REVOKE_GIFT_DEVICE_CANCEL_OPEN_TASKS_KEEP_POSTED_EARNINGS";
-  insufficientRecovery: "PLATFORM_LOSS_AND_CLOSE";
-  negativeBalance: false;
-  crossAssetDeduction: false;
-  terminalState: "REVERSED";
-  manualReviewAppliesTo: "APPROVED_CORRECTION";
-  unknownEvidence: "ORIGINAL_REFUND_CHECKS";
+  basis: string;
+  walletRecovery: string;
+  deviceRecovery: string;
+  insufficientRecovery: string;
+  negativeBalance: boolean;
+  crossAssetDeduction: boolean;
+  terminalState: string;
+  manualReviewAppliesTo: string;
+  unknownEvidence: string;
 };
 export type Policy = { "policyId": Id; "version": Revision; "revision": Revision; "contentHash": Hash; "state": "DRAFT" | "APPROVED" | "REVOKED"; "content": PolicyContent; "approvalRef": (ExternalId) | (null); "approvedBy": (Id) | (null); approvedByAdmin?: PolicyApprover | null; execution?: RefundPolicyExecution; "approvedAt": (Time) | (null); "fixture": boolean; "fixtureRunId": (Id) | (null); "resolvedDeviceRights": (ResolvedDeviceRights) | (null) };
 export type DayRange = { "minDays": (number) | (null); "maxDays": (number) | (null) };
