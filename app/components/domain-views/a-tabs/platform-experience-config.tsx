@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchPlatformExperienceConfig,
+  getRequiredContentLanguages,
   INTERFACE_LANGUAGES,
   OPERATING_LANGUAGE_CODES,
   recommendedExperienceChannels,
@@ -14,6 +16,15 @@ import {
 } from "@/lib/admin/platform-experience-client";
 import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 import { PublishedHowContentEditor } from "@/app/components/domain-views/published-how-content-editor";
+
+async function withEditableReleaseNotes(config: PlatformExperienceConfig): Promise<PlatformExperienceConfig> {
+  const { appDownload } = config;
+  if (appDownload.source !== "official") return config;
+  const required = config.operatingLanguages ?? await getRequiredContentLanguages();
+  const { en, zh } = appDownload.releaseNotes;
+  const editableZh = blankCopiedContentLanguage(required, "zh", { text: en }, { text: zh }).text;
+  return { ...config, appDownload: { ...appDownload, releaseNotes: { en, zh: editableZh } } };
+}
 
 export function PlatformExperienceConfig() {
   const session = useAdminAuth((state) => state.session);
@@ -29,7 +40,7 @@ export function PlatformExperienceConfig() {
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setLoading(true); setError(null); setSuccess(null);
-    try { setConfig(await fetchPlatformExperienceConfig()); }
+    try { setConfig(await withEditableReleaseNotes(await fetchPlatformExperienceConfig())); }
     catch (cause) { setConfig(null); setError(displayAdminError(cause)); }
     finally { setLoading(false); }
   }, [canRead]);
@@ -49,7 +60,7 @@ export function PlatformExperienceConfig() {
     setSaving(true); setError(null);
     try {
       const saved = await updatePlatformExperienceConfig(config, reason, session?.operator ?? session?.username ?? "");
-      setConfig(saved);
+      setConfig(await withEditableReleaseNotes(saved));
       setReason("");
       setSuccess(`已保存，当前版本 v${saved.version}。`);
     } catch (cause) {

@@ -249,7 +249,7 @@ function FaqModal({
 }) {
   const [category, setCategory] = useState<SupportFaq["category"]>(row?.category ?? "general");
   const [surface, setSurface] = useState<SupportFaq["surface"]>(row?.surface ?? "Help Center");
-  const [language, setLanguage] = useState<SupportFaq["language"]>(row?.language ?? "zh-CN");
+  const [language, setLanguage] = useState<SupportFaq["language"]>(row?.language ?? "en-US");
   const [sortOrder, setSortOrder] = useState(String(row?.sortOrder ?? 10));
   const [question, setQuestion] = useState(row?.question ?? "");
   const [answer, setAnswer] = useState(row?.answer ?? "");

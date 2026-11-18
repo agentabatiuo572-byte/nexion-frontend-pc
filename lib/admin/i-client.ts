@@ -212,6 +212,10 @@ export type NovaTemplateView = {
   status: string;
 };
 
+type LocalizedTitleBody = Pick<NovaTemplateView, "titleEn" | "bodyEn" | "titleZh" | "bodyZh" | "titleVi" | "bodyVi">;
+type NovaTemplateWrite = LocalizedTitleBody & Record<string, unknown>;
+type NotificationCampaignWrite = LocalizedTitleBody & { ctaHref: string; ctaLabel?: string } & Record<string, unknown>;
+
 export type LearningCourseVersionView = {
   courseId: string;
   version: string;
@@ -609,8 +613,8 @@ export type IContentActions = {
   updateI2NovaChannel: (key: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI2NovaChannelStatus: (key: string, enabled: boolean, reason: string) => Promise<void>;
   deleteI2NovaChannel: (key: string, reason: string) => Promise<void>;
-  createI2Template: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI2Template: (channel: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  createI2Template: (body: NovaTemplateWrite, reason: string) => Promise<void>;
+  updateI2Template: (channel: string, body: NovaTemplateWrite, reason: string) => Promise<void>;
   deleteI2Template: (channel: string, reason: string) => Promise<void>;
   updateI2TemplateStatus: (channel: string, status: string, reason: string) => Promise<void>;
   updateI2Distribution: (items: { key: string; pct: number }[], expectedItems: { key: string; pct: number }[], reason: string) => Promise<void>;
@@ -619,8 +623,8 @@ export type IContentActions = {
   previewI2SocialEvent: (language: "ZH" | "VI" | "EN") => Promise<NovaSocialEventSampleView | null>;
   updateI2SocialEventStatus: (id: number, status: NovaSocialEventStatus, reason: string) => Promise<void>;
   deleteI2SocialEvent: (id: number, reason: string) => Promise<void>;
-  createI3Campaign: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, expectedRevision: number, reason: string) => Promise<void>;
+  createI3Campaign: (body: NotificationCampaignWrite, reason: string) => Promise<void>;
+  updateI3CampaignDraft: (campaignNo: string, body: NotificationCampaignWrite, expectedRevision: number, reason: string) => Promise<void>;
   estimateI3Audience: (target: NotificationAudienceTarget) => Promise<NotificationAudienceEstimateView>;
   scheduleI3Campaign: (campaignNo: string, scheduledAt: string, expectedRevision: number, reason: string) => Promise<void>;
   sendI3CampaignNow: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
@@ -703,6 +707,20 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
   };
 }
 
+function requireNovaCopyReceipt(saved: NovaTemplateView, submitted: NovaTemplateWrite) {
+  const fields = ["titleEn", "bodyEn", "titleZh", "bodyZh", "titleVi", "bodyVi"] as const;
+  if (!saved || fields.some((field) => saved[field] !== submitted[field])) throw new Error("NOVA_TEMPLATE_COPY_NOT_SAVED");
+}
+
+function requireCampaignCopyReceipt(saved: NotificationCampaignRow, submitted: NotificationCampaignWrite) {
+  if (!saved || saved.bodyEn !== `${submitted.titleEn}\n${submitted.bodyEn}`
+    || saved.bodyZh !== `${submitted.titleZh}\n${submitted.bodyZh}`
+    || saved.bodyVi !== `${submitted.titleVi}\n${submitted.bodyVi}`
+    || saved.ctaHref !== submitted.ctaHref || saved.ctaLabel !== (submitted.ctaLabel ?? "")) {
+    throw new Error("NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED");
+  }
+}
+
 export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   createI1Copy: (body, reason) => apiRequest("/copy-ab/copies", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI1CopyPosition: (body, reason) => apiRequest("/copy-ab/positions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
@@ -725,8 +743,8 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2NovaChannel: (key, body, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI2NovaChannelStatus: (key, enabled, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ enabled }, reason)) }).then(() => undefined),
   deleteI2NovaChannel: (key, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI2Template: (channel, body, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  createI2Template: (body, reason) => apiRequest<NovaTemplateView>("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then((saved) => requireNovaCopyReceipt(saved, body)),
+  updateI2Template: (channel, body, reason) => apiRequest<NovaTemplateView>(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then((saved) => requireNovaCopyReceipt(saved, body)),
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   updateI2Distribution: (items, expectedItems, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items, expectedItems }, reason)) }).then(() => undefined),
@@ -740,8 +758,8 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   previewI2SocialEvent: (language) => apiRequest<NovaSocialEventSampleView | null>(`/nova/social-events/sample?language=${encodeURIComponent(language)}`),
   updateI2SocialEventStatus: (id, status, reason) => apiRequest(`/nova/social-events/${id}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   deleteI2SocialEvent: (id, reason) => apiRequest(`/nova/social-events/${id}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI3Campaign: (body, reason) => apiRequest("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI3CampaignDraft: (campaignNo, body, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason({ ...body, expectedRevision }, reason)) }).then(() => undefined),
+  createI3Campaign: (body, reason) => apiRequest<NotificationCampaignRow>("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then((saved) => requireCampaignCopyReceipt(saved, body)),
+  updateI3CampaignDraft: (campaignNo, body, expectedRevision, reason) => apiRequest<NotificationCampaignRow>(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason({ ...body, expectedRevision }, reason)) }).then((saved) => requireCampaignCopyReceipt(saved, body)),
   estimateI3Audience: (target) => apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) }),
   scheduleI3Campaign: (campaignNo, scheduledAt, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt, expectedRevision }, reason)) }).then(() => undefined),
   sendI3CampaignNow: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now", expectedRevision }, reason)) }).then(() => undefined),

@@ -21,6 +21,8 @@ import {
 import type { ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
 type NovaForm = {
   name: string;
@@ -204,15 +206,26 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return <span className="bdg dim">{st}</span>;
   };
 
-  const publishTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
-    action: <>发布模板 · {name}</>,
-    detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
-    amplifies: false,
-    reasonMax: 200,
-    run: (reason) => {
-      return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
-    },
-  });
+  const publishTpl = async (ch: string, name: string) => {
+    const required = await getRequiredContentLanguages();
+    const template = NOVA_TPLS.find((item) => item.ch === ch);
+    if (!template || required.some((language) => {
+      const locale = language === "en" ? "En" : language === "zh" ? "Zh" : "Vi";
+      return !template[`title${locale}`].trim() || !template[`body${locale}`].trim();
+    })) {
+      toast(displayAdminError("VALIDATION_FAILED"));
+      return;
+    }
+    openActionConfirm({ briefKind: "content",
+      action: <>发布模板 · {name}</>,
+      detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
+      amplifies: false,
+      reasonMax: 200,
+      run: (reason) => {
+        return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
+      },
+    });
+  };
   const archiveTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
     action: <>归档模板 · {name}</>,
     detail: <>归档后该模板从频道可选池移除,已在投递队列里的不撤回。</>,
@@ -226,34 +239,49 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [tplDrawer, setTplDrawer] = useState(false);
   const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[] | null>(null);
+  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const newTpl = () => {
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
     setEditTplChannel(null);
     setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
     setTplDrawer(true);
   };
-  const editTpl = (t: (typeof NOVA_TPLS)[number]) => {
+  const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
+    const required = requiredLanguages ?? await getRequiredContentLanguages();
+    const en = { title: t.titleEn, body: t.bodyEn };
+    const zh = blankCopiedContentLanguage(required, "zh", en, { title: t.titleZh, body: t.bodyZh });
+    const vi = blankCopiedContentLanguage(required, "vi", en, { title: t.titleVi, body: t.bodyVi });
     setEditTplChannel(t.ch);
     setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v,
-      titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
-      titleEn: t.titleEn, bodyEn: t.bodyEn });
+      titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body, titleEn: en.title, bodyEn: en.body });
     setTplDrawer(true);
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
-  const submitTpl = () => openConfirm({ briefKind: "config",
-    errorHandled: true,
-    action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
-    detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
-    reason: true,
-    okLabel: "保存草稿",
-    run: (reason) => {
-      const body = { ...tplForm };
-      return runBackend(editTplChannel
-        ? actions.updateI2Template(editTplChannel, body, reason)
-        : actions.createI2Template(body, reason),
-      `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
-    },
-  });
+  const templateContent = requiredLanguages && (() => {
+    const en = { title: tplForm.titleEn.trim(), body: tplForm.bodyEn.trim() };
+    const zh = fillBlankContentLanguage(requiredLanguages, "zh", en, { title: tplForm.titleZh.trim(), body: tplForm.bodyZh.trim() });
+    const vi = fillBlankContentLanguage(requiredLanguages, "vi", en, { title: tplForm.titleVi.trim(), body: tplForm.bodyVi.trim() });
+    return [en, zh, vi].some(({ title, body }) => !title || !body) ? null
+      : { titleEn: en.title, bodyEn: en.body, titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body };
+  })();
+  const submitTpl = () => {
+    if (!templateContent) return;
+    openConfirm({ briefKind: "config",
+      errorHandled: true,
+      action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
+      detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
+      reason: true,
+      okLabel: "保存草稿",
+      run: (reason) => {
+        const body = { ...tplForm, ...templateContent };
+        return runBackend(editTplChannel
+          ? actions.updateI2Template(editTplChannel, body, reason)
+          : actions.createI2Template(body, reason),
+        `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
+      },
+    });
+  };
   const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送模板 · {t.name}</>,
@@ -939,9 +967,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <button
                 className="l-btn primary"
                 style={{ flex: 1, justifyContent: "center" }}
-                disabled={!tplForm.channel || !tplForm.name.trim() || !tplForm.cta || !tplForm.version.trim()
-                  || !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() || !tplForm.titleVi.trim() || !tplForm.bodyVi.trim()
-                  || (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim())}
+                disabled={!tplForm.channel || !tplForm.name.trim() || !tplForm.cta || !tplForm.version.trim() || !templateContent}
                 onClick={submitTpl}
               >保存草稿</button>
             </>

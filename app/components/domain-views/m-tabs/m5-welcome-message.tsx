@@ -7,6 +7,8 @@ import { Modal } from "../design-kit";
 import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import type { MSupportPermission } from "./m5-service-rules";
 
 type WelcomePayload = Parameters<typeof supportWelcomeMessageClient.update>[0];
@@ -20,15 +22,24 @@ const fingerprintOf = (payload: WelcomePayload) => `support-welcome:${payload.ex
 // Same count as the backend: Unicode code points after trim. UTF-16 length counts 𠮷 twice.
 const codePointLength = (value: string) => Array.from(value.trim()).length;
 
-function textProblem(text: string): string {
+function textProblem(text: string, required: boolean): string {
   const length = codePointLength(text);
-  if (length === 0) return "不能为空";
+  if (required && length === 0) return "不能为空";
   if (length > MAX) return `超出 ${length - MAX} 字，最多 ${MAX} 字`;
   return "";
 }
 
 function changedLanguages(before: SupportWelcomeTexts, after: SupportWelcomeTexts): SupportWelcomeLanguage[] {
-  return LANGUAGES.map(({ key }) => key).filter((key) => before[key] !== after[key].trim());
+  return LANGUAGES.map(({ key }) => key).filter((key) => before[key].trim() !== after[key].trim());
+}
+
+function welcomeDraft(texts: SupportWelcomeTexts, required: readonly OperatingLanguageCode[]): SupportWelcomeTexts {
+  const en = { text: texts.en };
+  return {
+    en: texts.en,
+    zh: blankCopiedContentLanguage(required, "zh", en, { text: texts.zh }).text,
+    vi: blankCopiedContentLanguage(required, "vi", en, { text: texts.vi }).text,
+  };
 }
 
 function errorText(error: unknown): string {
@@ -44,6 +55,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [current, setCurrent] = useState<SupportWelcomeMessage | null>(null);
   const [draft, setDraft] = useState<SupportWelcomeTexts | null>(null);
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [latest, setLatest] = useState<SupportWelcomeMessage | null>(null);
   const [readUnavailable, setReadUnavailable] = useState(false);
   const [conflict, setConflict] = useState(false);
@@ -60,10 +72,11 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    supportWelcomeMessageClient.read(controller.signal).then((value) => {
+    Promise.all([supportWelcomeMessageClient.read(controller.signal), getRequiredContentLanguages()]).then(([value, required]) => {
       if (controller.signal.aborted) return;
       const pending = permission === "superadmin" ? welcomeCommands.list().find((row) => row.actorId === adminId) : undefined;
-      setCurrent(value); setDraft(pending ? pending.payload.texts : value.texts); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
+      setRequiredLanguages(required);
+      setCurrent(value); setDraft(welcomeDraft(pending?.payload.texts ?? value.texts, required)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
       setRetry(pending ? { key: pending.commandKey, payload: pending.payload, expiresAt: pending.expiresAt } : null);
       setReason(pending?.payload.reason ?? "");
     }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
@@ -71,21 +84,27 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
     return () => controller.abort();
   }, [permission, reload, adminId]);
 
-  const problems = draft ? LANGUAGES.map(({ key }) => textProblem(draft[key])) : [];
+  const problems = draft ? LANGUAGES.map(({ key }) => textProblem(draft[key], requiredLanguages.includes(key))) : [];
+  const textsForSave = draft && (() => {
+    const en = { text: draft.en.trim() };
+    const zh = fillBlankContentLanguage(requiredLanguages, "zh", en, { text: draft.zh.trim() });
+    const vi = fillBlankContentLanguage(requiredLanguages, "vi", en, { text: draft.vi.trim() });
+    return { en: en.text, zh: zh.text, vi: vi.text };
+  })();
   const valid = Boolean(draft) && problems.every((problem) => !problem);
-  const changed = current && draft ? changedLanguages(current.texts, draft) : [];
+  const changed = current && textsForSave ? changedLanguages(current.texts, textsForSave) : [];
   const editable = permission === "superadmin" && Boolean(current) && !loading && !readUnavailable && !saving && !conflict && !retry;
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canConfirm = editable && valid && changed.length > 0 && reasonOk;
 
   async function save() {
-    if (permission !== "superadmin" || (!canConfirm && !retry) || !current || !draft || saving || !adminId) return;
+    if (permission !== "superadmin" || (!canConfirm && !retry) || !current || !textsForSave || saving || !adminId) return;
     if (retry && Date.now() >= retry.expiresAt) { setError(EXPIRED); return; }
     const actor = actorStamp();
     const command = retry ?? {
       expiresAt: Date.now() + PENDING_MUTATION_TTL_MS,
       key: crypto.randomUUID(),
-      payload: { expectedVersion: current.version, texts: { zh: draft.zh.trim(), en: draft.en.trim(), vi: draft.vi.trim() }, reason: reason.trim() },
+      payload: { expectedVersion: current.version, texts: textsForSave, reason: reason.trim() },
     };
     const fingerprint = fingerprintOf(command.payload);
     if (!retry) welcomeCommands.remember(fingerprint, command.key, { actorId: adminId, payload: command.payload });
@@ -94,7 +113,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       const value = await supportWelcomeMessageClient.update(command.payload, command.key);
       if (actor !== actorStamp()) return;
       welcomeCommands.forget(fingerprint);
-      setCurrent(value); setDraft(value.texts); setReason(""); setConfirm(false); setRetry(null); setLatest(null); setSaved(true);
+      setCurrent(value); setDraft(welcomeDraft(value.texts, requiredLanguages)); setReason(""); setConfirm(false); setRetry(null); setLatest(null); setSaved(true);
     } catch (cause) {
       if (actor !== actorStamp()) return;
       const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
@@ -113,8 +132,8 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
   // Keep the languages this operator edited; take every other language from the latest saved version.
   function reviewLatest() {
     if (!latest || !current || !draft) return;
-    const edited = changedLanguages(current.texts, draft);
-    const next = { ...latest.texts };
+    const edited = changedLanguages(welcomeDraft(current.texts, requiredLanguages), draft);
+    const next = welcomeDraft(latest.texts, requiredLanguages);
     for (const key of edited) next[key] = draft[key];
     setCurrent(latest); setDraft(next); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
   }
@@ -135,7 +154,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
         const value = await supportWelcomeMessageClient.read();
         if (actor !== actorStamp()) return;
         welcomeCommands.forget(fingerprintOf(retry.payload));
-        setCurrent(value); setDraft(value.texts); setRetry(null); setReason(""); setConfirm(false); setError(""); setSaved(true);
+        setCurrent(value); setDraft(welcomeDraft(value.texts, requiredLanguages)); setRetry(null); setReason(""); setConfirm(false); setError(""); setSaved(true);
       } else if (result.status === "FAILED") {
         welcomeCommands.forget(fingerprintOf(retry.payload));
         setRetry(null); setError("上次保存没有成功，输入已保留；请检查后重新提交。");
@@ -153,7 +172,7 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
       const value = await supportWelcomeMessageClient.read();
       if (actor !== actorStamp()) return;
       welcomeCommands.forget(fingerprintOf(retry.payload), retry.key);
-      setCurrent(value); setDraft(retry.payload.texts); setRetry(null); setReason(""); setConfirm(false); setError("");
+      setCurrent(value); setDraft(welcomeDraft(retry.payload.texts, requiredLanguages)); setRetry(null); setReason(""); setConfirm(false); setError("");
     } catch (cause) { if (actor === actorStamp()) setError(errorText(cause)); }
     finally { setSaving(false); }
   }
@@ -181,9 +200,9 @@ export function M5WelcomeMessage({ permission }: { permission: MSupportPermissio
           {permission === "superadmin" && <button type="button" className="btn btn-pri btn-sm" disabled={retry ? false : !editable || !valid || changed.length === 0} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button>}
         </div>
       </>}
-      {confirm && current && draft && permission === "superadmin" && <Modal title="确认保存新用户欢迎语" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={(!canConfirm && !retry) || retryExpired || saving} onClick={() => void save()}>{saving ? "保存中…" : retry ? "按原操作重试" : "确认保存"}</button></>}>
+      {confirm && current && textsForSave && permission === "superadmin" && <Modal title="确认保存新用户欢迎语" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={(!canConfirm && !retry) || retryExpired || saving} onClick={() => void save()}>{saving ? "保存中…" : retry ? "按原操作重试" : "确认保存"}</button></>}>
         <div className="m-admin-muted">保存后，之后注册的新用户会收到新内容；已经发出的欢迎语不变。</div>
-        <div className="m-admin-list m5-welcome-diff">{(retry ? changedLanguages(current.texts, retry.payload.texts) : changed).map((key) => <div key={key}><strong>{LANGUAGES.find((item) => item.key === key)?.label}</strong><p>原：{current.texts[key]}</p><p>新：{(retry ? retry.payload.texts : draft)[key].trim()}</p></div>)}</div>
+        <div className="m-admin-list m5-welcome-diff">{(retry ? changedLanguages(current.texts, retry.payload.texts) : changed).map((key) => <div key={key}><strong>{LANGUAGES.find((item) => item.key === key)?.label}</strong><p>原：{current.texts[key]}</p><p>新：{(retry?.payload.texts ?? textsForSave)[key]}</p></div>)}</div>
         <label className="field"><span>修改理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={saving || Boolean(retry)} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="m-admin-muted">已输入 {reason.trim().length}/200 字</div>
         {retry && (retryExpired

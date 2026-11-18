@@ -630,8 +630,11 @@ const welcomeMessage = (value: unknown): SupportWelcomeMessage => {
 /** B16: the one welcome copy every new user receives in their support conversation right after registration. */
 export const supportWelcomeMessageClient = {
   read: (signal?: AbortSignal) => request("/support-agents/welcome-message", welcomeMessage, { signal }),
-  update: (input: { expectedVersion: number; texts: SupportWelcomeTexts; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
-    request("/support-agents/welcome-message", welcomeMessage, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
+  update: async (input: { expectedVersion: number; texts: SupportWelcomeTexts; reason: string }, idempotencyKey: string, signal?: AbortSignal) => {
+    const saved = await request("/support-agents/welcome-message", welcomeMessage, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal));
+    if (saved.texts.en !== input.texts.en || saved.texts.zh !== input.texts.zh || saved.texts.vi !== input.texts.vi) malformed("welcome.texts");
+    return saved;
+  },
 };
 
 export type SupportPersonalPhrase = { id: string; content: string };
