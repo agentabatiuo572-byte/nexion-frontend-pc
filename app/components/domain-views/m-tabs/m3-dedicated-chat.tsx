@@ -232,7 +232,7 @@ function tabMatch(row: SessionConvo, tab: ListTab, adminId: number): boolean {
   return true;
 }
 
-export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, reconnectExhausted }: { ctx: MCtx; back?: ReactNode; summary: string; banner?: ReactNode; streamReady: boolean; reconnectExhausted: boolean }) {
+export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, streamReady, reconnectExhausted }: { ctx: MCtx; snapshotRevision: number; back?: ReactNode; summary: string; banner?: ReactNode; streamReady: boolean; reconnectExhausted: boolean }) {
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = session?.adminId ?? 0;
@@ -409,7 +409,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     const assignmentId = first?.assignmentId ?? reply?.expectedAssignmentId;
     return customerId && assignmentId ? [{ key: row.commandKey, customerId, assignmentId, conversationId: reply?.conversationId }] : [];
   });
-  const recoveryScope = JSON.stringify([pageScope, scopeMode, entryCheck, detailRetry, profileRetry, recoveryTargets]);
+  const recoveryScope = JSON.stringify([pageScope, scopeMode, snapshotRevision, entryCheck, detailRetry, profileRetry, recoveryTargets]);
   const [verifiedRecovery, setVerifiedRecovery] = useState<{ scope: string; keys: Set<string> } | null>(null);
   const recoveryReads = useRef(new Map<string, Promise<boolean>>());
   const verifiedKeys = useRef<Set<string> | undefined>(undefined);
@@ -955,21 +955,34 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (rows && typeof rows === "object" && !Array.isArray(rows)) setTicketLinks(Object.fromEntries(Object.entries(rows).filter(([conversationId, ticketNo]) => conversationId && typeof ticketNo === "string" && ticketNo)));
     } catch { setTicketLinks({}); }
   }, [adminId, authEpoch]);
+  // A first contact may legitimately start without a thread. Once a thread is visible,
+  // losing it from the authorized snapshot invalidates the original private content.
+  const firstThreads = useRef(new Map<string, string[]>());
   useEffect(() => {
     if (!conversationsAvailable || qualificationUnknown) return;
-    for (const { reply, locator, row } of readSavedSends(adminId)) {
+    const previous = firstThreads.current;
+    const current = new Map<string, string[]>();
+    for (const { first, reply, locator, row } of savedSends) {
+      if (first) {
+        const ids = visible.filter(convo => convo.customerId === first.customerId).map(convo => convo.id);
+        if (previous.get(first.key)?.some(id => !ids.includes(id))) {
+          revokeCustomer(first.customerId, false, undefined, first.key);
+        } else current.set(first.key, ids);
+        continue;
+      }
       if (!reply) continue;
       const original = visible.find(convo => convo.id === reply.conversationId);
       if (!original) {
-        revokeCustomer(originalCustomer(locator), false, reply.conversationId);
-        return;
+        revokeCustomer(originalCustomer(locator), false, reply.conversationId, reply.key);
+        continue;
       }
       // Keep legacy evidence addressable in its original slot. Remember the proven customer before a later transfer.
       if (row.fingerprint === pendingKey(adminId) && !validCustomerId(reply.customerId ?? null)) {
         rememberPending(row.fingerprint, reply.key, { ...reply, customerId: customerIdOf(original) });
       }
     }
-  }, [adminId, conversationsAvailable, qualificationUnknown, messageRevision, visible, revokeCustomer, originalCustomer]);
+    firstThreads.current = current;
+  }, [adminId, conversationsAvailable, qualificationUnknown, savedSends, visible, revokeCustomer, originalCustomer]);
   const redactRecovery = useEffectEvent((customerId: string, conversationId: string | undefined, key: string) => {
     if (readSavedSends(adminId).some(entry => entry.row.commandKey === key && (entry.reply || entry.first))) {
       revokeCustomer(customerId, true, conversationId, key);

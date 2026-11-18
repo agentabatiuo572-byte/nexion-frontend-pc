@@ -139,6 +139,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const currentAuthEpoch = useRef(authEpoch);
   currentAuthEpoch.current = authEpoch;
   const mDataRef = useRef<MContentData | null>(null);
+  const [conversationSnapshotRevision, setConversationSnapshotRevision] = useState(0);
   const liveSnapshotController = useRef<AbortController | null>(null);
   const safeMData = mDataAuthEpoch.current === authEpoch ? mData : null;
   mDataRef.current = safeMData;
@@ -213,6 +214,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
       throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
     }
+    setConversationSnapshotRevision(revision => revision + 1);
     // Replace the scoped snapshot; never merge prior details (a scope change must not keep old private detail).
     // The open thread keeps its last loaded messages on screen while the detail reloads (M-9, m3-dedicated-chat).
     setMData((previous) => previous
@@ -692,7 +694,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ) : safeMData && (
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
-          {tab === "M3" && <M3DedicatedChat ctx={ctx} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
+          {tab === "M3" && <M3DedicatedChat ctx={ctx} snapshotRevision={conversationSnapshotRevision} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
         </>
       )}
 
