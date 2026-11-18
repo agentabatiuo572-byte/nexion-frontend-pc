@@ -310,6 +310,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   D2_DEVELOPMENT_SIMULATION_STATE_INVALID: "只有处于冷却期的开发账号提现单可以模拟到期，请刷新后重试。",
   D2_COOLDOWN_ALREADY_DUE: "这笔提现已到复查时间，无需模拟到期；请刷新查看系统复查结果。",
   D2_DEVELOPMENT_SIMULATION_CONFLICT: "模拟到期未完成，请刷新详情核对复查条件后重试。",
+  NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED: "通知草稿的写入结果未确认，请保留原内容重试，系统会沿用原操作编号。",
   NOTIFICATION_CAMPAIGN_STALE_VERSION: "该通知活动已被其他操作员更新，本次未覆盖。请刷新页面后基于最新状态重试。",
   NOTIFICATION_CAMPAIGN_REVISION_REQUIRED: "页面缺少通知活动版本，本次未执行。请刷新页面后重试。",
   NOTIFICATION_CAMPAIGN_DISPATCH_FAILED: "通知下发未完成，系统未把当前结果标记为成功。请刷新活动状态和用户通知数量后再决定是否重试。",
@@ -1051,6 +1052,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // 真属运营输入侧的两个码:给可操作提示,不落中性兜底(兜底只说「刷新重试」对它们没用)。
   A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
   NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
+  NOVA_TEMPLATE_COPY_NOT_SAVED: "推送模板的写入结果未确认，请保留原内容和理由重试，系统会沿用原操作编号。",
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
   // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
   E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示；请重试加载或联系值班人员。",
@@ -1063,6 +1065,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_SESSION_NOT_ESTABLISHED: "登录未完成：系统会话尚未建立，请重新登录。",
   ADMIN_SESSION_IDENTITY_MISMATCH: "登录校验异常：会话身份与登录账号不一致，已中止本次登录；请重新登录。",
   CONTENT_API_TIMEOUT: "客服内容服务响应超时，本次加载未完成；请稍后重试。",
+  CONTENT_API_INVALID_RESPONSE: "内容服务返回的数据格式异常，请刷新后重试。",
+  CONTENT_DRAFT_DELETION_NOT_CONFIRMED: "已收到删除回执，暂未核实草稿是否已删除。请重试核对或刷新查看。",
   M2_TICKET_DETAILS_UNAVAILABLE: "客服工单详情暂时加载不到，请刷新重试；持续失败请联系值班人员。",
   M3_CONVERSATION_DETAILS_UNAVAILABLE: "客服会话详情暂时加载不到，请刷新重试；持续失败请联系值班人员。",
   M3_CONVERSATION_SNAPSHOT_UNSTABLE: "客服会话更新暂时中断，连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",

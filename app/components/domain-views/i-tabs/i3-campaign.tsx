@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Drawer, OPTIONAL_CONTENT_HINT, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
-import type { NotificationAudienceTarget, NotificationCampaignRow } from "@/lib/admin/i-client";
+import { IContentReceiptError, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
@@ -157,12 +157,11 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       .then(() => actions.reloadIContent())
       .then(() => { toast(ok); return true; })
       .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
+        const message = displayAdminError(error);
+        toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
         return false;
       });
   };
-
-  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
 
   useEffect(() => {
     if (!newOpen) return;
@@ -203,12 +202,21 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     setScheduleVerified(false);
   };
 
+  const newDraft = async () => {
+    const required = await getRequiredContentLanguages();
+    setEditing(null);
+    setForm(FORM_INIT);
+    setRequiredLanguages(required);
+    setNewOpen(true);
+  };
+
   const editDraft = async (c: CampaignRow) => {
-    const required = requiredLanguages ?? await getRequiredContentLanguages();
+    const required = await getRequiredContentLanguages();
     const en = splitNotificationBody(c.bodyEn);
     const zh = blankCopiedContentLanguage(required, "zh", en, splitNotificationBody(c.bodyZh));
     const vi = blankCopiedContentLanguage(required, "vi", en, splitNotificationBody(c.bodyVi));
     setEditing(c);
+    setRequiredLanguages(required);
     setForm({
       name: c.name,
       titleZh: zh.title,
@@ -483,7 +491,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               <button key={k} className={`chip${stFlt === k ? " sel" : ""}`} onClick={() => setStFlt(k)}>{l}</button>
             ))}
             {!canWriteI3 && <span className="bdg dim">只读</span>}
-            {canWriteI3 && <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建通知</button>}
+            {canWriteI3 && <button className="l-btn sm primary" onClick={newDraft}>+ 新建通知</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>

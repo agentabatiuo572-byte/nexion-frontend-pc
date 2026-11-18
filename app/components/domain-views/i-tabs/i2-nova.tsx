@@ -21,6 +21,7 @@ import {
 import type { ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { IContentReceiptError } from "@/lib/admin/i-client";
 import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
@@ -102,7 +103,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       .then(() => actions.reloadIContent())
       .then(() => { toast(ok); onSuccess?.(); })
       .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
+        const message = displayAdminError(error);
+        toast(error instanceof IContentReceiptError ? message : `操作失败:${message}`);
         throw error;
       });
 
@@ -229,19 +231,21 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[] | null>(null);
-  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
-  const newTpl = () => {
+  const newTpl = async () => {
+    const required = await getRequiredContentLanguages();
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
     setEditTplChannel(null);
     setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
+    setRequiredLanguages(required);
     setTplDrawer(true);
   };
   const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
-    const required = requiredLanguages ?? await getRequiredContentLanguages();
+    const required = await getRequiredContentLanguages();
     const en = { title: t.titleEn, body: t.bodyEn };
     const zh = blankCopiedContentLanguage(required, "zh", en, { title: t.titleZh, body: t.bodyZh });
     const vi = blankCopiedContentLanguage(required, "vi", en, { title: t.titleVi, body: t.bodyVi });
     setEditTplChannel(t.ch);
+    setRequiredLanguages(required);
     setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v,
       titleZh: zh.title, bodyZh: zh.body, titleVi: vi.title, bodyVi: vi.body, titleEn: en.title, bodyEn: en.body });
     setTplDrawer(true);

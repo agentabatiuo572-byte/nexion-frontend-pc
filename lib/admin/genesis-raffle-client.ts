@@ -14,6 +14,12 @@ export function raffleDraftError(value: RaffleDraft, requiredLanguages: readonly
   if (missingTitles.length) return `请填写抽奖的${missingTitles.map(locale => RAFFLE_LANGUAGES[locale].label).join("、")}名称。`;
   if (!Number.isFinite(Date.parse(value.startsAt)) || !Number.isFinite(Date.parse(value.drawAt)) || Date.parse(value.drawAt) <= Date.parse(value.startsAt)) return "开奖时间必须晚于报名开始时间。";
   if (!value.prizes.length || value.prizes.length > 20 || new Set(value.prizes.map(prize => prize.id)).size !== value.prizes.length) return "请配置 1–20 个不重复的奖项。";
+  for (const locale of ["zh", "vi"] as const) {
+    if (requiredLanguages.includes(locale)) continue;
+    const { suffix, label } = RAFFLE_LANGUAGES[locale];
+    const filled = [value[`title${suffix}`], ...value.prizes.map(prize => prize[`name${suffix}`])].map(name => name.trim() !== "");
+    if (filled.some(Boolean) && !filled.every(Boolean)) return `${label}只填写了一部分，请填齐抽奖名称和所有奖项名称，或全部留空。`;
+  }
   for (const prize of value.prizes) {
     const missingNames = requiredLanguages.filter(locale => !prize[`name${RAFFLE_LANGUAGES[locale].suffix}`].trim());
     if (missingNames.length) return `请填写每个奖项的${missingNames.map(locale => RAFFLE_LANGUAGES[locale].label).join("、")}名称。`;
@@ -26,16 +32,14 @@ export function raffleDraftError(value: RaffleDraft, requiredLanguages: readonly
 
 export function raffleLocalizedDraft(draft: RaffleDraft, requiredLanguages: readonly OperatingLanguageCode[], mode: "edit" | "submit"): RaffleDraft {
   const transform = mode === "edit" ? blankCopiedContentLanguage : fillBlankContentLanguage;
-  const localized = (locale: "zh" | "vi", english: string, value: string) =>
-    transform(requiredLanguages, locale, { value: english }, { value }).value;
+  const english = { title: draft.titleEn, names: draft.prizes.map(prize => prize.nameEn) };
+  const zh = transform(requiredLanguages, "zh", english, { title: draft.titleZh, names: draft.prizes.map(prize => prize.nameZh) });
+  const vi = transform(requiredLanguages, "vi", english, { title: draft.titleVi, names: draft.prizes.map(prize => prize.nameVi) });
   return {
     ...draft,
-    titleZh: localized("zh", draft.titleEn, draft.titleZh),
-    titleVi: localized("vi", draft.titleEn, draft.titleVi),
-    prizes: draft.prizes.map(prize => ({ ...prize,
-      nameZh: localized("zh", prize.nameEn, prize.nameZh),
-      nameVi: localized("vi", prize.nameEn, prize.nameVi),
-    })),
+    titleZh: zh.title,
+    titleVi: vi.title,
+    prizes: draft.prizes.map((prize, index) => ({ ...prize, nameZh: zh.names[index], nameVi: vi.names[index] })),
   };
 }
 export function parseAdminRaffle(value: unknown): AdminRaffle {

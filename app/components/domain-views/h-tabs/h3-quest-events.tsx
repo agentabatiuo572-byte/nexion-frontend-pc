@@ -584,13 +584,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     return { name: read("name"), description: read("description"), rewardName: read("rewardName") };
   };
 
-  const eventContentCell = (event: QuestEvent, rule: EventRuleReadback | undefined, field: EventContentField, locale: OperatingLanguageCode) => {
+  const eventContentCell = (event: QuestEvent, rule: EventRuleReadback | undefined, field: EventContentField, locale: OperatingLanguageCode, languages = requiredLanguages) => {
     const english = eventFields(event.id, "en"), localized = eventFields(event.id, locale);
     const key = `localized.${locale}.${field}`;
     const readiness = event.copyReadiness;
-    const missing = readiness?.missing.includes(key) ?? false;
+    const missing = languages.includes(locale) && (readiness?.missing.includes(key) ?? false);
     const incomplete = readiness?.incomplete.includes(key) ?? false;
-    const optional = !missing && !requiredLanguages.includes(locale);
+    const optional = !missing && !languages.includes(locale);
     const { appUsesAuthoredRewardName, appRewardNames } = rule ?? event;
     const required = missing || (!optional && (field !== "rewardName" || appUsesAuthoredRewardName));
     const followsEnglish = optional && (["name", "description", "rewardName"] as const).every(key => {
@@ -670,13 +670,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (rawLocalizedValue("event", code, field, locale, next).trim() !== submitted) throw new Error("提交值与读回不一致，请核对已保存的文案。");
   };
 
-  const openLocalizedContent = (
+  const openLocalizedContent = async (
     entity: "mission" | "event", code: string,
     field: EventContentField, locale: OperatingLanguageCode, source: string, event?: QuestEvent, rule?: EventRuleReadback,
   ) => {
-    const cell = event ? eventContentCell(event, rule, field, locale) : undefined;
+    const languages = await getRequiredContentLanguages();
+    const cell = event ? eventContentCell(event, rule, field, locale, languages) : undefined;
     const current = cell?.stored ?? rawLocalizedValue(entity, code, field, locale);
-    const optional = cell?.optional ?? !requiredLanguages.includes(locale);
+    const optional = cell?.optional ?? !languages.includes(locale);
     const displayed = cell?.current ?? current;
     const operator = currentAdminOperator();
     const clearable = entity === "event" && optional && event?.deleteState === "draft"
@@ -814,10 +815,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
-  const openMissionStatus = (task: QuestTask, label: string, monthly = false) => {
+  const openMissionStatus = async (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     const targetStatus = status === "active" ? "paused" : "active";
+    const languages = targetStatus === "active" && taskKind === "MISSION" ? await getRequiredContentLanguages() : [];
     openConfirm({ briefKind: "config",
       errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${taskTitleText(label)}`,
@@ -829,7 +831,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         if (targetStatus === "active" && taskKind === "MISSION") {
           const latest = await fetchH3QuestEvents("tasks") as H3Model;
           apply(latest);
-          const missing = requiredLanguages.filter(locale => !rawLocalizedValue("mission", taskCode, "name", locale, latest).trim());
+          const missing = languages.filter(locale => !rawLocalizedValue("mission", taskCode, "name", locale, latest).trim());
           if (missing.length) throw new Error(`请先在上方「App 运营内容」填写这个任务的${missing.map(locale => LOCALE_LABEL[locale]).join("、")}名称，再启用。`);
         }
         await applyMissionMutation(transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
@@ -1977,7 +1979,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         })}>查看结果</button>
       </div>)}
       <H4EventRules ctx={ctx} rows={eventRules} confirmedRules={rulesByEvent} currentEventCodes={currentEventCodes} setSnapshot={setEventRuleSnapshot} contentRevision={eventContentRevision} />
-      <H4GenesisRaffle ctx={ctx} requiredLanguages={requiredLanguages} />
+      <H4GenesisRaffle ctx={ctx} />
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
