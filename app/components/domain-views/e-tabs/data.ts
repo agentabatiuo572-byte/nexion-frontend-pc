@@ -6,6 +6,7 @@
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
+import { appVisibleTextError } from "@/lib/admin/content-language-rules";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
@@ -84,6 +85,21 @@ export function joinGpu(model: string, count: string): string | undefined {
   return value ? count.trim() ? `${Number(count)}× ${value}` : value : undefined;
 }
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
+  const appVisibleFields = [
+    [f.name, "型号名称"],
+    [f.badge, "营销角标"],
+    [f.tagline, "商品标语"],
+    [f.gpu, "GPU 型号（单卡）"],
+    [f.tier === "Share" ? "" : f.power, "功耗 / 功率说明"],
+    [f.datacenter, "托管机房"],
+    [f.uptime, "在线率"],
+    [f.warranty, "质保期限"],
+    [f.specDocumentTitle, "资料名称"],
+  ];
+  for (const [value, field] of appVisibleFields) {
+    const error = appVisibleTextError(value, field);
+    if (error) return error;
+  }
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
   if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (existing && !supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)

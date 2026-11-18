@@ -34,6 +34,7 @@ import {
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { appVisibleTextError } from "@/lib/admin/content-language-rules";
 import type { ACtx } from "./types";
 import { AccountAvatarPicker } from "./account-avatar-picker";
 import { HDSelect } from "../m-tabs/hd-ui";
@@ -1148,7 +1149,7 @@ function NewAccountDrawer({
   const usernameOk = isValidUsername(username);
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : "",
+    !displayName.trim() ? "显示名未填写" : appVisibleTextError(displayName, "显示名"),
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     recoveryMode && role !== "super" ? "恢复模式只能创建超级管理员账号" : "",
     !reason.trim() ? "操作理由未填写" : "",
@@ -1212,7 +1213,7 @@ function NewAccountDrawer({
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="姓名,如:张三"
+            placeholder="Alex Chen"
             style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14 }}
           />
         </label>
@@ -1436,15 +1437,17 @@ function EditAccountDrawer({
   const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(account.avatarGender ?? "UNSPECIFIED");
   const usernameOk = isValidUsername(username);
   const emailOk = isValidEmail(email);
+  const displayNameChanged = displayName.trim() !== operatorDisplayName(account);
   const changed =
     username.trim().toLowerCase() !== (account.username || "").trim().toLowerCase()
-    || displayName.trim() !== operatorDisplayName(account)
+    || displayNameChanged
     || email.trim().toLowerCase() !== (account.email || "").trim().toLowerCase()
     || Boolean(avatarAssetId && avatarAssetId !== account.avatarAssetId)
     || avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED");
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
+    displayNameChanged ? appVisibleTextError(displayName, "显示名") : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     !changed ? "资料没有变化" : "",
     !reason.trim() ? "操作理由未填写" : "",

@@ -97,7 +97,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, verifyReceipt?: V
     const message = payload.message === "DISCLOSURE_JURISDICTION_CODE_EXISTS"
       ? "该适用地区代码已存在，请更换代码；如需改名，请编辑已有地区。"
       : payload.message;
-    throw new Error(formatAdminApiError(message, `CONTENT_API_${res.status}`));
+    throw new Error(formatAdminApiError(message, `CONTENT_API_${res.status}`, payload.data));
   }
   if (verifyReceipt && payload.code !== 0) throw unknownWrite();
   return verify(payload.data as T);

@@ -201,7 +201,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
-      ?? formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`));
+      ?? formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`, result?.data));
   }
 
   return result.data as T;

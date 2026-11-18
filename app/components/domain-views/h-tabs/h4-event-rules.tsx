@@ -5,6 +5,7 @@ import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleRea
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleReadinessText, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 
 export type EventRuleSnapshot = { rule: EventRuleReadback; contentRevision: number };
 
@@ -67,10 +68,29 @@ export default function H4EventRules({ ctx, rows, confirmedRules, currentEventCo
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
   const save = () => {
     if (!selected || selectionRemoved || !draft || saving || !canWrite || (draft.enabled && !canEnable)) return;
-    const next = { ...draft, rules: { ...draft.rules } };
-    try { if (selected.kind === "regional") next.rules.regions = parseEventRegions(regions); }
-    catch (cause) { setError(displayAdminError(cause)); return; }
     const base = selected;
+    const next = { ...draft, rules: { ...draft.rules } };
+    if (base.kind === "regional") {
+      const disableOnly = base.enabled && !next.enabled
+        && (["startsAt", "endsAt"] as const).every(key => next[key]?.replace(/\.000Z$/, "Z") === base[key]?.replace(/\.000Z$/, "Z"))
+        && JSON.stringify(next.rules) === JSON.stringify(eventRuleDraftRules(base))
+        && regions === eventRegionText(base.rules.regions);
+      if (disableOnly) {
+        // Preserve the stored rules and dates for a status-only write, including legacy region names.
+        next.rules = base.rules;
+        next.startsAt = base.startsAt;
+        next.endsAt = base.endsAt;
+      } else {
+        let parsedRegions: ReturnType<typeof parseEventRegions>;
+        try { parsedRegions = parseEventRegions(regions); }
+        catch (cause) { setError(displayAdminError(cause)); return; }
+        for (const [index, region] of parsedRegions.entries()) {
+          const nameError = appVisibleTextError(region.name, `第 ${index + 1} 个地区名称`);
+          if (nameError) { setError(nameError); return; }
+        }
+        next.rules.regions = parsedRegions;
+      }
+    }
     ctx.openActionConfirm({ briefKind: "config", action: `${!next.enabled ? "保存关闭状态" : base.enabled ? "保存配置（保持开启）" : "保存并启用"} · ${base.eventCode}`,
       detail: <>更新本活动的参与条件、奖励及有效期。{!next.enabled ? "保存后活动为关闭状态，不发放新奖励。" : base.enabled ? "活动保持开启，符合条件的用户继续参与；保存时会检查配置与奖励预算。" : base.rulesLocked ? "开启过又关闭的活动不能重新开启，保存会被拒绝。" : ""}</>,
       blockedReason: next.enabled && !base.enabled && !base.rulesLocked ? "首次开启活动要审批，这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
@@ -112,7 +132,7 @@ export default function H4EventRules({ ctx, rows, confirmedRules, currentEventCo
             {selected.kind === "boost" && <div className="field"><span>加成玩法</span><span>{draft.rules.action === "CHECKIN_MULTIPLIER" ? "周末签到加倍" : "锁定计划加抽奖券"}</span></div>}
             {eventRuleFields({ kind: selected.kind, rules: draft.rules }).map(field => <div className="field" key={field.key}><span>{field.label}</span>
               {field.type === "voucher" ? <><select aria-label={field.label} disabled={!canReadVouchers || voucherLoading || !!voucherError} value={String(draft.rules[field.key] ?? "")} onChange={event => patchRule(field.key, event.target.value)}><option value="">请选择全场八折券</option>{!!draft.rules[field.key] && !vouchers.some(v => v.id === draft.rules[field.key]) && <option value={String(draft.rules[field.key])} disabled>{String(draft.rules[field.key])} · 当前目录未提供</option>}{vouchers.map(v => <option key={v.id} value={v.id} disabled={v.status !== "active"}>{v.name} · {v.id} · 减免 {v.percent}%{v.status !== "active" ? " · 已停用" : ""}</option>)}</select><small>选择覆盖活动期限的全场八折券；券状态和使用条件在 H7 维护，每账号领取一次、单笔使用。</small>{!canReadVouchers ? <small>需要 H7 查看权限才能选择优惠券。</small> : voucherLoading ? <small role="status">正在读取优惠券…</small> : voucherError ? <><small role="alert">{voucherError}</small><button type="button" className="l-btn sm" onClick={() => setVoucherRetry(value => value + 1)}>重试读取优惠券</button></> : !vouchers.length ? <small>暂无百分比券，请先在 H7 配置。</small> : null}</>
-                : field.type === "regions" ? <><textarea aria-label={field.label} rows={4} value={regions} onChange={event => setRegions(event.target.value)} placeholder={"东南亚: VN, TH\n欧洲: DE, FR"}/><small>每行一个地区，国家使用两位代码；同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。</small></>
+                : field.type === "regions" ? <><textarea aria-label={field.label} rows={4} value={regions} onChange={event => setRegions(event.target.value)} placeholder={"Southeast Asia: VN, TH\nEurope: DE, FR"}/><small>地区名称：{APP_VISIBLE_TEXT_HINT}。每行一个地区，国家使用两位代码；同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。</small></>
                 : field.type === "weekdays" ? <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>{["一", "二", "三", "四", "五", "六", "日"].map((day, index) => <label key={day}><input type="checkbox" checked={Array.isArray(draft.rules.weekdays) && draft.rules.weekdays.includes(index + 1)} onChange={event => { const days = Array.isArray(draft.rules.weekdays) ? draft.rules.weekdays as number[] : []; patchRule("weekdays", event.target.checked ? [...days, index + 1].sort() : days.filter(day => day !== index + 1)); }}/>周{day}</label>)}</div>
                 : <input aria-label={field.label} type={field.type === "text" ? "text" : "number"} min={field.type === "text" ? undefined : 0} step={field.integer ? 1 : "any"} value={String(draft.rules[field.key] ?? "")} onChange={event => patchRule(field.key, field.type === "text" || event.target.value === "" ? event.target.value : Number(event.target.value))}/>}</div>)}
           </fieldset>

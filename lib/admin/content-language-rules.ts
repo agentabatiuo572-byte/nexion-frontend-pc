@@ -2,6 +2,14 @@ import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-clie
 
 type ContentLanguageValue = string | readonly string[];
 
+export const APP_VISIBLE_TEXT_HINT = "App 用户可见，请填英文";
+
+export function appVisibleTextError(value: string | undefined, field: string): string | undefined {
+  if (value && /\p{Script=Han}/u.test(value)) {
+    return `${field}会显示给 App 用户，不能包含中文，请填英文`;
+  }
+}
+
 export function trimStoredContent(value: string): string {
   // Java String.trim() preserves nonbreaking spaces and other characters above U+0020.
   return value.replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, "");

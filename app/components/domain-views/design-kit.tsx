@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy, trimStoredContent } from "@/lib/admin/content-language-rules";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, blankCopiedContentLanguage, englishCopyHint, fillBlankContentLanguage, isEnglishCopy, trimStoredContent } from "@/lib/admin/content-language-rules";
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -1453,6 +1453,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "disclosure-jurisdiction") {
     needs("code", "适用地区代码");
     needs("name", "适用地区名称");
+    const nameError = appVisibleTextError(state.name, "适用地区名称");
+    if (nameError) missing.push(nameError);
     if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
@@ -1655,6 +1657,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(delay) || delay < 0 || delay > 60000) missing.push("弹窗延迟须为 0-60000 毫秒");
     if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) missing.push("弹窗冷却须为 0-720 小时");
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
+  } else if (spec.kind === "wheel-tier-config") {
+    const rewardNameError = appVisibleTextError(state.rewardName, "奖励展示");
+    if (rewardNameError) missing.push(rewardNameError);
   } else if (spec.kind === "quest-event-config") {
     const target = state.targetValue?.trim();
     if (target && (!Number.isInteger(Number(target)) || Number(target) < 1 || Number(target) > 1_000_000_000)) {
@@ -2522,10 +2527,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               onChange={(event) => set("code", event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
             />
           </label>
-          {input("name", "适用地区名称", "如 越南司法辖区")}
+          {input("name", "适用地区名称", "State Bank of Vietnam")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          地区代码创建后不能修改。
+          适用地区名称：{APP_VISIBLE_TEXT_HINT}。地区代码创建后不能修改。
         </div>
       </div>
     );
@@ -3007,7 +3012,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">新建转盘奖项{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("tierName", "奖项名称", "如 小额奖")}
-          {input("rewardName", "奖励展示", "如 100 UVT")}
+          {input("rewardName", "奖励展示", "100 UVT")}
           {input("probabilityPct", "中奖概率（%）", "0–100，如 5", "number")}
           {select("realOutflow", "是否发真钱", ["0", "1"], "tier-real-outflow", { "0": "否", "1": "是" })}
           {select("rewardKind", "奖励类型", ["uvt", "usdt", "coupon"], "tier-reward-kind", { uvt: "UVT", usdt: "USDT", coupon: "代金券" })}
@@ -3016,7 +3021,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("dailyStock", "每日总数量（0 为不限）", "如 50", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          所有奖项概率加起来须等于 100。用户实际拿到的是「实际发放数量」，改展示名称不影响发放。USDT 奖项须选「发真钱」，并通过兑付覆盖率检查。
+          奖励展示：{APP_VISIBLE_TEXT_HINT}。所有奖项概率加起来须等于 100。用户实际拿到的是「实际发放数量」，改展示名称不影响发放。USDT 奖项须选「发真钱」，并通过兑付覆盖率检查。
         </div>
       </div>
     );

@@ -1,6 +1,7 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  APP_TEXT_CHINESE_NOT_ALLOWED: "显示给 App 用户的文字不能包含中文，请改成英文",
   SKU_MODEL_UNRECOGNIZED: SKU_MODEL_UNRECOGNIZED_REASON,
   CREGIS_SWITCH_DIFFERENT_CHECKER_REQUIRED: "不能复核自己发起的资金开关申请，请由另一位有权限的管理员复核。",
   CREGIS_SWITCH_VERSION_CHANGED: "资金开关版本已变化，请刷新当前状态后重新提交审批。",
@@ -1157,6 +1158,10 @@ export function formatAdminApiError(message: string | null | undefined, fallback
     const localized = eventLocalizedMissingMessage(data);
     if (localized) return localized;
   }
+  if (raw === "APP_TEXT_CHINESE_NOT_ALLOWED" && data && typeof data === "object"
+    && "field" in data && typeof data.field === "string" && data.field.trim()) {
+    return `${ADMIN_ERROR_MESSAGES[raw]}。字段：${data.field.trim()}`;
+  }
 
   if (raw.startsWith("J4_EXECUTION_PARTIAL:")) {
     const executionId = raw.split(":")[1] || "未知";
@@ -1219,6 +1224,9 @@ const HAS_CJK_RE = /[一-鿿]/;
 export function displayAdminError(error: unknown): string {
   if (!(error instanceof Error) && typeof error !== "string") return NEUTRAL_DISPLAY_FALLBACK;
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string") {
+    if (error.backendMessage === "APP_TEXT_CHINESE_NOT_ALLOWED" && "details" in error) {
+      return formatAdminApiError(error.backendMessage, "", error.details);
+    }
     const known = ADMIN_ERROR_MESSAGES[error.backendMessage];
     if (typeof known === "string") return known;
   }
