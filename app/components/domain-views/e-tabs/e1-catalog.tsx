@@ -319,7 +319,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const soldValue = soldValues.reduce((sum, v) => sum + BigInt(v.replace(".", "").padEnd(v.replace(".", "").length + valueScale - (v.split(".")[1] ?? "").length, "0")), BigInt("0")).toString().padStart(valueScale + 1, "0");
   const soldValueText = e1Number(valueScale ? `${soldValue.slice(0, -valueScale)}.${soldValue.slice(-valueScale)}` : soldValue);
   const phaseCurrentKnown = phaseOrder.includes(phaseCur);
-  const phaseMismatch = ctx.e1Gates?.phaseComparison?.same === false ? ctx.e1Gates.phaseComparison : null;
+  // 后端按原值比（E1 存「1」、H1 存「P1」也算不同）；换算成同一个阶段的不算不一致。
+  const comparison = ctx.e1Gates?.phaseComparison;
+  const phaseMismatch = comparison?.same === false && resolveE1PhaseId(phases, comparison.h1CurrentPhase) !== resolveE1PhaseId(phases, comparison.e1CurrentPhase) ? comparison : null;
   const gateNeedsAttention = (state: ReturnType<typeof e1GateReadiness>) => !state.declaredPhase || state.phaseConflict || !state.eligibilityReady || state.gatePhaseIdx < 0 || !phaseCurrentKnown;
   return <>
     {available && <Conclusion state={stats[3].value || legacy || unknown || unconfigured || ctx.e1InvalidSkus.length ? "warn" : "neutral"} explain="在售只计通过发布门的商品；仍须同时满足库存、开放阶段和个人购买条件。草稿不是待审批单。">
