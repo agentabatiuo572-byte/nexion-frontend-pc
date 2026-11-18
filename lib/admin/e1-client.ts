@@ -128,6 +128,8 @@ export interface E1GenerationGateData {
   phases: E1Phase[];
   platformMonth: number;
   phaseCurrent: string;
+  /** 后端 75888a2d：E1 当前阶段和「运营阶段设置」(H1) 的比较；商品开放仍按 E1 判断。 */
+  phaseComparison?: { e1CurrentPhase: string; h1CurrentPhase: string; same: boolean; gateSource: string };
   releases: E1GenerationRelease[];
   configValues: Record<string, string>;
   allowedFields: string[];
