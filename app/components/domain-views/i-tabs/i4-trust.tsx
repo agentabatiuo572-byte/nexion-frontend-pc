@@ -549,7 +549,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       effect: approvalTag,
       confirmTone: "danger",
       confirmLabel: "提交审批",
-      statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}换成所选版本；所选版本缺语言时 App 信任中心整页打不开。`, check: "先看所选版本完不完整：超过 80 项或格式不对的不能回滚。理由写清为什么回到这一版。" },
+      statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}换成所选版本。`, check: "先看所选版本完不完整：超过 80 项、格式不对或缺英文的不能回滚。理由写清为什么回到这一版。" },
       edit: { kind: "select", label: archived ? "恢复成" : "回滚到", current: s.v, currentLabel: archived ? "已下架的版本" : "现在公开", options, optionLabels, hint: `只能选这一块发布过的版本，时间为${businessZone().label}` },
       facts: (value?: string) => {
         const target = value ? versionOf(value) : undefined;
