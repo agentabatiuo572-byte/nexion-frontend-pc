@@ -10,23 +10,20 @@ import Link from "next/link";
 import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Lock, Smartphone } from "lucide-react";
 import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/h3-display-names";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
 import { h3Decimal, h3HasConfigValue, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
+// 叫法表放在 lib/admin/h3-display-names.ts，A2 审批单也用；这里照旧导出，H3 各文件的引用不变。
+export { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText };
+
 export type { H3Model } from "@/lib/admin/h3-contract";
 
 // ===== 选项表：照旧页面原样 =====
 export const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
-export const TASK_CATEGORY_LABELS: Record<string, string> = {
-  wallet: "钱包",
-  explore: "探索",
-  recommend: "推荐",
-  identity: "身份",
-  social: "社交",
-};
 export const TASK_ACTION_ROUTES = [
   "/pages/missions/missions",
   "/pages/me/profile",
@@ -43,24 +40,6 @@ export const TASK_ACTION_ROUTES = [
   "/pages/learn/courses",
   "/pages/genesis/marketplace",
 ];
-export const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
-  "/pages/missions/missions": "任务中心",
-  "/pages/me/profile": "个人资料",
-  "/pages/me/wallet-cards-new": "绑定银行卡",
-  "/pages/me/wallet-topup": "钱包充值",
-  "/pages/me/wallet-exchange": "UVT / USDT 兑换",
-  "/pages/me/wallet-repurchase": "锁定计划",
-  "/pages/me/devices": "我的设备",
-  "/pages/earn/earn": "收益",
-  "/pages/store/store": "商城",
-  "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
-  "/pages/team/team": "团队",
-  "/pages/team/commissions": "奖励明细",
-  "/pages/learn/courses": "学习中心",
-  "/pages/staking/staking": "Staking",
-  "/pages/genesis/genesis": "创世节点",
-  "/pages/genesis/marketplace": "创世节点 转让市场",
-};
 
 // 只暴露 Java OpsGrowthController 已接受的规范事件，避免运营手填 JSON 或拼接事件名。
 export const H3_BINDING_EVENT_PRODUCERS: Record<string, H3QuestEventBinding["producer"]> = {
@@ -204,11 +183,6 @@ export function parseTriReward(value: unknown): { full: string; grace: string } 
   return match ? { full: match[1], grace: match[2] } : null;
 }
 
-/** 后端旧名称里的 NEX 按真实类型写 UVT，并标出是旧名称。 */
-export function legacyAssetText(value: string): { text: string; legacy: boolean } {
-  const legacy = /\bNEX\b/i.test(value);
-  return { text: nexGridBrandText(value.replace(/\bNEX\b/gi, "UVT")), legacy };
-}
 
 // ===== 任务状态 =====
 export type TaskStatus = "active" | "paused" | "archived";
