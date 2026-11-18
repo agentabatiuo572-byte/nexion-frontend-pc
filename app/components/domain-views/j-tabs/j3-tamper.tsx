@@ -265,18 +265,18 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     }
     void actions.reloadJEmergency().then((next) => {
       const now = next.tamper?.alertConfig;
-      if (now?.threshold === null) toast(j3ErrorText(new Error(now.unknownReason)), "info");
+      if (now?.threshold === null) toast("现在读到：告警阈值读不出。这是现在的状态，不能据此判断原修改成没成。", "info");
       else if (now) toast(`现在读到：告警阈值 ${now.threshold} 次 / 24 小时，风险评分${feedText(now.feedK4)}。这是现在的值，不能据此判断原修改成没成。`, "info");
     }).catch(() => undefined);
   };
   const closeConfig = () => { setConfigOpen(null); syncSaved(); };
   const configBlocked = saved ? j3ErrorText(new Error("J3_ORIGINAL_CONFIG_PENDING"))
-    : ctx.contentLoading || ctx.contentError || accountLoading ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : alertUnavailable;
+    : ctx.contentLoading || ctx.contentError || accountLoading ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : alertUnavailable ? "读不出现在的阈值，修好前不能修改" : undefined;
 
   const exportDisabledReason = exporting ? undefined
     : retryableReport ? undefined
       : !data ? "数据还没读到，读到后才能导出"
-        : alertUnavailable ?? (!hasData ? `${WINDOW_TEXT[window]}没有拦截记录，不用导出空报表` : undefined);
+        : alertUnavailable ? "告警阈值读不出，报表里的告警账户算不出来" : !hasData ? `${WINDOW_TEXT[window]}没有拦截记录，不用导出空报表` : undefined;
 
   const header = (
     <PageHeader pageId="J3" title="篡改防御监控"
@@ -476,7 +476,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
     : `比${PREVIOUS_SPAN[win]} ${deltaPrevPct > 0 ? "+" : ""}${deltaPrevPct}%`;
   const conclusionExplain = <>
     <p>拦截次数是{W}里系统已经处理完的拦截事件之和，只统计已登记的 {data.coverage.registeredCount} 类入口；还没处理完的事件不算在内。</p>
-    <p>{alertUnavailable ?? `账户达到告警阈值：${W}内被拦次数 ≥ ${num(alertThreshold)} 次（每 24 小时 ${data.alertConfig.threshold} 次 × ${win === "24h" ? 1 : win === "7d" ? 7 : 30}）。`}</p>
+    <p>{alertUnavailable ? "告警阈值读不出，所以算不出哪些账户达到阈值；拦截次数、走势和入口照常统计。" : `账户达到告警阈值：${W}内被拦次数 ≥ ${num(alertThreshold)} 次（每 24 小时 ${data.alertConfig.threshold} 次 × ${win === "24h" ? 1 : win === "7d" ? 7 : 30}）。`}</p>
   </>;
 
   const userRef = (code: string) => {
@@ -493,8 +493,12 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
           action={<Button size="sm" onClick={scrollToAccounts}>查看这些账户</Button>}>
           {W}有 <b>{num(accountTotal)}</b> 个账户达到告警阈值
         </Conclusion>
+      : totalPath > 0 && alertUnavailable
+        ? <Conclusion state="warn" icon={CircleHelp} explain={conclusionExplain} hint="阈值要请技术值班修复，这页改不了。">
+          {W}有拦截，告警阈值读不出，暂时列不出要处理的账户
+        </Conclusion>
       : totalPath > 0
-        ? <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{alertUnavailable ?? `${W}有拦截，没有账户达到告警阈值`}</Conclusion>
+        ? <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{W}有拦截，没有账户达到告警阈值</Conclusion>
         : <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{W}没有拦截记录</Conclusion>}
 
     {!coverageComplete && (
@@ -514,7 +518,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
         explain={`和紧挨着的${PREVIOUS_SPAN[win]}比。前一段为 0 而这段有拦截时没法算百分比。`} />
       <Stat tone="role-2" icon={CalendarDays} label="近 7 天拦截" value={num(total7d)} unit="次" sub={`日均约 ${num(Math.round(total7d / 7))} 次`}
         explain="固定看近 7 天，不随时间范围变。日均是 7 天合计除以 7 后四舍五入。" />
-      <Stat tone="role-4" icon={Gauge} label="告警阈值" value={data.alertConfig.threshold?.toString() ?? "—"} unit="次 / 24 小时"
+      <Stat tone="role-4" icon={Gauge} label="告警阈值" value={data.alertConfig.threshold?.toString() ?? "读不出"} unit={data.alertConfig.threshold === null ? undefined : "次 / 24 小时"}
         sub={`风险评分：${feedText(data.alertConfig.feedK4)}`}
         explain={<>
           <p>一个账户 24 小时内被拦到这个次数就进告警名单；看 7 天、30 天时门槛按 7 倍、30 倍算。</p>
@@ -555,7 +559,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
 
     <div ref={accountsRef} className="j3-accounts">
       <Panel title="达到告警阈值的账户" icon={UsersRound} tone="role-3" flush
-        sub={`${W} · 门槛 ≥ ${num(alertThreshold)} 次 · 共 ${num(accountPager.total)} 个`}
+        sub={alertUnavailable ? `${W} · 阈值读不出` : `${W} · 门槛 ≥ ${num(alertThreshold)} 次 · 共 ${num(accountPager.total)} 个`}
         explain={<>
           <p>{W}内被拦次数达到门槛的账户，按次数从多到少排。本页不冻结账户，处理请去账户操作或多账户排查。</p>
           <p>风险评分：这个范围里的拦截事件有没有计入风险评分，写的是这些事件加了多少分（分数到上限时可能是 0），不是账户现在的总分。风险提醒：有没有送进「风险提醒」页的最近风险信号，在那里显示为「篡改风险」。</p>
@@ -578,7 +582,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
           </thead>
           <tbody>
             {TAMPER_ACCTS.length === 0
-              ? <TableMessage columns={5} role="status">{alertUnavailable ?? `${W}没有账户达到告警阈值。`}</TableMessage>
+              ? <TableMessage columns={5} role="status">{alertUnavailable ? "阈值读不出，暂时列不出达到阈值的账户。" : `${W}没有账户达到告警阈值。`}</TableMessage>
               : TAMPER_ACCTS.map((a) => (
                 <J3AccountRow key={a.userCode} account={a} feedK4={data.alertConfig.feedK4} zone={zone} userRef={userRef} pathName={pathName}
                   canViewK1={canViewK1} canFreezeC2={canFreezeC2} />

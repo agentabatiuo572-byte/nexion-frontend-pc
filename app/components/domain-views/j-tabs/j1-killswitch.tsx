@@ -677,6 +677,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
 
   const adjRule = (rule: AutoRuleRow, stale?: { draft: string; was: AutoRuleRow; round: number }) => {
+    // 后端说这条阈值从没保存过时，框里写「默认值」、说明这是第一次保存；旧后端不给来源时照旧。
+    const firstSave = rule.thresholdSource === "DEFAULT";
     openActionConfirm(staleAware({ briefKind: "config",
       formKey: stale?.round,
       action: `自动触发规则调整 · ${rule.nm}`,
@@ -684,13 +686,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       detail: "保存后系统会定时检查实际数据，超过阈值就自动关停对应业务，并记入操作记录。",
       effect: IMMEDIATE,
       statedBrief: { impact: "阈值改小更容易自动关停，改大更不容易。", check: "核对新值和单位，理由写清依据或工单号。" },
-      facts: stale && changedByOther(ruleValue(stale.was), ruleValue(rule)),
+      facts: stale ? changedByOther(ruleValue(stale.was), ruleValue(rule))
+        : firstSave ? <Facts><Fact k="第一次保存">还没保存过，现在按默认值；保存后按新值判断</Fact></Facts> : undefined,
       confirmLabel: "确认调整，立即生效",
-      edit: { kind: "number", current: rule.thr, initialValue: stale?.draft, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
+      edit: { kind: "number", current: rule.thr, currentLabel: firstSave ? "默认值" : undefined, initialValue: stale?.draft, unit: rule.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true,
         hint: "1–1,000,000,000 的整数",
         preview: (value) => `改成 ${Number(value).toLocaleString()} ${rule.unit}：实际数据超过这个值时自动关停对应业务。` },
       run: (reason, newValue) => sendCommand(`rule|${rule.id}`, {
-        label: `调整 ${rule.nm}`, locks: [`rule:${rule.id}`], reason, okText: `${rule.nm} 已生效`,
+        label: `调整 ${rule.nm}`, locks: [`rule:${rule.id}`], reason, okText: firstSave ? `${rule.nm}第一次保存成功，已生效` : `${rule.nm} 已生效`,
         command: { kind: "rule", id: rule.id, value: newValue ?? rule.thr, expected: rule.thr },
       }),
     }, (latest, draft) => adjRule(latest.autoRules.find((item) => item.id === rule.id) ?? rule, { draft, was: rule, round: (stale?.round ?? 0) + 1 })));
@@ -915,7 +918,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
                 })}
                 when={`${ruleModeText(rule)}${rule.adjustable ? "；保存后立即生效" : ""}`}
                 note={rule.refNote || undefined}
-                value={rule.id === "regulatoryDirective" ? "人工关停" : rule.tamperAdvisory?.actualThreshold === null ? "读不出" : ruleValue(rule)}
+                value={rule.id === "regulatoryDirective" ? "人工关停" : rule.tamperAdvisory?.actualThreshold === null ? "读不出"
+                  : rule.thresholdSource === "DEFAULT" ? <>{ruleValue(rule)} <StatusTag tone="neutral" explain="这条阈值还没保存过，现在按系统默认值判断；第一次保存后按你存的值。">默认值</StatusTag></> : ruleValue(rule)}
                 action={rule.adjustable && canWrite
                   ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={blockOf(`rule:${rule.id}`)} onClick={() => adjRule(rule)}>调整</Button>
                   : source && reach(source) ? <Link className="rd-link" href={source} prefetch={false} title={rule.refTitle}>去设置</Link> : undefined} />
