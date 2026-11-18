@@ -968,7 +968,7 @@ function G2ExchangePage() {
           ? <Fact k="显示在哪">App {appLanguage}界面；App 和 H5 现在还不显示</Fact>
           : <><Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact><Fact k="显示在哪">这页排队单的详情；App 和 H5 现在还不显示</Fact></>}
       </Facts>,
-      statedBrief: { impact: `改的是${appLanguage ? `App ${appLanguage}界面` : "排队单上"}写的预计时间，不改处理顺序，也不会让单子自动成交。`, check: "核对新值；理由写清依据或工单号。" },
+      statedBrief: { impact: appLanguage ? `改的是 App ${appLanguage}界面写的预计时间，不改处理顺序，也不会让单子自动成交。` : "改的是排队单上写的预计时间，不改处理顺序，也不会让单子自动成交。", check: "核对新值；理由写清依据或工单号。" },
       edit: key === "queueEtaHours"
         ? { kind: "number", current, displayCurrent: current ? undefined : "未设置", currentLabel: original ? "提交时" : undefined, disallowCurrent: true,
             initialValue: original?.input.value, min: 1, max: 999, step: 1, maxDecimals: 0, unit: "小时", hint: "1–999 的整数",
