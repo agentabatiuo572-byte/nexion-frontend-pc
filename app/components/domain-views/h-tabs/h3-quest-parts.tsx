@@ -10,14 +10,14 @@ import Link from "next/link";
 import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Lock, Smartphone } from "lucide-react";
 import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/h3-display-names";
+import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
 import { h3Decimal, h3HasConfigValue, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
-// 叫法表放在 lib/admin/h3-display-names.ts，A2 审批单也用；这里照旧导出，H3 各文件的引用不变。
+// 叫法表放在 lib/admin/config-help/h3-task.ts，A2 审批单也用；这里照旧导出，H3 各文件的引用不变。
 export { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText };
 
 export type { H3Model } from "@/lib/admin/h3-contract";

@@ -1,4 +1,4 @@
-/** H3 用户任务管理的叫法：任务类别、去完成页面、旧币种名。H3 页和 A2 审批单共用，两页同一个说法。 */
+/** H3 用户任务管理表单里任务类别、去完成页面的选项叫法和旧币种名的写法。H3 页和 A2 审批单共用，两页同一个说法。 */
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 export const TASK_CATEGORY_LABELS: Record<string, string> = {
