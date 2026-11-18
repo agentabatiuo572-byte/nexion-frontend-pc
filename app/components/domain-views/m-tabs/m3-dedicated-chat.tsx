@@ -12,7 +12,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
-import { supportClient, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { supportClient, isSupportScopeDenial, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -887,27 +887,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (rows && typeof rows === "object" && !Array.isArray(rows)) setTicketLinks(Object.fromEntries(Object.entries(rows).filter(([conversationId, ticketNo]) => conversationId && typeof ticketNo === "string" && ticketNo)));
     } catch { setTicketLinks({}); }
   }, [adminId, authEpoch]);
-  // A first contact may legitimately start without a thread. Once a thread is visible,
-  // losing it from the authorized snapshot invalidates the original private content.
-  const firstThreads = useRef(new Map<string, string[]>());
   useEffect(() => {
     if (!conversationsAvailable || qualificationUnknown) return;
-    const previous = firstThreads.current;
-    const current = new Map<string, string[]>();
-    for (const { first, reply, locator, row, dock } of savedSends) {
-      if (first) {
-        const ids = visible.filter(convo => convo.customerId === first.customerId).map(convo => convo.id);
-        if (previous.get(first.key)?.some(id => !ids.includes(id))) {
-          revokeCustomer(first.customerId, false, undefined, first.key);
-        } else current.set(first.key, ids);
-        continue;
-      }
+    for (const { reply, row, dock } of savedSends) {
       if (!reply) continue;
       const original = visible.find(convo => convo.id === reply.conversationId);
-      if (!original) {
-        revokeCustomer(originalCustomer(locator), false, reply.conversationId, reply.key);
-        continue;
-      }
+      if (!original) continue;
       // Keep legacy evidence addressable in its original slot. Remember the proven customer before a later transfer.
       if (dock && !validCustomerId(dock.customerId ?? null)) {
         dockCommands.remember(row.fingerprint, row.commandKey, { conversationNo: dock.conversationNo, payload: dock.payload, customerId: customerIdOf(original) });
@@ -915,8 +900,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         rememberPending(row.fingerprint, reply.key, { ...reply, customerId: customerIdOf(original) });
       }
     }
-    firstThreads.current = current;
-  }, [adminId, conversationsAvailable, qualificationUnknown, savedSends, visible, revokeCustomer, originalCustomer]);
+  }, [adminId, conversationsAvailable, qualificationUnknown, savedSends, visible]);
   const redactRecovery = useEffectEvent((customerId: string, conversationId: string | undefined, key: string) => {
     if (readSavedSends(adminId).some(entry => entry.row.commandKey === key && (entry.reply || entry.first))) {
       revokeCustomer(customerId, true, conversationId, key);
@@ -939,6 +923,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           redactRecovery(customerId, conversationId, key);
           return false;
         }
+        if (conversationId && !visible.some(row => row.id === conversationId && row.customerId === customerId)) return false;
         setVerifiedRecovery(old => ({ scope, keys: new Set([...(old?.scope === scope ? old.keys : []), key]) }));
         return true;
       }, cause => {
@@ -982,12 +967,19 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     });
     return () => { controller.abort(); if (markedRef.current === marker) markedRef.current = ""; };
   }, [selected?.id, selected?.ownerAdminId, selected?.version, readContextsKey, messagePages.readCursor, messagePages.readReady, conversationsAvailable, adminId, authEpoch, readRetry, screen, revokeCustomer]);
+  const customerIdOfSelection = selected?.customerId ?? savedSends.find(entry => entry.locator.conversationId === selectedId)?.locator.customerId;
   useEffect(() => {
     if (qualificationUnknown || !lostAccess && (!selected || selected.ownerAdminId === adminId || canReviewAll)) return;
-    const original = savedSends.find(entry => entry.locator.conversationId === selectedId);
-    const customerId = selected?.customerId ?? (original && originalCustomer(original.locator));
-    revokeCustomer(customerId, false, selectedId || undefined); setSendError("你已经看不了这个会话，请回客户列表刷新。");
-  }, [lostAccess, selected, selectedId, savedSends, originalCustomer, adminId, canReviewAll, revokeCustomer, qualificationUnknown]);
+    const customerId = customerIdOfSelection;
+    const controller = new AbortController();
+    if (lostAccess) {
+      void supportClient.conversationState(selectedId, controller.signal).catch(cause => {
+        if (!controller.signal.aborted && isSupportScopeDenial(cause)) ctx.invalidateScope(selectedId, customerId);
+      });
+    } else revokeCustomer(customerId, false, selectedId || undefined);
+    setSendError("你已经看不了这个会话，请回客户列表刷新。");
+    return () => controller.abort();
+  }, [lostAccess, selectedId, customerIdOfSelection, adminId, canReviewAll, qualificationUnknown, ctx.invalidateScope]);
 
   useEffect(() => {
     if (!validCustomerId(requestedCustomerId) || requestedConvo || !conversationsAvailable || qualificationUnknown) { setFirstDetail(null); return; }

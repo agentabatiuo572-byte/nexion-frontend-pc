@@ -44,7 +44,7 @@ import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -206,6 +206,36 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     void reloadMContent();
   }, [authEpoch, reloadMContent]);
 
+  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string) => {
+    if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
+    mLoadCoordinator.current.beginConversationSnapshot();
+    liveSnapshotController.current?.abort();
+    const cleared = session?.adminId ? redactCustomerSends(session.adminId, mDataRef.current?.conversations ?? [], customerId, conversationNo) : undefined;
+    customerId = cleared?.customerId ?? customerId;
+    const affectedIds = cleared?.affected ?? [];
+    if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
+    window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared } }));
+    setMData((previous) => previous ? {
+      ...previous,
+      conversations: previous.conversations.filter((conversation) =>
+        conversationNo || customerId
+          ? conversation.id !== conversationNo && conversation.customerId !== customerId
+          : false),
+      tickets: previous.tickets.map((ticket) =>
+        !conversationNo && !customerId
+          || Boolean(conversationNo && ticket.sourceConversationNo === conversationNo)
+          || Boolean(customerId && ticket.sourceConversationNo !== "DIRECT" && String(ticket.userId) === customerId)
+          ? { ...ticket, contentRestricted: true, subject: "私聊内容仅当前专属客服和客服主管可阅", messages: ticket.messages.filter((message) => message.author === "internal" || message.author === "system") }
+          : ticket),
+    } : previous);
+    void reloadMContent();
+    setUiParams((previous) => {
+      if ((conversationNo || customerId) && previous[DOCK_LAST_KEY] !== conversationNo && !affectedIds.includes(previous[DOCK_LAST_KEY])) return previous;
+      const next = { ...previous, [DOCK_LAST_KEY]: "", [DOCK_OPEN_KEY]: "0" };
+      if (session?.adminId) saveDockUi(session.adminId, next);
+      return next;
+    });
+  }, [reloadMContent, session?.adminId]);
   const reconcileConversationSnapshot = useCallback(async (signal: AbortSignal) => {
     const generation = mLoadCoordinator.current.beginConversationSnapshot();
     const snapshotAuthEpoch = authEpoch;
@@ -214,13 +244,22 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
       throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
     }
+    if (session?.adminId) {
+      const revoked = await revokedPrivateTargets(session.adminId, mDataRef.current?.conversations ?? [], conversations, signal);
+      if (signal.aborted || useAdminAuth.getState().authEpoch !== snapshotAuthEpoch
+        || !mLoadCoordinator.current.isConversationSnapshotCurrent(generation)) return;
+      if (revoked.length) {
+        for (const target of revoked) invalidateScope(target.conversationId, target.customerId);
+        return; // Invalidation starts a fresh authorized load.
+      }
+    }
     setConversationSnapshotRevision(revision => revision + 1);
     // Replace the scoped snapshot; never merge prior details (a scope change must not keep old private detail).
     // The open thread keeps its last loaded messages on screen while the detail reloads (M-9, m3-dedicated-chat).
     setMData((previous) => previous
       ? { ...previous, conversations, conversationsAvailable: true }
       : previous);
-  }, [authEpoch]);
+  }, [authEpoch, session?.adminId, invalidateScope]);
   const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal, includeCustomerProfile = true) => {
     const detailEpoch = authEpoch;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -353,36 +392,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
-  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string) => {
-    if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
-    mLoadCoordinator.current.beginConversationSnapshot();
-    liveSnapshotController.current?.abort();
-    const cleared = session?.adminId ? redactCustomerSends(session.adminId, mDataRef.current?.conversations ?? [], customerId, conversationNo) : undefined;
-    customerId = cleared?.customerId ?? customerId;
-    const affectedIds = cleared?.affected ?? [];
-    if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
-    window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared } }));
-    setMData((previous) => previous ? {
-      ...previous,
-      conversations: previous.conversations.filter((conversation) =>
-        conversationNo || customerId
-          ? conversation.id !== conversationNo && conversation.customerId !== customerId
-          : false),
-      tickets: previous.tickets.map((ticket) =>
-        !conversationNo && !customerId
-          || Boolean(conversationNo && ticket.sourceConversationNo === conversationNo)
-          || Boolean(customerId && ticket.sourceConversationNo !== "DIRECT" && String(ticket.userId) === customerId)
-          ? { ...ticket, contentRestricted: true, subject: "私聊内容仅当前专属客服和客服主管可阅", messages: ticket.messages.filter((message) => message.author === "internal" || message.author === "system") }
-          : ticket),
-    } : previous);
-    void reloadMContent();
-    setUiParams((previous) => {
-      if ((conversationNo || customerId) && previous[DOCK_LAST_KEY] !== conversationNo && !affectedIds.includes(previous[DOCK_LAST_KEY])) return previous;
-      const next = { ...previous, [DOCK_LAST_KEY]: "", [DOCK_OPEN_KEY]: "0" };
-      if (session?.adminId) saveDockUi(session.adminId, next);
-      return next;
-    });
-  }, [reloadMContent, session?.adminId]);
   const m3RecoveryEnabled = shouldStartM3ConversationRecovery({
     hasM3ReadAuthority: authorities.includes("service_m3_read"),
     hasMContentSnapshot: Boolean(safeMData),

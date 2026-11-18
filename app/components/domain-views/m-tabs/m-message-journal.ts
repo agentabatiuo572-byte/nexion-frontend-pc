@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { privateMessageRecovery, type PrivateMessageRecovery } from "@/lib/admin/m-support-enhancements";
-import { parseMConversationTimeoutPolicy } from "@/lib/admin/m-client";
-import { isDefiniteSupportRefusal, SupportClientError, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { fetchMConversationDetail, parseMConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { isSupportScopeDenial, supportClient, isDefiniteSupportRefusal, SupportClientError, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import type { SessionConvo, SessionMsg } from "./data";
 
 type Intent = "SERVICE" | "MAINTENANCE";
@@ -143,6 +143,87 @@ export function pendingSendCustomers(actorId: number, conversations: Conversatio
 }
 export function blocksNewSend(customers: Set<string | undefined>, customerId: string) {
   return customers.has(undefined) || customers.has(customerId);
+}
+
+type PrivateTarget = { conversationId?: string; customerId?: string; assignmentId?: string; ownerAdminId?: number | null };
+
+// Inspect only originals missing from a complete authorized snapshot. A new first
+// contact has no original thread: its customer detail is the authority in that case.
+export async function revokedPrivateTargets(adminId: number, previous: SessionConvo[], snapshot: SessionConvo[], signal: AbortSignal) {
+  const targets: PrivateTarget[] = [];
+  for (const { reply, first } of readSavedSends(adminId)) {
+    if (reply) targets.push({ conversationId: reply.conversationId, customerId: reply.customerId, assignmentId: reply.expectedAssignmentId });
+    if (first) targets.push({ customerId: first.customerId, assignmentId: first.assignmentId });
+  }
+  try {
+    const drafts = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}");
+    for (const [slot, value] of Object.entries(drafts)) {
+      if (typeof value !== "string" || !value) continue;
+      targets.push(slot.startsWith("first:") ? { customerId: slot.slice(6) } : { conversationId: slot });
+    }
+    const dockPrefix = `nexion-m-dock-draft:${adminId}:`;
+    for (const key of Object.keys(sessionStorage)) {
+      if (!key.startsWith(dockPrefix)) continue;
+      const [customerId, conversationId, assignmentId] = key.slice(dockPrefix.length).split(":");
+      targets.push({ customerId, conversationId, assignmentId, ownerAdminId: adminId });
+    }
+  } catch { /* Still verify the originals available from the in-memory journals. */ }
+
+  const missing = new Map<string, PrivateTarget>();
+  const addThread = (target: PrivateTarget, id: string) => {
+    if (snapshot.some(row => row.id === id)) return;
+    const old = previous.find(row => row.id === id);
+    const known = missing.get(id);
+    missing.set(id, { conversationId: id, customerId: known?.customerId || target.customerId || old?.customerId,
+      assignmentId: known?.assignmentId || target.assignmentId, ownerAdminId: known?.ownerAdminId ?? target.ownerAdminId ?? old?.ownerAdminId });
+  };
+  for (const target of targets) {
+    if (target.conversationId) addThread(target, target.conversationId);
+    else if (target.customerId) {
+      const threads = previous.filter(row => row.customerId === target.customerId);
+      for (const thread of threads) addThread(target, thread.id);
+      if (!threads.length && !snapshot.some(row => row.customerId === target.customerId)) {
+        const slot = `first:${target.customerId}`;
+        if (!missing.has(slot)) missing.set(slot, target);
+      }
+    }
+  }
+
+  const denied = new Map<string, PrivateTarget>();
+  const customers = new Map<string, ReturnType<typeof supportClient.customerDetail>>();
+  await Promise.all([...missing.values()].map(async target => {
+    let { customerId } = target;
+    const { conversationId } = target;
+    if (conversationId) {
+      try {
+        const thread = await fetchMConversationDetail(conversationId, signal, false);
+        if (customerId && thread.customerId !== customerId) return;
+        customerId = thread.customerId;
+      } catch (error) {
+        if (isSupportScopeDenial(error)) {
+          denied.set(customerId ? `customer:${customerId}` : `thread:${conversationId}`, { conversationId, customerId });
+          return;
+        }
+        // A temporary thread failure still permits an independent customer check.
+      }
+    }
+    try {
+      if (!customerId) return;
+      let request = customers.get(customerId);
+      if (!request) {
+        request = supportClient.customerDetail(customerId, signal);
+        customers.set(customerId, request);
+      }
+      const detail = await request;
+      if (detail.customerId !== customerId) return;
+      if ((!target.assignmentId || detail.assignmentId === target.assignmentId)
+        && (target.ownerAdminId == null || detail.agentAdminId === target.ownerAdminId)) return;
+    } catch (error) {
+      if (!isSupportScopeDenial(error)) return;
+    }
+    denied.set(customerId ? `customer:${customerId}` : `thread:${conversationId}`, { conversationId, customerId });
+  }));
+  return [...denied.values()];
 }
 
 export function redactCustomerSends(adminId: number, conversations: ConversationTarget[], customerId?: string, originalConversationId?: string, commandKey?: string) {
