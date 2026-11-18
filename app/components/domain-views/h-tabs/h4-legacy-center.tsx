@@ -4,7 +4,7 @@
  * H4 活动中心「既有活动与转盘」页签（第二部分）：既有活动、七类玩法、创世抽奖、转盘奖池与护栏。
  * 既有表单保留；H4 写入由共享命令层保存原请求、分流审批并恢复。
  */
-import { blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, blankCopiedContentLanguage } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import type { BusinessFormValue } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
@@ -66,6 +66,11 @@ type Model = H4Statistics & {
 };
 
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
+function wheelRewardNameFeedback(value: BusinessFormValue, label: string) {
+  const message = appVisibleTextError(value.rewardName, label);
+  return { message: message ?? "", invalid: message !== undefined, field: "rewardName" };
+}
+
 const killOn = (value: string) => ["1", "true", "on", "enabled", "open", "开"].includes(value.trim().toLowerCase());
 const budgetNumber = (value: string) => value.replace(/[$,\s]/g, "");
 /** 今天还剩多少预算：两个十进制串按位相减，不经浮点、不舍入。只用于显示。 */
@@ -626,9 +631,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       getPendingBusinessValue: () => h4PendingFor(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
+        feedback: (value) => wheelRewardNameFeedback(value, "奖品名称"),
         fields: [
           { key: "tierName", label: "奖项编号", current: "", placeholder: "如 uvt-100", required: true, help: "不能和已有奖项重复" },
-          { key: "rewardName", label: "奖品名称", current: "", placeholder: "如 100 UVT", required: true, help: "App 抽中时显示这串文字，不影响发放" },
+          { key: "rewardName", label: "奖品名称", current: "", placeholder: "100 UVT", required: true, help: `${APP_VISIBLE_TEXT_HINT}。App 抽中时显示这串文字，不影响发放` },
           { key: "rewardKind", label: "奖励类型", current: "uvt", inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" } },
           { key: "realOutflow", label: "是否发真钱", current: "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" },
             warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则保存会被拒绝" : undefined },
@@ -846,6 +852,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       businessForm: {
         kind: "multi-field",
         requireAnyChange: true,
+        feedback: (value) => wheelRewardNameFeedback(value, "奖项名称"),
         fields: [
           { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
           // 451dd37e normalizes the App projection only; retain the admin's stored kind.

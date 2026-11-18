@@ -10,6 +10,7 @@ import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleReadiness, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRuleReadiness, eventRegionText, parseEventRegions, type EventLocalizedContent } from "@/lib/admin/event-rule-form";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
@@ -123,8 +124,30 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     if (base && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${base.eventCode}`)) return;
     if (!base || !input || !rebased && saving || !canWrite) return;
     const next = { ...input, rules: { ...input.rules } };
-    try { if (base.kind === "regional" && !rebased) next.rules.regions = parseEventRegions(regions); }
-    catch (cause) { setError(displayAdminError(cause)); return; }
+    if (base.kind === "regional") {
+      const baseRegionText = eventRegionText(base.rules.regions);
+      const regionText = rebased ? eventRegionText(next.rules.regions) : regions;
+      const baseRules = rebased ? base.rules : eventRuleDraftRules(base);
+      const disableOnly = base.enabled && !next.enabled
+        && (["startsAt", "endsAt"] as const).every(key => next[key]?.replace(/\.000Z$/, "Z") === base[key]?.replace(/\.000Z$/, "Z"))
+        && JSON.stringify(next.rules) === JSON.stringify(baseRules)
+        && regionText === baseRegionText;
+      if (disableOnly) {
+        // Keep the exact stored rules and timestamps in a status-only write.
+        next.rules = base.rules;
+        next.startsAt = base.startsAt;
+        next.endsAt = base.endsAt;
+      } else {
+        let parsedRegions: ReturnType<typeof parseEventRegions>;
+        try { parsedRegions = parseEventRegions(regionText); }
+        catch (cause) { setError(displayAdminError(cause)); return; }
+        for (const [index, region] of parsedRegions.entries()) {
+          const nameError = appVisibleTextError(region.name, `第 ${index + 1} 个地区名称`);
+          if (nameError) { setError(nameError); return; }
+        }
+        if (!rebased) next.rules.regions = parsedRegions;
+      }
+    }
     const firstOpen = next.enabled && !base.enabled && !base.rulesLocked;
     const readVersion = h4ReadVersion("rules");
     let originalKey: string | undefined;
@@ -293,8 +316,8 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
               </div>;
             }
             if (field.type === "regions") return <div key={field.key} className="h4-field" data-wide="">
-              <Field label={field.label} help="每行一个地区，国家用两位代码；同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。">
-                <Textarea aria-label={field.label} rows={4} value={regions} onChange={event => setRegions(event.target.value)} placeholder={"东南亚: VN, TH\n欧洲: DE, FR"} />
+              <Field label={field.label} help={`地区名称：${APP_VISIBLE_TEXT_HINT}。每行一个地区，国家用两位代码；同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。`}>
+                <Textarea aria-label={field.label} rows={4} value={regions} onChange={event => setRegions(event.target.value)} placeholder={"Southeast Asia: VN, TH\nEurope: DE, FR"} />
               </Field>
             </div>;
             if (field.type === "weekdays") return <div key={field.key} className="h4-field" data-wide="">

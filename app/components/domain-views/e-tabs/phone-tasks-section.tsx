@@ -4,6 +4,7 @@ import { Activity, Clock3, ListTodo, Plus, Smartphone, Coins, Layers3 } from "lu
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { BlockState, Button, Cell, Check, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, NumberInput, Pager, Panel, Select, Stat, StatBand, StatusTag, StepBar, Table, TableLoading, TableMessage, TaskClassTag, Td, Th, Tr } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
@@ -60,6 +61,8 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   function submitForm() {
     if(!form || !ready || formUnchanged) return;
     if(!form.n.trim()) return setFormError("请填写任务名称");
+    const nameError = appVisibleTextError(form.n, "任务名称");
+    if (nameError) return setFormError(nameError);
     if(!/^[1-9]\d*$/.test(form.durationMinutes) || Number(form.durationMinutes)>1440) return setFormError("固定时长须为 1–1440 的整数分钟");
     if(!positiveAmount.test(form.baseReward.trim())) return setFormError("固定奖励须为非负数，最多 12 位整数、6 位小数");
     const amplifies = task ? compareE6Decimal(form.baseReward,String(task.simulation!.baseReward))>0 || task.simulation!.enabled && Number(form.durationMinutes)<task.simulation!.durationMinutes : form.enabled && compareE6Decimal(form.baseReward,"0")>0;
@@ -97,7 +100,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
     </Panel>
     {form && <Drawer open title={task?"编辑手机任务":"新增手机任务"} icon={Smartphone} tone="role-2" onClose={()=>setForm(null)} footer={<Decision primary={<Button variant="primary" disabledReason={!ready?"任务目录未就绪":formUnchanged?"没有修改":undefined} onClick={submitForm}>提交审批</Button>} others={<Button onClick={()=>setForm(null)}>取消</Button>}/>}>
       <Facts><Fact k="当前版本">{task?String(form.version):"待创建"}</Fact><Fact k="生效方式">另一位管理员批准后，对新派任务生效</Fact></Facts>
-      <div className="e6-form-grid"><Field label="任务名称" required error={formError&&!form.n.trim()?formError:undefined}><Input value={form.n} onChange={e=>{setFormError("");setForm({...form,n:e.target.value});}}/></Field>
+      <div className="e6-form-grid"><Field label="任务名称" required error={formError.includes("任务名称")?formError:undefined}><Input value={form.n} onChange={e=>{setFormError("");setForm({...form,n:e.target.value});}}/></Field>
         <Field label="任务类型" explain="六类业务任务，批准后用于新派任务。"><Select aria-label="任务类型" value={form.taskClass} onChange={taskClass=>setForm({...form,taskClass})} options={TASK_CLASSES.map(value=>({value,label:TASK_CLASS_LABELS[value]}))}/></Field>
         <Field label="固定时长" error={formError.startsWith("固定时长")?formError:undefined} help="1–1440 整数分钟。" explain="缩短启用任务时长须检查兑付覆盖率。"><NumberInput value={form.durationMinutes} min={1} max={1440} step={1} unit="分钟" onChange={e=>{setFormError("");setForm({...form,durationMinutes:e.target.value});}}/></Field>
         <Field label="每任务奖励" error={formError.startsWith("固定奖励")?formError:undefined} help={<><span className="rd-keep">非负，整数最多 12 位。</span>{" "}<span className="rd-keep">小数最多 6 位。</span></>} explain="一次任务完成的固定奖励；增加奖励或启用正奖励任务会增加支出。"><NumberInput value={form.baseReward} min={0} step={0.000001} unit={form.asset} onChange={e=>{setFormError("");setForm({...form,baseReward:e.target.value});}}/></Field>
