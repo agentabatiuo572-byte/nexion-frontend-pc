@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CircleOff, Download, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
+import { CircleOff, Download, FilePen, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
 import { BlockState, Button, Cell, Change, Check, DiffList, Explain, Fold, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -226,7 +226,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
     {conflictDraft.current && !confirmOpen ? <Notice tone="warn" title="别人刚保存过这组配置，你的修改没有保存"
       action={<Button size="sm" loading={loading} disabled={saving} onClick={() => void refresh()}>重新读取</Button>}>
       {readReady && baseline
-        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的有 ${conflictRows.length} 处（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <div className="a3-conflict-diff"><DiffList rows={conflictRows} /></div>}</>
+        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的${conflictRows.length === 1 ? `是「${conflictRows[0].label}」` : `有 ${conflictRows.length} 处`}（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <div className="a3-conflict-diff"><DiffList rows={conflictRows} /></div>}</>
         : loading ? "正在读取最新值，你填的都还在。"
           : <>最新值没读到，你填的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
     </Notice>
@@ -332,8 +332,8 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
           <Table label="界面语言和发布必填">
             <thead><tr>
               <Th>语言</Th>
-              <Th control>App 里可选<Explain label="App 里可选是什么" content="开着的语言出现在 App 的语言列表里，用户可以选。" /></Th>
-              <Th control>发布时必填<Explain label="发布时必填是什么" content={<><p>后台发布活动、课程、公告等内容时，勾上的语言必须填。没勾的语言可以不填，App 在这种语言下显示英文。</p><p>改了以后，下次打开内容编辑器时按新的检查；已发布的内容不变。</p></>} /></Th>
+              <Th icon={Smartphone}>App 里可选<Explain label="App 里可选是什么" content="开着的语言出现在 App 的语言列表里，用户可以选。" /></Th>
+              <Th icon={FilePen}>发布时必填<Explain label="发布时必填是什么" content={<><p>后台发布活动、课程、公告等内容时，勾上的语言必须填。没勾的语言可以不填，App 在这种语言下显示英文。</p><p>改了以后，下次打开内容编辑器时按新的检查；已发布的内容不变。</p></>} /></Th>
             </tr></thead>
             <tbody>
               {INTERFACE_LANGUAGES.map((language) => {
@@ -356,9 +356,9 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
               })}
             </tbody>
           </Table>
-          {(!languages || !operating) && <p className="rd-note">{!languages && !operating ? "系统支持后，可以在这里开关界面语言、设置发布必填，现在只能查看；发布时英文、中文、越南语都必填。"
+          {(!languages || !operating) && <p className="rd-note">{!languages && !operating ? "系统支持后才能在这里开关界面语言、设置发布必填；现在英文、中文、越南语都必填。"
             : !languages ? "系统支持后，可以在这里开关界面语言，现在只能查看。"
-            : "系统支持后，可以在这里设置发布必填，现在只能查看；发布时英文、中文、越南语都必填。"}</p>}
+            : "系统支持后才能设置发布必填，现在英文、中文、越南语都必填。"}</p>}
         </div>
         {preview("语言", <ul className="a3-preview-langs" aria-label="App 语言列表">
           {onLanguages.map((language) => <li key={language.code}>{language.nativeName}</li>)}
@@ -384,7 +384,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       </>}>
       {error && <Notice tone="danger" title={original ? undefined : "没有保存"}>{error}</Notice>}
       <Facts>
-        <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>
+        {!onlyOperating && <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>}
         {operatingChanged && baseline?.operatingLanguages && config.operatingLanguages && <Fact k="发布必填"><Change from={operatingNames(baseline.operatingLanguages)} to={operatingNames(config.operatingLanguages)} /></Fact>}
         <Fact k="版本">v{config.version} → v{config.version + 1}</Fact>
         {!onlyOperating && <Fact k="官方下载">{unavailable ? "暂不提供（保存后清空安装链接、版本和说明）" : "官方渠道"}</Fact>}
@@ -392,7 +392,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {operatingChanged && <Fact k="已发布的内容">不变；以后发布按新的必填语言检查</Fact>}
         {!onlyOperating && <Fact k="已有订单和奖励">不重算</Fact>}
       </Facts>
-      {conflictDraft.current && conflictRows.length > 0 && <Fold inset title="和最新版本不同的地方" summary={`${conflictRows.length} 处 · 保存后按你填的覆盖`}><DiffList rows={conflictRows} /></Fold>}
+      {conflictDraft.current && conflictRows.length > 0 && <Fold inset title="和最新版本不同的地方" summary={`${conflictRows.length === 1 ? conflictRows[0].label : `${conflictRows.length} 处`} · 保存后按你填的覆盖`}><DiffList rows={conflictRows} /></Fold>}
       <Field label="保存理由" required help="8–200 字">
         {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={original?.reason ?? reason} disabled={Boolean(original) || saving} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder={onlyOperating ? "例如：越南语内容改为必填，工单号" : "例如：上线 Telegram 分享，工单号"} onChange={(event) => setReason(event.target.value)} />}
       </Field>
