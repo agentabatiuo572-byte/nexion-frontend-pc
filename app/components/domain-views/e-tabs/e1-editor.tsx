@@ -339,7 +339,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
         </EditorSection>
         <EditorSection id="e1-specs" title="规格与资料">
           <div className="rd-form-grid">{field("gpu", "GPU 型号（单卡）", { placeholder: "RTX 4090", explain: APP_VISIBLE_TEXT_HINT })}{field("gpuCount", "GPU 数量", { number: true, min: 1, max: 1024, step: 1, help: "1～1024，须同时填写单卡型号" })}{field("vram", "显存")}
-            {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}；交付设备识别的写法：1800、1,800 W、1,800 W TDP、1,800 W (per-GPU rated)、1,800 W (combined GPU rated)` })}</>}
+            {form.tier !== "Share" && <>{field("hashRate", "算力")}{field("power", "功耗 / 功率说明", { placeholder: "1,800 W (combined GPU rated)", help: `${APP_VISIBLE_TEXT_HINT}，如 1,800 W`, explain: "只能用这几种写法：1800、1,800 W、1,800 W TDP、1,800 W (per-GPU rated)、1,800 W (combined GPU rated)，数值大于 0。写成别的，用户下单后设备会交付失败。" })}</>}
             {field("uptime", "在线率", { hint: "最多64字", placeholder: "99.9%", explain: APP_VISIBLE_TEXT_HINT })}{field("warranty", "质保期限", { hint: "最多128字", placeholder: "24 months", explain: APP_VISIBLE_TEXT_HINT })}
             {form.tier !== "Share" && <>{field("aiImageGenPerMin", "图像生成 张/分钟", { number: true, step: 1 })}{field("aiLlmTokensPerSec", "大模型推理（词元/秒）", { number: true, step: 1 })}{field("aiVideoMinPerHour", "每小时可渲染视频时长（分钟）", { number: true, step: 1 })}{field("aiFineTuneMins", "LoRA 微调（分钟）", { number: true, step: 1 })}</>}
           </div>
