@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BookOpen, CircleSlash, EyeOff, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6Amount } from "@/lib/admin/i6-amount";
 import { i6HasCopyText } from "@/lib/admin/i6-copy-quality";
 
@@ -133,10 +134,13 @@ export function mapCourseLanguages(form: CourseForm, required: readonly Operatin
 }
 
 type Missing = { key: string; text: string; need?: boolean };
-/** 和共用表单 course-authoring 的校验一字不差（design-kit missingBusinessFields），每项带上字段键，好把错误写在框下。 */
+/** 课程抽屉与提交前共用，每项带上字段键，好把错误写在框下。 */
 export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[] {
   const missing: Missing[] = [];
-  const needs = (key: string, text: string) => { if (!i6HasCopyText(state[key] ?? "")) missing.push({ key, text, need: true }); };
+  const needs = (key: string, text: string) => {
+    if (!i6HasCopyText(state[key] ?? "")) missing.push(key === "reward"
+      ? { key, text: displayAdminError("LEARNING_REWARD_OUT_OF_RANGE") } : { key, text, need: true });
+  };
   const NAMES: Record<string, string> = { slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英语标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英语正文", bodyVi: "越南语正文" };
   Object.keys(NAMES).forEach((key) => needs(key, NAMES[key]));
   for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
@@ -147,10 +151,12 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
     needs("version", "课程版本号");
     if (!/^v[1-9][0-9]{0,8}$/i.test(state.version || "")) missing.push({ key: "version", text: "版本号格式 v1、v2…" });
   }
-  const reward = Number(state.reward);
-  if (!Number.isFinite(reward)) missing.push({ key: "reward", text: "奖励数值" });
-  if (spec.rewardMin != null && reward < spec.rewardMin) missing.push({ key: "reward", text: `奖励 ≥ ${spec.rewardMin}` });
-  if (spec.rewardMax != null && reward > spec.rewardMax) missing.push({ key: "reward", text: `奖励 ≤ ${spec.rewardMax}` });
+  if (i6HasCopyText(state.reward ?? "")) {
+    const reward = Number(state.reward);
+    if (!Number.isFinite(reward)) missing.push({ key: "reward", text: "奖励数值" });
+    if (spec.rewardMin != null && reward < spec.rewardMin) missing.push({ key: "reward", text: `奖励 ≥ ${spec.rewardMin}` });
+    if (spec.rewardMax != null && reward > spec.rewardMax) missing.push({ key: "reward", text: `奖励 ≤ ${spec.rewardMax}` });
+  }
   const quizCount = Number(state.quizCount || 0);
   if (!Number.isInteger(quizCount) || quizCount < 1) missing.push({ key: "quizCount", text: "至少一道测验题" });
   for (let q = 0; q < quizCount; q += 1) {

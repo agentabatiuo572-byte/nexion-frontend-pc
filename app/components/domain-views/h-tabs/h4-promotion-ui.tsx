@@ -5,8 +5,9 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
 import { displayAdminError } from '@/lib/admin/error-messages';
 import { fetchA2ReasonPolicy } from '@/lib/admin/a2-client';
-import { PromotionApiError, promotionFieldLabel, acknowledgePromotionCommand, pendingPromotionCommands, promotionCommand, recoverPromotionCommand, verifyPromotionLocalizedReceipt, type PromotionCommandIntent } from '@/lib/admin/promotion-client';
+import { PROMOTION_RECEIPT_ADVANCED, PromotionApiError, promotionFieldLabel, acknowledgePromotionCommand, pendingPromotionCommands, promotionCommand, recoverPromotionCommand, verifyPromotionLocalizedReceipt, type PromotionCommandIntent } from '@/lib/admin/promotion-client';
 import type { CommandReceipt, DraftRewardSpec, LocalizedText, RewardDisclosure, RewardSpec } from '@/lib/admin/promotion-types';
+import { toast } from '@/lib/store/ui';
 import { BusinessFormBlock } from '../design-kit';
 import { Check } from 'lucide-react';
 import { BlockState, Button as RdButton, Check as RdCheck, Drawer, Fact, Facts, Field as RdField, Modal, Notice as RdNotice, Panel, Stat, StatBand, StatusTag, Table as RdTable, Td, Textarea, Th, Tr, type ButtonVariant, type StateTone } from '@/app/components/rd';
@@ -214,18 +215,23 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
     const visibleError = error || (!record && conflictReview?.error);
     const visibleNote = record ? note : '';
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
-    const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
-        const result = record?.receipt || await promotionCommand(record && retry ? record
-            : { ...intent, body: prepareBody ? await prepareBody(payload) : payload }, retry);
-        await verifyPromotionLocalizedReceipt(result);
+    const complete = async (result: CommandReceipt, original: boolean) => {
+        const { advanced } = await verifyPromotionLocalizedReceipt(result);
         // A normal success callback can close its own dialog; that is not a dismissed original.
-        let notifyOriginal = !!record || !active.current;
+        let notifyOriginal = original || !active.current;
         await onSuccess(result, () => {
             if (!active.current) notifyOriginal = true;
             return active.current;
         });
+        if (advanced) toast.success(PROMOTION_RECEIPT_ADVANCED);
+        else if (notifyOriginal) toast.success('原操作已确认成功，正在更新活动资料。');
         if (notifyOriginal) window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: result.idempotencyKey }));
         acknowledgePromotionCommand(result);
+    };
+    const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
+        const result = record?.receipt || await promotionCommand(record && retry ? record
+            : { ...intent, body: prepareBody ? await prepareBody(payload) : payload }, retry);
+        await complete(result, !!record);
     }
     catch (e) {
         setError(e);
@@ -265,10 +271,7 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
         if (result.status === 'SUCCEEDED') {
-            await verifyPromotionLocalizedReceipt(result);
-            await onSuccess(result, () => active.current);
-            window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
-            acknowledgePromotionCommand(result);
+            await complete(result, true);
         }
         else if (result.status === 'FAILED') window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         else

@@ -554,7 +554,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       statedBrief: { impact: "建成预告，不对用户开放。", check: "核对编号、玩法和奖励，理由写清依据。" },
       effect: <StatusTag tone="neutral" filled>建成预告，不开放</StatusTag>,
       detail: <>只能新建内置活动，每个编号只能用一次，删除过的活动用过的也不能再用。</>,
-      amplifies: true,
       reasonPlaceholder: "例如：按运营排期登记新活动",
       confirmLabel: "新建活动",
       businessForm: {
