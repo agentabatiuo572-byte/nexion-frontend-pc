@@ -731,7 +731,7 @@ function multiFieldIssues(spec: MultiFieldSpec, state: BusinessFormValue): Recor
       } catch {
         issues[f.key] = `${f.label}校验规则不可用`;
       }
-    } else if (f.inputKind === "number" && !feedback?.invalid && (raw || f.required === false)) {
+    } else if (f.inputKind === "number" && !feedback?.invalid && raw) {
       const n = Number(state[f.key]);
       const off = raw && normalizeEditDecimal(raw) === null ? true : !Number.isFinite(n) ? true
         : (f.min != null && n < f.min) || (f.max != null && n > f.max)
