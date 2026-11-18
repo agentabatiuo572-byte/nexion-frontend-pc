@@ -71,7 +71,7 @@ export function parseEventRegions(text: string) {
     const split = line.indexOf(":");
     const name = split < 0 ? "" : line.slice(0, split).trim();
     const countries = line.slice(split + 1).split(/[,\s]+/).filter(Boolean).map(value => value.toUpperCase());
-    if (!name || !countries.length || countries.some(value => !/^[A-Z]{2}$/.test(value))) throw new Error("每行填写地区名称、冒号和两位国家代码，例如：东南亚: VN, TH。");
+    if (!name || !countries.length || countries.some(value => !/^[A-Z]{2}$/.test(value))) throw new Error("每行填写地区名称、冒号和两位国家代码，例如：Southeast Asia: VN, TH。");
     return { name, countries };
   });
 }

@@ -1179,7 +1179,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const message = payload.message === "DISCLOSURE_JURISDICTION_CODE_EXISTS"
       ? "这个代码已有适用范围在用，请更换代码；如需改名，请编辑已有的适用范围。"
       : payload.message;
-    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`, isWrite ? "write" : "read");
+    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`, isWrite ? "write" : "read", payload.data);
     const status = res.ok && payload.code! >= 400 ? payload.code : res.status;
     throw Object.assign(isWrite && unknown ? new OutcomeUnknownError(formatted) : new Error(formatted), { status, reasonCode: payload.message });
   }

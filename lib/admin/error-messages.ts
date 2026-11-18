@@ -1,6 +1,7 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  APP_TEXT_CHINESE_NOT_ALLOWED: "显示给 App 用户的文字不能包含中文，请改成英文",
   NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED: "通知草稿的写入结果未确认，请保留原内容重试，系统会沿用原操作编号。",
   PLATFORM_OPERATING_LANGUAGES_NOT_SAVED: "其他设置已保存，但发布必填语言没有按你的选择保存；请刷新后核对，再重新保存。",
   SESSION_TEMPLATE_I18N_ENGLISH_PUBLICATION_REQUIRED: "对应的词条还没发布。请先到「多语言与课程」发布这条话术或模板的词条，词条英文要与正文一致，再回来发布。",
@@ -3900,6 +3901,10 @@ export function formatAdminApiError(
 
   const localized = eventLocalizedMissingMessage(raw, data);
   if (localized) return localized;
+  if (raw === "APP_TEXT_CHINESE_NOT_ALLOWED" && data && typeof data === "object"
+    && "field" in data && typeof data.field === "string" && data.field.trim()) {
+    return `${ADMIN_ERROR_MESSAGES[raw]}。字段：${data.field.trim()}`;
+  }
 
   if (raw.startsWith("J4_EXECUTION_PARTIAL:")) {
     const executionId = raw.split(":")[1] || "未知";
@@ -3982,6 +3987,9 @@ export function displayAdminError(error: unknown): string {
     if ("details" in error) {
       const localized = eventLocalizedMissingMessage(error.backendMessage, error.details);
       if (localized) return localized;
+      if (error.backendMessage === "APP_TEXT_CHINESE_NOT_ALLOWED") {
+        return formatAdminApiError(error.backendMessage, "", "write", error.details);
+      }
     }
     const known = ADMIN_ERROR_MESSAGES[error.backendMessage];
     if (typeof known === "string") return known;
