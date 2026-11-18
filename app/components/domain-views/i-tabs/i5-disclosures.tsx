@@ -1021,7 +1021,7 @@ function disclosureChange(current: DisclosureVersionItemView | undefined, target
   const onlySummary = !!current && summary.length > 0 && chapters.length === 0;
   const summaryNames = summary.map(([, name]) => name).join("、");
   const headline = !current ? "这个适用范围第一次发布，没有旧版本可对照"
-    : onlySummary ? `这次只改了总文（${summaryNames}），七章没变`
+    : onlySummary ? "只改了总文，七章没变"
     : summary.length ? `总文（${summaryNames}）和 ${chapters.length} 章有改动`
     : chapters.length ? `${chapters.length} 章有改动，总文没变`
     : "和当前版本内容相同";
@@ -1047,7 +1047,7 @@ function PublishDiff({ current, target }: { current?: DisclosureVersionItemView;
   const shown = LANGUAGES.filter(([code]) => (target.languageScope ?? "").split("+").includes(code));
   const chapterOf = (no: string) => current?.chapters.find((chapter) => chapter.no === no);
   // 第一次发布没有旧版本，折叠里是全部内容，不叫差异。
-  const parts = !current ? ["总文", `${target.chapters.length} 章`] : [change.summary.length > 0 && "总文", change.chapters.length > 0 && `第 ${change.chapters.map((item) => item.chapter.no).join("、")} 章`].filter(Boolean);
+  const parts = !current ? ["总文", `${target.chapters.length} 章`] : [change.summary.length > 0 && `总文（${change.summary.map(([, name]) => name).join("、")}）`, change.chapters.length > 0 && `第 ${change.chapters.map((item) => item.chapter.no).join("、")} 章`].filter(Boolean);
   const summarySame = change.summary.length === 0;
   return <div data-business-form="disclosure-publish-review" className="rd-form-stack">
     {parts.length > 0 && <Fold inset title={current ? "版本差异" : "全部内容"} summary={parts.join("、")}>
