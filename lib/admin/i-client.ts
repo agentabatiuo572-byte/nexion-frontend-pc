@@ -1629,6 +1629,7 @@ export type I18nLearningOverview = {
   hardcodedFindings: I18nHardcodedFindingView[];
   focusMessage?: I18nMessagePairView | null;
   messages: I18nMessagePairView[];
+  publishedMessages?: Record<string, I18nMessagePairView>;
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
   featuredCourseId: string;

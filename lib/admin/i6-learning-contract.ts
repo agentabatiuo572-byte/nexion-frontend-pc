@@ -101,6 +101,12 @@ export function parseI6Overview(value: unknown): I18nLearningOverview {
   }
   list(row.messages).forEach(parseI6Message); list(row.integrityIssues).forEach(parseI6Issue);
   if (row.focusMessage != null) parseI6Message(row.focusMessage);
+  if (row.publishedMessages !== undefined) {
+    for (const [key, value] of Object.entries(object(row.publishedMessages))) {
+      const message = parseI6Message(value);
+      if (message.messageKey !== key || message.status !== "published") invalid();
+    }
+  }
   list(row.courses).forEach(parseI6Course);
   for (const item of list(row.hardcodedFindings)) texts(object(item), ["location", "rawCopy", "suggestedKey", "status"]);
   if (row.metrics !== undefined) for (const item of list(row.metrics)) texts(object(item), ["key", "value"]);
