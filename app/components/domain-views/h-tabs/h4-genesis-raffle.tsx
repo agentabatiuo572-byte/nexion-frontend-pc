@@ -19,6 +19,10 @@ import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4Conf
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
+const editableRaffle = (row: AdminRaffle, required: readonly OperatingLanguageCode[]) => raffleLocalizedDraft({
+  id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi,
+  startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes,
+}, required, "edit");
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
 const STATUS: Record<AdminRaffle["status"], { label: string; tone: "neutral" | "ok" | "progress" | "done"; step: number; explain: string }> = {
   DRAFT: { label: "草稿", tone: "neutral", step: 0, explain: "还没对用户开放，可以随便改。" },
@@ -62,7 +66,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
     window.addEventListener("admin-h4-readback", readback);
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
-  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? raffleLocalizedDraft({ id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) }, required, "edit") : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null, required = requiredLanguages) => { conflictReview.current = null; setStale(""); setMerged(0); setBase(row); setDraft(row ? editableRaffle(row, required) : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const openRaffle = async (row: AdminRaffle | null) => {
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
@@ -138,9 +142,11 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
             const values = await load(), latest = values?.find(row => row.id === savedDraft.id);
             if (latest && previous) {
               setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
-              const comparable = (row: AdminRaffle) => ({ id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi,
-                startsAt: row.startsAt, drawAt: row.drawAt, prizes: Object.fromEntries(row.prizes.map(prize => [encodeURIComponent(prize.id).replace(/\./g, "%2E"), prize])), enabled: row.status === "OPEN" });
-              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), hConflictFields(comparable(previous), comparable(latest), { ...savedDraft, prizes: Object.fromEntries(savedDraft.prizes.map(prize => [encodeURIComponent(prize.id).replace(/\./g, "%2E"), prize])), enabled: nextEnabled }), () => {
+              const comparable = (value: RaffleDraft, enabled: boolean) => ({ ...value,
+                prizes: Object.fromEntries(value.prizes.map(prize => [prizeKey(prize.id), prize])), enabled });
+              const fields = hConflictFields(comparable(editableRaffle(previous, requiredLanguages), previous.status === "OPEN"),
+                comparable(editableRaffle(latest, requiredLanguages), latest.status === "OPEN"), comparable(savedDraft, nextEnabled));
+              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), fields, () => {
                 conflictReview.current = null;
                 save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason });
               });
@@ -239,8 +245,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const mergeConflict = () => {
     if (!base || !draft || mergeBlocked) return;
     const latest = base, mine = draft, kept = compareGroups.filter(group => group.byMe);
-    const next: RaffleDraft = { id: latest.id, titleZh: latest.titleZh, titleEn: latest.titleEn, titleVi: latest.titleVi, startsAt: latest.startsAt, drawAt: latest.drawAt,
-      prizes: latest.prizes.map(prize => ({ ...prize })) };
+    const next = editableRaffle(latest, requiredLanguages);
     let nextEnabled = latest.status === "OPEN";
     for (const group of kept) {
       const [top, id, field] = group.key.split(".");
