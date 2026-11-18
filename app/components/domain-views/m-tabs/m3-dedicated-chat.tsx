@@ -14,7 +14,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
-import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { fetchMConversationDetail, markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -303,6 +303,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const scopeGeneration = useRef(0);
   const [draftOwner, setDraftOwner] = useState(0), [metaTarget, setMetaTarget] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
   // Saved drafts may still carry a purpose; it is now derived from the explicit 联系维护 switch below (M-26 / M-54).
   const messageRevision = useSendJournalRevision();
   const mounted = useRef(false);
@@ -312,7 +314,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, []);
   const [recoveryError, setRecoveryError] = useState("");
   const [sendFeedback, setSendFeedback] = useState<{ customer: string | null; conversationId?: string; commandKey?: string; text: string } | null>(null);
-  const [peerChangedDraft, setPeerChangedDraft] = useState<{ identity: string; customerId: string; sourceKey: string } | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [attachmentPolicy, setAttachmentPolicy] = useState<SupportAttachmentPolicy | null>(null);
   const [attachmentPolicyError, setAttachmentPolicyError] = useState("");
@@ -431,6 +432,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const holderKnown = customerRows.some(row => row.holder !== undefined);
   const tabs = LIST_TABS.filter(([value]) => (value !== "unassigned" || reviewing) && (value !== "holding" || holderKnown));
   const [continuation, setContinuation] = useState<{ customerId: string; conversationNo: string | null } | null>(null);
+  const [continuationFrom, setContinuationFrom] = useState<{ source: string; destination: string } | null>(null);
   const requestedConvo = validCustomerId(requestedCustomerId) ? continuation?.customerId === requestedCustomerId
     ? visible.find(convo => convo.id === continuation.conversationNo) ?? null
     : customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
@@ -663,9 +665,9 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [targetCustomer, selectedConversationId, activeKey]);
   const pending = activeEntry?.reply;
   const firstPending = activeEntry?.first;
-  const firstRecoveryText = firstPending && verifiedKeys.current?.has(firstPending.key) ? firstPending.body : "";
   const privateContentReady = !qualificationUnknown && conversationsAvailable && draftOwner === adminId
-    && (!activeKey || verifiedKeys.current?.has(activeKey));
+    && targetSends.every(entry => !(entry.first || entry.reply) || verifiedKeys.current?.has(entry.row.commandKey));
+  const firstRecoveryText = privateContentReady && firstPending ? firstPending.body : "";
   const otherSends = savedSends.filter(entry => !queryOnly(entry) && !awaitingFirstResponse(entry)).filter(({ reply, first }) => first ? first !== firstPending
     : reply && (reply !== pending || reply.conversationId !== selected?.id) && visible.some(convo => convo.id === reply.conversationId));
   const displayedIntent = privateContentReady ? pending?.intent ?? firstPending?.intent ?? intent : "SERVICE";
@@ -712,25 +714,36 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     ? scopedDraftSlot(logicalSlot, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId) : "";
   const replyTargetsKey = adminId && targetKey && !qualificationUnknown ? `nexion-m3-reply-targets:${adminId}:${targetKey}` : "";
   const draftSlotRef = useRef(targetKey);
-  const failedCopy = failedCopies.find(copy => conversationsAvailable && (!copy.conversationId || copy.conversationId === selectedConversationId)
+  const failedCopy = privateContentReady && failedCopies.find(copy => conversationsAvailable && (!copy.conversationId || copy.conversationId === selectedConversationId)
     && originalCustomerId(copy, visible) === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
-  const carryContinuationDraft = useCallback((sourceKey: string, destinationKey: string, customerId: string) => {
-    if (sourceKey === destinationKey) return;
-    if (!draftAssignment?.assignmentId || !draftAssignment.agentAdminId || draftAssignment.customerId !== customerId) return;
-    sourceKey = scopedDraftSlot(sourceKey, customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId);
-    destinationKey = scopedDraftSlot(destinationKey, customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId);
-    if (savedSends.some(({ locator }) => {
-      const originalId = originalCustomer(locator);
-      return !originalId || originalId === customerId;
-    })) return;
-    setDrafts(current => {
-      if (!current[sourceKey]?.trim() || current[destinationKey]?.trim()) return current;
-      const updated = { ...current, [destinationKey]: current[sourceKey] };
-      delete updated[sourceKey];
-      return updated;
-    });
-  }, [savedSends, originalCustomer, draftAssignment]);
+  const carryContinuationDraft = (source: string, destination: string, customerId: string) => {
+    if (source === destination || !privateContentReady || !draftAssignment?.assignmentId
+      || !draftAssignment.agentAdminId || draftAssignment.customerId !== customerId
+      || blocksNewSend(pendingSendCustomers(adminId, visible), customerId)) return false;
+    const { assignmentId, agentAdminId } = draftAssignment;
+    const sourceKey = scopedDraftSlot(source, customerId, assignmentId, agentAdminId);
+    const destinationKey = scopedDraftSlot(destination, customerId, assignmentId, agentAdminId);
+    const current = draftsRef.current;
+    if (current[destinationKey]?.trim()) return false;
+    const copy = failedDraftCopies.list().find(row => row.commandOwnerId === adminId && row.source !== "dock"
+      && row.customerId === customerId && row.assignmentId === assignmentId
+      && (row.conversationId ?? `first:${customerId}`) === source && row.body.trim());
+    const body = current[sourceKey]?.trim() ? current[sourceKey] : copy?.body;
+    if (!body) return false;
+    const updated = { ...current, [destinationKey]: body };
+    delete updated[sourceKey];
+    try {
+      sessionStorage.setItem(`nexion-m3-drafts:${adminId}`, JSON.stringify(updated));
+    } catch {
+      setSendError("草稿保存不可用；当前输入仍保留在此页面。");
+      return false;
+    }
+    draftsRef.current = updated;
+    setDrafts(updated);
+    if (copy?.body === body) failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
+    return true;
+  };
   const recoveryBlocksTarget = savedSends.some(entry => {
     const customerId = originalCustomer(entry.locator);
     return !customerId || customerId === targetCustomer && queryOnly(entry);
@@ -902,7 +915,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, []);
   useEffect(() => {
     setMetaTarget("");
-    setDrafts({}); setDraftOwner(0); setPeerChangedDraft(null); setActionResult(""); setSendError(""); setMaintenanceChosen(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
+    setDrafts({}); setDraftOwner(0); setActionResult(""); setSendError(""); setMaintenanceChosen(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
     setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
@@ -915,20 +928,46 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
     setDraftOwner(adminId);
   }, [adminId, authEpoch, conversationsAvailable, qualificationUnknown]);
+  // First contact can race with another sender opening the current conversation.
+  // Check only earlier threads that actually have text to move.
+  const firstSource = targetCustomer ? `first:${targetCustomer}` : "";
+  const explicitSource = continuationFrom?.destination === selected?.id ? continuationFrom?.source : undefined;
+  const sourceThreads = linkedConversationNo ? explicitSource ? [explicitSource, firstSource] : [firstSource]
+    : [firstSource, ...visible.filter(row => row.customerId === targetCustomer && row.id !== selected?.id).map(row => row.id)];
+  const continuationSources = selected && targetCustomer && draftAssignment?.assignmentId && draftAssignment.agentAdminId
+    ? sourceThreads.filter(no => drafts[scopedDraftSlot(no, targetCustomer, draftAssignment.assignmentId!, draftAssignment.agentAdminId!)]?.trim()
+        || failedCopies.some(copy => copy.source !== "dock" && copy.customerId === targetCustomer
+          && copy.assignmentId === draftAssignment.assignmentId && (copy.conversationId ?? firstSource) === no && copy.body.trim()))
+    : [];
+  const continuationCandidates = continuationSources.join("|");
+  const recoverContinuationDraft = useEffectEvent(async (sources: string[], signal: AbortSignal) => {
+    if (!selected?.customerId || !draftAssignment?.agentAdminId || draftsRef.current[targetKey]?.trim()) return;
+    const { id: destination, customerId } = selected;
+    const stamp = identityRef.current;
+    for (const source of sources) {
+      if (source !== firstSource) {
+        try {
+          const detail = await fetchMConversationDetail(source, signal, false);
+          if (detail.customerId !== customerId || detail.writeState?.canReply !== false
+            || detail.writeState.writableConversationNo !== destination
+            || detail.writeState.currentAssignmentAgentId !== String(draftAssignment.agentAdminId)) continue;
+        } catch {
+          // No authoritative old-thread state means the draft stays in its original slot.
+          continue;
+        }
+      }
+      if (signal.aborted || stamp !== identityRef.current || !originalView()) return;
+      if (carryContinuationDraft(source, destination, customerId)) return;
+    }
+  });
+  const canRecoverContinuation = writeAuthorized && privateContentReady && !busy && !activeEntry
+    && !otherReplyBlocksTarget && !recoveryBlocksTarget && Boolean(targetKey);
   useEffect(() => {
-    // The customer now has a conversation (e.g. a concurrent first contact won): carry the unsent first-contact draft over,
-    // however the conversation was opened. A first contact whose result is still unconfirmed keeps its text where it is.
-    const customerId = selected?.customerId;
-    if (!selected || selected.writeState?.canReply !== true || !validCustomerId(customerId ?? null) || activeEntry || recoveryBlocksTarget) return;
-    if (!targetKey || !draftAssignment?.assignmentId || !draftAssignment.agentAdminId) return;
-    const firstKey = scopedDraftSlot(`first:${customerId}`, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId);
-    setDrafts(old => {
-      if (!old[firstKey]?.trim() || old[targetKey]?.trim()) return old;
-      const next = { ...old, [targetKey]: old[firstKey] };
-      delete next[firstKey];
-      return next;
-    });
-  }, [selected?.id, selected?.customerId, selected?.writeState?.canReply, targetKey, activeEntry, recoveryBlocksTarget]);
+    if (!canRecoverContinuation || !continuationCandidates) return;
+    const controller = new AbortController();
+    void recoverContinuationDraft(continuationCandidates.split("|"), controller.signal);
+    return () => controller.abort();
+  }, [canRecoverContinuation, continuationCandidates, targetKey]);
   useEffect(() => {
     if (!adminId || draftOwner!==adminId || qualificationUnknown) return;
     try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
@@ -1026,7 +1065,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       return next;
     });
   }, [pending, firstPending, selected?.id, privateContentReady, activeEntry?.dock, targetKey, logicalSlot, activeKey]);
-  useEffect(() => { clearAttachment(); if (!peerChangedDraft || peerChangedDraft.identity !== identityRef.current || peerChangedDraft.customerId !== (selected?.customerId ?? requestedCustomerId ?? peerChangedDraft.customerId)) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
+  useEffect(() => { clearAttachment(); setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
   useEffect(() => {
     if (!selected || !messagePages.readReady || !conversationsAvailable || selected.ownerAdminId !== adminId || document.visibilityState === "hidden" || !chatColumnRef.current?.getClientRects().length) return;
     const contexts = messagePages.page?.readContexts.filter(context => !context.alreadyRead) ?? [];
@@ -1108,10 +1147,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     return () => controller.abort();
   }, [selected?.id, selected?.customerId, selected?.version, selected?.lastTs, selected?.unread, selectedUnbound, conversationsAvailable, authEpoch, snapshotRevision, profileRetry, revokeCustomer, canReviewAll, adminId]);
 
-  const select = (conversationNo: string, commandKey = "") => {
+  const select = (conversationNo: string, commandKey = "", source?: string) => {
     setChosenCommand(commandKey);
+    setContinuationFrom(source ? { source, destination: conversationNo } : null);
     setMessageOpening(value => value + 1);
-    clearAttachment(pending?.kind !== "IMAGE"); setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(null); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError("");
+    clearAttachment(pending?.kind !== "IMAGE"); setContinuation(null); setRequestedCustomerId(null); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError("");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo", conversationNo); window.history.replaceState(null, "", url);
   };
 
@@ -1262,7 +1302,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const currentPage = () => sameAccount() && useAdminAuth.getState().authEpoch === authEpoch && mounted.current && identityRef.current === identity;
     const mayCapture = () => currentPage() && !!targetCustomer
       && !blocksNewSend(pendingSendCustomers(adminId, visible), targetCustomer);
-    setPeerChangedDraft(null);
+
     const retry = recovery ? pending : undefined;
     const retryFirst = recovery ? firstPending : undefined;
     const identity = identityRef.current;
@@ -1371,7 +1411,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         }
         if (!currentPage() || !originalView()) return;
         if (conversationPeerChanged(cause)) {
-          if (refused) setPeerChangedDraft({ identity, customerId, sourceKey: `first:${customerId}` });
           setSendError(refused ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
           await refreshChangedPeer(identity);
         } else if (busyHold) lockFromBusy(customerId, busyHold);
@@ -1469,7 +1508,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       }
       if (!currentPage() || !originalView()) return;
       if (conversationPeerChanged(cause)) {
-        if (refused) setPeerChangedDraft({ identity, customerId: String(selected.customerId), sourceKey: record.conversationId });
         setSendError(refused ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
         await refreshChangedPeer(identity);
       } else if (busyHold) lockFromBusy(String(selected.customerId), busyHold);
@@ -1598,10 +1636,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (next.conversationNo && !visible.some(convo => convo.id === next.conversationNo)) await ctx.refreshConversations();
       if (stamp !== identityRef.current || !originalView()) return;
       if (next.conversationNo) {
-        if (peerChangedDraft?.identity === stamp && peerChangedDraft.sourceKey === sourceKey && peerChangedDraft.customerId === next.customerId) {
-          carryContinuationDraft(sourceKey, next.conversationNo, next.customerId);
-        }
-        select(next.conversationNo);
+        select(next.conversationNo, "", sourceKey);
         return;
       }
       carryContinuationDraft(sourceKey, `first:${next.customerId}`, next.customerId);
@@ -2199,7 +2234,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       </aside>
       {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); setActionResult(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => setActionResult(`已确认原分配，专属客服为 ${name}。会话刷新失败，请刷新会话核对。`)); }} />}
       {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={baseBlocked ?? noOwnCustomers} onClose={() => { setBulkOpen(false); setEntryCheck(value => value + 1); }} />}
-      {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setChosenCommand(""); setPeerChangedDraft(null); setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
+      {contactOpen && <SupportContactPicker onClose={() => setContactOpen(false)} onSelect={customerId => { setChosenCommand(""); setContinuation(null); setRequestedCustomerId(customerId); setScreen("chat"); setContactOpen(false); const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url); }} />}
       {timeoutOpen && timeoutPolicy && <IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={() => { if (timeoutLatest) { setTimeoutPolicy(timeoutLatest); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutError(""); setTimeoutInput(input => input && { ...input, reason: "" }); } }} onClose={() => { if (!timeoutSaving) setTimeoutOpen(false); }} onSave={saveTimeout} />}
       {timeoutOpen && !timeoutPolicy && <Modal title="会话超时策略" icon="clock" footer={<Button onClick={() => setTimeoutOpen(false)}>关闭</Button>} onClose={() => setTimeoutOpen(false)}><p role={timeoutError ? "alert" : "status"}>{timeoutError || "正在加载…"}</p>{timeoutError && <Button size="sm" onClick={() => void openTimeout()}>重新加载</Button>}</Modal>}
     </section>
