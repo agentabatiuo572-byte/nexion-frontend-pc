@@ -854,7 +854,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         requireAnyChange: true,
         feedback: (value) => wheelRewardNameFeedback(value, "奖项名称"),
         fields: [
-          { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
+          { key: "rewardName", label: "奖项名称", current: text(tier.reward), inputKind: "text", required: true, showDiff: true, help: APP_VISIBLE_TEXT_HINT },
           // 451dd37e normalizes the App projection only; retain the admin's stored kind.
           { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "uvt"), inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "是否发真钱", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true,

@@ -12,7 +12,7 @@ import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { businessStamp, businessZone, businessZoneText, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
 import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
-import { appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { A1CreateAccountInput, A1Operator, A1PasswordResetResult, A1RoleDefinition, A1UpdateAccountInput } from "@/lib/admin/a1-client";
 import { AccountAvatarPicker } from "./account-avatar-picker";
@@ -452,7 +452,7 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
           <Field label="登录名" required hint="3–32 位" error={(touched || username.trim()) && !usernameOk ? (username.trim() ? "只能用小写字母、数字、点、下划线或短横线。" : "请填写登录名。") : undefined}>
             <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="例如 risk.shift" autoComplete="username" />
           </Field>
-          <Field label="显示名" required error={touched ? (!displayName.trim() ? "请填写显示名。" : displayNameError) : undefined}>
+          <Field label="显示名" required help={APP_VISIBLE_TEXT_HINT} error={touched ? (!displayName.trim() ? "请填写显示名。" : displayNameError) : undefined}>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Alex Chen" />
           </Field>
           <Field label="工作邮箱" hint="选填" error={email.trim() && !emailOk ? "请输入有效邮箱格式。" : undefined}>
@@ -571,7 +571,7 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
             error={(touched || username.trim()) && !usernameOk ? (username.trim() ? "只能用小写字母、数字、点、下划线或短横线。" : "请填写登录名。") : undefined}>
             <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoComplete="username" />
           </Field>
-          <Field label="显示名" required error={touched ? (!displayName.trim() ? "请填写显示名。" : displayNameError) : undefined}>
+          <Field label="显示名" required help={APP_VISIBLE_TEXT_HINT} error={touched ? (!displayName.trim() ? "请填写显示名。" : displayNameError) : undefined}>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
           </Field>
           <Field label="工作邮箱" hint="选填" error={email.trim() && !emailOk ? "请输入有效邮箱格式。" : undefined}>
