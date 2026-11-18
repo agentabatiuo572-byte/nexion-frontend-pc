@@ -564,16 +564,12 @@ export async function updateH4LocalizedContent(
   value: string,
   expectedValue: string,
   reason: string,
-  commandKey: string,
 ) {
   return growthRequest<Record<string, any>>(
     `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
-    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue), headers: { "Idempotency-Key": commandKey } },
+    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
+    `h4-content-${field}`,
   );
-}
-
-export function createH4ContentCommandKey(field: "name" | "description" | "rewardName") {
-  return nextIdempotencyKey(`h4-content-${field}`);
 }
 
 function h8Invalid(field: string): never {
