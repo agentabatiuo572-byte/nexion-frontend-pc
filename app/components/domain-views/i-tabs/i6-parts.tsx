@@ -217,15 +217,16 @@ function appRewardText(value: string): string | null {
   return `${fixed.slice(0, -2)}.${fixed.slice(-2)}`;
 }
 
-export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, quizCount, passScore, retries, caption, hidden }: {
+export function AppCoursePreview({ lang, title, body, category, format, level, duration, reward, rewardError, quizCount, passScore, retries, caption, hidden }: {
   lang: Lang; title: string; body: string; category: string; format: string; level: string; duration: string; reward: string;
+  rewardError?: string;
   quizCount: number; passScore: string; retries: string; caption?: ReactNode;
   /** 线上课程在这种语言下 App 不显示时，写不显示的原因。 */
   hidden?: string;
 }) {
   const Icon = categoryIcon(category);
   const langLabel = LANGS.find((item) => item.key === lang)?.label ?? "";
-  const rewardText = appRewardText(reward);
+  const rewardText = rewardError ? null : appRewardText(reward);
   return (
     <figure className="i6-phone" aria-label={`App 里这门课的样子（${langLabel}）`}>
       <div className="i6-phone-screen">
@@ -236,7 +237,7 @@ export function AppCoursePreview({ lang, title, body, category, format, level, d
           <span className="i6-phone-cat">{categoryLabel(category)} · {FORMAT_LABEL[format] ?? format} · {LEVEL_LABEL[level] ?? level}</span>
         </div>
         <h3 className="i6-phone-title" data-user-content="" data-empty={title.trim() ? undefined : ""}>{title.trim() ? nexGridBrandText(title) : `缺${langLabel}标题`}</h3>
-        <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">{rewardText === null ? "没有奖励" : `学完得 ${rewardText} UVT`}</span></div>
+        <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">{rewardError ?? (rewardText === null ? "没有奖励" : `学完得 ${rewardText} UVT`)}</span></div>
         <p className="i6-phone-body" data-user-content="" data-empty={body.trim() ? undefined : ""}>{body.trim() ? nexGridBrandText(body) : `缺${langLabel}正文`}</p>
         <div className="i6-phone-quiz"><GraduationCap size={14} aria-hidden /><span>测验 {quizCount} 题</span><span>{passScore || "—"} 分及格</span><span>可重试 {retries || "—"} 次</span></div>
         </>}
@@ -282,6 +283,7 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
   const completed = useMemo(() => mapCourseLanguages(form, requiredLanguages, "submit"), [form, requiredLanguages]);
   const missing = useMemo(() => spec ? courseFormMissing(spec, completed) : [], [spec, completed]);
   if (!spec) return null;
+  const rewardError = missing.some(item => item.key === "reward") ? displayAdminError("LEARNING_REWARD_OUT_OF_RANGE") : undefined;
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const err = (key: string) => { const item = tried ? missing.find((row) => row.key === key) : undefined; return item ? (item.need ? `请填${item.text}` : item.text) : undefined; };
   const quizCount = Math.max(1, Number(form.quizCount || 1));
@@ -422,7 +424,7 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
           </div>
         </div>
         <AppCoursePreview lang={lang} title={completed[`title${F}`] ?? ""} body={completed[`body${F}`] ?? ""} category={form.category ?? ""} format={form.format ?? ""}
-          level={form.difficulty ?? ""} duration={form.duration ?? ""} reward={form.reward ?? ""} quizCount={quizCount} passScore={form.passScore ?? ""} retries={form.retries ?? ""}
+          level={form.difficulty ?? ""} duration={form.duration ?? ""} reward={form.reward ?? ""} rewardError={rewardError} quizCount={quizCount} passScore={form.passScore ?? ""} retries={form.retries ?? ""}
           caption="App 里大致的样子，跟着上面选的语言变" />
       </div>
     </Drawer>

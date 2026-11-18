@@ -3,6 +3,7 @@
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
+import { compareH3Decimal, h3Decimal } from "@/lib/admin/h3-contract";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +24,22 @@ const editableRaffle = (row: AdminRaffle, required: readonly OperatingLanguageCo
   id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi,
   startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes,
 }, required, "edit");
+const prizeKey = (id: string) => encodeURIComponent(id).replace(/\./g, "%2E");
+function equalRaffleField(path: string, left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (/^prizes\.[^.]+\.amount$/.test(path) && (typeof left === "string" || typeof left === "number")
+    && (typeof right === "string" || typeof right === "number")) {
+    const a = h3Decimal(String(left)), b = h3Decimal(String(right));
+    return a !== null && b !== null && compareH3Decimal(a, b) === 0;
+  }
+  if ((path === "startsAt" || path === "drawAt") && typeof left === "string" && typeof right === "string") {
+    const time = Date.parse(left);
+    // The database stores microseconds. Compare any digits beyond Date's millisecond precision too.
+    const submillis = (value: string) => (value.match(/\.\d{3}(\d+)/)?.[1] ?? "").replace(/0+$/, "");
+    return Number.isFinite(time) && time === Date.parse(right) && submillis(left) === submillis(right);
+  }
+  return false;
+}
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
 const STATUS: Record<AdminRaffle["status"], { label: string; tone: "neutral" | "ok" | "progress" | "done"; step: number; explain: string }> = {
   DRAFT: { label: "草稿", tone: "neutral", step: 0, explain: "还没对用户开放，可以随便改。" },
@@ -145,7 +162,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
               const comparable = (value: RaffleDraft, enabled: boolean) => ({ ...value,
                 prizes: Object.fromEntries(value.prizes.map(prize => [prizeKey(prize.id), prize])), enabled });
               const fields = hConflictFields(comparable(editableRaffle(previous, requiredLanguages), previous.status === "OPEN"),
-                comparable(editableRaffle(latest, requiredLanguages), latest.status === "OPEN"), comparable(savedDraft, nextEnabled));
+                comparable(editableRaffle(latest, requiredLanguages), latest.status === "OPEN"), comparable(savedDraft, nextEnabled), equalRaffleField);
               conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), fields, () => {
                 conflictReview.current = null;
                 save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason });
@@ -163,10 +180,23 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const review = base && draft ? conflictReview.current : null;
   const PRIZE_FIELD: Record<string, string> = { nameZh: "中文名称", nameEn: "英文名称", nameVi: "越南语名称", rewardType: "奖励类型", amount: "每名金额", productNo: "设备商品编号", quantity: "中奖名额", id: "奖项" };
   const prizeName = (id: string) => {
-    const leaf = review?.fields.find(field => field.path === `prizes.${encodeURIComponent(id).replace(/\./g, "%2E")}.nameZh`);
+    const leaf = review?.fields.find(field => field.path === `prizes.${prizeKey(id)}.nameZh`);
     // 空名不算有名字：最新一份没写中文名时用你填的或打开时的名字。
     return [leaf?.latest, leaf?.mine, leaf?.opened].map(name => name == null ? "" : String(name).trim()).find(Boolean) || "未命名奖项";
   };
+  const submission = new Map<string, { latest: string; value: string }>();
+  if (review && draft && base) {
+    const submitted = raffleLocalizedDraft(draft, requiredLanguages, "submit");
+    const latestPrizes = new Map(base.prizes.map(prize => [prize.id, prize]));
+    for (const { suffix } of [RAFFLE_LANGUAGES.zh, RAFFLE_LANGUAGES.vi]) {
+      const title = `title${suffix}` as const, name = `name${suffix}` as const;
+      submission.set(title, { latest: base[title], value: submitted[title] });
+      for (const prize of submitted.prizes) {
+        const latest = latestPrizes.get(prize.id);
+        if (latest) submission.set(`prizes.${prizeKey(prize.id)}.${name}`, { latest: latest[name], value: prize[name] });
+      }
+    }
+  }
   const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
     path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
     key => {
@@ -179,13 +209,13 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
       : key.startsWith("prizes.") && raw === undefined ? "—"
       : key.endsWith(".amount") ? (type => type === "DEVICE" ? `${Number(raw)} 台` : `${amountText(String(raw))} ${PRIZE_UNIT[type]}`)(review.fields.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"])
-      : raw === undefined || raw === null || raw === "" ? "—" : String(raw)) : [];
+      : raw === undefined || raw === null || raw === "" ? "—" : String(raw), { equal: equalRaffleField, submission }) : [];
   // Identity sets are compared with the opened snapshot on both sides. Reordering is harmless;
   // additions/deletions require the explicit whole-draft choice, never an implicit replacement.
-  const prizeKey = (id: string) => encodeURIComponent(id).replace(/\./g, "%2E");
+  const prizeFields = (id: string) => review?.fields.filter(field => field.path.startsWith(`prizes.${prizeKey(id)}.`)) ?? [];
   /** 从对比数据里按奖项拼回某一份的奖项；那一份没有这一项时是 undefined。 */
   const prizeAt = (id: string, which: "opened" | "latest" | "mine") => {
-    const leaves = review?.fields.filter(field => field.path.startsWith(`prizes.${prizeKey(id)}.`)) ?? [];
+    const leaves = prizeFields(id);
     if (leaves.find(field => field.path === `prizes.${prizeKey(id)}.id`)?.[which] === undefined) return undefined;
     return Object.fromEntries(leaves.map(field => [field.path.split(".")[2], field[which]])) as unknown as RafflePrize;
   };
@@ -212,7 +242,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
     if (!marks(id).length) return "";
     return latest && !opened && !mine ? "别人新加的，提交后删掉"
       : !latest && opened && mine ? "别人删了，提交后恢复"
-      : latest && opened && !mine && JSON.stringify(latest) !== JSON.stringify(opened) ? "别人改过、你删了，提交后删掉" : "";
+      : latest && opened && !mine && prizeFields(id).some(field => field.changedByOther) ? "别人改过、你删了，提交后删掉" : "";
   };
   const prizeSections: H4CompareSection[] = review ? [
     { key: "raffle", rows: compareGroups.filter(group => !group.key.startsWith("prizes.")) },
@@ -220,7 +250,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
       const opened = prizeAt(id, "opened"), latest = prizeAt(id, "latest"), mine = prizeAt(id, "mine"), tags = marks(id);
       const rows = compareGroups.filter(group => group.key.startsWith(`prizes.${prizeKey(id)}.`)).map(group => ({ ...group, label: PRIZE_FIELD[group.key.split(".")[2]] ?? "其他" }));
       const lost = overwriteNote(id);
-      const whole = tags.length ? { opened: prizeSummary(opened), latest: prizeSummary(latest), byOther: JSON.stringify(opened) !== JSON.stringify(latest), byMe: JSON.stringify(opened) !== JSON.stringify(mine),
+      const fields = prizeFields(id);
+      const whole = tags.length ? { opened: prizeSummary(opened), latest: prizeSummary(latest), byOther: fields.some(field => field.changedByOther), byMe: fields.some(field => field.changedByMe),
         mine: <>{prizeSummary(mine)}{lost && <span className="h4-compare-lost">{`按我填的提交会${lost.slice(lost.lastIndexOf("提交后") + 3)}`}</span>}</> } : undefined;
       return { key: id, title: prizeName(id), tags: tags.map(mark => <StatusTag key={mark} tone={mark.startsWith("别人") ? "warn" : "neutral"}>{mark}</StatusTag>), rows, whole };
     }),
@@ -228,7 +259,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   // 整份按我填的提交时，会被换掉的别人的修改：增删过的奖项按整项说，其余逐项写「别人改成 → 提交后」。
   const overwrites: H4Overwrite[] = review ? [
     ...compareGroups.filter(group => group.overwritesOther && !prizeIds.some(id => marks(id).length && group.key.startsWith(`prizes.${prizeKey(id)}.`)))
-      .map(group => ({ key: group.key, label: group.label, latest: group.latest, mine: group.mine })),
+      .map(group => ({ key: group.key, label: group.label, latest: group.latest, submitted: group.submitted ?? group.mine })),
     ...prizeIds.flatMap(id => { const note = overwriteNote(id); return note ? [{ key: `prize:${id}`, label: prizeName(id), note: `：${note}` }] : []; }),
   ] : [];
   const sideText = (side: { added: string[]; removed: string[] }) => [
