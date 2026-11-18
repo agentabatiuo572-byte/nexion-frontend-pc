@@ -6,7 +6,7 @@ import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleReadi
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
-export default function H4EventRules({ ctx, missingContent, prepareContent }: { ctx: HCtx; missingContent: (code: string) => string[]; prepareContent: (code: string, reason: string) => Promise<void> }) {
+export default function H4EventRules({ ctx, contentReadiness, prepareContent }: { ctx: HCtx; contentReadiness: (code: string) => Pick<EventRuleView["readiness"], "missing" | "incomplete">; prepareContent: (code: string, reason: string) => Promise<void> }) {
   const [rows, setRows] = useState<EventRuleView[]>([]), [selected, setSelected] = useState<EventRuleView | null>(null);
   const [draft, setDraft] = useState<EventRuleChange | null>(null), [regions, setRegions] = useState("");
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
@@ -46,7 +46,17 @@ export default function H4EventRules({ ctx, missingContent, prepareContent }: { 
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开活动配置。");
         const own = generation.current; setSaving(true); setError("");
         try {
-          if (next.enabled) await prepareContent(base.eventCode, reason);
+          if (next.enabled) {
+            await prepareContent(base.eventCode, reason);
+            const latest = (await fetchEventRules()).find(row => row.eventCode === base.eventCode);
+            if (!latest || latest.revision !== base.revision) throw new Error("活动规则已变化，请关闭配置并刷新后核对。");
+            if (own !== generation.current) return;
+            setRows(current => current.map(row => row.eventCode === latest.eventCode ? latest : row));
+            setSelected(latest);
+            if (!latest.readiness.ready || latest.readiness.missing.length || latest.readiness.incomplete?.length) {
+              throw new Error(eventRuleReadinessText(latest));
+            }
+          }
           const saved = await updateEventRule(base.eventCode, next, base.revision, reason);
           if (own !== generation.current) return;
           setRows(current => current.map(row => row.eventCode === saved.eventCode ? saved : row)); choose(saved); ctx.toast("活动规则已保存");
@@ -56,7 +66,11 @@ export default function H4EventRules({ ctx, missingContent, prepareContent }: { 
     });
   };
   if (!canRead) return null;
-  const readiness = selected ? eventRuleReadiness(selected.readiness, missingContent(selected.eventCode)) : null;
+  const content = selected ? contentReadiness(selected.eventCode) : null;
+  const readiness = selected && content ? eventRuleReadiness(selected.readiness, content) : null;
+  const serverGaps = selected ? [...selected.readiness.missing, ...(selected.readiness.incomplete ?? [])] : [];
+  const canPrepare = content && !content.missing.length && !content.incomplete?.length
+    && serverGaps.length > 0 && serverGaps.every(key => key.startsWith("localized."));
   return <section className="l-card">
     <div className="l-h"><span className="ttl">活动玩法与开放设置</span><span className="sub">先保存完整配置，再开启活动</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button></div></div>
     <div className="l-b">
@@ -68,7 +82,7 @@ export default function H4EventRules({ ctx, missingContent, prepareContent }: { 
         {selected && draft && readiness && <><fieldset disabled={!canWrite || saving} style={{ marginTop: 16, border: 0, padding: 0 }}>
           <p>{eventRuleReadinessText({ ...selected, readiness })}</p>
           <p>{selected.rulesLocked ? "活动玩法和有效期已固定，只可关闭活动；关闭后不能重新开启。" : "活动首次开放后，玩法和有效期固定；关闭后不能重新开启。"}</p>
-          <label className="field"><span>活动开放</span><select value={String(draft.enabled)} onChange={event => setDraft({ ...draft, enabled: event.target.value === "true" })}><option value="false">关闭</option><option value="true" disabled={!readiness.ready || (selected.rulesLocked && !selected.enabled)}>开启</option></select></label>
+          <label className="field"><span>活动开放</span><select value={String(draft.enabled)} onChange={event => setDraft({ ...draft, enabled: event.target.value === "true" })}><option value="false">关闭</option><option value="true" disabled={(!readiness.ready && !canPrepare) || (selected.rulesLocked && !selected.enabled)}>开启</option></select></label>
           <fieldset disabled={selected.rulesLocked} className="grid g-2" style={{ gap: 12, border: 0, margin: 0, padding: 0 }}>
             {(["startsAt", "endsAt"] as const).map((key, index) => <label className="field" key={key}><span>{index ? "结束时间" : "开始时间"}（UTC）</span><input type="datetime-local" step={1} value={draft[key] ? new Date(draft[key]!).toISOString().slice(0, 19) : ""} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : null })}/></label>)}
             {selected.kind === "boost" && <div className="field"><span>加成玩法</span><span>{draft.rules.action === "CHECKIN_MULTIPLIER" ? "周末签到加倍" : "锁定计划加抽奖券"}</span></div>}

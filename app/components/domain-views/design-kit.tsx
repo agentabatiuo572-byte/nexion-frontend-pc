@@ -543,7 +543,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; allowEmpty?: boolean; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -600,7 +600,7 @@ function isDecimalStepAligned(value: string, base: number, step: number): boolea
 
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
-  if (!value.trim()) return false;
+  if (!value.trim()) return spec.kind === "text" && spec.allowEmpty === true;
   if (spec.disabledOptions?.includes(value.trim())) return false;
   if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
@@ -3558,7 +3558,7 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
     setSubmitError(null);
     try {
       if (retryApproval) await retryApproval();
-      else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
+      else await onConfirm(reason.trim(), spec?.allowEmpty ? submittedValue : submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
     } catch (error) {
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.

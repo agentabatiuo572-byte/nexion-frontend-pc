@@ -21,7 +21,12 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
-  const choose = (row: AdminRaffle | null) => { setBase(row); setDraft(row ? raffleLocalizedDraft({ id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes }, requiredLanguages, "edit") : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null) => {
+    setBase(row);
+    const stored = row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes } : empty();
+    setDraft(write && row?.status === "DRAFT" ? raffleLocalizedDraft(stored, requiredLanguages, "edit") : stored);
+    setEnabled(row?.status === "OPEN"); setError("");
+  };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const save = () => {
     if (!draft || !write || saving || (base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0)))) return;

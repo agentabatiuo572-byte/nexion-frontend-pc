@@ -17,6 +17,7 @@ import {
   updateH3QuestConfig,
   updateH3LocalizedContent,
   updateH4LocalizedContent,
+  createH4ContentCommandKey,
   updateH4EventFeatured,
   updateH4EventReward,
   updateH4EventStatus,
@@ -50,6 +51,9 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 
@@ -141,6 +145,23 @@ const LOCALIZED_FIELD_LABEL: Record<"name" | "description" | "rewardName", strin
 
 const EVENT_CONTENT_LOCALES = ["en", "zh", "vi"] as const;
 const EVENT_CONTENT_FIELDS = ["name", "description", "rewardName"] as const;
+type EventContentField = typeof EVENT_CONTENT_FIELDS[number];
+type EventContentEdit = { field: EventContentField; locale: OperatingLanguageCode; value: string };
+type EventContentCommand = EventContentEdit & { expectedValue: string; key: string };
+type EventContentAttempt = {
+  edit: EventContentEdit | null;
+  reason: string;
+  commands: EventContentCommand[];
+  observed: EventContentEdit[];
+  confirmed: number;
+  attempted: boolean;
+};
+const eventContentAttempts = createPendingMutationStore<PendingMutationRecord & EventContentAttempt>({
+  storageKey: "uvel-admin-h4-event-content-attempts-v1",
+  isValidRecord: record => Array.isArray(record.commands) && Array.isArray(record.observed) && typeof record.reason === "string"
+    && Number.isInteger(record.confirmed) && record.confirmed >= 0 && record.confirmed <= record.commands.length,
+});
+const eventContentSlot = (code: string) => `${currentAdminOperator()}:${code}`;
 
 const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
 const TASK_CATEGORY_LABELS: Record<string, string> = {
@@ -599,50 +620,121 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       .filter((field) => !rawLocalizedValue("event", eventCode, field, locale, source).trim())
       .map((field) => ({ eventCode, field, locale })));
 
-  const saveEventContent = async (
-    code: string, reason: string, source: H3Model,
-    edit?: { field: typeof EVENT_CONTENT_FIELDS[number]; locale: OperatingLanguageCode; value: string },
-  ) => {
-    const english = eventFields(code, "en", source);
-    if (edit?.locale === "en") english[edit.field] = edit.value.trim();
-    const optional = EVENT_CONTENT_LOCALES.filter(locale => !requiredLanguages.includes(locale));
-    const localized = optional.map(locale => ({ locale, fields: eventEditFields(code, locale, source) }));
-    if (!edit) {
-      const missing = eventLocalizedGaps(code, source);
-      const incomplete = localized.flatMap(({ locale, fields }) => Object.values(fields).some(value => value.trim())
-        ? EVENT_CONTENT_FIELDS.filter(field => !fields[field].trim()).map(field => ({ locale, field })) : []);
-      if (missing.length || incomplete.length) throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", { missing: [...missing, ...incomplete] }));
+  const eventIncompleteOptional = (code: string, source = model) => EVENT_CONTENT_LOCALES.flatMap(locale => {
+    if (requiredLanguages.includes(locale)) return [];
+    const fields = eventEditFields(code, locale, source);
+    return EVENT_CONTENT_FIELDS.some(field => fields[field].trim())
+      ? EVENT_CONTENT_FIELDS.filter(field => !fields[field].trim()).map(field => ({ locale, field })) : [];
+  });
+
+  const saveEventContent = async (code: string, reason: string, source: H3Model, edit: EventContentEdit | null) => {
+    const slot = eventContentSlot(code);
+    const pending = eventContentAttempts.list().find(record => record.fingerprint === slot);
+    if (pending && (pending.edit?.field !== edit?.field || pending.edit?.locale !== edit?.locale || pending.edit?.value !== edit?.value)) {
+      const original = pending.edit;
+      throw new Error(original
+        ? `请先打开${LOCALE_LABEL[original.locale]}${LOCALIZED_FIELD_LABEL[original.field]}，按原内容核对保存结果。`
+        : "活动上线前的补齐尚未确认，请先重试原操作。");
     }
-    const changes = edit ? [{ ...edit, value: edit.value.trim() }] : [];
-    if (!edit || edit.locale === "en") {
-      for (const { locale, fields } of localized) {
-        const filled = fillBlankContentLanguage(requiredLanguages, locale, english, fields);
-        if (filled !== english) continue;
-        for (const field of edit ? [edit.field] : EVENT_CONTENT_FIELDS) {
-          if (filled[field].trim()) changes.push({ locale, field, value: filled[field] });
+    let latest = edit || pending ? await fetchH3QuestEvents("events") as H3Model : source;
+    apply(latest);
+    let attempt: EventContentAttempt;
+    if (pending) {
+      attempt = pending;
+    } else {
+      if (!edit) {
+        const missing = eventLocalizedGaps(code, source);
+        const incomplete = eventIncompleteOptional(code, source);
+        if (missing.length || incomplete.length) {
+          throw new Error(formatAdminApiError("EVENT_LOCALIZED_CONTENT_INCOMPLETE", "", { missing, incomplete }));
         }
       }
+      const changes: EventContentEdit[] = edit ? [edit] : [];
+      const observedLocales = new Set<OperatingLanguageCode>();
+      if (!edit || edit.locale === "en") {
+        observedLocales.add("en");
+        const english = eventFields(code, "en", source);
+        if (edit) english[edit.field] = edit.value;
+        for (const locale of EVENT_CONTENT_LOCALES) {
+          if (requiredLanguages.includes(locale)) continue;
+          const filled = fillBlankContentLanguage(requiredLanguages, locale, english, eventEditFields(code, locale, source));
+          if (filled !== english) continue;
+          observedLocales.add(locale);
+          for (const field of edit ? [edit.field] : EVENT_CONTENT_FIELDS) {
+            if (filled[field].trim()) changes.push({ locale, field, value: filled[field].trim() });
+          }
+        }
+      }
+      const observed = [...observedLocales].flatMap(locale => EVENT_CONTENT_FIELDS.map(field => ({
+        field, locale, value: rawLocalizedValue("event", code, field, locale, source).trim(),
+      })));
+      const commands = changes.flatMap(change => {
+        const value = rawLocalizedValue("event", code, change.field, change.locale, source).trim();
+        if (!observedLocales.has(change.locale)) observed.push({ ...change, value });
+        return value === change.value ? [] : [{ ...change, expectedValue: value || "__MISSING__", key: createH4ContentCommandKey(change.field) }];
+      });
+      if (!commands.length) return;
+      attempt = { edit, reason, commands, observed, confirmed: 0, attempted: false };
     }
-    for (const { field, locale, value } of changes) {
-      const current = rawLocalizedValue("event", code, field, locale, source);
-      if (current.trim() === value.trim()) continue;
+    const batchKey = attempt.commands[0].key;
+    const remember = () => eventContentAttempts.remember(slot, batchKey, attempt);
+    while (true) {
+      const { commands, observed, confirmed, attempted } = attempt;
+      const read = ({ field, locale }: EventContentEdit) => rawLocalizedValue("event", code, field, locale, latest).trim();
+      const conflict = observed.find(cell => {
+        const index = commands.findIndex(command => command.field === cell.field && command.locale === cell.locale);
+        if (index >= 0 && index < confirmed) return read(cell) !== commands[index].value;
+        if (index === confirmed && attempted && read(cell) === commands[index].value) return false;
+        return read(cell) !== cell.value;
+      });
+      if (conflict) {
+        eventContentAttempts.forget(slot, batchKey);
+        throw new Error(`${LOCALE_LABEL[conflict.locale]}${LOCALIZED_FIELD_LABEL[conflict.field]}已变化。已重新读取，请关闭后核对，不会覆盖当前值。`);
+      }
+      const command = commands[confirmed];
+      if (!command) {
+        eventContentAttempts.forget(slot, batchKey);
+        return;
+      }
+      if (attempted && read(command) === command.value) {
+        attempt = { ...attempt, confirmed: confirmed + 1, attempted: false };
+        remember();
+        continue;
+      }
+      const { field, locale, value, expectedValue, key } = command;
+      if (!value && (requiredLanguages.includes(locale) || !latest.events?.some(event => event.id === code && event.deleteState === "draft"))) {
+        eventContentAttempts.forget(slot, batchKey);
+        throw new Error("仅未开放活动的选填文案可清空，请核对最新配置。");
+      }
+      attempt = { ...attempt, attempted: true };
+      remember();
+      if (!eventContentAttempts.isDurablyStored(slot, batchKey)) {
+        if (!pending && confirmed === 0) eventContentAttempts.forget(slot, batchKey);
+        throw new Error("当前页面无法保留原命令，未提交此格，请核对浏览器设置。");
+      }
       try {
-        const next = await updateH4LocalizedContent(code, field, locale, value, current.trim() || "__MISSING__", reason) as H3Model;
-        if (rawLocalizedValue("event", code, field, locale, next).trim() !== value.trim()) throw new Error("提交值与读回不一致。");
-        apply(next);
+        latest = await updateH4LocalizedContent(code, field, locale, value, expectedValue, attempt.reason, key) as H3Model;
+        apply(latest);
+        if (read(command) !== value) throw new Error("提交值与读回不一致。");
+        attempt = { ...attempt, confirmed: confirmed + 1, attempted: false };
+        remember();
       } catch (cause) {
         const message = `${LOCALE_LABEL[locale]}${LOCALIZED_FIELD_LABEL[field]}未确认保存：${displayAdminError(cause)}`;
-        try { apply(await fetchH3QuestEvents("events")); }
+        try { latest = await fetchH3QuestEvents("events") as H3Model; apply(latest); }
         catch (readError) { throw new Error(`${message}；重新读取活动失败：${displayAdminError(readError)}`); }
-        throw new Error(`${message}；已重新读取活动，请核对已保存的字段。`);
+        if (confirmed === 0 && read(command) !== value && cause instanceof Error && "status" in cause
+          && typeof cause.status === "number" && !outcomeStaysUnknown(cause.status, "apiCode" in cause && typeof cause.apiCode === "number" ? cause.apiCode : undefined)) {
+          eventContentAttempts.forget(slot, batchKey);
+          throw new Error(`${message}；已重新读取活动，请核对后再提交。`);
+        }
+        throw new Error(`${message}；已重新读取活动，可按原内容重试。`);
       }
     }
   };
 
   const prepareEventContent = async (code: string, reason: string) => {
     const source = await fetchH3QuestEvents("events") as H3Model;
-    apply(source);
-    await saveEventContent(code, reason, source);
+    await saveEventContent(code, reason, source, null);
   };
 
   const openEventStatus = (event: QuestEvent) => {
@@ -707,15 +799,24 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   ) => {
     const current = rawLocalizedValue(entity, code, field, locale);
     const optional = !requiredLanguages.includes(locale);
+    const displayed = entity === "event" ? eventEditFields(code, locale)[field] : current;
+    const slot = eventContentSlot(code);
+    const pending = entity === "event" ? eventContentAttempts.list().find(record => record.fingerprint === slot
+      && record.edit?.field === field && record.edit.locale === locale)?.edit : null;
+    const clearable = entity === "event" && optional && model?.events?.some(event => event.id === code && event.deleteState === "draft")
+      && (displayed.trim() !== "" || pending?.value === "");
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
-      detail: optional ? "选填，不填时 App 显示英文。" : entity === "event"
+      detail: clearable ? "选填。清空后确认可删除此格译文；取消不保存。" : optional ? "选填，不填时 App 显示英文。" : entity === "event"
         ? "活动发布前须补齐英文和运营区域语言的名称、说明和奖励名。"
         : "任务启用前须补齐英文和运营区域语言的名称。",
-      edit: { kind: "text", current: entity === "event" ? eventEditFields(code, locale)[field] : current },
+      edit: { kind: "text", current: displayed, initialValue: pending?.value ?? (clearable ? displayed : undefined), allowEmpty: clearable, disallowCurrent: clearable && !pending },
       run: async (reason, value) => {
-        if (!value) return;
-        if (entity === "event" && model) await saveEventContent(code, reason, model, { field, locale, value });
+        if (value === undefined) return;
+        if (entity === "event" && model) {
+          if (eventContentSlot(code) !== slot) throw new Error("登录身份已变化，请重新打开活动配置。");
+          await saveEventContent(code, reason, model, { field, locale, value: value.trim() });
+        }
         else apply(await updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason));
         toast(`${source} ${locale.toUpperCase()} 文案已保存`);
       },
@@ -807,7 +908,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
         if (targetStatus === "active" && taskKind === "MISSION") {
-          const missing = requiredLanguages.filter(locale => !rawLocalizedValue("mission", taskCode, "name", locale).trim());
+          const latest = await fetchH3QuestEvents("tasks") as H3Model;
+          apply(latest);
+          const missing = requiredLanguages.filter(locale => !rawLocalizedValue("mission", taskCode, "name", locale, latest).trim());
           if (missing.length) throw new Error(`请先补齐任务的${missing.map(locale => LOCALE_LABEL[locale]).join("、")}名称，再启用。`);
         }
         await applyMissionMutation(transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
@@ -1901,7 +2004,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
         })}>查看结果</button>
       </div>)}
-      <H4EventRules ctx={ctx} missingContent={code => eventLocalizedGaps(code).map(({ locale, field }) => `localized.${locale}.${field}`)} prepareContent={prepareEventContent} />
+      <H4EventRules ctx={ctx} contentReadiness={code => ({
+        missing: eventLocalizedGaps(code).map(({ locale, field }) => `localized.${locale}.${field}`),
+        incomplete: eventIncompleteOptional(code).map(({ locale, field }) => `localized.${locale}.${field}`),
+      })} prepareContent={prepareEventContent} />
       <H4GenesisRaffle ctx={ctx} requiredLanguages={requiredLanguages} />
       <div className="two-col">
         <section className="l-card">

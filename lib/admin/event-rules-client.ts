@@ -11,7 +11,7 @@ export interface EventRuleView {
   startsAt: string | null;
   endsAt: string | null;
   rules: Record<string, unknown>;
-  readiness: { ready: boolean; missing: string[] };
+  readiness: { ready: boolean; missing: string[]; incomplete?: string[] };
 }
 export type EventRuleChange = Pick<EventRuleView, "enabled" | "startsAt" | "endsAt" | "rules">;
 export interface EventVoucherOption { id: string; name: string; percent: number; status: "active" | "paused"; }
@@ -22,6 +22,7 @@ export function parseEventRule(value: unknown): EventRuleView {
     || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.enabled !== "boolean" || typeof row.rulesLocked !== "boolean"
     || !row.rules || typeof row.rules !== "object" || Array.isArray(row.rules)
     || typeof row.readiness?.ready !== "boolean" || !Array.isArray(row.readiness.missing) || row.readiness.missing.some(item => typeof item !== "string")
+    || (row.readiness.incomplete !== undefined && (!Array.isArray(row.readiness.incomplete) || row.readiness.incomplete.some(item => typeof item !== "string")))
     || [row.startsAt, row.endsAt].some(value => value !== null && (typeof value !== "string" || !Number.isFinite(Date.parse(value))))) throw new Error("活动规则读取失败，请刷新后重试。");
   return row;
 }

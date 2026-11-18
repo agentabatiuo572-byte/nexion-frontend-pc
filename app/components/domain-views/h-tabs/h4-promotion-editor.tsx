@@ -146,7 +146,7 @@ export default function PromotionEditor({ activity, catalog, requiredLanguages, 
     catalog: Catalog;
     can: (v: string) => boolean;
     requiredLanguages: readonly OperatingLanguageCode[];
-    onSaved: (nextStep?: number, saved?: Promotion) => Promise<void>;
+    onSaved: (nextStep?: number, saved?: Promotion, advanced?: boolean) => Promise<void>;
     onBack: () => void;
     onReview: () => void;
     onStep?: (step: number) => void;
@@ -179,6 +179,7 @@ export default function PromotionEditor({ activity, catalog, requiredLanguages, 
     else
         target === 'detail' ? onBack() : onReview(); };
     const submittedDraft = { ...draft, ...promotionDraftPublicText(draft) };
+    const publicPreview = publicOpen ? promotionPublicText(draft, requiredLanguages, 'submit') : null;
     const requestSave = (target: number | null = null) => { if (readOnly || bannerUploading) return; if (limitsFormatInvalid || limitsIncomplete) { setLimitsOpen(true); focusFormatError(); return; } setNextStep(target); setSaving(true); };
     const limitFormatNotice = limitsFormatInvalid && <Notice title="上限格式尚未通过" kind="bad"><p>{limitErrors.join('；')}</p><Button onClick={() => setLimitsOpen(true)}>定位上限输入</Button></Notice>;
     const moveStep = (target: number) => {
@@ -230,14 +231,19 @@ export default function PromotionEditor({ activity, catalog, requiredLanguages, 
     {limitFormatNotice}{!!error && <ReadError target="当前草稿输入或人群预览" retryLabel="继续修改" error={error} retry={() => setError(null)}/>}<div className="footerbar"><small>草稿尚未提交的输入会保留；保存成功后显示已保存版本。</small><div className="actions"><Button disabled={bannerUploading} onClick={() => leave('detail')}>返回活动</Button>{step > 0 && <Button disabled={bannerUploading} onClick={() => moveStep(step - 1)}>上一步</Button>}<Button disabled={readOnly || bannerUploading || limitsIncomplete || limitsFormatInvalid} onClick={() => requestSave()}>保存草稿</Button>{step < 3 ? <Button kind="primary" disabled={bannerUploading} onClick={() => moveStep(step + 1)}>下一步</Button> : <Button kind="primary" disabled={bannerUploading} onClick={() => leave('review')}>试算与审核</Button>}</div></div>
     {removeRule&&<Dialog title="移除草稿购买规则" onClose={()=>setRemoveRule(null)} footer={<><Button onClick={()=>setRemoveRule(null)}>取消</Button><Button kind="danger" onClick={()=>{patch({rules:(draft.rules||[]).filter(r=>r.ruleId!==removeRule.ruleId)});setRemoveRule(null);}}>确认移除</Button></>}><Summary rows={[['购买设备',sku(removeRule.productNo)],['受益人',removeRule.inviterReward?'购买者与直接邀请人':'购买者'],['影响','仅从当前草稿移除；已发布规则与历史奖励不改变。']]}/></Dialog>}
     {rule && <RuleEditor initial={rule} catalog={catalog} dual={draft.template === 'DIRECT_REFERRAL'} readOnly={readOnly} onClose={() => setRule(null)} onSave={r => { const list = draft.rules || [], exists = list.some(v => v.ruleId === r.ruleId); patch({ rules: exists ? list.map(v => v.ruleId === r.ruleId ? r : v) : [...list, r] }); setRule(null); }}/>}
-    {saving && !limitsFormatInvalid && <ConfirmCommand writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedVersion: version.version, expectedRevision: version.revision, draft: submittedDraft }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async result => { await onSaved(nextStep??undefined, await verifyPromotionLocalizedReceipt(result)); if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
-        onReview();
-    else if (exitTarget === 'detail')
-        onBack(); }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}
+    {saving && !limitsFormatInvalid && <ConfirmCommand writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedVersion: version.version, expectedRevision: version.revision, draft: submittedDraft }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async result => {
+        const { saved, advanced } = await verifyPromotionLocalizedReceipt(result);
+        await onSaved(advanced ? undefined : nextStep ?? undefined, saved, advanced);
+        if (!advanced && nextStep !== null) setStep(nextStep);
+        setNextStep(null); setSaving(false);
+        if (advanced) setExitTarget(null);
+        else if (exitTarget === 'review') onReview();
+        else if (exitTarget === 'detail') onBack();
+    }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}
     {templatePickerOpen && <Dialog title="选择活动模板" onClose={() => setTemplatePickerOpen(false)}><p>模板只创建配置结构，业务金额、资格、预算与政策均由运营明确填写。</p><div className="actions" style={{marginTop: 18}}>{Object.entries(TEMPLATE_LABELS).map(([value, label]) => <Button key={value} disabled={readOnly} onClick={() => { setTemplatePickerOpen(false); if (value !== draft.template) setTemplate(value as Template); }}>{label}</Button>)}</div></Dialog>}
     {template && <Dialog title="切换活动模板" onClose={() => setTemplate(null)} footer={<><Button onClick={() => setTemplate(null)}>取消</Button><Button kind="primary" onClick={() => { setDraft(changeTemplate(draft, template)); setBuyerLimit(null); setInviterLimit(null); setLimitInputs({}); setPreview(null); setTemplate(null); }}>确认清空并切换</Button></>}><Notice title="不兼容配置将清空" kind="warn">人群、购买规则、奖励、限额、预算与政策需重新选择。名称、时间和公开说明保留。</Notice></Dialog>}
     {exitTarget && !saving && !limitsOpen && <Dialog title="配置尚未保存" onClose={() => setExitTarget(null)} footer={<><Button onClick={() => setExitTarget(null)}>继续编辑</Button><Button onClick={() => { const target = exitTarget; setExitTarget(null); target === 'review' ? onReview() : onBack(); }}>放弃改动并返回</Button><Button kind="primary" disabled={readOnly||bannerUploading||limitsIncomplete||limitsFormatInvalid} onClick={() => requestSave()}>保存后继续</Button></>}><Notice title="输入已保留">先保存草稿再进入下一页；试算和审核始终使用已保存版本。</Notice>{limitFormatNotice}</Dialog>}
-    {publicOpen && <Dialog title="公开说明预览" onClose={() => setPublicOpen(false)}><h2>{draft.title?.[language] || '尚未填写标题'}</h2><p style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{draft.terms?.[language] || '尚未填写规则'}</p></Dialog>}
+    {publicPreview && <Dialog title="公开说明预览" onClose={() => setPublicOpen(false)}><h2>{publicPreview.title[language].trim() ? publicPreview.title[language] : '尚未填写标题'}</h2><p style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{publicPreview.terms[language].trim() ? publicPreview.terms[language] : '尚未填写规则'}</p></Dialog>}
     {budgetOpen && <BudgetEditor draft={draft} catalog={catalog} activity={activity} onClose={() => setBudgetOpen(false)} onSave={budgets => { patch({ budgets }); setBudgetOpen(false); }}/>}
   </>;
 }

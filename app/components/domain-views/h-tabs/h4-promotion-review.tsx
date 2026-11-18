@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import { H4SampleAccountSelect } from './h4-sample-account-select';
-import { acknowledgePromotionCommand, promotionCommand, promotionRead, promotionVersions, verifyPromotionLocalizedReceipt } from '@/lib/admin/promotion-client';
+import { acknowledgePromotionCommand, promotionCommand, promotionRead, promotionVersions, PROMOTION_RECEIPT_ADVANCED, verifyPromotionLocalizedReceipt } from '@/lib/admin/promotion-client';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
 import { limitText, promotionPublicMissing, promotionPublicText, PROMOTION_LANGUAGE_LABELS } from '@/lib/admin/promotion-form';
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from '@/lib/admin/platform-experience-client';
@@ -74,10 +74,11 @@ export default function PromotionReview({ activity, catalog, requiredLanguages, 
             path: `/promotions/${encodeURIComponent(activity.activityId)}/draft`, method: 'PUT',
             body: { expectedVersion: candidate.version, expectedRevision: candidate.revision, draft: text, reason: body.reason },
         });
-        const saved = await verifyPromotionLocalizedReceipt(receipt);
-        if (!saved?.current || saved.current.version !== candidate.version) throw new Error('尚未读到已补齐语言的候选草稿，请核查原操作。');
+        const { saved, advanced } = await verifyPromotionLocalizedReceipt(receipt);
+        if (!saved) throw new Error('尚未读到已补齐语言的候选草稿，请核查原操作。');
         acknowledgePromotionCommand(receipt);
         onReload(saved);
+        if (advanced || !saved.current) throw new Error(PROMOTION_RECEIPT_ADVANCED);
         return { ...body, expectedRevision: saved.current.revision };
     };
     const missingRanks=[candidate?.draft.buyerAudience,candidate?.draft.inviterAudience].some(a=>a?.rankIds?.some(id=>!catalog.ranks.some(r=>r.id===id)));

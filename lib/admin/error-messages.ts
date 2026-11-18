@@ -1105,25 +1105,33 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 function eventLocalizedMissingMessage(data: unknown): string | undefined {
-  if (!data || typeof data !== "object" || !("missing" in data) || !Array.isArray(data.missing)) return;
+  if (!data || typeof data !== "object") return;
 
   const languageLabels = { en: "英文", zh: "中文", vi: "越南语" };
   const fieldLabels = { name: "名称", description: "说明", rewardName: "奖励名" };
-  const byLanguage = new Map<string, Set<string>>();
-  for (const item of data.missing) {
-    const key = typeof item === "string" ? item
-      : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
-        ? `localized.${item.locale}.${item.field}` : "";
-    const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
-    if (!match) continue;
-    const language = languageLabels[match[1] as keyof typeof languageLabels];
-    const fields = byLanguage.get(language) ?? new Set<string>();
-    fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
-    byLanguage.set(language, fields);
-  }
-  if (!byLanguage.size) return;
-  const labels = [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`);
-  return `请在「App 运营内容」填写${labels.join("、")}，补齐后再发布或开启活动。选填语言请整组留空或填齐。`;
+  const describe = (value: unknown) => {
+    if (!Array.isArray(value)) return "";
+    const byLanguage = new Map<string, Set<string>>();
+    for (const item of value) {
+      const key = typeof item === "string" ? item
+        : item && typeof item === "object" && typeof item.locale === "string" && typeof item.field === "string"
+          ? `localized.${item.locale}.${item.field}` : "";
+      const match = /^localized\.(en|zh|vi)\.(name|description|rewardName)$/.exec(key);
+      if (!match) continue;
+      const language = languageLabels[match[1] as keyof typeof languageLabels];
+      const fields = byLanguage.get(language) ?? new Set<string>();
+      fields.add(fieldLabels[match[2] as keyof typeof fieldLabels]);
+      byLanguage.set(language, fields);
+    }
+    return [...byLanguage].map(([language, fields]) => `${language}${[...fields].join("、")}`).join("、");
+  };
+  const missing = describe("missing" in data ? data.missing : null);
+  const incomplete = describe("incomplete" in data ? data.incomplete : null);
+  if (!missing && !incomplete) return;
+  return [
+    missing && `请在「App 运营内容」填写${missing}，补齐后再发布或开启活动。`,
+    incomplete && `选填译文未填齐：${incomplete}。请整组留空或填齐。`,
+  ].filter(Boolean).join("");
 }
 
 export function formatAdminApiError(message: string | null | undefined, fallback: string, data?: unknown) {

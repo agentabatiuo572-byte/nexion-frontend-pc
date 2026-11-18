@@ -1,7 +1,7 @@
 import { guardedFetch, formatAdminApiError } from './error-messages.ts';
 import { outcomeStaysUnknown } from "./outcome-classification.ts";
 import { createPendingMutationStore, type PendingMutationRecord } from './pending-mutation-store.ts';
-import type { CommandReceipt, Draft, LocalizedText, Policy, PolicyContent, Promotion, VersionPage } from './promotion-types.ts';
+import type { CommandReceipt, Draft, DraftLocalizedText, LocalizedText, Policy, PolicyContent, Promotion, Version, VersionPage } from './promotion-types.ts';
 import { PROMOTION_POLICY_TEXT_FIELDS } from './promotion-form.ts';
 import { OPERATING_LANGUAGE_CODES } from './platform-experience-client.ts';
 
@@ -15,30 +15,44 @@ export const acknowledgePromotionCommand = (receipt: CommandReceipt) => {
   if(typeof window!=='undefined'&&typeof window.dispatchEvent==='function')window.dispatchEvent(new Event('admin-promotion-pending-changed'));
 };
 
-export async function verifyPromotionLocalizedReceipt(receipt: CommandReceipt): Promise<Promotion | undefined> {
-  if (receipt.operation !== 'saveDraft' && receipt.operation !== 'createPolicy') return;
+export const PROMOTION_RECEIPT_ADVANCED = '原操作已成功，当前版本已变化，请核对最新资料。';
+
+function sameLocalizedText(saved: DraftLocalizedText | null | undefined, submitted: DraftLocalizedText | null | undefined) {
+  const expected = new Map(Object.entries(submitted ?? {}));
+  const actual = Object.entries(saved ?? {});
+  return actual.length === expected.size && actual.every(([locale, text]) => text.trim() === expected.get(locale)?.trim());
+}
+
+export async function verifyPromotionLocalizedReceipt(receipt: CommandReceipt): Promise<{ saved?: Promotion; advanced: boolean }> {
+  if (receipt.operation !== 'saveDraft' && receipt.operation !== 'createPolicy') return { advanced: false };
   const mismatch = '操作已提交，尚未读到与提交内容匹配的版本，请核查原操作。';
   const record = pending.list().find(item => item.commandKey === receipt.idempotencyKey);
   if (!record) throw new Error(mismatch);
   if (receipt.operation === 'saveDraft') {
-    const { draft } = record.body as { draft: Draft };
-    const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(receipt.targetId)}`);
-    const version = saved.current;
-    if (!version || receipt.resource?.id !== `${saved.activityId}:${version.version}` || version.revision !== receipt.resource.revision
-      || OPERATING_LANGUAGE_CODES.some(locale =>
-        (version.draft.title?.[locale] ?? '').trim() !== (draft.title?.[locale] ?? '').trim()
-        || (version.draft.terms?.[locale] ?? '').trim() !== (draft.terms?.[locale] ?? '').trim())) throw new Error(mismatch);
-    return saved;
+    const { draft, expectedVersion } = record.body as { draft: Draft; expectedVersion: number };
+    const resource = receipt.resource;
+    if (resource?.type !== 'VERSION' || resource.id !== `${receipt.targetId}:${expectedVersion}` || resource.revision === null) throw new Error(mismatch);
+    const path = `/promotions/${encodeURIComponent(receipt.targetId)}`;
+    const saved = await promotionRead<Promotion>(path);
+    const version = saved.current?.version === expectedVersion ? saved.current : await promotionRead<Version>(`${path}/versions/${expectedVersion}`);
+    if (saved.activityId !== receipt.targetId || version.activityId !== saved.activityId || version.version !== expectedVersion
+      || version.revision < resource.revision) throw new Error(mismatch);
+    if (version.revision === resource.revision
+      && (!sameLocalizedText(version.draft.title, draft.title) || !sameLocalizedText(version.draft.terms, draft.terms))) throw new Error(mismatch);
+    return { saved, advanced: version.revision > resource.revision || saved.draftVersion !== expectedVersion || version.state !== 'DRAFT' };
   }
   const { content } = record.body as { content: PolicyContent };
-  if (!(content.kind in PROMOTION_POLICY_TEXT_FIELDS)) return;
+  if (!(content.kind in PROMOTION_POLICY_TEXT_FIELDS)) return { advanced: false };
   const field = PROMOTION_POLICY_TEXT_FIELDS[content.kind as keyof typeof PROMOTION_POLICY_TEXT_FIELDS];
   const [policyId, version] = receipt.resource?.id.split(':') ?? [];
-  if (receipt.resource?.type !== 'POLICY' || !policyId || !version) throw new Error(mismatch);
+  if (receipt.resource?.type !== 'POLICY' || receipt.resource.revision === null || !policyId || !version) throw new Error(mismatch);
   const saved = await promotionRead<Policy>(`/promotion-policies/${encodeURIComponent(policyId)}/versions/${encodeURIComponent(version)}`);
+  if (saved.policyId !== policyId || String(saved.version) !== version || saved.revision < receipt.resource.revision) throw new Error(mismatch);
+  if (saved.revision > receipt.resource.revision) return { advanced: true };
   const expected = (content as unknown as Record<string, LocalizedText>)[field];
   const actual = (saved.content as unknown as Record<string, LocalizedText>)[field];
-  if (!actual || saved.revision !== receipt.resource.revision || OPERATING_LANGUAGE_CODES.some(locale => actual[locale].trim() !== expected[locale].trim())) throw new Error(mismatch);
+  if (!actual || OPERATING_LANGUAGE_CODES.some(locale => actual[locale].trim() !== expected[locale].trim())) throw new Error(mismatch);
+  return { advanced: false };
 }
 export class PromotionApiError extends Error {
   status: number;

@@ -8,8 +8,8 @@ export const PROMOTION_LANGUAGE_LABELS = { en: '英文', zh: '中文', vi: '越�
 export const PROMOTION_POLICY_TEXT_FIELDS = { DEVICE_RIGHTS: 'rightsDescription', ASSET: 'availabilityDescription', REFUND: 'terms' } as const satisfies Partial<Record<PolicyContent['kind'], string>>;
 
 export function promotionPublicText(draft: Pick<Draft, 'title' | 'terms'>, required: readonly OperatingLanguageCode[], mode: 'edit' | 'submit'): { title: LocalizedText; terms: LocalizedText } {
-  const title: LocalizedText = { zh: '', en: draft.title?.en ?? '', vi: '' };
-  const terms: LocalizedText = { zh: '', en: draft.terms?.en ?? '', vi: '' };
+  const title: LocalizedText = { ...draft.title, zh: '', en: draft.title?.en ?? '', vi: '' };
+  const terms: LocalizedText = { ...draft.terms, zh: '', en: draft.terms?.en ?? '', vi: '' };
   const english = { title: title.en, terms: terms.en };
   const transform = mode === 'edit' ? blankCopiedContentLanguage : fillBlankContentLanguage;
   for (const locale of ['zh', 'vi'] as const) {
@@ -30,7 +30,7 @@ export function promotionPublicMissing(draft: Pick<Draft, 'title' | 'terms'> | u
 
 export function promotionDraftPublicText(draft: Pick<Draft, 'title' | 'terms'>): Pick<Draft, 'title' | 'terms'> {
   const nonblank = (value: DraftLocalizedText | null | undefined): DraftLocalizedText => Object.fromEntries(
-    Object.entries(value ?? {}).filter(([, text]) => text.trim()),
+    Object.entries(value ?? {}).filter(([locale, text]) => !OPERATING_LANGUAGE_CODES.some(code => code === locale) || text.trim()),
   );
   return { title: nonblank(draft.title), terms: nonblank(draft.terms) };
 }
