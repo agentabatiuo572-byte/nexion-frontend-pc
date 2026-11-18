@@ -11,7 +11,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isExplicitRejection, isFundCommandLookupRejection } from "@/lib/admin/explicit-rejection";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fmtConfigPct } from "@/lib/format";
 import Link from "next/link";
@@ -828,7 +828,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       void loadApprovals();
     } catch (cause) {
       syncPending();
-      if (isExplicitRejection(cause)) {
+      if (mode === "retry" && isExplicitRejection(cause)) {
         toast(errorText(cause), "warn");
       } else if (isA2OutcomeUncertainError(cause)) {
         // 原因写在括号里；只取中文说明，码不上屏。
@@ -857,12 +857,6 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       }
       return receipt;
     } catch (cause) {
-      if (!evidence && session && isFundCommandLookupRejection(cause)) {
-        releaseConfigApproval("D5", session.adminId, record.commandKey);
-        syncPending();
-        toast(errorText(cause), "warn");
-        return null;
-      }
       const error = displayAdminError(cause);
       // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
       if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
@@ -891,11 +885,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
     } catch (cause) {
-      if (isFundCommandLookupRejection(cause)) {
-        tightenCommands.forget(record.fingerprint, record.commandKey);
-        syncPending();
-        toast(errorText(cause), "warn");
-      } else setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
     } finally { setRecovering(""); }
   };
   const releasePending = (record: ReleaseTarget) => {

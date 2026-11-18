@@ -17,7 +17,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { isExplicitRejection, isFundCommandLookupRejection } from "@/lib/admin/explicit-rejection";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
@@ -271,14 +271,6 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     toast(ticket ? `审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位超级管理员批准，当前买入价不变" : "已找回原单，请核对审批结果"}` : paramOf(item.param).done, "success");
   };
 
-  const releaseRejected = (record: PendingFx, cause: unknown) => {
-    pendingFx.forget(record.fingerprint, record.commandKey);
-    syncPending();
-    setRetryRejected("");
-    setPendingNote("");
-    toast(retryRejectedReason(cause), "warn");
-  };
-
   /** 按原操作重试：同命令号、同内容、同理由、同版本号，不接受新输入（OP-94）。 */
   const retryPending = async (record: PendingFx) => {
     if (record.expiresAt <= Date.now() || !canManage || retryRejected) return;
@@ -293,8 +285,12 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       if (isExplicitRejection(cause)) {
-        if (record.proposal) releaseRejected(record, cause);
-        else setRetryRejected(retryRejectedReason(cause));
+        const reason = retryRejectedReason(cause);
+        if (record.proposal) {
+          pendingFx.forget(record.fingerprint, record.commandKey);
+          syncPending();
+          toast(reason, "warn");
+        } else setRetryRejected(reason);
       } else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
@@ -316,10 +312,6 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       }
       return receipt;
     } catch (cause) {
-      if (!evidence && isFundCommandLookupRejection(cause)) {
-        releaseRejected(record, cause);
-        return null;
-      }
       const error = displayAdminError(cause);
       // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
       if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
@@ -339,8 +331,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (done) await settleDirect(record, receipt?.originalStatus ?? "SUCCEEDED");
     } catch (cause) {
-      if (isFundCommandLookupRejection(cause)) releaseRejected(record, cause);
-      else setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
     } finally { setRetrying(false); }
   };
   const releasePending = (record: PendingFx) => {
@@ -362,8 +353,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await load();
       toast(`已找回原审批单 ${ticket.id}，请核对审批进度；当前值以本页回读为准`, "success");
     } catch (cause) {
-      if (isFundCommandLookupRejection(cause)) releaseRejected(record, cause);
-      else setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
+      setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
     } finally { setRetrying(false); }
   };
   /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */

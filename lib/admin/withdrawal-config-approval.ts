@@ -7,7 +7,7 @@ import {
   isA2OutcomeUncertainError,
   type A2OperationRow,
 } from "./a2-client";
-import { isExplicitRejection, isFundCommandLookupRejection } from "./explicit-rejection";
+import { isExplicitRejection } from "./explicit-rejection";
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
@@ -409,8 +409,7 @@ export async function submitConfigApproval<T>(
       try {
         // 只有 A2_PROPOSAL_NOT_FOUND 才算没有原单；OPERATION_RESULT_UNKNOWN 这类 404 说明不了，按查询失败保留原命令。
         ticket = await fetchA2ProposalByKey(key, true);
-      } catch (cause) {
-        if (withdrawalApproval && isFundCommandLookupRejection(cause)) throw cause;
+      } catch {
         throw new A2OutcomeUncertainError("暂时无法查询原审批单。", key);
       }
       canClearOnRejection = ticket === null;

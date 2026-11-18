@@ -662,7 +662,6 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
       apiCode: result?.code,
       details: result?.data,
       backendMessage: result?.message,
-      ...(upstreamOutcomeUnknown && path.startsWith("/operations/proposals/by-idempotency-key?") ? { unknownOutcome: true } : {}),
       f5StatusRejected,
       ...(f4PayoutCoverageRefusal ? { f4PayoutCoverageRefusal: true } : {}),
     });

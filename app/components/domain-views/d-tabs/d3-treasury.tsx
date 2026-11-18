@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
 import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
-import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag, useTabIds } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
@@ -35,7 +35,7 @@ import {
   type D3NetExposure,
 } from "@/lib/admin/d-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { isExplicitRejection, isFundCommandLookupRejection } from "@/lib/admin/explicit-rejection";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
@@ -224,6 +224,8 @@ export function D3Treasury() {
   const [retrying, setRetrying] = useState(false);
   /** 待确认条上最近一次重试的结果，只是当下的事实，不影响待确认本身。 */
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [retryRejected, setRetryRejected] = useState<string[]>([]);
+  const [releasing, setReleasing] = useState<PendingItem | null>(null);
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState<PendingItem | null>(null);
   const [settled, setSettled] = useState<FundSettled[]>([]);
@@ -330,7 +332,7 @@ export function D3Treasury() {
   /**
    * 写操作共用一条路，做法同提现审核：先把原操作存好再发，存不了就不发（OP-92）。
    * 首次提交明确被拒时丢号，留在确认框修改。其余结果保号，转成页面上方的待确认（OP-93）。
-   * 原号重试的明确拒绝交给恢复入口收尾。
+   * 原号重试被明确拒绝后，记录保留到操作员确认解除。
    */
   const sendCommand = async ({ retained, stored, forget, send, onUnknown, done }: {
     retained: boolean;
@@ -598,12 +600,6 @@ export function D3Treasury() {
     : !/^[A-Za-z0-9][A-Za-z0-9:_./-]{5,95}$/.test(injectVoucher) ? "6–96 位，字母或数字开头，只能用字母、数字和 : _ . / -"
       : unknownCommands.injections.some((record) => record.voucherNo === injectVoucher) ? "这个凭证号的登记结果未知，先在页面上方核对" : undefined;
 
-  const releaseRejected = (item: PendingItem, cause: unknown) => {
-    item.forget();
-    setUnknownTick((tick) => tick + 1);
-    toast(displayAdminError(cause), "warn");
-  };
-
   /** 按原操作重试：同命令号、同内容、同理由、同操作人，不接受新输入（OP-94）。 */
   const runRetry = async () => {
     if (!retry) return;
@@ -615,16 +611,27 @@ export function D3Treasury() {
       return;
     }
     setRetrying(true);
+    setRetryRejected((current) => current.filter((key) => key !== retry.commandKey));
     try {
       await retry.resend();
     } catch (err) {
       if (isPermissionDenied(err)) announcePermissionDenied();
-      if (isExplicitRejection(err)) releaseRejected(retry, err);
-      else setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 原操作结果仍未知，记录继续保留。` }));
+      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 原操作结果仍未知，记录继续保留。` }));
+      if (isExplicitRejection(err)) {
+        setRetryRejected((current) => [...current, retry.commandKey]);
+        toast(displayAdminError(err), "warn");
+      }
     } finally {
       setRetrying(false);
       setRetry(null);
     }
+  };
+
+  const releasePending = (item: PendingItem) => {
+    item.forget();
+    setUnknownTick((tick) => tick + 1);
+    setReleasing(null);
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   /** Query or submit evidence against the saved original. */
@@ -649,12 +656,7 @@ export function D3Treasury() {
   };
   const verifyPending = async (item: PendingItem) => {
     try { if (fundCommandSettled(await checkInvestigation(item))) return; }
-    catch (cause) {
-      if (isFundCommandLookupRejection(cause)) {
-        releaseRejected(item, cause);
-        return;
-      }
-    }
+    catch { /* 查询失败已写到原记录，保留原命令。 */ }
     refresh();
   };
 
@@ -797,6 +799,7 @@ export function D3Treasury() {
             actions: <>
               <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={expired} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
               <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
+              {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>,
             detail: <>
               <p>{found === "FAILED" ? "" : `${item.title}。`}{item.body}{expired ? "" : item.hint}</p>
@@ -943,6 +946,8 @@ export function D3Treasury() {
           </div>
         </Modal>
       )}
+
+      {releasing && <ReleaseModal label={releasing.title} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" />}
 
       {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing.investigationRecord))} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}

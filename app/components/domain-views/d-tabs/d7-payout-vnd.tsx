@@ -22,7 +22,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { PAYOUT_VND_HELP, PAYOUT_VND_SOURCE_HELP } from "@/lib/admin/config-help/d7-payout-vnd";
 import { DOutcomeUnknownError, DRequestError, isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isExplicitRejection, isFundCommandLookupRejection } from "@/lib/admin/explicit-rejection";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { loadPayoutVndConfig, updatePayoutVndConfig } from "@/lib/admin/payout-vnd-client";
 import {
@@ -528,13 +528,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         return;
       }
     } catch (cause) {
-      if (isFundCommandLookupRejection(cause)) {
-        directCommands.forget(record.fingerprint, record.commandKey);
-        syncPending();
-        toast(displayAdminError(cause), "warn");
-        setRecovering("");
-        return;
-      }
       // The current-values read remains available without a receipt conclusion.
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { error: displayAdminError(cause) } }));
     }
@@ -597,12 +590,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       }
       return receipt;
     } catch (cause) {
-      if (!evidence && session && isFundCommandLookupRejection(cause)) {
-        releaseConfigApproval("D7", session.adminId, record.commandKey);
-        syncPending();
-        toast(displayAdminError(cause), "warn");
-        return null;
-      }
       const error = displayAdminError(cause);
       // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
       if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
@@ -644,10 +631,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       toast(`已找到原审批单 ${result.ticket.id}，${PROPOSAL_STATUS[result.ticket.status]}`, "success");
       void loadQueue();
     } catch (cause) {
-      if (isExplicitRejection(cause)) {
-        syncPending();
-        toast(displayAdminError(cause), "warn");
-      } else note(key, isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
+      note(key, isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
         ? `暂时没查到原审批单，不代表没有提交。${canReachAudit ? "请到「操作记录与审批」核对，不要重复提交。" : "核对后交财务负责人处理，不要重复提交。"}`
         : `查询没有成功：${isA2OutcomeUncertainError(cause) ? uncertainDetail(cause) || "结果仍未知" : reasonOf(displayAdminError(cause))}。记录继续保留。`);
     } finally {

@@ -6,7 +6,7 @@
  * - IDEMPOTENCY_*：幂等层的状态（处理中、结果查不清、内容和原号对不上）；
  * - 结果未知、处理中、响应读不懂、本地没发出去（没有状态码）。
  *
- * 原因码在 D 域和付款接口的 reasonCode，审批接口的 backendMessage。D1、D2、D5、D6、D7 的重试被拒都按这一条判断。
+ * 原因码在 D 域和付款接口的 reasonCode，审批接口的 backendMessage。D1、D2、D3、D5、D6、D7 的重试被拒都按这一条判断。
  * D3、D5–D7 的首次发送也用这一条决定命令号是否保留。
  */
 import { isA2OutcomeUncertainError } from "./a2-client";
@@ -62,14 +62,4 @@ export function isExplicitRejection(error: unknown): boolean {
   return typeof value.status === "number" && value.status >= 400 && value.status < 500
     && (!NOT_A_VERDICT.has(value.status) || value.status === 403 && BUSINESS_REJECTION_BEFORE_WRITE.has(code))
     && code !== "" && !code.startsWith("IDEMPOTENCY_");
-}
-
-/** A refusal to locate or show a receipt says nothing about the original command. */
-export function isFundCommandLookupRejection(error: unknown): boolean {
-  if (!isExplicitRejection(error)) return false;
-  const { backendMessage } = error as { backendMessage?: string };
-  return backendMessage !== "INVESTIGATION_ORIGINAL_LOCATOR_INVALID"
-    && backendMessage !== "RECEIPT_SCOPE_INVALID" && backendMessage !== "RECEIPT_COMMAND_KEY_INVALID"
-    && backendMessage !== "A2_PROPOSAL_NOT_FOUND" && backendMessage !== "A2_MAKER_ID_UNVERIFIED"
-    && backendMessage !== "OPERATION_RESULT_UNKNOWN";
 }
