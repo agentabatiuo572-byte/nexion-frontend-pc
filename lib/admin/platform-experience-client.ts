@@ -21,11 +21,11 @@ export interface ExperienceDownload {
   releaseNotes: { zh: string; en: string };
   source: ExperienceSource;
 }
-// Contract order. zh/en/vi are base languages and are always on.
+// Contract order. Only English is a base language and is always on.
 export const INTERFACE_LANGUAGES = [
-  { code: "zh", nativeName: "中文", zhName: "中文", base: true },
+  { code: "zh", nativeName: "中文", zhName: "中文", base: false },
   { code: "en", nativeName: "English", zhName: "英语", base: true },
-  { code: "vi", nativeName: "Tiếng Việt", zhName: "越南语", base: true },
+  { code: "vi", nativeName: "Tiếng Việt", zhName: "越南语", base: false },
   { code: "id", nativeName: "Bahasa Indonesia", zhName: "印尼语", base: false },
   { code: "ms", nativeName: "Bahasa Melayu", zhName: "马来语", base: false },
   { code: "fil", nativeName: "Filipino", zhName: "菲律宾语", base: false },
