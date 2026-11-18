@@ -504,7 +504,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_FAQ_TEXT_REQUIRED: "问题或回答为空，未能保存；请补全内容后重新确认。",
   SUPPORT_FAQ_TEXT_TOO_LONG: "问题最多 160 字，回答最多 4000 字；请缩短超出的内容后重新确认。",
   SUPPORT_FAQ_CATEGORY_UNSUPPORTED: "问答分类不受支持，未能保存；请重新选择列表中的分类。",
-  SUPPORT_FAQ_SURFACE_UNSUPPORTED: "问答显示位置不受支持，未能保存；请重新选择帮助中心或 Nova。",
+  SUPPORT_FAQ_SURFACE_UNSUPPORTED: "问答显示位置不受支持，未能保存；请改选「帮助中心」。",
   SUPPORT_FAQ_STATUS_UNSUPPORTED: "问答发布状态不受支持，未能保存；请重新选择已发布或草稿。",
   SUPPORT_FAQ_LANGUAGE_UNSUPPORTED: "问答语言不受支持，未能保存；请重新选择当前提供的语言。",
   SUPPORT_FAQ_TRANSLATION_INVALID: "附带翻译格式不正确，未能保存；请核对英语底稿和六种附加语言的完整问答。",
