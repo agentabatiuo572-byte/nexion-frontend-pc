@@ -5,7 +5,7 @@ import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
-import { a2ActionText, a2ObjectText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
+import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
@@ -838,7 +838,7 @@ const G_PARAM_NAMES: Record<string, string> = {
 // 空值（比如 divBase 合法为空）读进来时末尾的空格已被去掉，等号后面直接结束，写成「= 空」；新单的参数名已是中文，同样补「空」。
 // 新增应付后端写「确定新增应付 Δ 12 USDT」，写成「新增应付 12 USDT」。
 const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) =( |$)/g, (whole, lead: string, key: string, tail: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} =${tail || " 空"}` : whole)
-  .replace(/ =$/, " = 空").replace(/确定新增应付 Δ /g, "新增应付 ");
+  .replace(/ =$/, " = 空").replace(/确定新增应付 Δ /g, "新增应付 ").replace(DIV_BASE_FORMULA, DIV_BASE_TEXT);
 /** H3 审批单对象的配置键写 H3 页上这一项的叫法（H3 页的设置名和改值框标题）。 */
 function h3ConfigName(key: string): string | undefined {
   if (key === "dayOne.triReward") return "新手任务奖励";
@@ -1840,7 +1840,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return <>{h3ConfigName(w.obj)}<Explain label="技术信息" content={`配置键 ${w.obj}`} /></>;
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
-    if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}`} /></>;
+    if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}${w.obj === "divBase" ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序收在折叠里（一笔时写在「这笔奖励」一行）。 */

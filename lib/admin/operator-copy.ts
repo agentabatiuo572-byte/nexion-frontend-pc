@@ -2,6 +2,11 @@ import { AUDIT_ACTION_NAMES } from "./audit-action-names";
 import { nexGridBrandText } from "./brand-copy.ts";
 import type { OpsSku } from "./platform-types";
 
+/** G4 收益计算基数的后端英文公式（默认值和运营照写的同一格式）：数字照原文带过来，只换成中文读法。 */
+export const DIV_BASE_FORMULA = /platform daily volume \* (\d+(?:\.\d+)?)% \/ (\d+) slots/g;
+export const DIV_BASE_TEXT = "平台每日交易量 × $1% ÷ $2 个节点";
+export const divBaseFormulaText = (text: string) => text.replace(DIV_BASE_FORMULA, DIV_BASE_TEXT);
+
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
   return nexGridBrandText(value)
@@ -12,7 +17,7 @@ export function operatorCopyText(value: string): string {
     .replace(/锁仓本息其他/g, "其他锁定金额及奖励")
     .replace(/Tier\s*(\d+)/g, "第 $1 档")
     .replace(/TGE 10% · halve every 6 months/g, "初始发放 10%，每 6 个月减半")
-    .replace(/platform daily volume \* 0\.1% \/ 1000 slots/g, "平台每日成交额 × 0.1% ÷ 1000 个节点")
+    .replace(DIV_BASE_FORMULA, DIV_BASE_TEXT)
     .replace(/Pro \/ Rack 月度库存/g, "专业设备 / 机柜设备月度库存")
     .replace(/Lucky Spin/g, "幸运转盘")
     .replace(/Lucky最高倍率/g, "幸运奖励最高倍率")
