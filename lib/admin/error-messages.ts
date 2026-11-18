@@ -226,7 +226,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H3_BINDING_APP_OBSERVATION_UNAVAILABLE: "该页面任务当前暂不可用，不能新增或启用；已有绑定可停用，或改绑为其他可用事件。",
   LEARNING_COURSE_COPY_REQUIRED: "请补齐英文和运营区域语言的课程标题、正文；选填语言须整组留空或填完整。",
   LEARNING_COURSE_QUIZ_INCOMPLETE: "请补齐英文和运营区域语言的测验题干与选项，确认各语言的选项数量及正确答案。",
-  I18N_COPY_REQUIRED: "请核对词条标识，并补齐英文和运营区域语言的文案；客服话术词条还须填写中文原文。",
+  I18N_COPY_REQUIRED: "请核对词条标识，并补齐英文和运营区域语言的文案。",
   TRUST_SECTION_TRILINGUAL_FIELDS_REQUIRED: "请核对英文和运营区域语言字段，并重新保存信任版块草稿后再发布。",
   DISCLOSURE_FIELDS_REQUIRED: "请填写适用地区、语言范围、生效日期及英文和运营区域语言的披露正文。",
   DISCLOSURE_EN_REQUIRED_FOR_SCOPE: "请补齐英文和运营区域语言的披露正文。",

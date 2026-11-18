@@ -569,10 +569,11 @@ export type I18nLearningOverview = {
   hardcodedFindings: I18nHardcodedFindingView[];
   focusMessage?: I18nMessagePairView;
   messages: I18nMessagePairView[];
+  publishedMessages: Record<string, I18nMessagePairView>;
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
   featuredCourseId: string;
-  metrics: LearningMetricView[];
+  metrics?: LearningMetricView[];
   categories: string[];
   formats: string[];
   levels: string[];

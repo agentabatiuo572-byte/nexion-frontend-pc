@@ -12,14 +12,13 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  * 完整性扫描 / 新建课程 / 编辑草稿 = 运营设定(仍需操作确认 + 留痕)→ openConfirm。
  */
 import { useEffect, useState } from "react";
-import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
+import type { I18nMessagePairView, I18nNamespaceView, LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
 import { CONTENT_LANGUAGE_LABELS, Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { isConversationSourceKey, requiredMessageLanguages } from "@/lib/admin/content-language-rules";
+import { messageQualityIssues, messageVariables, type summarizePublishedI6Messages } from "@/lib/admin/i6-copy-quality";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OPERATING_LANGUAGE_CODES, getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
@@ -31,8 +30,8 @@ const NS_FLT: [NsFlt, string][] = [
   ["issues", "有问题"],
 ];
 
-type NsDrawer = { ns: string; keys: number; cov: number; variants: string };
-type Namespace = { ns: string; keys: number; coverage: number; variants: string; lastChange: string };
+type Namespace = I18nNamespaceView & { missing: number };
+type I6I18nProps = { ctx: ICtx; requiredLanguages: readonly OperatingLanguageCode[]; publishedCoverage?: ReturnType<typeof summarizePublishedI6Messages> };
 type IntegrityIssue = { code: string; kind: string; cnt: number; samples: string[]; status: string };
 type HardcodedFinding = { location: string; rawCopy: string; suggestedKey: string; status: string };
 type Course = {
@@ -52,14 +51,6 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
   Security: "🛡",
 };
 
-function messageVariables(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
-  return languages.map((language) => [...new Set(message[language].match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"));
-}
-
-function messageQualityIssues(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
-  return i6CopyQualityIssues(languages.includes("zh") ? message.zh : "", message.en, languages.includes("vi") ? message.vi : "");
-}
-
 function missingCourseLanguages(course: Pick<Course, "titleZh" | "titleEn" | "titleVi" | "bodyZh" | "bodyEn" | "bodyVi" | "quizQuestions">, required: readonly OperatingLanguageCode[]) {
   const suffixes = { en: "En", zh: "Zh", vi: "Vi" } as const;
   return required.filter((language) => {
@@ -71,7 +62,7 @@ function missingCourseLanguages(course: Pick<Course, "titleZh" | "titleEn" | "ti
   });
 }
 
-export function I6I18n({ ctx }: { ctx: ICtx }) {
+export function I6I18n(props: I6I18nProps) {
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
   const authorities = session?.authorities ?? [];
@@ -80,10 +71,10 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
   if (!canReadI6 && !canReadI7) {
     return <section className="l-card"><div className="l-b">你没有查看多语言词条或教程的权限。</div></section>;
   }
-  return <>{canReadI6 && <I18nLearningPage ctx={ctx} view="i18n" />}{canReadI7 && <I18nLearningPage ctx={ctx} view="learn" />}</>;
+  return <>{canReadI6 && <I18nLearningPage {...props} view="i18n" />}{canReadI7 && <I18nLearningPage {...props} view="learn" />}</>;
 }
 
-function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
+function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I6I18nProps & { view: "i18n" | "learn" }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
@@ -92,11 +83,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const canAdjustI7Reward = isSuperadmin || !!session?.authorities.includes("content_i7_course_reward_adjust");
   const canPublishI7 = canWriteI7 && canAdjustI7Reward;
   const propose = usePropose();
-  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
-  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
-  const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
+  const [nsDrawerKey, setNsDrawer] = useState<string | null>(null);
   const [hcDrawer, setHcDrawer] = useState(false);
   const [messageSearch, setMessageSearch] = useState("");
   const [selectedMessageKey, setSelectedMessageKey] = useState("");
@@ -124,23 +113,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .finally(() => { if (active) setVersionsLoading(false); });
     return () => { active = false; };
   }, [actions, versionCourseId, content.i18nLearning, versionsRetry]);
-  const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
+  const I6_STATS = data?.stats ?? { totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
   const MESSAGES = data?.messages ?? [];
-  const completeLanguageCount = (message: I18nMessagePairView, languages = requiredMessageLanguages(message.messageKey, requiredLanguages)) =>
-    languages.filter((language) => message[language].trim()).length;
-  const completeByNamespace = new Map<string, number>();
-  let managedKeys = 0;
-  for (const message of MESSAGES) {
-    const languages = requiredMessageLanguages(message.messageKey, requiredLanguages);
-    if (message.status !== "published" || completeLanguageCount(message, languages) !== languages.length
-      || new Set(messageVariables(message, languages)).size !== 1 || messageQualityIssues(message, languages).length > 0) continue;
-    completeByNamespace.set(message.namespace, (completeByNamespace.get(message.namespace) ?? 0) + 1);
-    managedKeys += 1;
-  }
-  const NAMESPACES: Namespace[] = (data?.namespaces ?? []).map((row) => ({
-    ...row,
-    coverage: row.keys ? Math.round((completeByNamespace.get(row.ns) ?? 0) * 100 / row.keys) : 0,
-  }));
+  const completeLanguageCount = (message: I18nMessagePairView) => requiredLanguages.filter((language) => message[language].trim()).length;
+  const NAMESPACES: Namespace[] = (data?.namespaces ?? []).map((row) => {
+    const complete = publishedCoverage?.completeByNamespace.get(row.ns) ?? 0;
+    return { ...row, coverage: row.keys ? Math.round(complete * 100 / row.keys) : 0, missing: row.keys - complete };
+  });
+  const nsDrawer = NAMESPACES.find((namespace) => namespace.ns === nsDrawerKey);
+  const namespaceMessages = nsDrawer ? MESSAGES.filter((message) => message.namespace === nsDrawer.ns) : [];
   const INTEGRITY_ISSUES: IntegrityIssue[] = data?.integrityIssues ?? [];
   const HARDCODED_FINDINGS: HardcodedFinding[] = data?.hardcodedFindings ?? [];
   const COURSES: Course[] = (data?.courses ?? []).map((c) => ({
@@ -202,8 +183,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
-  const messageRequired = requiredMessageLanguages(selectedMessage?.messageKey ?? "", requiredLanguages);
-  const missingLocales = selectedMessage ? messageRequired.filter((language) => !selectedMessage[language].trim()).map((language) => CONTENT_LANGUAGE_LABELS[language]) : [];
+  const missingLocales = selectedMessage ? requiredLanguages.filter((language) => !selectedMessage[language].trim()).map((language) => CONTENT_LANGUAGE_LABELS[language]) : [];
   const providedLanguages = selectedMessage ? OPERATING_LANGUAGE_CODES.filter((language) => selectedMessage[language].trim()) : [];
   const variables = selectedMessage ? messageVariables(selectedMessage, providedLanguages) : [];
   const variablesMatch = new Set(variables).size === 1;
@@ -246,7 +226,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const filteredNs = NAMESPACES.filter((n) => {
     if (nsFlt === "all") return true;
-    if (nsFlt === "issues") return n.coverage < 100;
+    if (nsFlt === "issues") return n.missing > 0;
     return false;
   });
   const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
@@ -275,13 +255,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>编辑词条草稿 · {selectedMessage.messageKey}</>,
       detail: (
         <>
-          英文和运营区域语言必填，已填写语言的占位符须一致。{isConversationSourceKey(selectedMessage.messageKey) && "中文须填写客服话术原文。"}保存只新增或更新版本草稿，不覆盖当前发布版。
+          英文和运营区域语言必填，已填写语言的占位符须一致。保存只新增或更新版本草稿，不覆盖当前发布版。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "localized-copy",
-        requiredLanguages: requiredMessageLanguages(selectedMessage.messageKey, await getRequiredContentLanguages()),
+        requiredLanguages: await getRequiredContentLanguages(),
         mode: "edit",
         keyName: selectedMessage.messageKey,
         zh: selectedMessage.zh,
@@ -356,13 +336,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
         <>
-          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。{selectedMessage && isConversationSourceKey(selectedMessage.messageKey) && "中文须填写客服话术原文。"}保存后重新检查，问题清零后才能发布。
+          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。保存后重新检查，问题清零后才能发布。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "localized-copy",
-        requiredLanguages: requiredMessageLanguages(selectedMessage?.messageKey ?? "", await getRequiredContentLanguages()),
+        requiredLanguages: await getRequiredContentLanguages(),
         mode: "edit",
         keyName: selectedMessage?.messageKey ?? "",
         zh: selectedMessage?.zh ?? "",
@@ -648,7 +628,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   /* ============ render helpers ============ */
   const renderCoverage = (n: Namespace) => {
-    if (n.coverage === 100) return <span className="in-full">100% ✓</span>;
+    if (n.coverage === 100 && n.missing === 0) return <span className="in-full">100% ✓</span>;
     return (
       <>
         <span className="in-cov">
@@ -679,7 +659,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         <div className="f-stat">
           <div className="k">受管词条</div>
           <div className="v">
-            {managedKeys} / {I6_STATS.totalKeys}
+            {publishedCoverage?.managedKeys ?? 0} / {I6_STATS.totalKeys}
           </div>
           <div className="sub">已发布词条 · 必填语言</div>
         </div>
@@ -694,7 +674,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">词条分组</span>
-          <span className="sub">· 按当前词条目录汇总必填语言覆盖率</span>
+          <span className="sub">· 按有效发布版本汇总必填语言覆盖率</span>
           <div className="r chips">
             {NS_FLT.map(([k, l]) => (
               <button
@@ -723,20 +703,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </tr>
             </thead>
             <tbody>
-              {filteredNs.map((n) => {
-                const missing = Math.round((n.keys * (100 - n.coverage)) / 100);
-                return (
+              {filteredNs.map((n) => (
                   <tr
                     key={n.ns}
                     className="click"
-                    onClick={() =>
-                      setNsDrawer({
-                        ns: n.ns,
-                        keys: n.keys,
-                        cov: n.coverage,
-                        variants: n.variants,
-                      })
-                    }
+                    onClick={() => setNsDrawer(n.ns)}
                   >
                     <td>
                       <span className="ns-name">{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[n.ns] ?? n.ns}</span>
@@ -745,9 +716,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     <td>{renderCoverage(n)}</td>
                     <td
                       className="num mono"
-                      style={{ color: missing > 0 ? "var(--warning)" : "var(--ink-4)" }}
+                      style={{ color: n.missing > 0 ? "var(--warning)" : "var(--ink-4)" }}
                     >
-                      {missing > 0 ? missing : "—"}
+                      {n.missing > 0 ? n.missing : "—"}
                     </td>
                     <td
                       style={{
@@ -762,8 +733,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       {n.lastChange}
                     </td>
                   </tr>
-                );
-              })}
+              ))}
               <tr>
                 <td
                   colSpan={6}
@@ -802,15 +772,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <thead><tr><th>词条标识</th><th>命名空间</th><th>版本</th><th>状态</th><th>语言完整度</th><th></th></tr></thead>
             <tbody>
               {filteredMessages.map((message) => {
-                const languages = requiredMessageLanguages(message.messageKey, requiredLanguages);
-                const languageCount = completeLanguageCount(message, languages);
+                const languageCount = completeLanguageCount(message);
                 const selected = selectedMessage?.messageKey === message.messageKey;
                 return <tr key={message.messageKey} className="click" onClick={() => setSelectedMessageKey(message.messageKey)}>
                   <td className="mono" style={{ fontWeight: selected ? 700 : 500 }}>{message.messageKey}</td>
                   <td>{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[message.namespace] ?? message.namespace}</td>
                   <td className="mono">{message.version}</td>
                   <td><span className={`bdg ${message.status === "published" ? "ok" : message.status === "draft" ? "warn" : "dim"}`}>{statusLabel(message.status)}</span></td>
-                  <td>{languageCount}/{languages.length} · {languageCount === languages.length ? "必填语言完整" : "待补齐"}</td>
+                  <td>{languageCount}/{requiredLanguages.length} · {languageCount === requiredLanguages.length ? "必填语言完整" : "待补齐"}</td>
                   <td style={{ textAlign: "right" }}><button className="l-btn sm" aria-label={`选择 ${message.messageKey}`} onClick={(event) => { event.stopPropagation(); setSelectedMessageKey(message.messageKey); }}>选择</button></td>
                 </tr>;
               })}
@@ -844,9 +813,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             {selectedMessage ? <>
               {selectedMessage.status === "draft" && publicationIssues.length > 0 && <div className="itint warn" role="status">暂不能发布：{publicationIssues.join("；")}。请编辑词条草稿后再发布。</div>}
               <div className="ab-grid">
-                <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || (messageRequired.includes("zh") ? "待补齐" : "—")}</div></div>
+                <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || (requiredLanguages.includes("zh") ? "待补齐" : "—")}</div></div>
                 <div className="ab-prev"><div className="lc">英文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
-                <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || (messageRequired.includes("vi") ? "待补齐" : "—")}</div></div>
+                <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || (requiredLanguages.includes("vi") ? "待补齐" : "—")}</div></div>
               </div>
               <div className={`itint ${missingLocales.length === 0 ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>三语内容</b> · 版本 {selectedMessage.version} · 变量 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
@@ -856,12 +825,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   <thead><tr><th>历史版本</th><th>状态</th><th>必填语言完整度</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
                   <tbody>
                     {messageVersions.map((row) => {
-                      const languages = requiredMessageLanguages(row.messageKey, requiredLanguages);
-                      const complete = completeLanguageCount(row, languages);
+                      const complete = completeLanguageCount(row);
                       return <tr key={`${row.messageKey}-${row.version}`}>
                         <td className="mono">{row.version}</td>
                         <td>{statusLabel(row.status)}</td>
-                        <td>{complete}/{languages.length}</td>
+                        <td>{complete}/{requiredLanguages.length}</td>
                         <td style={{ textAlign: "right" }}>
                           {canWriteI6 && row.status === "archived" && selectedMessage.status !== "draft"
                             ? <button className="l-btn sm mc" onClick={() => rollbackMessageVersion(row)}>回滚到此版本</button>
@@ -1217,7 +1185,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </>}
 
       <p className="f-foot">
-        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查英文、运营区域语言和变量；客服话术词条须保留中文原文。发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
+        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查英文、运营区域语言和变量。发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
       </p>
       <PaginationExemptionList
         items={view === "i18n" ? [
@@ -1249,7 +1217,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <div
               style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13 }}
             >
-              {nsDrawer.keys} 个词条 · 必填语言覆盖 {nsDrawer.cov}%
+              {nsDrawer.keys} 个词条 · 必填语言覆盖 {nsDrawer.coverage}%
               {nsDrawer.variants !== "—"
                 ? ` · ${nsDrawer.variants} 进行中`
                 : ""}
@@ -1272,14 +1240,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 </tr>
               </thead>
               <tbody>
-                {MESSAGES.filter((message) => message.namespace === nsDrawer.ns).map((message) => (
-                  <tr key={message.messageKey}>
+                {namespaceMessages.map((message) => {
+                  const published = Object.hasOwn(data.publishedMessages, message.messageKey) ? data.publishedMessages[message.messageKey] : undefined;
+                  return <tr key={message.messageKey}>
                     <td className="mono" style={{ fontSize: 12 }}>
                       {message.messageKey}
                     </td>
-                    <td style={{ fontSize: 12 }}>{statusLabel(message.status)}</td>
+                    <td style={{ fontSize: 12 }}>{published ? statusLabel(published.status) : "未发布"}</td>
                     <td style={{ fontSize: 12 }}>
-                      {requiredMessageLanguages(message.messageKey, requiredLanguages).map((language) => `${message[language].trim() ? "" : "缺"}${CONTENT_LANGUAGE_LABELS[language]}`).join(" / ")}
+                      {requiredLanguages.map((language) => `${published?.[language].trim() ? "" : "缺"}${CONTENT_LANGUAGE_LABELS[language]}`).join(" / ")}
                     </td>
                     <td>
                       <button
@@ -1292,9 +1261,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                         查看词条
                       </button>
                     </td>
-                  </tr>
-                ))}
-                {MESSAGES.filter((message) => message.namespace === nsDrawer.ns).length === 0 && (
+                  </tr>;
+                })}
+                {namespaceMessages.length === 0 && (
                   <tr>
                     <td colSpan={4} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
                       该命名空间暂无真实词条

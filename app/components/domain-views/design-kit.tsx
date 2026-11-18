@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { blankCopiedContentLanguage, fillBlankContentLanguage, requiredMessageLanguages } from "@/lib/admin/content-language-rules";
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -647,7 +647,7 @@ export type BusinessFormSpec =
   | { kind: "export-wizard"; mode?: "aggregate-only"; kpiStructuredRange?: boolean; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
-  | { kind: "copy-edit"; requiredLanguages: readonly OperatingLanguageCode[]; i18nKey: string; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
+  | { kind: "copy-edit"; requiredLanguages: readonly OperatingLanguageCode[]; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
   | { kind: "copy-create"; requiredLanguages: readonly OperatingLanguageCode[]; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
   | { kind: "copy-version-option"; mode: "create" | "edit"; versionKey?: string; name?: string; description?: string; status?: string; sortOrder?: number; revision?: number }
@@ -851,12 +851,6 @@ function localizedFormKeys(spec: BusinessFormSpec | undefined, state: BusinessFo
   ]).flat()];
 }
 
-function localizedFormRequiredLanguages(spec: BusinessFormSpec, state: BusinessFormValue): readonly OperatingLanguageCode[] {
-  if (spec.kind === "copy-edit") return requiredMessageLanguages(spec.i18nKey, spec.requiredLanguages);
-  if (spec.kind === "copy-create") return requiredMessageLanguages(state.copyKey?.trim() ?? "", spec.requiredLanguages);
-  return "requiredLanguages" in spec ? spec.requiredLanguages : [];
-}
-
 function mapLocalizedForm(spec: BusinessFormSpec | undefined, state: BusinessFormValue, mode: "load" | "submit"): BusinessFormValue {
   if (!spec || !("requiredLanguages" in spec)) return state;
   if (mode === "load" && spec.kind === "course-authoring") return state;
@@ -864,11 +858,10 @@ function mapLocalizedForm(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (englishKeys.length === 0) return state;
   const english = englishKeys.map((key) => state[key] ?? "");
   const localized = { ...state };
-  const requiredLanguages = localizedFormRequiredLanguages(spec, state);
   const transform = mode === "load" ? blankCopiedContentLanguage : fillBlankContentLanguage;
   for (const language of ["zh", "vi"] as const) {
     const keys = localizedFormKeys(spec, state, language);
-    const { values } = transform(requiredLanguages, language, { values: english }, { values: keys.map((key) => state[key] ?? "") });
+    const { values } = transform(spec.requiredLanguages, language, { values: english }, { values: keys.map((key) => state[key] ?? "") });
     keys.forEach((key, index) => { localized[key] = values[index]; });
   }
   return localized;
@@ -1275,9 +1268,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const names: Record<string,string> = { title: "标题", body: "正文", tier: "等级", audience: "受众", schedule: "时间安排", budget: "预算", no: "章节编号", description: "说明", structure: "内容结构", exportType: "导出类型", fields: "导出字段", piiLevel: "隐私信息级别", maskPolicy: "脱敏方式", recipient: "接收人", ticket: "关联工单", jurisdictionCode: "适用地区代码", jurisdictionName: "适用地区名称", jurisdiction: "适用地区", countryCodes: "适用国家/地区", version: "版本", languageScope: "语言范围", effectiveDate: "生效日期", requiresReack: "是否要求重新确认", zh: "中文正文", vi: "越南语正文", zhTitle: "中文标题", enTitle: "英文标题", viTitle: "越南语标题", zhBody: "中文正文", enBody: "英文正文", viBody: "越南语正文", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题" };
     if (!state[key]?.trim()) missing.push(label.replace(/\b[A-Za-z][A-Za-z0-9]*\b/g, (field) => names[field] ?? field));
   };
-  const requiredLanguages = localizedFormRequiredLanguages(spec, state);
-  const activeLanguages = OPERATING_LANGUAGE_CODES.filter((language) =>
-    requiredLanguages.includes(language) || localizedFormKeys(spec, state, language).some((key) => state[key]?.trim()));
+  const activeLanguages = "requiredLanguages" in spec ? OPERATING_LANGUAGE_CODES.filter((language) =>
+    spec.requiredLanguages.includes(language) || localizedFormKeys(spec, state, language).some((key) => state[key]?.trim())) : [];
   const checkPlaceholders = (values: string[], label: string) => {
     if (values.every((value) => value.trim()) && new Set(values.map((value) =>
       [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join(","),
@@ -1748,9 +1740,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   };
   const localizedRequirements = new Map<string, boolean>();
   if ("requiredLanguages" in spec) {
-    const requiredLanguages = localizedFormRequiredLanguages(spec, value);
     for (const language of OPERATING_LANGUAGE_CODES) {
-      for (const key of localizedFormKeys(spec, value, language)) localizedRequirements.set(key, requiredLanguages.includes(language));
+      for (const key of localizedFormKeys(spec, value, language)) localizedRequirements.set(key, spec.requiredLanguages.includes(language));
     }
   }
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
