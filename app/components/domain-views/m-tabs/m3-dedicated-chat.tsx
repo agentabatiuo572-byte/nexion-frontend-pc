@@ -2028,7 +2028,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           {requestedCustomerId && !selected && firstDetail && firstDetail.agentAdminId !== adminId && !holdAllowsOther && !heldByOther && <Notice tone="warn">{canReviewAll && canWriteM3 && hold === undefined ? "正在核对接待状态…" : "这位客户由专属客服负责，你只能查看。"}</Notice>}
           {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <Notice tone="warn">还没读到这位客户的归属，暂不能发送，请刷新客户资料。</Notice>}
           {selected && !writable && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || !selected.writeState || selected.status !== "open") && (recoveryBlocksTarget
-            ? <Notice tone="warn" action={<Button size="sm" className="m3s-narrow-only" onClick={() => setScreen("list")}>返回列表查询</Button>}>有一条消息发送结果未知，查到结果前不能再发。在会话列表上方查询。</Notice>
+            ? <Notice tone="warn" action={<Button size="sm" className="m3s-narrow-only" onClick={() => setScreen("list")}>返回列表查询</Button>}>有一条消息发送结果未知，查到前不能再发；在列表上方查询。</Notice>
             : !canWriteM3 ? <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>
             : !selected.writeState ? <Notice tone="warn" action={<Button size="sm" onClick={() => void refreshChangedPeer(identityRef.current)}>重新读取会话</Button>}>还没确认这条会话能不能回复，确认前先不能发送。</Notice>
             : selected.status !== "open" && selected.writeState.writableConversationNo !== selected.id ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
@@ -2040,7 +2040,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             : messagePages.gap ? <Notice tone="warn" action={<Button size="sm" onClick={() => void messagePages.newest()}>查看最新10条</Button>}>有新消息尚未展开，请查看后再发送。</Notice>
             : !messagePages.contextReady || messagePages.page?.replyContext.ready !== true ? <Notice tone="warn" action={<Button size="sm" disabled={messagePages.loading} onClick={() => void messagePages.refresh()}>重新核对</Button>}>暂时核对不了要回复哪几条消息。</Notice>
             : <Notice tone="neutral">只有这位客户的专属客服能发消息，主管查看时不能代发。</Notice>)}
-          {!selected && recoveryBlocksTarget && <Notice tone="warn" action={<Button size="sm" className="m3s-narrow-only" onClick={() => setScreen("list")}>返回列表查询</Button>}>有一条消息发送结果未知，查到结果前不能再发。在会话列表上方查询。</Notice>}
+          {!selected && recoveryBlocksTarget && <Notice tone="warn" action={<Button size="sm" className="m3s-narrow-only" onClick={() => setScreen("list")}>返回列表查询</Button>}>有一条消息发送结果未知，查到前不能再发；在列表上方查询。</Notice>}
           {requestedCustomerId && !selected && !canWriteM3 && <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>}
           {replyCustomerId && closedCandidateRows.length > 0 && (displayedIntent === "MAINTENANCE" && !closedCandidateError && !closedCandidateMissing.length
             ? <fieldset className="m3s-targets"><legend>同时标记旧会话的待回复消息已处理（可不选）</legend>{closedCandidateRows.map(row => <Check key={row.conversationNo} label={row.text} checked={displayedClosedIds.has(row.conversationNo)} disabled={!writable || busy || Boolean(pending || firstPending)} onChange={event => setSelectedClosedIds(old => { const next = new Set(old); if (event.target.checked) next.add(row.conversationNo); else next.delete(row.conversationNo); return next; })} />)}</fieldset>
