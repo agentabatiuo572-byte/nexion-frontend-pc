@@ -916,14 +916,20 @@ function i1ReceiptMatches(command: I1Command, data: unknown) {
   if (family === "experiments") return typeof result.id === "string" && (key ? result.id === key : result.copyKey === input.copyKey)
     && result.state === (key ? ({ start: "running", stop: "concluded", discard: "discarded", adopt: "adopted" })[action as "start"] : "scheduled")
     && Array.isArray(result.variants) && result.variants.length >= 2;
-  if (family === "copies") return result.key === (key ?? input.copyKey)
-    && result.revision === (key ? Number(input.expectedRevision) + 1 : 1)
-    // 18308d7b preserves the copy's existing publication/archive state. Older
-    // receipts still carry draft-saved; neither state changes the draft proof.
-    && (action === "draft" ? result.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(String(result.status))
-      : method === "DELETE" ? result.draftVersion == null
-        : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
-          && result.status === (action === "archive" ? "archived" : "published"));
+  if (family === "copies") {
+    const expectedRevision = key ? Number(input.expectedRevision) : 0;
+    // Publishing edits to an existing draft saves it and then publishes it in one command.
+    const publishVersion = method === "POST" && action === "versions" && version === undefined;
+    const revisionMatches = result.revision === expectedRevision + 1
+      || (publishVersion && result.revision === expectedRevision + 2);
+    return result.key === (key ?? input.copyKey) && revisionMatches
+      // 18308d7b preserves the copy's existing publication/archive state. Older
+      // receipts still carry draft-saved; neither state changes the draft proof.
+      && (action === "draft" ? result.draftVersion === input.version && ["published", "archived", "draft-saved"].includes(String(result.status))
+        : method === "DELETE" ? result.draftVersion == null
+          : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
+            && result.status === (action === "archive" ? "archived" : "published"));
+  }
   return false;
 }
 
