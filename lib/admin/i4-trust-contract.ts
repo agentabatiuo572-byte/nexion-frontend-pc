@@ -69,7 +69,7 @@ export function i4DraftOmittedTranslations(published: readonly TrustField[], dra
   });
 }
 
-export function i4TrilingualFields(fields: readonly Pick<TrustField, "key" | "value">[]) {
+function i4LocalizedFieldFamilies(fields: readonly Pick<TrustField, "key" | "value">[]) {
   const families = new Map<string, Set<string>>();
   const localized = new RegExp(`^(.+?)[._-](${LANGUAGES})$`, "i");
   for (const field of fields) {
@@ -80,6 +80,16 @@ export function i4TrilingualFields(fields: readonly Pick<TrustField, "key" | "va
     if (field.value.trim()) languages.add(match[2].toLowerCase());
     families.set(family, languages);
   }
+  return families;
+}
+
+export function i4HasEnglishFields(fields: readonly Pick<TrustField, "key" | "value">[]) {
+  const families = i4LocalizedFieldFamilies(fields);
+  return families.size > 0 && [...families.values()].every(languages => languages.has("en"));
+}
+
+export function i4TrilingualFields(fields: readonly Pick<TrustField, "key" | "value">[]) {
+  const families = i4LocalizedFieldFamilies(fields);
   const missing = [...families].filter(([, languages]) => !["zh", "vi", "en"].every(lang => languages.has(lang))).map(([key]) => key);
   if (!families.size) missing.push("至少一组 .zh/.vi/.en 字段");
   return { valid: !missing.length, missing };

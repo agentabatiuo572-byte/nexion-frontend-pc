@@ -28,7 +28,7 @@ import { pendingI4DraftCommands, queryI4DraftReceipt, retryI4DraftCommand, i4Dra
 import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
-import { i4AppFieldIssue, i4DraftOmittedTranslations, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
+import { i4AppFieldIssue, i4DraftOmittedTranslations, i4HasEnglishFields, i4OmittedTranslations, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 import type { ActionConfirmReq } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled } from "@/lib/admin/e-command-investigation";
@@ -562,7 +562,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           </Facts>
           {target && <VersionCompare beforeLabel={`现在的 ${s.v}`} afterLabel={`批准后公开的 ${target.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={target.fields} problems={problems}
             afterBlanked={blankingOf(s.key, target).all ? `提醒：${blankingOf(s.key, target).all}` : undefined} />}
-          {target && problems.length === 0 && <p className="rd-note">所选版本完整：有说明和结构，中越英三语齐全，不超过 {APP_FIELD_LIMIT} 项内容。</p>}
+          {target && problems.length === 0 && i4TrilingualFields(target.fields).valid && <p className="rd-note">所选版本完整：有说明和结构，中越英三语齐全，不超过 {APP_FIELD_LIMIT} 项内容。</p>}
           {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
         </div>;
       },
@@ -571,6 +571,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         const target = versionOf(nv);
         const fieldIssue = target && i4AppFieldIssue(target.fields);
         if (fieldIssue) throw new Error(fieldIssue);
+        if (target && !i4HasEnglishFields(target.fields)) throw new Error("TRUST_SECTION_TRILINGUAL_FIELDS_REQUIRED");
         const def = findHighOp("i4_trust_section_manage")!;
         const fingerprint = JSON.stringify(["rollback", s.key, s.v, s.status, nv, reason]);
         return proposeTrustSection(`${s.key}:rollback`, fingerprint, {

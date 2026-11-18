@@ -11,7 +11,7 @@ import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store
 import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
-import { APP_FIELD_LIMIT, i4AppFieldIssue, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
+import { APP_FIELD_LIMIT, i4AppFieldIssue, i4HasEnglishFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
 
 import type { TrustPublishedSnapshotView, TrustSectionVersionView } from "@/lib/admin/i-client";
@@ -106,7 +106,7 @@ export function versionProblems(version: { version: string; description: string;
   if (!/^v[1-9][0-9]{0,8}$/.test(version.version)) problems.push("版本号不符合 App 规则");
   if (!version.description.trim() || !version.structure.trim()) problems.push("说明或结构是空的");
   if (version.fields.length === 0) problems.push("没有内容");
-  else if (!i4TrilingualFields(version.fields.map((field) => ({ key: field.key, value: field.value }))).valid) problems.push("中越英三语不全");
+  else if (!i4HasEnglishFields(version.fields)) problems.push("中越英三语不全");
   const fieldIssue = i4AppFieldIssue(version.fields);
   if (fieldIssue && version.fields.length) problems.push(fieldIssue);
   return problems;
