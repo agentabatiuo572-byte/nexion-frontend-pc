@@ -1108,6 +1108,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     return false;
   };
   const forgetSavedSend = (slot: string, key: string) => {
+    if (useAdminAuth.getState().session?.adminId !== adminId) return;
     sendJournal(slot).forget(slot, key);
     if (!slot.startsWith("dock|") && slot !== recoveryKey(adminId, key)) pendingMessages.forget(recoveryKey(adminId, key), key);
   };
@@ -1126,22 +1127,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (identityRef.current === identity) setActionError(displayAdminError(cause));
     }
   };
-  const settleMessageOwnershipRefusal = (cause: unknown, slot: string, key: string, customerId: string, conversationId?: string) => {
-    if (!rejectedMessageOwnership(cause)) return false;
-    // Scope invalidation can move this command to a redacted slot while its POST is in flight.
-    // A definitive first-submission refusal settles that exact key regardless of the view generation.
-    forgetSavedSend(slot, key);
-    const auth = useAdminAuth.getState();
-    if (auth.session?.adminId !== adminId || auth.authEpoch !== authEpoch) return true;
-    ctx.invalidateScope(conversationId, customerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。");
-    return true;
-  };
   const send = (kind: Pending["kind"], recovery?: "query" | "retry") => {
     if (!targetCustomer || Boolean(recovery) !== Boolean(activeEntry)) return;
     return runCustomerCommand(targetCustomer, activeKey, flight => sendMessage(kind, recovery, flight));
   };
   const sendMessage = async (kind: Pending["kind"], recovery: "query" | "retry" | undefined, flight: { commandKey?: string }) => {
-    const mayCapture = () => mounted.current && identityRef.current === identity && !!targetCustomer
+    const sameAccount = () => useAdminAuth.getState().session?.adminId === adminId;
+    const currentPage = () => sameAccount() && useAdminAuth.getState().authEpoch === authEpoch && mounted.current && identityRef.current === identity;
+    const mayCapture = () => currentPage() && !!targetCustomer
       && !blocksNewSend(pendingSendCustomers(adminId, visible), targetCustomer);
     setPeerChangedDraft(null);
     const retry = recovery ? pending : undefined;
@@ -1217,49 +1210,45 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const stored = retryFirst ? pendingMessages.isDurablyStored(slot, record.key) : rememberPending(slot, record.key, record);
       if (!stored) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
       setSendError("");
-      let submitted = false;
+      let conversationNo: string;
       try {
-        submitted = true;
-        const { conversationNo } = await supportClient.startConversation({ customerId: record.customerId, openingText: record.body, intent: record.intent, clientMessageId: record.clientMessageId, expectedAssignmentId: record.assignmentId, expectedVersion: record.version, replyTargets: record.replyTargets }, record.key);
-        let refreshFailed = false;
-        try { await ctx.refreshConversations(); }
-        catch { refreshFailed = true; setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
-        if (identityRef.current !== identity) return;
-        forgetSavedSend(slot, record.key);
-        window.dispatchEvent(new Event("support-todo-changed"));
-        // The text is sent: drop it from the first-contact slot too, which may differ from the current target once the conversation is listed.
-        clearSubmittedDraft(`first:${record.customerId}`, record.body, record.originalDraft);
-        if (!originalView()) return;
-        setContinuation(null); setHoldRetry((value) => value + 1);
-        if (conversationNo && !refreshFailed) {
-          // Open the inbox scope by the new conversation's actual owner (a supervisor may be on 「我的客户」 or 「负责组的客户」).
-          followSelection.current = true;
-          setSelectedId(conversationNo); setRequestedCustomerId(null);
-        }
-        if (!refreshFailed) { const url = new URL(window.location.href); url.searchParams.delete("customerId"); if(conversationNo)url.searchParams.set("conversationNo",conversationNo); window.history.replaceState(null, "", url); }
-        setScreen("chat");
+        ({ conversationNo } = await supportClient.startConversation({ customerId: record.customerId, openingText: record.body, intent: record.intent, clientMessageId: record.clientMessageId, expectedAssignmentId: record.assignmentId, expectedVersion: record.version, replyTargets: record.replyTargets }, record.key));
       } catch (cause) {
-        if (submitted && !retryFirst && settleMessageOwnershipRefusal(cause, slot, record.key, record.customerId)) return;
-        if (identityRef.current === identity) {
-          const busyHold = supportSessionBusy(cause);
-          if (conversationPeerChanged(cause)) {
-            if (submitted && rejectedSupportWrite(cause)) {
-              forgetSavedSend(slot, record.key);
-              if (originalView()) setPeerChangedDraft({ identity, customerId: record.customerId, sourceKey: `first:${record.customerId}` });
-            }
-            setSendError(submitted && rejectedSupportWrite(cause) ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
-            await refreshChangedPeer(identity);
-          } else if (submitted && busyHold) {
-            // Someone else started talking first: lock the composer with their details and keep the draft.
-            forgetSavedSend(slot, record.key);
-            if (originalView()) lockFromBusy(customerId, busyHold);
-          } else if (submitted && rejectedSupportWrite(cause)) {
-            forgetSavedSend(slot, record.key);
-            if (lostPermission(cause)) { ctx.invalidateScope(undefined, customerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
-            else { if (originalView()) setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
-          } else { if (lostPermission(cause)) { ctx.invalidateScope(undefined, customerId, "这条消息发送结果未知：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); } setSendError(MESSAGE_UNKNOWN); }
+        if (!sameAccount()) return;
+        const refused = (!retryFirst && rejectedMessageOwnership(cause)) || rejectedSupportWrite(cause);
+        const busyHold = supportSessionBusy(cause);
+        if (refused || busyHold) forgetSavedSend(slot, record.key);
+        if (lostPermission(cause)) {
+          ctx.invalidateScope(undefined, customerId, refused ? "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。" : "这条消息发送结果未知：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。");
+          return;
         }
+        if (!currentPage() || !originalView()) return;
+        if (conversationPeerChanged(cause)) {
+          if (refused) setPeerChangedDraft({ identity, customerId, sourceKey: `first:${customerId}` });
+          setSendError(refused ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
+          await refreshChangedPeer(identity);
+        } else if (busyHold) lockFromBusy(customerId, busyHold);
+        else if (refused) { setDetailRetry(value => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
+        else setSendError(MESSAGE_UNKNOWN);
+        return;
       }
+      if (!sameAccount()) return;
+      clearSubmittedDraft(`first:${record.customerId}`, record.body, record.originalDraft);
+      forgetSavedSend(slot, record.key);
+      window.dispatchEvent(new Event("support-todo-changed"));
+      if (!currentPage()) return;
+      let refreshFailed = false;
+      try { await ctx.refreshConversations(); }
+      catch { refreshFailed = true; setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
+      if (!currentPage() || !originalView()) return;
+      setContinuation(null); setHoldRetry((value) => value + 1);
+      if (conversationNo && !refreshFailed) {
+        // Open the inbox scope by the new conversation's actual owner (a supervisor may be on 「我的客户」 or 「负责组的客户」).
+        followSelection.current = true;
+        setSelectedId(conversationNo); setRequestedCustomerId(null);
+      }
+      if (!refreshFailed) { const url = new URL(window.location.href); url.searchParams.delete("customerId"); if(conversationNo)url.searchParams.set("conversationNo",conversationNo); window.history.replaceState(null, "", url); }
+      setScreen("chat");
       return;
     }
     if (!retry && (!writable || !currentProfileDetail?.assignmentId)) return;
@@ -1307,52 +1296,42 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!stored) { setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
     setSendError("");
     const input = activeEntry?.dock ? JSON.parse(activeEntry.dock.payload) : { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
-    let ok = false, submitted = false;
     try {
-      submitted = true;
       await supportClient.sendConversationReply(record.conversationId, input, record.key);
-      ok = true;
-      if (identityRef.current === identity && originalView()) { setMaintenanceChosen(false); setSelectedClosedIds(new Set()); } // one explicit maintenance contact per choice
-      try { await ctx.refreshConversations(); }
-      catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
-    }
-    catch (cause) {
-      if (submitted && !retry && settleMessageOwnershipRefusal(cause, slot, record.key, String(selected.customerId), record.conversationId)) return;
+    } catch (cause) {
+      if (!sameAccount()) return;
+      const refused = (!retry && rejectedMessageOwnership(cause)) || rejectedSupportWrite(cause);
       const busyHold = supportSessionBusy(cause);
-      if (identityRef.current === identity && conversationPeerChanged(cause)) {
-        if (submitted && rejectedSupportWrite(cause)) {
-          forgetSavedSend(slot, record.key);
-          if (originalView()) setPeerChangedDraft({ identity, customerId: String(selected.customerId), sourceKey: record.conversationId });
-        }
-        setSendError(submitted && rejectedSupportWrite(cause) ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
+      if (refused || busyHold) forgetSavedSend(slot, record.key);
+      if (lostPermission(cause)) {
+        ctx.invalidateScope(record.conversationId, String(selected.customerId), refused ? "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。" : "这条消息发送结果未知：你对这个会话的权限变了。请回客户列表核对，不要重发。");
+        return;
+      }
+      if (!currentPage() || !originalView()) return;
+      if (conversationPeerChanged(cause)) {
+        if (refused) setPeerChangedDraft({ identity, customerId: String(selected.customerId), sourceKey: record.conversationId });
+        setSendError(refused ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
         await refreshChangedPeer(identity);
-        return;
-      }
-      if (identityRef.current === identity && submitted && busyHold) {
-        forgetSavedSend(slot, record.key);
-        if (originalView()) lockFromBusy(String(selected.customerId), busyHold);
-        return;
-      }
-      if (identityRef.current === identity && submitted && rejectedSupportWrite(cause)) {
-        forgetSavedSend(slot, record.key);
+      } else if (busyHold) lockFromBusy(String(selected.customerId), busyHold);
+      else if (refused) {
         void ctx.refreshConversations().catch(() => {});
-        if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
-        else setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
-        return;
-      }
-      if (identityRef.current === identity) { if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "这条消息发送结果未知：你对这个会话的权限变了。请回客户列表核对，不要重发。"); } setSendError(MESSAGE_UNKNOWN); }
+        setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
+      } else setSendError(MESSAGE_UNKNOWN);
+      return;
     }
-    if (identityRef.current !== identity) return;
-    if (ok) {
-      window.dispatchEvent(new Event("support-todo-changed"));
-      forgetSavedSend(slot, record.key);
-      if (!activeEntry?.dock && record.kind !== "IMAGE") clearSubmittedDraft(record.conversationId, record.body, record.originalDraft);
-      if (!originalView()) return;
-      setProfileDetail(null); setProfileRetry((value) => value + 1); setHoldRetry((value) => value + 1);
-      if (record.kind === "IMAGE") clearAttachment(false);
-      setContentChoice(null);
-      refocusComposer.current = true;
-    }
+    if (!sameAccount()) return;
+    if (!activeEntry?.dock && record.kind !== "IMAGE") clearSubmittedDraft(record.conversationId, record.body, record.originalDraft);
+    forgetSavedSend(slot, record.key);
+    window.dispatchEvent(new Event("support-todo-changed"));
+    if (!currentPage()) return;
+    if (originalView()) { setMaintenanceChosen(false); setSelectedClosedIds(new Set()); }
+    try { await ctx.refreshConversations(); }
+    catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
+    if (!currentPage() || !originalView()) return;
+    setProfileDetail(null); setProfileRetry(value => value + 1); setHoldRetry(value => value + 1);
+    if (record.kind === "IMAGE") clearAttachment(false);
+    setContentChoice(null);
+    refocusComposer.current = true;
   };
 
   const chooseImage = async (file: File | undefined) => {
