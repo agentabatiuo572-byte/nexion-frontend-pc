@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { HCtx } from "./types";
 import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
-import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
+import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rules";
@@ -10,9 +10,10 @@ import { englishCopyHint, isEnglishCopy } from "@/lib/admin/content-language-rul
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
 const LANGUAGES = ["en", "zh", "vi"] as const;
-export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx; requiredLanguages: readonly OperatingLanguageCode[] }) {
+export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const generation = useRef(0), operator = currentAdminOperator();
   const read = ctx.can("growth_h4_read"), write = ctx.can("growth_h4_write"), locked = !!base && base.status !== "DRAFT";
   const load = async () => {
@@ -22,11 +23,16 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
-  const choose = (row: AdminRaffle | null) => {
+  const choose = (row: AdminRaffle | null, languages: readonly OperatingLanguageCode[]) => {
     setBase(row);
     const stored = row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes } : empty();
-    setDraft(write && row?.status === "DRAFT" ? raffleLocalizedDraft(stored, requiredLanguages, "edit") : stored);
+    setDraft(write && row?.status === "DRAFT" ? raffleLocalizedDraft(stored, languages, "edit") : stored);
     setEnabled(row?.status === "OPEN"); setError("");
+  };
+  const openEditor = async (row: AdminRaffle | null) => {
+    const languages = await getRequiredContentLanguages();
+    setRequiredLanguages(languages);
+    choose(row, languages);
   };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const save = () => {
@@ -42,7 +48,7 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
         try {
           const result = await saveAdminRaffle(savedDraft, previous?.revision ?? null, nextEnabled, reason);
           if (own !== generation.current) return;
-          setRows(current => current.some(row => row.id === result.id) ? current.map(row => row.id === result.id ? result : row) : [...current, result]); choose(result); ctx.toast("创世抽奖设置已保存");
+          setRows(current => current.some(row => row.id === result.id) ? current.map(row => row.id === result.id ? result : row) : [...current, result]); choose(result, requiredLanguages); ctx.toast("创世抽奖设置已保存");
         } catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); throw cause; }
         finally { if (own === generation.current) setSaving(false); }
       },
@@ -50,10 +56,10 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
   };
   if (!read) return null;
   return <section className="l-card">
-    <div className="l-h"><span className="ttl">创世抽奖</span><span className="sub">使用创世抽奖券报名，按配置时间开奖</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button><button className="l-btn sm mc" disabled={!write || loading || saving || !!draft} onClick={() => choose(null)}>新建一期</button></div></div>
+    <div className="l-h"><span className="ttl">创世抽奖</span><span className="sub">使用创世抽奖券报名，按配置时间开奖</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button><button className="l-btn sm mc" disabled={!write || loading || saving || !!draft} onClick={() => void openEditor(null)}>新建一期</button></div></div>
     <div className="l-b">{error && <p role="alert">{error}</p>}{loading ? <p role="status">正在加载抽奖设置…</p> : <>
       {!rows.length && !error && <p>暂无抽奖轮次。</p>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.id} disabled={!!draft || saving} onClick={() => choose(row)}>{row.titleZh || row.titleEn || row.id} · {{ DRAFT: "草稿", OPEN: "已开放", PROCESSING: "发放中", DRAWN: "已开奖" }[row.status]} · 已报名 {row.totalEntries} 票</button>)}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.id} disabled={!!draft || saving} onClick={() => void openEditor(row)}>{row.titleZh || row.titleEn || row.id} · {{ DRAFT: "草稿", OPEN: "已开放", PROCESSING: "发放中", DRAWN: "已开奖" }[row.status]} · 已报名 {row.totalEntries} 票</button>)}</div>
       {draft && <>
         <fieldset disabled={!write || saving} style={{ border: 0, padding: 0, marginTop: 16 }}>
           {base && <label className="field"><span>开放报名</span><select aria-label="开放创世抽奖报名" value={String(enabled)} disabled={base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0} onChange={event => setEnabled(event.target.value === "true")}><option value="false">关闭</option><option value="true">开启</option></select></label>}

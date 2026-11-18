@@ -70,7 +70,6 @@ export function recommendedExperienceChannels(): ExperienceChannel[] {
 interface ApiResult<T> { code: number; message?: string; data?: T; }
 const EXPERIENCE_CONFIG_PATH = "/api/admin/platform/config/experience";
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-platform-experience-commands-v1" });
-let requiredContentLanguages: Promise<readonly OperatingLanguageCode[]> | undefined;
 
 function strictUrl(value: unknown, required: boolean, allowHttp: boolean, allowFragment = false): string {
   const url = typeof value === "string" ? value.trim() : "";
@@ -190,10 +189,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
 }
 
 export async function fetchPlatformExperienceConfig() {
-  const config = normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
-  if (config.operatingLanguages) requiredContentLanguages = Promise.resolve(config.operatingLanguages);
-  else if (config.operatingLanguages === null) requiredContentLanguages = undefined;
-  return config;
+  return normalize(await request<unknown>(EXPERIENCE_CONFIG_PATH));
 }
 
 export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]> {
@@ -203,7 +199,7 @@ export async function fetchOperatingLanguages(): Promise<OperatingLanguageCode[]
 }
 
 export function getRequiredContentLanguages(): Promise<readonly OperatingLanguageCode[]> {
-  return requiredContentLanguages ??= fetchOperatingLanguages().catch(() => OPERATING_LANGUAGE_CODES);
+  return fetchOperatingLanguages().catch(() => OPERATING_LANGUAGE_CODES);
 }
 
 export async function updatePlatformExperienceConfig(
@@ -256,7 +252,6 @@ export async function updatePlatformExperienceConfig(
       throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
     }
     commandAttempts.forget(slot);
-    if (saved.operatingLanguages) requiredContentLanguages = Promise.resolve(saved.operatingLanguages);
     return saved;
   } catch (cause) {
     if (cause instanceof PlatformExperienceRequestError && !cause.resultUnconfirmed && !outcomeStaysUnknown(cause.status, cause.apiCode)) {

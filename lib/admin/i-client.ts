@@ -29,7 +29,7 @@ const contentCommands = createPendingMutationStore<PendingMutationRecord & { con
 
 export class IContentReceiptError extends Error {}
 
-const unknownWrite = () => new IContentReceiptError("写入结果未确认，请保留原内容和理由重试，系统会沿用原操作编号。");
+const unknownWrite = (message = "写入结果未确认，请保留原内容和理由重试，系统会沿用原操作编号。") => new IContentReceiptError(message);
 
 type ReadBack = (check: () => Promise<void>, version?: string) => Promise<void>;
 type VerifyReceipt<T> = (data: T, readBack: ReadBack) => void | Promise<void>;
@@ -800,7 +800,7 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
 
 function requireNovaCopyReceipt(saved: NovaTemplateView, submitted: NovaTemplateWrite) {
   const fields = ["titleEn", "bodyEn", "titleZh", "bodyZh", "titleVi", "bodyVi"] as const;
-  if (!saved || fields.some((field) => saved[field] !== submitted[field])) throw new Error("NOVA_TEMPLATE_COPY_NOT_SAVED");
+  if (!saved || fields.some((field) => saved[field] !== submitted[field])) throw unknownWrite("NOVA_TEMPLATE_COPY_NOT_SAVED");
 }
 
 function requireCampaignCopyReceipt(saved: NotificationCampaignRow, submitted: NotificationCampaignWrite) {
@@ -814,7 +814,7 @@ function requireCampaignCopyReceipt(saved: NotificationCampaignRow, submitted: N
       const actual = saved.translations?.[language];
       return copy && (!actual || actual.title !== copy.title || actual.body !== copy.body || actual.ctaLabel !== copy.ctaLabel);
     }))) {
-    throw new Error("NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED");
+    throw unknownWrite("NOTIFICATION_CAMPAIGN_COPY_NOT_SAVED");
   }
 }
 
