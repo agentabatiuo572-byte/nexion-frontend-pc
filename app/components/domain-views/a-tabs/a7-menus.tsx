@@ -493,7 +493,9 @@ export default function A7Menus() {
           initialReason={recoveryRecord?.reason} getPendingReason={() => confirmReq.getRecord()?.reason}
           blockedReason={!recoveryRecord ? confirmReq.blockedReason ?? readReason : undefined}
           inlineApproval={{ resolve: () => undefined, pending: !!recoveryRecord, initialRecovery: "retry",
-            expired: !!recoveryRecord && isRetryExpired(recoveryRecord), disabledReason: recoveryRecord && !authorities.includes("platform_a7_write") ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
+            expired: !!recoveryRecord && isRetryExpired(recoveryRecord),
+            expiredRequestRecovery: recoveryRecord && !recoveryRecord.receipt && isRetryExpired(recoveryRecord) ? "query" : undefined,
+            disabledReason: recoveryRecord && !authorities.includes("platform_a7_write") ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
             recover: async () => { const record = confirmReq.getRecord(); if (record) await queryOriginal(record); return true; } }}
           action={confirmReq.action}
           title={confirmReq.title}

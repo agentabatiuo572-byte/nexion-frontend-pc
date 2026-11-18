@@ -1384,6 +1384,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           pending: !!f4ModalRecord,
           initialRecovery: "retry",
           expired: !!f4ModalRecord && (f4ModalRecord.kind === "proposal" ? !canRetryF4Proposal(f4ModalRecord.original) : !canRetryF4Policy(f4ModalRecord.original)),
+          expiredRequestRecovery: f4ModalRecord && isRetryExpired(f4ModalRecord.original)
+            && (f4ModalRecord.kind === "policy" || !f4ModalRecord.original.ticket && !f4ModalRecord.original.received) ? "query" : undefined,
           recover: async () => {
             const original = f4ModalRecord ?? (() => {
               const row = f4PendingOriginal();
@@ -1397,6 +1399,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           dialogClassName: teamApproval.source === "F4" ? "team-fund-confirm f4-policy-confirm" : "team-fund-confirm",
           pending: !!pendingTeamApproval,
           expired: !!pendingTeamApproval && (pendingTeamApproval.expiresAt <= Date.now() || teamApproval.source === "F3" && (!f3FundPending?.request || !!f3FundPending?.received)),
+          expiredRequestRecovery: teamApproval.source === "F3" && f3FundPending?.request
+            && !f3FundPending.ticket && !f3FundPending.received && isRetryExpired(f3FundPending) ? "query" : undefined,
           disabledReason: mc.teamApprovalOwner === session?.adminId && canSubmitTeamApproval(teamApproval.source)
             ? undefined : "当前账号没有这项操作的权限，请关闭弹窗后重新核对。",
           recover: () => submitTeamApproval(teamApproval.source, null, "", true, mc.teamApprovalOwner),

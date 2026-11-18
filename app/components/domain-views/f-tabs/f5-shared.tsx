@@ -231,6 +231,8 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
         pending: !!original,
         initialRecovery: original?.kind === "proposal" && (original.original.ticket || original.original.received) ? "lookup" : "retry",
         expired: original ? isRetryExpired(original.original) : false,
+        expiredRequestRecovery: original && isRetryExpired(original.original)
+          && (original.kind === "anomaly" || !original.original.ticket && !original.original.received) ? "query" : undefined,
         disabledReason: original && !retryable ? "原操作当前只能查询原结果。" : undefined,
         recover: () => recover("query"),
         retry: async () => { await recover("retry"); },

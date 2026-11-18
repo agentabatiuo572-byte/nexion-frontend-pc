@@ -842,6 +842,7 @@ export default function DualLedgerPage() {
       initialReason={mc.draftReason}
       inlineApproval={mc.original ? {
         pending: true, initialRecovery: "retry", expired: mc.original.expiresAt <= Date.now(),
+        expiredRequestRecovery: mc.original.expiresAt <= Date.now() ? "query" : undefined,
         resolve: () => undefined,
         renderForm: mc.kind === "threshold" ? thresholdForm : undefined,
         recover: async () => { await queryWrite(mc.original!); return true; },
@@ -849,6 +850,7 @@ export default function DualLedgerPage() {
       } : thresholdBaseline ? {
         pending: !!pendingApproval,
         expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
+        expiredRequestRecovery: pendingApproval && !pendingApproval.received && !pendingApproval.b1Ticket && pendingApproval.expiresAt <= Date.now() ? "query" : undefined,
         disabledReason: !canConfigureThresholds ? "当前账号缺少设置兑付覆盖率阈值的权限。" : undefined,
         resolve: (value) => pendingApproval || value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
           coverageCheckCopy: "提交和批准时都按拟调整的红线校验覆盖率。",

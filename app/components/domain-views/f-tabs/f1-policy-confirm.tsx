@@ -215,6 +215,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
       pending: !!opening.pending,
       initialRecovery: "retry",
       expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
+      expiredRequestRecovery: opening.pending && !opening.pending.ticket && !opening.pending.received && opening.pending.expiresAt <= Date.now() ? "query" : undefined,
       disabledReason,
       resolve: (values) => baselineReady && f1PolicyNeedsApproval(editor, values) ? {
         heading: isCondition ? "放宽晋升条件 · 批准后生效" : "增加资金奖励 · 批准后生效",

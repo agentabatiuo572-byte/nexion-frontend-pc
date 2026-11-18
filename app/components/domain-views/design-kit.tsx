@@ -3778,13 +3778,15 @@ export type InlineOperationApproval = {
   /** Saved direct commands can expose the existing query and retry actions together. */
   initialRecovery?: "lookup" | "retry";
   expired?: boolean;
+  /** Set only when the retained request has passed its retry deadline. */
+  expiredRequestRecovery?: "query" | "reload";
   disabledReason?: string;
   compareEdit?: { rangeLabel?: string };
   dialogClassName?: string;
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, initialReason, measureReason, getPendingReason, pendingRequestExpired, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; pendingRequestExpired?: boolean; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? initialReason ?? "");
@@ -4001,6 +4003,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
+  const pendingReasonHelp = inlineApproval?.expiredRequestRecovery === "reload"
+    ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
+    : inlineApproval?.expiredRequestRecovery === "query"
+      ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
+      : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined) ?? confirmLabel;
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
@@ -4222,9 +4229,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         </div>
         {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
         {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>
-          {pendingRequestExpired
-            ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
-            : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。"}
+          {pendingReasonHelp}
         </div>}
         {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
           {reasonMax && <span>{reasonLength}/{reasonMax}</span>}

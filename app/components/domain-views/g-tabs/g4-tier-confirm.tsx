@@ -258,6 +258,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
     inlineApproval={{
       pending: !!opening.pending,
       expired: !!opening.pending && (Date.now() < opening.pending.createdAt || Date.now() >= opening.pending.expiresAt),
+      expiredRequestRecovery: opening.pending && !opening.pending.ticket && Date.now() >= opening.pending.expiresAt ? "query" : undefined,
       disabledReason: opening.error || undefined,
       resolve: value => requiresApproval(value) ? {
         heading: "要另一位超级管理员批准后生效",

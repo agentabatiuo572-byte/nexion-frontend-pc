@@ -10,6 +10,7 @@ import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, t
 import type { FViewCtx } from "./types";
 import { canRetryF3Proposal, listF3Proposals } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** 审批人叫法照「全站-审批人叫法」：F3 单项配置批准要另一位有这项业务权限和审批批准权限的管理员，不要求超级管理员。 */
@@ -73,6 +74,7 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
         pending: !!original,
         initialRecovery: "retry",
         expired: !!original && !canRetryF3Proposal(original),
+        expiredRequestRecovery: original && !original.ticket && !original.received && isRetryExpired(original) ? "query" : undefined,
         recover: async () => {
           const record = saved();
           if (!record) { onClose(); return true; }

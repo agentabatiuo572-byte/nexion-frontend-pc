@@ -507,6 +507,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       getPendingReason: () => saved && a1PendingCommands.list().some(r => r.commandKey === saved!.commandKey) ? saved.confirmationReason : undefined,
       getPendingBusinessValue: () => saved?.businessValue,
       inlineApproval: { resolve: () => undefined, pending: !!original, initialRecovery: "retry", expired: !!original && Date.now() >= original.expiresAt,
+        expiredRequestRecovery: original && !original.ticket && !original.received && Date.now() >= original.expiresAt ? "query" : undefined,
         disabledReason: original ? (() => { try { requireActor(intent, true, original.request.kind === "proposal"); return undefined; } catch (error) { return errorMessage(error); } })() : undefined,
         recover: async () => { if (!saved) return false; await queryOriginal(saved); return true; },
       },

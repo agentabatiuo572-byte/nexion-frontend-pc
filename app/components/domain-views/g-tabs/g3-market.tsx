@@ -656,6 +656,7 @@ function G3MarketEditor() {
             pending: !!pendingDirect,
             initialRecovery: "retry",
             expired: !!pendingDirect && g3MarketCommandExpired(pendingDirect),
+            expiredRequestRecovery: pendingDirect && Date.now() >= pendingDirect.expiresAt ? "reload" : undefined,
             disabledReason: pendingDirect && g3MarketCommandExpired(pendingDirect)
               ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项查不了原结果，请到「操作记录与审批」核对。"
               : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value) ? "你没有修改这一项的权限。" : undefined,

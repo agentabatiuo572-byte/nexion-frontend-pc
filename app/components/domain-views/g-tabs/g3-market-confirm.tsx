@@ -175,7 +175,6 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     reasonMin={8}
     reasonMax={200}
     getPendingReason={() => pendingG3MarketCommand(session.adminId, requested)?.reason}
-    pendingRequestExpired={expired && pending?.request.kind === "approval"}
     completionCopy={directCopy}
     inlineApproval={{
       dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
@@ -183,6 +182,9 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       pending: !!pending,
       initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
       expired,
+      expiredRequestRecovery: pending && Date.now() >= pending.expiresAt
+        ? pending.request.kind === "approval" ? "query" : "reload"
+        : undefined,
       disabledReason: expired && pending?.request.kind === "direct"
         ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项不能按原请求查询结果，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,

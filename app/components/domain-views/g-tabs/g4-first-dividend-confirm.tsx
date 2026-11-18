@@ -81,6 +81,7 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
     inlineApproval={{
       pending: !!pending,
       expired: !!pending && (Date.now() < pending.createdAt || Date.now() >= pending.expiresAt),
+      expiredRequestRecovery: pending && !pending.g4Ticket && !pending.received && Date.now() >= pending.expiresAt ? "query" : undefined,
       resolve: () => ({
         heading: "首次配置要另一位超级管理员批准",
         completionCopy: "待审期间每日收益比例仍为 0%。提交和批准时各核对一次比例有没有被改过、兑付覆盖率够不够。",
