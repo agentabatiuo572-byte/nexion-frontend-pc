@@ -16,6 +16,7 @@ import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
 import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
@@ -1524,6 +1525,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "disclosure-jurisdiction") {
     needs("code", "适用范围代码");
     needs("name", "适用范围名称");
+    const nameError = appVisibleTextError(state.name, "适用范围名称");
+    if (nameError) missing.push(nameError);
     if (spec.mode === "edit" && state.name?.trim() === spec.name) missing.push("名称没有改动");
     if (!DISCLOSURE_JURISDICTION_CODE.test((state.code ?? "").trim().toUpperCase())) missing.push(DISCLOSURE_JURISDICTION_CODE_HELP);
   } else if (spec.kind === "disclosure-publish-review") {
@@ -2697,10 +2700,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
             />}
           </RdField>
           {surface ? <RdField label="适用范围名称" required>
-            {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="如 越南司法辖区" />}
-          </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
+            {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="State Bank of Vietnam" />}
+          </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "State Bank of Vietnam")}
         </div>
-        <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>代码创建后不能修改。</div>
+        <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>适用范围名称：{APP_VISIBLE_TEXT_HINT}。代码创建后不能修改。</div>
       </div>
     );
   }
