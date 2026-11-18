@@ -140,7 +140,7 @@ export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { 
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
   return name ? `客服已切换为 ${name}${role ? `（${SUPPORT_SESSION_ROLE_LABEL[role]}）` : ""}` : "客服已切换";
 }
-export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null } | {
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown; messageOperation?: "M3_CONVERSATION_INITIATE" | "M3_CONVERSATION_REPLY"; businessCode?: number | null; businessReason?: "M3_TIMEOUT_POLICY_STALE" | "M3_TIMEOUT_POLICY_UNCHANGED" | null } | {
   status: "REJECTED";
   sent: false;
   customerId: string;
@@ -553,7 +553,10 @@ export const supportClient = {
     const result = row.result === undefined ? undefined : object(row.result, "command.result");
     if (typeof row.operationId === "string" && typeof row.previewId === "string" && Array.isArray(row.customers) && ["RUNNING", "COMPLETED"].includes(String(row.status))) return { status: row.status === "COMPLETED" ? "SUCCEEDED" : "PENDING", result: row };
     const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");
-    if (result && result.code === 0) return { status, result: result.data };
+    if (result && result.code === 0) {
+      if (row.resultType === "M3_CONVERSATION_REPLY" || row.resultType === "M3_CONVERSATION_INITIATE") return { status, result: result.data, messageOperation: row.resultType };
+      return { status, result: result.data };
+    }
     if (result && typeof result.batchId === "string" && result.counts) return { status, result };
     if (typeof row.operationId === "string" && Array.isArray(row.customers)) return { status, result: row };
     if (result) malformed("command.result.code");
@@ -602,6 +605,19 @@ export const supportClient = {
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
 };
+
+/** A completed idempotency entry can contain a business refusal with no conversation data. */
+export async function querySupportMessage(key: string, customerId?: string, conversationNo?: string): Promise<SupportCommandResult> {
+  const receipt = await supportClient.command(key);
+  if (receipt.status !== "SUCCEEDED") return receipt;
+  const expectedOperation = conversationNo ? "M3_CONVERSATION_REPLY" : "M3_CONVERSATION_INITIATE";
+  if (receipt.messageOperation !== expectedOperation || (!customerId && !conversationNo)) return { status: "UNKNOWN" };
+  const data = object(receipt.result, "command.message");
+  const target = id(data.userId, "command.message.userId");
+  const conversation = nonempty(data.conversationNo, "command.message.conversationNo");
+  if ((customerId && customerId !== target) || (conversationNo && conversationNo !== conversation)) return { status: "UNKNOWN" };
+  return receipt;
+}
 
 export type SupportUnboundPolicy = { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; defaultGroupName: string | null; version: number; updatedBy: string; reason: string; updatedAt: string };
 export type SupportUnboundPolicyUpdate = Pick<SupportUnboundPolicy, "alertMinutes" | "fallbackMinutes" | "defaultGroupId" | "reason"> & { expectedVersion: number };

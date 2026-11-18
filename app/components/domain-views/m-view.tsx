@@ -43,7 +43,7 @@ import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { querySupportMessage, supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import { blocksNewSend, dockCommands, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision, type DockCommandRecord } from "./m-tabs/m-message-journal";
 import { privateMessageRecovery } from "@/lib/admin/m-support-enhancements";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
@@ -1294,7 +1294,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   };
   const abandonQuery = (row: DockCommandRecord) => {
     if (!window.confirm("确认已自行保存原文，并放弃查询这条发送记录？放弃后无法继续用原命令核对结果。")) return;
-    dockCommands.forget(row.fingerprint);
+    dockCommands.forget(row.fingerprint, row.commandKey);
     setCanAbandon(false);
     setSendError("");
     ctx.toast("待确认记录已清除。", "success");
@@ -1303,7 +1303,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   useEffect(() => {
     if (!pendingDock || pendingDock.readOnlyRecovery || privateScopeLost || draft) return;
     try { setDraft((JSON.parse(pendingDock.payload) as SupportMessageInput).content ?? ""); }
-    catch { dockCommands.forget(dockSlot); }
+    catch { redactDockRecovery(pendingDock); }
   }, [canWrite, dockSlot, draft, pendingDock, privateScopeLost]);
   useEffect(() => {
     if (!privateScopeLost) return;
@@ -1343,7 +1343,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       const generation = identityGeneration.current;
       setSending(true); setSendError(""); setCanAbandon(false);
       try {
-        const result = await supportClient.command(recovery.commandKey);
+        const result = await querySupportMessage(recovery.commandKey, recovery.customerId, recovery.conversationNo);
         if (generation !== identityGeneration.current) return;
         if (result.status === "SUCCEEDED") {
           dockCommands.forget(recovery.fingerprint, recovery.commandKey);
@@ -1358,7 +1358,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         if (cause instanceof SupportClientError && cause.status === 403) {
           redactDockRecovery(recovery); setDraft("");
           setSendError("原消息暂不可查询；私聊原文已清除，原编号仍保留，请稍后重试。");
-        } else if (cause instanceof SupportClientError && cause.status === 404 && !readOnlyRecovery) { setCanAbandon(true); setSendError("原命令未找到，当前会话不可发送。可复制原文后放弃查询。"); }
+        } else if (cause instanceof SupportClientError && cause.status === 404) { setSendError("发送结果仍在确认，请稍后查询原命令。"); }
         else setSendError(`原命令暂无法确认：${displayAdminError(cause)} 请稍后重试。`);
       }
       finally { if (generation === identityGeneration.current) setSending(false); }
@@ -1403,8 +1403,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       };
       if (!pendingDock) dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId });
       if (pendingDock) {
-        const result = await supportClient.command(key).catch((error: unknown) => {
-          if (error instanceof SupportClientError && error.status === 404) return null;
+        const result = await querySupportMessage(key, pendingDock.customerId ?? conv.customerId, pendingDock.conversationNo).catch((error: unknown) => {
+          if (error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return null;
           throw error;
         });
         if (generation !== identityGeneration.current) return;
@@ -1412,7 +1412,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         if (result?.status === "FAILED") { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); return; }
         if (!result) {
           if (isRetryExpired(pendingDock)) { setSendError(RETRY_EXPIRED_TEXT); return; }
-          if (!canWrite) { setCanAbandon(true); setSendError("原命令未找到，当前会话不可发送。可复制原文后放弃查询。"); return; }
+          if (!canWrite) { setSendError("发送结果仍在确认，请稍后查询原命令。"); return; }
           if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
           submitted = true;
           await supportClient.sendConversationReply(conv.id, input, key);
