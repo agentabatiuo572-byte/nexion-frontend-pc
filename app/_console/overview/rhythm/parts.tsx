@@ -213,7 +213,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
       sub={`${named(currentPhase)} · ${source ? operatorCopyText(source) : `第 ${data.rhythm.currentMonth} 个月`}`}
       explain={<>
         <p>按运营阶段设置当前月份的值，和上面选的查看方式、阶段、月份无关。要改到运营阶段设置去改，这页只能看。</p>
-        <p>标「已停用」的那项系统不再执行；其余各项都按「现在」这一列的值执行，开关类按现在是开还是关。</p>
+        <p>标「已停用」的那项系统不再执行；其余各项按「现在」的值执行，开关看开没开。</p>
       </>}>
       <p className="b4-panel-note">
         {last ? "已是最后一个月，后面没有要切换的参数。"
