@@ -214,8 +214,8 @@ type EtaKey = "queueEtaHours" | "queueEtaCopy" | "queueEtaCopyZh" | "queueEtaCop
 const ETA: Record<EtaKey, { name: string; what: string }> = {
   queueEtaHours: { name: "预计处理时长", what: "排队单大约多久处理，填小时数" },
   queueEtaCopy: { name: "英文预计说法", what: "排队单上写的预计时间，用 {hours} 代表小时数" },
-  queueEtaCopyZh: { name: "中文预计说法", what: "App 中文界面写的预计时间，用 {hours} 代表小时数" },
-  queueEtaCopyVi: { name: "越南语预计说法", what: "App 越南语界面写的预计时间，用 {hours} 代表小时数" },
+  queueEtaCopyZh: { name: "中文预计说法", what: "中文界面的预计说法，{hours} 换成小时数" },
+  queueEtaCopyVi: { name: "越南语预计说法", what: "越南语界面的预计说法，{hours} 换成小时数" },
 };
 /** 中越说法只给 App 用；运营区域语言勾了这种语言时，这句没填好 App 上整条预计都不显示（AppExchangeService.queueEstimate）。 */
 const ETA_APP_LANGUAGE: Partial<Record<EtaKey, string>> = { queueEtaCopyZh: "中文", queueEtaCopyVi: "越南语" };
