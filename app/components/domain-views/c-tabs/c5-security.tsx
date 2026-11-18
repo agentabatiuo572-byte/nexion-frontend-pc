@@ -32,7 +32,7 @@ const userIdOf = (row?: UserSecurityUserRow | null) => row?.userId == null ? "" 
 const userLabel = (row?: UserSecurityUserRow | null) => { if (!row) return "未选择用户"; const name = userNicknameText(text(row.nickname, ""), row.phoneMasked); return name ? `${name} · ${text(row.userNo)}` : text(row.userNo); };
 const maskSessionId = (id: string) => id.length <= 10 ? `${id.slice(0, 3)}•••${id.slice(-2)}` : `${id.slice(0, 6)}••••${id.slice(-4)}`;
 const sessionLabel = (state: unknown) => ({ ACTIVE: "活跃", REVOKED: "已撤销", EXPIRED: "已过期" }[String(state)] ?? "状态未知");
-const lockLabel = (row?: UserSecurityUserRow | null) => !row ? "未确认" : row.lockKind === "SHORT" ? "短时锁定" : row.lockKind === "LONG" ? "长时锁定" : row.lockKind === "NONE" || row.locked === false ? "未锁定" : "未确认";
+const lockLabel = (row?: UserSecurityUserRow | null) => !row ? "未确认" : row.lockKind === "SHORT" ? "短时锁定" : row.lockKind === "LONG" ? "长时锁定" : row.lockKind === "NONE" || row.locked === false ? "未锁定" : row.lockLabel || "未确认";
 const PARAM_HELP: Record<string, { what: string; when: string; effect: string; where: string }> = {
   accessTtl: { what: "单个访问令牌的有效时长", when: "后续签发令牌时采用", effect: "不改写已签发的令牌", where: "本页登录与改号规则" },
   refreshTtl: { what: "长期登录刷新的期限", when: "后续创建刷新会话时采用", effect: "不改写已有会话的期限", where: "本页登录与改号规则" },
@@ -58,7 +58,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const canRevokeOne = rights.includes("user_c5_session_revoke_one");
   const canRevokeAll = rights.some(code => ["user_c2_session_revoke_all", "user_c5_session_revoke_all"].includes(code)) && rights.some(code => ["platform_a2_write", "platform_a2_proposal_create"].includes(code));
   const canReset = rights.includes("user_c5_password_reset"), canDisable = rights.includes("user_c5_2fa_disable"), canConfig = rights.includes("user_c5_write");
-  const canUnlock = (row: UserSecurityUserRow) => rights.includes(row.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short")
+  const canUnlock = (row: UserSecurityUserRow) => (row.lockKind === "SHORT" || row.lockKind === "LONG")
+    && rights.includes(row.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short")
     && (row.lockKind === "LONG" ? ["superadmin", "risk"].includes(session?.role ?? "") : ["superadmin", "risk", "support", "supportlead"].includes(session?.role ?? ""));
   const reach = useReach(), pathname = usePathname(), router = useRouter(), params = useSearchParams();
   const focus = (params?.get("userCode") ?? "").trim().toUpperCase();
