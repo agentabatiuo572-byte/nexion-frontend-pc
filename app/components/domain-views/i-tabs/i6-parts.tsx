@@ -205,8 +205,12 @@ export function copyFormMissing(placeholders: readonly string[], input: Record<L
   return missing;
 }
 
-export const blockedText = (missing: readonly Missing[]) => missing.length === 0 ? undefined
-  : missing.length === 1 ? `还没填好：${missing[0].text}` : `还没填好：${missing[0].text}等 ${missing.length} 项`;
+export function blockedText(missing: readonly Missing[]) {
+  if (!missing.length) return;
+  const first = missing[0].text.replace(/。$/, "");
+  const suffix = missing.length > 1 ? `等 ${missing.length} 项` : "";
+  return `还没填好：${first}${suffix}。`;
+}
 
 /* ---------- App 里的样子 ---------- */
 

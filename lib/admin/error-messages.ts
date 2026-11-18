@@ -3902,7 +3902,7 @@ function eventRuleIncompleteMessage(code: string, data: unknown): string | undef
     business.length && `活动配置待核对：${business.join("、")}`,
   ].filter(Boolean);
   if (!parts.length) return;
-  return `${parts.join("；")}。${must.length || half.length ? "到「既有活动」卡片底部逐格补。" : ""}`;
+  return `${parts.join("；")}。${must.length || half.length ? "到「既有活动」卡片底部逐格补。" : "补齐后再开启。"}`;
 }
 
 export function formatAdminApiError(

@@ -78,7 +78,7 @@ export function parseEventRegions(text: string) {
 export function eventRuleMissingLabel(key: string): string {
   // 缺哪种语言在「既有活动」卡片和抽屉里逐格标出；这里合成一项，只指路。
   if (key.startsWith("localized.")) return "活动在 App 上的文字（到「既有活动」页签补）";
-  const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户、全硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
+  const voucherIssue = ({ voucherId: "有效且已启用的百分比券（请在「代金券」核对）", voucherDiscount: "优惠券须减免20%（八折），无最低消费及优惠封顶", voucherScope: "优惠券须面向全部用户并适用于全部硬件", voucherClaimSurface: "优惠券须允许商城领取", voucherPeriod: "优惠券有效期须覆盖活动全期", voucherStacking: "关联优惠券及促销政策均需允许叠加" } as Record<string, string>)[key];
   if (voucherIssue) return voucherIssue;
   if (key === "eventCode") return "活动编号";
   if (key === "action") return "参与玩法";
