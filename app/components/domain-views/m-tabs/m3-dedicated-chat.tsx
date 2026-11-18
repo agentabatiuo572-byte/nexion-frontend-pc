@@ -67,6 +67,7 @@ const MESSAGE_FAILED = "这条消息没发出，原文已放回输入框，可�
 /** 原槽已有新稿时原文另存一份（failedDraftCopies），提示条换这句。 */
 const MESSAGE_FAILED_KEPT = "输入框里是你后来写的内容，原文另存在下面；删除后不能找回。";
 const MESSAGE_FAILED_UNCHECKED = "这条消息没发出。客户仍归你时，原文会放回原来的输入框。";
+const MESSAGE_FAILED_IMAGE = "这张图片没发出，可以重新发送。";
 const PEER_CHANGED_SEND_REFUSAL = "没有发出：这已不是客户的当前会话。客户仍归你时，原文会带进当前会话的空输入框，核对后再发；那边已有草稿时，原文留在原会话。";
 
 const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientError
@@ -1214,7 +1215,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         if (identityRef.current !== identity || !mounted.current) return;
         if (result.status === "FAILED" || result.status === "REJECTED") {
           const reason = result.status === "REJECTED" ? ADMIN_ERROR_MESSAGES[result.businessReason] : undefined;
-          setSendError(`${activeEntry.dock || !verifiedKeys.current?.has(activeEntry.row.commandKey) ? MESSAGE_FAILED_UNCHECKED : MESSAGE_FAILED}${reason ? `原因：${reason}` : ""}`);
+          setSendError(`${activeEntry.reply?.kind === "IMAGE" ? MESSAGE_FAILED_IMAGE : activeEntry.dock || !verifiedKeys.current?.has(activeEntry.row.commandKey) ? MESSAGE_FAILED_UNCHECKED : MESSAGE_FAILED}${reason ? `原因：${reason}` : ""}`);
           return;
         }
         if (result.status !== "SUCCEEDED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
@@ -1296,7 +1297,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           forgetSavedSend(slot, record.key);
         }
         if (lostPermission(cause)) {
-          ctx.invalidateScope(undefined, customerId, refused ? "消息没有发出：这位客户已不归你接待，原文已清除。" : "消息发送结果未知：这位客户已不归你接待，原文已清除，只能查询结果。");
+          ctx.invalidateScope(undefined, customerId, refused ? "消息没有发出：你已不能接待这位客户，原文已清除。" : "消息发送结果未知：你已不能接待这位客户，原文已清除，只能查询结果。");
           return;
         }
         if (!currentPage() || !originalView()) return;
@@ -1394,7 +1395,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         forgetSavedSend(slot, record.key);
       }
       if (lostPermission(cause)) {
-        ctx.invalidateScope(record.conversationId, String(selected.customerId), refused ? "消息没有发出：这位客户已不归你接待，原文已清除。" : "消息发送结果未知：这位客户已不归你接待，原文已清除，只能查询结果。");
+        ctx.invalidateScope(record.conversationId, String(selected.customerId), refused ? "消息没有发出：你已不能接待这位客户，原文已清除。" : "消息发送结果未知：你已不能接待这位客户，原文已清除，只能查询结果。");
         return;
       }
       if (!currentPage() || !originalView()) return;
@@ -1465,7 +1466,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (controller.signal.aborted) return;
       if (attachmentRef.current?.uploadId !== current.uploadId) return;
       if (lostPermission(cause)) {
-        ctx.invalidateScope(selected.id, String(selected.customerId), "图片没有上传：这位客户已不归你接待。"); setSendError("当前已无权上传该客户图片，请返回客户列表刷新。");
+        ctx.invalidateScope(selected.id, String(selected.customerId), "图片没有上传：你已不能接待这位客户。"); setSendError("当前已无权上传该客户图片，请返回客户列表刷新。");
       } else setAttachment({ ...current, state: "error", error: displayAdminError(cause) });
     } finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; }
   };
@@ -1826,7 +1827,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const sendTech = (key: string) => <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{key}</span></Fact></Facts></Fold>;
   const pendingItems: RecoveryItem[] = [
     ...recoveries.map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt, object: customerLabel(originalCustomer(entry.locator)), tag: null,
-      line: entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey) ? "已不归你接待，只能查询结果" : "原记录不全，只能查询结果",
+      line: entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
       detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
       actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原结果</Button> })),
     ...otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
@@ -1932,7 +1933,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           {archiveMode && <div className="m3s-batch"><span role="status">已选 {archiveIds.size} 位客户</span><Button size="sm" disabled={!archiveIds.size || actionChecking} onClick={() => void archiveBatch().then(() => setArchiveMode(false))}>归档已选 {archiveIds.size}</Button><Button size="sm" variant="ghost" onClick={() => { setArchiveMode(false); setArchiveIds(new Set()); }}>取消</Button></div>}
         </header>
         {pendingItems.length > 0 && <div className="m3s-pending"><RecoveryPanel label="发送结果未知的消息" title={`${pendingItems.length} 条消息发送结果未知`} explainLabel="这些消息怎么处理"
-            explain={`发出后没收到明确结果的消息，查清前不能再给同一位客户发。「只能查询」：客户已不归你接待，原文和图片已从本机清除，只能查有没有发出，不能重发。时间为${zoneLabel}。`} items={pendingItems} /></div>}
+            explain={`发出后没收到明确结果的消息，查清前不能再给同一位客户发。「只能查询」：客户被转走或你的权限变了，原文和图片已从本机清除，只能查有没有发出，不能重发。时间为${zoneLabel}。`} items={pendingItems} /></div>}
         {recoveryError && <div className="m3s-pending"><Notice tone={recoveryError.startsWith("查到了") ? "neutral" : "warn"} action={<Button size="sm" onClick={() => setRecoveryError("")}>知道了</Button>}>{recoveryError}</Notice></div>}
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
           {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}

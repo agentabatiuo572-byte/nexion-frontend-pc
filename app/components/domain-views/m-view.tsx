@@ -677,7 +677,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const page = (
     <>
       {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
-      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
+      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">去专属会话处理</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
       {tab !== "M3" && tab !== "M4" && tab !== "M5" && mError && (
@@ -1243,6 +1243,8 @@ function dockRelWhen(ts: number): string {
 const DOCK_BLOCKED = "上一条消息发送结果未知，确认前不能再发。";
 const DOCK_BLOCKED_OTHER = "有一条消息发送结果未知，确认前不能再发。";
 const DOCK_NOT_YOURS_SENT = "消息没有发出：这位客户已不归你接待，原文已清除。";
+/** 403/404 只说明现在不能接待，不一定是转走。 */
+const DOCK_NO_ACCESS_SENT = "消息没有发出：你已不能接待这位客户，原文已清除。";
 
 function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: boolean; onScopeInvalidated: MCtx["invalidateScope"] }) {
   const [draft, setDraft] = useState("");
@@ -1384,7 +1386,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         dockCommands.forget(dockSlot, key);
       }
       if (scopeLost) {
-        onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? DOCK_NOT_YOURS_SENT : "消息发送结果未知：这位客户已不归你接待，原文已清除，只能查询结果。");
+        onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? DOCK_NO_ACCESS_SENT : "消息发送结果未知：你已不能接待这位客户，原文已清除，只能查询结果。");
       } else if (currentDock()) {
         setSendError(rejected ? `没有发出，原文已放回输入框，可以改了再发。原因：${displayAdminError(error)}` : key ? DOCK_BLOCKED : displayAdminError(error));
       }
