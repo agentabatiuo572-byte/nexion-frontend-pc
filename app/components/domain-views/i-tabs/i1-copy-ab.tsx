@@ -20,7 +20,7 @@ import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { mapSingleContentText } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
+import { fetchI1CopyOverview, type CopyAbOverview, type CopyAudienceTarget, pendingI1Commands, queryI1Command, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -29,7 +29,7 @@ import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictVie
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
-  audienceText, copyStatus, experimentState, LANGUAGE_OPTIONS, missingLangs, moduleLabel, versionStatus,
+  audienceText, copyStatus, experimentAudience, experimentState, LANGUAGE_OPTIONS, missingLangs, moduleLabel, versionStatus,
   type CopyCreateSpec, type CopyEditSpec, type ExperimentCopyOption, type PositionCopy, type SaveMode, type Texts,
 } from "./i1-parts";
 
@@ -42,14 +42,13 @@ type Tab = "positions" | "experiments" | "history" | "catalog";
 type CopyRow = {
   key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
-  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget | null; draftTrafficSplit?: string; draftNote?: string;
+  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: CopyAudienceTarget | null; draftTrafficSplit?: string; draftNote?: string;
   revision?: number; usedVersionKeys?: string[];
 };
-type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type VersionRow = {
   copyKey: string; v: string; st: string; chain: string; ts: string;
   zh: string; en: string; vi: string; copyPosition?: string; surface: string;
-  audience: string; audienceTarget?: AudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
+  audience: string; audienceTarget?: CopyAudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
 };
 type VersionOptionRow = {
   versionKey: string; name: string; description: string | null; status: string;
@@ -125,7 +124,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   };
 }
 
-function audienceTargetFields(target?: AudienceTarget | null) {
+function audienceTargetFields(target?: CopyAudienceTarget | null) {
   if (!target) return {};
   const tiers = (target.tiers ?? []).map((tier) => Number(tier.replace(/^P/i, ""))).filter(Number.isFinite).sort((a, b) => a - b);
   return {
@@ -1030,7 +1029,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const submitExperiment = (form: BusinessFormValue) => {
     const count = Number(form?.variantCount || 0);
     const copy = findCopy(form.copyKey);
-    const first = EXPERIMENT_COPY_OPTIONS.find((item) => item.value === form.copyKey)?.versions.find((item) => item.value === form["variantVersion.0"]);
+    const { version: audienceVersion } = experimentAudience(
+      EXPERIMENT_COPY_OPTIONS.find((item) => item.value === form.copyKey),
+      Array.from({ length: count }, (_, index) => form[`variantVersion.${index}`] ?? ""),
+    );
     openActionConfirm({ briefKind: "config",
       action: <>创建 A/B 实验</>,
       title: "创建对比实验",
@@ -1044,7 +1046,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         {Array.from({ length: count }, (_, index) => (
           <Fact key={index} k={`${String.fromCharCode(65 + index)} 组`}>{form[`variantVersion.${index}`]} · 分流 {form[`variantSplit.${index}`]}%</Fact>
         ))}
-        <Fact k="受众">{audienceText(first)}</Fact>
+        <Fact k="受众">{audienceText(audienceVersion)}</Fact>
       </Facts>,
       run: (reason) => {
         const variants = Array.from({ length: count }, (_, index) => ({

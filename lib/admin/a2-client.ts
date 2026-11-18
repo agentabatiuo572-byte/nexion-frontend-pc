@@ -8,6 +8,7 @@ import { readE4Money } from "./e4-refund-amount";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
+import type { DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   buildA2FilterQuery,
@@ -76,8 +77,7 @@ export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
   roleGrantsDiff?: unknown;
-  /** Optional projection of the publish command's bound draft. Older servers omit it. */
-  i5DisclosurePublishReview?: unknown;
+  disclosureReview?: unknown;
   ruleTaskAction?: A2RuleTaskAction | null;
   approveDeniedCode?: number | null;
   approveDeniedMessage?: string | null;
@@ -203,18 +203,16 @@ export interface A2RoleGrantsReview {
   menusRemoved: { id: number; name: string | null; catalogueStatus: A2CatalogueStatus }[];
 }
 
-interface I5DisclosurePublishReview {
-  jurisdiction: string;
-  version: string;
-  expectedRevision: number;
-  expectedContentHash: string;
-}
+type I5DisclosureReview = { jurisdiction: string; version: string } & (
+  | { kind: "PUBLISH"; draft?: DisclosureVersionItemView }
+  | { kind: "MATRIX"; expectedVersion: string }
+);
 
 export interface A2OperationRow {
   /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
   roleGrantsDiff: A2RoleGrantsDiff | null;
   roleGrantsReview: A2RoleGrantsReview | null;
-  i5DisclosurePublishReview?: I5DisclosurePublishReview;
+  disclosureReview?: I5DisclosureReview;
   ruleTaskAction?: A2RuleTaskAction;
   approveDeniedMessage?: string;
   rejectDeniedMessage?: string;
@@ -399,14 +397,33 @@ function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
   };
 }
 
-function readI5DisclosurePublishReview(value: unknown): I5DisclosurePublishReview | undefined {
+export function readA2DisclosureVersion(value: unknown, jurisdiction: string, version: string): DisclosureVersionItemView | undefined {
+  const row = value as Partial<DisclosureVersionItemView> | null | undefined;
+  if (row?.jurisdiction !== jurisdiction || row.version !== version || typeof row.status !== "string"
+    || (row.languageScope !== "zh+vi" && row.languageScope !== "zh+vi+en")
+    || typeof row.effectiveDate !== "string" || typeof row.requiresReack !== "boolean"
+    || typeof row.zh !== "string" || typeof row.vi !== "string" || typeof row.en !== "string"
+    || !Array.isArray(row.chapters) || row.chapters.length !== 7
+    || !row.chapters.every((chapter) => chapter?.jurisdiction === jurisdiction && chapter.version === version
+      && typeof chapter.no === "string" && /^0[1-7]$/.test(chapter.no)
+      && typeof chapter.zh === "string" && typeof chapter.vi === "string" && typeof chapter.en === "string"
+      && typeof chapter.zhBody === "string" && typeof chapter.viBody === "string" && typeof chapter.enBody === "string")
+    || new Set(row.chapters.map((chapter) => chapter.no)).size !== 7) return undefined;
+  return row as DisclosureVersionItemView;
+}
+
+function readI5DisclosureReview(value: unknown, operation: BackendTicket["operationCode"]): I5DisclosureReview | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { jurisdiction, version, expectedRevision, expectedContentHash } = value as Record<string, unknown>;
-  if (typeof jurisdiction !== "string" || !jurisdiction
-    || typeof version !== "string" || !version
-    || typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1
-    || typeof expectedContentHash !== "string" || !expectedContentHash) return undefined;
-  return { jurisdiction, version, expectedRevision, expectedContentHash };
+  const { kind, jurisdiction, version, expectedVersion, revision, contentHash, draft, chapters } = value as Record<string, unknown>;
+  if (typeof jurisdiction !== "string" || !jurisdiction.trim() || typeof version !== "string" || !version.trim()) return undefined;
+  if (kind === "MATRIX" && operation === "i5_matrix_configure" && typeof expectedVersion === "string") {
+    return { kind, jurisdiction, version, expectedVersion };
+  }
+  if (kind !== "PUBLISH" || (operation !== "i4_disclosure_publish" && operation !== "i5_disclosure_publish")) return undefined;
+  const frozen = draft && typeof draft === "object" ? readA2DisclosureVersion({ ...draft, chapters }, jurisdiction, version) : undefined;
+  return { kind, jurisdiction, version, draft: frozen?.status.toLowerCase() === "draft"
+    && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0 && frozen.revision === revision
+    && typeof contentHash === "string" && /^[a-f0-9]{64}$/.test(contentHash) && frozen.contentHash === contentHash ? frozen : undefined };
 }
 
 function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {
@@ -496,7 +513,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   return {
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
-    i5DisclosurePublishReview: readI5DisclosurePublishReview(ticket.i5DisclosurePublishReview),
+    disclosureReview: readI5DisclosureReview(ticket.disclosureReview, ticket.operationCode),
     ruleTaskAction: ticket.ruleTaskAction ?? undefined,
     approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
     rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,

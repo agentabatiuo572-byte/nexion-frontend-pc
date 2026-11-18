@@ -13,6 +13,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { englishCopyHint, isEnglishCopy, mapSingleContentText } from "@/lib/admin/content-language-rules";
 import type { OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
+import type { CopyAudienceTarget } from "@/lib/admin/i-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 
 export type Lang = "zh" | "vi" | "en";
@@ -515,33 +516,47 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, stale, liveVersion
 
 /* ---------- 实验创建抽屉 ---------- */
 
-export type ExperimentCopyOption = Extract<BusinessFormSpec, { kind: "copy-experiment-create" }>["copies"][number];
-type ExperimentVersionOption = ExperimentCopyOption["versions"][number];
+type BusinessExperimentCopy = Extract<BusinessFormSpec, { kind: "copy-experiment-create" }>["copies"][number];
+type ExperimentVersionOption = BusinessExperimentCopy["versions"][number] & { audienceTarget?: CopyAudienceTarget };
+export type ExperimentCopyOption = Omit<BusinessExperimentCopy, "versions"> & { versions: ExperimentVersionOption[] };
 
-function audienceSignature(version?: ExperimentVersionOption): string {
-  if (!version) return "";
+function isNeutralExperimentVersion(version: ExperimentVersionOption) {
+  const target = version.audienceTarget;
+  return version.audience === "全量" && (!target || (!target.tiers?.length && !target.locales?.length
+    && target.registrationDaysMin == null && target.registrationDaysMax == null));
+}
+
+function audienceSignature(version: ExperimentVersionOption): string {
   const target = version.audienceTarget;
   if (!target) return JSON.stringify(version.audience ?? null);
   return JSON.stringify({
-    tiers: target.tiers,
-    locales: target.locales,
+    mode: target.mode ?? null,
+    tiers: target.tiers ?? null,
+    locales: target.locales ?? null,
     registrationDaysMin: target.registrationDaysMin ?? null,
     registrationDaysMax: target.registrationDaysMax ?? null,
   });
 }
 
+export function experimentAudience(copy: ExperimentCopyOption | undefined, selected: string[]) {
+  const versions = selected.map((key) => copy?.versions.find((item) => item.value === key));
+  const known = versions.filter((version): version is ExperimentVersionOption => version != null);
+  const targeted = known.filter((version) => !isNeutralExperimentVersion(version));
+  const mismatch = new Set(targeted.map(audienceSignature)).size > 1;
+  const consistent = known.length === selected.length && !mismatch;
+  return { consistent, mismatch, version: consistent ? targeted[0] ?? known[0] : undefined };
+}
+
 /** 受众写成一句：阶段、语言、注册天数（同 design-kit 实验表单的读法）。 */
-export function audienceText(version?: { audience?: string; audienceTarget?: ExperimentVersionOption["audienceTarget"] | null }) {
-  const target = version?.audienceTarget;
-  if (!target && version?.audience === "全量") return version.audience;
-  const parsed = parseCopyAudience(version?.audience);
-  const tiers = target?.tiers?.length
-    ? `${target.tiers[0]}${target.tiers.length > 1 ? `–${target.tiers[target.tiers.length - 1]}` : ""}`
-    : `${parsed.phaseMin}${parsed.phaseMin === parsed.phaseMax ? "" : `–${parsed.phaseMax}`}`;
-  const languages = target?.locales?.length
+export function audienceText(version?: ExperimentVersionOption) {
+  if (!version) return "—";
+  const target = version.audienceTarget;
+  if (!target?.tiers?.length || target.registrationDaysMin == null || target.registrationDaysMax != null) return version.audience;
+  const tiers = `${target.tiers[0]}${target.tiers.length > 1 ? `–${target.tiers[target.tiers.length - 1]}` : ""}`;
+  const languages = target.locales?.length
     ? target.locales.map((item) => LANGUAGE_OPTIONS.find((option) => option.value === item)?.label ?? item).join("、")
-    : parsed.language === "all" ? "全部语言" : LANGUAGE_OPTIONS.find((option) => option.value === parsed.language)?.label ?? parsed.language;
-  const days = target?.registrationDaysMin != null ? Math.max(0, target.registrationDaysMin - 1) : Number(parsed.registrationDaysGt || 0);
+    : "全部语言";
+  const days = Math.max(0, target.registrationDaysMin - 1);
   return `阶段 ${tiers} · ${languages} · 注册超过 ${days} 天`;
 }
 
@@ -575,9 +590,7 @@ export function ExperimentDrawer({ copies, versionText, onClose, onSubmit }: {
   const count = Math.max(2, Number(form.variantCount || 2));
   const selected = Array.from({ length: count }, (_, index) => form[`variantVersion.${index}`] ?? "");
   const splitTotal = Array.from({ length: count }, (_, index) => Number(form[`variantSplit.${index}`] || 0)).reduce((sum, split) => sum + split, 0);
-  const signatures = selected.map((version) => audienceSignature(copy?.versions.find((item) => item.value === version))).filter(Boolean);
-  const audienceConsistent = signatures.length === selected.length && new Set(signatures).size <= 1;
-  const first = copy?.versions.find((item) => item.value === selected[0]);
+  const { consistent: audienceConsistent, mismatch, version: audienceVersion } = experimentAudience(copy, selected);
 
   // 同 design-kit missingBusinessFields 的 copy-experiment-create。
   const missing: string[] = [];
@@ -586,8 +599,7 @@ export function ExperimentDrawer({ copies, versionText, onClose, onSubmit }: {
   const splits = Array.from({ length: Number(form.variantCount || 0) }, (_, index) => Number(form[`variantSplit.${index}`]));
   if (!Number.isInteger(Number(form.variantCount || 0)) || Number(form.variantCount || 0) < 2) missing.push("至少选择 2 个不同的非草稿内容版本");
   if (versions.some((version) => !version) || new Set(versions).size !== versions.length) missing.push("至少选择 2 个不同的非草稿内容版本");
-  const sigs = versions.map((version) => audienceSignature(copy?.versions.find((item) => item.value === version))).filter(Boolean);
-  if (sigs.length === versions.length && new Set(sigs).size > 1) missing.push("所选版本的受众须一致");
+  if (mismatch) missing.push("所选版本的受众须一致");
   if (splits.some((split) => !Number.isInteger(split) || split <= 0 || split >= 100)) missing.push("每组分流为 1–99 的整数");
   if (splits.reduce((sum, split) => sum + split, 0) !== 100) missing.push("分流合计 100%");
   if ((form.note?.length ?? 0) > 255) missing.push("备注不超过 255 字");
@@ -663,8 +675,8 @@ export function ExperimentDrawer({ copies, versionText, onClose, onSubmit }: {
           </div>
           <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={!copy || count >= copy.versions.length ? "这条文案没有更多可选的版本" : undefined} onClick={addVariant}>添加一组</Button></div>
           <Facts>
-            <Fact k="受众（沿用文案）">{audienceText(first)}</Fact>
-            <Fact k="估算人数">{first?.estimatedAudience == null ? "—" : `约 ${first.estimatedAudience.toLocaleString()} 人（按现在的条件）`}</Fact>
+            <Fact k="受众（沿用文案）">{audienceText(audienceVersion)}</Fact>
+            <Fact k="估算人数">{audienceVersion?.estimatedAudience == null ? "—" : `约 ${audienceVersion.estimatedAudience.toLocaleString()} 人（按现在的条件）`}</Fact>
           </Facts>
           {!audienceConsistent && <Notice tone="warn">所选版本的受众不一致，换成受众相同的版本。</Notice>}
           <Field label="实验备注" help="选填，最多 255 字">
