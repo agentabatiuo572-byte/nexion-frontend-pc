@@ -1277,7 +1277,7 @@ function G4GenesisPage() {
           explain="下一张节点按哪个价卖：累计售出数落在哪一档就按哪一档的价格。已下单的订单按下单时的价格，不跟着改。" />
         <Stat label="今日分红" icon={dividendState.icon} tone={dividendState.tone === "ok" ? "ok" : dividendState.tone === "warn" ? "warn" : "role-other"}
           value={dividendState.text} sub={dividendState.sub}
-          explain="今天这一批（按业务日）真实发出去的节点数和金额，以批次实际入账为准。系统不保证每天什么时候自动发；今天还没发时，在「每日分红」里手动发放。" />
+          explain="今天这一批（按业务日）真实发出去的节点数和金额，以批次实际入账为准。系统不保证每天会自动发；今天还没发时，在「每日分红」里手动发放。" />
         <Stat label="没处理完的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
           sub={pendingCount > 0 ? "见上面的提醒" : "没有压着的申请"}
           explain="你在这台电脑上提交、还没处理完的申请。待审批是在等另一位超级管理员批准；结果未知是可能已经生效，先查询原结果。别人发起的在「操作记录与审批」看。" />
@@ -1344,7 +1344,7 @@ function G4GenesisPage() {
         <Panel title="每日分红" icon={Coins} tone="role-1"
           explain={<>
             <p>现有持仓每天的分红按「系列当前价 × 持仓数量 × 每日收益比例」算，逐个节点算到 6 位小数再合计。收益计算基数和发放曲线目前只是说明，不参与计算。</p>
-            <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。估算应发不等于已发，以批次实际入账为准。系统不保证每天什么时候自动发；今天还没发时，点「重新发放今日收益」。</p>
+            <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。估算应发不等于已发，以批次实际入账为准。系统不保证每天会自动发；今天还没发时，点「重新发放今日收益」。</p>
           </>}
           actions={(allowed("finprod_g4_write") || paramApproval.record(dividend.batchNo))
             ? <span className="g4x-head-actions">{batchRerun && <StatusTag tone="done" explain="今天这一批已经重新发放过；再点一次会按真实待付金额判断，没有待付时不新付钱。">今天已重发</StatusTag>}<Button size="sm" variant={batchRerun ? "secondary" : "primary"} disabledReason={rerunDisabledReason} onClick={runRerunBatch}>重新发放今日收益</Button></span>
