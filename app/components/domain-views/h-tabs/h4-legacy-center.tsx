@@ -42,7 +42,7 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
-import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
+import { fetchAdminRaffles, RAFFLE_READBACK_ADVANCED, type AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
@@ -573,8 +573,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           { key: "reward", label: "奖励", current: "", placeholder: "如 100 UVT", required: false, explain: "没有玩法规则的活动只认正数的 UVT 或 USDT。" },
           { key: "condition", label: "活动说明", current: "", placeholder: "如 邀请好友注册，双方都有奖励", required: false, wide: true, help: "写给用户看的话，不填代码",
             explain: "存成说明的原文：用户的语言和英文都没填说明时，App 显示这段。建好后到卡片底部「App 上的文字」填各语言。" },
-          { key: "__more", label: "其余设置", current: "hide", inputKind: "select", options: ["hide", "show"], optionLabels: { hide: "收起，没填的用默认值", show: "展开逐项填写" }, required: false, wide: true, explain: "只控制状态、目标值、地区、App 跳转、时间、主推、统计效果这几项显示不显示，这一项本身不提交。已填的值收起后照样提交；没填的按默认值：进行中、目标值 1、不限地区、不跳转、不设时间、不主推、不统计。" },
-          { key: "state", label: "状态", current: "ongoing", inputKind: "select", options: ["ongoing", "upcoming", "ended"], optionLabels: { ongoing: "进行中", upcoming: "预告", ended: "已结束" }, explain: "这一项照原样提交，但建成后一律是「预告」，不会因为选了「进行中」就开放。", visibleWhen: { key: "__more", equals: "show" } },
+          { key: "__more", label: "其余设置", current: "hide", inputKind: "select", options: ["hide", "show"], optionLabels: { hide: "收起，没填的用默认值", show: "展开逐项填写" }, required: false, wide: true, explain: "只控制状态、目标值、地区、App 跳转、时间、主推、统计效果这几项显示不显示，这一项本身不提交。已填的值收起后照样提交；没填的按默认值：预告、目标值 1、不限地区、不跳转、不设时间、不主推、不统计。" },
+          { key: "state", label: "状态", current: "upcoming", inputKind: "select", options: ["upcoming"], optionLabels: { upcoming: "预告" }, explain: "新建活动一律建成预告。建好后到「App 上的文字」补齐中文、越南语和英文文案，再按现有流程开启；需要审批时提交 A2。", visibleWhen: { key: "__more", equals: "show" } },
           { key: "targetValue", label: "目标值", current: "", placeholder: "留空按 1", inputKind: "number", min: 1, max: 1_000_000_000, step: 1, required: false, visibleWhen: { key: "__more", equals: "show" } },
           { key: "geo", label: "地区", current: "", placeholder: "如 VN / GLOBAL", required: false, visibleWhen: { key: "__more", equals: "show" } },
           { key: "href", label: "App 跳转", current: "", placeholder: "如 /pages/store/store", required: false, help: "只能填 /pages/ 开头的页面", visibleWhen: { key: "__more", equals: "show" } },
@@ -590,7 +590,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           id: String(bv.id || "").trim(),
           name: String(bv.name || "").trim(),
           kind: bv.kind || "discount",
-          state: bv.state || "ongoing",
+          state: "upcoming",
           reward: String(bv.reward || "").trim(),
           condition: String(bv.condition || "").trim(),
           targetValue: bv.targetValue?.trim() ? Number(bv.targetValue) : 1,
@@ -978,11 +978,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const refreshAll = async () => {
     await reloadH4Approvals();
     await reload();
-    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), import("@/lib/admin/genesis-raffle-client").then(m => m.fetchAdminRaffles())]);
+    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), fetchAdminRaffles()]);
     window.dispatchEvent(new CustomEvent("admin-h4-readback", { detail: {
       rules: rules.status === "fulfilled" ? rules.value : undefined, ruleError: rules.status === "rejected" ? displayAdminError(rules.reason) : "",
-      raffles: raffles.status === "fulfilled" ? raffles.value : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
+      raffles: raffles.status === "fulfilled" ? raffles.value.rows : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
     } }));
+    if (raffles.status === "fulfilled" && raffles.value.advanced) toast(RAFFLE_READBACK_ADVANCED);
   };
   const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);

@@ -9,10 +9,11 @@ import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
 import type { HCtx } from "./types";
-import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
+import { fetchAdminRaffles, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
 import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
@@ -64,10 +65,19 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   const conflictReview = useRef<HConflictReviewRequired | null>(null);
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
-  const load = async () => {
+  const load = async (afterWrite = false) => {
     const own = ++generation.current; setLoading(true); setError(""); setReadFailed(false);
-    try { const values = await fetchAdminRaffles(); if (own === generation.current) { setRows(values); return values; } return null; }
-    catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); } return null; }
+    try {
+      const result = await fetchAdminRaffles();
+      if (own !== generation.current) return null;
+      setRows(result.rows);
+      if (result.advanced) ctx.toast(RAFFLE_READBACK_ADVANCED);
+      return result;
+    } catch (cause) {
+      if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); }
+      if (afterWrite && isOutcomeUnknownError(cause)) throw cause;
+      return null;
+    }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
@@ -125,9 +135,12 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
         const own = generation.current; setSaving(true); setError("");
         const complete = async (result: unknown) => {
           if (own !== generation.current) return;
-          if (isH4ApprovalReceipt(result)) await onApprovalCompleted?.();
-          await load(); setDraft(null); setBase(null);
-          ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "创世抽奖设置已保存");
+          const approval = isH4ApprovalReceipt(result);
+          if (approval) await onApprovalCompleted?.();
+          const readback = await load(!approval);
+          setDraft(null); setBase(null);
+          if (approval) ctx.toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+          else if (!readback?.advanced) ctx.toast("创世抽奖设置已保存");
         };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
@@ -156,7 +169,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
           if (isHGrowthReadConflict(cause)) setStale(savedDraft.titleZh || savedDraft.id);
           if (isHGrowthReadConflict(cause) && !originalKey) {
             ctx.openActionConfirm(null);
-            const values = await load(), latest = values?.find(row => row.id === savedDraft.id);
+            const values = await load(), latest = values?.rows.find(row => row.id === savedDraft.id);
             if (latest && previous) {
               setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
               const comparable = (value: RaffleDraft, enabled: boolean) => ({ ...value,
@@ -291,10 +304,13 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
     choose(latest); setDraft(next); setEnabled(nextEnabled); setMerged(kept.length);
   };
   const keepMine = () => { const current = conflictReview.current; if (!current) return; setError(""); current.confirm(); pendingChanged(v => v + 1); };
+  const pendingSave = draft ? h4PendingFor(`H/h4_genesis_raffle/${draft.id}`) : undefined;
   const savedUnread = !!draft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${draft.id}`);
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
   const showSaved = savedUnread && (!error || readFailed);
+  const saveNoticeTitle = showSaved ? "已保存，但没读到最新的这一期" : pendingSave && !pendingSave.acknowledged ? "操作结果未知"
+    : stale ? "没有保存：最新的这一期也没读到" : "没有保存";
   const formLocked = !write || saving || savedUnread || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`) || !!review;
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
   return <Panel id="h4l-raffle" title="创世抽奖" icon={Trophy} tone="role-4" sub={loading ? undefined : `最近 ${rows.length} 期`}
@@ -373,7 +389,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
             <Button size="sm" icon={<Plus size={13} aria-hidden />} disabled={formLocked || locked || draft.prizes.length >= 20} onClick={() => setDraft({ ...draft, prizes: [...draft.prizes, { id: `prize-${Date.now().toString(36)}-${draft.prizes.length}`, nameZh: "", nameEn: "", nameVi: "", rewardType: "UVT", amount: "", quantity: 1 }] })}>添加奖项</Button>
           </div>
         </fieldset>
-        {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={showSaved ? "已保存，但没读到最新的这一期" : stale ? "没有保存：最新的这一期也没读到" : "没有保存"}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
+        {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={saveNoticeTitle}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
       </fieldset></div>}
     </Drawer>
   </Panel>;

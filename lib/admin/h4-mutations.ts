@@ -7,7 +7,7 @@ import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, is
 import { growthRequest, validateH4OverviewEvents } from "./h-client";
 import { parseEventRule } from "./event-rules-client";
 import { trimStoredContent } from "./content-language-rules";
-import { parseAdminRaffle, RAFFLE_LANGUAGES } from "./genesis-raffle-client";
+import { parseAdminRaffle, RAFFLE_LANGUAGES, type AdminRaffle } from "./genesis-raffle-client";
 import { h4CommandStores, type H4StoredCommand } from "./h4-command-store";
 import { findHighOp } from "./high-ops-registry";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -30,6 +30,7 @@ export type H4UploadRestoration = { canAutoRestore: boolean; restored: boolean; 
 export type H4Command = H4StoredCommand & {
   store: keyof typeof h4CommandStores; owner: number; scope: string; action: string; reason: string;
   request: Direct | { proposal: Proposal }; acknowledged?: boolean;
+  raffleReceipt?: Pick<AdminRaffle, "id" | "revision">;
   asset?: UploadedAsset;
   uploadTarget?: H4UploadTarget;
   restoration?: H4UploadRestoration;
@@ -119,6 +120,20 @@ export function pendingH4Commands(): H4Command[] {
 export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.scope === scope && !r.asset && (!r.acknowledged || "proposal" in r.request));
 /** Validated direct successes awaiting a current read, never unknown outcomes. */
 export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowledged && !r.asset && !("proposal" in r.request));
+export function checkH4RaffleReadback(rows: AdminRaffle[]) {
+  let advanced = false;
+  for (const record of confirmedH4Saves()) {
+    const { raffleReceipt, ...original } = record;
+    if (!raffleReceipt) continue;
+    const current = rows.find(row => row.id === raffleReceipt.id);
+    if (!current || current.revision < raffleReceipt.revision) {
+      retain({ ...original, acknowledged: false });
+      throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");
+    }
+    advanced ||= current.revision > raffleReceipt.revision;
+  }
+  return advanced;
+}
 export const recoveredH4Uploads = () => pendingH4Commands().filter(r => r.scope.includes("/h4_media/") && !!r.asset).map(r => ({ ...r,
   restoration: r.restoration ?? { canAutoRestore: !!r.uploadTarget, restored: false, reason: r.uploadTarget ? "等待在原对象中恢复" : "旧记录未保存目标对象，请重新选择" },
 }));
@@ -284,6 +299,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
   if (r.acknowledged) throw new Error("H4_REFRESH_REQUIRED");
   try { retain(r); } catch (error) { if (!recovery) forget(r); throw error; }
   let result: Record<string, any>;
+  let raffleReceipt: H4Command["raffleReceipt"];
   const media = !("proposal" in r.request) && r.request.path.startsWith("/media/uploads?");
   try {
     if ("proposal" in r.request) {
@@ -316,12 +332,13 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
         parseEventRule(result);
       } else if (parts[1] === "genesis-raffle") {
         const saved = parseAdminRaffle(result);
-        if (Object.values(RAFFLE_LANGUAGES).some(({ suffix }) =>
+        if (saved.prizes.length !== b.prizes.length || Object.values(RAFFLE_LANGUAGES).some(({ suffix }) =>
           saved[`title${suffix}`] !== b[`title${suffix}`]
           || b.prizes.some((prize: { id: string } & Record<string, unknown>) =>
             saved.prizes.find(item => item.id === prize.id)?.[`name${suffix}`] !== prize[`name${suffix}`]))) {
           throw new OutcomeUnknownError("H4_RESPONSE_INVALID");
         }
+        raffleReceipt = { id: saved.id, revision: saved.revision };
       } else if (parts[1] === "quest-events" && !(parts[2] === "events" && request.method === "DELETE")
         && !request.path.endsWith("/retire")) {
         validateH4OverviewEvents(result.events);
@@ -341,7 +358,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
     }
     throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");
   }
-  retain({ ...r, acknowledged: true, ...(media ? { asset: result as UploadedAsset } : {}) });
+  retain({ ...r, acknowledged: true, ...(raffleReceipt ? { raffleReceipt } : {}), ...(media ? { asset: result as UploadedAsset } : {}) });
   if (media) {
     // Local file cleanup is outside the write-outcome catch: it cannot turn a
     // validated successful upload into an unknown backend result.

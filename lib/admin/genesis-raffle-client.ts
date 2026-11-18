@@ -1,5 +1,5 @@
 import { growthRequest } from "./h-client";
-import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
+import { checkH4RaffleReadback, h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
 import { blankCopiedContentLanguage, fillBlankContentLanguage } from "./content-language-rules";
 import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "./platform-experience-client";
 
@@ -8,6 +8,7 @@ export interface RafflePrize { id: string; nameZh: string; nameEn: string; nameV
 export interface RaffleDraft { id: string; titleZh: string; titleEn: string; titleVi: string; startsAt: string; drawAt: string; prizes: RafflePrize[]; }
 export interface AdminRaffle extends RaffleDraft { status: "DRAFT" | "OPEN" | "PROCESSING" | "DRAWN"; revision: number; totalEntries: number; titleTranslations?: RaffleTranslations | null; }
 export const RAFFLE_LANGUAGES = { zh: { suffix: "Zh", label: "中文" }, en: { suffix: "En", label: "英文" }, vi: { suffix: "Vi", label: "越南语" } } as const;
+export const RAFFLE_READBACK_ADVANCED = "本次保存已成功，当前配置已被后续修改。请核对最新配置。";
 export function raffleDraftError(value: RaffleDraft, requiredLanguages: readonly OperatingLanguageCode[] = OPERATING_LANGUAGE_CODES): string {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value.id)) return "本期编号需为 1–64 位字母、数字、下划线或短横线。";
   const missingTitles = requiredLanguages.filter(locale => !value[`title${RAFFLE_LANGUAGES[locale].suffix}`].trim());
@@ -47,19 +48,25 @@ export function parseAdminRaffle(value: unknown): AdminRaffle {
   if (!row || !["DRAFT", "OPEN", "PROCESSING", "DRAWN"].includes(row.status) || !Number.isSafeInteger(row.revision) || !Number.isSafeInteger(row.totalEntries) || row.totalEntries < 0 || !Array.isArray(row.prizes)) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
   // Drafts may be incomplete; only structural values are required on read.
   if (![row.id, row.titleZh, row.titleEn, row.titleVi, row.startsAt, row.drawAt].every(value => typeof value === "string")) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
+  if (row.prizes.some(prize => !prize || ![prize.id, prize.nameZh, prize.nameEn, prize.nameVi].every(value => typeof value === "string")
+    || !["UVT", "USDT", "DEVICE"].includes(prize.rewardType) || !Number.isSafeInteger(prize.quantity)
+    || (typeof prize.amount !== "number" && typeof prize.amount !== "string") || (prize.productNo != null && typeof prize.productNo !== "string"))) {
+    throw new Error("创世抽奖配置读取失败，请刷新后重试。");
+  }
   if ([row.titleTranslations, ...row.prizes.map(prize => prize?.nameTranslations)].some(map => map != null
     && (typeof map !== "object" || Array.isArray(map) || Object.values(map).some(value => value !== null && typeof value !== "string")))) {
     throw new Error("创世抽奖配置读取失败，请刷新后重试。");
   }
   return row;
 }
-export async function fetchAdminRaffles(): Promise<AdminRaffle[]> {
+export async function fetchAdminRaffles() {
   markH4Read("raffles", false);
   const result = await growthRequest<{ draws: unknown[] }>("/genesis-raffle");
   if (!Array.isArray(result?.draws)) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
   const rows = result.draws.map(parseAdminRaffle);
+  const advanced = checkH4RaffleReadback(rows);
   markH4Read("raffles", true);
-  return rows;
+  return { rows, advanced };
 }
 export async function saveAdminRaffle(draft: RaffleDraft, revision: number | null, enabled: boolean, reason: string, opening = revision !== null && enabled): Promise<AdminRaffle | H4ApprovalReceipt> {
   return h4CommandRequest(`/genesis-raffle${revision === null ? "" : `/${encodeURIComponent(draft.id)}`}`, {
