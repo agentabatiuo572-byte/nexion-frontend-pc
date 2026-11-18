@@ -49,7 +49,7 @@ import H4GenesisRaffle from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentGaps, gapWeight, OPTIONAL_TEXT, REQUIRED_TEXT, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
-  WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, casExpected, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
+  WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
   type LegacyEvent, type LocaleCode, type WheelTier,
 } from "./h4-legacy-parts";
@@ -383,7 +383,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const eventContent = model?.contentLocales?.event ?? {};
-  const missingFor = (event: LegacyEvent) => eventLocalizedContentGaps(eventContent[event.id], event.appUsesAuthoredRewardName);
+  const missingFor = (event: LegacyEvent) => eventLocalizedContentGaps(eventContent[event.id], event.appUsesAuthoredRewardName, event.copyReadiness);
   /** 还没开放，或玩法还能首次开启：必填语言都要填（和开放、开启时的检查同一个条件）。 */
   const allLocalesRequired = (event: LegacyEvent) => {
     const rule = rules?.find((row) => row.eventCode === event.id);
@@ -393,6 +393,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const rewardFromRule = (event: LegacyEvent) => text(event.kind, "").toLowerCase() !== "wheel"
     && (event.rewardCopyOnly ?? (rules !== null && H4_EVENT_RULE_CODES.has(event.id) && !!rules.find((row) => row.eventCode === event.id))) === true;
   const weighedGaps = (event: LegacyEvent) => {
+    if (event.copyReadiness) return { must: missingFor(event), soft: [] };
     const requiresAll = allLocalesRequired(event), fromRule = rewardFromRule(event);
     const gaps = contentGaps(eventContent[event.id])
       .filter(gap => gap.field !== "rewardName" || event.appUsesAuthoredRewardName !== false)
@@ -458,7 +459,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
     if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
-    const current = localizedValue(code, field, locale);
+    const expectedValue = eventContent[code]?.[locale]?.[field];
+    const current = text(expectedValue, "");
     const saved = localizedDraft.current;
     const draft = saved?.code === code && saved.field === field && saved.locale === locale ? saved : undefined;
     const event = (model?.events ?? []).find((row) => row.id === code);
@@ -478,7 +480,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       run: async (reason, value) => {
         if (!value) return;
         localizedDraft.current = { code, field, locale, value, reason };
-        const result = await updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason);
+        const result = await updateH4LocalizedContent(code, field, locale, value, expectedValue, reason);
         localizedDraft.current = null;
         if (await apply(result)) {
           setContentRefresh(current => current + 1);
