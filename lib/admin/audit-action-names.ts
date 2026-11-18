@@ -357,6 +357,7 @@ export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   "H3_MONTHLY_REWARD_CHANGED": "调整月度挑战奖励",
   "H3_PROMO_BANNER_CHANGED": "调整推广横幅",
   "H3_QUEST_CLAIMED": "领取用户任务",
+  "H3_QUEST_EVENT_BINDING_UPDATED": "调整任务完成条件",
   "H3_QUEST_COMPLETED": "完成用户任务",
   "H3_SHARE_EVENT_RECORDED": "记录分享事件",
   "H4_EVENT_CLAIMED": "领取活动",
