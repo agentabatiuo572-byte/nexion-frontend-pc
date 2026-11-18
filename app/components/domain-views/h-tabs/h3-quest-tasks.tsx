@@ -19,6 +19,7 @@ import {
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
 import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
+import { fetchOperatingLanguages } from "@/lib/admin/platform-experience-client";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -549,6 +550,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
+        if (enabling && taskKind === "MISSION" && task.missionNames != null && !confirmation.current?.commandKey) {
+          const [raw, languages] = await Promise.all([fetchH3QuestEvents("tasks"), fetchOperatingLanguages()]);
+          const latest = parseH3Model(raw);
+          const names = [...latest.dayOneTasks, ...latest.weeklyTier1, ...latest.weeklyTier2]
+            .find((row) => row.taskCode === taskCode)?.missionNames;
+          if (names != null && languages.some((language) => names[language] === undefined)) throw new Error("H3_MISSION_NAMES_REQUIRED");
+        }
         await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}/status`, method: "PATCH", target: taskCode,
           body: { taskKind, targetStatus, expectedStatus: status }, before: status, after: targetStatus, success: `任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}` }, reason);
       },
@@ -1042,7 +1050,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const active = all.filter((task) => taskStatusOf(task) === "active");
   const stuck = all.filter(activeUnbound);
   const codes = new Set(all.map(codeOf));
-  const orphans = bindings.filter((binding) => Number(binding.status) === 1 && !codes.has(binding.questCode));
+  const orphans = bindings.filter((binding) => binding.status === 1 && binding.targetInTaskCatalog !== true && !codes.has(binding.questCode));
   const h1 = model.phaseMultiplierReadonly ?? {};
   const currentPhase = cleanPhaseKey(text(h1.currentPhase, ""));
   const h1Value = decimalOf(h1.value);
@@ -1435,7 +1443,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               {bindings.map((binding) => {
                 const enabled = Number(binding.status) === 1;
                 const task = bindingTaskName(binding.questCode);
-                return <Tr key={binding.bindingCode} mark={enabled && !task ? "danger" : undefined}>
+                return <Tr key={binding.bindingCode} mark={enabled && !task && binding.targetInTaskCatalog !== true ? "danger" : undefined}>
                   <Td grow><Cell main={bindingEventText(binding)} title={`${binding.bindingCode} · ${producerText(binding.producer)} · ${binding.eventType}`} sub={<><span data-mono="">{binding.bindingCode}</span>{` · ${producerText(binding.producer)} · `}<span data-mono="">{binding.eventType}</span></>} /></Td>
                   <Td>{task
                     ? <Cell main={task} sub={<span data-mono="">{binding.questCode}</span>} />
@@ -1542,7 +1550,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const promoFold = (
     <Fold title="首页备用卡" icon={Megaphone} tone="role-other"
       summary={<span className="h3-retired-sum"><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>{promoStatus ? "以前存的值，仅供查看" : "没读到以前存的值"}</span>}
-      explain="这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。">
+      explain={promo.promoBannerConfigNote ?? "这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。"}>
       <ConfigList label="首页备用卡以前存的值">
         <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"} />
         <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} />

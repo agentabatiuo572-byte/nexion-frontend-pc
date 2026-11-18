@@ -22,6 +22,7 @@ export type A7MenuNode = {
   sortOrder: number;
   status: number;
   version: string;
+  legacyNavigationNode?: boolean;
 };
 
 export type A7MenuTreeNode = A7MenuNode & {

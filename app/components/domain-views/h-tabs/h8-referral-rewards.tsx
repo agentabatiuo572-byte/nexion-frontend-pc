@@ -197,13 +197,16 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const pendingPolicy = commands.some(r => r.kind === "param-approval" && r.ticket?.status === "pending");
   const freshBlocked = !readReady || loading ? displayAdminError(new Error("H8_OVERVIEW_REQUIRED")) : undefined;
 
-  const finishCommand = async (record: H8RewardCommand, ticket: Awaited<ReturnType<typeof sendH8RewardCommand>>) => {
+  const finishCommand = async (record: H8RewardCommand, { ticket, unchanged }: Awaited<ReturnType<typeof sendH8RewardCommand>>) => {
     setMc(current => current?.commandKey === record.commandKey ? null : current);
     currentRead.current.ready = false;
     setReadReady(false);
     changed();
     const original = record.original;
-    if (original?.kind === "direct") {
+    if (unchanged) {
+      await load();
+      ctx.toast("和现在一样，没有改动");
+    } else if (original?.kind === "direct") {
       const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === original.paramKey)!;
       setSavedUnread({ param, value: original.value });
       if (await load("", false, true)) ctx.toast(param.key === "enabled" ? "邀请奖励已停用" : `${param.label} 已更新为 ${valueText(param, original.value)}`);
@@ -216,10 +219,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const request = confirmation.current;
     if (request && !recovering) request.commandKey = record.commandKey;
     try {
-      const ticket = await sendH8RewardCommand(record, recovering);
+      const result = await sendH8RewardCommand(record, recovering);
       // 重建后提交成功，「没有保存」的提示随之清掉（同 H3、H5）。
       setStale(null);
-      await finishCommand(record, ticket);
+      await finishCommand(record, result);
     } catch (error) {
       changed();
       // A resolved recovery must not retain a closure that can dispatch the old request.
@@ -244,7 +247,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       }
       const ticket = await queryH8RewardCommand(record);
       if (!ticket) return false;
-      await finishCommand(record, ticket);
+      await finishCommand(record, { ticket, unchanged: false });
       return true;
     } finally { changed(); }
   };

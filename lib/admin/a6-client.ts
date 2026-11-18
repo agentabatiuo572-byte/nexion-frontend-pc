@@ -37,6 +37,7 @@ export type A6RoleDetail = {
   builtin: boolean;
   permissionCodes: string[];
   menuIds: number[];
+  legacyNonReadPermissionCodes?: string[];
 };
 
 export type A6RoleCreateInput = { roleCode: string; roleName: string; remark?: string; status?: number };

@@ -315,7 +315,7 @@ export default function A8Permissions() {
         {detailLoading || !detail ? <JudgmentPoints loading rows={[]} /> : (
           <>
             <JudgmentPoints rows={[
-              { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.menuCodePath)}</span> },
+              { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.description ?? detail.menuCodePath)}</span> },
               { label: "资金风险", value: detail.amplifies ? <StatusTag tone="warn" icon={Coins} explain={AMPLIFIES_EXPLAIN}>可能多付钱</StatusTag> : "没有标记", state: detail.amplifies ? "warn" : undefined },
               { label: "已绑定角色", value: rolesReady && unreadableRoles.length === 0
                 ? <span className="a8-roles">{rolesWith(detail.permissionCode).length === 0 ? <span className="a8-muted">没有角色</span> : rolesWith(detail.permissionCode).map(roleChip)}</span>

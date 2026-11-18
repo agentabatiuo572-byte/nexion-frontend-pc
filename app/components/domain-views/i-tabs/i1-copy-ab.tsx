@@ -56,7 +56,7 @@ type VersionOptionRow = {
   sortOrder: number; revision: number; usageCount: number;
 };
 type ExpRow = {
-  id: string; copyKey: string; variants: { name: string; split: number; cvr: number; version: string; impressions?: number; conversions?: number }[];
+  id: string; copyKey: string; variants: { name: string; split: number; cvr: number | null; version: string; impressions?: number; conversions?: number }[];
   audience: string; estimatedAudience?: number; impressions: string; conversions: string; state: string; note: string;
 };
 type Editor =
@@ -490,7 +490,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const EXPS: ExpRow[] = (data?.experiments ?? []).map((row) => ({
     id: row.id,
     copyKey: row.copyKey,
-    variants: row.variants.map((v) => ({ name: v.name, split: v.split, cvr: Number(v.cvr), version: v.version ?? "", impressions: v.impressions, conversions: v.conversions })),
+    variants: row.variants.map((v) => ({ name: v.name, split: v.split, cvr: v.cvr ?? null, version: v.version ?? "", impressions: v.impressions, conversions: v.conversions })),
     audience: row.audience,
     estimatedAudience: row.estimatedAudience,
     impressions: row.impressions,
@@ -1160,7 +1160,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       statedBrief: { impact: "按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组满 100 人看到、转化率唯一最高才能采纳，内容和位置按发布的要求检查；不做显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
-        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，不能采纳"}</Fact>
+        <Fact k="按页面的数" tone={winner?.cvr != null ? "ok" : "warn"}>{winner?.cvr != null ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，不能采纳"}</Fact>
         {copy && i18nFact(copy.i18nKey)}
       </Facts>,
       content: <>
@@ -1188,7 +1188,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       }
       return tied ? undefined : best.name;
     }
-    const max = Math.max(...exp.variants.map((variant) => variant.cvr));
+    const rates = exp.variants.flatMap((variant) => variant.cvr === null ? [] : [variant.cvr]);
+    if (rates.length !== exp.variants.length) return undefined;
+    const max = Math.max(...rates);
     const top = exp.variants.filter((variant) => variant.cvr === max);
     return top.length === 1 ? top[0].name : undefined;
   }

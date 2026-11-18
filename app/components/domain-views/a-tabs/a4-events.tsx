@@ -54,7 +54,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { ACtx, ActionConfirmReq } from "./types";
 import {
   A4RecoveryNotice, H3_TYPE_TEXT, LIFECYCLE_AFTER, LIFECYCLE_NOW, LIFECYCLE_ORDER, LIFECYCLE_TEXT, LifeDots, NEXT_LIFECYCLE, PRODUCER_TEXT, PROPERTY_TYPE_TEXT, REDRIVE_STATUS,
-  consumerParts, eventDesc, moduleText, minute, propertyList, waited, zoneNote, type A4Lifecycle, type A4RecoveryRow, type A4Schema,
+  consumerParts, eventDesc, moduleText as legacyModuleText, minute, propertyList, waited, zoneNote, type A4Lifecycle, type A4RecoveryRow, type A4Schema,
 } from "./a4-event-views";
 
 /* ────────────────── helpers ────────────────── */
@@ -344,6 +344,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const COMMON_FIELDS = overview?.commonFields ?? [];
   const KPI_DIMENSION_PARAMS = overview?.dimensionParams ?? [];
   const KPI_FORMULAS = overview?.kpiFormulas ?? [];
+  const moduleText = (code: string, displayName?: string | null) => displayName ?? overview?.domainDisplayNames?.[code] ?? legacyModuleText(code);
 /**
  * 扩展批次行操作的目标名。
  *
@@ -1292,8 +1293,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const shown = parts.slice(0, 2);
     return <span className="a4-uses" title={full}>{shown.map((part, index) => <span key={part.key} className="a4-nowrap">{part.text}{index < shown.length - 1 ? "、" : ""}</span>)}{parts.length > 2 && <span className="a4-dim a4-nowrap">等 {parts.length} 个</span>}</span>;
   };
-  const moduleCell = (code: string) => {
-    const name = moduleText(code);
+  const moduleCell = (code: string, displayName?: string | null) => {
+    const name = moduleText(code, displayName);
     return name ? <span title={`模块代码 ${code}`}>{name}</span> : <span data-mono>{code}</span>;
   };
   const schemaActions = (schema: A4Schema) => {
@@ -1346,13 +1347,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           </tr></thead>
           <tbody>
             {shownSchemas.slice((schemaPage - 1) * schemaPageSize, schemaPage * schemaPageSize).map((schema) => {
-              const desc = eventDesc(overview, schema.eventName);
+              const desc = schema.displayName ?? eventDesc(overview, schema.eventName);
               const count = propertyList(schema.properties).length;
               return (
                 <Tr key={schema.eventName} selected={detailEvent?.from === "list" && detailEvent.name === schema.eventName}
                   onOpen={() => setDetailEvent({ name: schema.eventName, from: "list" })}>
                   <Td><span className="a4-ename">{desc && <span className="a4-ename-desc">{desc}</span>}<span data-mono>{breakable(schema.eventName)}</span></span></Td>
-                  <Td>{moduleCell(schema.ownerDomain)}</Td>
+                  <Td>{moduleCell(schema.ownerDomain, schema.ownerDisplayName)}</Td>
                   <Td align="right">{count ? <><span data-num>{count}</span> 个</> : <span className="a4-dim">—</span>}</Td>
                   <Td><LifeDots state={schema.lifecycleState} /></Td>
                   <Td>{consumersOf(schema.consumers)}</Td>
@@ -1383,7 +1384,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           {schemaLookup && (
             <div className="a4-lookup-hit">
               <span className="a4-pair"><span data-mono>{schemaLookup.eventName}</span><LifeDots state={schemaLookup.lifecycleState} /></span>
-              <span className="a4-dim">{moduleText(schemaLookup.ownerDomain) ?? schemaLookup.ownerDomain} · {propertyList(schemaLookup.properties).length} 个字段</span>
+              <span className="a4-dim">{moduleText(schemaLookup.ownerDomain, schemaLookup.ownerDisplayName) ?? schemaLookup.ownerDomain} · {propertyList(schemaLookup.properties).length} 个字段</span>
               <Button size="sm" onClick={() => setDetailEvent({ name: schemaLookup.eventName, from: "lookup" })}>查看详情</Button>
             </div>
           )}
@@ -1574,9 +1575,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <Tr key={batch.id} selected={batchIdx === index} onOpen={() => setBatchIdx(index)}>
                   <Td><span className="a4-ename" title={`工单 ${batch.id}`}><span className="a4-ename-desc">{operatorCopyText(batch.title)}</span><span data-mono>{batch.details.length > 0 ? breakable(batch.details[0].item) : `工单 ${batch.id}`}</span></span></Td>
                   <Td>{batch.newDomains.length > 0
-                    ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined} title={moduleText(domain.name) ? `模块代码 ${domain.name}` : undefined}>{moduleText(domain.name) ?? <span data-mono>{domain.name}</span>}</span>)}</span>
+                    ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => {
+                      const name = moduleText(domain.name, domain.displayName);
+                      return <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined} title={name ? `模块代码 ${domain.name}` : undefined}>{name ?? <span data-mono>{domain.name}</span>}</span>;
+                    })}</span>
                     : <span className="a4-dim">核对后台操作事件清单</span>}</Td>
-                  <Td><Cell main={batch.proposer} title={batch.proposer} /></Td>
+                  <Td><Cell main={batch.proposer ?? "—"} title={batch.proposer ?? undefined} /></Td>
                   <Td><StatusTag tone={state.tone === "role-other" ? "neutral" : state.tone}>{state.label}</StatusTag></Td>
                   <Td grow><span className="a4-clamp" title={operatorCopyText(batch.impact)}>{operatorCopyText(batch.impact)}</span></Td>
                   <Td sticky="end" align="right" data-fit="">
@@ -1664,7 +1668,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
       {/* ───── 单个事件的详情：上线进度、字段、谁在用 ───── */}
       <Drawer open={!!detailSchema} onClose={() => setDetailEvent(null)} icon={BookOpen} tone="role-2"
-        title={detailSchema ? eventDesc(overview, detailSchema.eventName) ?? "事件详情" : "事件详情"}
+        title={detailSchema ? detailSchema.displayName ?? eventDesc(overview, detailSchema.eventName) ?? "事件详情" : "事件详情"}
         sub={detailSchema ? <span data-mono>{detailSchema.eventName}</span> : undefined}
         nav={detailIndex >= 0 ? {
           hasPrev: detailIndex > 0, hasNext: detailIndex < shownSchemas.length - 1,
@@ -1683,6 +1687,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           const at = LIFECYCLE_ORDER.indexOf(detailSchema.lifecycleState);
           const next = NEXT_LIFECYCLE[detailSchema.lifecycleState];
           const fields = propertyList(detailSchema.properties);
+          const ownerDisplayName = moduleText(detailSchema.ownerDomain, detailSchema.ownerDisplayName);
           return <>
             <div className="a4-detail-life">
               <Steps label="上线进度" items={LIFECYCLE_ORDER.map((state, index) => ({ label: LIFECYCLE_TEXT[state], state: index < at ? "done" as const : index === at ? "current" as const : "todo" as const }))} />
@@ -1693,7 +1698,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               </Facts>
             </div>
             <Facts>
-              <Fact k="产生模块">{moduleText(detailSchema.ownerDomain) ? <>{moduleText(detailSchema.ownerDomain)} <span className="a4-dim" data-mono>{detailSchema.ownerDomain}</span></> : <span data-mono>{detailSchema.ownerDomain}</span>}</Fact>
+              <Fact k="产生模块">{ownerDisplayName ? <>{ownerDisplayName} <span className="a4-dim" data-mono>{detailSchema.ownerDomain}</span></> : <span data-mono>{detailSchema.ownerDomain}</span>}</Fact>
               <Fact k="发送方">{PRODUCER_TEXT[detailSchema.producer] ?? detailSchema.producer}{!PRODUCER_TEXT[detailSchema.producer] && <> <span className="a4-dim">（登记时写的说明）</span></>}</Fact>
               <Fact k="谁在用">{consumersOf(detailSchema.consumers, true)}</Fact>
               <Fact k="由服务器记录">{detailSchema.serverAuthoritative ? "是" : "否"}</Fact>
@@ -1720,9 +1725,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {batch && <>
           <Facts>
             <Fact k="状态" tone={BATCH_STATE[batch.state].tone === "warn" ? "warn" : undefined}>{BATCH_STATE[batch.state].label}</Fact>
-            <Fact k="提出方">{batch.proposer}</Fact>
+            <Fact k="提出方">{batch.proposer ?? "—"}</Fact>
             <Fact k="影响">{operatorCopyText(batch.impact)}</Fact>
-            <Fact k="新模块">{batch.newDomains.length ? batch.newDomains.map((domain) => domain.name).join("、") : "—"}</Fact>
+            <Fact k="新模块">{batch.newDomains.length ? batch.newDomains.map((domain) => domain.displayName ?? domain.name).join("、") : "—"}</Fact>
           </Facts>
           <Table label="批次明细" className="a4-family-table">
             <thead><tr><Th>事件或项目</Th><Th>说明</Th></tr></thead>

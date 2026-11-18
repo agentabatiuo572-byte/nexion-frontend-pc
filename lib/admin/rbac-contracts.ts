@@ -76,6 +76,7 @@ export function normalizeA6Detail(raw: unknown) {
     builtin: flag(row.builtin, message),
     permissionCodes: strings(row.permissionCodes, message),
     menuIds: ids(row.menuIds, message),
+    legacyNonReadPermissionCodes: row.legacyNonReadPermissionCodes === undefined ? undefined : strings(row.legacyNonReadPermissionCodes, message),
   };
 }
 
@@ -98,6 +99,7 @@ function normalizeA7Node(raw: unknown): Record<string, unknown> & { children: Re
     sortOrder: integer(node.sortOrder, message),
     status,
     version: string(node.version, message),
+    legacyNavigationNode: node.legacyNavigationNode === undefined ? undefined : flag(node.legacyNavigationNode, message),
     roleBindingCount: wrapper.roleBindingCount === undefined ? undefined : integer(wrapper.roleBindingCount, message),
     activePermissionCount: wrapper.activePermissionCount === undefined ? undefined : integer(wrapper.activePermissionCount, message),
     children: wrapper.children.map(normalizeA7Node),
@@ -132,6 +134,7 @@ export function normalizeA8Permission(raw: unknown) {
   return {
     permissionCode: string(row.permissionCode, message),
     permissionName: optionalString(row.permissionName, message),
+    description: optionalString(row.description, message) || undefined,
     permType,
     menuId: row.menuId == null ? null : integer(row.menuId, message, 1),
     menuCodePath: string(row.menuCodePath, message),

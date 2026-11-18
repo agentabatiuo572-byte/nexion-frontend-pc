@@ -29,7 +29,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
-import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView, type NovaTemplateView } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -534,23 +534,26 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [tplDrawer, setTplDrawer] = useState(false);
-  const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
+  const [editTplSnapshot, setEditTplSnapshot] = useState<NovaTemplateView | null>(null);
+  const editTplChannel = editTplSnapshot?.channel ?? null;
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
   const newTpl = async () => {
     setRequiredLanguages(await getRequiredContentLanguages());
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
-    setEditTplChannel(null);
+    setEditTplSnapshot(null);
     setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
     setTplDrawer(true);
   };
   const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
+    const snapshot = data?.templates.find((template) => template.channel === t.ch);
+    if (!snapshot) return;
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
-    setEditTplChannel(t.ch);
+    setEditTplSnapshot(snapshot);
     setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") });
     setTplDrawer(true);
   };
-  const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
+  const closeTplDrawer = () => { setTplDrawer(false); setEditTplSnapshot(null); setTplForm(EMPTY_TEMPLATE); };
   const submitTpl = () => {
     const n = novas.find((x) => x.key === tplForm.channel);
     return openConfirm({ briefKind: "config",
@@ -580,8 +583,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         const copy = mapContentTitleBody(tplForm, required, "submit");
         if (templateCopyGap(copy)) throw new Error("NOVA_TEMPLATE_FIELDS_REQUIRED");
         const body = { ...tplForm, ...copy };
-        return runBackend(editTplChannel
-          ? actions.updateI2Template(editTplChannel, body, reason, data?.templates.find(t => t.channel === editTplChannel))
+        return runBackend(editTplSnapshot
+          ? actions.updateI2Template(editTplSnapshot.channel, body, reason, editTplSnapshot)
           : actions.createI2Template(body, reason),
         `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
       },
@@ -1012,7 +1015,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const templateChannelOptions = novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
     .map((n) => ({ value: n.key, label: `${channelName(n.key, n.name)}（${n.key}）` }));
-  const tplRetiredTranslations = !!editTplChannel && hasRetiredPlaceholder(...Object.values(data?.templates.find((t) => t.channel === editTplChannel)?.translations ?? {}).flatMap((t) => [t.title, t.body]));
+  const tplRetiredTranslations = !!editTplSnapshot && hasRetiredPlaceholder(...Object.values(editTplSnapshot.translations ?? {}).flatMap((t) => [t.title, t.body]));
   const missingTemplateCopy = templateCopyGap(mapContentTitleBody(tplForm, requiredLanguages, "submit"));
   const tplBlocked = lockReason(`channel:${tplForm.channel}`) || (!tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
     : missingTemplateCopy ? missingTemplateCopy.code === "en" ? "英语标题和正文都要填写。" : `填写${missingTemplateCopy.label}标题和正文`

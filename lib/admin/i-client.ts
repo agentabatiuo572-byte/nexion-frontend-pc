@@ -529,7 +529,8 @@ function i2TemplateWriteBody(body: Record<string, unknown>, reason: string, snap
   }
   // PC sends the six base-language fields and omits translations; the backend preserves them.
   validateI2TemplatePlaceholders(body, snapshot?.translations);
-  return JSON.stringify(withReason(body, reason));
+  const expectedRevision = snapshot?.revision;
+  return JSON.stringify(withReason(expectedRevision === undefined ? body : { ...body, expectedRevision }, reason));
 }
 
 export async function fetchI2NovaOverview(): Promise<NovaOverview> {
@@ -1279,7 +1280,7 @@ export type CopyVersionRow = {
 export type CopyExperimentRow = {
   id: string;
   copyKey: string;
-  variants: { name: string; split: number; cvr: number; version?: string | null; impressions?: number; conversions?: number }[];
+  variants: { name: string; split: number; cvr?: number | null; version?: string | null; impressions?: number; conversions?: number }[];
   audience: string;
   estimatedAudience?: number;
   impressions: string;
@@ -1344,6 +1345,7 @@ export type NovaTemplateView = {
   titleEn: string;
   bodyEn: string;
   status: string;
+  revision?: string;
   translations?: Record<string, { title: string; body: string }>;
 };
 

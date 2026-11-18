@@ -93,9 +93,11 @@ export interface G2EmergencyExchangeSwitch {
 }
 
 export interface G2QueueEstimate {
-  /** Raw queueEtaHours and queueEtaCopy configuration. Orders carry their own rendered ETA. */
+  /** Raw queue estimate configuration. Orders carry their own rendered ETA. */
   hours?: string | null;
   copy?: string | null;
+  copyZh?: string | null;
+  copyVi?: string | null;
 }
 
 export interface BackendOverview {

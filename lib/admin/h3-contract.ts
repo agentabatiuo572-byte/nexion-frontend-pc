@@ -1,4 +1,5 @@
 import type { H3QuestEventBinding } from "./h-client";
+import type { OperatingLanguageCode } from "./platform-experience-client";
 
 export type H3PendingApproval = {
   action: string | null;
@@ -24,11 +25,18 @@ export type H3PendingMissionCreation = {
   actionRoute: string | null;
 };
 
-export type H3Task = Record<string, any> & { contentState?: "UNKNOWN" | "DRAFT" | "OPENED"; pendingApproval?: H3PendingApproval | null };
+type H3MissionNames = Partial<Record<OperatingLanguageCode, string>>;
+
+export type H3Task = Record<string, any> & {
+  contentState?: "UNKNOWN" | "DRAFT" | "OPENED";
+  pendingApproval?: H3PendingApproval | null;
+  missionNames?: H3MissionNames | null;
+};
 
 export interface H3TaskContract extends Record<string, any> {
   missionCode?: string;
   pendingApproval?: H3PendingApproval | null;
+  missionNames?: H3MissionNames | null;
   completed24h?: number | null;
   b3Default?: boolean | number | string;
   retentionOnlyDefault?: boolean | number | string;
@@ -109,7 +117,7 @@ export type H3Model = {
   monthlyMissions: H3Task[];
   taskMonitor: Array<{ label: string; note: string }>;
   taskContracts: H3TaskContract[];
-  promoBanner: Record<string, any> & { targetDailyAsset?: string | null };
+  promoBanner: Record<string, any> & { targetDailyAsset?: string | null; promoBannerConfigNote?: string | null };
   contentLocales: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly: Record<string, any>;
   eventBindings: H3QuestEventBinding[];
@@ -132,6 +140,9 @@ export function parseH3Model(value: unknown): H3Model {
   const strings = (r: Record<string, any>, keys: string[]) => {
     if (keys.some(key => typeof r[key] !== "string")) throw new Error("H3_RESPONSE_INVALID");
   };
+  const validateMissionNames = (value: unknown) => {
+    if (value != null && Object.values(object(value)).some(name => typeof name !== "string" || !name.trim())) throw new Error("H3_RESPONSE_INVALID");
+  };
   const pendingApproval = (value: unknown) => {
     if (value === null) return;
     const pending = object(value);
@@ -152,6 +163,7 @@ export function parseH3Model(value: unknown): H3Model {
   strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
   for (const key of ["h3Stats", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
   const banner = object(row.promoBanner);
+  if (banner.promoBannerConfigNote != null) strings(banner, ["promoBannerConfigNote"]);
   const targetDailyAsset: unknown = banner.targetDailyAsset;
   if (targetDailyAsset !== undefined && targetDailyAsset !== null
     && (typeof targetDailyAsset !== "string" || !targetDailyAsset.trim())) {
@@ -202,6 +214,7 @@ export function parseH3Model(value: unknown): H3Model {
     row[key].forEach(object);
   }
   for (const contract of row.taskContracts) {
+    validateMissionNames(contract.missionNames);
     if (contract.pendingApproval !== undefined) pendingApproval(contract.pendingApproval);
     if (contract.completed24h === undefined) continue;
     strings(contract, ["missionCode"]);
@@ -214,6 +227,7 @@ export function parseH3Model(value: unknown): H3Model {
     if (!Array.isArray(basis.states) || basis.states.some(state => typeof state !== "string")) throw new Error("H3_RESPONSE_INVALID");
   }
   for (const task of [...row.dayOneTasks, ...row.weeklyTier1, ...row.weeklyTier2, ...row.monthlyMissions]) {
+    validateMissionNames(task.missionNames);
     if (task.pendingApproval !== undefined) pendingApproval(task.pendingApproval);
     strings(task, ["taskCode", "taskKind", "status", "reward"]);
     if (!task.taskCode || !["MISSION", "MONTHLY"].includes(task.taskKind) || !["active", "paused", "archived"].includes(task.status)) throw new Error("H3_RESPONSE_INVALID");
@@ -229,6 +243,11 @@ export function parseH3Model(value: unknown): H3Model {
     strings(item, ["bindingCode", "producer", "eventType", "questCode", "userIdField"]);
     if (!Number.isSafeInteger(item.status) || !["ORDER", "REFERRAL", "LEARNING", "DEVICE", "COMMISSION", "SYSTEM"].includes(item.producer)
       || !["user_id", "inviter_user_id"].includes(item.userIdField)) throw new Error("H3_RESPONSE_INVALID");
+    for (const key of ["targetInTaskCatalog", "targetActiveInTaskCatalog"]) {
+      const fact = item[key];
+      if (fact === 0 || fact === 1) item[key] = fact === 1;
+      else if (fact != null && typeof fact !== "boolean") throw new Error("H3_RESPONSE_INVALID");
+    }
   }
   return row as H3Model;
 }

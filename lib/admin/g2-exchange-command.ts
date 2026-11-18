@@ -45,7 +45,7 @@ export function listG2ExchangeCommands(adminId: number): G2PendingCommand[] {
     if (!match) throw new Error("原操作内容不完整，请到操作记录核对，勿重复提交。");
     const [, prefix, method, path, body] = match;
     const input = JSON.parse(body) as CommandBody;
-    const param = /^\/exchange\/params\/(userDailyCap|platformDailyCap|fee|feeMin|queueMode|queueEtaHours|queueEtaCopy)$/.exec(path);
+    const param = /^\/exchange\/params\/(userDailyCap|platformDailyCap|fee|feeMin|queueMode|queueEtaHours|queueEtaCopy(?:Zh|Vi)?)$/.exec(path);
     const validTarget = param ? method === "PATCH" && prefix === `g2-param-${param[1]}` && typeof input?.value === "string"
       : path === "/exchange/swap" ? method === "PATCH" && prefix === "g2-swap" && input?.enabled === false
         && Array.isArray(input.geoBlock) && input.geoBlock.every(country => typeof country === "string") && typeof input.triggerBasis === "string"

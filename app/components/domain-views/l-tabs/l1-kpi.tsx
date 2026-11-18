@@ -398,7 +398,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
 }
 
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
-/** 后端第 6 项写成了推送送达，事件实际是 Nova 站内通知发出。只改这页显示，等后端同步。 */
+/** 旧版第 6 项的名称和口径；新版使用概览里的定义。 */
 const NOVA_FX = "nova.push_clicked ÷ nova.push_sent";
 const NOVA_PLAIN = "消息推送点击人数 ÷ 发送人数";
 const NOVA_NOTE = "统计的是消息推送的发送和点击，不代表手机系统推送送达率。";
@@ -531,7 +531,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
 
   const data = localData;
   useEffect(() => { if (data) setReadAt(businessClock(Date.now())); }, [data]);
-  const rawKpis = (data?.kpis ?? []).map((item) => item.n === 6 ? { ...item, name: "消息推送点击率" } : item);
+  const legacyNotification = data?.kpis.some((item) => item.n === 6 && item.name === "Nova 推送点击");
+  const rawKpis = (data?.kpis ?? []).map((item) => legacyNotification && item.n === 6 ? { ...item, name: "消息推送点击率" } : item);
   const liveTotals = readL1LiveTotals(data);
 
   const draftSlices = { cohort: cohortFilter || undefined, phase: phaseFilter || undefined, locale: localeFilter || undefined, ref: refFilter || undefined };
@@ -694,7 +695,9 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     const PHASE_SWITCH_IDX = data?.phaseSwitchIndex == null ? -1 : num(data.phaseSwitchIndex, -1);
     const applicableCount = data?.applicableKpiCount ?? KPIS.length;
     const KPI_EXT = rec<KpiExt>(data?.kpiExt);
-    const KPI_PLAIN = Object.fromEntries(Object.entries(rec<string>(data?.kpiPlain)).map(([n, plain]) => [n, KPI_EXT[n]?.fx === NOVA_FX ? NOVA_PLAIN : plain]));
+    const plain = rec<string>(data?.kpiPlain);
+    const KPI_PLAIN = legacyNotification ? { ...plain, "6": NOVA_PLAIN } : plain;
+    const formula = (id: number, ext: KpiExt) => renderFx(!legacyNotification && ext.fx === NOVA_FX ? KPI_PLAIN[id] ?? ext.fx : ext.fx, ext.fxBold);
     const states = KPIS.map((item) => kpiStatus(item, ylOffset));
     const count = (state: KpiState) => states.filter((item) => item === state).length;
     const green = count("g");
@@ -727,7 +730,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       ...baseExt,
       num: k.numerator == null ? null : String(k.numerator),
       den: k.denominator == null ? null : String(k.denominator),
-      note: blankNote(kState, k) ?? (baseExt.fx === NOVA_FX ? NOVA_NOTE : NOTE_TEXT[baseExt.note] ?? baseExt.note),
+      note: blankNote(kState, k) ?? (legacyNotification && baseExt.fx === NOVA_FX ? NOVA_NOTE : NOTE_TEXT[baseExt.note] ?? baseExt.note),
     };
     const phase = rec(data?.currentPhase);
     const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
@@ -932,7 +935,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
               )}
               <Fold inset title="这项指标怎么算" summary={`指标 ${k.n} 的公式和开放批次`} explain={<AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss>}>
                 <div className="rd-stack">
-                  <div>{renderFx(ext.fx, ext.fxBold)}</div>
+                  <div>{formula(k.n, ext)}</div>
                   <p className="rd-note">开放批次：{batchText(k.vis)}</p>
                 </div>
               </Fold>
@@ -1027,7 +1030,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                   <Tr key={item.n}>
                     <Td><Cell num main={item.n} /></Td>
                     <Td><Cell main={<AutoGloss>{operatorCopyText(item.name)}</AutoGloss>} /></Td>
-                    <Td className="l1-rule-fx"><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={renderFx(KPI_EXT[item.n].fx, KPI_EXT[item.n].fxBold)} /></>} /></Td>
+                    <Td className="l1-rule-fx"><Cell full main={<><AutoGloss>{operatorCopyText(KPI_PLAIN[item.n] ?? "")}</AutoGloss><Explain label={`${operatorCopyText(item.name)}的公式`} content={formula(item.n, KPI_EXT[item.n])} /></>} /></Td>
                     <Td align="right"><Cell num main={tgtShort(item)} /></Td>
                     <Td><Cell main={batchText(item.vis)} /></Td>
                   </Tr>
