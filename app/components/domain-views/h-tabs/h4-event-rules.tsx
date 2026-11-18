@@ -321,7 +321,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
             }
             if (field.type === "regions") return <div key={field.key} className="h4-field" data-wide="">
               <Field label={field.label} help={`每行一个地区，国家用两位代码；地区名称 ${APP_VISIBLE_TEXT_HINT}`} explain="同一国家只能属于一个地区。用户加入时按已验证手机号归属国家确定地区。" error={regionNameError}>
-                <Textarea aria-label={field.label} rows={4} value={regions} onChange={event => setRegions(event.target.value)} placeholder={"Southeast Asia: VN, TH\nEurope: DE, FR"} />
+                <Textarea aria-label={field.label} rows={4} value={regions} onChange={event => { setRegions(event.target.value); if (error && error === regionNameError) setError(""); }} placeholder={"Southeast Asia: VN, TH\nEurope: DE, FR"} />
               </Field>
             </div>;
             if (field.type === "weekdays") return <div key={field.key} className="h4-field" data-wide="">
