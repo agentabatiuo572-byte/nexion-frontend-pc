@@ -37,6 +37,7 @@ import { useM3MessagePages } from "./use-m3-message-pages";
 
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
+type SendFlight = { commandKey?: string; image?: { id: string; outcome: "unused" | "submitted" | "sent" } };
 type TimeoutInput = { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string };
 type TimeoutCommand = { key: string; input: TimeoutInput; policy: ConversationTimeoutPolicy; operator: string };
 
@@ -308,16 +309,23 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const messageAnchor = useRef<{ id: string; offset: number } | null>(null);
   const messageScroll = useRef({ top: 0, bottom: true, touchY: 0 });
   const olderScrollIntent = useRef({ up: false, scrollbar: false, pointerY: 0, clientHeight: 0, scrollHeight: 0 });
-  const flights = useRef(new Map<string, { commandKey?: string }>());
+  const flights = useRef(new Map<string, SendFlight>());
   const [, refreshFlights] = useState(0);
-  const runCustomerCommand = async (customer: string, commandKey: string | undefined, action: (flight: { commandKey?: string }) => Promise<void>) => {
+  const runCustomerCommand = async (customer: string, commandKey: string | undefined, action: (flight: SendFlight) => Promise<void>) => {
     const slot = `${scopeIdentity}:${customer}`;
     if (flights.current.has(slot)) return;
-    const flight = { commandKey };
+    const flight: SendFlight = { commandKey };
     flights.current.set(slot, flight);
     refreshFlights(n => n + 1);
     try { await action(flight); }
     finally {
+      const image = flight.image;
+      if (image && useAdminAuth.getState().session?.adminId === adminId) {
+        if (image.outcome === "sent" && attachmentRef.current?.id === image.id) clearAttachment(false);
+        if (image.outcome === "unused" && attachmentRef.current?.id !== image.id) {
+          void supportClient.cancelAttachment(image.id, newKey()).catch(() => undefined);
+        }
+      }
       flights.current.delete(slot);
       refreshFlights(n => n + 1);
     }
@@ -758,7 +766,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const current = attachmentRef.current;
     if (!current) return;
     URL.revokeObjectURL(current.url);
-    if (cancel && current.id && !readSavedSends(adminId).some(entry => entry.reply?.attachmentId === current.id)) void supportClient.cancelAttachment(current.id, newKey()).catch(() => undefined);
+    if (cancel && current.id && ![...flights.current.values()].some(flight => flight.image?.id === current.id) && !readSavedSends(adminId).some(entry => entry.reply?.attachmentId === current.id)) void supportClient.cancelAttachment(current.id, newKey()).catch(() => undefined);
     attachmentRef.current = null;
     setAttachment(null);
   }, [adminId]);
@@ -824,7 +832,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (current) {
         URL.revokeObjectURL(current.url);
         const waitingImage=pendingMessages.list().some(row=>{try{const saved=JSON.parse(row.payload);return saved.kind==="IMAGE"&&saved.attachmentId===current.id;}catch{return false;}});
-        if (current.id && !waitingImage) void supportClient.cancelAttachment(current.id, newKey()).catch(() => undefined);
+        if (current.id && !waitingImage && ![...flights.current.values()].some(flight => flight.image?.id === current.id)) void supportClient.cancelAttachment(current.id, newKey()).catch(() => undefined);
       }
     };
   }, []);
@@ -1077,6 +1085,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (original && !entry.dock && reply?.kind !== "IMAGE" && (result.status === "SUCCEEDED" || !verifiedKeys.current?.has(row.commandKey))) {
         clearSubmittedDraft(reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft);
       }
+      if (reply?.attachmentId) {
+        if (result.status === "SUCCEEDED" && attachmentRef.current?.id === reply.attachmentId) clearAttachment(false);
+        if (result.status !== "SUCCEEDED" && attachmentRef.current?.id !== reply.attachmentId) {
+          void supportClient.cancelAttachment(reply.attachmentId, newKey()).catch(() => undefined);
+        }
+      }
       forgetSavedSend(row.fingerprint, row.commandKey);
     }
     return result;
@@ -1131,7 +1145,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!targetCustomer || Boolean(recovery) !== Boolean(activeEntry)) return;
     return runCustomerCommand(targetCustomer, activeKey, flight => sendMessage(kind, recovery, flight));
   };
-  const sendMessage = async (kind: Pending["kind"], recovery: "query" | "retry" | undefined, flight: { commandKey?: string }) => {
+  const sendMessage = async (kind: Pending["kind"], recovery: "query" | "retry" | undefined, flight: SendFlight) => {
     const sameAccount = () => useAdminAuth.getState().session?.adminId === adminId;
     const currentPage = () => sameAccount() && useAdminAuth.getState().authEpoch === authEpoch && mounted.current && identityRef.current === identity;
     const mayCapture = () => currentPage() && !!targetCustomer
@@ -1151,7 +1165,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         }
         if (result.status !== "SUCCEEDED") { setSendError(MESSAGE_STILL_UNKNOWN); return; }
         if (originalView()) {
-          if (pending?.kind === "IMAGE") clearAttachment(false);
           setMaintenanceChosen(false); setSelectedClosedIds(new Set()); setContentChoice(null);
           setProfileDetail(null); setProfileRetry(value => value + 1); setHoldRetry(value => value + 1);
         }
@@ -1255,6 +1268,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const body = retry?.body ?? (kind === "IMAGE" ? "" : draft.trim());
     const attachmentId = retry?.attachmentId ?? (kind === "IMAGE" ? attachment?.id : undefined);
     if (kind !== "IMAGE" && !body || kind === "IMAGE" && !attachmentId || !retry && (kind==="SKU"||kind==="LINK") && contentChoice?.kind!==kind) return;
+    if (attachmentId) flight.image = { id: attachmentId, outcome: retry ? "submitted" : "unused" };
     let currentVersion = selected.version;
     let currentStatus = selected.status.toUpperCase();
     if (!retry) {
@@ -1297,12 +1311,17 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     setSendError("");
     const input = activeEntry?.dock ? JSON.parse(activeEntry.dock.payload) : { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
     try {
+      if (flight.image) flight.image.outcome = "submitted";
       await supportClient.sendConversationReply(record.conversationId, input, record.key);
+      if (flight.image) flight.image.outcome = "sent";
     } catch (cause) {
       if (!sameAccount()) return;
       const refused = (!retry && rejectedMessageOwnership(cause)) || rejectedSupportWrite(cause);
       const busyHold = supportSessionBusy(cause);
-      if (refused || busyHold) forgetSavedSend(slot, record.key);
+      if (refused || busyHold) {
+        if (flight.image) flight.image.outcome = "unused";
+        forgetSavedSend(slot, record.key);
+      }
       if (lostPermission(cause)) {
         ctx.invalidateScope(record.conversationId, String(selected.customerId), refused ? "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。" : "这条消息发送结果未知：你对这个会话的权限变了。请回客户列表核对，不要重发。");
         return;
@@ -1329,7 +1348,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
     if (!currentPage() || !originalView()) return;
     setProfileDetail(null); setProfileRetry(value => value + 1); setHoldRetry(value => value + 1);
-    if (record.kind === "IMAGE") clearAttachment(false);
     setContentChoice(null);
     refocusComposer.current = true;
   };
