@@ -31,6 +31,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "experience") {
     return "/api/admin/platform/config/experience";
   }
+  if (parts.length === 2 && parts[0] === "config" && parts[1] === "operating-languages") {
+    return "/api/admin/platform/config/operating-languages";
+  }
   // R-1: A3 业务时区 (GET for every console; PUT and POST cancel are super-admin only on the backend).
   if (parts.length === 1 && parts[0] === "business-calendar") {
     return "/api/admin/platform/business-calendar";
@@ -188,6 +191,7 @@ function backendPath(parts: string[]) {
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   if (path.join("/") === "audit/operations/proposals/by-idempotency-key" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
+  if (path.join("/") === "config/operating-languages" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   const diagnostics = path.length === 2 && path[0] === "events" && ["outbox-diagnostics", "outbox-dead-letters"].includes(path[1]);
   if (diagnostics && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   const avatarRoute = avatarProxyRoute(path, request.method);
