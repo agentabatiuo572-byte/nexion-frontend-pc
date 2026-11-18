@@ -1839,7 +1839,9 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   // 原文另存了一份时，没发出和原因并进那块原文里说，不再单独出一条红色提示。
   const failedPrefix = failedCopy && sendFeedback?.commandKey === failedCopy.commandKey ? [MESSAGE_FAILED, MESSAGE_FAILED_UNCHECKED].find(text => sendError.startsWith(text)) : undefined;
   const keptReason = failedPrefix ? sendError.slice(failedPrefix.length) || " " : "";
-  const failedNotice = keptReason ? "" : sendError;
+  // 查询结案时核验状态常已重置，句子先写成「客户仍归你时会放回」；原文实际已回到这个输入框（没另存、框里有字）就直接说放回了。
+  const failedNotice = keptReason ? "" : sendError.startsWith(MESSAGE_FAILED_UNCHECKED) && !failedCopy && !activeEntry && draft.trim()
+    ? MESSAGE_FAILED + sendError.slice(MESSAGE_FAILED_UNCHECKED.length) : sendError;
   // 分段一行放两个，其余进「更多」（DP-14）：待回复、待分配这类要处理的排在前面。
   const tabItems = [...tabs].sort(([a], [b]) => TAB_ORDER.indexOf(a) - TAB_ORDER.indexOf(b)).map(([value, label]) => {
     const count = customerRows.filter(row => tabMatch(row, value, adminId)).length;
