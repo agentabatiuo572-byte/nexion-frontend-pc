@@ -6,7 +6,7 @@
  * 业务数据读写后端 content 接口;I.support.* / I.session.* 仅作为子组件视图态适配键。
  * MC 显式 edit 契约:调参传 edit、处置不传。MessageThread 共享组件复用于 M2/M3。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { DomainModuleLoading } from "./domain-module-state";
@@ -43,9 +43,8 @@ import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { querySupportMessage, supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, dockCommands, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision, type DockCommandRecord } from "./m-tabs/m-message-journal";
-import { privateMessageRecovery } from "@/lib/admin/m-support-enhancements";
+import { supportClient, SupportClientError, isIndeterminateSupportError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
+import { blocksNewSend, dockCommands, dockDraftKey, redactDockRecovery, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -59,21 +58,6 @@ const M5Page = dynamic(() => import("./m-tabs/m5-page").then(m => m.M5Page), { l
  *   m3direct| M3 标签 / 备注直写(`m3:add-tag:会话号:标签`)
  * 落 sessionStorage:刷新后「写入失败或结果未知」的重试必须仍是同一命令号,后端才能去重。
  */
-function redactDockRecovery(record: DockCommandRecord) {
-  let clientMessageId = "";
-  try { clientMessageId = JSON.parse(record.payload).clientMessageId ?? ""; } catch { /* Query still uses the original command key. */ }
-  const locator = privateMessageRecovery({ key: record.commandKey, clientMessageId, conversationId: record.conversationNo, customerId: record.customerId });
-  const payload = JSON.stringify(locator ?? { readOnlyRecovery: true, key: record.commandKey, conversationId: record.conversationNo });
-  const extra = { payload, conversationNo: record.conversationNo, readOnlyRecovery: true as const, ...(record.customerId ? { customerId: record.customerId } : {}) };
-  dockCommands.remember(record.fingerprint, record.commandKey, extra);
-  try {
-    if (JSON.parse(sessionStorage.getItem("nexion-admin-m-dock-pending-v1") ?? "{}")[record.commandKey]?.payload !== payload) {
-      sessionStorage.removeItem("nexion-admin-m-dock-pending-v1");
-      dockCommands.remember(record.fingerprint, record.commandKey, extra);
-    }
-  } catch { /* The in-memory record is already redacted. */ }
-  return dockCommands.isDurablyStored(record.fingerprint, record.commandKey);
-}
 const commandSlot = (commandFingerprint: string) => `cmd|${commandFingerprint}`;
 const directWriteSlot = (fingerprint: string) => `m3direct|${fingerprint}`;
 
@@ -746,7 +730,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
-      {safeMData && <SessionDock ctx={ctx} hidden={tab === "M3"} onScopeInvalidated={invalidateScope} />}
+      {safeMData && <SessionDock key={JSON.stringify([authEpoch, session?.adminId, mergedParams[DOCK_LAST_KEY], tab === "M3"])} ctx={ctx} hidden={tab === "M3"} onScopeInvalidated={invalidateScope} />}
       {toastNode}
     </>
   );
@@ -1241,7 +1225,6 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
-  const [canAbandon, setCanAbandon] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [detailRetry, setDetailRetry] = useState(0);
   const sendInFlight = useRef(false);
@@ -1254,8 +1237,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const lastId = ctx.pget(DOCK_LAST_KEY);
   const convos = useMemo(() => dockParseConvos(ctx.pget(DOCK_CONVO_KEY)), [ctx.params]);
   useSendJournalRevision();
-  const pendingForAdmin = dockCommands.list().find((row) => row.fingerprint.startsWith(`dock|${currentAdminId}|`));
-  const conv = pendingForAdmin ? convos.find((c) => c.id === pendingForAdmin.conversationNo) ?? null : convos.find((c) => c.id === lastId) ?? null;
+  const conv = convos.find(c => c.id === lastId);
   const open = ctx.pget(DOCK_OPEN_KEY) === "1";
   const offFor = ctx.pget(DOCK_OFF_KEY);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
@@ -1263,58 +1245,38 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
   const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type !== "ai" && conv.status === "open");
   const canWrite = canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true && conv.writeState?.canReply !== false;
-  const canReviewAll = isSuperAdmin || Boolean(supportReadModes?.includes("MANAGED"));
-  const privateScopeLost = conversationsAvailable && (!conv || conv.ownerAdminId !== currentAdminId && !canReviewAll);
-  const dockSlot = pendingForAdmin?.fingerprint ?? `dock|${currentAdminId}|${conv?.id ?? ""}`;
-  const pendingDock = dockCommands.list().find((row) => row.fingerprint === dockSlot && row.conversationNo === conv?.id);
-  useEffect(() => {
-    identityGeneration.current += 1;
-    setDraft(""); setSendError(""); setSending(false); setCanAbandon(false); sendInFlight.current = false;
-    return () => { identityGeneration.current += 1; };
-  }, [currentAdminId, authEpoch]);
-  useEffect(() => {
-    const clearPrivate = (event: Event) => {
-      const detail = (event as CustomEvent<{ conversationNo?: string; customerId?: string }>).detail;
-      if (detail?.conversationNo || detail?.customerId) {
-        const target = pendingForAdmin?.conversationNo ?? conv?.id;
-        const customerId = pendingForAdmin?.customerId ?? conv?.customerId;
-        if (detail.conversationNo !== target && (!detail.customerId || customerId && detail.customerId !== customerId)) return;
-      }
-      identityGeneration.current += 1; sendInFlight.current = false;
-      setDraft(""); setSendError(""); setSending(false); setCanAbandon(false);
-    };
-    window.addEventListener("support-scope-invalidated", clearPrivate);
-    return () => window.removeEventListener("support-scope-invalidated", clearPrivate);
-  }, [pendingForAdmin?.conversationNo, pendingForAdmin?.customerId, conv?.id, conv?.customerId]);
+  const dockSlot = `dock|${currentAdminId}|${lastId}`;
+  const draftKey = currentAdminId && conv?.customerId ? dockDraftKey(currentAdminId, conv.customerId, conv.id, conv.assignmentId) : "";
   const newSendBlocked = !!currentAdminId && !!conv?.customerId && blocksNewSend(pendingSendCustomers(currentAdminId, convos), conv.customerId);
-  const dockFeedback = sendError || (!pendingDock && newSendBlocked ? "原消息发送结果未知，暂时不能再发。" : "");
-  const copyOriginal = async (original: string) => {
-    try { await navigator.clipboard.writeText(original); ctx.toast("原文已复制。", "success"); }
-    catch { setSendError("自动复制失败。可在原文框中手动选择并复制。"); }
+  const dockFeedback = newSendBlocked ? "原消息发送结果未知，暂时不能再发。" : sendError;
+  const updateDraft = (value: string) => {
+    setDraft(value);
+    try {
+      if (value) sessionStorage.setItem(draftKey, value);
+      else sessionStorage.removeItem(draftKey);
+    } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
   };
-  const abandonQuery = (row: DockCommandRecord) => {
-    if (!window.confirm("确认已自行保存原文，并放弃查询这条发送记录？放弃后无法继续用原命令核对结果。")) return;
-    dockCommands.forget(row.fingerprint, row.commandKey);
-    setCanAbandon(false);
-    setSendError("");
-    ctx.toast("待确认记录已清除。", "success");
-  };
-
-  useEffect(() => {
-    if (!pendingDock || pendingDock.readOnlyRecovery || privateScopeLost || draft) return;
-    try { setDraft((JSON.parse(pendingDock.payload) as SupportMessageInput).content ?? ""); }
-    catch { redactDockRecovery(pendingDock); }
-  }, [canWrite, dockSlot, draft, pendingDock, privateScopeLost]);
-  useEffect(() => {
-    if (!privateScopeLost) return;
-    if (pendingForAdmin && !pendingForAdmin.readOnlyRecovery) redactDockRecovery(pendingForAdmin);
-    setDraft(""); setSending(false);
-    identityGeneration.current += 1; sendInFlight.current = false;
-  }, [pendingForAdmin?.commandKey, pendingForAdmin?.readOnlyRecovery, privateScopeLost]);
+  useLayoutEffect(() => {
+    if (draftKey && owned) {
+      try { setDraft(sessionStorage.getItem(draftKey) ?? ""); }
+      catch { setDraft(""); }
+    } else setDraft("");
+    const invalidate = (event: Event) => {
+      const target = (event as CustomEvent<{ conversationNo?: string; customerId?: string }>).detail;
+      if ((target?.customerId || target?.conversationNo) && target.customerId !== conv?.customerId && target.conversationNo !== lastId) return;
+      identityGeneration.current++;
+      setDraft("");
+    };
+    window.addEventListener("support-scope-invalidated", invalidate);
+    return () => {
+      identityGeneration.current++;
+      window.removeEventListener("support-scope-invalidated", invalidate);
+    };
+  }, [draftKey, owned, lastId, conv?.customerId]);
 
   const loadConversationDetail = ctx.loadConversationDetail;
   useEffect(() => {
-    if (hidden && !pendingForAdmin || !open || !conv || conv.detailReady || !conversationsAvailable || detailError) return;
+    if (hidden || !open || !conv || conv.detailReady || !conversationsAvailable || detailError) return;
     const controller = new AbortController();
     void loadConversationDetail(conv.id, controller.signal).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
@@ -1323,123 +1285,66 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       }
     });
     return () => controller.abort();
-  }, [hidden, Boolean(pendingForAdmin), open, conv?.id, conv?.version, conv?.detailReady, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
+  }, [hidden, open, conv?.id, conv?.version, conv?.detailReady, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
   useEffect(() => { setDetailError(""); }, [conv?.id, authEpoch]);
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显
-  if (hidden && !pendingForAdmin || conv && !owned && !pendingDock || conv && !pendingDock && offFor === conv.id) return null;
-
-  if (!conv && !pendingForAdmin) return null;
-  if (!conv || pendingForAdmin && (pendingForAdmin.readOnlyRecovery || privateScopeLost)) {
-    const recovery = pendingForAdmin!;
-    const readOnlyRecovery = recovery.readOnlyRecovery || privateScopeLost;
-    let recoveryText = "";
-    if (!readOnlyRecovery) try { recoveryText = (JSON.parse(recovery.payload) as SupportMessageInput).content ?? ""; } catch { /* Keep the command query available. */ }
-    return <div className="card" role="status" style={{ position: "fixed", right: 22, bottom: 22, zIndex: 30, padding: 12, maxWidth: 360 }}>
-    <div>会话 {recovery.conversationNo} 的发送结果待确认。</div>
-    {readOnlyRecovery ? <div>私聊原文已清除，只保留原消息编号供查询。{!dockCommands.isDurablyStored(recovery.fingerprint, recovery.commandKey) && "原编号仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面。"}</div> : <textarea readOnly aria-label="待确认消息原文" value={recoveryText} style={{ width: "100%", marginTop: 8 }} />}
-    {isRetryExpired(recovery) ? <div role="status">{RETRY_EXPIRED_TEXT}</div> : sendError && <div role="alert">{sendError}</div>}
-    <button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void (async () => {
-      const generation = identityGeneration.current;
-      setSending(true); setSendError(""); setCanAbandon(false);
-      try {
-        const result = await querySupportMessage(recovery.commandKey, recovery.customerId, recovery.conversationNo);
-        if (generation !== identityGeneration.current) return;
-        if (result.status === "SUCCEEDED") {
-          dockCommands.forget(recovery.fingerprint, recovery.commandKey);
-          ctx.toast("消息已发送。", "success");
-          void ctx.refreshConversations();
-        } else if (result.status === "FAILED") {
-          if (readOnlyRecovery) { dockCommands.forget(recovery.fingerprint, recovery.commandKey); ctx.toast("原消息发送失败，待确认记录已清除。", "error"); }
-          else { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); }
-        } else setSendError("发送结果仍在确认，请稍后查询原命令。");
-      } catch (cause) {
-        if (generation !== identityGeneration.current) return;
-        if (cause instanceof SupportClientError && cause.status === 403) {
-          redactDockRecovery(recovery); setDraft("");
-          setSendError("原消息暂不可查询；私聊原文已清除，原编号仍保留，请稍后重试。");
-        } else if (cause instanceof SupportClientError && cause.status === 404) { setSendError("发送结果仍在确认，请稍后查询原命令。"); }
-        else setSendError(`原命令暂无法确认：${displayAdminError(cause)} 请稍后重试。`);
-      }
-      finally { if (generation === identityGeneration.current) setSending(false); }
-    })()}>查询原命令结果</button>
-    {!readOnlyRecovery && canAbandon && <><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(recoveryText)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(recovery)}>放弃查询</button></>}
-    </div>;
-  }
+  if (hidden || !conv || !owned || offFor === conv.id) return null;
 
   const setOpen = (v: boolean) => ctx.setParam(DOCK_OPEN_KEY, v ? "1" : "0", { action: "持续接待窗口 展开/收起", reason: "ui-state" });
   const closeDock = () => ctx.setParam(DOCK_OFF_KEY, conv.id, { action: "持续接待窗口 关闭", reason: "ui-state" });
   const send = async () => {
     const text = draft.trim();
-    if (!text || pendingDock?.readOnlyRecovery || (!pendingDock && (!canWrite || newSendBlocked)) || sendInFlight.current) return;
+    if (!text || !canWrite || newSendBlocked || sendInFlight.current || !currentAdminId || !conv.customerId) return;
     const generation = identityGeneration.current;
-    let key = pendingDock?.commandKey;
-    let submitted = false;
+    const sameAccount = () => useAdminAuth.getState().session?.adminId === currentAdminId && useAdminAuth.getState().authEpoch === authEpoch;
+    let key: string | undefined;
     sendInFlight.current = true;
     setSending(true);
     setSendError("");
-    setCanAbandon(false);
     try {
-      const owner = pendingDock ? null : await supportClient.customerDetail(conv.customerId!);
-      if (generation !== identityGeneration.current) return;
-      if (owner && (owner.agentAdminId !== currentAdminId || !owner.assignmentId)) throw new SupportClientError(403, undefined, "SUPPORT_CUSTOMER_SCOPE_CHANGED");
-      const state = pendingDock ? null : await supportClient.conversationState(conv.id);
-      if (generation !== identityGeneration.current) return;
-      if (state && state.status !== "OPEN") { setSendError("当前会话已结束，请刷新会话列表后重新选择。"); return; }
-      if (state && state.version !== conv.version) {
+      const owner = await supportClient.customerDetail(conv.customerId);
+      if (!sameAccount() || generation !== identityGeneration.current) return;
+      if (owner.agentAdminId !== currentAdminId || !owner.assignmentId || conv.assignmentId && conv.assignmentId !== owner.assignmentId) throw new SupportClientError(403, undefined, "SUPPORT_CUSTOMER_SCOPE_CHANGED");
+      const state = await supportClient.conversationState(conv.id);
+      if (!sameAccount() || generation !== identityGeneration.current) return;
+      if (state.status !== "OPEN") { setSendError("当前会话已结束，请刷新会话列表后重新选择。"); return; }
+      if (state.version !== conv.version) {
         setSendError("会话有新消息，请核对刷新后的详情再发送。原文已保留。");
         try { await ctx.refreshConversations(); }
         catch { if (generation === identityGeneration.current) setSendError("会话有新消息，列表刷新失败。原文已保留，请刷新会话后重试。"); }
         return;
       }
-      if (!pendingDock && (!currentAdminId || !conv.customerId || blocksNewSend(pendingSendCustomers(currentAdminId, convos), conv.customerId))) return;
-      key ??= crypto.randomUUID();
+      if (blocksNewSend(pendingSendCustomers(currentAdminId, convos), conv.customerId)) return;
+      key = crypto.randomUUID();
       const latest = [...conv.messages].reverse().find((message) => message.sender === "user" && message.sourceSenderType !== "SYSTEM" && message.sourceSenderType !== "INTERNAL" && Number.isSafeInteger(message.id));
-      const input: SupportMessageInput = pendingDock ? JSON.parse(pendingDock.payload) : {
+      const input: SupportMessageInput = {
         kind: "TEXT", content: text, intent: "SERVICE", clientMessageId: crypto.randomUUID(),
-        expectedAssignmentId: owner!.assignmentId!, expectedVersion: state!.version,
+        expectedAssignmentId: owner.assignmentId, expectedVersion: state.version,
         replyTargets: latest?.sender === "user" && Number.isSafeInteger(latest.id)
           ? [{ conversationNo: conv.id, throughMessageId: latest.id! }] : undefined,
       };
-      if (!pendingDock) dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId });
-      if (pendingDock) {
-        const result = await querySupportMessage(key, pendingDock.customerId ?? conv.customerId, pendingDock.conversationNo).catch((error: unknown) => {
-          if (error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return null;
-          throw error;
-        });
-        if (generation !== identityGeneration.current) return;
-        if (result && result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError("发送结果仍在确认，请稍后查询。"); return; }
-        if (result?.status === "FAILED") { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); return; }
-        if (!result) {
-          if (isRetryExpired(pendingDock)) { setSendError(RETRY_EXPIRED_TEXT); return; }
-          if (!canWrite) { setSendError("发送结果仍在确认，请稍后查询原命令。"); return; }
-          if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
-          submitted = true;
-          await supportClient.sendConversationReply(conv.id, input, key);
-        }
-      } else {
-        if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
-        submitted = true;
-        await supportClient.sendConversationReply(conv.id, input, key);
-      }
-      if (generation !== identityGeneration.current) return;
-      try { await ctx.refreshConversations(); }
-      catch { if (generation === identityGeneration.current) setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
-      if (generation !== identityGeneration.current) return;
+      dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId });
+      if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
+      updateDraft("");
+      await supportClient.sendConversationReply(conv.id, input, key);
+      if (!sameAccount()) return;
       dockCommands.forget(dockSlot, key);
-      setDraft("");
-      ctx.toast(`${conv.id} 已回复`, "success");
       window.dispatchEvent(new Event("support-todo-changed"));
-    } catch (error) {
       if (generation !== identityGeneration.current) return;
-      const rejected = !pendingDock && submitted && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
-      if (rejected) {
-        dockCommands.forget(dockSlot, key);
-        setSendError(`本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。`);
-      } else setSendError(`发送失败或结果待确认：${displayAdminError(error)} 请查询结果并重试。`);
-      // 权限刷新会卸载小窗，结果交给页面的常驻权限提示；原文仍按权限边界清除。
-      if (error instanceof SupportClientError && [403, 404].includes(error.status)) onScopeInvalidated(conv.id, conv.customerId,
-        rejected || !pendingDock && !submitted ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。");
+      ctx.toast(`${conv.id} 已回复`, "success");
+      try { await ctx.refreshConversations(); }
+      catch { setSendError("消息已发送，但会话列表暂未刷新。请刷新会话查看最新消息。"); }
+    } catch (error) {
+      if (!sameAccount()) return;
+      const rejected = key && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
+      if (rejected) dockCommands.forget(dockSlot, key);
+      if (error instanceof SupportClientError && [403, 404].includes(error.status)) {
+        onScopeInvalidated(conv.id, conv.customerId, rejected || !key ? "消息没有发出：这个会话的权限变了，请到专属会话核对。" : "发送结果待确认：这个会话的权限变了，请到专属会话核对，不要重发。");
+      } else if (generation === identityGeneration.current) {
+        if (rejected) updateDraft(draft);
+        setSendError(rejected ? `本次发送已被拒绝：${displayAdminError(error)} 原文已保留，可修改后重发。` : displayAdminError(error));
+      }
     } finally {
       if (generation === identityGeneration.current) { sendInFlight.current = false; setSending(false); }
     }
@@ -1508,9 +1413,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
         {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
-      {dockFeedback && !(pendingDock && isRetryExpired(pendingDock)) && <div role="alert" className="m-dock-error">{dockFeedback}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
-      {pendingDock && isRetryExpired(pendingDock) && <div role="status" className="m-dock-note">{RETRY_EXPIRED_TEXT}</div>}
-      {pendingDock && canAbandon && <div><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(draft)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(pendingDock)}>放弃查询</button></div>}
+      {dockFeedback && <div role="alert" className="m-dock-error">{dockFeedback}{newSendBlocked && <Link className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`}>到专属会话核对</Link>}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
       {canWriteM3 && owned && conv.writeState?.canReply === false && <div role="status" className="m-dock-note">这不是客户当前的会话，不能在这里回复；到「专属会话」查看。</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>
@@ -1518,13 +1421,11 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
           className="ta"
           data-proof="session-dock-reply"
           rows={1}
-          value={draft}
+          value={newSendBlocked ? "" : draft}
           aria-label={`回复会话 ${conv.id}`}
-          readOnly={Boolean(pendingDock)}
-          disabled={!pendingDock && (!canWrite || newSendBlocked || sending)}
-          onChange={(e) => setDraft(e.target.value)}
+          disabled={!canWrite || newSendBlocked || sending}
+          onChange={(e) => updateDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (pendingDock) return;
             if (!shouldSendOnEnter(e)) return;
             e.preventDefault();
             void send();
@@ -1532,7 +1433,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
           placeholder="回车发送，Shift+回车换行"
           style={{ maxHeight: 80 }}
         />
-        <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? isRetryExpired(pendingDock) ? "查询原结果" : "查询结果并重试会话回复" : "发送会话回复"} disabled={(!pendingDock && (!canWrite || newSendBlocked)) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
+        <button type="button" className="btn btn-pri btn-sm" aria-label="发送会话回复" disabled={!canWrite || newSendBlocked || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
     </div>
   );

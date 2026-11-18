@@ -43,14 +43,14 @@ export const dockCommands = createMessageJournal<DockCommandRecord>({
     && (record.readOnlyRecovery === undefined || typeof record.readOnlyRecovery === "boolean"),
 });
 export type MessageLocator = Omit<PrivateMessageRecovery, "clientMessageId"> & { clientMessageId?: string };
-type SavedSend = { row: StoredMessage; locator: MessageLocator; reply?: Pending; first?: FirstContact };
+export type SavedSend = { row: StoredMessage; locator: MessageLocator; reply?: Pending; first?: FirstContact; dock?: DockCommandRecord };
 
 function isMessageSlot(slot: string, adminId: number) {
   return slot === pendingKey(adminId) || slot.startsWith(`${pendingKey(adminId)}:`) || slot.startsWith(`nexion-m3-first-pending:${adminId}:`);
 }
 
 export function readSavedSends(adminId: number): SavedSend[] {
-  return pendingMessages.list().filter(row => isMessageSlot(row.fingerprint, adminId)).map(row => {
+  const main = pendingMessages.list().filter(row => isMessageSlot(row.fingerprint, adminId)).map(row => {
     const keyOnly: MessageLocator = { readOnlyRecovery: true, key: row.commandKey };
     let value;
     try { value = JSON.parse(row.payload); }
@@ -72,6 +72,23 @@ export function readSavedSends(adminId: number): SavedSend[] {
       && value.message.text === value.body && ["TEXT", "IMAGE", "SKU", "LINK"].includes(value.kind)) return { row, locator, reply: value as Pending };
     return { row, locator };
   });
+  const dock = dockCommands.list().filter(row => row.fingerprint.startsWith(`dock|${adminId}|`)).map((row): SavedSend => {
+    const locator: MessageLocator = { readOnlyRecovery: true, key: row.commandKey, customerId: row.customerId, conversationId: row.conversationNo };
+    let input;
+    try { input = JSON.parse(row.payload); } catch { return { row, locator, dock: row }; }
+    if (typeof input?.clientMessageId === "string") locator.clientMessageId = input.clientMessageId;
+    if (row.readOnlyRecovery || !locator.clientMessageId || input.kind !== "TEXT" || input.intent !== "SERVICE"
+      || typeof input.content !== "string" || !input.content || typeof input.expectedAssignmentId !== "string" || !input.expectedAssignmentId
+      || !Number.isSafeInteger(input.expectedVersion) || row.fingerprint !== `dock|${adminId}|${row.conversationNo}`
+      || input.replyTargets !== undefined && (!Array.isArray(input.replyTargets) || !input.replyTargets.every((t: { conversationNo?: string; throughMessageId?: number } | null) => t?.conversationNo === row.conversationNo && Number.isSafeInteger(t.throughMessageId)))) return { row, locator, dock: row };
+    const reply: Pending = {
+      key: row.commandKey, conversationId: row.conversationNo, customerId: row.customerId, kind: "TEXT", body: input.content, intent: "SERVICE",
+      expectedAssignmentId: input.expectedAssignmentId, expectedStatus: input.expectedStatus, expectedVersion: input.expectedVersion,
+      message: { ts: row.createdAt, sender: "agent", kind: "TEXT", text: input.content, intent: "SERVICE", clientMessageId: locator.clientMessageId, replyTargets: input.replyTargets },
+    };
+    return { row, locator, reply, dock: row };
+  });
+  return [...main, ...dock];
 }
 export const rememberPending = (slot: string, commandKey: string, value: object) => {
   pendingMessages.remember(slot, commandKey, { payload: JSON.stringify(value) });
@@ -92,14 +109,29 @@ export function originalCustomerId(locator: { customerId?: string; conversationI
   return validCustomerId(locator.customerId ?? null) ? locator.customerId : conversations.find(row => row.id === locator.conversationId)?.customerId;
 }
 
-export function pendingDockCustomers(actorId: number, conversations: ConversationTarget[]) {
-  return dockCommands.list().filter(row => row.fingerprint.startsWith(`dock|${actorId}|`))
-    .map(row => originalCustomerId({ customerId: row.customerId, conversationId: row.conversationNo }, conversations));
+export function redactDockRecovery(record: DockCommandRecord) {
+  let clientMessageId = "";
+  try { clientMessageId = JSON.parse(record.payload).clientMessageId ?? ""; } catch { /* Query still uses the original command key. */ }
+  const locator = privateMessageRecovery({ key: record.commandKey, clientMessageId, conversationId: record.conversationNo, customerId: record.customerId });
+  const payload = JSON.stringify(locator ?? { readOnlyRecovery: true, key: record.commandKey, conversationId: record.conversationNo });
+  const extra = { payload, conversationNo: record.conversationNo, readOnlyRecovery: true as const, ...(record.customerId ? { customerId: record.customerId } : {}) };
+  dockCommands.remember(record.fingerprint, record.commandKey, extra);
+  try {
+    if (JSON.parse(sessionStorage.getItem("nexion-admin-m-dock-pending-v1") ?? "{}")[record.commandKey]?.payload !== payload) {
+      sessionStorage.removeItem("nexion-admin-m-dock-pending-v1");
+      dockCommands.remember(record.fingerprint, record.commandKey, extra);
+    }
+  } catch { /* The in-memory record is already redacted. */ }
+  return dockCommands.isDurablyStored(record.fingerprint, record.commandKey);
 }
+
+export const dockDraftKey = (adminId: number, customerId: string, conversationNo: string, assignmentId?: string | null) =>
+  `nexion-m-dock-draft:${adminId}:${customerId}:${conversationNo}:${assignmentId ?? ""}`;
+export const sendJournal = (slot: string) => slot.startsWith("dock|") ? dockCommands : pendingMessages;
 
 // Undefined denotes an owned original whose customer cannot yet be proved.
 export function pendingSendCustomers(actorId: number, conversations: ConversationTarget[]) {
-  return new Set([...pendingDockCustomers(actorId, conversations), ...readSavedSends(actorId).map(entry => originalCustomerId(entry.locator, conversations))]);
+  return new Set(readSavedSends(actorId).map(entry => originalCustomerId(entry.locator, conversations)));
 }
 export function blocksNewSend(customers: Set<string | undefined>, customerId: string) {
   return customers.has(undefined) || customers.has(customerId);
