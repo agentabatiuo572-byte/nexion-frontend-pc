@@ -12,6 +12,8 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
+import { blankCopiedContentLanguage, fillBlankContentLanguage } from "@/lib/admin/content-language-rules";
+import { OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -644,15 +646,15 @@ export type BusinessFormSpec =
       steps: { domain: string; action: string; ref: string; approve: boolean }[] }
   | { kind: "export-wizard"; mode?: "aggregate-only"; kpiStructuredRange?: boolean; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
-  | { kind: "localized-copy"; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
-  | { kind: "copy-edit"; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
-  | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
+  | { kind: "localized-copy"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
+  | { kind: "copy-edit"; requiredLanguages: readonly OperatingLanguageCode[]; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
+  | { kind: "copy-create"; requiredLanguages: readonly OperatingLanguageCode[]; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
   | { kind: "copy-version-option"; mode: "create" | "edit"; versionKey?: string; name?: string; description?: string; status?: string; sortOrder?: number; revision?: number }
   | { kind: "copy-experiment-create"; copies: CopyExperimentCopyOption[] }
   | { kind: "copy-experiment-start"; experimentId: string }
   | { kind: "copy-experiment-discard"; experimentId: string }
-  | { kind: "course-authoring"; mode?: "create" | "edit" | "version-create" | "version-edit"; rewardMin?: number; rewardMax?: number; categories?: string[]; formats?: string[]; levels?: string[]; durations?: string[];
+  | { kind: "course-authoring"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit" | "version-create" | "version-edit"; rewardMin?: number; rewardMax?: number; categories?: string[]; formats?: string[]; levels?: string[]; durations?: string[];
       current?: { slug: string; version?: string; category: string; format: string; difficulty: string; duration: string; reward: number; titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
         quizQuestions?: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
         passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string } }
@@ -660,12 +662,12 @@ export type BusinessFormSpec =
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
-  | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
+  | { kind: "version-authoring"; requiredLanguages: readonly OperatingLanguageCode[]; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope: string; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
   | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
-  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
+  | { kind: "disclosure-publish-review"; requiredLanguages: readonly OperatingLanguageCode[]; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; targetChapters: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
-  | { kind: "trust-section-publish"; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
+  | { kind: "trust-section-publish"; requiredLanguages: readonly OperatingLanguageCode[]; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
       currentFields: { key: string; label: string; value: string }[];
       targetFields: { key: string; label: string; value: string }[] }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
@@ -831,7 +833,39 @@ const COURSE_FORMAT_LABELS: Record<string, string> = { Article: "图文", Video:
 const COURSE_LEVEL_LABELS: Record<string, string> = { Beginner: "入门", Intermediate: "进阶", Advanced: "高级" };
 const COURSE_STATUS_LABELS: Record<string, string> = { draft: "草稿", published: "已发布", archived: "已归档" };
 const DEFAULT_CAMPAIGN_TIERS = ["critical", "high", "normal", "low"];
-const DEFAULT_LANGUAGE_SCOPES = ["zh+vi", "zh+vi+en"];
+export const DISCLOSURE_LANGUAGE_SCOPE = "zh+vi+en";
+export const OPTIONAL_CONTENT_HINT = "选填，不填时 App 显示英文";
+export const CONTENT_LANGUAGE_LABELS = { en: "英文", zh: "中文", vi: "越南语" };
+const CONTENT_LANGUAGE_SUFFIX = { en: "En", zh: "Zh", vi: "Vi" } as const;
+
+function localizedFormKeys(spec: BusinessFormSpec | undefined, state: BusinessFormValue, language: OperatingLanguageCode): string[] {
+  if (spec?.kind === "copy-create" || spec?.kind === "copy-edit" || spec?.kind === "localized-copy") return [language];
+  if (spec?.kind === "version-authoring") return [language, ...(spec.chapters ?? []).flatMap((_, index) => [
+    `chapter.${index}.${language}Title`, `chapter.${index}.${language}Body`,
+  ])];
+  if (spec?.kind !== "course-authoring") return [];
+  const suffix = CONTENT_LANGUAGE_SUFFIX[language];
+  return [`title${suffix}`, `body${suffix}`, ...Array.from({ length: Number(state.quizCount) }, (_, index) => [
+    `quiz.${index}.question${suffix}`,
+    ...Array.from({ length: Number(state[`quiz.${index}.optionCount`]) }, (_, option) => `quiz.${index}.option.${option}.${language}`),
+  ]).flat()];
+}
+
+function mapLocalizedForm(spec: BusinessFormSpec | undefined, state: BusinessFormValue, mode: "load" | "submit"): BusinessFormValue {
+  if (!spec || !("requiredLanguages" in spec)) return state;
+  if (mode === "load" && spec.kind === "course-authoring") return state;
+  const englishKeys = localizedFormKeys(spec, state, "en");
+  if (englishKeys.length === 0) return state;
+  const english = englishKeys.map((key) => state[key] ?? "");
+  const localized = { ...state };
+  const transform = mode === "load" ? blankCopiedContentLanguage : fillBlankContentLanguage;
+  for (const language of ["zh", "vi"] as const) {
+    const keys = localizedFormKeys(spec, state, language);
+    const { values } = transform(spec.requiredLanguages, language, { values: english }, { values: keys.map((key) => state[key] ?? "") });
+    keys.forEach((key, index) => { localized[key] = values[index]; });
+  }
+  return localized;
+}
 
 function parseCopyAudience(audience?: string): { phaseMin: string; phaseMax: string; language: string; registrationDaysGt: string } {
   const raw = audience?.trim() ?? "";
@@ -876,6 +910,10 @@ function parseSopSlaMinutes(raw?: string): number | null {
 }
 
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
+  return mapLocalizedForm(spec, initRawBusinessForm(spec), "load");
+}
+
+function initRawBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
   if (spec.kind === "mission-create") {
     return { category: "explore", actionRoute: "/pages/missions/missions" };
@@ -965,6 +1003,16 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     const questions = current?.quizQuestions?.length ? current.quizQuestions : [{
       questionId: "q1", questionZh: "", questionEn: "", questionVi: "", optionsZh: ["", ""], optionsEn: ["", ""], optionsVi: ["", ""], correctOptionIndex: 0,
     }];
+    const courseLanguage = (language: OperatingLanguageCode) => {
+      const suffix = CONTENT_LANGUAGE_SUFFIX[language];
+      return {
+        ...Object.fromEntries(questions.map((question, index) => [`options.${index}`, question[`options${suffix}`] ?? []])),
+        copy: [current?.[`title${suffix}`] ?? "", current?.[`body${suffix}`] ?? "", ...questions.map((question) => question[`question${suffix}`] ?? "")],
+      } as Record<string, readonly string[]>;
+    };
+    const en = courseLanguage("en");
+    const zh = blankCopiedContentLanguage(spec.requiredLanguages, "zh", en, courseLanguage("zh"));
+    const vi = blankCopiedContentLanguage(spec.requiredLanguages, "vi", en, courseLanguage("vi"));
     const state: BusinessFormValue = {
       slug: current?.slug ?? "",
       version: current?.version ?? "v1",
@@ -974,12 +1022,12 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       duration: current?.duration ?? spec.durations?.[0] ?? DEFAULT_COURSE_DURATIONS[0],
       reward: String(current?.reward ?? spec.rewardMin ?? 5),
       publishState: "draft",
-      titleZh: current?.titleZh ?? "",
-      titleEn: current?.titleEn ?? "",
-      titleVi: current?.titleVi ?? "",
-      bodyZh: current?.bodyZh ?? "",
-      bodyEn: current?.bodyEn ?? "",
-      bodyVi: current?.bodyVi ?? "",
+      titleZh: zh.copy[0],
+      titleEn: en.copy[0],
+      titleVi: vi.copy[0],
+      bodyZh: zh.copy[1],
+      bodyEn: en.copy[1],
+      bodyVi: vi.copy[1],
       quizCount: String(questions.length),
       passScore: String(current?.passScore ?? 60),
       retries: String(current?.retryLimit ?? 3),
@@ -987,15 +1035,17 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       rewardEvent: current?.rewardEvent ?? "quiz.passed",
     };
     questions.forEach((question, questionIndex) => {
+      const optionsZh = zh[`options.${questionIndex}`];
+      const optionsVi = vi[`options.${questionIndex}`];
       state[`quiz.${questionIndex}.id`] = question.questionId || `q${questionIndex + 1}`;
-      state[`quiz.${questionIndex}.questionZh`] = question.questionZh;
-      state[`quiz.${questionIndex}.questionEn`] = question.questionEn;
-      state[`quiz.${questionIndex}.questionVi`] = question.questionVi ?? "";
+      state[`quiz.${questionIndex}.questionZh`] = zh.copy[questionIndex + 2];
+      state[`quiz.${questionIndex}.questionEn`] = en.copy[questionIndex + 2];
+      state[`quiz.${questionIndex}.questionVi`] = vi.copy[questionIndex + 2];
       state[`quiz.${questionIndex}.optionCount`] = String(Math.max(2, question.optionsZh.length, question.optionsEn.length, question.optionsVi?.length ?? 0));
       for (let optionIndex = 0; optionIndex < Number(state[`quiz.${questionIndex}.optionCount`]); optionIndex += 1) {
-        state[`quiz.${questionIndex}.option.${optionIndex}.zh`] = question.optionsZh[optionIndex] ?? "";
+        state[`quiz.${questionIndex}.option.${optionIndex}.zh`] = optionsZh[optionIndex] ?? "";
         state[`quiz.${questionIndex}.option.${optionIndex}.en`] = question.optionsEn[optionIndex] ?? "";
-        state[`quiz.${questionIndex}.option.${optionIndex}.vi`] = question.optionsVi?.[optionIndex] ?? "";
+        state[`quiz.${questionIndex}.option.${optionIndex}.vi`] = optionsVi[optionIndex] ?? "";
       }
       state[`quiz.${questionIndex}.correctOptionIndex`] = String(question.correctOptionIndex ?? 0);
     });
@@ -1035,7 +1085,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return {
       version: spec.version ?? "",
       jurisdiction: spec.jurisdiction ?? "",
-      languageScope: spec.languageScope ?? spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
+      languageScope: spec.languageScope,
       effectiveDate: spec.effectiveDate ?? "",
       // I5 切换生效版本时要求重新确认；发布只封存内容。旧草稿也统一保存该要求。
       requiresReack: "true",
@@ -1218,6 +1268,29 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const names: Record<string,string> = { title: "标题", body: "正文", tier: "等级", audience: "受众", schedule: "时间安排", budget: "预算", no: "章节编号", description: "说明", structure: "内容结构", exportType: "导出类型", fields: "导出字段", piiLevel: "隐私信息级别", maskPolicy: "脱敏方式", recipient: "接收人", ticket: "关联工单", jurisdictionCode: "适用地区代码", jurisdictionName: "适用地区名称", jurisdiction: "适用地区", countryCodes: "适用国家/地区", version: "版本", languageScope: "语言范围", effectiveDate: "生效日期", requiresReack: "是否要求重新确认", zh: "中文正文", vi: "越南语正文", zhTitle: "中文标题", enTitle: "英文标题", viTitle: "越南语标题", zhBody: "中文正文", enBody: "英文正文", viBody: "越南语正文", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题" };
     if (!state[key]?.trim()) missing.push(label.replace(/\b[A-Za-z][A-Za-z0-9]*\b/g, (field) => names[field] ?? field));
   };
+  const activeLanguages = "requiredLanguages" in spec ? OPERATING_LANGUAGE_CODES.filter((language) =>
+    spec.requiredLanguages.includes(language) || localizedFormKeys(spec, state, language).some((key) => state[key]?.trim())) : [];
+  const checkPlaceholders = (values: string[], label: string) => {
+    if (values.every((value) => value.trim()) && new Set(values.map((value) =>
+      [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join(","),
+    )).size > 1) missing.push(label);
+  };
+  const checkCopy = (placeholders: string[] = [], publish = false, maxLength?: number) => {
+    for (const language of activeLanguages) {
+      const label = `${CONTENT_LANGUAGE_LABELS[language]}文案`;
+      needs(language, label);
+      if (maxLength && (state[language] ?? "").trim().length > maxLength) missing.push(`${label}最多 ${maxLength} 字`);
+    }
+    checkPlaceholders(activeLanguages.map((language) => state[language] ?? ""), "已填写文案的占位符不一致");
+    for (const placeholder of placeholders) {
+      if (activeLanguages.some((language) => !state[language]?.includes(placeholder))) missing.push(`占位符 ${placeholder}`);
+    }
+    if (publish) missing.push(...i6CopyQualityIssues(
+      activeLanguages.includes("zh") ? state.zh ?? "" : "",
+      state.en ?? "",
+      activeLanguages.includes("vi") ? state.vi ?? "" : "",
+    ));
+  };
   if (spec.kind === "role-select") {
     needs("role", "目标角色");
     if (state.role === spec.currentRole) missing.push("目标角色必须发生变化");
@@ -1228,12 +1301,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
   } else if (spec.kind === "localized-copy") {
     if (spec.mode === "create") needs("messageKey", "词条标识");
-    needs("zh", "中文文案");
-    needs("en", "英文文案");
-    needs("vi", "越南语文案");
-    (spec.placeholders ?? []).forEach((ph) => {
-      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`占位符 ${ph}`);
-    });
+    checkCopy(spec.placeholders);
   } else if (spec.kind === "copy-edit") {
     needs("version", "文案版本");
     needs("surface", "投放模块");
@@ -1244,17 +1312,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
     needs("versionNote", "版本说明");
-    needs("zh", "中文草稿");
-    needs("en", "英文草稿");
-    needs("vi", "越南语文案");
     if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("阶段范围");
     if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
-    (spec.placeholders ?? []).forEach((ph) => {
-      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
-    });
-    if (state.saveMode === "发布生效") missing.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
+    checkCopy(spec.placeholders, state.saveMode === "发布生效", 1000);
   } else if (spec.kind === "copy-create") {
     needs("copyKey", "文案标识");
     needs("description", "文案名称");
@@ -1267,17 +1329,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("trafficSplit", "分流比例");
     needs("version", "文案版本");
     needs("versionNote", "版本说明");
-    needs("zh", "中文文案");
-    needs("en", "英文文案");
-    needs("vi", "越南语文案");
     if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("阶段范围");
     if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
-    (spec.placeholders ?? []).forEach((ph) => {
-      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
-    });
-    missing.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
+    checkCopy(spec.placeholders, true, 1000);
   } else if (spec.kind === "copy-position-create") {
     needs("positionKey", "位置标识");
     needs("positionName", "位置名称");
@@ -1306,7 +1362,16 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "copy-experiment-start") {
     if (state.ack !== "true") missing.push("勾选启动确认");
   } else if (spec.kind === "course-authoring") {
-    ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, ({ slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文" } as Record<string, string>)[key] ?? "课程字段"));
+    Object.entries({ slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励" }).forEach(([key, label]) => needs(key, label));
+    for (const language of activeLanguages) {
+      const suffix = CONTENT_LANGUAGE_SUFFIX[language];
+      needs(`title${suffix}`, `${CONTENT_LANGUAGE_LABELS[language]}标题`);
+      needs(`body${suffix}`, `${CONTENT_LANGUAGE_LABELS[language]}正文`);
+    }
+    checkPlaceholders(activeLanguages.map((language) => state[`body${CONTENT_LANGUAGE_SUFFIX[language]}`] ?? ""), "课程正文占位符不一致");
+    if (!activeLanguages.includes("zh") && Array.from((state.titleEn ?? "").trim()).length > 128) {
+      missing.push("中文未填时会用英文作主标题，英文标题请控制在 128 字内");
+    }
     for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
       if ((state[key] ?? "").trim().length > 1024) missing.push(`${({titleZh:"中文标题",titleEn:"英文标题",titleVi:"越南语标题",bodyZh:"中文正文",bodyEn:"英文正文",bodyVi:"越南语正文"} as Record<string,string>)[key] ?? "内容"} 最多 1024 字`);
     }
@@ -1322,15 +1387,15 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isInteger(quizCount) || quizCount < 1) missing.push("至少一道测验题");
     for (let questionIndex = 0; questionIndex < quizCount; questionIndex += 1) {
       needs(`quiz.${questionIndex}.id`, `第 ${questionIndex + 1} 题标识`);
-      needs(`quiz.${questionIndex}.questionZh`, `第 ${questionIndex + 1} 题中文题干`);
-      needs(`quiz.${questionIndex}.questionEn`, `第 ${questionIndex + 1} 题英文题干`);
-      needs(`quiz.${questionIndex}.questionVi`, `第 ${questionIndex + 1} 题越南语题干`);
+      for (const language of activeLanguages) {
+        needs(`quiz.${questionIndex}.question${CONTENT_LANGUAGE_SUFFIX[language]}`, `第 ${questionIndex + 1} 题${CONTENT_LANGUAGE_LABELS[language]}题干`);
+      }
       const optionCount = Number(state[`quiz.${questionIndex}.optionCount`] || 0);
       if (!Number.isInteger(optionCount) || optionCount < 2) missing.push(`第 ${questionIndex + 1} 题至少两个选项`);
       for (let optionIndex = 0; optionIndex < optionCount; optionIndex += 1) {
-        needs(`quiz.${questionIndex}.option.${optionIndex}.zh`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 中文`);
-        needs(`quiz.${questionIndex}.option.${optionIndex}.en`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 英文`);
-        needs(`quiz.${questionIndex}.option.${optionIndex}.vi`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 越南语`);
+        for (const language of activeLanguages) {
+          needs(`quiz.${questionIndex}.option.${optionIndex}.${language}`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} ${CONTENT_LANGUAGE_LABELS[language]}`);
+        }
       }
       const correct = Number(state[`quiz.${questionIndex}.correctOptionIndex`]);
       if (!Number.isInteger(correct) || correct < 0 || correct >= optionCount) missing.push(`第 ${questionIndex + 1} 题正确选项`);
@@ -1360,12 +1425,20 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isInteger(sort) || sort < 0 || sort > 9999) missing.push("排序 0-9999");
     if (state.status && !["active", "archived"].includes(state.status)) missing.push("状态只能为启用 / 已归档");
   } else if (spec.kind === "version-authoring") {
-    ["version", "jurisdiction", "languageScope", "effectiveDate", "requiresReack", "zh", "vi"].forEach((key) => needs(key, key));
-    if (state.languageScope?.includes("en")) needs("en", "英文正文");
+    ["version", "jurisdiction", "effectiveDate", "requiresReack"].forEach((key) => needs(key, key));
+    activeLanguages.forEach((language) => needs(language, `${CONTENT_LANGUAGE_LABELS[language]}正文`));
+    checkPlaceholders(activeLanguages.map((language) => state[language] ?? ""), "披露正文占位符不一致");
     if ((spec.chapters ?? []).length !== 7) missing.push("完整 7 章节");
     (spec.chapters ?? []).forEach((_chapter, index) => {
-      ["no", "zhTitle", "viTitle", "zhBody", "viBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
-      if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
+      needs(`chapter.${index}.no`, `第 ${index + 1} 章编号`);
+      const chapterTexts = activeLanguages.map((language) => {
+        const title = `chapter.${index}.${language}Title`;
+        const body = `chapter.${index}.${language}Body`;
+        needs(title, `第 ${index + 1} 章${CONTENT_LANGUAGE_LABELS[language]}标题`);
+        needs(body, `第 ${index + 1} 章${CONTENT_LANGUAGE_LABELS[language]}正文`);
+        return `${state[title] ?? ""}${state[body] ?? ""}`;
+      });
+      checkPlaceholders(chapterTexts, `第 ${index + 1} 章占位符不一致`);
     });
   } else if (spec.kind === "disclosure-jurisdiction") {
     needs("code", "适用地区代码");
@@ -1373,9 +1446,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
-    if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
+    for (const language of spec.requiredLanguages) {
+      if (spec.targetChapters.some((chapter) => !chapter[language].trim() || !chapter[`${language}Body`].trim())) missing.push(`七章${CONTENT_LANGUAGE_LABELS[language]}完整内容`);
+    }
     if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
-    if (state.bilingualConfirmed !== "true") missing.push("七章中越英内容核对");
+    if (state.bilingualConfirmed !== "true") missing.push("七章必填语言核对");
   } else if (spec.kind === "disclosure-matrix") {
     ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
   } else if (spec.kind === "trust-section-authoring") {
@@ -1396,9 +1471,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
     if (spec.requireDataSource) needs("dataSource", "财务/UVT数据来源");
-    const trilingual = validateTrustSectionTrilingualFields(spec.targetFields);
-    if (!trilingual.valid) missing.push(`中越英字段不完整：${trilingual.missing.join("、")}`);
-    if (state.bilingualConfirmed !== "true") missing.push("中越英三语确认");
+    const required = validateTrustSectionTrilingualFields(spec.targetFields, spec.requiredLanguages);
+    if (!required.valid) missing.push(`必填语言字段不完整：${required.missing.join("、")}`);
+    if (state.bilingualConfirmed !== "true") missing.push("必填语言核对");
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
   } else if (spec.kind === "identity-verify") {
@@ -1660,16 +1735,22 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     latestValueRef.current = next;
     onChange(next);
   };
+  const localizedRequirements = new Map<string, boolean>();
+  if ("requiredLanguages" in spec) {
+    for (const language of OPERATING_LANGUAGE_CODES) {
+      for (const key of localizedFormKeys(spec, value, language)) localizedRequirements.set(key, spec.requiredLanguages.includes(language));
+    }
+  }
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
-      <span>{label}</span>
-      <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
+      <span>{label}{localizedRequirements.get(key) && " *"}</span>
+      <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={localizedRequirements.get(key) === false ? OPTIONAL_CONTENT_HINT : placeholder} />
     </label>
   );
   const input = (key: string, label: string, placeholder: string, type = "text", maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
-      <span>{label}</span>
-      <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
+      <span>{label}{localizedRequirements.get(key) && " *"}</span>
+      <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={localizedRequirements.get(key) === false ? OPTIONAL_CONTENT_HINT : placeholder} />
     </label>
   );
   const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void, unavailableLabel?: string) => {
@@ -2345,7 +2426,6 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
 
   if (spec.kind === "version-authoring") {
     const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
-    const englishRequirement = value.languageScope?.includes("en") ? "必填" : "选填";
     return (
       <div className="field" data-business-form="version-authoring">
         <span className="bf-legend">新建 / 编辑披露草稿</span>
@@ -2359,14 +2439,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             onChange(updated);
             onSelectionChange?.(updated);
           })}
-          {select("languageScope", "语言范围", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES, { "zh+vi": "中文 + 越南语", "zh+vi+en": "中文 + 越南语 + 英语" })}
+          {select("languageScope", "语言范围", [spec.languageScope], { "zh+vi": "中文 + 越南语", [DISCLOSURE_LANGUAGE_SCOPE]: "中文 + 越南语 + 英语" })}
           {input("effectiveDate", "生效日期", "YYYY-MM-DD", "date")}
           {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（切换生效版本后用户须重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
           {textArea("vi", "越南语版本正文", "Nhập nội dung công bố bằng tiếng Việt", 4)}
-          {textArea("en", `英语版本正文（${englishRequirement}）`, "Fill English disclosure body", 4)}
+          {textArea("en", "英语版本正文", "Fill English disclosure body", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
           <span className="bf-legend">章节内容（共 7 章）</span>
@@ -2375,10 +2455,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
               {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
               {input(`chapter.${index}.viTitle`, "越南语标题", "Nhập tiêu đề tiếng Việt")}
-              {input(`chapter.${index}.enTitle`, `英语标题（${englishRequirement}）`, "English title")}
+              {input(`chapter.${index}.enTitle`, "英语标题", "English title")}
               {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
               {textArea(`chapter.${index}.viBody`, "越南语正文", "Nhập nội dung tiếng Việt", 3)}
-              {textArea(`chapter.${index}.enBody`, `英语正文（${englishRequirement}）`, "English body", 3)}
+              {textArea(`chapter.${index}.enBody`, "英语正文", "English body", 3)}
             </div>
           </div>)}
         </div>
@@ -2446,7 +2526,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
         </label>
         <label className="field" style={{ marginTop: 6 }}>
-          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对七章中文、越南语和英语内容，与监管要求一致</span>
+          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 已核对七章必填语言（{spec.requiredLanguages.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}），与监管要求一致</span>
         </label>
       </div>
     );
@@ -2556,7 +2636,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         {spec.requireDataSource && input("dataSource", "财务/UVT数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
-          已逐项核对中、越、英三语，关键数字一致
+          已逐项核对必填语言（{spec.requiredLanguages.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}），关键数字一致
         </label>
       </div>
     );
@@ -3558,7 +3638,7 @@ export function OperationConfirmModal({ action, detail, content, amplifies, cove
     setSubmitError(null);
     try {
       if (retryApproval) await retryApproval();
-      else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
+      else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? mapLocalizedForm(activeBusinessForm, businessValue, "submit") : undefined);
     } catch (error) {
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.

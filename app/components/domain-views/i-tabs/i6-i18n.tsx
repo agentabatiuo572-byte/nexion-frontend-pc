@@ -14,12 +14,13 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useEffect, useState } from "react";
 import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { CONTENT_LANGUAGE_LABELS, Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { OPERATING_LANGUAGE_CODES, getRequiredContentLanguages, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
 
 type NsFlt = "all" | "issues";
 type CatFlt = string;
@@ -50,6 +51,33 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
   Security: "🛡",
 };
 
+function messageVariables(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
+  return languages.map((language) => [...new Set(message[language].match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"));
+}
+
+function isConversationSourceKey(messageKey: string): boolean {
+  return messageKey.startsWith("conversation.script.") || messageKey.startsWith("conversation.template.");
+}
+
+function requiredMessageLanguages(messageKey: string, required: readonly OperatingLanguageCode[]): readonly OperatingLanguageCode[] {
+  return isConversationSourceKey(messageKey) && !required.includes("zh") ? [...required, "zh"] : required;
+}
+
+function messageQualityIssues(message: I18nMessagePairView, languages: readonly OperatingLanguageCode[]): string[] {
+  return i6CopyQualityIssues(languages.includes("zh") ? message.zh : "", message.en, languages.includes("vi") ? message.vi : "");
+}
+
+function missingCourseLanguages(course: Pick<Course, "titleZh" | "titleEn" | "titleVi" | "bodyZh" | "bodyEn" | "bodyVi" | "quizQuestions">, required: readonly OperatingLanguageCode[]) {
+  const suffixes = { en: "En", zh: "Zh", vi: "Vi" } as const;
+  return required.filter((language) => {
+    const suffix = suffixes[language];
+    return !course[`title${suffix}`].trim() || !course[`body${suffix}`].trim() || course.quizQuestions.some((question) => {
+      const options = question[`options${suffix}`];
+      return !question[`question${suffix}`]?.trim() || !options || options.length !== question.optionsEn.length || options.some((option) => !option.trim());
+    });
+  });
+}
+
 export function I6I18n({ ctx }: { ctx: ICtx }) {
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
@@ -71,6 +99,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const canAdjustI7Reward = isSuperadmin || !!session?.authorities.includes("content_i7_course_reward_adjust");
   const canPublishI7 = canWriteI7 && canAdjustI7Reward;
   const propose = usePropose();
+  const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
+  useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
   const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
@@ -102,8 +132,22 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return () => { active = false; };
   }, [actions, versionCourseId, content.i18nLearning, versionsRetry]);
   const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
-  const NAMESPACES: Namespace[] = data?.namespaces ?? [];
   const MESSAGES = data?.messages ?? [];
+  const completeLanguageCount = (message: I18nMessagePairView, languages = requiredMessageLanguages(message.messageKey, requiredLanguages)) =>
+    languages.filter((language) => message[language].trim()).length;
+  const completeByNamespace = new Map<string, number>();
+  let managedKeys = 0;
+  for (const message of MESSAGES) {
+    const languages = requiredMessageLanguages(message.messageKey, requiredLanguages);
+    if (message.status !== "published" || completeLanguageCount(message, languages) !== languages.length
+      || new Set(messageVariables(message, languages)).size !== 1 || messageQualityIssues(message, languages).length > 0) continue;
+    completeByNamespace.set(message.namespace, (completeByNamespace.get(message.namespace) ?? 0) + 1);
+    managedKeys += 1;
+  }
+  const NAMESPACES: Namespace[] = (data?.namespaces ?? []).map((row) => ({
+    ...row,
+    coverage: row.keys ? Math.round((completeByNamespace.get(row.ns) ?? 0) * 100 / row.keys) : 0,
+  }));
   const INTEGRITY_ISSUES: IntegrityIssue[] = data?.integrityIssues ?? [];
   const HARDCODED_FINDINGS: HardcodedFinding[] = data?.hardcodedFindings ?? [];
   const COURSES: Course[] = (data?.courses ?? []).map((c) => ({
@@ -119,10 +163,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     v: c.version,
     status: c.status,
     body: c.body,
-    titleZh: c.titleZh || c.title,
+    titleZh: c.titleZh ?? "",
     titleEn: c.titleEn || "",
     titleVi: c.titleVi || "",
-    bodyZh: c.bodyZh || c.body,
+    bodyZh: c.bodyZh ?? "",
     bodyEn: c.bodyEn || "",
     bodyVi: c.bodyVi || "",
     quizQuestions: c.quizQuestions ?? [],
@@ -165,18 +209,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
-  const missingLocales = selectedMessage
-    ? ([["中文", selectedMessage.zh], ["英文", selectedMessage.en], ["越南语", selectedMessage.vi]] as const).filter(([, value]) => !value.trim()).map(([label]) => label)
-    : [];
-  const messageVariables = selectedMessage
-    ? [selectedMessage.zh, selectedMessage.en, selectedMessage.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
-    : [];
-  const variablesMatch = new Set(messageVariables).size === 1;
-  const qualityIssues = selectedMessage ? i6CopyQualityIssues(selectedMessage.zh, selectedMessage.en, selectedMessage.vi) : [];
+  const messageRequired = requiredMessageLanguages(selectedMessage?.messageKey ?? "", requiredLanguages);
+  const missingLocales = selectedMessage ? messageRequired.filter((language) => !selectedMessage[language].trim()).map((language) => CONTENT_LANGUAGE_LABELS[language]) : [];
+  const providedLanguages = selectedMessage ? OPERATING_LANGUAGE_CODES.filter((language) => selectedMessage[language].trim()) : [];
+  const variables = selectedMessage ? messageVariables(selectedMessage, providedLanguages) : [];
+  const variablesMatch = new Set(variables).size === 1;
+  const qualityIssues = selectedMessage ? messageQualityIssues(selectedMessage, providedLanguages) : [];
   const publicationIssues = [
     ...missingLocales.map((locale) => `缺少${locale}文案`),
-    ...(missingLocales.length === 0 && !variablesMatch ? ["三语变量不一致"] : []),
+    ...(missingLocales.length === 0 && !variablesMatch ? ["已填写文案的变量不一致"] : []),
     ...qualityIssues,
+    ...(selectedMessage?.status === "draft" && missingLocales.length === 0 && providedLanguages.length < OPERATING_LANGUAGE_CODES.length
+      ? ["该草稿需先重新保存，才能发布已存内容"] : []),
   ];
   useEffect(() => {
     const messageKey = selectedMessage?.messageKey;
@@ -226,24 +270,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rescan = () =>
     openConfirm({ briefKind: "record",
       errorHandled: true,
-      action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
+      action: <>全量重扫 {I6_STATS.totalKeys} 词条</>,
       detail: <>检查缺少翻译、变量不一致、占位文字、旧品牌名、写死的文字和禁用词。只检查不修改，结果会刷新到下表。</>,
       chips: [["只读扫描 · 普通确认", "done"]],
       okLabel: "开始扫描",
       run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), "检查完成，请看下表的问题"),
     });
 
-  const editKeyDraft = () => selectedMessage &&
+  const editKeyDraft = async () => selectedMessage &&
     openActionConfirm({ briefKind: "config",
       action: <>编辑词条草稿 · {selectedMessage.messageKey}</>,
       detail: (
         <>
-          中文、英文、越南语三份一起维护；三种语言的占位符集合必须一致。保存只新增或更新版本草稿，不覆盖当前发布版。
+          英文和运营区域语言必填，已填写语言的占位符须一致。{isConversationSourceKey(selectedMessage.messageKey) && "中文须填写客服话术原文。"}保存只新增或更新版本草稿，不覆盖当前发布版。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "localized-copy",
+        requiredLanguages: requiredMessageLanguages(selectedMessage.messageKey, await getRequiredContentLanguages()),
         mode: "edit",
         keyName: selectedMessage.messageKey,
         zh: selectedMessage.zh,
@@ -268,8 +313,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
       detail: (
         <>
-          发布前检查：<b>中英越三语{missingLocales.length === 0 ? "完整 ✓" : `待补齐（${missingLocales.join("、")}）`}</b>；
-          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐三语）" : variablesMatch ? `一致 ✓（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
+          发布前检查：<b>必填语言{missingLocales.length === 0 ? "完整 ✓" : `待补齐（${missingLocales.join("、")}）`}</b>；
+          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐必填语言）" : variablesMatch ? `一致 ✓（${variables[0] || "无变量"}）` : "不一致"}</b>；
           <b>占位文字与旧品牌{qualityIssues.length === 0 ? "检查通过 ✓" : `检查未通过：${qualityIssues.join("、")}`}</b>。
           发布后用户下次加载该词条时使用新版本。系统提交时仍会核对发布条件。
         </>
@@ -313,17 +358,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ), `${selectedMessage.messageKey} 已从 ${target.version} 恢复为新发布版本`),
     });
 
-  const fixIntegrity = (issue: IntegrityIssue) =>
+  const fixIntegrity = async (issue: IntegrityIssue) =>
     openActionConfirm({ briefKind: "config",
       action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
         <>
-          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。保存后重新检查，问题清零后才能发布。
+          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。{selectedMessage && isConversationSourceKey(selectedMessage.messageKey) && "中文须填写客服话术原文。"}保存后重新检查，问题清零后才能发布。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "localized-copy",
+        requiredLanguages: requiredMessageLanguages(selectedMessage?.messageKey ?? "", await getRequiredContentLanguages()),
         mode: "edit",
         keyName: selectedMessage?.messageKey ?? "",
         zh: selectedMessage?.zh ?? "",
@@ -357,7 +403,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </>
       ),
       amplifies: false,
-      run: (reason) => {
+      run: async (reason) => {
+        const missing = missingCourseLanguages(c, await getRequiredContentLanguages());
+        if (missing.length > 0) {
+          toast(`请先补齐课程：${missing.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}`);
+          return false;
+        }
         return runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
       },
     });
@@ -446,17 +497,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     };
   };
 
-  const newCrs = () =>
+  const newCrs = async () =>
     openActionConfirm({ briefKind: "config",
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
-          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题和正文在「多语言文案」里另建中英越三语。草稿用户看不到，发布时需要确认。
+          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题、正文和测验须填写英文和运营区域语言。草稿用户看不到，发布时需要确认。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "course-authoring",
+        requiredLanguages: await getRequiredContentLanguages(),
         mode: "create",
         rewardMin: TUTORIAL_REWARD_RANGE.min,
         rewardMax: TUTORIAL_REWARD_RANGE.max,
@@ -470,12 +522,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
     });
 
-  const editCrs = (c: Course) => openActionConfirm({ briefKind: "config",
+  const editCrs = async (c: Course) => openActionConfirm({ briefKind: "config",
     action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
     detail: <>只有草稿可以编辑；测验按题目和选项填写。</>,
     amplifies: false,
     businessForm: {
       kind: "course-authoring",
+      requiredLanguages: await getRequiredContentLanguages(),
       mode: "edit",
       rewardMin: TUTORIAL_REWARD_RANGE.min,
       rewardMax: TUTORIAL_REWARD_RANGE.max,
@@ -515,7 +568,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     rewardEvent: String(payload?.rewardEvent ?? c.rewardEvent ?? "quiz.passed"),
   });
 
-  const newCourseVersion = (c: Course) => {
+  const newCourseVersion = async (c: Course) => {
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
     openActionConfirm({ briefKind: "config",
@@ -524,6 +577,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: false,
       businessForm: {
         kind: "course-authoring", mode: "version-create", rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max,
+        requiredLanguages: await getRequiredContentLanguages(),
         categories: courseCategories, formats: data?.formats, levels: data?.levels,
         current: courseCurrent(c, `v${maxVersion + 1}`),
       },
@@ -532,12 +586,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
   };
 
-  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "config",
+  const editCourseVersion = async (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "config",
     action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
+    detail: <>英文和运营区域语言的正文与测验须填写完整。如果别人刚改过，需要刷新后重改。</>,
     amplifies: false,
     businessForm: {
       kind: "course-authoring", mode: "version-edit", rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max,
+      requiredLanguages: await getRequiredContentLanguages(),
       categories: courseCategories, formats: data?.formats, levels: data?.levels,
       current: courseCurrent(c, row.version, row.payload),
     },
@@ -554,9 +609,16 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
+    detail: <>发布前会检查必填语言的测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
     amplifies: true,
-    run: (reason) => runBackend(actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
+    run: async (reason) => {
+      const missing = missingCourseLanguages(courseCurrent(c, row.version, row.payload), await getRequiredContentLanguages());
+      if (missing.length > 0) {
+        toast(`请先补齐课程版本：${missing.map((language) => CONTENT_LANGUAGE_LABELS[language]).join("、")}`);
+        return false;
+      }
+      return runBackend(actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`);
+    },
   });
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
@@ -624,9 +686,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         <div className="f-stat">
           <div className="k">受管词条</div>
           <div className="v">
-            {I6_STATS.managedKeys} / {I6_STATS.totalKeys}
+            {managedKeys} / {I6_STATS.totalKeys}
           </div>
-          <div className="sub">真实词条目录 × zh/en/vi</div>
+          <div className="sub">已发布词条 · 必填语言</div>
         </div>
         <div className={`f-stat ${liveIntegrity === 0 ? "ok" : "warn"}`}>
           <div className="k">完整性问题</div>
@@ -639,7 +701,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">词条分组</span>
-          <span className="sub">· 按真实词条实时汇总三语覆盖率</span>
+          <span className="sub">· 按当前词条目录汇总必填语言覆盖率</span>
           <div className="r chips">
             {NS_FLT.map(([k, l]) => (
               <button
@@ -747,14 +809,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <thead><tr><th>词条标识</th><th>命名空间</th><th>版本</th><th>状态</th><th>语言完整度</th><th></th></tr></thead>
             <tbody>
               {filteredMessages.map((message) => {
-                const languageCount = [message.zh, message.en, message.vi].filter(Boolean).length;
+                const languages = requiredMessageLanguages(message.messageKey, requiredLanguages);
+                const languageCount = completeLanguageCount(message, languages);
                 const selected = selectedMessage?.messageKey === message.messageKey;
                 return <tr key={message.messageKey} className="click" onClick={() => setSelectedMessageKey(message.messageKey)}>
                   <td className="mono" style={{ fontWeight: selected ? 700 : 500 }}>{message.messageKey}</td>
                   <td>{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[message.namespace] ?? message.namespace}</td>
                   <td className="mono">{message.version}</td>
                   <td><span className={`bdg ${message.status === "published" ? "ok" : message.status === "draft" ? "warn" : "dim"}`}>{statusLabel(message.status)}</span></td>
-                  <td>{languageCount}/3 · {languageCount === 3 ? "中英越完整" : "待补齐"}</td>
+                  <td>{languageCount}/{languages.length} · {languageCount === languages.length ? "必填语言完整" : "待补齐"}</td>
                   <td style={{ textAlign: "right" }}><button className="l-btn sm" aria-label={`选择 ${message.messageKey}`} onClick={(event) => { event.stopPropagation(); setSelectedMessageKey(message.messageKey); }}>选择</button></td>
                 </tr>;
               })}
@@ -775,7 +838,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               {!canWriteI6 && <span className="bdg dim">只读</span>}
               {canWriteI6 && selectedMessage && <>
               <button className="l-btn sm" onClick={editKeyDraft}>
-                编辑三语草稿
+                编辑词条草稿
               </button>
               {selectedMessage.status === "draft" && <button className="l-btn sm mc" disabled={publicationIssues.length > 0} onClick={pubKey}>
                 发布
@@ -786,25 +849,26 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             {selectedMessage ? <>
-              {selectedMessage.status === "draft" && publicationIssues.length > 0 && <div className="itint warn" role="status">暂不能发布：{publicationIssues.join("；")}。请编辑三语草稿后再发布。</div>}
+              {selectedMessage.status === "draft" && publicationIssues.length > 0 && <div className="itint warn" role="status">暂不能发布：{publicationIssues.join("；")}。请编辑词条草稿后再发布。</div>}
               <div className="ab-grid">
-                <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || "待补齐"}</div></div>
+                <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || (messageRequired.includes("zh") ? "待补齐" : "—")}</div></div>
                 <div className="ab-prev"><div className="lc">英文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
-                <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || "待补齐"}</div></div>
+                <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || (messageRequired.includes("vi") ? "待补齐" : "—")}</div></div>
               </div>
-              <div className={`itint ${selectedMessage.zh && selectedMessage.en && selectedMessage.vi ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
+              <div className={`itint ${missingLocales.length === 0 ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>三语内容</b> · 版本 {selectedMessage.version} · 变量 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
               </div>
               <div style={{ overflowX: "auto", marginTop: 12 }}>
                 <table className="l-tbl" style={{ minWidth: 520 }}>
-                  <thead><tr><th>历史版本</th><th>状态</th><th>三语完整度</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+                  <thead><tr><th>历史版本</th><th>状态</th><th>必填语言完整度</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
                   <tbody>
                     {messageVersions.map((row) => {
-                      const complete = [row.zh, row.en, row.vi].filter(Boolean).length;
+                      const languages = requiredMessageLanguages(row.messageKey, requiredLanguages);
+                      const complete = completeLanguageCount(row, languages);
                       return <tr key={`${row.messageKey}-${row.version}`}>
                         <td className="mono">{row.version}</td>
                         <td>{statusLabel(row.status)}</td>
-                        <td>{complete}/3</td>
+                        <td>{complete}/{languages.length}</td>
                         <td style={{ textAlign: "right" }}>
                           {canWriteI6 && row.status === "archived" && selectedMessage.status !== "draft"
                             ? <button className="l-btn sm mc" onClick={() => rollbackMessageVersion(row)}>回滚到此版本</button>
@@ -1160,7 +1224,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </>}
 
       <p className="f-foot">
-        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查中英越三语和变量；发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
+        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查英文、运营区域语言和变量；客服话术词条须保留中文原文。发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
       </p>
       <PaginationExemptionList
         items={view === "i18n" ? [
@@ -1168,7 +1232,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             label: "词条分组",
             kind: "reference-catalog",
             maxRows: Math.max(1, NAMESPACES.length),
-            reason: `命名空间来自真实词条目录,当前 ${NAMESPACES.length} 组,需要同屏核对三语覆盖率和缺少词条`,
+            reason: `命名空间来自真实词条目录,当前 ${NAMESPACES.length} 组,需要同屏核对必填语言覆盖率和缺少词条`,
           },
         ] : [
           {
@@ -1192,7 +1256,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <div
               style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13 }}
             >
-              {nsDrawer.keys} 个词条 · 三语覆盖 {nsDrawer.cov}%
+              {nsDrawer.keys} 个词条 · 必填语言覆盖 {nsDrawer.cov}%
               {nsDrawer.variants !== "—"
                 ? ` · ${nsDrawer.variants} 进行中`
                 : ""}
@@ -1222,7 +1286,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     </td>
                     <td style={{ fontSize: 12 }}>{statusLabel(message.status)}</td>
                     <td style={{ fontSize: 12 }}>
-                      {message.zh ? "中" : "缺中"} / {message.en ? "英" : "缺英"} / {message.vi ? "越" : "缺越"}
+                      {requiredMessageLanguages(message.messageKey, requiredLanguages).map((language) => `${message[language].trim() ? "" : "缺"}${CONTENT_LANGUAGE_LABELS[language]}`).join(" / ")}
                     </td>
                     <td>
                       <button
@@ -1251,7 +1315,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             className="itint"
             style={{ fontSize: 12, lineHeight: 1.6 }}
           >
-            点「查看词条」可回到词条详情编辑中、英、越三语；缺少任一语言或占位符不一致时均不能发布。
+            点「查看词条」可回到词条详情；缺少必填语言或占位符不一致时不能发布。
           </div>
         </Drawer>
       )}
