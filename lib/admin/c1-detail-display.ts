@@ -42,8 +42,8 @@ const RUNTIME_STATUS_LABELS: Record<string, string> = {
 
 /** 通知类型。 */
 const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
-  NOVA_WELCOME: "Nova 欢迎",
-  NOVA_SOCIAL: "Nova 社交",
+  NOVA_WELCOME: "欢迎与玩法解释",
+  NOVA_SOCIAL: "真实动态",
   SYSTEM: "系统通知",
   WALLET: "钱包通知",
   PAYMENT_METHOD: "支付方式",
