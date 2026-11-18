@@ -75,6 +75,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
         <OperationConfirmModal briefKind={mc.briefKind}
           action={mc.action}
           detail={mc.detail}
+          content={mc.content}
+          blockedReason={mc.blockedReason}
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}

@@ -32,8 +32,9 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
     if (!draft || !write || saving || (base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0)))) return;
     const invalid = raffleDraftError(draft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const savedDraft = raffleLocalizedDraft(draft, requiredLanguages, "submit"), previous = base, nextEnabled = !!base && enabled;
-    ctx.openActionConfirm({ briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, amplifies: nextEnabled,
-      detail: <>本期共 {draft.prizes.reduce((sum, prize) => sum + prize.quantity, 0)} 个中奖名额。{nextEnabled ? "开放报名需要审批，当前页面还不能提交这项审批，保存会被拒绝、不会生效。批准开放后用户可按公布时段使用抽奖券报名，奖项和时间固定。" : base?.status === "OPEN" ? "本期改回草稿并关闭报名（仅限还没人报名的轮次）。" : "保存为草稿，不会对用户开放。"}</>,
+    ctx.openActionConfirm({ briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
+      detail: <>本期共 {draft.prizes.reduce((sum, prize) => sum + prize.quantity, 0)} 个中奖名额。{nextEnabled ? "批准开放后用户可按公布时段使用抽奖券报名，奖项和时间固定。" : base?.status === "OPEN" ? "本期改回草稿并关闭报名（仅限还没人报名的轮次）。" : "保存为草稿，不会对用户开放。"}</>,
+      blockedReason: nextEnabled && base?.status !== "OPEN" ? "开放报名要审批，这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开配置。");
         const own = generation.current; setSaving(true); setError("");
@@ -51,7 +52,7 @@ export default function H4GenesisRaffle({ ctx, requiredLanguages }: { ctx: HCtx;
     <div className="l-h"><span className="ttl">创世抽奖</span><span className="sub">使用创世抽奖券报名，按配置时间开奖</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button><button className="l-btn sm mc" disabled={!write || loading || saving || !!draft} onClick={() => choose(null)}>新建一期</button></div></div>
     <div className="l-b">{error && <p role="alert">{error}</p>}{loading ? <p role="status">正在加载抽奖设置…</p> : <>
       {!rows.length && !error && <p>暂无抽奖轮次。</p>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.id} disabled={!!draft || saving} onClick={() => choose(row)}>{row.titleZh || row.id} · {{ DRAFT: "草稿", OPEN: "已开放", PROCESSING: "发放中", DRAWN: "已开奖" }[row.status]} · 已报名 {row.totalEntries} 票</button>)}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.id} disabled={!!draft || saving} onClick={() => choose(row)}>{row.titleZh || row.titleEn || row.id} · {{ DRAFT: "草稿", OPEN: "已开放", PROCESSING: "发放中", DRAWN: "已开奖" }[row.status]} · 已报名 {row.totalEntries} 票</button>)}</div>
       {draft && <>
         <fieldset disabled={!write || saving} style={{ border: 0, padding: 0, marginTop: 16 }}>
           {base && <label className="field"><span>开放报名</span><select aria-label="开放创世抽奖报名" value={String(enabled)} disabled={base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0} onChange={event => setEnabled(event.target.value === "true")}><option value="false">关闭</option><option value="true">开启</option></select></label>}

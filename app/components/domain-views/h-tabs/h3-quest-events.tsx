@@ -1960,18 +1960,19 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   const [label, tone] = lifecycle === "draft" ? ["草稿", "dim"] : EVENT_LABEL[lifecycle] ?? stateTone.get(event.state) ?? ["状态未知", "dim"];
                   const ended = lifecycle === "ended";
                   const wheelEvent = text(event.kind).toLowerCase() === "wheel";
-                  const zhName = rawLocalizedValue("event", event.id, "name", "zh");
-                  const zhDescription = rawLocalizedValue("event", event.id, "description", "zh");
-                  const zhRewardName = rawLocalizedValue("event", event.id, "rewardName", "zh");
+                  const listCopy = (field: EventContentField) => rawLocalizedValue("event", event.id, field, "zh").trim() || rawLocalizedValue("event", event.id, field, "en").trim();
+                  const zhName = listCopy("name");
+                  const zhDescription = listCopy("description");
+                  const zhRewardName = listCopy("rewardName");
                   return (
                     <tr key={event.id}>
                       <td style={{ color: "var(--ink)" }}>
-                        <div style={{ fontWeight: 600 }}>{zhName || "中文标题未配置"}</div>
-                        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "中文说明未配置"}</div>
+                        <div style={{ fontWeight: 600 }}>{zhName || "名称未填写"}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "说明未填写"}</div>
                       </td>
                       <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
-                      <td className="num">{zhRewardName || "中文奖项未配置"}</td>
+                      <td className="num">{zhRewardName || "—"}</td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {wheelEvent ? (

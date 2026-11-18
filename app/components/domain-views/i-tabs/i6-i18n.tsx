@@ -373,9 +373,10 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。{c.reward > 0 ? "带奖励的课程发布要走审批，当前页面还不能提交审批，后台会拒绝直接发布。" : "发布后直接生效。"}
+          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。{c.reward > 0 ? "" : "发布后直接生效。"}
         </>
       ),
+      blockedReason: c.reward > 0 ? "带奖励的课程发布要审批，这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
       amplifies: false,
       run: async (reason) => {
         const missing = missingCourseLanguages(c, await getRequiredContentLanguages());
@@ -586,7 +587,8 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>发布前会检查必填语言的测验、兑付覆盖率和权限；发布后旧版本变为历史版本。{Number(row.payload?.rewardNex ?? c.reward) > 0 ? "这个版本带奖励，发布要走审批，当前页面还不能提交审批，后台会拒绝直接发布。" : ""}</>,
+    detail: <>发布前会检查必填语言的测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
+    blockedReason: Number(row.payload?.rewardNex ?? c.reward) > 0 ? "这个版本带奖励，发布要审批，这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
     amplifies: true,
     run: async (reason) => {
       const missing = missingCourseLanguages(courseCurrent(c, row.version, row.payload), await getRequiredContentLanguages());
@@ -600,7 +602,8 @@ function I18nLearningPage({ ctx, view, requiredLanguages, publishedCoverage }: I
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
-    detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。{Number(row.payload?.rewardNex ?? 0) > 0 ? "目标版本带奖励，回滚要走审批（等额、降额也算），当前页面还不能提交审批，后台会拒绝直接回滚。" : ""}</>,
+    detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
+    blockedReason: Number(row.payload?.rewardNex ?? 0) > 0 ? "目标版本带奖励，回滚要审批（等额、降额也算），这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
     amplifies: true,
     run: (reason) => runBackend(actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
   });

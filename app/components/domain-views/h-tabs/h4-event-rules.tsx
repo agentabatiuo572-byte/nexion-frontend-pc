@@ -72,7 +72,8 @@ export default function H4EventRules({ ctx, rows, confirmedRules, currentEventCo
     catch (cause) { setError(displayAdminError(cause)); return; }
     const base = selected;
     ctx.openActionConfirm({ briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
-      detail: <>更新本活动的参与条件、奖励及有效期。{!next.enabled ? "保存后活动为关闭状态，不发放新奖励。" : base.enabled ? "活动保持开启，符合条件的用户继续参与；保存时会检查配置与奖励预算。" : base.rulesLocked ? "开启过又关闭的活动不能重新开启，保存会被拒绝。" : "首次开启需要审批，当前页面还不能提交这项审批，保存会被拒绝、不会生效。"}</>,
+      detail: <>更新本活动的参与条件、奖励及有效期。{!next.enabled ? "保存后活动为关闭状态，不发放新奖励。" : base.enabled ? "活动保持开启，符合条件的用户继续参与；保存时会检查配置与奖励预算。" : base.rulesLocked ? "开启过又关闭的活动不能重新开启，保存会被拒绝。" : ""}</>,
+      blockedReason: next.enabled && !base.enabled && !base.rulesLocked ? "首次开启活动要审批，这个页面没有审批入口。请到新版后台提交审批，或请管理员走审批流程。" : undefined,
       amplifies: next.enabled,
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开活动配置。");
