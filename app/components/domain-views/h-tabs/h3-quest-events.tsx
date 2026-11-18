@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
+  type H4EventRewardPresentation,
   fetchH3WeeklyRegionPolicy,
   h3WeeklyRegionPolicyParams,
   validateH3WeeklyRegionMappings,
@@ -60,7 +61,7 @@ type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
 
 type QuestTask = Record<string, any>;
-type QuestEvent = {
+type QuestEvent = H4EventRewardPresentation & {
   id: string;
   name: string;
   kind?: string;
@@ -71,8 +72,6 @@ type QuestEvent = {
   reward?: string;
   description?: string;
   rewardName?: string;
-  appUsesAuthoredRewardName?: boolean;
-  appRewardNames?: Partial<Record<OperatingLanguageCode, string>>;
   featured?: boolean;
   trackable?: boolean;
   condition?: string;
@@ -584,9 +583,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     return { name: read("name"), description: read("description"), rewardName: read("rewardName") };
   };
 
-  const eventEditFields = (code: string, locale: OperatingLanguageCode, appUsesAuthoredRewardName?: boolean) => {
-    const english = eventFields(code, "en"), localized = eventFields(code, locale);
-    if (appUsesAuthoredRewardName !== false) return blankCopiedContentLanguage(requiredLanguages, locale, english, localized);
+  const eventEditFields = (event: QuestEvent, locale: OperatingLanguageCode) => {
+    const english = eventFields(event.id, "en"), localized = eventFields(event.id, locale);
+    if (event.appUsesAuthoredRewardName) return blankCopiedContentLanguage(requiredLanguages, locale, english, localized);
     const active = blankCopiedContentLanguage(requiredLanguages, locale,
       { name: english.name, description: english.description }, { name: localized.name, description: localized.description });
     return { ...active, rewardName: localized.rewardName };
@@ -654,8 +653,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   ) => {
     const current = rawLocalizedValue(entity, code, field, locale);
     const optional = !requiredLanguages.includes(locale);
-    const computedReward = field === "rewardName" && event?.appUsesAuthoredRewardName === false;
-    const displayed = entity === "event" ? eventEditFields(code, locale, event?.appUsesAuthoredRewardName)[field] : current;
+    const computedReward = field === "rewardName" && event && !event.appUsesAuthoredRewardName;
+    const displayed = event ? eventEditFields(event, locale)[field] : current;
     const operator = currentAdminOperator();
     const clearable = entity === "event" && optional && event?.deleteState === "draft"
       && current.trim() !== "";
@@ -1384,8 +1383,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               ];
               const event = item.entity === "event" ? item.event : undefined;
               if (event) {
-                const rewardLabels = event.appUsesAuthoredRewardName === false ? EVENT_CONTENT_LOCALES.flatMap(locale => {
-                  const label = event.appRewardNames?.[locale];
+                const rewardLabels = !event.appUsesAuthoredRewardName ? EVENT_CONTENT_LOCALES.flatMap(locale => {
+                  const label = event.appRewardNames[locale];
                   return label ? [`${LOCALE_LABEL[locale]} ${label}`] : [];
                 }) : [];
                 rows.push(
@@ -1398,19 +1397,19 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <td className="mono">{row.label}</td>
                   <td>{row.preview ?? taskTitleText(row.source)}</td>
                   {EVENT_CONTENT_LOCALES.map((language) => {
-                    const current = event ? eventEditFields(item.code, language, event.appUsesAuthoredRewardName)[row.field] : rawLocalizedValue(item.entity, item.code, row.field, language);
+                    const current = event ? eventEditFields(event, language)[row.field] : rawLocalizedValue(item.entity, item.code, row.field, language);
                     if (item.readOnly) {
                       return <td key={language}><span title="任务已归档，译文只读">{current || "未填写"}</span></td>;
                     }
                     const missing = item.entity === "event" && localizedGapKeys.has(`${item.code}:localized.${language}.${row.field}`);
                     const rewardName = row.field === "rewardName";
-                    const required = event && requiredLanguages.includes(language) && (!rewardName || event.appUsesAuthoredRewardName === true);
+                    const required = event && requiredLanguages.includes(language) && (!rewardName || event.appUsesAuthoredRewardName);
                     return (
                       <td key={language}>
                         <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
                           aria-label={`${missing ? "填写（上线前必须补齐）" : current ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
                           onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source, event)}>
-                          {missing ? "缺失" : current || (event && (!rewardName || event.appUsesAuthoredRewardName === true) ? "未填，App 显示英文" : "填写")}{required ? " *" : ""}
+                          {missing ? "缺失" : current || (event && (!rewardName || event.appUsesAuthoredRewardName) ? "未填，App 显示英文" : "填写")}{required ? " *" : ""}
                         </button>
                         {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="活动设为「进行中」前必须补齐这个语言">缺</span>}
                       </td>
