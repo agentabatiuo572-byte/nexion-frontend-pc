@@ -3773,6 +3773,7 @@ export type InlineOperationApproval = {
   resolve: (value: BusinessFormValue, editValue: string) => OperationApproval | undefined;
   renderForm?: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
   recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
+  recoverLabel?: string;
   retry?: () => Promise<void>;
   pending?: boolean;
   /** Saved direct commands can expose the existing query and retry actions together. */
@@ -3975,6 +3976,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
         setSubmitError(inlineApproval?.expired ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
+      } else if (inlineApproval?.recoverLabel) {
+        setSubmitError(null);
       }
     } catch (error) {
       setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
@@ -4052,7 +4055,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
-            {submitting ? "查询中…" : "查询原结果"}
+            {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
         {!approvalOnlyLookup && (surface ? (

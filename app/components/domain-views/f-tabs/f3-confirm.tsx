@@ -74,7 +74,7 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
         pending: !!original,
         initialRecovery: "retry",
         expired: !!original && !canRetryF3Proposal(original),
-        expiredRequestRecovery: original && !original.ticket && !original.received && isRetryExpired(original) ? "query" : undefined,
+        expiredRequestRecovery: original && isRetryExpired(original) ? "query" : undefined,
         recover: async () => {
           const record = saved();
           if (!record) { onClose(); return true; }
