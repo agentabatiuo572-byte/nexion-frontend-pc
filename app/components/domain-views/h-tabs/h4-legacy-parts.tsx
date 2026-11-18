@@ -166,21 +166,23 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
   const life = lifecycleOf(event);
   const wheel = text(event.kind, "").toLowerCase() === "wheel";
   const reward = legacyName(event.reward);
-  // 中文、英文说明都没填时 App 显示原文（说明那一列，新建时填的「活动说明」）。
-  const originalDescription = text(event.description, "");
-  // 卡片先显示中文；中文没填用英文那一份并标出来；都没有才写「未配置」。
-  const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false } : en[field] ? { text: en[field], en: true } : null;
+  // 卡片先显示中文；中文没填用英文那一份并标出来；名称、说明中英文都没填时显示原文（App 中文也显示它）并标出来；都没有才写「未配置」。
+  const originals = { name: text(event.name, ""), description: text(event.description, "") };
+  const pick = (field: ContentField) => zh[field] ? { text: zh[field], en: false, original: false } : en[field] ? { text: en[field], en: true, original: false }
+    : field !== "rewardName" && originals[field] ? { text: originals[field], en: false, original: true } : null;
   // App 上的奖励文字有后端给的事实（appRewardNames）时原样照它写，不换旧名、不改格式；旧数据没有时照旧按填的奖项名推。
   const appReward = event.appRewardNames ? { text: event.appRewardNames.zh } : null;
   const name = pick("name"), description = pick("description"), rewardName = event.appUsesAuthoredRewardName === false ? null : pick("rewardName");
-  // 一张卡只标一次，标在第一处用了英文的地方。
+  // 一张卡只标一次，标在第一处用了英文的地方；原文也一样。
   const firstEn = ([["name", name], ["description", description], ["rewardName", rewardName]] as const).find(([, value]) => value?.en)?.[0];
   const enTag = (field: ContentField) => firstEn === field ? <> <StatusTag tone="neutral" icon={Languages} explain={field === "rewardName" && rewardFromRule && !appReward ? "中文没填，这里显示的是英文那一份；App 中文显示玩法规则摘要。" : field === "rewardName" && appReward ? "中文没填，App 中文显示英文那一份。" : "中文没填，这里显示的是英文那一份。"}>英文</StatusTag></> : null;
+  const originalFields = ([["name", name], ["description", description]] as const).filter(([, value]) => value?.original).map(([field]) => field);
+  const originalTag = <StatusTag tone="neutral" icon={Smartphone} explain={`${originalFields.map(field => FIELD_NAME[field]).join("和")}的中文、英文都没填，这里显示的是原文；App 中文显示的也是原文。`}>原文</StatusTag>;
   return (
     <article className="h4-card h4l-event" aria-label={name?.text || event.id} data-dim={life.key === "ended" ? "" : undefined}>
       <header className="h4-card-head">
         <div className="h4-card-title">
-          <h3 data-empty={name ? undefined : ""}>{name?.text ?? "名称未配置"}{enTag("name")}</h3>
+          <h3 data-empty={name ? undefined : ""}>{name?.text ?? "名称未配置"}{enTag("name")}{originalFields[0] === "name" && <> {originalTag}</>}</h3>
           <span className="h4-card-meta"><span className="h4-card-kind">{KIND_LABEL(event.kind)}</span><span className="h4-mono" title={event.id}>{event.id}</span></span>
         </div>
         <span className="h4l-tags">
@@ -188,9 +190,8 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, rule,
           <StatusTag tone={life.tone} explain={life.explain}>{life.label}</StatusTag>
         </span>
       </header>
-      {description || !originalDescription
-        ? <p className="h4l-desc" data-empty={description ? undefined : ""}>{description?.text ?? "说明未配置"}{enTag("description")}</p>
-        : <p className="h4l-desc h4l-clip" data-empty="" title={originalDescription}>中英文说明没填，App 显示原文：<span data-user-content="">{originalDescription}</span></p>}
+      <p className="h4l-desc" data-empty={description ? undefined : ""} data-clamp={description?.original ? "" : undefined} title={description?.original ? description.text : undefined}>
+        {originalFields[0] === "description" && <>{originalTag} </>}{description?.original ? <span data-user-content="">{description.text}</span> : description?.text ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
