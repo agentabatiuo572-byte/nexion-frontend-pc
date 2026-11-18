@@ -36,14 +36,24 @@ export const firstPendingKey = (adminId: number, customerId: string) => `nexion-
 export type StoredMessage = PendingMutationRecord & { payload: string };
 // Legacy timeout rows must survive private-message housekeeping even when their payload cannot be recovered.
 export const pendingMessages = createMessageJournal<StoredMessage>({ storageKey: "nexion-admin-m3-private-pending-v1", retainExpiredRecords: true, isValidRecord: (row) => typeof row.payload === "string" || /^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint) });
-export interface DockCommandRecord extends PendingMutationRecord { payload: string; conversationNo: string; customerId?: string; readOnlyRecovery?: boolean }
+export interface DockCommandRecord extends PendingMutationRecord { payload: string; conversationNo: string; customerId?: string; readOnlyRecovery?: boolean; originalDraft?: string; draftAssignmentId?: string }
 export const dockCommands = createMessageJournal<DockCommandRecord>({
   storageKey: "nexion-admin-m-dock-pending-v1",
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.payload === "string" && typeof record.conversationNo === "string"
     && (record.customerId === undefined || typeof record.customerId === "string")
+    && (record.originalDraft === undefined || typeof record.originalDraft === "string")
+    && (record.draftAssignmentId === undefined || typeof record.draftAssignmentId === "string")
     && (record.readOnlyRecovery === undefined || typeof record.readOnlyRecovery === "boolean"),
 });
+// Closed commands with text displaced by a newer draft. These copies never lock or replay a send.
+interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string }
+export const failedDraftCopies = createMessageJournal<FailedDraftCopy>({
+  storageKey: "nexion-m3-failed-draft-copies-v1", retainExpiredRecords: true,
+  isValidRecord: row => typeof row.customerId === "string" && typeof row.assignmentId === "string"
+    && (row.conversationId === undefined || typeof row.conversationId === "string") && typeof row.body === "string",
+});
+export const SUPPORT_MESSAGE_MAX_LENGTH = 2000;
 export type MessageLocator = Omit<PrivateMessageRecovery, "clientMessageId"> & { clientMessageId?: string };
 export type SavedSend = { row: StoredMessage; locator: MessageLocator; reply?: Pending; first?: FirstContact; dock?: DockCommandRecord; dockInput?: SupportMessageInput };
 
@@ -85,7 +95,7 @@ export function readSavedSends(adminId: number): SavedSend[] {
       || input.replyTargets !== undefined && (!Array.isArray(input.replyTargets) || !input.replyTargets.every((t: { conversationNo?: string; throughMessageId?: number } | null) => t?.conversationNo === row.conversationNo && Number.isSafeInteger(t.throughMessageId)))) return { row, locator, dock: row };
     const reply: Pending = {
       key: row.commandKey, conversationId: row.conversationNo, customerId: row.customerId, kind: "TEXT", body: input.content, intent: "SERVICE",
-      expectedAssignmentId: input.expectedAssignmentId, expectedStatus: input.expectedStatus, expectedVersion: input.expectedVersion,
+      originalDraft: row.originalDraft, expectedAssignmentId: input.expectedAssignmentId, expectedStatus: input.expectedStatus, expectedVersion: input.expectedVersion,
       message: { ts: row.createdAt, sender: "agent", kind: "TEXT", text: input.content, intent: "SERVICE", clientMessageId: locator.clientMessageId, replyTargets: input.replyTargets },
     };
     return { row, locator, reply, dock: row, dockInput: input };
@@ -137,6 +147,36 @@ export const dockDraftKey = (adminId: number, customerId: string, conversationNo
   `nexion-m-dock-draft:${adminId}:${customerId}:${conversationNo}:${assignmentId ?? ""}`;
 export const sendJournal = (slot: string) => slot.startsWith("dock|") ? dockCommands : pendingMessages;
 
+// Called only after a definitive failure and verification of the original assignment.
+export function restoreFailedDraft(adminId: number, commandKey: string, customerId: string) {
+  const entry = readSavedSends(adminId).find(item => item.row.commandKey === commandKey);
+  const original = entry?.reply ?? entry?.first;
+  if (!entry || !original || entry.reply?.kind === "IMAGE") return;
+  const { reply, first, dock } = entry;
+  const body = original.originalDraft ?? original.body;
+  const slot = reply?.conversationId ?? `first:${customerId}`;
+  try {
+    if (dock) {
+      const key = dockDraftKey(adminId, customerId, dock.conversationNo, dock.draftAssignmentId);
+      const newer = sessionStorage.getItem(key);
+      if (!newer || newer === body) {
+        sessionStorage.setItem(key, body);
+        return true;
+      }
+    } else {
+      const key = `nexion-m3-drafts:${adminId}`;
+      const drafts = JSON.parse(sessionStorage.getItem(key) ?? "{}");
+      if (!drafts[slot] || drafts[slot] === body) {
+        sessionStorage.setItem(key, JSON.stringify({ ...drafts, [slot]: body }));
+        window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body } }));
+        return true;
+      }
+    }
+  } catch { /* Keep a read-only copy if the editable draft cannot be saved. */ }
+  failedDraftCopies.remember(slot, commandKey, { customerId, conversationId: reply?.conversationId,
+    assignmentId: first?.assignmentId ?? reply!.expectedAssignmentId, body });
+}
+
 // Undefined denotes an owned original whose customer cannot yet be proved.
 export function pendingSendCustomers(actorId: number, conversations: ConversationTarget[]) {
   return new Set(readSavedSends(actorId).map(entry => originalCustomerId(entry.locator, conversations)));
@@ -150,7 +190,7 @@ type PrivateTarget = { conversationId?: string; customerId?: string; assignmentI
 // Inspect only originals missing from a complete authorized snapshot. A new first
 // contact has no original thread: its customer detail is the authority in that case.
 export async function revokedPrivateTargets(adminId: number, previous: SessionConvo[], snapshot: SessionConvo[], signal: AbortSignal) {
-  const targets: PrivateTarget[] = [];
+  const targets: PrivateTarget[] = failedDraftCopies.list().filter(row => row.commandOwnerId === adminId);
   for (const { reply, first } of readSavedSends(adminId)) {
     if (reply) targets.push({ conversationId: reply.conversationId, customerId: reply.customerId, assignmentId: reply.expectedAssignmentId });
     if (first) targets.push({ customerId: first.customerId, assignmentId: first.assignmentId });
@@ -189,7 +229,7 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
     }
   }
 
-  const denied = new Map<string, PrivateTarget>();
+  const denied: PrivateTarget[] = [];
   const customers = new Map<string, ReturnType<typeof supportClient.customerDetail>>();
   await Promise.all([...missing.values()].map(async target => {
     let { customerId } = target;
@@ -201,7 +241,7 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
         customerId = thread.customerId;
       } catch (error) {
         if (isSupportScopeDenial(error)) {
-          denied.set(customerId ? `customer:${customerId}` : `thread:${conversationId}`, { conversationId, customerId });
+          denied.push({ conversationId, customerId });
           return;
         }
         // A temporary thread failure still permits an independent customer check.
@@ -221,9 +261,9 @@ export async function revokedPrivateTargets(adminId: number, previous: SessionCo
     } catch (error) {
       if (!isSupportScopeDenial(error)) return;
     }
-    denied.set(customerId ? `customer:${customerId}` : `thread:${conversationId}`, { conversationId, customerId });
+    denied.push({ conversationId, customerId });
   }));
-  return [...denied.values()];
+  return denied;
 }
 
 export function redactCustomerSends(adminId: number, conversations: ConversationTarget[], customerId?: string, originalConversationId?: string, commandKey?: string) {
@@ -234,6 +274,13 @@ export function redactCustomerSends(adminId: number, conversations: Conversation
   const clearFirst = !commandKey || !originalConversationId;
   const affected = commandKey ? [] : conversations.filter(convo => revokeAll || convo.customerId === customerId).map(convo => convo.id);
   if (originalConversationId) affected.push(originalConversationId);
+  for (const copy of failedDraftCopies.list()) {
+    if (copy.commandOwnerId !== adminId || commandKey && copy.commandKey !== commandKey) continue;
+    if (revokeAll || copy.customerId === customerId || copy.conversationId && affected.includes(copy.conversationId)) {
+      if (copy.conversationId && !affected.includes(copy.conversationId)) affected.push(copy.conversationId);
+      failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
+    }
+  }
   let error = "";
   for (const { row: record, locator, dock } of entries) {
     if (commandKey && record.commandKey !== commandKey) continue;

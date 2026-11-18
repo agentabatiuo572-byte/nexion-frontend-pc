@@ -8,12 +8,12 @@ import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Me
 import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, Fold, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
-import { markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { fetchMConversationDetail, markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -30,7 +30,7 @@ import { AssignAdvisorDialog, hasPendingFirstAssignment } from "./m3-assign-advi
 import { setSupportAlertPrefs, useSupportAlertPrefs } from "@/lib/admin/support-alerts";
 import { legacySupportDestination, supportEnhancements } from "@/lib/admin/m-support-enhancements";
 import { businessResultUnavailableText, RecoveryPanel } from "../recovery-panel";
-import { blocksNewSend, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
+import { blocksNewSend, failedDraftCopies, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, refusedMessage, firstPendingKey, originalCustomerId, parseConversations, redactCustomerSends, sendJournal, pendingKey, pendingMessages, pendingSendCustomers, readSavedSends, recoveryKey, rememberPending, replySlot, useSendJournalRevision, validCustomerId, type MessageLocator, type Pending, type SavedSend, type StoredMessage } from "./m-message-journal";
 export { validCustomerId } from "./m-message-journal";
 import "./m3-dedicated-chat.css";
 import { useM3MessagePages } from "./use-m3-message-pages";
@@ -399,6 +399,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     ? visible.find(convo => convo.id === continuation.conversationNo) ?? null
     : customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
   const savedSends = useMemo(() => qualificationUnknown ? [] : readSavedSends(adminId), [adminId, authEpoch, qualificationUnknown, messageRevision]);
+  const failedCopies = useMemo(() => qualificationUnknown ? [] : failedDraftCopies.list().filter(copy => copy.commandOwnerId === adminId),
+    [adminId, authEpoch, qualificationUnknown, messageRevision]);
   const originalCustomer = useCallback((locator: MessageLocator) => originalCustomerId(locator, visible), [visible]);
   const recoveries = savedSends.filter(entry => !entry.reply && !entry.first);
   const recoveriesRedacted = recoveries.every(({ row, dock }) => dock?.readOnlyRecovery || row.fingerprint === recoveryKey(adminId, row.commandKey));
@@ -412,6 +414,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const assignmentId = first?.assignmentId ?? reply?.expectedAssignmentId;
     return customerId && assignmentId ? [{ key: row.commandKey, customerId, assignmentId, conversationId: reply?.conversationId }] : [];
   });
+  for (const copy of failedCopies) recoveryTargets.push({ key: copy.commandKey, customerId: copy.customerId,
+    assignmentId: copy.assignmentId, conversationId: copy.conversationId });
   const recoveryScope = JSON.stringify([pageScope, scopeMode, snapshotRevision, entryCheck, detailRetry, profileRetry, recoveryTargets]);
   const [verifiedRecovery, setVerifiedRecovery] = useState<{ scope: string; keys: Set<string> } | null>(null);
   const verifiedKeys = useRef<Set<string> | undefined>(undefined);
@@ -654,6 +658,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const profileCustomerId = selected && !selectedUnbound ? selected.customerId : firstProfileCustomer?.customerId;
   const currentProfileDetail = profileDetail?.customerId === selected?.customerId ? profileDetail : null;
   const targetKey = selected?.id ?? (requestedCustomerId ? `first:${requestedCustomerId}` : "");
+  const failedCopy = failedCopies.find(copy => conversationsAvailable && copy.customerId === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
   // Both explicit continuation and a refused send's automatic landing use the same draft rules.
   const carryContinuationDraft = useCallback((sourceKey: string, destinationKey: string, customerId: string) => {
@@ -842,7 +847,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (!adminId || !conversationsAvailable || qualificationUnknown) return;
     try {
       const value = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}") as Record<string,unknown>;
-      setDrafts(Object.fromEntries(Object.entries(value).filter((entry):entry is [string,string]=>typeof entry[1]==="string" && entry[1].length<=10000 && (visible.some(c=>c.id===entry[0]&&(c.ownerAdminId===adminId||canReviewAll)) || /^first:\d+$/.test(entry[0])))));
+      setDrafts(Object.fromEntries(Object.entries(value).filter((entry):entry is [string,string]=>typeof entry[1]==="string" && (visible.some(c=>c.id===entry[0]&&(c.ownerAdminId===adminId||canReviewAll)) || /^first:\d+$/.test(entry[0])))));
     } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
     setDraftOwner(adminId);
   }, [adminId, authEpoch, conversationsAvailable, qualificationUnknown]);
@@ -902,7 +907,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
   }, [adminId, conversationsAvailable, qualificationUnknown, savedSends, visible]);
   const redactRecovery = useEffectEvent((customerId: string, conversationId: string | undefined, key: string) => {
-    if (readSavedSends(adminId).some(entry => entry.row.commandKey === key && (entry.reply || entry.first))) {
+    if (readSavedSends(adminId).some(entry => entry.row.commandKey === key && (entry.reply || entry.first)) || failedCopies.some(copy => copy.commandKey === key)) {
       revokeCustomer(customerId, true, conversationId, key);
     }
   });
@@ -1061,9 +1066,44 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         return next;
       });
     };
+    const restore = (event: Event) => {
+      const { adminId: owner, slot, body } = (event as CustomEvent<{ adminId: number; slot: string; body: string }>).detail;
+      if (owner === adminId) setDrafts(old => old[slot] ? old : { ...old, [slot]: body });
+    };
     window.addEventListener("m3-draft-settled", settled);
-    return () => window.removeEventListener("m3-draft-settled", settled);
+    window.addEventListener("m3-draft-restored", restore);
+    return () => {
+      window.removeEventListener("m3-draft-settled", settled);
+      window.removeEventListener("m3-draft-restored", restore);
+    };
   }, [adminId]);
+
+  const keepRefusedDraft = async (entry: SavedSend, customerId?: string) => {
+    const { row, first, reply } = entry;
+    if (!customerId || (!first && !reply) || reply?.kind === "IMAGE") return false;
+    const sameActor = () => useAdminAuth.getState().session?.adminId === adminId;
+    if (!sameActor()) return false;
+    // A terminal receipt may arrive before background verification or after leaving M3.
+    if (!mounted.current || !verifiedKeys.current?.has(row.commandKey)) {
+      try {
+        if (reply && !visible.some(c => c.id === reply.conversationId && c.customerId === customerId)) {
+          const thread = await fetchMConversationDetail(reply.conversationId, undefined, false);
+          if (!sameActor() || thread.customerId !== customerId) return false;
+        }
+        const detail = await supportClient.customerDetail(customerId);
+        if (!sameActor() || detail.customerId !== customerId) return false;
+        if (detail.assignmentId !== (first?.assignmentId ?? reply?.expectedAssignmentId) || !canReviewAll && detail.agentAdminId !== adminId) {
+          ctx.invalidateScope(reply?.conversationId, customerId, undefined, row.commandKey);
+          return false;
+        }
+      } catch (error) {
+        if (sameActor() && isSupportScopeDenial(error)) ctx.invalidateScope(reply?.conversationId, customerId);
+        return false;
+      }
+    }
+    restoreFailedDraft(adminId, row.commandKey, customerId);
+    return true;
+  };
 
   const querySavedSend = async (entry: SavedSend) => {
     const { row, locator, reply, first } = entry;
@@ -1082,7 +1122,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         return result;
       }
       const original = reply ?? first;
-      const authorizedDraft = mounted.current && verifiedKeys.current?.has(row.commandKey);
+      const authorizedDraft = result.status === "SUCCEEDED" || reply?.kind === "IMAGE"
+        ? mounted.current && verifiedKeys.current?.has(row.commandKey)
+        : await keepRefusedDraft(entry, customerId);
+      if (useAdminAuth.getState().session?.adminId !== adminId) return result;
       if (!authorizedDraft && reply && originalView() && selected?.id === reply.conversationId) {
         if (reply.attachmentId && attachmentRef.current?.id === reply.attachmentId) clearAttachment(false);
         if (reply.kind === "SKU" || reply.kind === "LINK") setContentChoice(null);
@@ -1210,6 +1253,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       }
     }
     if (!conversationsAvailable || !recovery && recoveryBlocksTarget) return;
+    const text = retryFirst?.body ?? retry?.body ?? draft.trim();
+    if (kind !== "IMAGE" && text.length > SUPPORT_MESSAGE_MAX_LENGTH) { setSendError(ADMIN_ERROR_MESSAGES.REPLY_BODY_TOO_LONG); return; }
     sendAdminTyping(false);
     if (retry && retry.conversationId !== selected?.id) return;
     if (retryFirst || !selected) {
@@ -1240,7 +1285,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         }
         const refused = refusedMessage(cause, !retryFirst);
         const busyHold = supportSessionBusy(cause);
-        if (refused || busyHold) forgetSavedSend(slot, record.key);
+        if (refused || busyHold) {
+          if (retryFirst && activeEntry && !isSupportScopeDenial(cause)) await keepRefusedDraft(activeEntry, customerId);
+          forgetSavedSend(slot, record.key);
+        }
         if (lostPermission(cause)) {
           ctx.invalidateScope(undefined, customerId, refused ? "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。" : "这条消息发送结果未知：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。");
           return;
@@ -1336,6 +1384,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       const busyHold = supportSessionBusy(cause);
       if (refused || busyHold) {
         if (flight.image) flight.image.outcome = "unused";
+        if (retry && activeEntry && !isSupportScopeDenial(cause)) await keepRefusedDraft(activeEntry, String(selected.customerId));
         forgetSavedSend(slot, record.key);
       }
       if (lostPermission(cause)) {
@@ -1901,7 +1950,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             {chatMenu.length > 0 && <MoreMenu items={chatMenu} />}
           </div>
         </header>
-        {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
+        {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || failedCopy || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
           {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : holdEndRejected.has(record.commandKey) ? "这次接待的结束被拒绝了，原记录还在；核对后可以解除原操作记录。" : "这次接待的结束结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>)}
           {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={<><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{holdEndRejected.has(record.commandKey) && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</>}>{record.sessionRef ? isRetryExpired(record) ? `还不能确认这条结束记录是哪一次接待的，可以查原结果；${RETRY_EXPIRED_TEXT}` : "还不能确认这条结束记录是哪一次接待的，可以查原结果；点「结束会话」会先按它核对，可能按原请求重试。" : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? `${RETRY_EXPIRED_TEXT}` : ""}`}</Notice>)}
           {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
@@ -1918,7 +1967,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
                 actions: <><Button size="sm" onClick={() => void querySessionEndRecord(record)}>查询原结果</Button>{rejected && <Button size="sm" onClick={() => setHoldEndRelease(record)}>解除原操作记录</Button>}</> };
             })} />}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
-          {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
+          {(actionResult || failedCopy) && <Notice tone="progress" action={<Button size="sm" onClick={() => {
+            if (actionResult) setActionResult("");
+            else if (failedCopy) failedDraftCopies.forget(failedCopy.fingerprint, failedCopy.commandKey);
+          }}>知道了</Button>}>{actionResult || failedCopy?.body}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}
           {!requestedCustomerIdValid && <Notice tone="danger">客户链接无效，无法打开会话。请从<a className="rd-link" href="/service/overview">我的客户</a>重新进入。</Notice>}
           {readError && <Notice tone="warn" action={<Button size="sm" onClick={() => { const failed = failedReadContext.current; if (!failed || failed.key !== messagePages.key) return; markedRef.current = ""; void messagePages.refreshReadContexts(failed).then(() => setReadRetry(value => value + 1)); }}>重试</Button>}>已读状态更新失败：{readError}</Notice>}

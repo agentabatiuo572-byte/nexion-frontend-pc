@@ -11,7 +11,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { DomainModuleLoading } from "./domain-module-state";
 import "./m-domain.css";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
@@ -44,7 +44,7 @@ import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
-import { blocksNewSend, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
+import { blocksNewSend, failedDraftCopies, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
@@ -206,14 +206,16 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     void reloadMContent();
   }, [authEpoch, reloadMContent]);
 
-  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string) => {
+  const invalidateScope = useCallback((conversationNo?: string, customerId?: string, notice?: string, changedAssignmentKey?: string,
+    knownThreads: Pick<SessionConvo, "id" | "customerId">[] = mDataRef.current?.conversations ?? []) => {
     // A receipt for an already redacted assignment must not erase a later draft.
     if (changedAssignmentKey && !readSavedSends(session?.adminId ?? 0).some(entry =>
-      entry.row.commandKey === changedAssignmentKey && (entry.reply || entry.first))) return;
+      entry.row.commandKey === changedAssignmentKey && (entry.reply || entry.first))
+      && !failedDraftCopies.list().some(copy => copy.commandKey === changedAssignmentKey && copy.commandOwnerId === session?.adminId)) return;
     if (notice) { lastOperationNotice = { adminId: session?.adminId, text: notice, tone: "danger" }; setOperationNotice(lastOperationNotice); }
     mLoadCoordinator.current.beginConversationSnapshot();
     liveSnapshotController.current?.abort();
-    const cleared = session?.adminId ? redactCustomerSends(session.adminId, mDataRef.current?.conversations ?? [], customerId, conversationNo) : undefined;
+    const cleared = session?.adminId ? redactCustomerSends(session.adminId, knownThreads, customerId, conversationNo) : undefined;
     customerId = cleared?.customerId ?? customerId;
     const affectedIds = cleared?.affected ?? [];
     if (cleared?.error) { lastOperationNotice = { adminId: session?.adminId, text: cleared.error, tone: "danger" }; setOperationNotice(lastOperationNotice); }
@@ -247,21 +249,25 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
       throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
     }
-    if (session?.adminId) {
-      const revoked = await revokedPrivateTargets(session.adminId, mDataRef.current?.conversations ?? [], conversations, signal);
-      if (signal.aborted || useAdminAuth.getState().authEpoch !== snapshotAuthEpoch
-        || !mLoadCoordinator.current.isConversationSnapshotCurrent(generation)) return;
-      if (revoked.length) {
-        for (const target of revoked) invalidateScope(target.conversationId, target.customerId);
-        return; // Invalidation starts a fresh authorized load.
-      }
-    }
+    const previousThreads = mDataRef.current?.conversations ?? [];
     setConversationSnapshotRevision(revision => revision + 1);
     // Replace the scoped snapshot; never merge prior details (a scope change must not keep old private detail).
     // The open thread keeps its last loaded messages on screen while the detail reloads (M-9, m3-dedicated-chat).
     setMData((previous) => previous
       ? { ...previous, conversations, conversationsAvailable: true }
       : previous);
+    if (!session?.adminId) return;
+    const revoked = await revokedPrivateTargets(session.adminId, previousThreads, conversations, signal);
+    if (!revoked.length || signal.aborted || useAdminAuth.getState().authEpoch !== snapshotAuthEpoch
+      || !mLoadCoordinator.current.isConversationSnapshotCurrent(generation)) return;
+    const knownThreads = [...previousThreads, ...conversations, ...revoked.flatMap(target =>
+      target.conversationId ? [{ id: target.conversationId, customerId: target.customerId }] : [])];
+    const clearedCustomers = new Set<string>();
+    for (const { conversationId, customerId } of revoked) {
+      if (customerId && clearedCustomers.has(customerId)) continue;
+      invalidateScope(conversationId, customerId, undefined, undefined, knownThreads);
+      if (customerId) clearedCustomers.add(customerId);
+    }
   }, [authEpoch, session?.adminId, invalidateScope]);
   const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal, includeCustomerProfile = true) => {
     const detailEpoch = authEpoch;
@@ -1314,6 +1320,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const send = async () => {
     const text = draft.trim();
     if (!text || !canWrite || newSendBlocked || sendInFlight.current || !currentAdminId || !conv.customerId) return;
+    if (text.length > SUPPORT_MESSAGE_MAX_LENGTH) { setSendError(ADMIN_ERROR_MESSAGES.REPLY_BODY_TOO_LONG); return; }
     const generation = identityGeneration.current;
     const sameAccount = () => useAdminAuth.getState().session?.adminId === currentAdminId;
     const currentDock = () => sameAccount() && useAdminAuth.getState().authEpoch === authEpoch && generation === identityGeneration.current;
@@ -1343,7 +1350,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         replyTargets: latest?.sender === "user" && Number.isSafeInteger(latest.id)
           ? [{ conversationNo: conv.id, throughMessageId: latest.id! }] : undefined,
       };
-      dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId });
+      dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id, customerId: conv.customerId, originalDraft: draft !== text ? draft : undefined, draftAssignmentId: conv.assignmentId ?? undefined });
       if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
       updateDraft("");
       await supportClient.sendConversationReply(conv.id, input, key);
@@ -1363,16 +1370,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       }
       const rejected = key && refusedMessage(error, true);
       const scopeLost = error instanceof SupportClientError && [403, 404].includes(error.status);
-      if (rejected) {
-        const original = dockCommands.list().find(row => row.commandKey === key && row.fingerprint === dockSlot);
-        if (original && !original.readOnlyRecovery && !scopeLost) {
-          // A definitive refusal can arrive after leaving the dock. Keep only its own
-          // draft, provided the original has not been redacted or the slot edited.
-          try {
-            if (sessionStorage.getItem(draftKey) === null) sessionStorage.setItem(draftKey, draft);
-          } catch { if (currentDock()) setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
-          if (currentDock()) setDraft(draft);
-        }
+      if (rejected && key) {
+        if (!scopeLost && restoreFailedDraft(currentAdminId, key, conv.customerId) && currentDock()) setDraft(draft);
         dockCommands.forget(dockSlot, key);
       }
       if (scopeLost) {
