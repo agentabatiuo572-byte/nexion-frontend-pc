@@ -339,6 +339,24 @@ function initialDocument(): PublishedHowContentDocument {
   for (const key of KEYS) contents[key] = { locales: { en: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } };
   return { version: "draft-local", status: "DRAFT", contents, revision: 0, source: "server", configKey: "how-it-works.published" };
 }
+/** 奖励明细说明里花括号的内容由 App 打开时按当前规则填（App commissions-how-content.ts）；认不出的那一块 App 显示「说明暂时无法加载」。 */
+const APP_FILLED_PAGE = "team-commissions-how";
+const APP_TOKENS: Record<string, string> = {
+  directPurchaseRules: "好友购买的奖励规则", networkPurchaseRules: "团队购买的奖励说明", directDeviceRules: "好友设备收益的奖励规则",
+  directScope: "好友设备收益发给谁", directPrice: "UVT 价格", coolingDays: "等待天数", binaryRules: "团队平衡奖励的发放周期",
+  peerRules: "同级奖励说明", cultivationRules: "好友升级奖励说明", leadershipRules: "团队激励池的参与起点", leadershipVotes: "团队激励池票数",
+  peerStatus: "同级奖励开没开", genesisStatus: "创世节点奖励开没开", exampleBase: "算例订单金额", exampleRank: "有好友升级奖励的等级",
+};
+function previewText(page: string, value: string): ReactNode {
+  if (page !== APP_FILLED_PAGE) return value;
+  return value.split(/(\{[A-Za-z]+\})/).map((part, i) => {
+    const token = /^\{([A-Za-z]+)\}$/.exec(part)?.[1];
+    if (!token) return part;
+    const label = APP_TOKENS[token];
+    return <mark key={i} className="a3-token" data-unknown={label ? undefined : ""} title={label ? "App 打开时按当前规则填进来" : "App 认不出这一项，这一块在 App 上会显示「说明暂时无法加载」"}>{label ?? `认不出的 ${part}`}</mark>;
+  });
+}
+const hasAppToken = (blocks: Row[]) => blocks.some((block) => [block.title, block.body, ...list(block.items)].some((value) => /\{[A-Za-z]+\}/.test(text(value))));
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
 function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, retry, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
@@ -576,7 +594,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
                 <Field label="类型">{(control) => <Select {...control} aria-label={`内容块 ${index + 1} 类型`} value={text(item.kind)} disabled={locked} onChange={(value) => changeKind(index, value)} options={[{ value: "text", label: "正文" }, { value: "list", label: "列表" }, { value: "callout", label: "提示说明" }, { value: "ruleRef", label: "引用系统规则" }]} />}</Field>
               </div>
               <Field label="标题">{(control) => <Input {...control} value={text(item.title)} maxLength={256} disabled={locked} onChange={e => patchBlock(index, { title: e.target.value })} />}</Field>
-              <Field label="正文" help={item.kind === "ruleRef" ? <>必须保留 {"{value}"}，不然草稿也存不了</> : undefined}>{(control) => <Textarea {...control} rows={3} value={text(item.body)} maxLength={20000} disabled={locked} onChange={e => patchBlock(index, { body: e.target.value })} />}</Field>
+              <Field label="正文" help={item.kind === "ruleRef" ? <>必须保留 {"{value}"}，不然草稿也存不了</> : key === APP_FILLED_PAGE && /\{[A-Za-z]+\}/.test(text(item.body)) ? "花括号里的由 App 打开时自动填，原样保留" : undefined}>{(control) => <Textarea {...control} rows={3} value={text(item.body)} maxLength={20000} disabled={locked} onChange={e => patchBlock(index, { body: e.target.value })} />}</Field>
               {item.kind === "ruleRef" && <>
                 <Notice tone="warn" title="规则引用块发布不了">发布时系统会拒绝含这种块的说明，草稿照常能存。要发布，先删掉这一块或改成「正文」。</Notice>
                 <div className="rd-form-grid" data-cols="2">
@@ -601,10 +619,11 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
           <div className="a3-how-preview" data-user-content="">
             <b className="a3-how-page">{PAGE_LABELS[key] ?? key} · {localeName(locale)}</b>
             {currentBlocks.length === 0 && <span className="a3-preview-empty">这种语言还没有内容</span>}
+            {key === APP_FILLED_PAGE && hasAppToken(currentBlocks) && <span className="a3-preview-empty">标色的是 App 打开时按当前规则自动填的内容</span>}
             {currentBlocks.map((item, index) => <section key={index} data-kind={text(item.kind)}>
-              {text(item.title) && <h4>{text(item.title)}</h4>}
-              {text(item.body) && <p>{item.kind === "ruleRef" ? text(item.body).split("{value}").flatMap((part, i) => i === 0 ? [part] : [<mark key={i}>{"{value}"}</mark>, part]) : text(item.body)}</p>}
-              {item.kind === "list" && <ul>{list(item.items).map((value, i) => <li key={i}>{text(value)}</li>)}</ul>}
+              {text(item.title) && <h4>{previewText(key, text(item.title))}</h4>}
+              {text(item.body) && <p>{item.kind === "ruleRef" ? text(item.body).split("{value}").flatMap((part, i) => i === 0 ? [part] : [<mark key={i}>{"{value}"}</mark>, part]) : previewText(key, text(item.body))}</p>}
+              {item.kind === "list" && <ul>{list(item.items).map((value, i) => <li key={i}>{previewText(key, text(value))}</li>)}</ul>}
               {item.kind === "ruleRef" && <span className="a3-preview-empty">规则引用块，不能发布</span>}
             </section>)}
           </div>
