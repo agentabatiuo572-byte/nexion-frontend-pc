@@ -614,6 +614,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [targetCustomer, activeKey]);
   const pending = activeEntry?.reply;
   const firstPending = activeEntry?.first;
+  const firstRecoveryText = firstPending && verifiedKeys.current?.has(firstPending.key) ? firstPending.body : "";
   const privateContentReady = !qualificationUnknown && conversationsAvailable && draftOwner === adminId
     && targetSends.every(entry => !(entry.first || entry.reply) || verifiedKeys.current?.has(entry.row.commandKey));
   const otherSends = savedSends.filter(({ reply, first }) => first ? first !== firstPending
@@ -1985,7 +1986,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
               const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", customerId); window.history.replaceState(null, "", url);
             }
           }}>返回原会话</Button>}>{originalCustomer(entry.locator) === targetCustomer ? "另一条消息发送结果未知，请先回原会话处理。" : MESSAGE_STILL_UNKNOWN}</Notice>)}
-          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && !sendRetryExpired && <Button size="sm" disabled={busy} onClick={() => void send(pending?.kind ?? "TEXT", "query")}>查询原结果</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || !sendRetryExpired && Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => void send(pending?.kind ?? "TEXT", sendRetryExpired ? "query" : "retry")}>{sendRetryExpired ? "查询原结果" : "按原请求重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>按原请求重试</Button>}</>}>{sendError || (sendRetryExpired ? "超过 24 小时不能再重试，先查询原结果。" : MESSAGE_UNKNOWN)}</Notice>}
+          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && !sendRetryExpired && <Button size="sm" disabled={busy} onClick={() => void send(pending?.kind ?? "TEXT", "query")}>查询原结果</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || !sendRetryExpired && Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => void send(pending?.kind ?? "TEXT", sendRetryExpired ? "query" : "retry")}>{sendRetryExpired ? "查询原结果" : "按原请求重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>按原请求重试</Button>}</>}>{sendError || (sendRetryExpired ? "超过 24 小时不能再重试，先查询原结果。" : MESSAGE_UNKNOWN)}{firstRecoveryText && ` ${firstRecoveryText}`}</Notice>}
         </div>
       </div>
 
