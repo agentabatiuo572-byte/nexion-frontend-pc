@@ -77,7 +77,7 @@ export const dockCommands = createMessageJournal<DockCommandRecord>({
     && (record.readOnlyRecovery === undefined || typeof record.readOnlyRecovery === "boolean"),
 });
 // Closed commands with text displaced by a newer draft. These copies never lock or replay a send.
-interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string; source?: "dock" | "main" }
+interface FailedDraftCopy extends PendingMutationRecord { customerId: string; conversationId?: string; assignmentId: string; body: string; source?: "dock" | "main"; legacySlot?: boolean; displaced?: boolean }
 const legacyDraftCopies = createMessageJournal<FailedDraftCopy>({
   storageKey: "nexion-m3-failed-draft-copies-v1", retainExpiredRecords: true,
   isValidRecord: row => typeof row.customerId === "string" && typeof row.assignmentId === "string"
@@ -89,15 +89,15 @@ export const failedDraftCopies = {
     const copies = legacyDraftCopies.list();
     for (const source of ["dock", "main"] as const) {
       for (const row of (source === "dock" ? dockCommands : pendingMessages).list()) {
-        const [kind, customerId, assignmentId, conversationId] = row.fingerprint.split("@");
-        if (kind !== `failed-${source}` || !assignmentId) continue;
-        copies.push({ ...row, source, customerId, assignmentId, conversationId: conversationId || undefined, body: row.payload });
+        const [kind, customerId, assignmentId, conversationId, legacy] = row.fingerprint.split("@");
+        if (kind !== `failed-${source}` && kind !== `saved-${source}` || !assignmentId) continue;
+        copies.push({ ...row, source, customerId, assignmentId, legacySlot: legacy === "legacy", displaced: kind === `saved-${source}`, conversationId: conversationId || undefined, body: row.payload });
       }
     }
     return copies;
   },
   forget(slot: string, key: string) {
-    const store = slot.startsWith("failed-dock@") ? dockCommands : slot.startsWith("failed-main@") ? pendingMessages : legacyDraftCopies;
+    const store = /^(failed|saved)-dock@/.test(slot) ? dockCommands : /^(failed|saved)-main@/.test(slot) ? pendingMessages : legacyDraftCopies;
     store.forget(slot, key);
   },
 };
@@ -202,32 +202,52 @@ export function closeFailedDraft(adminId: number, commandKey: string, customerId
   const entry = readSavedSends(adminId).find(item => item.row.commandKey === commandKey);
   const original = entry?.reply ?? entry?.first;
   if (!entry || !original || entry.reply?.kind === "IMAGE") return;
-  const body = original.originalDraft ?? original.body;
-  const slot = [entry.dock ? "failed-dock" : "failed-main", customerId, entry.first?.assignmentId ?? entry.reply!.expectedAssignmentId, entry.reply?.conversationId].join("@");
-  const store = entry.dock ? dockCommands : pendingMessages;
-  if (entry.dock) dockCommands.remember(slot, commandKey, { payload: body, conversationNo: entry.dock.conversationNo });
-  else pendingMessages.remember(slot, commandKey, { payload: body });
-  if (!store.isDurablyStored(slot, commandKey)) throw new Error("浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。");
+  let body = original.originalDraft ?? original.body;
+  const legacySlot = !entry.dock && !original.draftSlot;
+  if (legacySlot && original.originalDraft === undefined) {
+    try {
+      const drafts = JSON.parse(sessionStorage.getItem(`nexion-m3-drafts:${adminId}`) ?? "{}");
+      const text = drafts[entry.reply?.conversationId ?? `first:${customerId}`];
+      if (typeof text === "string" && text.trim() === original.body) body = text;
+    } catch { /* The submitted text is still in the original journal. */ }
+  }
+  const slot = [entry.dock ? "failed-dock" : "failed-main", customerId, entry.first?.assignmentId ?? entry.reply!.expectedAssignmentId, entry.reply?.conversationId, legacySlot ? "legacy" : ""].join("@");
+  const stored = entry.dock ? dockCommands.redact(entry.dock, slot, { payload: body, conversationNo: entry.dock.conversationNo })
+    : pendingMessages.redact(entry.row, slot, { payload: body });
+  if (!stored) throw new Error("浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。");
   return failedDraftCopies.list().find(copy => copy.commandKey === commandKey);
 }
 
 export function restoreFailedDraft(adminId: number, commandKey: string, detail: { customerId: string; assignmentId: string | null; agentAdminId: number | null }) {
   const copy = failedDraftCopies.list().find(row => row.commandOwnerId === adminId && row.commandKey === commandKey);
-  if (!copy?.source || copy.customerId && copy.customerId !== detail.customerId || detail.assignmentId !== copy.assignmentId || !detail.agentAdminId) return;
+  if (!copy?.source || copy.displaced || copy.customerId && copy.customerId !== detail.customerId || detail.assignmentId !== copy.assignmentId || !detail.agentAdminId) return;
   const { customerId, assignmentId, agentAdminId } = detail;
   const { conversationId, body } = copy;
   try {
     if (copy.source === "dock" && conversationId) {
       const key = dockDraftKey(adminId, customerId, conversationId, assignmentId);
       const newer = sessionStorage.getItem(key);
-      if (newer && newer !== body) return;
+      if (newer && newer !== body) {
+        dockCommands.remember(copy.fingerprint.replace("failed-", "saved-"), commandKey, { payload: body, conversationNo: conversationId });
+        return;
+      }
       sessionStorage.setItem(key, body);
       window.dispatchEvent(new CustomEvent("dock-draft-restored", { detail: { key, body } }));
     } else {
       const key = `nexion-m3-drafts:${adminId}`;
       const slot = scopedDraftSlot(conversationId ?? `first:${customerId}`, customerId, assignmentId, agentAdminId);
       const drafts = JSON.parse(sessionStorage.getItem(key) ?? "{}");
-      if (drafts[slot] && drafts[slot] !== body) return;
+      const legacy = conversationId ?? `first:${customerId}`;
+      if (copy.legacySlot && !drafts[slot] && drafts[legacy]) {
+        drafts[slot] = drafts[legacy];
+        delete drafts[legacy];
+        sessionStorage.setItem(key, JSON.stringify(drafts));
+        window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body: drafts[slot], legacy } }));
+      }
+      if (drafts[slot] && drafts[slot] !== body) {
+        pendingMessages.remember(copy.fingerprint.replace("failed-", "saved-"), commandKey, { payload: body });
+        return;
+      }
       sessionStorage.setItem(key, JSON.stringify({ ...drafts, [slot]: body }));
       window.dispatchEvent(new CustomEvent("m3-draft-restored", { detail: { adminId, slot, body } }));
     }

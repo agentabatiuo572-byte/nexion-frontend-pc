@@ -38,6 +38,16 @@ import { useM3MessagePages } from "./use-m3-message-pages";
 
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
+type SettledDraft = { slot: string; body: string; originalDraft?: string; legacyAssignment?: string };
+function withoutSubmittedDraft(drafts: Record<string, string>, sent: SettledDraft) {
+  const next = { ...drafts };
+  for (const [key, text] of Object.entries(drafts)) {
+    const [logical, , assignment] = key.split("@");
+    if (key !== sent.slot && !(sent.legacyAssignment && logical === sent.slot && assignment === sent.legacyAssignment)) continue;
+    if (text === (sent.originalDraft ?? sent.body) || sent.legacyAssignment && sent.originalDraft === undefined && typeof text === "string" && text.trim() === sent.body) delete next[key];
+  }
+  return next;
+}
 type SendFlight = { commandKey?: string; newSubmission?: boolean; image?: { id: string; outcome: "unused" | "submitted" | "sent" } };
 type TimeoutInput = { warnMinutes: number; closeMinutes: number; sessionEndMinutes?: number; reason: string };
 type TimeoutCommand = { key: string; input: TimeoutInput; policy: ConversationTimeoutPolicy; operator: string };
@@ -688,7 +698,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const targetKey = logicalSlot && draftAssignment?.assignmentId && draftAssignment.agentAdminId
     ? scopedDraftSlot(logicalSlot, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId) : "";
   const draftSlotRef = useRef(targetKey);
-  draftSlotRef.current = targetKey;
   const failedCopy = failedCopies.find(copy => conversationsAvailable && originalCustomerId(copy, visible) === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
   // Both explicit continuation and a refused send's automatic landing use the same draft rules.
@@ -807,7 +816,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     attachmentRef.current = null;
     setAttachment(null);
   }, [adminId]);
-  const revokeCustomer = useCallback((customerId?: string, authoritative = false, originalConversationId?: string, commandKey?: string, persisted?: ReturnType<typeof redactCustomerSends>, assignmentChanged = false) => {
+  useLayoutEffect(() => {
+    if (!targetKey) return;
+    if (draftSlotRef.current && draftSlotRef.current !== targetKey) {
+      clearAttachment(); setContentChoice(null);
+    }
+    draftSlotRef.current = targetKey;
+  }, [targetKey, clearAttachment]);
+  const revokeCustomer = useCallback((customerId?: string, authoritative = false, originalConversationId?: string, commandKey?: string, persisted?: ReturnType<typeof redactCustomerSends>) => {
     // A pending roster is not evidence that access was revoked. Server denials still clear immediately.
     if (qualificationUnknown && !authoritative) return;
     if (!commandKey && persisted?.assignmentId === undefined) {
@@ -818,7 +834,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const { affected, revokeAll } = cleared;
     customerId = cleared.customerId;
     if (cleared.error) setRecoveryError(cleared.error);
-    if (!commandKey && cleared.assignmentId === undefined && !assignmentChanged) setRevokedIds((old) => new Set([...old, ...affected]));
+    if (!commandKey && cleared.assignmentId === undefined) setRevokedIds((old) => new Set([...old, ...affected]));
     if (!commandKey && cleared.assignmentId === undefined) setTicketLinks(old => { const next = { ...old }; for (const id of affected) delete next[id]; try { sessionStorage.setItem(ticketLinksKey(adminId), JSON.stringify(next)); } catch {} return next; });
     setDrafts((old) => {
       if (revokeAll) return {};
@@ -843,7 +859,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   useEffect(() => {
     const onScope = (event: Event) => {
       const target = (event as CustomEvent<{ customerId?: string; conversationNo?: string; cleared?: ReturnType<typeof redactCustomerSends>; changedAssignmentKey?: string }>).detail;
-      revokeCustomer(target?.customerId, true, target?.conversationNo, undefined, target?.cleared, Boolean(target?.changedAssignmentKey));
+      revokeCustomer(target?.customerId, true, target?.conversationNo, target?.changedAssignmentKey, target?.cleared);
     };
     window.addEventListener("support-scope-invalidated", onScope);
     window.addEventListener("m3-assignment-invalidated", onScope);
@@ -908,7 +924,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [drafts, adminId, draftOwner, qualificationUnknown]);
   useEffect(() => {
     if (qualificationUnknown || !targetKey) return;
-    setMetaTarget(""); setContentChoice(null);
+    setMetaTarget("");
     try {
       const saved=JSON.parse(sessionStorage.getItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`)??"{}");
       setSelectedClosedIds(new Set());
@@ -983,9 +999,15 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [recoveryScope, qualificationUnknown]);
   useEffect(() => {
     if (!privateContentReady || !targetKey || !verifiedKeys.current?.has(activeKey ?? "")) return;
-    if (!activeEntry?.dock && pending?.kind === "TEXT" && selected?.id === pending.conversationId) setDrafts(old => old[targetKey] ? old : { ...old, [targetKey]: pending.originalDraft ?? pending.body });
-    if (firstPending && !selected) setDrafts(old => old[targetKey] ? old : { ...old, [targetKey]: firstPending.originalDraft ?? firstPending.body });
-  }, [pending, firstPending, selected?.id, privateContentReady, activeEntry?.dock, targetKey, activeKey]);
+    const original = firstPending && !selected ? firstPending : !activeEntry?.dock && pending?.kind === "TEXT" && pending.conversationId === selected?.id ? pending : null;
+    if (!original) return;
+    setDrafts(old => {
+      if (old[targetKey]) return old;
+      const next = { ...old, [targetKey]: (!original.draftSlot && old[logicalSlot]) || original.originalDraft || original.body };
+      if (!original.draftSlot) delete next[logicalSlot];
+      return next;
+    });
+  }, [pending, firstPending, selected?.id, privateContentReady, activeEntry?.dock, targetKey, logicalSlot, activeKey]);
   useEffect(() => { clearAttachment(); if (!peerChangedDraft || peerChangedDraft.identity !== identityRef.current || peerChangedDraft.customerId !== (selected?.customerId ?? requestedCustomerId ?? peerChangedDraft.customerId)) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
   useEffect(() => {
     if (!selected || !messagePages.readReady || !conversationsAvailable || selected.ownerAdminId !== adminId || document.visibilityState === "hidden" || !chatColumnRef.current?.getClientRects().length) return;
@@ -1076,32 +1098,28 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
 
   // A POST can finish after this composer unmounts. Update the original slot on disk
   // and notify whichever M3 instance currently owns the on-screen drafts.
-  const clearSubmittedDraft = (slot: string, body: string, originalDraft?: string) => {
+  const clearSubmittedDraft = (slot: string, body: string, originalDraft?: string, legacyAssignment?: string) => {
     if (useAdminAuth.getState().session?.adminId !== adminId) return;
     try {
       const storageKey = `nexion-m3-drafts:${adminId}`;
       const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
-      if (saved[slot] === (originalDraft ?? body)) {
-        delete saved[slot];
-        sessionStorage.setItem(storageKey, JSON.stringify(saved));
-      }
+      sessionStorage.setItem(storageKey, JSON.stringify(withoutSubmittedDraft(saved, { slot, body, originalDraft, legacyAssignment })));
     } catch { setRecoveryError("草稿保存不可用；当前输入仍保留在此页面。"); }
-    window.dispatchEvent(new CustomEvent("m3-draft-settled", { detail: { adminId, slot, body, originalDraft } }));
+    window.dispatchEvent(new CustomEvent("m3-draft-settled", { detail: { adminId, slot, body, originalDraft, legacyAssignment } }));
   };
   useLayoutEffect(() => {
     const settled = (event: Event) => {
-      const sent = (event as CustomEvent<{ adminId: number; slot: string; body: string; originalDraft?: string }>).detail;
+      const sent = (event as CustomEvent<SettledDraft & { adminId: number }>).detail;
       if (sent.adminId !== adminId) return;
-      setDrafts(previous => {
-        if (!previous[sent.slot] || previous[sent.slot] !== (sent.originalDraft ?? sent.body)) return previous;
-        const next = { ...previous };
-        delete next[sent.slot];
-        return next;
-      });
+      setDrafts(previous => withoutSubmittedDraft(previous, sent));
     };
     const restore = (event: Event) => {
-      const { adminId: owner, slot, body } = (event as CustomEvent<{ adminId: number; slot: string; body: string }>).detail;
-      if (owner === adminId) setDrafts(old => old[slot] ? old : { ...old, [slot]: body });
+      const { adminId: owner, slot, body, legacy } = (event as CustomEvent<{ adminId: number; slot: string; body: string; legacy?: string }>).detail;
+      if (owner === adminId) setDrafts(old => {
+        const next = { ...old, [slot]: old[slot] || body };
+        if (legacy && old[legacy] === body) delete next[legacy];
+        return next;
+      });
     };
     window.addEventListener("m3-draft-settled", settled);
     window.addEventListener("m3-draft-restored", restore);
@@ -1116,7 +1134,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     const original = entry?.first ?? entry?.reply;
     if (!entry || !original || entry.reply?.kind === "IMAGE") return;
     const copy = closeFailedDraft(adminId, key, customerId);
-    if (copy && !entry.dock) clearSubmittedDraft(original.draftSlot ?? entry.reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft);
+    if (copy && !entry.dock) clearSubmittedDraft(original.draftSlot ?? entry.reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft, original.draftSlot ? undefined : entry.first?.assignmentId ?? entry.reply?.expectedAssignmentId);
   };
 
   const querySavedSend = async (entry: SavedSend) => {
@@ -1158,7 +1176,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         if (reply.kind === "SKU" || reply.kind === "LINK") setContentChoice(null);
       }
       if (original && !entry.dock && reply?.kind !== "IMAGE" && result.status === "SUCCEEDED") {
-        clearSubmittedDraft(original.draftSlot ?? reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft);
+        clearSubmittedDraft(original.draftSlot ?? reply?.conversationId ?? `first:${customerId}`, original.body, original.originalDraft, original.draftSlot ? undefined : first?.assignmentId ?? reply?.expectedAssignmentId);
       }
       if (reply?.attachmentId) {
         if (result.status === "SUCCEEDED" && attachmentRef.current?.id === reply.attachmentId) clearAttachment(false);
@@ -1292,7 +1310,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }
     if (!conversationsAvailable || !recovery && recoveryBlocksTarget) return;
     const text = retryFirst?.body ?? retry?.body ?? draft.trim();
-    if (kind !== "IMAGE" && text.length > SUPPORT_MESSAGE_MAX_LENGTH) { setSendError(ADMIN_ERROR_MESSAGES.REPLY_BODY_TOO_LONG); return; }
+    if (!recovery && kind !== "IMAGE" && text.length > SUPPORT_MESSAGE_MAX_LENGTH) { setSendError(ADMIN_ERROR_MESSAGES.REPLY_BODY_TOO_LONG); return; }
     sendAdminTyping(false);
     if (retry && retry.conversationId !== selected?.id) return;
     if (retryFirst || !selected) {
@@ -1342,7 +1360,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         return;
       }
       if (!sameAccount()) return;
-      clearSubmittedDraft(record.draftSlot ?? `first:${record.customerId}`, record.body, record.originalDraft);
+      clearSubmittedDraft(record.draftSlot ?? `first:${record.customerId}`, record.body, record.originalDraft, record.draftSlot ? undefined : record.assignmentId);
       forgetSavedSend(slot, record.key);
       window.dispatchEvent(new Event("support-todo-changed"));
       if (!currentPage()) return;
@@ -1442,7 +1460,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       return;
     }
     if (!sameAccount()) return;
-    if (!activeEntry?.dock && record.kind !== "IMAGE") clearSubmittedDraft(record.draftSlot ?? record.conversationId, record.body, record.originalDraft);
+    if (!activeEntry?.dock && record.kind !== "IMAGE") clearSubmittedDraft(record.draftSlot ?? record.conversationId, record.body, record.originalDraft, record.draftSlot ? undefined : record.expectedAssignmentId);
     forgetSavedSend(slot, record.key);
     window.dispatchEvent(new Event("support-todo-changed"));
     if (!currentPage()) return;
@@ -2095,8 +2113,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             </div>
             {selected && attachmentPolicyError && <Notice tone="warn" action={<Button size="sm" onClick={() => setAttachmentPolicyRetry((value) => value + 1)}>重试</Button>}>{attachmentPolicyError}</Notice>}
             {maintenanceOffered && !pending && !firstPending && <Check label={`本条记为联系维护${intentSource?.due === true ? "（该客户维护已到期）" : ""}`} explain="发送成功后计入一次人工维护执行；客户之后重新活跃才算维护成功。" checked={maintenanceChosen} disabled={!writable && !requestedCustomerId || busy} onChange={event => setMaintenanceChosen(event.target.checked)} />}
-            {privateContentReady && contentChoice && <Notice tone="neutral" action={<Button size="sm" disabled={busy || Boolean(pending)} onClick={() => setContentChoice(null)}>取消推荐</Button>}>将发送：{contentChoice.name}</Notice>}
-            {privateContentReady && attachment && <div className="m3s-upload">
+            {privateContentReady && targetKey && contentChoice && <Notice tone="neutral" action={<Button size="sm" disabled={busy || Boolean(pending)} onClick={() => setContentChoice(null)}>取消推荐</Button>}>将发送：{contentChoice.name}</Notice>}
+            {privateContentReady && targetKey && attachment && <div className="m3s-upload">
               <img src={attachment.url} alt="待发送图片预览" />
               <div className="m3s-upload-text"><strong title={attachment.file.name}>{attachment.file.name}</strong><span data-error={attachment.state === "error" ? "" : undefined}>{attachment.state === "ready" ? "已上传，尚未发送" : attachment.state === "uploading" ? "上传中…" : attachment.state === "error" ? `上传失败：${attachment.error}` : "等待上传"} <Explain label="图片怎么发" content="发送文字不会附带此图片。先点「上传图片」，再点「发送图片」。" /></span></div>
               <Button size="sm" disabled={!writable || busy || attachment.state === "uploading" || attachment.state === "ready"} onClick={() => void uploadImage()}>{attachment.state === "error" ? "重试上传" : "上传图片"}</Button>
