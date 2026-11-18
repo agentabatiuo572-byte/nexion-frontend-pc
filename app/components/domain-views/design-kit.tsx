@@ -2311,7 +2311,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("slug", "课程标识", "learn-earn-basics")}
           {spec.mode === "version-create" && input("version", "版本号", "v2")}
-          {spec.mode === "version-edit" && <div className="field" style={{ marginBottom: 0 }}><span>版本号</span><output className="fld" aria-label="版本号" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{value.version} · 编辑中的草稿</output></div>}
+          {spec.mode === "version-edit" && <label className="field" style={{ marginBottom: 0 }}><span>版本号</span><input className="fld" aria-label="版本号" value={`${value.version ?? ""} · 编辑中的草稿`} readOnly aria-readonly="true" /></label>}
           {select("category", "课程分类", spec.categories ?? DEFAULT_COURSE_CATEGORIES, COURSE_CATEGORY_LABELS)}
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
           {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
@@ -2377,8 +2377,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             <div className="itint" data-proof="course-retired-options" style={{ marginTop: 10 }}>
               <div className="tiny" style={{ color: "var(--ink-3)", marginBottom: 6 }}>以下两项已停用，只显示这条记录的历史值，保存时原样保留，不能修改。用户按上面的通过分数判定是否通过。</div>
               <div className="grid g-2" style={{ gap: 10 }}>
-                {spec.current?.completionCondition && <div className="field" style={{ marginBottom: 0 }}><span>完成条件（历史值）</span><output className="fld" aria-label="完成条件（历史值）" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{({ quiz_passed: "达到通过分数", all_questions_correct: "全部答对" } as Record<string, string>)[spec.current.completionCondition] ?? spec.current.completionCondition}</output></div>}
-                {spec.current?.rewardEvent && <div className="field" style={{ marginBottom: 0 }}><span>何时发奖（历史值）</span><output className="fld" aria-label="何时发奖（历史值）" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{({ "quiz.passed": "测验通过", "course.completed": "课程完成" } as Record<string, string>)[spec.current.rewardEvent] ?? spec.current.rewardEvent}</output></div>}
+                {spec.current?.completionCondition && <label className="field" style={{ marginBottom: 0 }}><span>完成条件（历史值）</span><input className="fld" aria-label="完成条件（历史值）" value={({ quiz_passed: "达到通过分数", all_questions_correct: "全部答对" } as Record<string, string>)[spec.current.completionCondition] ?? spec.current.completionCondition} readOnly aria-readonly="true" /></label>}
+                {spec.current?.rewardEvent && <label className="field" style={{ marginBottom: 0 }}><span>何时发奖（历史值）</span><input className="fld" aria-label="何时发奖（历史值）" value={({ "quiz.passed": "测验通过", "course.completed": "课程完成" } as Record<string, string>)[spec.current.rewardEvent] ?? spec.current.rewardEvent} readOnly aria-readonly="true" /></label>}
               </div>
             </div>
           )}
