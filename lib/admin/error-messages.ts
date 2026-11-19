@@ -2204,7 +2204,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   "HOSTING_CENTERS_REVISION_CONFLICT": "托管机房清单已被别人改过，请刷新后核对。",
   "HOSTING_CENTERS_UNAVAILABLE": "托管机房清单暂时读不到，请联系值班技术。",
   "F4_QUOTA_SKU_EXISTS": "这个商品已经有名额档位，不能再建；要改名额，到它那一行点「调额度」。",
-  "F4_QUOTA_SKU_NOT_SELLABLE": "这个商品当前不可售，请刷新商品清单后再选。",
+  "F4_QUOTA_SKU_NOT_SELLABLE": "这个商品现在不能卖：已下架、开放阶段或代际还没到，或规格没填全；到「商品与上架条件」核对后再选。",
   "F4_QUOTA_CODE_EXISTS": "名额档位编号已存在，请刷新后重试。",
   "F4_QUOTA_TIER_INVALID": "请核对商品、名称、资格条件和每月名额。",
   "EARN_MILESTONE_KEY_INVALID": "收益里程碑编号无效，本次未建单。请刷新档位并联系值班同事核对配置。",

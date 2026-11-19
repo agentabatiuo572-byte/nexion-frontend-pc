@@ -333,7 +333,7 @@ A2请求为 `sourceDomain:A1`、`type:acct`、`amplifies:false`、`sos:false`、
 
 #### [A2] 操作记录与审批
 
-**2026-11-20 上线配置审批**：按 `operationCode` 识别 E1 托管机房清单 `e1_hosting_centers_update`、H5 收益里程碑新增 `h5_earn_milestone_create`、F4 购机名额档位新增 `f4_quota_tier_create`。三项均由另一位具有相应权限的管理员批准后执行。H5 和 F4 要求批准人是超级管理员，H5 批准时核对兑付覆盖率。
+**2026-11-20 上线配置审批**：按 `operationCode` 识别 E1 托管机房清单 `e1_hosting_centers_update`、H5 收益里程碑新增 `h5_earn_milestone_create`、F4 购机名额档位新增 `f4_quota_tier_create`。三项均由另一位具有相应权限的管理员批准后执行。H5 和 F4 要求批准人是超级管理员，H5 在建单和批准时都核对兑付覆盖率，低于红线或读不到都会被拒。
 
 2026-11-17（13193cec，hd-sync43）：角色授权审批单的资金标记以后端为准，可识别新旧单均不标放大资金；新单给出服务端持久化roleGrantsDiff四组增减。PC读取及可选目录命名已接，null与四空数组分开，旧before/after保留兼容，不用当前角色重算历史；队列、详情、批准框显示交界面，详见《A2-A6-角色授权审批差异-20261117》。
 
@@ -1020,7 +1020,7 @@ Nexion 运营控制后台
 | H5 | 签到 & 积分 | /daily(Lucky 倍率 / streak / saver / 里程碑) | §9.8 / §9.11c.1 | V3 |
 | H6 | 里程碑庆祝 | MilestoneWatcher(5 档阈值 + NEX 奖励) | §11.3a | V3 |
 
-**H5 新建收益里程碑**：用 `POST /api/admin/growth/earn-milestones` 提交编号、英文名称、累计收益门槛、UVT 奖励、按门槛位置计算的顺序及理由。H5 列表在批准后重读；后端复验编号、门槛顺序和兑付覆盖率。
+**H5 新建收益里程碑**：用 `POST /api/admin/growth/earn-milestones` 提交编号、英文名称、累计收益门槛、UVT 奖励、按门槛位置计算的顺序及理由。H5 列表在批准后重读；建单和批准时后端都复验编号、门槛顺序和兑付覆盖率，覆盖率低于红线或读不到都会被拒。
 
 **H7 转盘专发券**：从券列表读取 `wheelOnly`，值为 true 时以转盘中奖发放为准，自领入口不可编辑。券保存的请求不带 `wheelOnly`。
 

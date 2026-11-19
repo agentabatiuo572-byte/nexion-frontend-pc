@@ -86,7 +86,7 @@ export function earnCreateRequest({ snapshot, approver, rights, runChange }: { s
       };
     },
     coverageLead: "加一档会让平台多付 UVT",
-    coverageCheck: "批准时检查兑付覆盖率不低于红线，低于或算不准都拒绝。",
+    coverageCheck: "提交审批时和批准时都检查兑付覆盖率，低于红线或读不到都会被拒。",
     amplifies: true,
     confirmLabel: "提交审批",
     reasonPlaceholder: "例如：活动方案或工单号",

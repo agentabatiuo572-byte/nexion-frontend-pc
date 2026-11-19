@@ -5,7 +5,7 @@
  * 写入口和请求沿用旧页面：额度、回收走 shell 的 param/dispose 提交（A2 审批），申请规则走 ctx.updateF4AmbassadorPolicy 或 ctx.submitTeamApproval。
  */
 import { useState } from "react";
-import { AlertCircle, FileText, Package, PauseCircle, Plus, Users } from "lucide-react";
+import { AlertCircle, Ban, FileText, Package, PauseCircle, Plus, Users } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fold, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
@@ -102,15 +102,15 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           </div>
         </div>
         {data.quotaRows.length ? <ul className="f4-quota-items" aria-label="各商品本月名额">
-          {data.quotaRows.map((quota) => { const paused = quota.status === 0; return <li key={quota.id} data-tight={quota.tight && !paused ? "" : undefined} data-paused={paused ? "" : undefined}>
+          {data.quotaRows.map((quota) => { const paused = quota.status === 0; const limit = quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota; const soldOut = !paused && limit !== null && quota.current >= Number(limit); return <li key={quota.id} data-tight={quota.tight && !paused && !soldOut ? "" : undefined} data-paused={paused ? "" : undefined}>
             <span className="f4-quota-head">
               <span className="f4-quota-name"><b>{quota.name}</b><span data-mono>{quota.productNo || quota.quotaCode}</span></span>
               {canWrite && <Button size="sm" disabledReason={quota.monthlyQuota === null ? QUOTA_MISSING : undefined} onClick={() => openQuota(quota)}>调额度</Button>}
             </span>
             <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
-            <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={paused ? "done" : quota.tight ? "warn" : "role-2"}
+            <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={paused ? "done" : soldOut ? "danger" : quota.tight ? "warn" : "role-2"}
               state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText="这个商品的月额度没读到" emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
-            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
+            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : soldOut ? <StatusTag tone="danger" icon={Ban}>本月已停卖</StatusTag> : quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
             {paused && <span className="f4-quota-cond">用户买不了这个商品，不算进总量</span>}
           </li>; })}
         </ul> : <BlockState state="empty" title="还没有设置购机名额" detail={canWrite ? "新建一档后，要另一位超级管理员批准才生效。" : undefined}
