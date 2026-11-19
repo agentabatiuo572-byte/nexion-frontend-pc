@@ -1313,7 +1313,7 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 
 /* 主题选择（顶栏、登录页）：只有图标的左右两侧选择，滑槽有底色，左太阳浅色、右月亮深色，滑块停在已选的一侧，那一侧的图标亮、另一侧弱一档。
    滑块位置和图标明暗按 <html data-theme> 定，不跟 React 状态：首屏脚本先设好属性，加载时滑块就在对的一侧，不会滑一下。
-   高 32（--rd-control-h），圆角和顶栏其它控件一样 8，滑块 6；焦点环画在整条滑槽外 2px（焦点总在已选项上，滑块标出是哪一侧）。减少动效时全局规则把过渡压到 0，直接到位。 */
+   高 32（--rd-control-h），圆角和顶栏其它控件一样 8，滑块 6；焦点环画在整条滑槽外 2px（焦点总在已选项上，滑块标出是哪一侧）。减少动效时 globals.css 的全局规则把过渡压到 0.01ms，看起来直接到位。 */
 .rd-theme { position: relative; display: inline-grid; flex: none; grid-template-columns: 1fr 1fr; width: 60px; height: var(--rd-control-h); padding: 2px; border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .rd-theme button { position: relative; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--rd-radius-control); background: transparent; color: var(--rd-text-3); cursor: pointer; }
 .rd-theme button[aria-checked="true"] { cursor: default; }

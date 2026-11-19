@@ -4,8 +4,8 @@
  * 主题。深色是默认，浅色挂 data-theme="light"，两套都正式保留（产品 2026-11-05 定）。
  * - <ThemeScript />：放在 <head> 里同步执行，首屏按记住的选择设属性，不闪屏。
  * - <ThemeToggle />：顶栏和登录页的左右两侧选择，只有图标：左太阳浅色、右月亮深色，滑块停在已选的一侧。
- *   单选组（radiogroup「主题」，两个 radio「浅色」「深色」）：点哪一侧选哪一侧，点已选的一侧不变；Tab 停在已选项，
- *   左右方向键移到另一侧并选中，空格、回车选中焦点项。悬停和聚焦写这一侧是什么（「浅色」「深色」）。
+ *   单选组（radiogroup「主题」，两个 radio「浅色」「深色」）：点哪一侧选哪一侧，点已选的一侧画面不变、照旧记一次选择；
+ *   Tab 停在已选项，方向键循环（只有两项，任一方向键都移到另一侧并选中），空格、回车选中焦点项。悬停和聚焦写这一侧是什么（「浅色」「深色」）。
  *   滑块位置和图标明暗由 CSS 按 <html data-theme> 定，首屏就在对的一侧，不会滑一下。
  * - useAdminTheme(adminId)：登录后按这个账号记住的选择切换，在绘制前生效，内容不会先按本机选择画一次。
  * 记忆：localStorage `nexion-admin-rd-theme` 是本机最近一次的选择，登录前也用它；
@@ -81,14 +81,12 @@ export function ThemeToggle({ adminId, floating }: { adminId?: number; floating?
             aria-checked={theme === value}
             tabIndex={theme === value ? 0 : -1}
             data-value={value}
-            onClick={() => {
-              if (theme !== value) applyTheme(value, adminId);
-            }}
+            onClick={() => applyTheme(value, adminId)}
             onKeyDown={(e) => {
-              const pick = e.key === "ArrowLeft" || e.key === "ArrowUp" ? "light" : e.key === "ArrowRight" || e.key === "ArrowDown" ? "dark" : null;
-              if (!pick) return;
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
               e.preventDefault();
-              if (pick !== theme) applyTheme(pick, adminId);
+              const pick: Theme = value === "light" ? "dark" : "light";
+              applyTheme(pick, adminId);
               e.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-value="${pick}"]`)?.focus();
             }}
           >
