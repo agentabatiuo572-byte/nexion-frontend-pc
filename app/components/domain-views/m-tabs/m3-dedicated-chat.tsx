@@ -3,7 +3,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { customerConversations, replyTimeout } from "@/lib/admin/customer-conversations";
 
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type SetStateAction } from "react";
 import { useSearchParams } from "next/navigation";
 import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, Search, SendHorizontal, Square, TimerOff } from "lucide-react";
 import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, Fold, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
@@ -40,6 +40,8 @@ import { useM3MessagePages } from "./use-m3-message-pages";
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
 type SettledDraft = { slot: string; body: string; originalDraft?: string; legacyAssignment?: string };
+type ContinuedCopy = { fingerprint: string; commandKey: string; destinationKey: string; body: string };
+type DraftState = { drafts: Record<string, string>; continuedCopy?: ContinuedCopy };
 function withoutSubmittedDraft(drafts: Record<string, string>, sent: SettledDraft) {
   const next = { ...drafts };
   for (const [key, text] of Object.entries(drafts)) {
@@ -306,7 +308,13 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   timeoutIdentityRef.current = `${authEpoch}:${adminId}:${session?.role === "super" || session?.role === "superadmin"}:${Boolean(session?.authorities?.includes("service_m3_read"))}:${Boolean(session?.authorities?.includes("service_m3_timeout_manage"))}`;
   const scopeGeneration = useRef(0);
   const [draftOwner, setDraftOwner] = useState(0), [metaTarget, setMetaTarget] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [{ drafts, continuedCopy }, setDraftState] = useState<DraftState>({ drafts: {} });
+  const setDrafts = useCallback((update: SetStateAction<DraftState["drafts"]>) => {
+    setDraftState(old => {
+      const next = typeof update === "function" ? update(old.drafts) : update;
+      return next === old.drafts ? old : { ...old, drafts: next };
+    });
+  }, []);
   // Saved drafts may still carry a purpose; it is now derived from the explicit 联系维护 switch below (M-26 / M-54).
   const messageRevision = useSendJournalRevision();
   const mounted = useRef(false);
@@ -917,7 +925,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, []);
   useEffect(() => {
     setMetaTarget("");
-    setDrafts({}); setDraftOwner(0); setActionResult(""); setSendError(""); setMaintenanceChosen(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
+    setDraftState({ drafts: {} }); setDraftOwner(0); setActionResult(""); setSendError(""); setMaintenanceChosen(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
     setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
@@ -939,8 +947,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       : linkedConversationNo ? [firstSource]
         : [firstSource, ...visible.filter(row => row.customerId === targetCustomer && row.id !== selected.id).map(row => row.id)]
     : explicitSource ? [explicitSource] : [];
+  const matchesContinuationCopy = (copy: (typeof failedCopies)[number], source: string) =>
+    copy.commandOwnerId === adminId && copy.source !== "dock" && copy.customerId === targetCustomer
+    && copy.assignmentId === draftAssignment?.assignmentId && (copy.conversationId ?? firstSource) === source && Boolean(copy.body.trim());
   const continuationSources = targetCustomer && draftAssignment?.assignmentId && draftAssignment.agentAdminId
-    ? sourceThreads.filter(no => drafts[scopedDraftSlot(no, targetCustomer, draftAssignment.assignmentId!, draftAssignment.agentAdminId!)]?.trim())
+    ? sourceThreads.filter(no => drafts[scopedDraftSlot(no, targetCustomer, draftAssignment.assignmentId!, draftAssignment.agentAdminId!)]?.trim()
+      || failedCopies.some(copy => matchesContinuationCopy(copy, no)))
     : [];
   const continuationCandidates = continuationSources.join("|");
   const continuationBlocked = useRef(false);
@@ -967,12 +979,17 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (signal.aborted || stamp !== identityRef.current || !originalView()
         || blocksNewSend(pendingSendCustomers(adminId, visible), targetCustomer)) return;
       const sourceKey = scopedDraftSlot(source, targetCustomer, assignmentId, agentAdminId);
+      const copy = failedDraftCopies.list().find(item => matchesContinuationCopy(item, source));
       // Revocation and draft edits may have updated either slot during the read.
-      setDrafts(old => {
-        if (sourceKey === targetKey || !old[sourceKey]?.trim() || old[targetKey]?.trim()) return old;
-        const next = { ...old, [targetKey]: old[sourceKey] };
-        delete next[sourceKey];
-        return next;
+      setDraftState(old => {
+        if (sourceKey === targetKey || old.drafts[targetKey]?.trim()) return old;
+        const body = old.drafts[sourceKey]?.trim() ? old.drafts[sourceKey] : copy?.body;
+        if (!body) return old;
+        const drafts = { ...old.drafts, [targetKey]: body };
+        delete drafts[sourceKey];
+        return { drafts, continuedCopy: copy?.body === body
+          ? { fingerprint: copy.fingerprint, commandKey: copy.commandKey, destinationKey: targetKey, body }
+          : old.continuedCopy };
       });
       return;
     }
@@ -988,8 +1005,19 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   }, [canRecoverContinuation, continuationCandidates, targetKey, destinationOccupied, messageOpening]);
   useEffect(() => {
     if (!adminId || draftOwner!==adminId || qualificationUnknown) return;
-    try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
-  }, [drafts, adminId, draftOwner, qualificationUnknown]);
+    try {
+      sessionStorage.setItem(`nexion-m3-drafts:${adminId}`, JSON.stringify(drafts));
+    } catch {
+      setSendError("草稿保存不可用；当前输入仍保留在此页面。");
+      return;
+    }
+    if (continuedCopy) {
+      if (drafts[continuedCopy.destinationKey] === continuedCopy.body) {
+        failedDraftCopies.forget(continuedCopy.fingerprint, continuedCopy.commandKey);
+      }
+      setDraftState(old => old.continuedCopy === continuedCopy ? { drafts: old.drafts } : old);
+    }
+  }, [drafts, continuedCopy, adminId, draftOwner, qualificationUnknown]);
   useEffect(() => {
     if (!replyTargetsKey || metaTarget === replyTargetsKey) return;
     try {
