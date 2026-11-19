@@ -4,6 +4,7 @@
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import type { StateTone } from "@/app/components/rd";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
@@ -268,6 +269,7 @@ export interface E1GateReadiness {
   declaredPhase: string;
   phaseConflict: boolean;
   unlocked: boolean;
+  needsAttention: boolean;
   blockers: string[];
 }
 
@@ -275,7 +277,7 @@ export interface E1GateReadinessInput {
   release: { id: string; phase: string; releaseMonth: number; phaseOffset?: number; eligibility?: boolean; forceUnlock?: boolean };
   phaseOrder: string[];
   /** 阶段配置行:skus 是运营展示标签,不参与发布判定。 */
-  phases: Array<{ p: string; label?: string; skus: string }>;
+  phases: E1GenerationGateData["phases"];
   /** 该门上挂的 SKU;unlock 是商品服务端解锁阶段。 */
   sku?: { id: string; unlock: string } | null;
   currentPhase: string;
@@ -287,6 +289,51 @@ const phaseLabelOf = (phases: Array<{ p: string; label?: string; skus: string }>
 
 export const resolveE1PhaseId = (phases: Array<{ p: string; label?: string }>, value: string): string =>
   phases.find((phase) => phase.p === value)?.p ?? phases.find((phase) => phase.label === value)?.p ?? value;
+
+export const E1_CURRENT_PHASE_UNVERIFIED = "当前阶段待核实";
+
+const e1PhaseToken = (value: string): string => {
+  const token = value.trim().toUpperCase();
+  return /^[1-9]$/.test(token) ? `P${token}` : token;
+};
+
+export function e1CurrentPhase(gates: E1GenerationGateData | null) {
+  const comparison = gates?.phaseComparison;
+  const operatingPhase = typeof comparison?.h1CurrentPhase === "string" ? comparison.h1CurrentPhase : "";
+  const current = gates?.phaseCurrent ?? "";
+  // Earlier responses reported the independently calculated E1 ID in phaseCurrent.
+  const sharedSource = comparison?.same === true && comparison.e1CurrentPhase === current
+    && operatingPhase === current && comparison.mappingStatus !== undefined;
+  const activeIds = gates?.phaseOrder.filter(id => gates.phases.some(phase => phase.p === id && phase.status !== "archived")) ?? [];
+  const token = e1PhaseToken(current);
+  const matches = activeIds.filter(id => e1PhaseToken(id) === token);
+  const mapped = comparison?.mappedH1Phase;
+  const phaseId = !token || sharedSource && (comparison.mappingStatus !== "EXACT_ID_PRESENT" || typeof mapped !== "string" || e1PhaseToken(mapped) !== token)
+    ? "" : activeIds.includes(current) ? current : matches.length === 1 ? matches[0] : "";
+  const mismatch = comparison?.same === false && operatingPhase && typeof comparison.e1CurrentPhase === "string"
+    && e1PhaseToken(resolveE1PhaseId(gates?.phases ?? [], operatingPhase)) !== e1PhaseToken(resolveE1PhaseId(gates?.phases ?? [], comparison.e1CurrentPhase))
+    ? { h1: operatingPhase, e1: comparison.e1CurrentPhase } : null;
+  return { operatingPhase, phaseId, mismatch };
+}
+
+function e1PhaseIndex(phaseOrder: string[], phases: E1GenerationGateData["phases"], id: string) {
+  return phases.some(phase => phase.p === id && phase.status !== "archived") ? phaseOrder.indexOf(id) : -1;
+}
+
+export function e1SkuOpening(sku: OpsSku, gates: E1GenerationGateData, currentPhase: string) {
+  const { releases, phaseOrder, phases, platformMonth } = gates;
+  const release = releases.find(gate => gate.id === sku.id);
+  const readiness = release ? e1GateReadiness({ release, phaseOrder, phases, sku, currentPhase, platformMonth }) : null;
+  const unlock = declaredPhaseForSku(sku);
+  const phaseId = resolveE1PhaseId(phases, unlock);
+  const phaseIndex = e1PhaseIndex(phaseOrder, phases, phaseId);
+  const needsAttention = readiness?.needsAttention ?? (!!unlock && (!currentPhase || phaseIndex < 0));
+  const open = readiness ? readiness.unlocked : !unlock || !!currentPhase && phaseIndex >= 0 && phaseIndex <= phaseOrder.indexOf(currentPhase);
+  const blockers = readiness ? readiness.blockers : open ? [] : [
+    !currentPhase ? E1_CURRENT_PHASE_UNVERIFIED : phaseIndex < 0 ? "开放阶段对不上" : `待${phaseLabelOf(phases, phaseId)}`,
+  ];
+  return { release, needsAttention, open, blockers };
+}
 
 /**
  * 商品解锁阶段来自 nx_product.unlock_phase,与服务端发布判定同源。
@@ -305,28 +352,30 @@ export function e1GateReadiness(input: E1GateReadinessInput): E1GateReadiness {
   const { release, phaseOrder, phases, sku, currentPhase, platformMonth } = input;
   const phaseId = (value: string): string => resolveE1PhaseId(phases, value);
   const gatePhase = phaseId(release.phase);
-  const gatePhaseIdx = phaseOrder.indexOf(gatePhase);
-  const curIdx = phaseOrder.indexOf(phaseId(currentPhase));
-  const hasPhaseConfig = phaseOrder.length > 0 && phases.length > 0 && curIdx >= 0;
+  const gatePhaseIdx = e1PhaseIndex(phaseOrder, phases, gatePhase);
+  const curIdx = e1PhaseIndex(phaseOrder, phases, currentPhase);
   const declaredPhase = phaseId(declaredPhaseForSku(sku));
   const phaseConflict = !!declaredPhase && !!gatePhase && declaredPhase !== gatePhase;
   const eligibilityReady = !!release.eligibility;
-  const phaseReached = hasPhaseConfig && gatePhaseIdx >= 0 && curIdx >= gatePhaseIdx;
+  const phaseReached = gatePhaseIdx >= 0 && curIdx >= gatePhaseIdx;
   const effectiveMonth = effectiveReleaseMonth(release.releaseMonth, release.phaseOffset ?? 0);
   const monthReached = platformMonth >= effectiveMonth;
   const forceMonthOpen = !!release.forceUnlock;
   const blockers: string[] = [];
 
+  if (curIdx < 0) blockers.push(E1_CURRENT_PHASE_UNVERIFIED);
   if (!sku) blockers.push("商品不存在");
   else if (!declaredPhase) blockers.push("商品没有设置开放阶段");
   else if (phaseConflict) blockers.push(`阶段不一致 · 商品的开放阶段是${phaseLabelOf(phases, declaredPhase)}`);
   if (!eligibilityReady) blockers.push("待补设备资格");
-  if (!phaseReached) blockers.push(gatePhaseIdx >= 0 ? `待${phaseLabelOf(phases, release.phase)}` : "阶段未匹配");
+  if (gatePhaseIdx < 0) blockers.push("阶段未匹配");
+  else if (curIdx >= 0 && !phaseReached) blockers.push(`待${phaseLabelOf(phases, release.phase)}`);
   if (!monthReached && !forceMonthOpen) blockers.push(`待第 ${effectiveMonth} 个月`);
 
   return {
     effectiveMonth, eligibilityReady, forceMonthOpen, gatePhaseIdx, monthReached, phaseReached,
     declaredPhase, phaseConflict,
+    needsAttention: !declaredPhase || phaseConflict || !eligibilityReady || gatePhaseIdx < 0 || curIdx < 0,
     unlocked: !!declaredPhase && !phaseConflict && eligibilityReady && phaseReached && (monthReached || forceMonthOpen),
     blockers,
   };
