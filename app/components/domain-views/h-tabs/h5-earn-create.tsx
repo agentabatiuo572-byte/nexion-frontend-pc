@@ -7,6 +7,7 @@
  */
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { h5Amount } from "@/lib/admin/h5-contract";
+import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { amountText, type EarnMilestone } from "./h5-parts";
 import type { ActionConfirmReq } from "./types";
 
@@ -36,6 +37,11 @@ export function earnCreateIssue(list: readonly EarnMilestone[], values: Record<s
   const key = values.milestoneKey.trim();
   if (!KEY_RULE.test(key)) return { field: "milestoneKey", message: "编号只能用字母、数字、- 和 _，最多 64 个字符" };
   if (list.some(item => item.key.toLowerCase() === key.toLowerCase())) return { field: "milestoneKey", message: `编号 ${key} 已经有了，换一个` };
+  const label = values.label.trim();
+  if (!label) return { field: "label", message: "请填写名称" };
+  const labelError = appVisibleTextError(label, "名称");
+  if (labelError) return { field: "label", message: labelError };
+  if (label.length > 128) return { field: "label", message: "名称最多 128 个字符" };
   const threshold = h5Amount(values.threshold), reward = h5Amount(values.nex);
   if (threshold === undefined || threshold < MIN_THRESHOLD || threshold > MAX_AMOUNT) return { field: "threshold", message: "门槛为 1–100,000,000 USDT，最多 6 位小数" };
   if (list.some(item => h5Amount(item.threshold) === threshold)) return { field: "threshold", message: `已经有 ${amountText(values.threshold)} USDT 这一档，门槛不能重复` };
@@ -81,12 +87,14 @@ export function earnCreateRequest({ list, approver, rights }: { list: readonly E
       },
       fields: [
         { key: "milestoneKey", label: "档位编号", inputKind: "text", current: "", placeholder: "例如 M6", help: "字母、数字、- 或 _，建好后不能改", maxLength: 64 },
+        { key: "label", label: "名称", inputKind: "text", current: "", placeholder: "例如 Earn 500 USDT", help: `${APP_VISIBLE_TEXT_HINT}，最多 128 个字符`, maxLength: 128 },
         { key: "threshold", label: "门槛（累计收益 USDT）", inputKind: "number", current: "", placeholder: "例如 500", help: "最多 6 位小数，不能和现有的档相同" },
         { key: "nex", label: "奖励（UVT）", inputKind: "number", current: "", placeholder: "例如 250", help: "最多 6 位小数，可以是 0" },
       ],
     },
     run: async () => {
-      // PLACEHOLDER(pc-wire)：接后端新建命令，提交审批后写原操作记录、关框、重读。
+      // PLACEHOLDER(pc-wire)：接 lc/milestone 新建命令 { milestoneKey, label, thresholdUsd, rewardNex, sortOrder, reason }；
+      // sortOrder 按门槛在现有档位里的位置算（placeOf 的 index）。提交审批后写原操作记录、关框、重读。
       throw new Error("新建档位还没接上后台，这次没有提交。");
     },
   };

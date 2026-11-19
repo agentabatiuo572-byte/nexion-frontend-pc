@@ -6,7 +6,7 @@
  *
  * PLACEHOLDER(pc-wire)：
  * - 后端新建命令还没做（hd-impl-x-lc-quota），确认按钮先拒绝，不发任何请求。
- * - 可选商品现在取 ctx.skuOptions / ctx.skuLabels：它们来自会员等级页的读取，打开这页时不一定读过；接线时换成在售商品清单。
+ * - 可选商品现在取 ctx.skuOptions / ctx.skuLabels：它们来自会员等级页的读取，打开这页时是空的；接线时改从 E1 在售商品读取（名称用 E1 商品名）。
  * - 暂停的档位不一定出现在 quotaRows 里，后端「这个商品已有档位」的拒绝要按错误码显示在框里（文案见 QUOTA_CREATE_TAKEN）。
  */
 import { Fact, Facts, Notice, StatusTag } from "@/app/components/rd";
@@ -15,7 +15,7 @@ import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count } from "./f4-shared";
 
 export const QUOTA_CREATE_TAKEN = "这个商品已经有名额档位，不能再建；要改名额，到它那一行点「调额度」。";
-const APPROVER = "另一位管理员";
+const APPROVER = "另一位超级管理员";
 const MODE_LABELS: Record<string, string> = { ALL: "两项都要满足", EITHER: "满足一项就行" };
 const WHOLE = /^(?:0|[1-9]\d{0,11})$/;
 
@@ -48,7 +48,7 @@ export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: 
       detail={<>新建要{APPROVER}批准，批准后才生效。</>}
       effect={<StatusTag tone="progress" filled explain={`${APPROVER}批准后才加上这一档，提交人不能批自己的；批准前这个商品照常卖，不受名额限制。`}>批准后生效</StatusTag>}
       facts={<Facts>
-        <Fact k="谁来批">{`${APPROVER}，需有购机名额修改权限和审批权限，不能是提交人`}</Fact>
+        <Fact k="谁来批">{`${APPROVER}，需有购机名额修改权限，不能是提交人`}</Fact>
       </Facts>}
       content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已经有档位，不在下面的可选范围里；要改，到它那一行点「调额度」。`}</Notice> : undefined}
       blockedReason={noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined}
@@ -67,7 +67,7 @@ export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: 
         },
         fields: [
           { key: "productNo", label: "商品", inputKind: "select", options: free, optionLabels: skuLabels, mustChoose: true, searchable: free.length > 8, current: "", wide: true },
-          { key: "name", label: "名称", inputKind: "text", current: "", placeholder: "例如 Pro 月名额", maxLength: 128, wide: true },
+          { key: "name", label: "名称", inputKind: "text", current: "", placeholder: "例如 Pro 月名额", help: "只在后台显示", maxLength: 128, wide: true },
           { key: "directRefs", label: "有效直接邀请（人）", inputKind: "number", current: "0", min: 0, step: 1, help: "填 0 表示不要求" },
           { key: "monthComputePoints", label: "本月团队算力点", inputKind: "number", current: "0", min: 0, step: 1, help: "填 0 表示不要求" },
           { key: "unlockMode", label: "两项条件", inputKind: "select", options: ["ALL", "EITHER"], optionLabels: MODE_LABELS, segments: true, current: "ALL", help: "两项都填了才有区别" },

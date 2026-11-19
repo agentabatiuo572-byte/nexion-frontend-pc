@@ -112,7 +112,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
               state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText="这个商品的月额度没读到" emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
             <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
           </li>)}
-        </ul> : <BlockState state="empty" title="还没有设置购机名额" detail={canWrite ? "新建一档后，要另一位管理员批准才生效。" : undefined}
+        </ul> : <BlockState state="empty" title="还没有设置购机名额" detail={canWrite ? "新建一档后，要另一位超级管理员批准才生效。" : undefined}
           onRetry={canWrite ? () => setCreating(true) : undefined} retryLabel="新建档位" />}
         <KeyValues rows={[
           { key: "pro", label: "Pro 商品月额度", value: monthQuota(data.proUnlock), explain: "名字里带 Pro 的第一个商品，取额度和已用里较大的一个；额度读不到时按已用算。不是购买门槛。" },
