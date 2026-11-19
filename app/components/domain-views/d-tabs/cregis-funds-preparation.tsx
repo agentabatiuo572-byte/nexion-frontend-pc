@@ -10,12 +10,13 @@ import { DRequestError, d1PendingObjectReason, financeAdminRequest } from "@/lib
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionId, exceptionObject, exceptionPage, exceptionRead, type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
 import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_GAS, PREPARATION_NETWORKS, PREPARATION_STATE, type PreparationConfig, type PreparationKind, type PreparationNetwork } from "@/lib/admin/cregis-funds-preparation";
-import { LongValue, usdt } from "./d1-shared";
+import { LongValue, usdt, zoneLabel } from "./d1-shared";
+import { businessStamp, parseBusinessTime } from "@/lib/admin/business-time";
 import type { DCtx } from "./types";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const ROOT = "/funds-preparation";
-const ERC20_CONFIGURATION_REQUIRED = "ERC20 收款地址还没配置";
+const configurationTitle = (network: PreparationNetwork) => `${network} 收款配置还没完成`;
 const configurationRequired = (failure: unknown) => failure instanceof DRequestError && failure.status === 503
   && failure.reasonCode === "CREGIS_PREPARATION_CONFIGURATION_REQUIRED";
 const kindLabel = (kind: unknown) => kind === "COLLECTION" ? "归集到 Cregis 准备" : "Cregis 转平台收款钱包准备";
@@ -76,7 +77,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     } catch (failure) {
       if (owns() && at === readEpoch.current) {
         setConfig(null); setPage(EMPTY);
-        if (network === "ERC20" && configurationRequired(failure)) setUnconfigured(true);
+        if (configurationRequired(failure)) setUnconfigured(true);
         else setError(displayAdminReadError(failure));
       }
     } finally { if (owns() && at === readEpoch.current) setLoading(false); }
@@ -109,8 +110,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
           || response.blockers.some(item => typeof item !== "string")) throw new Error("资金检查结果无效，请重新读取");
       if (at === selection.current) setPreflight(response);
     } catch (failure) {
-      if (owns()) setFormError(network === "ERC20" && configurationRequired(failure)
-        ? ERC20_CONFIGURATION_REQUIRED : displayAdminError(failure));
+      if (owns()) setFormError(configurationRequired(failure) ? configurationTitle(network) : displayAdminError(failure));
     }
     finally { mutation.current = false; if (owns()) setBusy(false); }
   };
@@ -136,9 +136,9 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
       const target = kind === "COLLECTION" ? config!.platformAddress : config!.counterpartyAddress;
       openActionConfirm({ briefKind: "record", action: "创建资金准备单", title: "创建资金准备单", confirmLabel: "确认创建",
         effect: <StatusTag tone="neutral" filled>只保存准备记录</StatusTag>,
-        facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(body.amountUsdt)}</Fact><Fact k="类型">{kindLabel(kind)}</Fact>{network === "ERC20" && <Fact k="网络">ERC20</Fact>}<Fact k="来源">{body.sourceAddress}</Fact><Fact k="接收">{target}</Fact><Fact k="业务参考">{snapshot.businessReference}</Fact></Facts>,
-        detail: `${network === "ERC20" ? "ERC20 · " : ""}${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${target} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
-        reasonMin: 10, reasonMax: 300, completionCopy: "只保存准备记录，不发送资金。", run: async reason => { await command("/plans", { ...snapshot, reason }, network); setCreating(false); } });
+        facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(body.amountUsdt)}</Fact><Fact k="类型">{kindLabel(kind)}</Fact><Fact k="网络">{network}</Fact><Fact k="来源"><LongValue value={body.sourceAddress} label="来源地址" /></Fact><Fact k="接收"><LongValue value={target} label="接收地址" /></Fact><Fact k="业务参考">{snapshot.businessReference}</Fact></Facts>,
+        detail: `${network} · 提交后等另一位管理员复核；真实转账须另行授权，在收款服务后台执行。`,
+        reasonMin: 10, reasonMax: 300, completionCopy: "不发送资金。", run: async reason => { await command("/plans", { ...snapshot, reason }, network); setCreating(false); } });
     } catch (failure) { setFormError((failure as Error).message); }
   };
   const decide = (row: ExceptionRecord, decision: "REVIEW" | "CANCEL") => {
@@ -148,9 +148,9 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     const held = d1PendingObjectReason(`/cregis${ROOT}/plans/${String(row.planNo)}/decision`); if (held) { setError(held); return; }
     openActionConfirm({ briefKind: "record", action: decision === "REVIEW" ? "复核准备单" : "取消准备单", title: decision === "REVIEW" ? "复核准备单" : "取消准备单",
       confirmLabel: decision === "REVIEW" ? "确认复核" : "确认取消", effect: <StatusTag tone="neutral" filled>不转账</StatusTag>,
-      facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact>{planNetwork === "ERC20" && <Fact k="网络">ERC20</Fact>}<Fact k="来源">{String(row.sourceAddress)}</Fact><Fact k="接收">{String(row.targetAddress)}</Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,
-      detail: `${planNetwork === "ERC20" ? "ERC20 · " : ""}${kindLabel(row.kind)} · ${row.amountUsdt} USDT · ${row.sourceAddress} → ${row.targetAddress} · ${row.businessReference}。复核只确认准备信息，不授权或执行转账。`,
-      reasonMin: 10, reasonMax: 300, completionCopy: decision === "REVIEW" ? "准备信息已复核，尚未转账" : "准备单已取消",
+      facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact><Fact k="网络">{planNetwork}</Fact><Fact k="来源"><LongValue value={String(row.sourceAddress)} label="来源地址" /></Fact><Fact k="接收"><LongValue value={String(row.targetAddress)} label="接收地址" /></Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,
+      detail: decision === "REVIEW" ? `${planNetwork} · 核对金额、地址和业务参考与原业务单一致；真实转账须另行授权，在收款服务后台执行。` : `${planNetwork} · 准备单改为已取消，没有资金需要撤回。`,
+      reasonMin: 10, reasonMax: 300, completionCopy: decision === "REVIEW" ? "复核只确认准备信息，仍不转账" : "取消后这张准备单不能再复核",
       run: reason => command(`/plans/${row.planNo}/decision`, { expectedVersion: row.version, decision, reason }, planNetwork) });
   };
   const more = async () => {
@@ -168,11 +168,11 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     ...(["DRAFT", "REVIEWED"].includes(String(row.state)) ? [{ key: "cancel", label: "取消准备单", primary: false, run: () => decide(row, "CANCEL") }] : []),
   ] : [];
   const amountIssue = amount && !/^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$/.test(amount) ? "金额须大于零，最多十二位整数和六位小数" : undefined;
-  const checkBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue);
+  const checkBlock = block ?? (kind === "COLLECTION" && !source ? (config?.sources.length === 0 ? "没有可用的来源子地址，不能建归集准备单" : "先选来源子地址") : !amount ? "先填金额" : amountIssue);
   const createBlock = checkBlock ?? (!reference.trim() ? "先填业务参考号" : undefined);
 
   return <Panel icon={ClipboardList} tone="role-2" title={network === "BEP20" ? "BEP20 人工资金准备" : "ERC20 人工资金准备"}
-    explain={<><p>这里只保存 {network} 准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到 Cregis 钱包。3. Cregis 钱包到账后，按业务金额创建并复核Cregis 转平台收款钱包准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
+    explain={<><p>真实转账须另行授权后在收款服务后台执行，这里的复核不会自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。</p><p>2. 由另一位管理员复核，之后另行授权，在收款服务后台将资金归集到 Cregis 钱包。</p><p>3. Cregis 钱包到账后，按业务金额创建并复核 Cregis 转平台收款钱包准备单；之后在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
     actions={<>
       {/* 网络选择放在标题行右侧，和上面自动资金流程标题下的三网选择分开（位置不同，一眼看出是两块各自的选择）。 */}
       <Segments label="人工资金准备网络" value={network} onChange={onNetworkChange} items={PREPARATION_NETWORKS.map(value => ({ value, label: value }))} />
@@ -181,7 +181,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     </>}>
     {error && config && <Notice tone="warn">{error}</Notice>}
     {loading && !config ? <BlockState state="loading" title="正在读取资金准备记录…" />
-      : unconfigured ? <BlockState state="empty" title={ERC20_CONFIGURATION_REQUIRED} detail="请联系管理员核对 ERC20 的收款服务项目和钱包地址配置，配好后点「刷新」。" />
+      : unconfigured ? <BlockState state="empty" title={configurationTitle(network)} detail={`请联系管理员核对 ${network} 的收款服务项目和钱包地址配置，配好后点「刷新」。`} />
       : !config ? <BlockState state="error" title="资金准备读取失败" detail={error} onRetry={() => void refresh()} />
         : <div className="rd-stack">
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
@@ -201,7 +201,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
           {page.hasMore && <div><Button size="sm" disabled={busy || loading} onClick={() => void more()}>加载更早准备单</Button></div>}
         </div>}
 
-    <Drawer open={creating} onClose={() => setCreating(false)} title="新建准备单" sub={network === "ERC20" ? "ERC20" : undefined} icon={ClipboardList} tone="role-2" busy={busy}
+    <Drawer open={creating} onClose={() => setCreating(false)} title="新建准备单" sub={network} icon={ClipboardList} tone="role-2" busy={busy}
       footer={<Decision note={createBlock} explain="只读检查不保存任何东西；创建准备单只保存准备记录，不发送资金。"
         others={<Button variant="ghost" disabledReason={checkBlock} onClick={() => void check()}>只读检查余额与条件</Button>}
         primary={<Button variant="primary" disabledReason={createBlock} onClick={create}>创建准备单</Button>} />}>
@@ -225,7 +225,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         {preflight && <JudgmentPoints title="只读检查结果" rows={[
           { label: "来源 USDT", value: balance ? String(balance.usdt) : "待核实" },
           { label: `来源 ${gasSymbol}`, value: balance ? String(balance.nativeBalance) : "待核实", reason: `须在执行前重新核对项目钱包绑定及实际手续费；${gasSymbol} 余额大于零不表示足以支付网络费。` },
-          { label: "检查时间", value: String(preflight.checkedAt), reason: "仅供准备核对，仍未授权转账。" },
+          { label: "检查时间", value: Number.isFinite(parseBusinessTime(String(preflight.checkedAt))) ? `${businessStamp(parseBusinessTime(String(preflight.checkedAt)))}（${zoneLabel()}）` : "待核实", reason: "仅供准备核对，仍未授权转账。" },
           ...(preflight.blockers as string[]).map(item => ({ label: "条件", state: "warn" as const, value: PREPARATION_BLOCKER[item] ?? "仍有条件待核实，请联系管理员" })),
         ]} />}
       </>}
