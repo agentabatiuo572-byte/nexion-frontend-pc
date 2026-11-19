@@ -13,6 +13,8 @@ import type { EViewCtx, McSpec } from "./types";
 import { E1_CURRENT_PHASE_UNVERIFIED, type e1CurrentPhase, e1GateReadiness, e1SkuOpening, gateRemaining, releaseMonthPresentation, resolveE1PhaseId } from "./data";
 import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Decimal, e1Precision, e1TargetPrecision, e1Multiply, e1Range, e1Value } from "./e1-state";
 
+export const E1_MISSING_SERIES_REASON = "未设所属系列，编辑时先选系列";
+
 export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1InvalidSkus" | "e1Loading" | "e1Error" | "e1Gates" | "e1BundleDiscount" | "refreshE1" | "openSku" | "delSku" | "openActionConfirm" | "toast" | "pE"> & {
   currentPhase: ReturnType<typeof e1CurrentPhase>;
   earlyReady: boolean; earlyLoading: boolean; earlyError: string | null; refreshEarly: () => void;
@@ -354,8 +356,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const { release, open, needsAttention, blockers } = ctx.e1Gates ? e1SkuOpening(s, ctx.e1Gates, phaseCur) : { open: !s.unlock, needsAttention: !!s.unlock, blockers: [], release: undefined };
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);
-      const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && !s.datacenter?.trim() ? "上架前请填写托管机房" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
-      const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(hasUnsupportedSeries(s) ? ["未设所属系列，编辑时先选系列"] : [])])];
+      const seriesReason = hasUnsupportedSeries(s) ? E1_MISSING_SERIES_REASON : undefined;
+      const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.status !== "on" && seriesReason ? seriesReason : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && !s.datacenter?.trim() ? "上架前请填写托管机房" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
+      const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(seriesReason ? [seriesReason] : [])])];
       const actionReason = onBlock && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const proposal = ctx.pendingProposal(s.id);
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);

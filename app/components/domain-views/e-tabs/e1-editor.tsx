@@ -7,18 +7,25 @@ import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
-import { guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError, containsHan } from "@/lib/admin/content-language-rules";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
-import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
+import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
 import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
 export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number };
+export type E1SkuReview = {
+  sku: OpsSku;
+  beforeSku?: OpsSku;
+  form: SkuForm;
+  acceptRevision: (latest: OpsSku) => boolean;
+  setSeriesError: (message: string) => void;
+};
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
 
@@ -41,9 +48,36 @@ const E1_APP_VISIBLE_FIELDS = [
 /** 交付设备认得的功耗写法（后端按这几种取瓦数，写成别的设备交付不了）。 */
 const E1_POWER_FORMATS = ["1800", "1,800 W", "1,800 W TDP", "1,800 W (per-GPU rated)", "1,800 W (combined GPU rated)"];
 
-export function E1Editor({ request, gates, currentPhaseId, writable, currentSku, onClose, onReview, busy, toast, onMediaChange, writeBlockedReason }: {
+const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
+
+function skuMedia(sku?: OpsSku): Media {
+  return sku?.imageAssetId && sku.imageObjectKey ? { kind: /\.(mp4|webm|mov)$/i.test(sku.imageObjectKey) ? "video" : "image", src: "", name: sku.imageObjectKey.split("/").pop() ?? "商品媒体", assetId: sku.imageAssetId, objectKey: sku.imageObjectKey } : null;
+}
+
+function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): OpsSku {
+  const draft: OpsSku = { ...original, ...formToSku(form, original), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
+  if (original) {
+    const opened = skuToForm(original);
+    // A complete snapshot must retain untouched values, including legacy formatting.
+    const earningsChanged = ["monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "shareYieldMin", "shareYieldMax", "tier", "price"].some(key => form[key as keyof SkuForm] !== opened[key as keyof SkuForm]);
+    for (const { key } of E1_SKU_FIELDS) {
+      if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu"].includes(key)) continue;
+      if (key in opened && JSON.stringify(form[key as keyof SkuForm]) === JSON.stringify(opened[key as keyof SkuForm])) Object.assign(draft, { [key]: original[key] });
+    }
+    if (form.gpu === opened.gpu && form.gpuCount === opened.gpuCount) draft.gpu = original.gpu;
+    if (Object.keys(opened).filter(key => key.startsWith("gate")).every(key => form[key as keyof SkuForm] === opened[key as keyof SkuForm])) draft.purchaseGate = original.purchaseGate;
+    if (!earningsChanged) {
+      draft.dailyEarn = original.dailyEarn; draft.shareYieldMin = original.shareYieldMin; draft.shareYieldMax = original.shareYieldMax;
+      draft.baseRate = original.baseRate; draft.derivedDailyEarnUsdt = original.derivedDailyEarnUsdt;
+      draft.derivedShareYieldMinPct = original.derivedShareYieldMinPct; draft.derivedShareYieldMaxPct = original.derivedShareYieldMaxPct;
+    }
+  }
+  return draft;
+}
+
+export function E1Editor({ request, gates, currentPhaseId, writable, currentSku, onClose, onReview, onRevisionAccepted, busy, toast, onMediaChange, writeBlockedReason }: {
   request: E1EditRequest | null; gates: E1GenerationGateData | null; currentPhaseId: string; writable: boolean; currentSku?: OpsSku;
-  onClose: () => void; onReview: (sku: OpsSku, before: OpsSku | undefined, form: SkuForm) => void;
+  onClose: () => void; onReview: (review: E1SkuReview) => void; onRevisionAccepted: () => void;
   busy: boolean; toast: (text: string) => void; onMediaChange: (inFlight?: string) => void; writeBlockedReason?: string;
 }) {
   const actor = useAdminAuth(s => String(s.session?.adminId ?? ""));
@@ -67,31 +101,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [labelError, setLabelError] = useState("");
   const [leave, setLeave] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [versionAccepted, setVersionAccepted] = useState(false);
   const editId = original?.id;
   const seriesLocked = original?.seriesLocked === true;
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
-  const imageIdentity = (m: Media) => JSON.stringify([m?.assetId ?? "", m?.objectKey ?? ""]);
   const dirty = !!request && (JSON.stringify(form) !== initialForm || imageIdentity(media) !== initialMedia);
-  const latestChanged = !!original && !!currentSku && original.updatedAt !== currentSku.updatedAt;
-  const draft: OpsSku = { ...original, ...formToSku(form, original), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
-  if (original) {
-    const opened = skuToForm(original);
-    // A complete snapshot must retain untouched values, including legacy formatting.
-    const earningsChanged = ["monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "shareYieldMin", "shareYieldMax", "tier", "price"].some(key => form[key as keyof SkuForm] !== opened[key as keyof SkuForm]);
-    for (const { key } of E1_SKU_FIELDS) {
-      if (["dailyEarn", "shareYieldMin", "shareYieldMax", "gpu"].includes(key)) continue;
-      if (key in opened && JSON.stringify(form[key as keyof SkuForm]) === JSON.stringify(opened[key as keyof SkuForm])) Object.assign(draft, { [key]: original[key] });
-    }
-    if (form.gpu === opened.gpu && form.gpuCount === opened.gpuCount) draft.gpu = original.gpu;
-    if (Object.keys(opened).filter(key => key.startsWith("gate")).every(key => form[key as keyof SkuForm] === opened[key as keyof SkuForm])) draft.purchaseGate = original.purchaseGate;
-    if (!earningsChanged) {
-      draft.dailyEarn = original.dailyEarn; draft.shareYieldMin = original.shareYieldMin; draft.shareYieldMax = original.shareYieldMax;
-      draft.baseRate = original.baseRate; draft.derivedDailyEarnUsdt = original.derivedDailyEarnUsdt;
-      draft.derivedShareYieldMinPct = original.derivedShareYieldMinPct; draft.derivedShareYieldMaxPct = original.derivedShareYieldMaxPct;
-    }
-  }
+  const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
+  const draft = skuDraft(form, original, media);
   const changes = e1SkuDiff(original, draft, form).filter(r => r.before !== r.after);
   const update = (key: keyof SkuForm, value: string) => { setForm(f => ({ ...f, [key]: value })); setErrors(e => ({ ...e, [key]: "" })); };
   const refreshPreview = useCallback(async (assetId: string) => {
@@ -104,9 +120,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!request) return;
     const sku = request.sku, next = sku ? skuToForm(sku) : { ...EMPTY_SKU_FORM, allowedPoolCodes: [], unlock: gates?.phaseOrder[0] ?? "" };
     if (request.unlock !== undefined) next.unlock = request.unlock;
-    const m: Media = sku?.imageAssetId && sku.imageObjectKey ? { kind: /\.(mp4|webm|mov)$/i.test(sku.imageObjectKey) ? "video" : "image", src: "", name: sku.imageObjectKey.split("/").pop() ?? "商品媒体", assetId: sku.imageAssetId, objectKey: sku.imageObjectKey } : null;
+    const m = skuMedia(sku);
     setOriginal(sku); setForm(next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
-    setMedia(m); setInitialMedia(imageIdentity(m)); setErrors({}); setLeave(false); setVersionAccepted(false); setMediaError("");
+    setMedia(m); setInitialMedia(imageIdentity(m)); setErrors({}); setLeave(false); setMediaError("");
     setMediaPending(e1MediaCommands.list().find(r => r.actorId === actor) ?? null);
     if (m?.assetId) void refreshPreview(m.assetId);
     void Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]).then(([p, l]) => {
@@ -204,15 +220,36 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     } catch { setMediaError("裁剪没有完成，原媒体保留；请稍后重试"); } finally { setMediaBusy(false); }
   };
 
-  const review = () => {
+  const adoptRevision = (latest: OpsSku, form: SkuForm, original: OpsSku, media: Media) => {
+    const previous = skuToForm(original);
+    const latestForm = skuToForm(latest);
+    const merged = { ...latestForm };
+    for (const key of Object.keys(previous) as (keyof SkuForm)[]) {
+      if (JSON.stringify(form[key]) !== JSON.stringify(previous[key])) Object.assign(merged, { [key]: form[key] });
+    }
+    const latestMedia = skuMedia(latest);
+    const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(original))
+      && imageIdentity(media) !== imageIdentity(latestMedia) ? latestMedia : media;
+    setOriginal(latest);
+    setInitialForm(JSON.stringify(latestForm));
+    setForm(merged);
+    setInitialMedia(imageIdentity(latestMedia));
+    setMedia(mergedMedia);
+    if (mergedMedia !== media && mergedMedia?.assetId) void refreshPreview(mergedMedia.assetId);
+    setErrors({});
+    onRevisionAccepted();
+    return { form: merged, media: mergedMedia };
+  };
+
+  const reviewDraft = (form: SkuForm, original: OpsSku | undefined, media: Media, acceptedRevision = false): boolean => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = "请填写型号名称";
     if (!form.tier) e.tier = "请选择档位";
     if (!form.lifecycle) e.lifecycle = "请选择生命周期";
     if (!/^\d+(?:\.\d+)?$/.test(form.price.trim()) || Number(form.price) <= 0) e.price = "售价须为大于 0 的 USD 金额";
     if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
-    // B53-WIRE: 在这里接 validateSkuSeries(form, original)，返回的码按 ADMIN_ERROR_MESSAGES[code] 写进 e.seriesCode；
-    // A2 拒绝回来的 SKU_SERIES_* 码也写回 errors.seriesCode。控件、报错位置和首错定位（e1-basic）已备好。
+    const seriesError = validateSkuSeries(form, original);
+    if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError];
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on") {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
@@ -242,7 +279,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (gates?.skuReviewContractVersion !== 1) e.form = "商品审核暂时不可用，请刷新后重试；已填写的内容会保留";
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
     if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
-    if (latestChanged && !versionAccepted) e.form = "商品修订已变化，请核对新旧修订后继续";
+    if (!acceptedRevision && latestChanged) e.form = "商品修订已变化，请核对新旧修订后继续";
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
       if (!error) continue;
@@ -256,12 +293,23 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0];
       const section = ["name", "id", "tier", "seriesCode", "lifecycle", "tagline", "badge", "media"].includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
-      nav.select(section); return;
+      nav.select(section); return false;
     }
-    if (original && !changes.length) { toast("没有任何修改，无需提交"); return; }
+    const sku = skuDraft(form, original, media);
+    if (original && !e1SkuDiff(original, sku, form).some(row => row.before !== row.after)) { toast("没有任何修改，无需提交"); return false; }
     setLeave(false);
-    onReview(draft, original, form);
+    onReview({
+      sku, beforeSku: original, form,
+      acceptRevision: latest => {
+        if (!original) return false;
+        const merged = adoptRevision(latest, form, original, media);
+        return reviewDraft(merged.form, latest, merged.media, true);
+      },
+      setSeriesError: message => setErrors(errors => ({ ...errors, seriesCode: message })),
+    });
+    return true;
   };
+  const review = () => { reviewDraft(form, original, media); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
   const appTextErrors: Record<string, string> = {};
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
@@ -283,7 +331,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   return <>
     <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
-      {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={versionAccepted} onChange={e => { setVersionAccepted(e.target.checked); if (e.target.checked && currentSku) setOriginal(currentSku); }} /></Notice>}
+      {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={false} onChange={e => { if (e.target.checked && currentSku) adoptRevision(currentSku, form, original, media); }} /></Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
           <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}

@@ -6,7 +6,6 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { e6AmountPrecision, formatE6Amount } from "@/lib/admin/e6-decimal";
 import { buildE6OnboardingYieldSkuProposal } from "@/lib/admin/high-ops-registry";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
-import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { E2YieldComparison } from "@/lib/admin/e2-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
@@ -23,11 +22,10 @@ const TERMINAL_NAMES: Record<string, string> = { approved: "已批准", rejected
 
 /** 引导对比：手机行来自 T3，商品行各绑一件在售实物商品，换绑走审批。 */
 export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: boolean }) {
-  const m = useE6Mutations(), rights = useAdminAuth(s => s.session!.authorities);
+  const m = useE6Mutations();
   const [pick, setPick] = useState<{ row: E2YieldComparison; skuId: string } | null>(null);
   const [confirm, setConfirm] = useState<{ row: E2YieldComparison; sku: OpsSku } | null>(null);
-  // B53-WIRE: 换成换绑的真实权限：E6 写 + E1 读 + A2 发起，另需 A2 读或专用提案权限（plan 第 3 步）；不要沿用调手机收益的权限。
-  const canBind = rights.includes("device_e6_write") && m.canPropose;
+  const canBind = m.canBindYieldSku;
   const candidates = ctx.e6SkuCandidates;
   const rows = [...ctx.yieldComparisons].sort((a, b) => Number(b.configKey === "phone") - Number(a.configKey === "phone") || a.sortOrder - b.sortOrder);
   // 不可用行两币都是空，只按可用行定位数。
@@ -107,6 +105,9 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
           else {
             const spec = buildE6OnboardingYieldSkuProposal(row, sku.id);
             if (!spec) throw new Error("这一位暂时不能更换，请刷新后核对。");
+            if (!ready || ctx.yieldComparisons.find(current => current.configKey === row.configKey)?.bindingRevision !== row.bindingRevision) {
+              throw new Error("ONBOARDING_COMPARISON_VERSION_CONFLICT");
+            }
             await m.proposal(scope, "tiers", { ...spec, action: `更换引导对比商品 · ${slot}`, beforeValue: before, afterValue: `${sku.name} (${sku.id}) · ${sku.dailyEarn} USDT / ${sku.dailyEarnNEX} UVT 每日`, reason });
           }
           setConfirm(null); ctx.toast("已提交审批，批准前原商品照常显示"); await ctx.refreshE2();

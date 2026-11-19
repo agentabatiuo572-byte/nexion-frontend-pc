@@ -28,8 +28,9 @@ export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolea
 export const E6_SKU_BINDING_ROLE_GATE = "另一位有批准权限和手机算力配置查看权限的管理员";
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
+const isYieldSkuProposal = (payload: Payload) => payload.kind === "proposal" && payload.input.command.op === "e6_onboarding_yield_sku";
 
-function useMutations() {
+function useMutations(refreshYieldBinding: () => Promise<void>) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
   const [pending, setPending] = useState<E6Pending[]>([]);
@@ -49,6 +50,8 @@ function useMutations() {
   };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
   const canAudit = rights.includes("platform_a2_read");
+  const canBindYieldSku = canPropose && rights.includes("device_e6_write") && rights.includes("device_e1_read")
+    && (canAudit || rights.includes("platform_a2_proposal_create"));
   const visible = (section: E6Section) => rights.includes(section === "tasks" || section === "tiers" ? "device_e2_read" : section === "phones" ? "device_e5_read" : "device_e6_read");
   useEffect(() => {
     active.current = true; sync();
@@ -65,6 +68,7 @@ function useMutations() {
     if (record.payload.kind === "risk") return rights.includes("device_e6_write");
     if (record.payload.kind === "device") return rights.includes("device_e5_write");
     const op = record.payload.input.command.op;
+    if (isYieldSkuProposal(record.payload)) return canBindYieldSku;
     if (!canPropose) return false;
     if (op.startsWith("e2_task_")) return rights.includes("device_e2_write");
     if (op === "e2_phone_tier") {
@@ -91,7 +95,10 @@ function useMutations() {
         if (ticket) {
           if (!ticket.mine || ticket.obj !== record.payload.input.obj) throw new Error("原提案归属无法核实，请到操作记录核对。");
           commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal: ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined });
-          if (active.current) sync();
+          if (active.current) {
+            sync();
+            if (ticket.status === "approved" && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
+          }
           return;
         }
       }
@@ -138,12 +145,15 @@ function useMutations() {
         if (!checkingProposal && retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
         setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "按原请求重试被明确拒绝，核对后可以解除这条记录。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
+        if (!checkingProposal && isYieldSkuProposal(record.payload)
+          && response.backendMessage === "ONBOARDING_COMPARISON_VERSION_CONFLICT") await refreshYieldBinding();
       }
       throw failure;
     } finally { sending.current = false; if (active.current) setBusy(""); }
   }
   async function start(scope: string, section: E6Section, label: string, payload: Payload) {
     if (sending.current) throw new Error("正在提交原操作，请等结果。");
+    if (isYieldSkuProposal(payload) && (!visible(section) || !canBindYieldSku)) throw new Error("当前没有这项操作的提交权限。");
     if (locked(scope)) throw new Error("这个对象有结果未知的原操作，请先核对原操作。");
     const commandKey = createA2CommandKey("e6"), fingerprint = `${owner}|${scope}`;
     const body = JSON.stringify(payload.kind === "risk" ? { ...payload.input, expectedRevision: payload.revision, confirmed: true } : payload.kind === "device" ? payload.input.action === "pause" || payload.input.action === "resume" ? { userId: payload.input.userId, reason: payload.input.reason, operator: payload.input.operator } : { reason: payload.input.reason, operator: payload.input.operator } : payload.input);
@@ -169,6 +179,7 @@ function useMutations() {
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined;
       commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
       setNotes(n => ({ ...n, [record.commandKey]: `审批单 ${ticket.id} ${({ pending: "还在等批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as Record<string,string>)[ticket.status] ?? "状态待核实"}` }));
+      if (ticket.status === "approved" && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
     } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: record.ticketId ? TICKET_UNREAD : eReadError(failure) })); if (propagate) throw failure; }
     finally { if (active.current) setBusy(""); }
   }
@@ -210,7 +221,7 @@ function useMutations() {
       throw failure;
     } finally { if (active.current) { sync(); setBusy(""); } }
   }
-  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, proposal, start, check, releaseMissing, checkDirect, send,
+  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
@@ -220,8 +231,8 @@ function useMutations() {
     forget: (record: E6Pending) => { commands.forget(record.fingerprint, record.commandKey); sync(); },
   };
 }
-export function E6MutationProvider({ children }: { children: ReactNode }) {
-  const mutations = useMutations();
+export function E6MutationProvider({ children, refreshYieldBinding }: { children: ReactNode; refreshYieldBinding: () => Promise<void> }) {
+  const mutations = useMutations(refreshYieldBinding);
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }
 export function useE6Mutations() { return useContext(Context)!; }
