@@ -5,8 +5,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
-  Route, Sparkles, Trash2, Trophy,
+  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Pause, Pencil, Play, Plus, RefreshCw,
+  Route, Sparkles, Trash2,
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag,
@@ -1074,8 +1074,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const triLegacy = legacyAssetText(triRaw);
   const tri = parseTriReward(triLegacy.text);
   const eligibility = text(model.dayOneEligibilityHours, "");
-  const promo = model.promoBanner;
-  const promoStatus = text(promo.status, "");
   const regionPending = region.pending;
   // 后端读回的新建申请：读得出的按类型放进对应页签；读不出的（审批锁定）只在要处理的事里提一句。
   const creations = model.pendingMissionCreations ?? [];
@@ -1263,7 +1261,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const grace = compareH3Decimal(next.grace, tri.grace);
     return full > 0 || grace > 0 ? "up" : full === 0 && grace === 0 ? "same" : "down";
   };
-  const windowRaw = text(model.dayOneWindow, "");
   const dayOneTab = (
     <div {...tabIds.panel("dayOne")} className="h3-tabpanel">
       <Panel title="新手任务奖励和期限" icon={Gift} tone="role-4" sub={`完成期限 ${eligibility ? `注册后 ${eligibility} 小时` : "—"}`}
@@ -1311,11 +1308,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               hint: "24–720 的整数小时",
               preview: (value) => /^\d+$/.test(value.trim()) ? `之后注册的用户，注册后 ${value.trim()} 小时新手任务过期。` : null,
             }, <>从注册算，过了这个时间新手任务过期。</>))}>调整</Button> : undefined} />
-          {/* 任务时长说明文字已停用（后端 d9e2038f：新保存被拒，返回里带 dayOneWindowConfig 只读标记）：只读显示原来的文字，不再给调整入口。 */}
-          {windowRaw && <ConfigRow name="任务时长说明文字" value={operatorCopyText(windowRaw)}
-            sub={<StatusTag tone="neutral" icon={CircleSlash}>已停用，不能再改</StatusTag>}
-            what="以前填的一段展示文字，现在只显示，不能再改。"
-            effect="不改变 App 的倒计时和奖励：倒计时按完成期限走，全额时限固定 24 小时。" />}
         </ConfigList>
       </Panel>
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
@@ -1369,7 +1361,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       hint: "0.1–5，例如 1.2",
     }))}>调整</Button>;
   } : undefined;
-  const champion = text(model.weeklyChampionBonus, "");
   const weeklyTab = (
     <div {...tabIds.panel("weekly")} className="h3-tabpanel">
       <Panel title="每周奖励怎么算" icon={Sparkles} tone="role-4" sub={currentPhase ? `现在是 ${currentPhase}` : "当前阶段没读到"}
@@ -1391,23 +1382,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           {multipliers.map((item) => cleanPhaseKey(item.p)).filter((phase) => backendLock(`weekly.mult.${phase}`))
             .map((phase) => <Fragment key={phase}>{pendingLine(`weekly.mult.${phase}`, phase)}</Fragment>)}
         </div>}
-        <ConfigList label="周冠军">
-          <ConfigRow name="周冠军说明文字" value={champion ? operatorCopyText(champion) : "还没填"}
-            sub={<StatusTag tone="neutral" icon={Trophy}>App 不显示，也不发奖</StatusTag>}
-            what="一段只在后台看得到的说明文字。" effect="App 和 H5 都不显示这段字；系统不选冠军、不发奖，也不按里面的数字算钱。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:5"]), () => openSimpleConfig("weekly.champBonus", "周冠军说明文字", text(model.weeklyChampionBonus), false, {
-              title: "改周冠军说明文字",
-              effect: <StatusTag tone="neutral">只改文字</StatusTag>,
-              facts: <Facts>
-                <Fact k="改的是">一段只在后台看得到的文字</Fact>
-                <Fact k="App">不显示，H5 也不显示</Fact>
-                <Fact k="发奖">不发：系统不选冠军，也不按文字里的数字算钱</Fact>
-              </Facts>,
-              statedBrief: { impact: "只改后台这段字；App 不显示，也不会给任何人发奖。", check: "核对文字；理由写清依据。" },
-              confirmLabel: "确认修改",
-              hint: "最多 160 字",
-            }, <>只在后台看得到，App 不显示。</>))}>调整</Button> : undefined} />
-        </ConfigList>
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
@@ -1557,29 +1531,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     </div>
   );
 
-  // ----- 首页备用卡（d7540265：七项设置已停用，新保存一律被拒；只读显示以前存的值，收在页底折叠里） -----
-  const promoBase = decimalOf(promo.baseReward);
-  const promoMult = decimalOf(promo.multiplier);
-  const promoFold = (
-    <Fold title="首页备用卡" icon={Megaphone} tone="role-other"
-      summary={<span className="h3-retired-sum"><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>{promoStatus ? "以前存的值，仅供查看" : "没读到以前存的值"}</span>}
-      explain={promo.promoBannerConfigNote ?? "这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。"}>
-      <ConfigList label="首页备用卡以前存的值">
-        <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"} />
-        <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} />
-        <ConfigRow name="展示倍率" value={promoMult == null ? "—" : `${promoMult}×`} />
-        <ConfigRow name="卡上写的奖励" value={mulDecimal(promoBase, promoMult) == null ? "—" : `${mulDecimal(promoBase, promoMult)} UVT`}
-          sub="基础奖励 × 展示倍率" what="按上面两项算，不是实际发的奖励。" />
-        <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
-        <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
-        {/* 币种：USDT 跟在金额后；后端给 null 或旧数据没有这项写「币种未知」；认不出的写「币种读不出」，原值放问号里。 */}
-        <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : promo.targetDailyAsset === "USDT" ? `${text(promo.targetDaily)} USDT` : text(promo.targetDaily)}
-          sub={decimalOf(promo.targetDaily) == null || promo.targetDailyAsset === "USDT" ? undefined : promo.targetDailyAsset == null ? "币种未知" : "币种读不出"}
-          note={decimalOf(promo.targetDaily) != null && promo.targetDailyAsset != null && promo.targetDailyAsset !== "USDT" ? `页面认不出这个币种，原值 ${promo.targetDailyAsset}` : undefined} />
-      </ConfigList>
-    </Fold>
-  );
-
   // ----- 数据口径（第三层） -----
   const monitor = model.taskMonitor ?? [];
   // 11ea3732 起同一个数改按完成时间数；旧后端没有口径字段时仍是新建记录数，表头跟着返回的口径走。
@@ -1652,7 +1603,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {tab === "bindings" && bindingsTab}
       {tab === "monthly" && monthlyTab}
       {contracts}
-      {promoFold}
 
       <Drawer open={!!detailTask} onClose={() => setDetail(null)} title="任务详情" icon={ListChecks} tone="role-2" sub={detailTask ? nameOf(detailTask) : undefined}
         nav={{ hasPrev: detailIndex > 0, hasNext: detailIndex >= 0 && detailIndex < detailList.length - 1,

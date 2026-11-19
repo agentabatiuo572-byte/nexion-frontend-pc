@@ -79,7 +79,7 @@ export type H3Stats = {
   weeklyPaidSource?: string;
   monthlyInflight?: number | null;
   monthlyInflightAvailable?: boolean;
-  monthlyInflightReason?: string;
+  monthlyInflightReason?: string | null;
   userScope?: string;
   asOf?: string;
   weekTimeZone?: string;
@@ -102,8 +102,6 @@ export function h3MissionCreationRefusal(missionType: string, missionCode: strin
 
 export type H3Model = {
   h3Stats: H3Stats;
-  dayOneWindow: string;
-  dayOneWindowConfig?: { key: "dayOne.windowMs"; readOnly: true; retired: true; valueKind: "DISPLAY_TEXT_ONLY" };
   dayOneEligibilityHours: string;
   dayOneTriReward: string;
   pendingApprovals?: Record<string, H3PendingApproval | null>;
@@ -112,12 +110,10 @@ export type H3Model = {
   dayOneStates: Array<{ st: string; label: string; tone: string }>;
   weeklyTier1: H3Task[];
   weeklyTier2: H3Task[];
-  weeklyChampionBonus: string;
   weeklyMultipliers: Array<{ p: string; mult: string | null }>;
   monthlyMissions: H3Task[];
   taskMonitor: Array<{ label: string; note: string }>;
   taskContracts: H3TaskContract[];
-  promoBanner: Record<string, any> & { targetDailyAsset?: string | null; promoBannerConfigNote?: string | null };
   contentLocales: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly: Record<string, any>;
   eventBindings: H3QuestEventBinding[];
@@ -160,28 +156,18 @@ export function parseH3Model(value: unknown): H3Model {
         || pending.rewardPoints !== null && (!Number.isInteger(pending.rewardPoints) || pending.rewardPoints < 0 || pending.rewardPoints > 2147483647)) throw new Error("H3_RESPONSE_INVALID");
     }
   }
-  strings(row, ["dayOneWindow", "dayOneEligibilityHours", "dayOneTriReward", "weeklyChampionBonus"]);
+  // dayOneWindow, weeklyChampionBonus and promoBanner are not read: the page dropped them (product 2026-11-19), and H3-BE-15 may stop returning them.
+  strings(row, ["dayOneEligibilityHours", "dayOneTriReward"]);
   for (const key of ["h3Stats", "contentLocales", "phaseMultiplierReadonly"]) object(row[key]);
-  const banner = object(row.promoBanner);
-  if (banner.promoBannerConfigNote != null) strings(banner, ["promoBannerConfigNote"]);
-  const targetDailyAsset: unknown = banner.targetDailyAsset;
-  if (targetDailyAsset !== undefined && targetDailyAsset !== null
-    && (typeof targetDailyAsset !== "string" || !targetDailyAsset.trim())) {
-    throw new Error("H3_RESPONSE_INVALID");
-  }
-  if (["promoBannerConfigurable", "promoBannerRetired", "promoBannerRetiredReason"].some(key => banner[key] !== undefined)
-    && (banner.promoBannerConfigurable !== false || banner.promoBannerRetired !== true
-      || banner.promoBannerRetiredReason !== "RETIRED_FEATURE")) throw new Error("H3_RESPONSE_INVALID");
-  if (row.dayOneWindowConfig !== undefined) {
-    const config = object(row.dayOneWindowConfig);
-    if (config.key !== "dayOne.windowMs" || config.readOnly !== true || config.retired !== true || config.valueKind !== "DISPLAY_TEXT_ONLY") throw new Error("H3_RESPONSE_INVALID");
-  }
   const stats = row.h3Stats;
   if (stats.operatingStatsAvailable !== undefined) {
     const invalid = () => { throw new Error("H3_RESPONSE_INVALID"); };
     if (typeof stats.operatingStatsAvailable !== "boolean" || typeof stats.operatingStatsComplete !== "boolean"
       || typeof stats.monthlyInflightAvailable !== "boolean") invalid();
-    strings(stats, ["monthlyInflightReason", "dayOneRateBasis", "dayOneRateUnit", "weeklyNexAsset", "userScope"]);
+    strings(stats, ["dayOneRateBasis", "dayOneRateUnit", "weeklyNexAsset", "userScope"]);
+    // af96b171: with the monthly count available the backend sends monthlyInflightReason null; the reason is only required when the count is missing.
+    if (stats.monthlyInflightAvailable ? stats.monthlyInflightReason != null && typeof stats.monthlyInflightReason !== "string"
+      : typeof stats.monthlyInflightReason !== "string") invalid();
     for (const key of ["dayOneRate24h", "dayOneRateGrace", "weeklyDone", "t1Done", "t2Done", "monthlyInflight"]) {
       const value = stats[key];
       if (value !== null && (typeof value !== "number" || !Number.isFinite(value) || value < 0
