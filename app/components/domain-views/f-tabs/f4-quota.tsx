@@ -82,7 +82,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
 
   return (
     <div className="f4-stack">
-      {creating && <F4QuotaCreate data={data} skuOptions={ctx.skuOptions} skuLabels={ctx.skuLabels} onClose={() => setCreating(false)} />}
+      {creating && <F4QuotaCreate data={data} ctx={ctx} onClose={() => setCreating(false)} />}
       <Panel title="购机名额" icon={Package} tone="role-2" sub="本月 · 台"
         actions={canWrite && data.quotaRows.length > 0 ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>新建档位</Button> : undefined}
         explain={<>

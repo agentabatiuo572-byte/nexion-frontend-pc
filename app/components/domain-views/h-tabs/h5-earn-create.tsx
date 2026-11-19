@@ -2,8 +2,6 @@
 
 /**
  * H5 收益里程碑「新建档位」的确认框内容。新建一档要另一位超级管理员批准，批准后才加进业务表；批准前 App 里没有这一档。
- * PLACEHOLDER(pc-wire)：后端新建命令还没做（hd-impl-x-lc-milestone），`run` 先拒绝，不发任何请求。
- * 接线时按后端契约补：命令名、请求体（编号、门槛、奖励，是否还要名称和排序）、审批单名称、原操作记录的恢复（restore 认 earn:new）。
  */
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { h5Amount } from "@/lib/admin/h5-contract";
@@ -11,7 +9,9 @@ import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-
 import { amountText, type EarnMilestone } from "./h5-parts";
 import type { ActionConfirmReq } from "./types";
 
-export const EARN_CREATE_TARGET = "earn:new";
+import { EARN_CREATE_TARGET, type H5Change } from "@/lib/admin/use-h5-mutations";
+
+export { EARN_CREATE_TARGET };
 const KEY_RULE = /^[A-Za-z0-9_-]{1,64}$/;
 const MIN_THRESHOLD = BigInt(1000000);
 const MAX_AMOUNT = BigInt("100000000000000");
@@ -48,7 +48,8 @@ export function earnCreateIssue(list: readonly EarnMilestone[], values: Record<s
   if (reward === undefined || reward > MAX_AMOUNT) return { field: "nex", message: "奖励为 0–100,000,000 UVT，最多 6 位小数" };
 }
 
-export function earnCreateRequest({ list, approver, rights }: { list: readonly EarnMilestone[]; approver: string; rights: string }): ActionConfirmReq & { target: string } {
+export function earnCreateRequest({ snapshot, approver, rights, runChange }: { snapshot: H5Change["snapshot"]; approver: string; rights: string; runChange: (change: H5Change) => Promise<void> }): ActionConfirmReq & { target: string } {
+  const list = snapshot.earnMilestones;
   const existing = list.length ? `${list.length} 档：${list.map(item => amountText(item.threshold)).join("、")} USDT` : "还没有";
   return {
     target: EARN_CREATE_TARGET,
@@ -92,10 +93,20 @@ export function earnCreateRequest({ list, approver, rights }: { list: readonly E
         { key: "nex", label: "奖励（UVT）", inputKind: "number", current: "", placeholder: "例如 250", help: "最多 6 位小数，可以是 0" },
       ],
     },
-    run: async () => {
-      // PLACEHOLDER(pc-wire)：接 lc/milestone 新建命令 { milestoneKey, label, thresholdUsd, rewardNex, sortOrder, reason }；
-      // sortOrder 按门槛在现有档位里的位置算（placeOf 的 index）。提交审批后写原操作记录、关框、重读。
-      throw new Error("新建档位还没接上后台，这次没有提交。");
+    run: async (reason, _value, form) => {
+      if (!form) throw new Error("EARN_MILESTONE_AMOUNTS_REQUIRED");
+      const issue = earnCreateIssue(list, form);
+      if (issue) throw new Error(issue.message);
+      const milestoneKey = form.milestoneKey.trim(), label = form.label.trim();
+      const threshold = form.threshold.trim(), nex = form.nex.trim();
+      const sortOrder = placeOf(list, threshold)!.index;
+      await runChange({
+        target: EARN_CREATE_TARGET, action: "收益里程碑 · 新建档位", name: `收益里程碑 · ${milestoneKey}`,
+        before: "还没有", after: `${amountText(threshold)} USDT · ${amountText(nex)} UVT`,
+        reason, success: "已提交审批", approvalRequired: true, snapshot,
+        businessValue: { milestoneKey, label, threshold, nex },
+        earnCreate: { milestoneKey, label, thresholdUsd: threshold, rewardNex: nex, sortOrder },
+      });
     },
   };
 }

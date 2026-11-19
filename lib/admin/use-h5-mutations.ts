@@ -14,6 +14,9 @@ import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } 
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
+export const EARN_CREATE_TARGET = "earn-create:new";
+const EARN_CREATE_OPERATION = "h5_earn_milestone_create";
+type EarnCreate = { milestoneKey: string; label: string; thresholdUsd: string; rewardNex: string; sortOrder: number };
 type Direct = { path: string; body: Record<string, string | number> };
 export type H5Change = {
   target: string;
@@ -27,13 +30,14 @@ export type H5Change = {
   businessValue?: Record<string, string>;
   reason: string;
   direct?: Direct;
+  earnCreate?: EarnCreate;
   proposal?: Pick<Proposal, "command" | "target" | "type" | "amplifies" | "roleGate">;
   approvalRequired: boolean;
 };
 export interface H5PendingCommand extends PendingMutationRecord {
   adminId: number;
   change: H5Change;
-  request: { kind: "direct"; path: string; body: string } | { kind: "approval"; body: Proposal };
+  request: { kind: "direct"; path: string; body: string } | { kind: "approval"; body: Proposal } | { kind: "earn-create"; body: EarnCreate & { reason: string } };
   acknowledged?: boolean;
   ticket?: A2OperationRow;
 }
@@ -57,7 +61,7 @@ const pending = createPendingMutationStore<H5PendingCommand>({
       const c = r.change;
       const [kind, ...idParts] = c.target.split(":");
       const id = idParts.join(":");
-      if (!id || !["rule", "streak", "power", "earn", "tick"].includes(kind)
+      if (!id || !["rule", "streak", "power", "earn", "earn-create", "tick"].includes(kind)
         || r.fingerprint !== `${r.adminId}|H5|${c.target}`
         || ![c.action, c.name, c.before, c.after, c.success, c.reason].every(v => typeof v === "string")
         || c.editValue !== undefined && typeof c.editValue !== "string"
@@ -73,11 +77,20 @@ const pending = createPendingMutationStore<H5PendingCommand>({
       const proposalValid = (p: H5Change["proposal"]) => p?.command?.domain === "H" && p.command.op === operations[kind]
         && p.target?.domain === "H" && p.target.type === targetTypes[kind] && p.target.id === id
         && !!p.command.params && (kind === "rule" ? p.command.params.ruleKey === id : !!p.command.params.values);
+      if (r.request.kind === "earn-create") {
+        const body = r.request.body;
+        const values = c.businessValue;
+        return c.target === EARN_CREATE_TARGET && c.approvalRequired && !!values && !!body
+          && body.milestoneKey === values.milestoneKey && /^[A-Za-z0-9_-]{1,64}$/.test(body.milestoneKey)
+          && body.label === values.label && body.thresholdUsd === values.threshold && body.rewardNex === values.nex
+          && Number.isSafeInteger(body.sortOrder) && body.sortOrder > 0 && body.reason === c.reason
+          && (!r.ticket || validTicket(r.ticket, body.milestoneKey, EARN_CREATE_OPERATION));
+      }
+      if (kind === "earn-create") return false;
       if (c.proposal && !proposalValid(c.proposal)) return false;
       if (r.request.kind === "approval") {
         const body = r.request.body;
-        if (r.ticket && (typeof r.ticket.id !== "string" || !r.ticket.id || !r.ticket.mine || r.ticket.obj !== id
-          || r.ticket.operationCode !== body.command.op || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(r.ticket.status))) return false;
+        if (r.ticket && !validTicket(r.ticket, id, body.command.op)) return false;
         return proposalValid(body) && body.sourceDomain === "H5" && body.obj === id && body.reason === c.reason
           && typeof body.operator === "string" && typeof body.operatorRole === "string";
       }
@@ -88,11 +101,22 @@ const pending = createPendingMutationStore<H5PendingCommand>({
   },
 });
 
+function validTicket(ticket: A2OperationRow | null | undefined, obj: string, operation: string) {
+  return !!ticket && typeof ticket.id === "string" && !!ticket.id && ticket.mine === true && ticket.obj === obj
+    && ticket.operationCode === operation && ["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status);
+}
+
 function firstRejection(error: unknown) {
   if (isA2OutcomeUncertainError(error) || isOutcomeUnknownError(error)) return false;
   const e = error as { status?: number; apiCode?: number; reasonCode?: string; backendMessage?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean } | null;
   return !!e && !e.unknownOutcome && !e.bodyUnreadable && !(e.apiCode !== undefined && e.apiCode >= 500) && !(e.reasonCode ?? e.backendMessage ?? "").startsWith("IDEMPOTENCY_")
     && isDeterministicRejection(e.status ?? 0, e.apiCode);
+}
+
+// Growth may return a business refusal in an HTTP 200 envelope.
+function normalizeGrowthRejection(error: unknown) {
+  const e = error as { status?: number; apiCode?: number };
+  if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
 }
 
 /** Requests and recovery only. All forms, facts, labels and status slots belong to H5's existing view. */
@@ -124,10 +148,10 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     if (!pending.isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原结果。");
   };
   const checkTicket = (original: H5PendingCommand, ticket: A2OperationRow) => {
-    const proposal = original.request.kind === "approval" ? original.request.body : undefined;
-    // 111e00cd ticketMetadata returns operationCode for every persisted command, including H5.
-    if (!proposal || !ticket.mine || ticket.obj !== proposal.obj || ticket.operationCode !== proposal.command.op
-      || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) {
+    const { request } = original;
+    const matches = request.kind === "approval" ? validTicket(ticket, request.body.obj, request.body.command.op)
+      : request.kind === "earn-create" && validTicket(ticket, request.body.milestoneKey, EARN_CREATE_OPERATION);
+    if (!matches) {
       throw new Error("审批单与保存的原申请不符，原请求继续保留，请查询原结果。");
     }
   };
@@ -162,11 +186,19 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       if (!recovering) forget(original);
       throw error;
     }
-    if (original.request.kind === "approval") {
+    const { request } = original;
+    if (request.kind !== "direct") {
       let receipt: A2OperationRow;
       try {
-        receipt = await createA2OperationProposal(original.request.body, original.commandKey, true);
+        if (request.kind === "earn-create") {
+          receipt = await growthRequest<A2OperationRow>("/earn-milestones", {
+            method: "POST", body: JSON.stringify(request.body), headers: { "Idempotency-Key": original.commandKey },
+          }, undefined, true);
+        } else {
+          receipt = await createA2OperationProposal(request.body, original.commandKey, true);
+        }
       } catch (error) {
+        if (request.kind === "earn-create") normalizeGrowthRejection(error);
         if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
           forget(original);
           if (recovering || isHGrowthReadConflict(error)) await settled(original.commandKey);
@@ -179,17 +211,14 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       retain(acknowledged);
       const current = await query(acknowledged);
       if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
-      if (recovering && current.status === "pending") await settled(original.commandKey);
+      if ((recovering || request.kind === "earn-create") && current.status === "pending") await settled(original.commandKey);
       return;
     }
     let result: Record<string, unknown>;
     try {
-      result = await growthRequest(original.request.path, { method: "PATCH", body: original.request.body, headers: { "Idempotency-Key": original.commandKey } }, undefined, true);
+      result = await growthRequest(request.path, { method: "PATCH", body: request.body, headers: { "Idempotency-Key": original.commandKey } }, undefined, true);
     } catch (error) {
-      const e = error as { status?: number; apiCode?: number };
-      // Growth's ApiResult.fail is also returned under HTTP 200. Preserve the business
-      // verdict so the shared retry classifier can recognize an actual 4xx refusal.
-      if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
+      normalizeGrowthRejection(error);
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(original);
         if (recovering || isHGrowthReadConflict(error)) await settled(original.commandKey);
@@ -198,7 +227,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     }
     // Validate the command-specific receipt, but never install a historical replay as current data.
     const updated = result?.updated as Record<string, unknown> | undefined;
-    const body = JSON.parse(original.request.body) as Record<string, string | number>;
+    const body = JSON.parse(request.body) as Record<string, string | number>;
     const [kind, ...idParts] = original.change.target.split(":");
     const id = idParts.join(":");
     const [tickWhole, tickFraction = ""] = kind === "tick" ? String(body.value).split(".") : ["0"];
@@ -227,11 +256,13 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       ...change.proposal,
     } : undefined;
     const create = (approval: boolean): H5PendingCommand => {
-      const request: H5PendingCommand["request"] = approval && proposal ? { kind: "approval", body: proposal }
+      const request: H5PendingCommand["request"] = change.earnCreate
+        ? { kind: "earn-create", body: { ...change.earnCreate, reason: change.reason } }
+        : approval && proposal ? { kind: "approval", body: proposal }
         : change.direct ? { kind: "direct", path: change.direct.path, body: JSON.stringify({ ...change.direct.body, reason: change.reason, operator: actor.operator || actor.username }) }
           : (() => { throw new Error("H5_PROPOSAL_INVALID"); })();
       const now = Date.now();
-      return { fingerprint, commandKey: createA2CommandKey(request.kind === "approval" ? "h5-proposal" : "h5-direct"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, change, request };
+      return { fingerprint, commandKey: createA2CommandKey(request.kind === "direct" ? "h5-direct" : "h5-proposal"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, change, request };
     };
     try {
       const original = create(change.approvalRequired);
@@ -256,7 +287,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       try { requireActor(original.change.target, true); return true; } catch { return false; }
     },
     async refreshTickets() {
-      const results = await Promise.allSettled(records().filter(r => r.request.kind === "approval").map(r => query(r, true)));
+      const results = await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, true)));
       // A failed lookup must not promote a historical POST receipt to a current pending status.
       update();
       return results;
@@ -264,7 +295,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     async retry(original: H5PendingCommand) {
       const current = record(original.change.target);
       if (current?.commandKey !== original.commandKey) throw new Error("原操作已处理，请刷新后重新操作。");
-      if (current.request.kind === "approval") {
+      if (current.request.kind !== "direct") {
         const ticket = await query(current);
         if (ticket) {
           if (ticket.status === "pending") await settled(original.commandKey);
@@ -274,7 +305,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       return send(current, true);
     },
     async releaseExpired(original: H5PendingCommand) {
-      if (original.request.kind !== "approval" || !isRetryExpired(original) || original.acknowledged || original.ticket
+      if (original.request.kind === "direct" || !isRetryExpired(original) || original.acknowledged || original.ticket
         || await query(original, true) !== null) throw new Error("原申请不能解除，请查询原结果。");
       forget(original);
       await settled(original.commandKey);

@@ -3,11 +3,6 @@
 /**
  * E1 托管机房清单（B55）。8 个托管机房：显示名、启用、权重。新设备交付时按启用机房的权重随机分配，已交付的设备不变。
  * 整份清单一起改、一起提交审批（后端按整份清单的修改序号防覆盖），所以这页不按单项保存。
- *
- * 界面由视觉 worker 搭好，逻辑等代码 worker（pc-wire）接：
- * - PLACEHOLDER(pc-wire) 读取：`GET /api/admin/config/hosting-centers` 还没进 lib/admin，也没进 app/api/admin/config 的代理白名单。
- * - PLACEHOLDER(pc-wire) 提交：A2 操作 `e1_hosting_centers_update`（参数 expectedRevision、centers）还没进 high-ops 注册表，提交按钮先拒绝。
- * - PLACEHOLDER(pc-wire) 原操作记录：`receipts` 由提交、查询原结果填写；现在一直为空，面板和每种状态的样子已备好。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -19,7 +14,12 @@ import {
 import { OperationConfirmModal } from "../design-kit";
 import { E1Page } from "./e1-page";
 import { RECOVERY_LINE, RecoveryPanel, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { roleLabel } from "@/lib/nav/console-nav";
 import { APP_VISIBLE_TEXT_HINT, containsHan } from "@/lib/admin/content-language-rules";
 import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -29,16 +29,26 @@ import "./hosting-centers.css";
 type Center = { id: string; name: string; enabled: boolean; weight: number };
 type HostingState = { revision: number; centers: Center[] };
 type DraftRow = { id: string; name: string; enabled: boolean; weight: string };
-/** 一次提交的原操作记录。status 由代码 worker 按审批单读回填写。 */
-type HostingReceipt = {
+type HostingReceipt = PendingMutationRecord & {
   key: string;
   status: "unknown" | "pending" | "rejected" | "conflict" | "expired";
-  createdAt: number;
   changes: DiffRow[];
+  request: Parameters<typeof createA2OperationProposal>[0];
   ticketId?: string;
   /** 后台写的驳回或拒绝原因（已翻成中文）。 */
   why?: string;
 };
+
+const HOSTING_OPERATION = "e1_hosting_centers_update";
+const SLOT = "e1-hosting-centers";
+const hostingRecords = createPendingMutationStore<HostingReceipt>({
+  storageKey: "nexion-admin-e1-hosting-centers",
+  retainExpiredRecords: true,
+  isValidRecord: row => row.fingerprint === SLOT && row.commandKey === row.key && Array.isArray(row.changes)
+    && ["unknown", "pending", "rejected", "conflict", "expired"].includes(row.status)
+    && row.request?.command?.op === HOSTING_OPERATION && row.request?.command?.domain === "E"
+    && row.request.obj === "default" && row.request.sourceDomain === "E1",
+});
 
 const NAME_MAX = 128;
 const APPROVER = "另一位有审批权限和商品修改权限的管理员";
@@ -57,7 +67,6 @@ function hostingError(error: unknown) {
   return code ? HOSTING_ERRORS[code] : `${message || "读取失败。"}读到之前不能修改。`;
 }
 
-/** PLACEHOLDER(pc-wire)：接口和代理白名单接好后搬进 lib/admin。只在这里校验一次后端给的形状。 */
 async function readHostingCenters(): Promise<HostingState> {
   const response = await guardedFetch("/api/admin/config/hosting-centers", { cache: "no-store" });
   const result = await response.json().catch(() => null) as { code?: number; message?: string; data?: { revision?: unknown; centers?: unknown } } | null;
@@ -68,7 +77,7 @@ async function readHostingCenters(): Promise<HostingState> {
   const { revision, centers } = result.data ?? {};
   const rows = Array.isArray(centers) ? centers as Record<string, unknown>[] : [];
   const valid = Number.isSafeInteger(revision) && (revision as number) >= 0 && rows.length === 8 && rows.every(row =>
-    typeof row.id === "string" && typeof row.name === "string" && typeof row.enabled === "boolean" && Number.isSafeInteger(row.weight) && (row.weight as number) >= 1);
+    row != null && typeof row.id === "string" && typeof row.name === "string" && typeof row.enabled === "boolean" && Number.isSafeInteger(row.weight) && (row.weight as number) >= 1);
   if (!valid) throw new Error("HOSTING_CENTERS_UNAVAILABLE");
   return { revision: revision as number, centers: rows.map(row => ({ id: row.id as string, name: row.name as string, enabled: row.enabled as boolean, weight: row.weight as number })) };
 }
@@ -110,6 +119,7 @@ export function HostingCentersPage() {
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const canRead = authorities.includes("device_e1_read");
   const canWrite = canRead && authorities.includes("device_e1_write") && authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
+  const owner = useAdminAuth(s => s.session?.adminId);
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   const [state, setState] = useState<HostingState | null>(null);
@@ -117,20 +127,36 @@ export function HostingCentersPage() {
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
   const [draft, setDraft] = useState<DraftRow[] | null>(null);
+  const [baseline, setBaseline] = useState<HostingState | null>(null);
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  // PLACEHOLDER(pc-wire)：提交和查询原结果填写；被别人改过时由提交失败写入 conflict。
   const [receipts, setReceipts] = useState<HostingReceipt[]>([]);
-  const [conflict, setConflict] = useState<DraftRow[] | null>(null);
+  const [conflict, setConflict] = useState<{ draft: DraftRow[]; before: Center[] } | null>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  useEffect(() => { setReceipts(hostingRecords.list()); }, [owner]);
+
+  function remember(receipt: HostingReceipt) {
+    hostingRecords.remember(receipt.fingerprint, receipt.key, receipt);
+    setReceipts(hostingRecords.list());
+  }
+
+  function dismiss(receipt: HostingReceipt) {
+    hostingRecords.forget(receipt.fingerprint, receipt.key);
+    setReceipts(hostingRecords.list());
+  }
 
   const reload = useCallback(async () => {
     if (!canRead) return;
     setLoading(true);
     try {
-      setState(await readHostingCenters());
+      const latest = await readHostingCenters();
+      setState(latest);
       setReadAt(Date.now());
       setError(null);
+      return latest;
     } catch (cause) {
+      setState(null);
       setError(hostingError(cause));
     } finally {
       setLoading(false);
@@ -138,20 +164,63 @@ export function HostingCentersPage() {
   }, [canRead]);
   useEffect(() => { void reload(); }, [reload]);
 
+  async function applyTicket(receipt: HostingReceipt, ticket: A2OperationRow) {
+    if (!ticket.mine || ticket.obj !== "default" || ticket.operationCode !== HOSTING_OPERATION) {
+      throw new Error("A2_RESPONSE_UNREADABLE");
+    }
+    if (ticket.status === "approved") {
+      dismiss(receipt);
+      await reload();
+    } else {
+      const status = ticket.status === "pending" || ticket.status === "expired" ? ticket.status : "rejected";
+      remember({ ...receipt, status, ticketId: ticket.id });
+    }
+  }
+
+  async function recover(receipt: HostingReceipt, retry: boolean) {
+    if (receiptBusy) return;
+    setReceiptBusy(true);
+    setReceiptError(null);
+    let resending = false;
+    try {
+      const ticket = await fetchA2ProposalByKey(receipt.key, true, "metadata");
+      if (ticket) await applyTicket(receipt, ticket);
+      else if (retry && canWrite && receipt.status === "unknown") {
+        if (isRetryExpired(receipt)) throw new Error(RETRY_EXPIRED_TEXT);
+        resending = true;
+        await applyTicket(receipt, await createA2OperationProposal(receipt.request, receipt.key, "proposal"));
+      }
+    } catch (cause) {
+      const code = (cause as { backendMessage?: string }).backendMessage;
+      if (resending && isExplicitRejection(cause)) {
+        remember({ ...receipt, status: code === "HOSTING_CENTERS_REVISION_CONFLICT" ? "conflict" : "rejected",
+          why: code ? HOSTING_ERRORS[code] ?? displayAdminError(cause) : displayAdminError(cause) });
+        await reload();
+      } else setReceiptError(displayAdminError(cause));
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
+
   const centers = state?.centers ?? [];
   const enabled = centers.filter(center => center.enabled);
   const total = enabled.reduce((sum, center) => sum + center.weight, 0);
   const pending = receipts.find(receipt => receipt.status === "pending" || receipt.status === "unknown");
   const editBlock = !state ? "清单读到之后才能编辑" : pending ? pending.status === "pending" ? "有一份修改在等批准，批准或驳回后才能再改" : "上一次提交结果未知，先查询原结果" : undefined;
 
-  const draftChanges = draft && state ? changesOf(state.centers, draft) : [];
+  const draftChanges = draft && baseline ? changesOf(baseline.centers, draft) : [];
   const draftIssues = draft ? draft.map(row => ({ id: row.id, name: nameIssue(row.name), weight: weightIssue(row.weight) })) : [];
   const draftEnabled = draft?.filter(row => row.enabled) ?? [];
   const draftTotal = draftEnabled.reduce((sum, row) => sum + (weightIssue(row.weight) ? 0 : Number(row.weight)), 0);
   const draftInvalid = draftIssues.some(issue => issue.name || issue.weight);
   const submitBlock = !draft ? undefined : !draftChanges.length ? "还没有改动" : !draftEnabled.length ? "至少要启用一个机房" : draftInvalid ? "有名称或权重要改" : undefined;
 
-  const openEdit = (from?: DraftRow[]) => { setDraft(from ?? toDraft(centers)); setTouched(false); };
+  const openEdit = (from?: DraftRow[]) => {
+    if (!state) return;
+    setBaseline(state);
+    setDraft(from ?? toDraft(centers));
+    setTouched(false);
+  };
   const setRow = (id: string, patch: Partial<DraftRow>) => setDraft(rows => rows && rows.map(row => row.id === id ? { ...row, ...patch } : row));
 
   const recoveryItems: RecoveryItem[] = receipts.map(receipt => {
@@ -176,14 +245,14 @@ export function HostingCentersPage() {
       tag,
       line,
       actions: <>
-        {(receipt.status === "unknown" || receipt.status === "pending") && <Button size="sm" onClick={() => undefined /* PLACEHOLDER(pc-wire) 查询原结果 */}>查询原结果</Button>}
-        {receipt.status === "unknown" && <Button size="sm" disabledReason={canWrite ? undefined : "当前账号没有提交权限"} onClick={() => undefined /* PLACEHOLDER(pc-wire) 按原请求重试 */}>按原请求重试</Button>}
-        {receipt.status !== "unknown" && receipt.status !== "pending" && <Button size="sm" variant="ghost" onClick={() => setReceipts(rows => rows.filter(row => row.key !== receipt.key))}>知道了</Button>}
+        {(receipt.status === "unknown" || receipt.status === "pending") && <Button size="sm" loading={receiptBusy} onClick={() => void recover(receipt, false)}>查询原结果</Button>}
+        {receipt.status === "unknown" && <Button size="sm" disabledReason={canWrite ? undefined : "当前账号没有提交权限"} loading={receiptBusy} onClick={() => void recover(receipt, true)}>按原请求重试</Button>}
+        {receipt.status !== "unknown" && receipt.status !== "pending" && <Button size="sm" variant="ghost" onClick={() => dismiss(receipt)}>知道了</Button>}
       </>,
       detail: <Facts>
         <Fact k="提交时间">{`${businessStamp(receipt.createdAt)}（${businessZone().label}）`}</Fact>
         <Fact k="改了什么"><DiffList rows={receipt.changes} /></Fact>
-        {receipt.why && <Fact k="原因">{receipt.why}</Fact>}
+        {(receipt.why || (receipt === pending && receiptError)) && <Fact k="原因">{receipt.why || receiptError}</Fact>}
       </Facts>,
       tech: receipt.ticketId ? <Facts><Fact k="审批单">{receipt.ticketId}</Fact></Facts> : undefined,
     };
@@ -214,9 +283,17 @@ export function HostingCentersPage() {
       items={recoveryItems} />
   );
 
-  const conflictNotice = conflict && (
+  const conflictNotice = conflict && state && (
     <Notice tone="warn" title="没有提交：清单已被别人改过"
-      action={<><Button size="sm" onClick={() => { openEdit(conflict); setConflict(null); }}>按现在的清单重新编辑</Button><Button size="sm" variant="ghost" onClick={() => setConflict(null)}>放弃这次修改</Button></>}>
+      action={<><Button size="sm" onClick={() => { openEdit(toDraft(centers).map(row => {
+        const edited = conflict.draft.find(item => item.id === row.id)!;
+        const before = conflict.before.find(item => item.id === row.id)!;
+        return { ...row,
+          name: edited.name.trim() === before.name ? row.name : edited.name,
+          enabled: edited.enabled === before.enabled ? row.enabled : edited.enabled,
+          weight: edited.weight.trim() === String(before.weight) ? row.weight : edited.weight,
+        };
+      })); setConflict(null); }}>按现在的清单重新编辑</Button><Button size="sm" variant="ghost" onClick={() => setConflict(null)}>放弃这次修改</Button></>}>
       已读到最新清单。你这次填的内容还留着，重新编辑时会带上，核对后再提交。
     </Notice>
   );
@@ -288,8 +365,8 @@ export function HostingCentersPage() {
         <thead><tr><Th>机房名称</Th><Th>启用</Th><Th>权重</Th><Th>新设备约占</Th></tr></thead>
         <tbody>{draft.map((row, index) => {
           const issue = draftIssues[index];
-          const showName = issue.name && (touched || row.name !== state.centers[index].name);
-          const showWeight = issue.weight && (touched || row.weight !== String(state.centers[index].weight));
+          const showName = issue.name && (touched || row.name !== baseline?.centers[index].name);
+          const showWeight = issue.weight && (touched || row.weight !== String(baseline?.centers[index].weight));
           return <Tr key={row.id}>
             <Td grow>
               <Input aria-label={`第 ${index + 1} 个机房的名称`} value={row.name} maxLength={NAME_MAX + 8} aria-invalid={showName ? true : undefined} onChange={event => setRow(row.id, { name: event.target.value })} />
@@ -321,9 +398,56 @@ export function HostingCentersPage() {
       statedBrief={{ impact: "批准后，之后交付的新设备按新清单分配；已交付的设备不变。", check: "核对改了的名称、启用和权重；理由写清依据。" }}
       confirmLabel="提交审批" reasonPlaceholder="例如：托管合同编号、机房变更通知"
       onClose={() => setConfirming(false)}
-      onConfirm={async () => {
-        // PLACEHOLDER(pc-wire)：按 e1_hosting_centers_update 提交 { expectedRevision: state.revision, centers }，成功后写 receipts、关框、重读。
-        throw new Error("提交还没接上后台，这次没有提交。");
+      onConfirm={async (reason) => {
+        const auth = useAdminAuth.getState();
+        const session = auth.session;
+        if (!canWrite || !session || session.adminId !== owner || !auth.isAuthenticated || auth.logoutPending) throw new Error("ADMIN_PERMISSION_DENIED");
+        if (!baseline || submitBlock || hostingRecords.list().some(r => r.status === "unknown" || r.status === "pending")) {
+          throw new Error(submitBlock ?? "OBJECT_ALREADY_PENDING");
+        }
+        const now = Date.now();
+        const key = createA2CommandKey(SLOT);
+        const receipt: HostingReceipt = {
+          fingerprint: SLOT, commandKey: key, key, createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS,
+          status: "unknown", changes: draftChanges,
+          request: {
+            action: "调整托管机房清单", obj: "default", beforeValue: "托管机房当前清单", afterValue: "托管机房拟发布清单",
+            operator: session.operator || session.username, operatorRole: roleLabel(session.role),
+            type: "param", amplifies: false, sos: false, roleGate: APPROVER, reason, sourceDomain: "E1",
+            command: { domain: "E", op: HOSTING_OPERATION, params: {
+              expectedRevision: baseline.revision,
+              centers: draft.map(row => ({ ...row, name: row.name.trim(), weight: Number(row.weight) })),
+            } },
+            target: { domain: "E", type: "hosting_centers", id: "default" },
+          },
+        };
+        remember(receipt);
+        if (!hostingRecords.isDurablyStored(SLOT, key)) {
+          dismiss(receipt);
+          throw new Error("浏览器无法保存原请求，这次没有提交。");
+        }
+        try {
+          await applyTicket(receipt, await createA2OperationProposal(receipt.request, key, "proposal"));
+        } catch (cause) {
+          const { backendMessage: code, httpStatus, apiCode } = cause as { backendMessage?: string; httpStatus?: number; apiCode?: number };
+          if (httpStatus === undefined || !isDeterministicRejection(httpStatus, apiCode)) {
+            setConfirming(false);
+            setDraft(null);
+            return;
+          }
+          dismiss(receipt);
+          if (code === "HOSTING_CENTERS_REVISION_CONFLICT") {
+            setConflict({ draft, before: baseline.centers });
+            setConfirming(false);
+            setDraft(null);
+            await reload();
+            return;
+          }
+          throw code && HOSTING_ERRORS[code] ? new Error(HOSTING_ERRORS[code]) : cause;
+        }
+        setConfirming(false);
+        setDraft(null);
+        await reload();
       }} />}
   </RdPage>;
 }

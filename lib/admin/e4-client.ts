@@ -85,6 +85,7 @@ export interface E4OrderFunding {
 export interface E4OrderDevice {
   deviceId: number;
   deviceInstanceNo: string | null;
+  dcLocation?: string | null;
   kind: "PURCHASE" | "PROMOTION_GIFT";
   sourceChannel: string | null;
   status: string | null;

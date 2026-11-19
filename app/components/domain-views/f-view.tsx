@@ -1187,6 +1187,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4ApprovalRows,
     recoverF4,
     refreshF4,
+    submitF4Proposal: sendF4,
     updateF4Config: async (key, value, reason, expectedVersion, expectedMaterialRevision) => {
       if (["F.pool.monthlyCap", "F.leaderboard.poolUsd"].includes(key) && f4MonthlyCap(value) === null) throw new Error("F4_POOL_MONEY_INVALID");
       if (key === "F.pool.settleCron") { const issue = f4WeeklyCronIssue(value); if (issue) throw new Error(issue); }

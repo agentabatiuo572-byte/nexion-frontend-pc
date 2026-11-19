@@ -67,8 +67,6 @@ export function skuText(skus: readonly string[], labels: Record<string, string>)
 export const surfacesText = (surfaces: readonly string[]) => surfaces.map((s) => SURFACE_LABEL[s] ?? "其他页面").join("、") || "不限入口";
 
 /** 转盘专发券：四个自领入口都拒绝，只有幸运转盘中奖能发；它的空入口不是「不限」。PC 保存不改这一项。 */
-// PLACEHOLDER(pc-wire): parseH7Voucher 还没带出后端的 wheelOnly，接上前这里总是 false；接上后改成直接读 v.wheelOnly。
-export const isWheelOnly = (v: H7Voucher) => (v as H7Voucher & { wheelOnly?: boolean }).wheelOnly === true;
 export const WHEEL_ONLY_TEXT = "仅转盘发放";
 export const WHEEL_ONLY_HELP = "用户不能自己领，只在幸运转盘中奖时发到钱包。";
 /** 转盘抽中时券发不出（暂停、过期、发完），这次抽奖整体报错，不会换成别的奖。 */
@@ -100,7 +98,7 @@ export const limitReached = (v: Pick<H7Voucher, "issuanceLimit" | "issuedCount">
 /** 状态标签：投放状态之外，过期、未开始、发完各一枚；过期的不再写「投放中」。 */
 export function VoucherTags({ v, now, showPending = true }: { v: H7Voucher; now: number; showPending?: boolean }) {
   const phase = voucherPhase(v, now);
-  const wheelOnly = isWheelOnly(v);
+  const wheelOnly = v.wheelOnly;
   return (
     <span className="h7-tags">
       {showPending && v.pendingApproval && pendingTag(v.pendingApproval)}

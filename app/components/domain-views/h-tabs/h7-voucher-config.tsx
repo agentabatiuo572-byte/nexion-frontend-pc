@@ -37,7 +37,7 @@ import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sen
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, expiredTag,
-  endDetailText, faceValue, isWheelOnly, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, WHEEL_ONLY_HELP, WHEEL_ONLY_TEXT, WHEEL_STOP_HINT, type H7RecoveryRow, type H7Voucher,
+  endDetailText, faceValue, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, WHEEL_ONLY_HELP, WHEEL_ONLY_TEXT, WHEEL_STOP_HINT, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
 import { H7VoucherForm, SPLIT_RETIRED_HELP, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
@@ -285,12 +285,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `编辑代金券 · ${v.name}`,
       title: "编辑代金券",
-      detail: `${v.name} · ${isWheelOnly(v) ? "改面值、门槛、适用商品、发给谁、有效期或弹窗设置；仅转盘发放，领取入口不能改。" : "改面值、门槛、适用商品、发给谁、有效期、领取入口或弹窗设置。"}${v.issuedCount > 0 ? "已发券的模板类型不可修改。" : "尚未发券，可修改类型。"}代金券不算平台负债，不受覆盖率限制。`,
+      detail: `${v.name} · ${v.wheelOnly ? "改面值、门槛、适用商品、发给谁、有效期或弹窗设置；仅转盘发放，领取入口不能改。" : "改面值、门槛、适用商品、发给谁、有效期、领取入口或弹窗设置。"}${v.issuedCount > 0 ? "已发券的模板类型不可修改。" : "尚未发券，可修改类型。"}代金券不算平台负债，不受覆盖率限制。`,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: {
         impact: touchesIssued
           ? `保存后立即按新规则生效：已发出还没用的 ${countText(v.availableCount)} 张也按新规则使用，已用掉的 ${countText(v.redeemedCount)} 张和已完成的订单不变。`
-          : isWheelOnly(v) ? "保存后立即按新规则生效，之后转盘发券和用券都按新规则。" : "保存后立即按新规则生效，之后领券和用券都按新规则。",
+          : v.wheelOnly ? "保存后立即按新规则生效，之后转盘发券和用券都按新规则。" : "保存后立即按新规则生效，之后领券和用券都按新规则。",
         check: "核对每一项改前改后，理由写清依据或工单号。",
       },
       facts: (
@@ -319,7 +319,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     if (!restored && blockNew(v.id)) return;
     const next = v.status === "active" ? "paused" : "active";
     const label = next === "active" ? "投放" : "暂停";
-    const wheelOnly = isWheelOnly(v);
+    const wheelOnly = v.wheelOnly;
     openActionConfirm({ briefKind: "content",
       action: `${label}代金券 · ${v.name}`,
       title: `${label}代金券`,
@@ -574,7 +574,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
       <StatBand label="代金券概况">
         <Stat tone="role-4" icon={TicketCheck} label="投放中" value={countText(activeN)} unit="张" sub={`共 ${countText(total)} 张 · 已暂停 ${countText(pausedN)} 张`}
-          explain={`只看券的状态。已过有效期但没暂停的也算在内；用户能不能领还要看有效期、发给谁、发行上限和领取入口。${data.vouchers.some(isWheelOnly) ? "「仅转盘发放」的券只在幸运转盘中奖时发。" : ""}`} />
+          explain={`只看券的状态。已过有效期但没暂停的也算在内；用户能不能领还要看有效期、发给谁、发行上限和领取入口。${data.vouchers.some(v => v.wheelOnly) ? "「仅转盘发放」的券只在幸运转盘中奖时发。" : ""}`} />
         <Stat tone="role-2" icon={Send} label="已发出" value={countText(issuedSum)} unit="张" sub={`未使用 ${countText(availableSum)} 张`}
           explain="这页现有券的领取记录合计，不是人数；删掉的券不再计入。未使用包括已过有效期还没用的。" />
         <Stat tone="role-2" icon={ReceiptText} label="已使用" value={countText(redeemedSum)} unit="张" sub={`已作废 ${countText(revokedSum)} 张`}
@@ -669,7 +669,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <Fact k="最多减">{(v.maxDiscountUSD ?? 0) > 0 ? `${amountText(v.maxDiscountUSD)} ${UNIT}` : "不封顶"}</Fact>
                 <Fact k="适用商品">{v.applicableSkus.length ? v.applicableSkus.map((id) => skuLabels[id] ?? `已不在当前目录（${id}）`).join("、") : "全部商品"}</Fact>
                 <Fact k="发给谁">{AUDIENCE_LABEL[v.audience]}</Fact>
-                <Fact k="领取入口">{isWheelOnly(v) ? <>{WHEEL_ONLY_TEXT}<p className="h7-form-note">{WHEEL_ONLY_HELP}</p></> : surfacesText(v.claimSurfaces)}</Fact>
+                <Fact k="领取入口">{v.wheelOnly ? <>{WHEEL_ONLY_TEXT}<p className="h7-form-note">{WHEEL_ONLY_HELP}</p></> : surfacesText(v.claimSurfaces)}</Fact>
                 <Fact k="开始">{startDetailText(v.startAt)}</Fact>
                 <Fact k="结束">{endDetailText(v.endAt)}</Fact>
                 <Fact k="发行上限">{v.issuanceLimit === 0 ? "不限量" : `${countText(v.issuanceLimit)} 张`}</Fact>

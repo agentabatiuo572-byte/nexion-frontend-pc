@@ -3,16 +3,14 @@
 /**
  * F4 购机名额「新建档位」确认框。一个商品最多一个名额档位：已经有档位的商品不在可选范围里，要改就去它的「调额度」。
  * 新建要另一位管理员批准，批准后才加进名额表；批准前普通购机完全不受影响。
- *
- * PLACEHOLDER(pc-wire)：
- * - 后端新建命令还没做（hd-impl-x-lc-quota），确认按钮先拒绝，不发任何请求。
- * - 可选商品现在取 ctx.skuOptions / ctx.skuLabels：它们来自会员等级页的读取，打开这页时是空的；接线时改从 E1 在售商品读取（名称用 E1 商品名）。
- * - 暂停的档位不一定出现在 quotaRows 里，后端「这个商品已有档位」的拒绝要按错误码显示在框里（文案见 QUOTA_CREATE_TAKEN）。
  */
+import { useEffect, useState } from "react";
+import { fetchE1Products } from "@/lib/admin/e1-client";
 import { Fact, Facts, Notice, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count } from "./f4-shared";
+import type { FViewCtx } from "./types";
 
 export const QUOTA_CREATE_TAKEN = "这个商品已经有名额档位，不能再建；要改名额，到它那一行点「调额度」。";
 const APPROVER = "另一位超级管理员";
@@ -23,7 +21,7 @@ function issue(values: Record<string, string>): { field: string; message: string
   if (!values.productNo) return { field: "productNo", message: "请选择商品" };
   if (!values.name.trim()) return { field: "name", message: "请填写名称" };
   if (values.name.trim().length > 128) return { field: "name", message: "名称最多 128 个字符" };
-  if (!WHOLE.test(values.directRefs.trim())) return { field: "directRefs", message: "有效直接邀请填 0 起的整数" };
+  if (!WHOLE.test(values.directRefs.trim()) || Number(values.directRefs) > 2147483647) return { field: "directRefs", message: "有效直接邀请填 0 起的整数" };
   if (!WHOLE.test(values.monthComputePoints.trim())) return { field: "monthComputePoints", message: "本月团队算力点填 0 起的整数" };
   if (!WHOLE.test(values.monthlyQuota.trim()) || Number(values.monthlyQuota) > 1000000) return { field: "monthlyQuota", message: "每月名额为 0–1,000,000 台的整数" };
 }
@@ -37,7 +35,18 @@ function conditionText(values: Record<string, string>) {
   return `买的人要满足：${parts.join(values.unlockMode === "EITHER" ? " 或 " : " 且 ")}`;
 }
 
-export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: F4LeadershipPoolOverview; skuOptions: readonly string[]; skuLabels: Record<string, string>; onClose: () => void }) {
+export function F4QuotaCreate({ data, ctx, onClose }: { data: F4LeadershipPoolOverview; ctx: FViewCtx; onClose: () => void }) {
+  const [products, setProducts] = useState<Awaited<ReturnType<typeof fetchE1Products>>["skus"]>([]);
+  useEffect(() => {
+    let active = true;
+    void fetchE1Products().then(({ skus }) => { if (active) setProducts(skus); }).catch(() => {
+      if (active) setProducts([]);
+    });
+    return () => { active = false; };
+  }, []);
+  const skuOptions = products.filter(sku => sku.status === "on" && sku.publishBlocked === false && sku.price > 0
+    && (sku.inventoryMode === "UNLIMITED" || Number(sku.stock) > 0)).map(sku => sku.id);
+  const skuLabels = Object.fromEntries(products.map(sku => [sku.id, sku.name]));
   const taken = new Set(data.quotaRows.map(row => row.productNo).filter(Boolean));
   const free = skuOptions.filter(sku => !taken.has(sku));
   const takenNames = data.quotaRows.filter(row => row.productNo).map(row => skuLabels[row.productNo] ?? row.name ?? row.productNo);
@@ -60,6 +69,7 @@ export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: 
         check: "核对商品、资格条件和每月名额；理由写清依据或工单号。",
       })}
       confirmLabel="提交审批" reasonPlaceholder="例如：活动方案或工单号"
+      businessFormRevision={products.length}
       businessForm={{
         kind: "multi-field",
         feedback: values => {
@@ -76,9 +86,30 @@ export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: 
         ],
       }}
       onClose={onClose}
-      onConfirm={async () => {
-        // PLACEHOLDER(pc-wire)：接后端新建命令，提交审批后写原操作记录、关框、重读；已有档位被拒时显示 QUOTA_CREATE_TAKEN。
-        throw new Error("新建档位还没接上后台，这次没有提交。");
+      onConfirm={async (reason, _value, values) => {
+        const productNo = values?.productNo;
+        if (!productNo || !skuOptions.includes(productNo)) throw new Error("F4_QUOTA_SKU_NOT_SELLABLE");
+        if (taken.has(productNo)) throw new Error(QUOTA_CREATE_TAKEN);
+        const problem = issue(values);
+        if (problem) throw new Error(problem.message);
+        try {
+          await ctx.submitF4Proposal(`f4-quota-create:${productNo}`, {
+            action: "新增购机名额档位", obj: productNo, before: "不存在", after: values.name.trim(),
+            type: "param", gate: { roles: [] }, gateLabel: APPROVER, reason, sourceDomain: "F4",
+            command: { domain: "F", op: "f4_quota_tier_create", params: { values: {
+              quotaCode: `quota-${crypto.randomUUID().replaceAll("-", "").slice(0, 26)}`,
+              productNo, displayName: values.name.trim(), directRefs: Number(values.directRefs),
+              monthComputePoints: Number(values.monthComputePoints), monthlyQuota: Number(values.monthlyQuota),
+              unlockMode: values.unlockMode, status: 1, sortOrder: 0,
+            } } },
+            target: { domain: "F", type: "hardware_quota_tier", id: productNo },
+          });
+        } catch (error) {
+          if ((error as { backendMessage?: string }).backendMessage === "F4_QUOTA_SKU_EXISTS") throw new Error(QUOTA_CREATE_TAKEN);
+          throw error;
+        }
+        onClose();
+        await ctx.refreshF4();
       }} />
   );
 }

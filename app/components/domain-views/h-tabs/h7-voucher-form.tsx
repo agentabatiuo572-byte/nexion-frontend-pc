@@ -10,7 +10,7 @@ import { BellOff, CircleSlash, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { validateH7VoucherMoneyPrecision } from "@/lib/admin/h7-voucher-money";
-import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, WHEEL_ONLY_TEXT, amountText, countText, isWheelOnly, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
+import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, WHEEL_ONLY_TEXT, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
 /** 3c2031d4：「可拆分」已停用，新的勾选会被拒；编辑时只显示以前存的值。券都是整张核销。 */
@@ -173,7 +173,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
   const [folds, setFolds] = useState({ popup: false, stack: false });
   const typeLocked = !!voucher && voucher.issuedCount > 0;
   // 转盘专发券的入口不能改：换成锁定标签，保存时原样带回存的入口。
-  const wheelOnly = !!voucher && isWheelOnly(voucher);
+  const wheelOnly = voucher?.wheelOnly === true;
   const errors = useMemo(() => formErrors(value), [value]);
   const shown = attempted ? errors : {};
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
