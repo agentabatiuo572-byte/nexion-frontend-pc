@@ -350,7 +350,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const activeGates = gates.filter((gate) => gate.active && !gate.retired);
   const exchangeRestricted = activeGates.some((gate) => gate.key === "exchange");
   const confirmationGates = activeGates.filter((gate) => gate.key !== "exchange").map((gate) => gate.name);
-  const exchangeGateEffect = "兑换纳入受限时，全平台的新兑换和处理排队都会被拒绝，直到获批移出。";
+  const exchangeGateEffect = "兑换纳入受限时，全平台的新兑换和处理排队都会被拒绝；获批移出后解除这道限制。";
   const gateEffect = activeGates.length ? [
     exchangeRestricted ? exchangeGateEffect : "",
     confirmationGates.length ? `没确认的用户做${confirmationGates.join("、")}时会被拦下。` : "",
@@ -658,14 +658,14 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const toggleGate = (gate: typeof gates[number]) => {
     const on = gate.active;
     const nextScope = gates.filter((item) => (item.key === gate.key ? !on : item.active)).map((item) => item.name).join(" + ") || "无";
-    const exchangeImpact = on ? "批准前兑换仍被阻断；批准后风险披露闸门不再挡新兑换和处理排队。" : "批准后全平台停兑换，直到获批移出；排队的单留在队列。";
+    const exchangeImpact = on ? "批准前兑换仍被阻断；批准后解除风险披露限制。" : "批准后全平台停兑换，获批移出后才解除；排队的单留在队列。";
     openActionConfirm({ briefKind: "record", ...approvalProps,
       action: <>{on ? "移出" : "纳入"}受限动作 · {gate.name}</>,
       title: `${on ? "移出" : "纳入"}受限动作`,
       confirmLabel: `提交${on ? "移出" : "纳入"}审批`,
       detail: gate.key === "exchange"
         ? on
-          ? <>移出后，风险披露闸门不再阻断 <b>{gate.name}</b>，能不能兑换只看兑换开关。</>
+          ? <>移出后，风险披露闸门不再阻断 <b>{gate.name}</b>；兑换开关、额度、地区等其他检查照常。</>
           : <>纳入后，全平台的新兑换和处理排队都会被拒绝，不看用户有没有确认披露。</>
         : on
           ? <>移出后，没确认当前披露的用户做 <b>{gate.name}</b> 也不会被拦下。这是放松合规拦截，理由写清依据。</>
@@ -726,10 +726,10 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={[todoHint, exchangeAlso].filter(Boolean).join(" · ") || undefined}><b>{issues.size}</b> 个适用范围的生效版本有问题，App 可能读不到披露</Conclusion>
     : exchangeRestricted
     ? <Conclusion state="warn" icon={ShieldAlert} action={headActions}
-        hint={[versionNote, todoHint, queueLimit, "到下面「受限动作」移出兑换，批准后才恢复"].filter(Boolean).join(" · ")}
+        hint={[versionNote, todoHint, queueLimit, "到下面「受限动作」移出兑换，批准后解除风险披露限制"].filter(Boolean).join(" · ")}
         explain={<>
           <p>兑换在受限动作里：全平台的新兑换和处理排队都会被拒绝，不看用户有没有确认披露。</p>
-          <p>这和「紧急停用开关」里的兑换开关是两道闸，「兑换额度与规则」页分开显示。</p>
+          <p>这和「紧急停用开关」里的兑换开关是两道闸，两道都放开才能兑换；「兑换额度与规则」页分开显示。</p>
         </>}>风险披露闸门已阻断兑换，全平台的新兑换和处理排队都会被拒绝</Conclusion>
     : unmapped.length
       ? <Conclusion state="warn" action={headActions} hint={todoHint}><b>{unmapped.length}</b> 个启用的适用范围还没有生效版本：{unmapped.map((item) => item.code).join("、")}</Conclusion>

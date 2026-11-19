@@ -694,7 +694,7 @@ function G2ExchangePage() {
   const pauseAction = overview && (emergencyPaused !== true || pendingPause
     ? (allowed("finprod_g2_swap_toggle") || pendingPause) && <Button variant="danger-outline" size="sm" icon={<PauseCircle size={14} aria-hidden />}
       disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : !pendingPause ? switchBlockedReason : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
-    : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link>);
+    : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>{disclosureBlocked ? "去「紧急停用开关」恢复兑换开关" : "去「紧急停用开关」恢复"}</Link>);
   const header = (
     <PageHeader pageId="G2" title="兑换额度与规则"
       summary="管 UVT 和 USDT 兑换的额度、手续费和排队。"
@@ -1178,7 +1178,8 @@ function G2ExchangePage() {
     : overview.emergencySwitch?.exchange.unavailableReason === "MISSING" ? "missing"
     : overview.emergencySwitch?.exchange.unavailableReason === "INVALID" ? "invalid" : "absent";
   const disclosureLink = reach("/content/disclosures") ? <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> : "「法律条款与风险披露」";
-  const disclosureHint = disclosureBlocked ? <>风险披露闸门也在阻断兑换，在 {disclosureLink} 管。</> : null;
+  // 两道都挡着时，各入口只解除自己那一道：分两步写，不说去一处就能恢复。
+  const disclosureStep = disclosureBlocked ? <>风险披露闸门也在阻断兑换，还要到 {disclosureLink} 把兑换移出受限动作。</> : null;
   const conclusion = switchUnread === "absent" && !disclosureBlocked
     ? <Conclusion state="warn" icon={CircleHelp}
         hint={<>真实状态到 {killSwitchLink} 看。</>}
@@ -1187,14 +1188,16 @@ function G2ExchangePage() {
         </>}>这页读不到兑换开关</Conclusion>
     : switchUnread === "missing" || switchUnread === "invalid"
     ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开。{disclosureHint}</>}
+        hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开兑换开关。{disclosureStep}</>}
         explain={<>
           <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况兑换一律按关闭处理。</p>
           <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
         </>}>{switchUnread === "missing" ? "兑换开关没有设置，兑换现在是停的" : "兑换开关设置有误，兑换现在是停的"}</Conclusion>
     : swap.emergencyPaused
     ? <Conclusion state="warn" icon={PauseCircle}
-        hint={<>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}{disclosureHint}</>}
+        hint={disclosureBlocked
+          ? <>恢复兑换要两步：到 {killSwitchLink} 打开兑换开关，到 {disclosureLink} 把兑换移出受限动作。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>
+          : <>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>}
         explain={<>
           <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
           <p>暂停时，用户新发起的兑换和「处理排队」都会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
