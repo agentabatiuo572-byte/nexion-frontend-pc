@@ -357,7 +357,7 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 ## 深浅两套主题
 
-深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的左右两侧选择：只有图标，左太阳浅色、右月亮深色，滑块停在已选的一侧；点哪一侧选哪一侧，点已选的一侧不变。单选组 `role="radiogroup"`（`aria-label="主题"`），两个 `role="radio"`（「浅色」「深色」，`aria-checked` 跟当前主题）；Tab 停在已选项（roving tabindex），左右方向键移到另一侧并选中，空格、回车选中焦点项；焦点环画在整条滑槽外。悬停和聚焦用 `IconTip` 写这一侧是什么：「浅色」「深色」。滑块位置和图标明暗由 CSS 按 `<html data-theme>` 定，不跟 React 状态，首屏不会滑一下；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
+深色默认，浅色挂 `data-theme="light"`，两套都正式保留。`theme-switch.tsx` 管三件事：`<ThemeScript />` 在 `app/layout.tsx` 的 `<head>` 里同步执行，首屏按记住的选择设属性，不闪屏；`<ThemeToggle adminId={…} />` 是顶栏和登录页的左右两侧选择：只有图标，左太阳浅色、右月亮深色，滑块停在已选的一侧；点哪一侧选哪一侧，点已选的一侧画面不变，但照旧记一次选择（写本机和账号的记忆键）。单选组 `role="radiogroup"`（`aria-label="主题"`），两个 `role="radio"`（「浅色」「深色」，`aria-checked` 跟当前主题）；Tab 停在已选项（roving tabindex），方向键按单选组惯例循环：只有两项，任一方向键（左右上下）都移到另一侧并选中，空格、回车选中焦点项；焦点环画在整条滑槽外。悬停和聚焦用 `IconTip` 写这一侧是什么：「浅色」「深色」。滑块位置和图标明暗由 CSS 按 `<html data-theme>` 定，不跟 React 状态，首屏不会滑一下；`useAdminTheme(adminId)` 登录后按账号记住的选择切换。记忆在本机：`nexion-admin-rd-theme` 是最近一次的选择（登录前也用它），`nexion-admin-rd-theme:<adminId>` 是每个账号的选择。网址参数 `?theme=light|dark` 只给截图和验收脚本用，不是入口。
 
 两套主题的差别只在 `tokens.css` 和 `rd.css` 里：浅色数字用正文色、身份靠实色图标底和图表色（VS-14）；白面板加 1px 边（VS-94）；输入框、下拉和确认框里的旧字段白底加 1px `--rd-line-strong` 描边，悬停 `--rd-control-line`（Ant Design Input），禁用和只读保留灰底，填错时只留外框；筛选的条件条加 1px `--rd-line` 边（底色和页面几乎一样）；Logo 换横版 on-light（`shell.css`）。告警横幅和 `Notice` 两套主题一个样子：浅底加同色 1px 边，取 Ant Design Alert 默认。页面不写这些。
 
