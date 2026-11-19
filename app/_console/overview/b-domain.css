@@ -199,4 +199,4 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 .cc .rd-metric:has(.lucide-server) { --cc-ic: var(--rd-icon-slate-tile); --cc-ic-ink: var(--rd-icon-slate-tile-ink); }
 .cc .rd-metric:has(.lucide-hourglass) { --cc-ic: var(--rd-icon-orchid-tile); --cc-ic-ink: var(--rd-icon-orchid-tile-ink); }
 .cc .rd-metric:has(.lucide-gift) { --cc-ic: var(--rd-icon-bronze-tile); --cc-ic-ink: var(--rd-icon-bronze-tile-ink); }
-.cc .rd-metric:not([aria-busy]):not(:has(> .rd-metric-compare > :is(.rd-inline-retry, [aria-label="为什么没有"]))) > .rd-metric-label > .rd-tile { --tone-tile: var(--cc-ic); --tone-tile-ink: var(--cc-ic-ink); }
+.cc .rd-metric:not([aria-busy]):not(:has(> .rd-metric-compare > :is(.rd-inline-retry, [aria-label="为什么没有"], [data-noread]))) > .rd-metric-label > .rd-tile { --tone-tile: var(--cc-ic); --tone-tile-ink: var(--cc-ic-ink); }

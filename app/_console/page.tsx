@@ -233,7 +233,7 @@ export default function CommandCenter() {
       ...(flows.error ? ["资金进出"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...(exchangeQueue.error ? ["兑换排队"] : []),
-      ...(referralRewards.error ? ["邀请奖励"] : []),
+      ...(referralRewards.error ? ["待结算新人"] : []),
       ...(promotionRewards.error ? ["活动奖励"] : []),
       ...pendingFailed,
     ],

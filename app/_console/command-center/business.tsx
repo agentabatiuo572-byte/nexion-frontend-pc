@@ -86,15 +86,17 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
   const active = summary?.blocks.activeUsers;
   const link = (href: string) => (reach(href) ? href : undefined);
   const referral = blocks.referralRewards ? {
-    label: "邀请奖励", unit: "人", block: referralRewards, href: link("/growth/referral-rewards"),
+    label: "待结算新人", open: "查看新人礼与邀请奖励", unit: "人", block: referralRewards, href: link("/growth/referral-rewards"),
   } : null;
   const promotion = blocks.promotionRewards ? {
-    label: "活动奖励", unit: "项", block: promotionRewards,
+    label: "活动奖励", open: "查看活动奖励", unit: "项", block: promotionRewards,
     href: reach("/growth/events", "growth_promotion_read") ? "/growth/events" : undefined,
   } : null;
   const reward = referral ?? promotion;
   const rewardDetail = referral ? promotion : null;
   const rewardState = reward && cardState(reward.block);
+  // 主数还在读、分项已失败时卡按就绪显示（保留分项重试），但卡上没有可用读数：图标照旧灰底（b-domain.css 看 data-noread）。
+  const rewardEmpty = reward?.block.data === null && (!rewardDetail || rewardDetail.block.data === null);
   /** 和上一期同一时刻比；「全部」不比。上一期算不出时写原因，不写 0。 */
   const compareWith = (text: string | null, unavailable?: ReactNode): ReactNode => !summary ? undefined
     : !previous ? "累计，不对比"
@@ -302,9 +304,9 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           icon={Gift}
           value={reward.block.data === null ? "—" : fmtNum(reward.block.data)}
           unit={reward.unit}
-          compare={<>{NOW}{rewardState === "loading" ? `${reward.label}读取中…` : reward.label}</>}
-          explain={rewardDetail ? "显示现在待结算的邀请奖励人数和尚未办结的活动奖励项数，不随时段变。"
-            : referral ? "显示现在待结算的邀请奖励人数，不随时段变。"
+          compare={<>{NOW}<span data-noread={rewardEmpty ? "" : undefined}>{rewardState === "loading" ? `${reward.label}读取中…` : reward.label}</span></>}
+          explain={rewardDetail ? "显示现在等着结算新人礼和邀请奖励的新人人数（有没有邀请人都算），和尚未办结的活动奖励项数，不随时段变。"
+            : referral ? "显示现在等着结算新人礼和邀请奖励的新人人数，有没有邀请人都算，不随时段变。"
               : "显示现在尚未办结的活动奖励项数，不随时段变。"}
           rows={rewardDetail ? [{
             k: rewardDetail.href
@@ -315,7 +317,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
               : rewardDetail.block.data === null ? "…" : `${fmtNum(rewardDetail.block.data)} ${rewardDetail.unit}`,
           }] : []}
           href={reward.href}
-          openLabel={`查看${reward.label}`}
+          openLabel={reward.open}
           state={rewardState === "loading" && rewardDetail && cardState(rewardDetail.block) !== "loading" ? "ready" : rewardState ?? undefined}
           onRetry={reward.block.reload}
         />
