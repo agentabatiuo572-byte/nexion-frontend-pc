@@ -33,14 +33,14 @@ function conditionText(values: Record<string, string>) {
   const parts: string[] = [];
   if (WHOLE.test(values.directRefs.trim()) && Number(values.directRefs) > 0) parts.push(`有效直接邀请 ≥ ${count(Number(values.directRefs))}`);
   if (WHOLE.test(values.monthComputePoints.trim()) && Number(values.monthComputePoints) > 0) parts.push(`本月团队算力点 ≥ ${count(Number(values.monthComputePoints))}`);
-  if (!parts.length) return "无额外条件，买这个商品的人都能用名额";
-  return parts.join(values.unlockMode === "EITHER" ? " 或 " : " 且 ");
+  if (!parts.length) return "买的人不用满足额外条件";
+  return `买的人要满足：${parts.join(values.unlockMode === "EITHER" ? " 或 " : " 且 ")}`;
 }
 
 export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: F4LeadershipPoolOverview; skuOptions: readonly string[]; skuLabels: Record<string, string>; onClose: () => void }) {
   const taken = new Set(data.quotaRows.map(row => row.productNo).filter(Boolean));
   const free = skuOptions.filter(sku => !taken.has(sku));
-  const takenNames = data.quotaRows.filter(row => row.productNo).map(row => row.name || row.productNo);
+  const takenNames = data.quotaRows.filter(row => row.productNo).map(row => skuLabels[row.productNo] ?? row.name ?? row.productNo);
   const noSkus = !skuOptions.length;
   return (
     <OperationConfirmModal briefKind="config"
@@ -48,15 +48,14 @@ export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: 
       detail={<>新建要{APPROVER}批准，批准后才生效。</>}
       effect={<StatusTag tone="progress" filled explain={`${APPROVER}批准后才加上这一档，提交人不能批自己的；批准前这个商品照常卖，不受名额限制。`}>批准后生效</StatusTag>}
       facts={<Facts>
-        <Fact k="现有档位">{data.quotaRows.length ? `${data.quotaRows.length} 个商品已有` : "还没有"}</Fact>
         <Fact k="谁来批">{`${APPROVER}，需有购机名额修改权限和审批权限，不能是提交人`}</Fact>
       </Facts>}
-      content={noSkus
-        ? <Notice tone="warn" title="商品清单没读到">暂时选不了商品。刷新这页后再试。</Notice>
-        : takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已经有档位，不在下面的可选范围里；要改，到它那一行点「调额度」。`}</Notice> : undefined}
-      blockedReason={noSkus ? "商品清单没读到" : !free.length ? "在售商品都已经有名额档位" : undefined}
+      content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已经有档位，不在下面的可选范围里；要改，到它那一行点「调额度」。`}</Notice> : undefined}
+      blockedReason={noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined}
       statedBrief={(values) => ({
-        impact: `批准后，${values.productNo ? skuLabels[values.productNo] ?? values.productNo : "这个商品"}每月最多卖 ${WHOLE.test((values.monthlyQuota ?? "").trim()) ? count(Number(values.monthlyQuota)) : "—"} 台，${conditionText(values)}。批准前照常卖。`,
+        impact: values.productNo && WHOLE.test((values.monthlyQuota ?? "").trim())
+          ? `批准后 ${skuLabels[values.productNo] ?? values.productNo} 每月最多卖 ${count(Number(values.monthlyQuota))} 台，${conditionText(values)}；批准前照常卖，不受限制。`
+          : "批准后这个商品每月限量卖，买的人要满足填的资格条件；批准前照常卖，不受限制。",
         check: "核对商品、资格条件和每月名额；理由写清依据或工单号。",
       })}
       confirmLabel="提交审批" reasonPlaceholder="例如：活动方案或工单号"

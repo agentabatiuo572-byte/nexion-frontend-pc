@@ -35,10 +35,10 @@ function placeText(list: readonly EarnMilestone[], threshold: string) {
 export function earnCreateIssue(list: readonly EarnMilestone[], values: Record<string, string>): { message: string; field: string } | undefined {
   const key = values.milestoneKey.trim();
   if (!KEY_RULE.test(key)) return { field: "milestoneKey", message: "编号只能用字母、数字、- 和 _，最多 64 个字符" };
-  if (list.some(item => item.key.toLowerCase() === key.toLowerCase())) return { field: "milestoneKey", message: `已经有编号 ${key} 的一档，换一个编号；要改它，到列表里点「调整」` };
+  if (list.some(item => item.key.toLowerCase() === key.toLowerCase())) return { field: "milestoneKey", message: `编号 ${key} 已经有了，换一个` };
   const threshold = h5Amount(values.threshold), reward = h5Amount(values.nex);
   if (threshold === undefined || threshold < MIN_THRESHOLD || threshold > MAX_AMOUNT) return { field: "threshold", message: "门槛为 1–100,000,000 USDT，最多 6 位小数" };
-  if (list.some(item => h5Amount(item.threshold) === threshold)) return { field: "threshold", message: `已经有门槛 ${amountText(values.threshold)} USDT 的一档，门槛不能重复` };
+  if (list.some(item => h5Amount(item.threshold) === threshold)) return { field: "threshold", message: `已经有 ${amountText(values.threshold)} USDT 这一档，门槛不能重复` };
   if (reward === undefined || reward > MAX_AMOUNT) return { field: "nex", message: "奖励为 0–100,000,000 UVT，最多 6 位小数" };
 }
 
@@ -59,11 +59,11 @@ export function earnCreateRequest({ list, approver, rights }: { list: readonly E
       </Facts>
     ),
     statedBrief: (values) => {
-      const place = placeText(list, values.threshold ?? "");
-      const threshold = h5Amount(values.threshold ?? "") !== undefined ? `${amountText(values.threshold)} USDT` : "门槛";
-      const reward = h5Amount(values.nex ?? "") !== undefined ? `${amountText(values.nex)} UVT` : "奖励";
+      const filled = h5Amount(values.threshold ?? "") !== undefined && h5Amount(values.nex ?? "") !== undefined;
       return {
-        impact: `批准后加一档：累计收益满 ${threshold} 的用户可以在 App 成就页领 ${reward}${place ? `；${place}` : ""}。已经满这个门槛的用户也能领。`,
+        impact: filled
+          ? `批准后累计收益满 ${amountText(values.threshold)} USDT 的用户可在 App 成就页领 ${amountText(values.nex)} UVT；已满门槛的用户也能领。`
+          : "批准后加上这一档，累计收益满门槛的用户可在 App 成就页领奖励；已满门槛的用户也能领。",
         check: "核对编号、门槛和奖励；理由写清依据或工单号。",
       };
     },

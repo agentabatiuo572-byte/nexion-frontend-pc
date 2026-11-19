@@ -54,14 +54,17 @@ const HOSTING_ERRORS: Record<string, string> = {
 function hostingError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   const code = Object.keys(HOSTING_ERRORS).find(key => message.includes(key));
-  return code ? HOSTING_ERRORS[code] : message || "读取失败";
+  return code ? HOSTING_ERRORS[code] : `${message || "读取失败。"}读到之前不能修改。`;
 }
 
 /** PLACEHOLDER(pc-wire)：接口和代理白名单接好后搬进 lib/admin。只在这里校验一次后端给的形状。 */
 async function readHostingCenters(): Promise<HostingState> {
   const response = await guardedFetch("/api/admin/config/hosting-centers", { cache: "no-store" });
   const result = await response.json().catch(() => null) as { code?: number; message?: string; data?: { revision?: unknown; centers?: unknown } } | null;
-  if (!response.ok || !result || result.code !== 0) throw new Error(formatAdminApiError(result?.message, `HOSTING_CENTERS_READ_FAILED_${response.status}`));
+  if (!response.ok || !result || result.code !== 0) {
+    const code = Object.keys(HOSTING_ERRORS).find(key => result?.message?.includes(key));
+    throw new Error(code ?? formatAdminApiError(result?.message, `HOSTING_CENTERS_READ_FAILED_${response.status}`));
+  }
   const { revision, centers } = result.data ?? {};
   const rows = Array.isArray(centers) ? centers as Record<string, unknown>[] : [];
   const valid = Number.isSafeInteger(revision) && (revision as number) >= 0 && rows.length === 8 && rows.every(row =>
@@ -86,7 +89,7 @@ function nameIssue(name: string) {
 }
 
 function weightIssue(weight: string) {
-  return /^[1-9]\d{0,8}$/.test(weight.trim()) ? undefined : "权重是 1 起的整数";
+  return /^[1-9]\d{0,8}$/.test(weight.trim()) ? undefined : "填正整数";
 }
 
 const toDraft = (centers: Center[]): DraftRow[] => centers.map(center => ({ ...center, weight: String(center.weight) }));
@@ -221,7 +224,7 @@ export function HostingCentersPage() {
   let body;
   if (!canRead) body = <BlockState state="denied" title="没有查看托管机房的权限" detail="要有商品管理的查看权限。" />;
   else if (loading && !state) body = <Panel title="机房和分配比例" icon={Server} tone="role-2" flush><Table label="托管机房"><tbody><TableLoading columns={4} /></tbody></Table></Panel>;
-  else if (error && !state) body = <BlockState state="error" title="托管机房清单读取失败" detail={`${error} 读到之前不能修改。`} onRetry={() => void reload()} retrying={loading} />;
+  else if (error && !state) body = <BlockState state="error" title="托管机房清单读取失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
   else if (state) {
     const defaults = state.revision === 0;
     body = <>
@@ -230,7 +233,7 @@ export function HostingCentersPage() {
           <p>新设备交付时，按启用机房的权重随机分配：权重 2 的机房被分到的机会是权重 1 的两倍。停用的机房不再分到新设备，已经分在那里的设备不变。</p>
           <p>{defaults ? "还没人改过清单，用的是系统默认：8 个都启用，权重都是 1。" : "清单改过后，以最近一次批准的为准。"}</p>
         </>}>
-        {!enabled.length ? "没有启用的机房，新设备分不到机房" : `${enabled.length} 个机房启用，${centers.length - enabled.length} 个停用`}
+        {!enabled.length ? "没有启用的机房，新设备分不到机房" : enabled.length === centers.length ? `${centers.length} 个机房都启用` : `${enabled.length} 个机房启用，${centers.length - enabled.length} 个停用`}
         {defaults && enabled.length > 0 && "；用的是系统默认清单"}
         {waiting > 0 && "；有一份修改在等批准"}
         {unknown > 0 && "；上一次提交结果未知，先查询原结果"}
@@ -255,17 +258,25 @@ export function HostingCentersPage() {
   }
 
   const confirmFacts = state && draft && <Facts>
-    <Fact k="改了什么"><DiffList rows={draftChanges} /></Fact>
     <Fact k="改后">{`${draftEnabled.length} 个启用 · 权重合计 ${draftTotal}`}</Fact>
     <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
   </Facts>;
+  const confirmChanges = state && draft && <div className="rd-impact">
+    <div className="rd-impact-title">{`改了 ${draftChanges.length} 处`}</div>
+    <Table label="改了什么" className="hc-change-table">
+      <thead><tr><Th>机房</Th><Th>改了</Th><Th>现在</Th><Th>改后</Th></tr></thead>
+      <tbody>{draftChanges.map(row => { const [center, field] = String(row.label).split(" · "); return <Tr key={row.key}>
+        <Td>{center}</Td><Td>{field}</Td><Td>{row.before}</Td><Td><b>{row.after}</b></Td>
+      </Tr>; })}</tbody>
+    </Table>
+  </div>;
 
   return <RdPage className="hc-page">
     {header}
     {recovery}
     {conflictNotice}
     {body}
-    {draft && state && <Drawer open wide title="编辑托管机房清单" icon={Server} tone="role-2" sub={`${draftEnabled.length} 个启用 · 权重合计 ${draftTotal || "—"}`}
+    {draft && state && <Drawer open title="编辑托管机房清单" icon={Server} tone="role-2" sub={`${draftEnabled.length} 个启用 · 权重合计 ${draftTotal || "—"}`}
       explain="整份清单一起提交审批，批准后才生效；批准前仍按现在的清单分配。"
       busy={confirming} onClose={() => setDraft(null)}
       footer={<Decision note={touched ? submitBlock : undefined}
@@ -283,7 +294,7 @@ export function HostingCentersPage() {
               <Input aria-label={`第 ${index + 1} 个机房的名称`} value={row.name} maxLength={NAME_MAX + 8} aria-invalid={showName ? true : undefined} onChange={event => setRow(row.id, { name: event.target.value })} />
               {showName && <span className="hc-field-error" role="alert">{issue.name}</span>}
             </Td>
-            <Td><Check label="启用" checked={row.enabled} onChange={event => setRow(row.id, { enabled: event.target.checked })} /></Td>
+            <Td><Check label={<span className="rd-sr-only">{`启用 ${row.name || `第 ${index + 1} 个机房`}`}</span>} checked={row.enabled} onChange={event => setRow(row.id, { enabled: event.target.checked })} /></Td>
             <Td>
               <NumberInput aria-label={`${row.name || `第 ${index + 1} 个机房`}的权重`} value={row.weight} min={1} step={1} onChange={event => setRow(row.id, { weight: event.target.value })} />
               {showWeight && <span className="hc-field-error" role="alert">{issue.weight}</span>}
@@ -305,6 +316,7 @@ export function HostingCentersPage() {
       detail="批准后，之后交付的新设备按新清单分配；已交付的设备不变。"
       effect={<StatusTag tone="progress" filled explain={`${APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的清单分配。`}>批准后生效</StatusTag>}
       facts={confirmFacts}
+      content={confirmChanges}
       statedBrief={{ impact: "批准后，之后交付的新设备按新清单分配；已交付的设备不变。", check: "核对改了的名称、启用和权重；理由写清依据。" }}
       confirmLabel="提交审批" reasonPlaceholder="例如：托管合同编号、机房变更通知"
       onClose={() => setConfirming(false)}
