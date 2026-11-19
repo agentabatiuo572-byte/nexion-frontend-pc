@@ -5,7 +5,7 @@
 
 .hc-table td:first-child { min-width: 220px; }
 .hc-share { display: flex; align-items: center; gap: var(--rd-space-3); }
-.hc-share > :first-child { flex: 1 1 auto; min-width: 120px; }
+.hc-share > :first-child { flex: 1 1 auto; min-width: 120px; max-width: none; }
 .hc-share-num { flex: none; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rd-text); }
 .hc-muted { color: var(--rd-text-3); }
 
