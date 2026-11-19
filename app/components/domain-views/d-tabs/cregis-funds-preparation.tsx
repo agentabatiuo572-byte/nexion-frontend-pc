@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { ClipboardList, Plus, RefreshCw } from "lucide-react";
 import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, JudgmentPoints, KeyValues, Notice, Panel, Segments, Select, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
@@ -33,14 +33,16 @@ async function readPlans(network: PreparationNetwork, beforeId: string | null, r
 
 export function CregisFundsPreparation(props: Props) {
   const [network, setNetwork] = useState<PreparationNetwork>("BEP20");
+  // 切网络会换掉整块（key 带网络），新块挂上后把焦点还给网络选择，键盘用户不丢位置。
+  const switched = useRef(false);
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   if (!session?.authorities.includes("finance_d1_read")) return null;
   return <OwnedPreparation key={`${network}:${props.reloadKey}:${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
-    {...props} owner={session.adminId} ownerEpoch={epoch} network={network} onNetworkChange={setNetwork} />;
+    {...props} owner={session.adminId} ownerEpoch={epoch} network={network} switched={switched} onNetworkChange={next => { switched.current = true; setNetwork(next); }} />;
 }
 
-function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, ownerEpoch, network, onNetworkChange }: Props & {
-  owner: number; ownerEpoch: number; network: PreparationNetwork; onNetworkChange: (network: PreparationNetwork) => void;
+function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, ownerEpoch, network, switched, onNetworkChange }: Props & {
+  owner: number; ownerEpoch: number; network: PreparationNetwork; switched: MutableRefObject<boolean>; onNetworkChange: (network: PreparationNetwork) => void;
 }) {
   const lifecycle = useRef(adminAuthLifecycleEpoch()).current;
   const live = useRef(true), mutation = useRef(false), selection = useRef(0), readEpoch = useRef(0);
@@ -80,6 +82,11 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     } finally { if (owns() && at === readEpoch.current) setLoading(false); }
   }, [scope, owns, network]);
   useEffect(() => { live.current = true; void refresh(); return () => { live.current = false; selection.current++; }; }, [refresh]);
+  useEffect(() => {
+    if (!switched.current) return;
+    switched.current = false;
+    document.querySelector<HTMLElement>('[role="radiogroup"][aria-label="人工资金准备网络"] [aria-checked="true"]')?.focus();
+  }, [switched]);
   const edit = (action: () => void) => { selection.current++; setPreflight(null); setFormError(""); action(); };
   const payload = () => {
     if (!config) throw new Error("请先读取资金准备配置");
@@ -129,7 +136,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
       const target = kind === "COLLECTION" ? config!.platformAddress : config!.counterpartyAddress;
       openActionConfirm({ briefKind: "record", action: "创建资金准备单", title: "创建资金准备单", confirmLabel: "确认创建",
         effect: <StatusTag tone="neutral" filled>只保存准备记录</StatusTag>,
-        facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(body.amountUsdt)}</Fact><Fact k="类型">{kindLabel(kind)}</Fact><Fact k="来源">{body.sourceAddress}</Fact><Fact k="接收">{target}</Fact><Fact k="业务参考">{snapshot.businessReference}</Fact></Facts>,
+        facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(body.amountUsdt)}</Fact><Fact k="类型">{kindLabel(kind)}</Fact>{network === "ERC20" && <Fact k="网络">ERC20</Fact>}<Fact k="来源">{body.sourceAddress}</Fact><Fact k="接收">{target}</Fact><Fact k="业务参考">{snapshot.businessReference}</Fact></Facts>,
         detail: `${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${target} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
         reasonMin: 10, reasonMax: 300, completionCopy: "只保存准备记录，不发送资金。", run: async reason => { await command("/plans", { ...snapshot, reason }, network); setCreating(false); } });
     } catch (failure) { setFormError((failure as Error).message); }
@@ -141,7 +148,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     const held = d1PendingObjectReason(`/cregis${ROOT}/plans/${String(row.planNo)}/decision`); if (held) { setError(held); return; }
     openActionConfirm({ briefKind: "record", action: decision === "REVIEW" ? "复核准备单" : "取消准备单", title: decision === "REVIEW" ? "复核准备单" : "取消准备单",
       confirmLabel: decision === "REVIEW" ? "确认复核" : "确认取消", effect: <StatusTag tone="neutral" filled>不转账</StatusTag>,
-      facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact><Fact k="来源">{String(row.sourceAddress)}</Fact><Fact k="接收">{String(row.targetAddress)}</Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,
+      facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact>{planNetwork === "ERC20" && <Fact k="网络">ERC20</Fact>}<Fact k="来源">{String(row.sourceAddress)}</Fact><Fact k="接收">{String(row.targetAddress)}</Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,
       detail: `${kindLabel(row.kind)} · ${row.amountUsdt} USDT · ${row.sourceAddress} → ${row.targetAddress} · ${row.businessReference}。复核只确认准备信息，不授权或执行转账。`,
       reasonMin: 10, reasonMax: 300, completionCopy: decision === "REVIEW" ? "准备信息已复核，尚未转账" : "准备单已取消",
       run: reason => command(`/plans/${row.planNo}/decision`, { expectedVersion: row.version, decision, reason }, planNetwork) });
@@ -167,13 +174,14 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   return <Panel icon={ClipboardList} tone="role-2" title={network === "BEP20" ? "BEP20 人工资金准备" : "ERC20 人工资金准备"}
     explain={<><p>这里只保存 {network} 准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到 Cregis 钱包。3. Cregis 钱包到账后，按业务金额创建并复核Cregis 转平台收款钱包准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
     actions={<>
+      {/* 网络选择放在标题行右侧，和上面自动资金流程标题下的三网选择分开（位置不同，一眼看出是两块各自的选择）。 */}
+      <Segments label="人工资金准备网络" value={network} onChange={onNetworkChange} items={PREPARATION_NETWORKS.map(value => ({ value, label: value }))} />
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>
       {canWrite && config && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={block} onClick={() => setCreating(true)}>新建准备单</Button>}
     </>}>
-    <Segments label="人工资金准备网络" value={network} onChange={onNetworkChange} items={PREPARATION_NETWORKS.map(value => ({ value, label: value }))} />
     {error && config && <Notice tone="warn">{error}</Notice>}
     {loading && !config ? <BlockState state="loading" title="正在读取资金准备记录…" />
-      : unconfigured ? <BlockState state="empty" title={ERC20_CONFIGURATION_REQUIRED} detail="请联系管理员核对 ERC20 收款地址配置。" />
+      : unconfigured ? <BlockState state="empty" title={ERC20_CONFIGURATION_REQUIRED} detail="请联系管理员配置 ERC20 的 Cregis 归集钱包和平台收款钱包，配好后点「刷新」。" />
       : !config ? <BlockState state="error" title="资金准备读取失败" detail={error} onRetry={() => void refresh()} />
         : <div className="rd-stack">
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
@@ -193,7 +201,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
           {page.hasMore && <div><Button size="sm" disabled={busy || loading} onClick={() => void more()}>加载更早准备单</Button></div>}
         </div>}
 
-    <Drawer open={creating} onClose={() => setCreating(false)} title="新建准备单" icon={ClipboardList} tone="role-2" busy={busy}
+    <Drawer open={creating} onClose={() => setCreating(false)} title="新建准备单" sub={network === "ERC20" ? "ERC20" : undefined} icon={ClipboardList} tone="role-2" busy={busy}
       footer={<Decision note={createBlock} explain="只读检查不保存任何东西；创建准备单只保存准备记录，不发送资金。"
         others={<Button variant="ghost" disabledReason={checkBlock} onClick={() => void check()}>只读检查余额与条件</Button>}
         primary={<Button variant="primary" disabledReason={createBlock} onClick={create}>创建准备单</Button>} />}>
