@@ -6,6 +6,7 @@
  * 活跃用户是第五个有角色色的数，用灰（VS-10），一屏主色多一个是产品批准的例外，见重构说明。
  * 系统处理中、待审核、累计注册和设备是存量，不随时段变。卡按权限各自显示，读不到的卡写失败和重试，其余不受影响（5.6）。
  * 没有读取授权（后端省略这一块）、算不出（sales.available=false）、上一期算不出、「全部」没有活跃人数，各写各的，都不写 0。
+ * 图标每张卡固定一色，按图标认卡（产品 2026-11-19，b-domain.css）；数字的颜色仍按上面的槽位。
  * 同一个数一页只出现一次（DP-61）：待审核写在待处理那一行，那一行不显示时才写在提现卡上；净入金用比例条，不再写入金、提现金额。
  */
 import { useState, type ReactNode } from "react";
@@ -26,7 +27,7 @@ const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>�
 /** 后端这一期没有返回这一块：账号没有这一项的读取权限，不是 0。 */
 const DENIED = <>没有查看权限<Explain label="为什么没有" content="你的账号没有这一项的查看权限。需要看，请管理员在「运营账号与权限」里开通。" /></>;
 const REFUND_UNKNOWN = "这段时间有退款单查不到实际退了多少，所以先不算销售额。到「订单进度」查这些订单。";
-/** 兑换排队、奖励待结算是读取时的存量，不随时段变：对比行开头标「当前」，不和「昨日同时段」混看（不写「实时」，ST-48）。 */
+/** 设备、兑换排队、奖励待结算是读取时的存量，不随时段变：对比行开头标「当前」，不和「昨日同时段」混看（不写「实时」，ST-48）。 */
 const NOW = <span className="cc-now">当前</span>;
 
 /** 只有存量卡时切时段没有用，不放切换，按今日。 */
@@ -264,7 +265,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           value={devices.data ? fmtNum(devices.data.running) : ""}
           prefix="运行中"
           unit="台"
-          compare={devices.data ? `共 ${fmtNum(devices.data.total)} 台 · 用户设备，不含手机` : undefined}
+          compare={devices.data ? <>{NOW}共 {fmtNum(devices.data.total)} 台</> : undefined}
           rows={devices.data ? [
             { k: <>等待启动<Explain label="等待启动统计范围" content="包含待激活、等待初始化和旧任务未结清的设备。" /></>, v: `${fmtNum(devices.data.waitingActivation)} 台`, tone: devices.data.waitingActivation > 0 ? "warn" : undefined },
             { k: "已停用", v: `${fmtNum(devices.data.stopped)} 台` },

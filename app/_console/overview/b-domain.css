@@ -187,3 +187,16 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
 /* 存量卡对比行开头的「当前」：对比行同高，不撑高这一行。 */
 .cc-now { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); }
 :root[data-theme="light"] .cc-now { box-shadow: inset 0 0 0 1px var(--rd-line); }
+
+/* 经营数据卡的图标色：每张卡固定一色，按图标认卡，不随排位和张数变（产品 2026-11-19）。只染图标底，数字照 VS-11、VS-12。
+   入金、提现、销售额、新注册用角色色槽位，其余五张用补充图标色。读取中、读不到、没有查看权限时照旧是灰底。 */
+.cc .rd-metric:has(.lucide-arrow-down-to-line) { --cc-ic: var(--rd-role-2-tile); --cc-ic-ink: var(--rd-role-2-tile-ink); }
+.cc .rd-metric:has(.lucide-arrow-up-from-line) { --cc-ic: var(--rd-role-4-tile); --cc-ic-ink: var(--rd-role-4-tile-ink); }
+.cc .rd-metric:has(.lucide-arrow-left-right) { --cc-ic: var(--rd-icon-indigo-tile); --cc-ic-ink: var(--rd-icon-indigo-tile-ink); }
+.cc .rd-metric:has(.lucide-circle-dollar-sign) { --cc-ic: var(--rd-role-1-tile); --cc-ic-ink: var(--rd-role-1-tile-ink); }
+.cc .rd-metric:has(.lucide-user-plus) { --cc-ic: var(--rd-role-3-tile); --cc-ic-ink: var(--rd-role-3-tile-ink); }
+.cc .rd-metric:has(.lucide-activity) { --cc-ic: var(--rd-icon-olive-tile); --cc-ic-ink: var(--rd-icon-olive-tile-ink); }
+.cc .rd-metric:has(.lucide-server) { --cc-ic: var(--rd-icon-slate-tile); --cc-ic-ink: var(--rd-icon-slate-tile-ink); }
+.cc .rd-metric:has(.lucide-hourglass) { --cc-ic: var(--rd-icon-orchid-tile); --cc-ic-ink: var(--rd-icon-orchid-tile-ink); }
+.cc .rd-metric:has(.lucide-gift) { --cc-ic: var(--rd-icon-bronze-tile); --cc-ic-ink: var(--rd-icon-bronze-tile-ink); }
+.cc .rd-metric:not([aria-busy]):not(:has(> .rd-metric-compare > :is(.rd-inline-retry, [aria-label="为什么没有"]))) > .rd-metric-label > .rd-tile { --tone-tile: var(--cc-ic); --tone-tile-ink: var(--cc-ic-ink); }
