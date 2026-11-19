@@ -43,6 +43,7 @@ import {
   type G2PendingCommand,
 } from "@/lib/admin/g2-exchange-command";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
@@ -379,14 +380,14 @@ function G2ExchangePage() {
     setRecoveryKey(null);
   }, [batchAdminId, canProcessBatch]);
 
-  const reload = useCallback(async (silent = false) => {
+  const reload = useCallback(async (silent = false, message = "") => {
     const generation = ++readGeneration.current;
     latest.current.readFailed = true;
     latest.current.rereadPending = true;
     setRereadPending(true);
     if (!silent) setLoading(true);
     setReadFailed(true);
-    setError("");
+    setError(message);
     try {
       const next = await fetchG2ExchangeOverview();
       if (generation !== readGeneration.current) return;
@@ -1152,7 +1153,12 @@ function G2ExchangePage() {
       try {
         await processQueueBatch(saved?.limit ?? Number(value || 50), saved?.reason ?? reason);
       } catch (error) {
-        if (saved) { await reload(true); if (!pendingG2QueueBatch(batchAdminId)) openActionConfirm(null); }
+        const rejection = explicitRejectionCode(error);
+        const gateRejected = rejection === "EXCHANGE_DISCLOSURE_GATE_CLOSED" || rejection === "EXCHANGE_SWAP_PAUSED";
+        if (saved || gateRejected) {
+          await reload(true, gateRejected ? messageOf(error) : undefined);
+          if (!pendingG2QueueBatch(batchAdminId)) openActionConfirm(null);
+        }
         throw error;
       }
     },
