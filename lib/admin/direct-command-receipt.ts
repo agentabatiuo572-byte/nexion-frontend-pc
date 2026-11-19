@@ -3,8 +3,16 @@ import { formatAdminApiError, guardedFetch } from "./error-messages";
 
 export type DirectCommandReceiptState = "NOT_FOUND" | "UNKNOWN" | "PROCESSING" | "SUCCEEDED" | "REJECTED" | "NOT_EXECUTED" | "FAILED";
 
-/** Read the owner's original command, including expired receipts; never replay a write or return its payload. */
+export type DirectCommandReceipt =
+  | { state: Exclude<DirectCommandReceiptState, "REJECTED"> }
+  | { state: "REJECTED"; businessCode?: number; businessMessage?: string };
+
 export async function fetchDirectCommandReceipt(scope: string, commandKey: string, actorId: number): Promise<DirectCommandReceiptState> {
+  return (await fetchDirectCommandReceiptDetails(scope, commandKey, actorId)).state;
+}
+
+/** Read the owner's original command, including expired receipts; never replay a write or return its payload. */
+export async function fetchDirectCommandReceiptDetails(scope: string, commandKey: string, actorId: number): Promise<DirectCommandReceipt> {
   const requireActor = () => {
     const auth = useAdminAuth.getState(), session = auth.session;
     if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !session || session.passwordChangeRequired
@@ -27,7 +35,12 @@ export async function fetchDirectCommandReceipt(scope: string, commandKey: strin
     });
   }
   if (!result.data || typeof result.data !== "object" || Array.isArray(result.data)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
-  const { state } = result.data as { state?: unknown };
+  const { state, businessCode, businessMessage } = result.data as Record<string, unknown>;
   if (typeof state !== "string" || !["NOT_FOUND", "UNKNOWN", "PROCESSING", "SUCCEEDED", "REJECTED", "NOT_EXECUTED", "FAILED"].includes(state)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
-  return state as DirectCommandReceiptState;
+  if (state !== "REJECTED") return { state: state as Exclude<DirectCommandReceiptState, "REJECTED"> };
+  return {
+    state,
+    businessCode: typeof businessCode === "number" && Number.isSafeInteger(businessCode) && businessCode !== 0 ? businessCode : undefined,
+    businessMessage: typeof businessMessage === "string" && businessMessage.trim() ? businessMessage : undefined,
+  };
 }

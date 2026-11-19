@@ -28,7 +28,7 @@ import { A2RoleGrantsChange, isRoleGrantsTicket, roleGrantsSummary } from "./a2-
  *   审批单、统计和记录上，不分开读的话待审批数会跟着操作记录的筛选变。
  * - 批准、驳回、撤回、调整机制参数、立即清理、导出：先把命令号和原内容（导出连同已应用的筛选）存进本标签页再发；
  *   结果未知时关框，转成页面上方的待确认条，这张单（这项设置、清理、导出）锁住，只能按原操作重试；
- *   批准、驳回、撤回重试被后端明确拒绝（isExplicitRejection）就结案；其余重试被明确拒绝后由人解除；超过 24 小时只能核对（OP-92～OP-96、OP-153）。
+ *   批准、驳回、撤回用原决定回执核对；其他操作重试被明确拒绝后由人解除；超过 24 小时只能核对（OP-92～OP-96、OP-153）。
  * - 批准、驳回入口使用后端返回的当前资格，没有权限的不显示入口（OP-124）。
  * - 记录只追加：没有改、删记录的接口，页面也不给入口。所有写操作都要填理由。
  */
@@ -83,7 +83,8 @@ import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, ty
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
@@ -702,7 +703,8 @@ function readRoute(search: string) {
 
 /* ────────────────── 结果未知的命令 ────────────────── */
 
-type A2CommandKind = "approve" | "reject" | "withdraw" | "param" | "retention" | "export";
+type A2DecisionKind = "approve" | "reject" | "withdraw";
+type A2CommandKind = A2DecisionKind | "param" | "retention" | "export";
 type A2PendingCommand = PendingMutationRecord & {
   kind: A2CommandKind;
   /** 待确认条上写的「做了什么」。 */
@@ -1628,13 +1630,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         result = await send(key);
       } catch (cause) {
         const unknown = isA2OutcomeUncertainError(cause);
-        const payoutCoverageRefused = extra.kind === "approve"
-          && ["f4_pool_settle", "f4_leaderboard_period_payout"].includes(extra.operationCode ?? "")
-          && isExplicitRejection(cause)
-          && ["COVERAGE_SNAPSHOT_UNAVAILABLE", "COVERAGE_BELOW_REDLINE"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
         const retentionRefused = extra.kind === "retention" && isExplicitRejection(cause)
           && ["RETENTION_PARAMETERS_STALE", "RETENTION_EXPECTED_MONTHS_REQUIRED"].includes((cause as { backendMessage?: string }).backendMessage ?? "");
-        if (!unknown && (!retained || payoutCoverageRefused || retentionRefused || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)) a2Commands.forget(scope, key);
+        if (!unknown && (!retained || retentionRefused)) a2Commands.forget(scope, key);
         syncPending();
         if (retentionRefused) {
           ctx.closeActionConfirm?.();
@@ -1655,7 +1653,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdtText"> & { rule?: DecisionRule | null };
-  const runDecision = (kind: "approve" | "reject" | "withdraw", w: DecisionTicket, reason: string, by = operator) => sendCommand(
+  const runDecision = (kind: A2DecisionKind, w: DecisionTicket, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
       operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
@@ -1663,7 +1661,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key, w.operationCode)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
         : withdrawA2Operation(w.id, reason, by, key),
-    async () => {
+    async (receipt) => {
+      if (receipt.id !== w.id || receipt.status !== DECISION_STATUS[kind]) return false;
       const next = await loadMain();
       void loadFiltered(appliedRef.current);
       return next.operationQueue.some((item) => item.id === w.id && item.status === DECISION_STATUS[kind])
@@ -1724,6 +1723,37 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const notePending = (record: A2PendingCommand, text: string) =>
     setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${text}` }));
 
+  const verifyDecisionPending = async (record: A2PendingCommand, kind: A2DecisionKind) => {
+    const owner = record.commandOwnerId;
+    const hasOriginal = () => owner !== undefined && isPendingCommandOwnedBy(record, owner)
+      && record.fingerprint === `${kind}|${record.target}` && a2Commands.isDurablyStored(record.fingerprint, record.commandKey);
+    if (owner === undefined || !hasOriginal()) return;
+    const receipt = await fetchDirectCommandReceiptDetails("A2_COMMAND", record.commandKey, owner)
+      .catch((error: unknown) => ({ state: "READ_FAILED" as const, error }));
+    if (!hasOriginal()) return;
+    if (receipt.state === "READ_FAILED") {
+      notePending(record, displayAdminReadError(receipt.error));
+      return receipt;
+    }
+    if (receipt.state === "SUCCEEDED" || receipt.state === "REJECTED") {
+      a2Commands.forget(record.fingerprint, record.commandKey);
+      syncPending();
+      setPendingNotes((current) => {
+        const next = { ...current };
+        delete next[record.fingerprint];
+        return next;
+      });
+      if (receipt.state === "REJECTED") {
+        const why = formatAdminApiError(receipt.businessMessage, "IDEMPOTENCY_INVESTIGATION_CONFIRMED_REJECTED").replace(/[。.]$/, "");
+        toast(`${record.label}没有生效：${why}。原记录已解除。`, "warn");
+      } else decisionToast(kind, record.target);
+    } else {
+      notePending(record, formatAdminApiError(receipt.state === "PROCESSING" ? "INVESTIGATION_COMMAND_STILL_PROCESSING" : "A2_COMMAND_FAILED", ""));
+    }
+    await refreshAfterWrite();
+    return receipt;
+  };
+
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
   const canRetry = (record: A2PendingCommand) => {
     if (!isPendingCommandOwnedBy(record)) return false;
@@ -1753,8 +1783,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /**
    * 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功并读回到目标状态才解除待确认。
-   * 失败时只有后端对这条命令下了结论（isExplicitRejection：带原因码的 4xx）才算数：批准、驳回、撤回直接结案；
-   * 机制参数、清理、导出的后端在按原号回放前还有别的检查，被拒说明不了原操作，放出「解除待确认」由人核实。
+   * 决定重试遇到业务拒绝时查原回执：回放前的校验可能先拒绝重试请求。
+   * 机制参数、清理、导出重试明确被拒后仍由人核实，再解除待确认。
    * 登录、权限、超时、限流、IDEMPOTENCY_* 只更新说明，原命令和锁都留着（M1、OP-153）。
    */
   const retryPending = async (record: A2PendingCommand) => {
@@ -1783,32 +1813,29 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const why = ((record.kind === "approve" ? approvalRefusedText(record.operationCode, cause) : undefined)
         ?? (record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
-      if ((cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true) { toast(why, "warn"); return; }
       if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
         toast(why, "error");
         return;
       }
-      const refusedCode = (cause as { backendMessage?: unknown; reasonCode?: unknown }) ?? {};
-      const code = typeof refusedCode.reasonCode === "string" ? refusedCode.reasonCode : typeof refusedCode.backendMessage === "string" ? refusedCode.backendMessage : "";
-      if (isExplicitRejection(cause) && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw") && !/^(A2_)?REASON_/.test(code)) {
-        // 批准、驳回、撤回按原命令号重试：后端（OpsAuditCenterService.idempotentTicket）在按原号回放之前只查权限，权限拒绝不算明确拒绝；
-        // 原操作已成功会原样回放成功。所以这里被业务规则明确拒绝，就说明原操作没有生效：结案，不留待确认。
-        // 理由长度在回放之前按「当前」下限校验（AdminReasonConstraintAdvice），下限调高后原理由会被拒，证明不了原操作，留给人核实。
-        a2Commands.forget(record.fingerprint, record.commandKey);
-        syncPending();
-        toast(`${record.label}没有生效：${why}。原记录已解除。`, "warn");
+      const rejected = isExplicitRejection(cause);
+      if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)
+        && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
+        await verifyDecisionPending(record, record.kind);
         return;
       }
-      if (isExplicitRejection(cause)) {
+      if (rejected) {
         notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else notePending(record, `这次没查到结果：${why}。原记录继续保留，稍后再查询或重试。`);
     }
   };
 
-  /** 读回只给现在的事实，不解除（OP-93、OP-95）。 */
+  /** 决定按原命令读回，其余只核对现状（OP-93、OP-95）。 */
   const verifyPending = async (record: A2PendingCommand) => {
     if (!isPendingCommandOwnedBy(record)) return;
+    if (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw") {
+      return verifyDecisionPending(record, record.kind);
+    }
     if (record.kind === "export") {
       // 后端把命令号写进这次导出记录的详情，按对象查得到；查到也只说明后端生成过，文件没下到时按原操作重试。
       const found = await fetchA2Overview({ action: "A2_AUDIT_EXPORTED", object: record.commandKey }).catch(() => null);
@@ -1829,24 +1856,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       return;
     }
     const next = await loadMain().catch(() => null);
-    if (!next) { notePending(record, record.kind === "param" ? "查询失败，这项设置暂时读不到。原记录继续保留。" : "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
-    if (record.kind === "param") {
-      const now = next.mechanismParams.find((item) => item.key === record.target)?.value;
-      notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。原记录继续保留。`);
-      return;
-    }
-    const found = ticketStatus(next, record.target);
-    if (!found) { notePending(record, "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
-    // 批准、驳回、撤回只能对待审批的单发出；按单现在的状态和处理人说这次操作的结果，记录照旧保留：
-    // 同一账号在另一标签页用另一个命令号处理同一张单，读到的状态和处理人一模一样，证明不了是原命令。
-    const kind = record.kind as "approve" | "reject" | "withdraw";
-    const verb = DECISION_VERB[kind];
-    const step = retryBlock(record) ? "原记录继续保留。" : "按原请求重试可确认，不会重复执行。";
-    const now = `「${HIST_LABEL[found.status] ?? found.status}」${found.actor ? `，处理人 ${found.actor}` : ""}`;
-    notePending(record, found.status === "pending" ? `查到：这张单还是「待审批」，这次${verb}还没生效。${step}`
-      : found.status === DECISION_STATUS[kind] && (!found.actor || found.actor === session?.username) ? `查到：这张单现在是${now}，和这次${verb}对得上。${step}`
-        : found.status === "expired" ? `查到：这张单已过期，这次${verb}没有生效。原记录继续保留。`
-          : `查到：这张单现在是${now}，不是这次的${verb}，可能是别人处理的。原记录继续保留。`);
+    if (!next) { notePending(record, "查询失败，这项设置暂时读不到。原记录继续保留。"); return; }
+    const now = next.mechanismParams.find((item) => item.key === record.target)?.value;
+    notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。原记录继续保留。`);
   };
 
   /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，后端仍按这张单现在的状态校验。 */
