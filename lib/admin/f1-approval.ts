@@ -10,6 +10,8 @@ import { useAdminAuth } from "../store/admin-auth";
 const legacyF1Slot = (slot: string) => /^f-(?:vrank-(?:bootstrap|override)|payout-action):/.test(slot)
   || ["f-config:F.vrank.permanent", "f-config:F.vrank.titles", "f-config:F.prize.name"].includes(slot);
 
+export const isF1PayoutSlot = (slot: string) => slot.startsWith("f-payout-action:");
+
 export function listF1Proposals(adminId: number) {
   return fCommands.list().filter(row => row.spec?.sourceDomain === "F1" || legacyF1Slot(row.fingerprint))
     .filter(row => row.adminId === adminId || row.adminId === undefined);
@@ -89,7 +91,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+    if (recovering || isF1PayoutSlot(slot) ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
     throw error;
   }

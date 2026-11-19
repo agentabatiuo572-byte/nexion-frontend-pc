@@ -12,7 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { f1ProposalAuthority } from "@/lib/admin/f1-approval";
+import { f1ProposalAuthority, isF1PayoutSlot } from "@/lib/admin/f1-approval";
 import { f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
@@ -52,9 +52,16 @@ function ordinaryLabel(original: FDomainAttempt): { name: string; change: ReactN
     return { name: "各级头衔", change: spec && count ? `设置 ${count} 级头衔` : "原请求不完整，只能查询原结果" };
   }
   if (slot.startsWith("f-vrank-override:")) return { name: `人工调整等级 · 用户 ${id}`, change: spec ? `${spec.amplifies ? "升级" : "降级"}到 ${spec.after}` : "原请求不完整，只能查询原结果" };
-  if (slot.startsWith("f-payout-action:")) {
-    const reissue = spec ? spec.after === "REISSUED" : undefined;
-    return { name: `${reissue === undefined ? "处理奖励" : reissue ? "重发奖励" : "冲正奖励"} · 发放单 ${id}`, change: reissue === undefined ? "原请求不完整，只能查询原结果" : <Change from={reissue ? "已冲正" : "现在的状态"} to={reissue ? "已重发" : "已冲正"} /> };
+  if (isF1PayoutSlot(slot)) {
+    const action = spec?.command.params.action;
+    const clawback = spec?.command.params.usedVoucherClawback;
+    const reissue = action === "reissue";
+    const reverse = action === "reverse";
+    const to = reissue ? "已重发" : typeof clawback === "boolean" ? `已冲正 · 已用券${clawback ? "扣回" : "不扣回"}` : "已冲正";
+    return {
+      name: `${reissue ? "重发奖励" : reverse ? "冲正奖励" : "处理奖励"} · 发放单 ${id}`,
+      change: reissue || reverse ? <Change from={reissue ? "已冲正" : "现在的状态"} to={to} /> : "原请求不完整，只能查询原结果",
+    };
   }
   if (slot.startsWith("f-vrank-bootstrap:")) return { name: "首次配置九级", change: spec ? <Change from="还没有会员等级" to="九级门槛" /> : "原请求不完整，只能查询原结果" };
   return { name: "等级设置的原申请", change: "原请求不完整，只能查询原结果" };

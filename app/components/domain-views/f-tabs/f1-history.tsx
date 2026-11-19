@@ -13,6 +13,7 @@ import {
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import type { F1PromotionRecord, F1RewardPayout, F1VRankRow } from "@/lib/admin/f1-client";
+import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import type { FViewCtx } from "./types";
 import { ADMIN_APPROVER, PAYOUT_STATUS, PAYOUT_TYPES, payoutReward, rewardKind, type F1Confirm } from "./f1-shared";
 
@@ -121,20 +122,19 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
     const reward = payoutReward(record);
     const rewardText = reward.unit ? `${reward.main} ${reward.unit}` : reward.main;
     const from = PAYOUT_STATUS[record.status]?.label ?? "状态未知";
+    const voucherReverse = action === "reverse" && kind === "voucher";
     const impact = action === "reissue"
       ? kind === "fund" ? `批准后按原发放单重新记一笔 ${rewardText} 应付：付给邀请人的立即可用，付给本人的先进冷却期。批准时检查兑付覆盖率。`
         : kind === "sku" ? "批准后恢复原商品的履约和权益，并核对库存；库存不够或状态变了会被拒。"
-          : kind === "voucher" ? "第一次重发会给用户新发一张这张券；同一笔再重发不会再发新券，还是上次那张，发放记录仍显示已重发。"
+          : kind === "voucher" ? F1_VOUCHER_REISSUE
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。"
       : kind === "fund" ? record.commissionEventId
         ? `批准后收回这笔 ${rewardText}：已到账的从用户余额扣回并记账，余额不够会失败；还在冷却期的取消这笔待入账，不扣余额。`
         : "这笔没有关联的奖励记录，批准后只把状态改成已冲正，不动账。"
         : kind === "sku" ? "批准后取消对应的履约、收回权益，按履约状态退回库存。"
-          : kind === "voucher" ? "批准后按券的现状处理：没用过的作废；已用过的按券现在的面额从 USDT 可用余额扣回；已作废或查不到发券记录的只改发放记录。"
-            : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。";
-    const voucherNote = kind !== "voucher" ? ""
-      : action === "reissue" ? "第一次重发时，券已停发、过期或发完会执行失败。"
-        : "扣回不记进账单，用户只看到余额变少；余额不够扣时目前会执行失败，券和余额都不变。";
+          : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。";
+    const voucherNote = kind === "voucher" && action === "reissue" ? F1_VOUCHER_REISSUE_UNAVAILABLE : "";
+    const check = "核对发放单、用户和奖励；理由写清依据或工单号。";
     openConfirm({
       proposalSlot: `f-payout-action:${record.payoutId}`,
       action: `${action === "reissue" ? "重新发放" : "冲正"}奖励`,
@@ -152,12 +152,42 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         <Fact k="发放单">{record.payoutId}</Fact>
         <Fact k="用户">用户 {record.userId} · {dash(record.rankCode)}</Fact>
         {action === "reissue" && kind === "fund" && <Fact k="收款人">{record.sponsorUserId ? `邀请人 ${record.sponsorUserId}（原单）` : "用户本人（原单没有邀请人）"}</Fact>}
-        {action === "reverse" && kind === "voucher" && <Fact k="已用过时扣回">券现在的面额 · USDT；按比例减的券不扣</Fact>}
         <Fact k="状态"><Change from={from} to={action === "reissue" ? "已重发" : "已冲正"} /></Fact>
       </Facts>,
-      statedBrief: { impact: `${impact}不改奖励模板，也不改用户等级。`, check: "核对发放单、用户和奖励；理由写清依据或工单号。" },
+      statedBrief: (values) => ({
+        impact: `${!voucherReverse ? impact
+          : values.usedVoucherClawback === "true" ? "最近一轮的券没用过会作废。用过的按实际抵扣额从 USDT 可用余额扣回并记账。"
+            : values.usedVoucherClawback === "false" ? F1_VOUCHER_REVERSE_KEEP
+              : "只处理最近一轮发的券。没用过的作废；用过的按下面的选择处理。"}不改奖励模板，也不改用户等级。`,
+        check,
+      }),
+      businessForm: voucherReverse ? {
+        kind: "multi-field",
+        requireAnyChange: false,
+        // 两个选项各自的后果写在选项下面；选了扣回再补扣款的细则，选了不扣回上面的影响已经说完。
+        feedback: (values) => ({
+          invalid: false,
+          message: values.usedVoucherClawback === "true" ? "比例券也按实际抵扣额扣回。余额不够会失败；没有抵扣记录的旧券只改发放记录。"
+            : values.usedVoucherClawback === "false" ? ""
+              : "扣回按实际抵扣额扣 USDT 并记账。不扣回只改发放记录。",
+        }),
+        fields: [{
+          key: "usedVoucherClawback",
+          label: "如果这张券已经用过",
+          inputKind: "select",
+          segments: true,
+          options: ["true", "false"],
+          optionLabels: { true: "扣回", false: "不扣回" },
+          required: true,
+          mustChoose: true,
+        }],
+      } : undefined,
       detail: `${action === "reissue" ? `只有已冲正的奖励可以重新发放${kind === "fund" ? "，平台会再付一次这笔钱" : ""}。` : "只有已发放、已重发或待发放的奖励可以冲正。"}${voucherNote}提交后需批准才生效。`,
-      submit: async (reason) => ctx.proposePayoutAction(record, action, reason),
+      submit: async (reason, values) => {
+        const choice = values?.usedVoucherClawback;
+        await ctx.proposePayoutAction(record, action, reason,
+          voucherReverse && (choice === "true" || choice === "false") ? choice === "true" : undefined);
+      },
     });
   };
 
