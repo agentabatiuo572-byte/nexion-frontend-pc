@@ -3,7 +3,7 @@
 .hc-area-tabs { min-width: 0; }
 .hc-page { container-type: inline-size; }
 
-.hc-table td:first-child { min-width: 220px; }
+.hc-table td:first-child { min-width: 280px; }
 .hc-table td:first-child .rd-cell { max-width: 360px; }
 .hc-table td:first-child .rd-cell-main { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
 .hc-share { display: flex; align-items: center; gap: var(--rd-space-3); }

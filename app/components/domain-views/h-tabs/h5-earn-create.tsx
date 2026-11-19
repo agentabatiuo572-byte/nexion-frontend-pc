@@ -44,7 +44,7 @@ export function earnCreateIssue(list: readonly EarnMilestone[], values: Record<s
   if (label.length > 128) return { field: "label", message: "名称最多 128 个字符" };
   const threshold = h5Amount(values.threshold), reward = h5Amount(values.nex);
   if (threshold === undefined || threshold < MIN_THRESHOLD || threshold > MAX_AMOUNT) return { field: "threshold", message: "门槛为 1–100,000,000 USDT，最多 6 位小数" };
-  if (list.some(item => h5Amount(item.threshold) === threshold)) return { field: "threshold", message: `已经有 ${amountText(values.threshold)} USDT 这一档，门槛不能重复` };
+  if (list.some(item => h5Amount(item.threshold) === threshold)) return { field: "threshold", message: `已有 ${amountText(values.threshold)} USDT 这一档，换一个` };
   if (reward === undefined || reward > MAX_AMOUNT) return { field: "nex", message: "奖励为 0–100,000,000 UVT，最多 6 位小数" };
 }
 

@@ -259,7 +259,8 @@ export function HostingCentersPage() {
 
   const confirmFacts = state && draft && <Facts>
     <Fact k="改后">{`${draftEnabled.length} 个启用 · 权重合计 ${draftTotal}`}</Fact>
-    <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
+    <Fact k="谁来批">另一位管理员，不能是提交人</Fact>
+    <Fact k="需有权限">审批权限和商品修改权限</Fact>
   </Facts>;
   const confirmChanges = state && draft && <div className="rd-impact">
     <div className="rd-impact-title">{`改了 ${draftChanges.length} 处`}</div>
