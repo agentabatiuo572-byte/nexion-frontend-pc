@@ -137,6 +137,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          requireReason={mc.requireReason}
           measureReason={mc.measureReason}
           edit={mc.edit}
           businessForm={mc.businessForm}

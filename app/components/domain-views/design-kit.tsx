@@ -3787,7 +3787,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason = true, initialReason, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; initialReason?: string; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? initialReason ?? "");
@@ -3868,8 +3868,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
-  const reasonPolicyReady = authoritativeReasonMin !== null;
-  const reasonMin = reasonPolicyReady ? Math.max(requestedMinimum, authoritativeReasonMin) : requestedMinimum;
+  const reasonPolicyReady = !requireReason || authoritativeReasonMin !== null;
+  const reasonMin = Math.max(requestedMinimum, authoritativeReasonMin ?? requestedMinimum);
   const requestedMaximum = requestedReasonMax ?? (isJ4Command
     ? 200
     : activeBusinessForm?.kind === "multi-field"
@@ -3885,7 +3885,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // cannot be used to pad an operation reason to the configured minimum.
   const visibleLength = visibleReasonLength(reason);
   const reasonLength = measureReason ? measureReason(reason) : visibleLength;
-  const reasonOk = visibleLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
+  const reasonOk = !requireReason || (visibleLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax));
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   // 表单自己写了校验提示的，理由下面的清单不再写一遍（VS-105）。
   const formFeedback = surface && activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.feedback?.(businessValue) : undefined;
@@ -3919,6 +3919,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     !reasonOk && (visibleLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
   ].filter(Boolean);
   useEffect(() => {
+    if (!requireReason) return;
     let active = true;
     setAuthoritativeReasonMin(null);
     setAuthoritativeReasonMax(null);
@@ -3938,7 +3939,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       }
     });
     return () => { active = false; };
-  }, [reasonPolicyOptional]);
+  }, [reasonPolicyOptional, requireReason]);
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSubmitting(true);
@@ -3946,7 +3947,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     setSubmitUnknown(false);
     try {
       if (retryApproval) await retryApproval();
-      else await onConfirm(reason.trim(), submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
+      else await onConfirm(requireReason ? reason.trim() : "", submittedValue || (emptyChosen && spec?.emptyOption ? "" : undefined), activeBusinessForm ? businessValue : undefined);
     } catch (error) {
       // 没权限再填也没用：提示、关框、重读权限（OP-81、OP-132）。
       if (isPermissionDenied(error)) {
@@ -4221,7 +4222,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         </div>
       )}
       {surface && !approval && !coverageFirst && coverageNotice}
-      <div className={surface ? "field rd-reason-field" : "field"}>
+      {requireReason && <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
           ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span></label>
           : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
@@ -4247,7 +4248,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             请检查以下内容： {listedMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{listedMissing.length > 4 ? "…" : ""}。
           </div>
         )}
-      </div>
+      </div>}
       </fieldset>
     </Modal>
   );

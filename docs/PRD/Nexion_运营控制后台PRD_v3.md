@@ -273,7 +273,7 @@
 | W02 七天上涨概率 | 同 W01，字段 pumpProbability | 提高审批、降低直存；非 dev 环境均禁止。保存计划、推进复制到当前配置，但目前不影响公布价。 |
 | W03 七天波动幅度 | 同 PUT 七帧 CAS | 已停用（a18095cf）：实质修改返回 422 RETIRED_FEATURE；页面只读显示旧值，有原操作时只能查询或按原请求重试。推进仍把旧值抄进当天配置，发布价格直接取目标价，不随机波动。 |
 | W04 自动推进时间 | PATCH `/nex/curve/controls/schedule` 原 rawValue；首次走 initial-schedule 审批并携 scheduleRevision | 只配置排程、不当场改价；同一 UTC 日期最多推进一次。支持 `HH:mm ZoneId` 或后端 cron 格式，缺时区按 UTC。 |
-| W05 固定生效日 | PATCH controls/pin，原 expectedValue | 选择 D1–D7 立即按该帧发布现价，停止自动推进；选不固定只清 pin，不立即发布。拟发布价高于现价时重估覆盖率，现行规则不审批。 |
+| W05 固定生效日 | PATCH controls/pin，原 expectedValue；提价改走 pin 审批，携 pinRevision | 目标价高于现价时，按拟发布价重估覆盖率并提交双人审批。批准前本次申请不改价格，批准时按当时曲线复核并发布该日目标价。等于或低于现价时直接发布该日目标价并停止自动推进。选不固定只清 pin，现价不变。 |
 | W06 D7 之后 | PATCH controls/loop，原 expectedValue | 保存不改现价；循环则 D7→D1，停在末值则后续推进仍用 D7，不等于 paused。 |
 | W07 应急现价 | PATCH `/nex/overrides/currentPrice` 原 expectedValue；提高走 current-price 审批并携 priceRevision | 仅 dev 允许。降低立即发布，提高批准后发布；七天计划不变，下一次实际发布帧才覆盖。新兑换在后端执行时取价，已完成成交不重算。 |
 | W08 当前波动幅度 | PATCH overrides/volatilityPct，原 expectedValue | 保存配置；下一次 applyFrame 覆盖，目前不影响发布价。 |
@@ -281,11 +281,13 @@
 | W10 偏离告警阈值 | PATCH overrides/deviationPct，原 expectedValue | 保存直到再改；目前无比价或告警消费者。 |
 | W11 初始成本价 | PATCH overrides/costBasis，原 expectedValue | 保存直到再改；App API/store 读取，但当前没有盈亏展示，不影响现价或兑换。 |
 | W12 暂停自动变化 | PATCH overrides/paused，value=true、原 false | 直接保存，停自动推进和五分钟采样；不阻挡有权的人工现价或 pin 发布。 |
-| W13 恢复自动变化 | 同 paused，value=false、原 true | 真实超管且暂停权；用当前 B1 快照检查可靠性和红线，不按下一帧预测、不审批、不立即推进；pin 或缺排程仍不自动推进。 |
+| W13 恢复自动变化 | 同 paused，value=false、原 true；提价改走 resume 审批，携 pausedRevision | PC 保持超级管理员及暂停权限门槛。按固定日或下一推进日的目标价比较现价，D7 后遵守循环或停在末值。提价走双人审批，提交和批准按当时目标价重估覆盖率；其余按当前 B1 快照检查后直写。恢复只解除暂停，等实际推进才发布价格；固定或未配置排程期间仍不自动推进。 |
 
 价格输入大于 0、最多八位小数，页面上限 1,000,000 USDT；概率 0–1、页面步长 0.01（协议最多六位）；波动 0–20%、阈值 0–50%。成本后端没有相同上限，页面现有上限保留，不擅改交互。理由按服务端策略及可见字符要求校验，读取失败不提交。
 
-**④ G3 专用审批**：仅 W01/W02/W07 提高及 W04 首次配置。POST `/api/admin/platform/audit/operations`，`sourceDomain=G3`、`command={domain:G,op:g3_market_policy_change,params:{values}}`。values 为原十进制字符串和 expectedRevision；曲线另带 dayIndex/field。目标分别为 `G:nex_market_curve:weekly`、`G:nex_market_override:currentPrice`、`G:nex_market_control:schedule`，obj 与 target.id 一致。maker 必须具对应细分业务码；checker 必须另一位真实超管、有 A2 批准权，现行专用分支不再要求其具 maker 的细分业务码。提案只创建待审单，不发布价格；批准重新核对 revision、环境与覆盖率。
+**2026-11-19 视觉复审（hd-bs-vis，2b2a0380e、cf874ef6a）**：W05、W13 走审批时确认框写「这次申请批准前不改价；没有暂停时，现价仍按排程推进。批准时按那天当时的目标价重算兑付覆盖率并发布。」（固定）或「这次申请批准前不改价，价格自动变化仍暂停。批准时按当时的七天计划重算兑付覆盖率；恢复后到下一次推进才变价。」（恢复）；提交成功提示「已提交审批，这次申请批准前不改价」；运行方式行写「固定到比现价高的一天要审批，其余直接生效」「暂停直接生效；恢复会提价时要审批」。
+
+**④ G3 专用审批**：W01/W02/W05/W07/W13 提高及 W04 首次配置。POST `/api/admin/platform/audit/operations`，`sourceDomain=G3`、`command={domain:G,op:g3_market_policy_change,params:{values}}`。values 含 action、字符串 value 及 expectedRevision；曲线另带 dayIndex/field。目标分别为 `G:nex_market_curve:weekly`、`G:nex_market_override:currentPrice`、`G:nex_market_control:schedule`、`G:nex_market_control:pin`、`G:nex_market_override:paused`，obj 与 target.id 一致。固定提价传 `{action:"pin", value:"Dn", expectedRevision:pinRevision}`，发起人须有 `finprod_g3_write`。恢复提价传 `{action:"resume", value:"false", expectedRevision:pausedRevision}`，发起人须有 `finprod_g3_engine_pause_toggle`；两类均为 fund、amplifies=true。批准人必须是另一位有 `platform_a2_operation_approve` 的真实超管。提案只创建待审单，批准前本次申请不改变价格或运行状态。批准重新核对修订及覆盖率。固定和恢复的修订分别绑定固定设置、暂停状态，批准按当时的曲线和推进位置复核（后端 `07ec3930`，G3-BE-07 待处理）。不能比较现价时，先重新读取以确定固定或恢复的提价方向；暂停及解除固定可直接保存。
 
 **⑤ 结果未知 R1**：W01–W13 均从 G3 原对象槽保存完整请求、原值/版本/七帧、理由、命令号与首次时间，确认持久保存后才发送。结果未知冻结原输入，关闭或刷新仍显示标记并从原记录恢复；有效期内只按原 body 与原命令号重试。同对象不能用改过的内容另建号。恢复暂停/恢复以及枚举类操作时，动作、原值、目标值、事实区和成功反馈由原记录构造，不随当前已落地的新值反转；原请求了结后才提供新动作。后端 `G2G3AdminCommandService` / A2_COMMAND 按 scope、key、payload 去重；不改 G4/G7 共用执行器行为。
 
@@ -696,7 +698,7 @@
 
 2026-11-15 按后端 `111e00cd` 同步现行合同，入口 `/growth/quest`。只管理任务目录、完成事件绑定及配置；没有代用户领取奖励的入口。旧 mock 的固定任务数、9/8条优先级、三种完成判定、月度派发与备用卡展示不再作为当前功能合同。
 
-**页面与数据**：四个页签为新手任务、每周任务、完成条件、历史月度挑战。App 不显示的首页备用卡、周冠军说明文字和任务时长说明文字，产品 2026-11-19 决定从后台删除，页面不再显示（后端仍返回这三项，退役待办 H3-BE-15，页面不读）。GET `/api/admin/growth/quest-events/tasks` 独立于H4读权；任务目录包含启用、停用、归档，编号是身份，不按名称或数组下标提交。首屏经营统计缺领取率、本周完成/发放和月度人数，显示缺失，不填0。监控是定义COUNT；11ea3732的sample24h/completed24h为真实completed_at落DB滚动24h闭窗、当前三种完成状态的实例数，PC优先completed24h，旧端缺字段沿原sample读法；异常比例仍按过去24h创建实例的当前失败/异常/拒绝算到1位。missionCode是任务码，b3Default/retentionOnlyDefault是静态默认，attributionAvailable=false不代表实际归因。旧表头和说明交视觉，详见H3经营统计读取PRD。
+**页面与数据**：四个页签为新手任务、每周任务、完成条件、历史月度挑战。App 不显示的首页备用卡、周冠军说明文字和任务时长说明文字，产品 2026-11-19 决定从后台删除，页面不再显示（后端仍返回这三项，退役待办 H3-BE-15，页面不读）。GET `/api/admin/growth/quest-events/tasks` 独立于H4读权；任务目录包含启用、停用、归档，编号是身份，不按名称或数组下标提交。「经营统计」按后端给的领取率、本周完成和发放、本月有任务记录的用户显示，缺哪项写「—」，不填0。监控是定义COUNT；11ea3732的sample24h/completed24h为真实completed_at落DB滚动24h闭窗、当前三种完成状态的实例数，PC优先completed24h，旧端缺字段沿原sample读法；异常比例仍按过去24h创建实例的当前失败/异常/拒绝算到1位。missionCode是任务码，b3Default/retentionOnlyDefault是静态默认，attributionAvailable=false不代表实际归因。旧表头和说明交视觉，详见H3经营统计读取PRD。
 
 **新手任务（DAY_ONE）**：注册时冻结任务、绑定、名称、类别、路由、译文、三档政策、H1任务加成及完成期限（后端叫资格期限 `growth.quest.day_one.eligibility_hours`）。全额边界固定24小时，完成期限24–720整数小时，App倒计时按完成期限走；`dayOne.windowMs`（任务时长说明文字）已停用，新写被拒，不改倒计时；产品 2026-11-19 决定从后台删除这一行。三档格式为“全额 / 宽限 / 0 UVT”，全额>0、0≤宽限≤全额，有效小数≤6；完成全组才可领取，金额档位由领取时刻的注册年龄确定，等于资格终点为过期。页面时间线和确认事实按领取时刻写明档位；完成整组仍是领取前置。
 

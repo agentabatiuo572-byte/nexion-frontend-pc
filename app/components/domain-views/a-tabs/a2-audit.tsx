@@ -48,6 +48,7 @@ import {
   fetchA2RetentionPreview,
   fetchA2Overview,
   isA2OutcomeUncertainError,
+  isFirstA2DisclosurePublish,
   rejectA2Operation,
   runA2RetentionNow,
   updateA2MechanismParam,
@@ -1168,12 +1169,15 @@ function deviceApprovalValue(value: string, operationCode?: string) {
  * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
  * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
  */
-function i5MatrixVersionText(summary: string, version: string) {
-  return version ? summary.startsWith(`${version} · `) ? summary : version : "未配置";
+function i5MatrixVersionText(version: string, countries?: string[] | null) {
+  return `${version || "未配置"} · ${countries?.join("、") || (countries ? "未配置" : "未提供")}`;
 }
 
 const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
-  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.before, row.disclosureReview.expectedVersion);
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.expectedVersion, row.disclosureReview.originalCountryCodes);
+  if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.previousVersion
+    ?? (isFirstA2DisclosurePublish(row.disclosureReview) ? "无上一版" : "未提供");
+  if (row.operationCode === "i5_disclosure_publish" || row.operationCode === "i4_disclosure_publish") return "未提供";
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_FROM[fund.state] ?? "批准时的状态";
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.before);
@@ -1186,7 +1190,7 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
-  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.after, row.disclosureReview.version);
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
@@ -1201,6 +1205,20 @@ const changeAfter = (row: { after: string; obj?: string; action?: string; operat
 const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
   : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
     .replace(/；(NOT_SUBMITTED|PENDING|NEEDS_MORE|PASSED)$/, (_, state: string) => `；${ambassadorMaterialStateLabel(state)}`);
+
+function g3ControlReviewAfter(before: Record<string, unknown>, after: Record<string, unknown>, operationCode?: string) {
+  if (operationCode !== "g3_market_policy_change") return undefined;
+  if ("引擎状态" in before && "引擎状态" in after && "恢复后推进" in after) return after;
+  if (!("钉住控制" in before) || !("钉住控制" in after)) return undefined;
+
+  // For a pin proposal, B1 values the same target price that the frozen review proposes to publish.
+  const currentPrice = "当前全站价格（USDT/UVT）";
+  const day = after["钉住控制"];
+  const price = after["B1拟估值价格（USDT/UVT）"];
+  if (!(currentPrice in before) || currentPrice in after || typeof day !== "string" || !/^D[1-7]$/.test(day)
+    || typeof price !== "number" || !Number.isFinite(price) || price <= 0) return after;
+  return { ...after, [currentPrice]: `拟按 ${day} 目标价 ${valueText(currentPrice, price)} 发布` };
+}
 
 export function A2ChangeReview({ before, after, omit = [], operationCode, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; children?: ReactNode }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
@@ -1219,16 +1237,18 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, childr
       {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value, labels)}</p>}</Fold>}
     </>;
   } else {
-    const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
     const was = b?.kind === "object" ? b.value : undefined;
-    const removed = was ? Object.keys(was).filter((key) => !omit.includes(key) && !(key in a.value)) : [];
-    const groups = keys.filter((key) => isRowList(a.value[key]));
-    const plain = [...keys.filter((key) => !isRowList(a.value[key])), ...removed];
+    const g3Control = was && g3ControlReviewAfter(was, a.value, operationCode);
+    const next = g3Control ?? a.value;
+    const keys = Object.keys(next).filter((key) => !omit.includes(key));
+    const removed = was ? Object.keys(was).filter((key) => !omit.includes(key) && !(key in next)) : [];
+    const groups = keys.filter((key) => isRowList(next[key]));
+    const plain = [...keys.filter((key) => !isRowList(next[key])), ...removed];
     const rows: DiffRow[] = plain.map((key) => ({
       key,
       label: labels[key] ?? key,
-      before: valueText(key, was?.[key], labels),
-      after: valueText(key, a.value[key], labels),
+      before: g3Control && was && !(key in was) ? undefined : valueText(key, was?.[key], labels),
+      after: g3Control && !(key in next) ? undefined : valueText(key, next[key], labels),
     }));
     body = <>
       {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows, labels)}</Fact></Facts>}
@@ -1239,9 +1259,9 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, childr
         const old = was?.[key];
         return (
           <div key={key} className="a2-change-group">
-            <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, a.value[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows labels={labels} name={key} rows={a.value[key] as Record<string, unknown>[]} />
-            {isRowList(old) && !same(old, a.value[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} /></Fold>}
+            <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, next[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
+            <ReviewRows labels={labels} name={key} rows={next[key] as Record<string, unknown>[]} />
+            {isRowList(old) && !same(old, next[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} /></Fold>}
           </div>
         );
       })}
@@ -2062,6 +2082,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
             : i5Publish ? "批准后这版封存，用户看到的版本不变。"
+            // F1 奖励发放按奖励类型影响不同（商品、自定义奖励不动钱），实际影响写在改动里。
+            : w.operationCode === "f_reward_payout_action" ? "立即执行，影响见改动；失败不改原值。"
             : isFunds ? "立即执行，改资金或账目；失败不改原值。"
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"

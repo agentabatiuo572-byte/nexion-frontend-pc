@@ -2,7 +2,7 @@
 
 /**
  * H3 经营统计：任务 GET 附带的有来源统计（后端 50ca59b0 questTasksWithOperatingStats）。
- * 后端给几个量就给几个位置；读不到写「—」和原因，不当 0；金额按币种分开、按原值；月度人数后端没有，写明没有。
+ * 后端给几个量就给几个位置；读不到写「—」和原因，不当 0；金额按币种分开、按原值；本月人数没给时写明没有。
  * 旧后端没有这些字段时页面不用这里，保留原来的占位格。
  */
 import { Coins } from "lucide-react";
@@ -49,7 +49,10 @@ function rowsOf(s: H3Stats): Row[] {
     { key: "paid", name: "本周发放的任务奖励", range: week,
       value: !ok ? "—" : paid.length ? paid.map((row) => `${money(row.amount)} ${row.asset}`).join("；") : `0.00 ${s.weeklyNexAsset ?? "UVT"}`,
       basis: !ok ? "这次读不到" : paid.length ? `已到账，按币种分开：${paid.map((row) => `${row.asset} ${count(row.ledgerCount)} 笔`).join("、")}` : "本周还没有到账的任务奖励" },
-    { key: "monthly", name: "正在做月度挑战的人数", range: "—", value: "没有这项统计", basis: "月度挑战不记录谁在做" },
+    { key: "monthly", name: "本月有任务记录的用户", range: "本月",
+      value: ok && s.monthlyInflightAvailable && s.monthlyInflight != null ? `${count(s.monthlyInflight)} 人` : "—",
+      basis: !ok ? "这次读不到" : s.monthlyInflightAvailable && s.monthlyInflight != null
+        ? "本月完成任务或参加活动的用户，一人算一次" : "没有这项统计" },
   ];
 }
 
