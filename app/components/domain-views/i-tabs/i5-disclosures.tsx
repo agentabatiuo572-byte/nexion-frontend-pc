@@ -354,7 +354,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const gateEffect = activeGates.length ? [
     exchangeRestricted ? exchangeGateEffect : "",
     confirmationGates.length ? `没确认的用户做${confirmationGates.join("、")}时会被拦下。` : "",
-  ].filter(Boolean).join(" ") : "现在没有受限操作，不确认也不影响用户使用。";
+  ].filter(Boolean).join(" ") : "现在没有受限动作，不确认也不影响用户使用。";
 
   // ---------- 地区 ----------
   const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
@@ -633,7 +633,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         ? "批准后用户还看当前版本；「调整生效版本」换成这版后，用户原来的确认失效，之后也能切回旧版本或归档生效设置。这个版本封存，不能再改或删除。"
         : "批准后用户还读不到披露，「设置生效版本」选了这版才显示。这个版本封存，不能再改或删除。", check: change.onlySummary ? "这次只改了总文，核对总文的新旧对照，理由写清版本依据。" : `核对总文和七章的${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
-        <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={confirmationGates.length ? `切换后没确认的用户做${confirmationGates.join("、")}时会被拦下。` : exchangeRestricted ? "现在没有要先确认才能做的操作，不确认也不影响使用；兑换的阻断和确认无关。" : "现在没有受限的操作，不确认也不影响使用。"} /></Fact><Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{change.headline}</Fact></Facts>
+        <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={confirmationGates.length ? `切换后没确认的用户做${confirmationGates.join("、")}时会被拦下。` : exchangeRestricted ? "现在没有要先确认才能做的操作，不确认也不影响使用；兑换的阻断和确认无关。" : "现在没有受限动作，不确认也不影响使用。"} /></Fact><Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{change.headline}</Fact></Facts>
         <PublishDiff current={current} target={row} />
       </>,
       businessForm: {
@@ -890,7 +890,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </Table>
     </Fold>
 
-    <Fold title="受限动作" icon={ShieldCheck} tone="role-4" explain={<><p>{gateEffect}</p><p>兑换不看用户有没有确认；其他操作只拦没重新确认的用户，相当于让用户重新签一次条款。</p><p>改受限动作要审批。监管要求马上停业务，去「紧急停用开关」。</p></>} summary={activeGates.length ? `${activeGates.length} 项受限${exchangeRestricted ? "，兑换被全平台阻断" : "，未确认的用户会被拦下"}` : "当前没有受限操作"}>
+    <Fold title="受限动作" icon={ShieldCheck} tone="role-4" explain={<><p>{gateEffect}</p><p>兑换不看用户有没有确认；其他操作只拦没重新确认的用户，相当于让用户重新签一次条款。</p><p>改受限动作要审批。监管要求马上停业务，去「紧急停用开关」。</p></>} summary={activeGates.length ? `${activeGates.length} 项受限${exchangeRestricted ? "，兑换被全平台阻断" : "，未确认的用户会被拦下"}` : "当前没有受限动作"}>
       {!gates.length && <p className="rd-note">现在没有受限动作。</p>}
       <ConfigList label="受限动作">
         {gates.map((gate) => (
