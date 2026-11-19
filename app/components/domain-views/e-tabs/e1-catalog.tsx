@@ -241,14 +241,16 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     }
     const gatePhaseOptions = g?.phase && !phaseOptions.includes(g.phase) ? [g.phase, ...phaseOptions] : phaseOptions;
     const gatePhaseLabels = Object.fromEntries(gatePhaseOptions.map((phaseId) => [phaseId, phaseLabel(phaseId)]));
-    const skuId = g?.id ?? gateSkuOptions[0], phase = (g?.phase ?? phaseCur) || gatePhaseOptions[0];
+    const mustChoosePhase = !g && !phaseCur;
+    const skuId = g?.id ?? gateSkuOptions[0];
+    const phase = mustChoosePhase ? "" : (g?.phase ?? phaseCur) || gatePhaseOptions[0];
     const canChangeForce = g?.forceUnlock ? ctx.forceLock : ctx.forceUnlock;
     ctx.openActionConfirm({ briefKind: "config",
       name: g ? `编辑上架条件 · ${(g.name)}` : "新增上架条件",
       op: "generation-gate-save",
       generationGateId: g?.id,
       generationGate: { skuId, phase, forceUnlock: g?.forceUnlock ?? false },
-      facts: <Facts>{(g || gateSkuOptions.length === 1) && <Fact k="商品">{g?.name || skus.find(s => s.id === skuId)?.name || skuId}</Fact>}{gatePhaseOptions.length === 1 && <Fact k="开放阶段">{phaseLabel(phase)}</Fact>}{!canChangeForce && <Fact k="强制提前开放">{g?.forceUnlock ? "是" : "否"} · 当前账号不能调整此方向</Fact>}</Facts>,
+      facts: <Facts>{(g || gateSkuOptions.length === 1) && <Fact k="商品">{g?.name || skus.find(s => s.id === skuId)?.name || skuId}</Fact>}{!mustChoosePhase && gatePhaseOptions.length === 1 && <Fact k="开放阶段">{phaseLabel(phase)}</Fact>}{!canChangeForce && <Fact k="强制提前开放">{g?.forceUnlock ? "是" : "否"} · 当前账号不能调整此方向</Fact>}</Facts>,
       businessForm: {
         kind: "multi-field", requireAnyChange: !!g,
         amplifies: v => v.forceUnlock === "true" || !canChangeForce && !!g?.forceUnlock,
@@ -256,7 +258,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           ...(!g && gateSkuOptions.length > 1 ? [{ key: "skuId", label: "商品", current: skuId, inputKind: "select" as const, options: gateSkuOptions, optionLabels: Object.fromEntries(skus.map(s => [s.id, `${s.name} · ${s.id}`])), wide: true }] : []),
           { key: "name", label: "展示名称", current: g?.name ?? "", required: false, help: "留空使用商品名称" },
           { key: "releaseMonth", label: "计划开放月", current: String(g?.releaseMonth ?? Math.min(12, Math.max(1, platformMonth))), inputKind: "number", min: 1, max: 12, step: 1, required: true },
-          ...(gatePhaseOptions.length > 1 ? [{ key: "phase", label: "开放阶段", current: phase, inputKind: "select" as const, options: gatePhaseOptions, optionLabels: gatePhaseLabels }] : []),
+          ...(mustChoosePhase || gatePhaseOptions.length > 1 ? [{ key: "phase", label: "开放阶段", current: phase, inputKind: "select" as const, mustChoose: mustChoosePhase, options: gatePhaseOptions, optionLabels: gatePhaseLabels }] : []),
           { key: "phaseOffset", label: "开放偏移（月）", current: String(g?.phaseOffset ?? 0), inputKind: "number", min: -12, max: 12, step: 1, required: true, explain: "绝对偏移，计划月加偏移等于有效开放月。" },
           { key: "eligibility", label: "设备资格", current: String(g?.eligibility ?? false), inputKind: "select", options: ["false", "true"], optionLabels: { false: "未补录", true: "已补齐" } },
           ...(canChangeForce ? [{ key: "forceUnlock", label: "强制提前开放", current: String(g?.forceUnlock ?? false), inputKind: "select" as const, options: ["false", "true"], optionLabels: { false: "否", true: "是" }, explain: "只跳过运营月数，阶段和设备资格仍须满足；变更方向须专门权限。" }] : []),

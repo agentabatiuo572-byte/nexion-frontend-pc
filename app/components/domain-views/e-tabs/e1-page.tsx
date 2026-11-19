@@ -11,7 +11,7 @@ import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -19,7 +19,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { McSpec } from "./types";
-import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, type SkuForm } from "./data";
+import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1PhaseId, type SkuForm } from "./data";
 import { E1Catalog, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest } from "./e1-editor";
 import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
@@ -139,9 +139,18 @@ export function E1Page() {
       }
       case "phase-archive": return gatesReadBlock ?? catalogReadBlock ?? archiveCurrentBlock(input.phaseId);
       case "generation-gate-save": {
-        if (gatesReadBlock) return gatesReadBlock;
-        if (!input.generationGateId) return catalogReadBlock ?? phaseBlock;
-        return values && (values.forceUnlock ?? String(input.generationGate?.forceUnlock)) === "true" ? phaseBlock : undefined;
+        const sourceBlock = gatesReadBlock ?? (!input.generationGateId ? catalogReadBlock : undefined);
+        if (sourceBlock || !values || !phaseBlock) return sourceBlock;
+        if ((values.forceUnlock ?? String(input.generationGate?.forceUnlock)) === "true") return phaseBlock;
+        if (input.generationGateId) return undefined;
+        const phaseId = values.phase;
+        if (!phaseId) return "请先选择开放阶段";
+        if (!gates?.phaseOrder.includes(phaseId) || !gates.phases.some(phase => phase.p === phaseId && phase.status !== "archived")) {
+          return formatAdminApiError("E1_GATE_PHASE_INVALID", "");
+        }
+        const sku = skus.find(item => item.id === (values.skuId ?? input.generationGate?.skuId));
+        if (!sku || resolveE1PhaseId(gates.phases, sku.unlock.trim()) !== phaseId) return formatAdminApiError("E1_GATE_SKU_PHASE_MISMATCH", "");
+        return undefined;
       }
       case "generation-gate-force": return gatesReadBlock ?? (input.generationGate?.forceUnlock ? catalogReadBlock ?? phaseBlock : undefined);
       case "phase-save": return gatesReadBlock ?? (input.phaseId && values?.status === "archived"
