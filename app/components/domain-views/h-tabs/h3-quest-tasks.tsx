@@ -1393,19 +1393,20 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         </div>}
         <ConfigList label="周冠军">
           <ConfigRow name="周冠军说明文字" value={champion ? operatorCopyText(champion) : "还没填"}
-            sub={<StatusTag tone="neutral" icon={Trophy}>只是展示文字，不发奖</StatusTag>}
-            what="一段说明文字。" effect="系统不选冠军、不发奖，也不按里面的数字算钱。真正的冠军奖励规则还没定。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:5"]), () => openSimpleConfig("weekly.champBonus", "周冠军展示文字", text(model.weeklyChampionBonus), false, {
+            sub={<StatusTag tone="neutral" icon={Trophy}>App 不显示，也不发奖</StatusTag>}
+            what="一段只在后台看得到的说明文字。" effect="App 和 H5 都不显示这段字；系统不选冠军、不发奖，也不按里面的数字算钱。"
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:5"]), () => openSimpleConfig("weekly.champBonus", "周冠军说明文字", text(model.weeklyChampionBonus), false, {
               title: "改周冠军说明文字",
               effect: <StatusTag tone="neutral">只改文字</StatusTag>,
               facts: <Facts>
-                <Fact k="改的是">一段展示文字</Fact>
+                <Fact k="改的是">一段只在后台看得到的文字</Fact>
+                <Fact k="App">不显示，H5 也不显示</Fact>
                 <Fact k="发奖">不发：系统不选冠军，也不按文字里的数字算钱</Fact>
               </Facts>,
-              statedBrief: { impact: "只改说明文字，不会给任何人发奖。", check: "文字里别承诺系统做不到的奖励。" },
+              statedBrief: { impact: "只改后台这段字；App 不显示，也不会给任何人发奖。", check: "核对文字；理由写清依据。" },
               confirmLabel: "确认修改",
               hint: "最多 160 字",
-            }, <>只是一段展示文字。</>))}>调整</Button> : undefined} />
+            }, <>只在后台看得到，App 不显示。</>))}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
