@@ -36,9 +36,9 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import {
   executeG3MarketChange, canWriteG3MarketChange, g3MarketCommandExpired, g3MarketFailureCode, g3MarketObjectKey,
-  g3MarketObjectReadState, g3MarketReadBlockedCode,
+  g3MarketObjectReadState, g3MarketReadBlockedCode, g3RuntimeApproval,
   G3_ENVIRONMENT_FORBIDDEN, listG3MarketCommands, pendingG3MarketCommand, refreshG3MarketApprovals,
-  type G3MarketChange, type G3DirectChange, type G3ReviewedChange, type G3PendingCommand,
+  type G3MarketChange, type G3DirectChange, type G3ReviewedChange, type G3PendingCommand, type G3CommandResult,
 } from "@/lib/admin/g3-market-command";
 import { OperationConfirmModal, useToast, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { G3_EXPIRED_DIRECT_READ, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
@@ -62,6 +62,7 @@ type G3ConfirmReq = {
   confirmLabel?: string;
   reasonPlaceholder?: string;
   change: G3DirectChange;
+  runtimeApproval?: (value: string) => ReturnType<typeof g3RuntimeApproval>;
   value?: string;
   success: string;
 };
@@ -75,6 +76,7 @@ const RETIRED_OVERRIDE_NAME = { volatilityPct: "当前波动幅度", oracle: "�
 const CONTROL_ORDER = ["pin", "schedule", "loop"];
 /** 按原请求重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
 const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
+const RUNTIME_PRICE_UNAVAILABLE = "现价暂不可用，无法判断是否提价，请刷新后再试。";
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
 // 只剩字符串时（页面上的 error）按开头认结果未知：A2 发起申请丢回包的句子以「结果未知，可能已经提交」开头。
 const UNKNOWN_TEXT = /^(提交结果未知|结果未知，可能已经提交)/;
@@ -198,9 +200,10 @@ function ObjectTag({ state }: { state?: G3ObjectState }) {
 }
 
 /** New edits and recovered direct commands use the same existing confirmation contents. */
-function directConfirmation(change: G3DirectChange, value: string | undefined, overview: G3Overview | null, coverageKnown = true): G3ConfirmReq {
+function directConfirmation(change: G3DirectChange, value: string | undefined, overview: G3Overview | null, coverageKnown: boolean, original?: G3PendingCommand): G3ConfirmReq {
   const current = change.current;
   const priceMissing = !overview || !(overview.currentPrice > 0);
+  const runtimeApproval = (selected: string) => g3RuntimeApproval(overview, change, selected);
   const curDay = overview ? overview.activeDayIndex + 1 : undefined;
   const coverageRead = coverageKnown ? overview : null;
   const cov = coverageRead?.coverage.coverageRatio.toFixed(1) ?? "—";
@@ -238,11 +241,12 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     const pinFacts = (value?: string) => {
       const day = value && /^D[1-7]$/.test(value) ? Number(value.slice(1)) - 1 : -1;
       const target = day >= 0 ? overview?.frames[day]?.targetPrice : undefined;
+      const approval = original ? original.request.kind === "approval" : value && runtimeApproval(value);
       return <Facts>
         {target !== undefined ? <>
           <Fact k="选了之后"><Change from={priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`} to={`${price(target)} USDT（${value} 目标价）`} /></Fact>
-          <Fact k="什么时候变">确认后马上按 {value} 发布现价，之后不再自动切换</Fact>
-          {!priceMissing && target > overview!.currentPrice && <Fact k="提交时检查" tone="warn">比现价高：按 {value} 目标价重估兑付覆盖率，低于红线就拒绝；不需要审批</Fact>}
+          <Fact k="什么时候变">{approval ? "批准后固定并发布价格，之后不再自动切换" : original ? "按原请求重试，以原结果为准"
+            : priceMissing ? RUNTIME_PRICE_UNAVAILABLE : `确认后马上按 ${value} 发布现价，之后不再自动切换`}</Fact>
         </> : value === "未钉住" && overview ? <>
           <Fact k="选了之后">现价不变；之后在排程已配置、没有暂停时，从 D{curDay === 7 ? loopStop ? 7 : 1 : curDay! + 1} 继续推进{curDay === 7 && loopStop ? "（D7 之后选的是停在末值）" : ""}</Fact>
         </> : <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>}
@@ -256,15 +260,17 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       action: `调整价格计划运行方式 · ${name}`,
       title: key === "pin" ? "调整固定生效日" : "调整 D7 之后的走法",
       detail: <><b>{name}</b> · 当前:{current}。固定某一天或暂停切换，都不会改动已设好的计划。</>,
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled>{key === "pin" ? "提价须审批" : "立即生效"}</StatusTag>,
       facts: key === "pin" ? pinFacts : loopFacts,
       statedBrief: key === "pin"
-        ? { impact: "固定到某一天会立即按那天的目标价发布现价，之后的兑换按新价；七天计划不变。", check: "核对选的是哪一天和它的目标价，理由写清为什么固定。" }
+        ? { impact: "固定后按那天的目标价发布现价，之后的兑换按新价；七天计划不变。", check: "核对选的是哪一天和它的目标价，理由写清为什么固定。" }
         : { impact: "只决定 D7 之后怎么走，现价和七天计划都不变。", check: "核对选项，理由写清依据或工单号。" },
       amplifies: false,
       confirmLabel: "确认修改",
-      edit: { kind: "select", current, options: ctlOptions[key], optionLabels: { "未钉住": "不固定" }, disallowCurrent: true },
+      edit: { kind: "select", current, options: ctlOptions[key], optionLabels: { "未钉住": "不固定" }, disallowCurrent: true,
+        validate: key === "pin" && !original ? selected => runtimeApproval(selected) === null ? RUNTIME_PRICE_UNAVAILABLE : undefined : undefined },
       change,
+      runtimeApproval: key === "pin" ? runtimeApproval : undefined,
       success: `${name}已立即生效`,
     };
   }
@@ -292,15 +298,16 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
   if (change.key === "paused") {
     // The saved target determines the original action even if the live read already changed.
     const paused = (value ?? String(change.current !== "true")) === "false";
+    const approval = original ? original.request.kind === "approval" : paused && !!runtimeApproval("false");
     return { briefKind: "emergency",
     action: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     title: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     detail: paused
       ? <>恢复后在下一次排程时刻重新按计划推进（固定或没配置排程时仍不推进）。计划价更高时平台要多付钱，覆盖率低于红线时无法恢复（{coverageRead ? `当前 ${cov}%，红线 ${redline}` : "覆盖率现在读不准"}）。</>
       : <>暂停后每日推进和 5 分钟采样都停下；应急改现价和固定生效日仍会发布价格。</>,
-    effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+    effect: <StatusTag tone="progress" filled>{approval ? "提价须审批" : "立即生效"}</StatusTag>,
     coverageLead: paused ? "恢复后价格重新按七天计划推进，计划价更高时平台的 UVT 应付款跟着变" : undefined,
-    coverageCheck: "恢复时按当前兑付覆盖率检查，低于红线或算不准时拒绝；不需要审批。",
+    coverageCheck: "直接恢复时按当前兑付覆盖率检查，低于红线或算不准时拒绝。",
     facts: paused
       ? <Facts>
         <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>
@@ -314,10 +321,11 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     statedBrief: paused
       ? { impact: "排程已配置、没有固定时，价格重新按七天计划推进，之后的兑换按推进后的价格。", check: "核对兑付覆盖率和固定生效日，理由写清为什么恢复。" }
       : { impact: "自动推进和采样停下；应急改现价和固定生效日仍会改价。", check: "理由写清为什么暂停、预计多久恢复。" },
-    amplifies: paused,
-    coverage: paused ? coverageSnapshot : undefined,
+    amplifies: paused && !approval,
+    coverage: paused && !approval ? coverageSnapshot : undefined,
     confirmLabel: paused ? "确认恢复" : "确认暂停",
     change,
+    runtimeApproval: paused ? runtimeApproval : undefined,
     value: String(!paused),
     success: paused ? "价格已恢复自动变化" : "价格已暂停变化",
   };
@@ -368,7 +376,9 @@ function G3MarketEditor() {
     OBJECT_STATES[g3MarketObjectKey(row.change)] = row.ticketId
       ? { kind: "approval", detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。`,
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
-      : { kind: "unknown", detail: "提交时没收到确定结果，可能已经生效。打开这一项查询原结果，24 小时内也可以按原请求重试。", verification: "current", observedAt: row.createdAt };
+      : { kind: "unknown", detail: row.request.kind === "approval"
+        ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原结果，24 小时内也可以按原请求重试。"
+        : "提交时没收到确定结果，可能已经生效。打开这一项查询原结果，24 小时内也可以按原请求重试。", verification: "current", observedAt: row.createdAt };
   }
   for (const state of overview?.objectStates ?? []) {
     const keys = state.target.type === "nex_market_curve"
@@ -511,11 +521,19 @@ function G3MarketEditor() {
     };
   }, [showRead]);
 
-  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3ReadOverview>, success: string, recovered = false) => {
+  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3CommandResult | null>, success: string, recovered = false) => {
     setBusyKey(g3MarketObjectKey(change));
     setError("");
     try {
-      await action();
+      const result = await action();
+      if (!result) return false;
+      if (!result.active) {
+        openActionConfirm(null);
+        if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
+        toast(result.acknowledgement);
+        setRereadPending(true); void reload(true);
+        return true;
+      }
       reconcileObservedAfterSave(change);
       // 按原请求恢复时，后端回放的是当时保存的回包，不是现在的读取：不拿它当当前概览，改为重读；
       // 重读失败只报读取失败，新修改继续不可用，原操作照常算完成。
@@ -529,8 +547,10 @@ function G3MarketEditor() {
         setHistory([]);
         setHistoryError(messageOf(historyResult.reason));
       }
+      openActionConfirm(null);
       toast(recovered ? REREAD_TEXT : success);
       setRereadPending(true); void reload(true);
+      return true;
     } catch (err) {
       const message = messageOf(err);
       setError(message);
@@ -555,7 +575,7 @@ function G3MarketEditor() {
 
   const openDirect = (requested: G3DirectChange, value?: string) => {
     const original = session ? pendingG3MarketCommand(session.adminId, requested) : undefined;
-    openActionConfirm(directConfirmation((original?.change ?? requested) as G3DirectChange, original?.value ?? value, overview, !gaps.coverage));
+    openActionConfirm(directConfirmation((original?.change ?? requested) as G3DirectChange, original?.value ?? value, overview, !gaps.coverage, original));
   };
   const openSavedCommand = (row: G3PendingCommand) => {
     if (row.ticketId) { void refreshKnownApprovals(); return; }
@@ -608,6 +628,7 @@ function G3MarketEditor() {
     </>} />;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
   const directPastDeadline = pendingDirect && Date.now() >= pendingDirect.expiresAt;
+  const pendingRuntimeApproval = pendingDirect?.request.kind === "approval";
   const readCurrent = async () => {
     const current = await fetchG3MarketReadOverview();
     const auth = useAdminAuth.getState();
@@ -625,6 +646,26 @@ function G3MarketEditor() {
       ? g3MarketObjectReadState(overview, g3MarketObjectKey(change))?.pendingOperationId : undefined;
     if (ticket) return `审批单 ${ticket} 在等批准，有结论前不能改。`;
     return code === G3_ENVIRONMENT_FORBIDDEN ? G3_TUNING_FORBIDDEN : code ? messageOf(new Error(code)) : undefined;
+  };
+  const executeConfirmedChange = async (mode: "submit" | "lookup" | "retry", reason = "", newValue?: string) => {
+    if (!confirm || !session) return false;
+    const { change } = confirm;
+    const saved = pendingG3MarketCommand(session.adminId, change);
+    const value = newValue ?? saved?.value ?? confirm.value ?? "";
+    const runtimeApproval = saved ? undefined : confirm.runtimeApproval?.(value);
+    if (mode === "submit" && !saved) {
+      const blocked = newWriteBlockedReason ?? readBlockedReason(change, value);
+      if (blocked) throw new Error(blocked);
+      if (runtimeApproval === null) throw new Error(RUNTIME_PRICE_UNAVAILABLE);
+    }
+    try {
+      return await mutate(change, () => executeG3MarketChange(session, change, value, reason, mode, false, runtimeApproval ?? undefined),
+        confirm.success, !!saved);
+    } catch (failure) {
+      onCommandFailure(change, failure);
+      if (!overview && !pendingG3MarketCommand(session.adminId, change)) openActionConfirm(null);
+      throw failure;
+    } finally { syncCommands(); }
   };
   const confirmationPanels = <>
       {marketConfirm && session && <G3MarketConfirm session={session} epoch={epoch} requested={marketConfirm}
@@ -661,41 +702,42 @@ function G3MarketEditor() {
           completionCopy={confirm.completionCopy}
           confirmLabel={confirm.confirmLabel}
           reasonPlaceholder={confirm.reasonPlaceholder}
-          blockedReason={!pendingDirect ? newWriteBlockedReason ?? readBlockedReason(confirm.change, confirm.value) : undefined}
+          blockedReason={!pendingDirect ? newWriteBlockedReason ?? readBlockedReason(confirm.change, confirm.value)
+            ?? (confirm.value && confirm.runtimeApproval?.(confirm.value) === null ? RUNTIME_PRICE_UNAVAILABLE : undefined) : undefined}
           getPendingReason={() => session ? pendingG3MarketCommand(session.adminId, confirm.change)?.reason : undefined}
           inlineApproval={{
             pending: !!pendingDirect,
-            initialRecovery: "retry",
+            initialRecovery: pendingRuntimeApproval ? "lookup" : "retry",
             expired: !!pendingDirect && g3MarketCommandExpired(pendingDirect),
-            expiredRequestRecovery: directPastDeadline ? "reload" : undefined,
-            disabledReason: directPastDeadline ? G3_EXPIRED_DIRECT_READ : pendingDirect && g3MarketCommandExpired(pendingDirect)
+            expiredRequestRecovery: directPastDeadline ? pendingRuntimeApproval ? "query" : "reload" : undefined,
+            disabledReason: directPastDeadline && !pendingRuntimeApproval ? G3_EXPIRED_DIRECT_READ
+              : pendingDirect && !pendingRuntimeApproval && g3MarketCommandExpired(pendingDirect)
               ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项查不了原结果，请到「操作记录与审批」核对。"
-              : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value) ? "你没有修改这一项的权限。" : undefined,
-            resolve: () => undefined,
-            recoverLabel: directPastDeadline ? "读取当前配置" : undefined,
-            recover: directPastDeadline ? readCurrent : async () => {
+              : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value, pendingRuntimeApproval) ? "你没有修改这一项的权限。" : undefined,
+            resolve: (_business, newValue) => {
+              const value = pendingDirect?.value ?? confirm.value ?? newValue;
+              const approval = pendingDirect ? undefined : confirm.runtimeApproval?.(value);
+              if (!pendingRuntimeApproval && !approval) return undefined;
+              const resume = confirm.change.action === "override";
+              return {
+                heading: "要另一位超级管理员（需有审批批准权限）批准后生效",
+                completionCopy: resume
+                  ? "本次申请批准前不改变价格。批准时按当时的价格曲线复核；恢复后等实际推进再变价。"
+                  : "本次申请批准前不改变价格。批准时按当时的价格曲线执行。",
+                disabledReason: approval && !/^[0-9a-f]{64}$/.test(approval.expectedRevision ?? "")
+                  ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。"
+                  : approval && session && !canWriteG3MarketChange(session, confirm.change, value, true) ? "你没有修改这一项的权限。" : undefined,
+              };
+            },
+            recoverLabel: directPastDeadline && !pendingRuntimeApproval ? "读取当前配置" : undefined,
+            recover: pendingRuntimeApproval ? () => executeConfirmedChange("lookup") : directPastDeadline ? readCurrent : async () => {
               if (session) await executeG3MarketChange(session, confirm.change, "", "", "lookup");
               return false;
             },
+            retry: pendingRuntimeApproval ? () => executeConfirmedChange("retry").then(() => undefined) : undefined,
           }}
           onClose={() => openActionConfirm(null)}
-          onConfirm={async (reason, newValue) => {
-            if (!session) return;
-            const blocked = newWriteBlockedReason ?? readBlockedReason(confirm.change, newValue ?? confirm.value);
-            if (blocked && !pendingG3MarketCommand(session.adminId, confirm.change)) throw new Error(blocked);
-            try {
-              await mutate(confirm.change, async () => {
-                const result = await executeG3MarketChange(session, confirm.change, newValue ?? pendingDirect?.value ?? confirm.value ?? "", reason);
-                if (!result?.active) throw new Error("原操作结果仍需核对，请保留原记录。");
-                return result.active;
-              }, confirm.success, !!pendingDirect);
-              openActionConfirm(null);
-            } catch (failure) {
-              onCommandFailure(confirm.change, failure);
-              if (!overview && !pendingG3MarketCommand(session.adminId, confirm.change)) openActionConfirm(null);
-              throw failure;
-            } finally { syncCommands(); }
-          }}
+          onConfirm={(reason, newValue) => executeConfirmedChange("submit", reason, newValue).then(() => undefined)}
         />
       )}
   </>;
@@ -930,7 +972,7 @@ function G3MarketEditor() {
 
   const controls = [...overview.controls].sort((a, b) => (CONTROL_ORDER.indexOf(a.key) + 99) % 99 - (CONTROL_ORDER.indexOf(b.key) + 99) % 99);
   const controlCopy: Record<string, { name: string; what: string; when: string; effect: string; value: (value: string) => string }> = {
-    pin: { name: "固定生效日", what: "把价格固定在七天里的某一天，自动推进停下", when: "确认后立即生效", effect: "选一天马上按那天的目标价发布现价；选「不固定」现价不变，之后在排程已配置、没有暂停时按排程推进", value: (value) => value === "未钉住" ? "不固定" : `固定在 ${value}` },
+    pin: { name: "固定生效日", what: "把价格固定在七天里的某一天，自动推进停下", when: "固定到比现价高的一天要审批；其余确认后生效", effect: "固定后按那天的目标价发布现价；选「不固定」现价不变，之后在排程已配置、没有暂停时按排程推进", value: (value) => value === "未钉住" ? "不固定" : `固定在 ${value}` },
     schedule: { name: "自动按日推进", what: "每天几点切换到下一天的目标价，时区写在时刻后面，不写按 UTC", when: "已有排程直接保存，从下一次排程时刻起按新时间；第一次配置要另一位超级管理员批准", effect: "只改切换时间，现价不当场变；同一个 UTC 日期最多推进一次", value: (value) => value === "" ? "未配置" : value },
     loop: { name: "D7 之后", what: "七天走完后回到 D1 循环，还是一直用 D7", when: "确认后立即保存，到 D7 之后的那次推进才用上", effect: "只决定 D7 之后怎么走，现价不变；停在末值不是暂停", value: (value) => value },
   };
@@ -1013,7 +1055,7 @@ function G3MarketEditor() {
           <ConfigList label="运行方式">
             <ConfigRow name="价格自动变化"
               what="每日推进和 5 分钟采样是否在跑"
-              when="确认后立即生效，不需要审批"
+              when="暂停和不提价的恢复直接保存；提价的恢复要审批"
               effect="暂停后不再自动推进；恢复后等下一次排程再推进，恢复时检查兑付覆盖率"
               note="暂停挡不住应急改现价和固定生效日，这两项照常发布价格。暂停只要暂停权限；恢复还要超级管理员。"
               value={<span className="g3-value">{paused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag> : <StatusTag tone="ok">自动变化中</StatusTag>}<ObjectTag state={OBJECT_STATES.paused} /></span>}
