@@ -14,7 +14,7 @@ export function L1LiveTotals({ metrics }: { metrics: L1LiveMetric[] }) {
 
   return (
     <>
-      <Conclusion state="unknown" hint="8 项关键指标的详细数据还没开放，目前只有累计数，算不出比率和趋势，页面不会拿累计数冒充比率。">关键指标：暂时无法判断</Conclusion>
+      <Conclusion state="unknown" hint="7 项关键指标的详细数据还没开放，目前只有累计数，算不出比率和趋势，页面不会拿累计数冒充比率。">关键指标：暂时无法判断</Conclusion>
       <StatBand label="当前累计">
         {highlights.map((metric, index) => (
           <Stat key={metric.key} label={metric.label} value={metric.value.toLocaleString("zh-CN")} sub={`当前累计 · ${metric.sourceLabel}`} tone={tones[index]} icon={icons[index]} />

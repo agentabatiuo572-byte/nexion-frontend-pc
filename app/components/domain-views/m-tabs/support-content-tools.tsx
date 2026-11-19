@@ -10,7 +10,7 @@ import { Icon, Modal } from "../design-kit";
 import { BlockState, Button, KeepText, Explain, Field, Input, Select, Textarea } from "@/app/components/rd";
 import "./support-content-tools.css";
 export type SelectedSupportContent = { kind: "SKU"; skuId: string; name: string } | { kind: "LINK"; linkTarget: SupportLink; name: string };
-export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean }) {
+export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false, faqLanguage = "zh-CN" }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean; faqLanguage?: string }) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<CSSProperties>();
   const [templateType, setTemplateType] = useState("reply"), [keyword, setKeyword] = useState(""), [group, setGroup] = useState("");
@@ -31,7 +31,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
     try { setPhrases(await action()); setPhraseDraft(""); } catch (e) { setPhraseError(displayAdminError(e)); } finally { setPhraseBusy(false); }
   }
   // M-47: published FAQ answers can be looked up and inserted without leaving the conversation.
-  const faqs: Array<{ id: string; question: string; answer: string; status: string; language: string }> = (() => { try { const rows = JSON.parse(ctx.pget("I.support.faqs") ?? "[]"); return Array.isArray(rows) ? rows.filter(r => r.status === "published" && typeof r.answer === "string" && (r.language ?? "zh-CN") === "zh-CN") : []; } catch { return []; } })();
+  const faqs: Array<{ id: string; question: string; answer: string; status: string; language: string }> = (() => { try { const rows = JSON.parse(ctx.pget("I.support.faqs") ?? "[]"); return Array.isArray(rows) ? rows.filter(r => r.status === "published" && typeof r.answer === "string" && (r.language ?? "zh-CN") === faqLanguage) : []; } catch { return []; } })();
   const [faqQuery, setFaqQuery] = useState("");
   const faqMatches = faqs.filter(f => !faqQuery.trim() || `${f.question}${f.answer}`.includes(faqQuery.trim()));
   const faqAvailable = ctx.pget("I.support.knowledgeAvailable") === "1";

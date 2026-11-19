@@ -4,8 +4,7 @@ import { useReach } from "@/lib/nav/use-reach";
 /**
  * L2 · 用户转化与留存（「用户转化概览」B3 的下钻页）。
  * 一句结论 → 四个关键数字 → 四步漏斗 ┬ 所选一步的人数、耗时和试用线 → 页签：按注册时间看留存 / 渠道 × 语言 → 查原因。
- * 读取、校验、导出请求和本机视图都沿用改版前的写法（请求逐字节不变），这里只换界面。
- * 留存要用的 App 日活、试用第一步的事件还没有产生方（决定 L2-来源）：这两处显示「数据来源还没接上」，不显示成 0。
+ * 留存按完整采集的日活业务日计算，未采集与有效零值分开显示。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -27,7 +26,7 @@ import { findByPath } from "@/lib/nav/console-nav";
 import { l2ScopeText as scopeText } from "./l2-scope-text";
 import { PaginationExemptionList } from "../design-kit";
 import { rec, rows, str, strings } from "./live-data";
-import { readL2LiveStages, SMALL_SAMPLE_LABEL, type L2LiveStage } from "./l1-l2-live-data";
+import { DAU_NOT_COLLECTED_LABEL, readL2LiveStages, retentionReasonLabel, SMALL_SAMPLE_LABEL, type L2LiveStage } from "./l1-l2-live-data";
 import {
   isCanonicalL2StageEvents,
   L2_STAGE_EVENT_CONTRACT,
@@ -49,13 +48,12 @@ import {
   StepFunnel,
   TrialLine,
   type CohortRow,
+  type RetentionColumn,
   type FunnelExt,
   type FunnelRow,
   type XdMetric,
 } from "./l2-funnel-views";
 
-/** 后端待办 L2-BE01：留存要用的 App 日活事件（app.dau）还没有产生方，成熟的组会被算成 0%。后端接上后改成 true。 */
-const RETENTION_SOURCE_READY = false;
 /** 试用这条线（L2-BE-02，后端 5cb76001）：开始试用 → 试用后购买两步。旧后端不给 trialFunnel，照旧写「来源未接上」。 */
 const TRIAL_OLD_NOTE = "试用人数还没接上，先不显示，不是 0 人。";
 const trialReason = (reason: string | null | undefined) => formatAdminApiError(reason ?? "TRIAL_EVENT_LINKAGE_INCOMPLETE", "试用人数暂不可用。");
@@ -165,6 +163,8 @@ function normalizeXdMetric(raw: unknown): XdMetric {
     rows: rows<(string | number | null)[]>(data.rows),
     alert: rows<number>(data.alert),
     suppressedCells: new Set(rows<[number, number]>(data.suppressedCells).map(([row, column]) => `${row}:${column}`)),
+    unavailableCells: new Map(rows<{ row: number; column: number; reason: string }>(data.unavailableCells)
+      .map(({ row, column, reason }) => [`${row}:${column}`, reason])),
     unit: str(data.unit, "%"),
     msg: {
       pre: str(msg.pre, message),
@@ -399,6 +399,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const XD = crossOverride ?? rec(data?.crossAnalysis);
   const STAGE_EV = strings(data?.stageEvents);
   const day7 = rec(data?.day7Kpi);
+  const retentionCollectionFrom = str(data?.retentionCollectionFrom);
   const liveStages = detailedAttempt ? [] : readL2LiveStages(data);
   const applied: L2FunnelQuery = ctx.l2Query ?? {};
   const scope = scopeText(applied);
@@ -427,9 +428,8 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Facts>
           <Fact k="范围">{complete ? scopeText(ctx.l2Query ?? {}) : "全部数据，不带筛选"}</Fact>
           <Fact k="文件内容">{complete
-            ? <>四步的人数和转化率，加最近 6 个注册周的第 1、7、14、30、60 天留存<Explain label="导出哪些不导出哪些" content={<><p>不导出：按注册月分组、试用、渠道 × 语言、留存曲线；和页面上选的哪一步、看第几天无关。</p><p>样本过小的格子留空并标「样本过小」，还没到的天数留空。</p><p>导出时按当时的最新事件重新计算，可能和页面上的数稍有不同。</p></>} /></>
+            ? <>四步的人数和转化率，加最近 6 个注册周的第 1、7、14、30、60 天留存<Explain label="导出哪些不导出哪些" content={<><p>不导出：按注册月分组、试用、渠道 × 语言、留存曲线；和页面上选的哪一步、看第几天无关。</p><p>样本过小的格子留空并标「样本过小」，还没到的天数留空，缺少日活采集的天数标「未采集」。</p><p>导出时按当时的最新事件重新计算，可能和页面上的数稍有不同。</p></>} /></>
             : <>四项各自的累计人数，一项一行<Explain label="导出的说明" content="导出时按当时的数据重新读取；如果那时详细数据已经可用，会导出完整的转化与留存。" /></>}</Fact>
-          {complete && !RETENTION_SOURCE_READY && <Fact k="留存列" tone="warn">日活事件还没接上，导出的留存率不可信，先别用</Fact>}
           <Fact k="文件格式">CSV</Fact>
           <Fact k="去哪下载">「{exportPageName}」</Fact>
         </Facts>
@@ -579,7 +579,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const xd = normalizeXdMetric(XD[metric]);
   const retentionColumns = ([1, 7, 14, 30, 60] as const)
     .filter((day) => wins.includes(`Day${day}`))
-    .map((day) => ({ day, key: `d${day}` as keyof CohortRow }));
+    .map((day) => ({ day, key: `d${day}` as RetentionColumn["key"] }));
 
   const cohortCurveKeys = COHORTS.filter((cohort) => !cohort.suppressed).map((cohort) => cohort.w);
   const activeQuery: L2FunnelQuery = ctx.l2Query ?? {};
@@ -595,7 +595,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       for (const cohort of cohorts) {
         if (cohort.suppressed) curves[cohort.w] = [];
       }
-      const merged = { ...rec(data), cohorts, curves };
+      const merged = { ...rec(data), cohorts, curves, retentionCollectionFrom: response.retentionCollectionFrom };
       if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_PROTOCOL_ERROR");
       setQueryData(merged);
       setWins(nextWins);
@@ -654,9 +654,13 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       const merged = {
         ...rec(data),
         [curveKey]: { ...rec(data?.[curveKey]), [cohort]: response.curve },
-        [rowKey]: suppressed ? COHORTS.map((row) => row.w === cohort
-          ? { w: row.w, size: null, suppressed: true }
-          : row) : COHORTS,
+        [rowKey]: COHORTS.map((row) => row.w === cohort
+          ? {
+            ...(suppressed ? { w: row.w, size: null, suppressed: true } : row),
+            retentionUnavailableReasons: response.retentionUnavailableReasons,
+          }
+          : row),
+        retentionCollectionFrom: response.retentionCollectionFrom,
       };
       if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
       setQueryData(merged);
@@ -684,7 +688,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         用户转化：卡在「{FUNNEL[lowest].stage}」，只有 <b>{pct(FUNNEL[lowest].cvr!)}</b> 走到这一步
       </Conclusion>;
 
-  const day7Value = !RETENTION_SOURCE_READY ? "来源未接上" : day7.suppressed === true ? SMALL_SAMPLE_LABEL : typeof day7.value === "number" ? pct(day7.value) : "—";
+  const day7Rate = day7.available === true && typeof day7.value === "number" ? day7.value : null;
+  const day7Value = day7.suppressed === true ? SMALL_SAMPLE_LABEL
+    : day7Rate !== null ? pct(day7Rate) : retentionReasonLabel(day7.unavailableReason);
   const trialValue = !TRIAL ? "来源未接上" : !TRIAL.available ? "不可用" : trialSmall ? SMALL_SAMPLE_LABEL : TRIAL_BUY?.arr ?? "—";
   const stats = (
     <StatBand label="这批用户的关键数字">
@@ -694,9 +700,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       <Stat label="注册到提现" value={FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? SMALL_SAMPLE_LABEL : fullCvr == null ? "—" : `${fullCvr}%`}
         sub={FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "少于 5 人，不显示" : registrations && withdrawals != null ? `${people(withdrawals)} ÷ ${people(registrations)} 人` : "注册 0 人，算不出"} tone={fullCvr == null || FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "role-other" : "role-3"} icon={Route}
         explain="同一批注册用户里最后提交了提现申请的比例，不是到账率。" />
-      <Stat label="第 7 天仍活跃" value={day7Value} tone={RETENTION_SOURCE_READY ? "role-3" : "role-other"} icon={CalendarCheck}
-        sub={!RETENTION_SOURCE_READY ? `日活事件还没接上 · 目标 ${String(day7.target ?? 60)}%` : day7.value == null && day7.suppressed !== true ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
-        explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天有日活记录的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{!RETENTION_SOURCE_READY && <p>日活事件还没接上，现在算出来会是 0%，所以先不显示；接上后再显示。</p>}</>} />
+      <Stat label="第 7 天仍活跃" value={day7Value} tone={day7Rate !== null ? "role-3" : "role-other"} icon={CalendarCheck}
+        sub={day7.unavailableReason === "NO_MATURE_DAY7_COHORT" ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
+        explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天有日活记录的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{retentionCollectionFrom && <p>完整日活采集始于 {retentionCollectionFrom}。</p>}</>} />
       <Stat label="试用后购买比例" value={trialValue} tone={TRIAL?.available && !trialSmall && TRIAL_BUY?.arr ? "role-3" : TRIAL && !TRIAL.available ? "warn" : "role-other"} icon={Gift}
         sub={!TRIAL ? "试用人数还没接上" : !TRIAL.available ? "试用记录不全" : trialSmall ? "少于 5 人，不显示" : TRIAL_START?.n != null && TRIAL_BUY?.n != null ? `${people(TRIAL_BUY.n)} ÷ ${people(TRIAL_START.n)} 人` : "—"}
         explain={<><p>开始试用的人里，用同一笔试用确认购买的比例。试用是另一条线，不算进首购转化率。</p>{!TRIAL ? <p>{TRIAL_OLD_NOTE}</p> : !TRIAL.available && <p>{trialReason(TRIAL.reason)}</p>}</>} />
@@ -762,12 +768,25 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
 
   /* ---- 页签一：按注册时间看留存（热力格 + 曲线对比）。 ---- */
   const selectedCohort = COHORTS[safeCohort];
-  const curveTicks = [...new Set([...(CURVES[selectedCohort.w] ?? []), ...(cmp !== "none" ? CURVES[cmp] ?? [] : [])].map(([day]) => day))].filter((day) => day > 0).sort((a, b) => a - b);
-  const curveSeries = [
-    { key: selectedCohort.w, label: selectedCohort.w, slot: 3 as const, points: CURVES[selectedCohort.w] ?? [] },
-    ...(cmp !== "none" && cmp !== selectedCohort.w ? [{ key: cmp, label: cmp, slot: "other" as const, points: CURVES[cmp] ?? [] }] : []),
-  ].map(({ points, ...item }) => ({ ...item, values: curveTicks.map((day) => points.find(([pointDay]) => pointDay === day)?.[1] ?? null) }));
   const compareKeys = cohortCurveKeys.filter((key) => key !== selectedCohort.w).slice(-2);
+  const comparedCohort = compareKeys.includes(cmp) ? COHORTS.find((cohort) => cohort.w === cmp) : undefined;
+  const curveCohorts = comparedCohort ? [selectedCohort, comparedCohort] : [selectedCohort];
+  const curveTicks = [...new Set(curveCohorts.flatMap((cohort) => [
+    ...(CURVES[cohort.w] ?? []).map(([day]) => day),
+    ...Object.entries(cohort.retentionUnavailableReasons ?? {}).flatMap(([key, reason]) =>
+      reason === "DAU_NOT_COLLECTED" ? [Number(key.slice(1))] : []),
+  ]))].filter((day) => day > 0).sort((a, b) => a - b);
+  const curveSeries = curveCohorts.map((cohort, index) => ({
+    key: cohort.w,
+    label: cohort.w,
+    slot: index === 0 ? 3 as const : "other" as const,
+    values: curveTicks.map((day) => CURVES[cohort.w]?.find(([pointDay]) => pointDay === day)?.[1] ?? null),
+    missingLabels: curveTicks.map((day) => {
+      const reason = cohort.retentionUnavailableReasons?.[`d${day}`];
+      return reason ? retentionReasonLabel(reason) : null;
+    }),
+  }));
+  const curveUncollected = curveSeries.some((series) => series.missingLabels.includes(DAU_NOT_COLLECTED_LABEL));
   const retentionPane = (
     <div className="rd-stack">
       <div className="rd-toolbar l2-toolbar">
@@ -789,24 +808,17 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         </div>
         <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "改分组只换显示，改天数会重新读取"}</span>
       </div>
-      {!RETENTION_SOURCE_READY && (
-        <Notice tone="warn" title="留存的数据来源还没接上">
-          日活事件还没接上，算出来会是 0%。满了天数的格子写「未接上」，曲线不画，人数照常。
-        </Notice>
-      )}
       <div className="rd-split" data-detail="">
         <Panel title={`按注册${cohortKind}的留存`} icon={CalendarRange} tone="role-3" sub={`最近 ${COHORTS.length} 个注册${cohortKind} · ${scope}`}
           explain={<><p>每一行是同一{cohortKind}注册的人，每一格是这批人注册后第 N 天当天有日活记录的比例，不是 N 天里任意一天。</p><p>这批人里还有人注册不满 N 天时不算，写「未到」。只列最近 6 个注册{cohortKind}。点一行在右边看它的曲线。</p><p>{PROTECT_NOTE}</p></>}>
-          <RetentionHeatmap kind={cohortKind} cohorts={COHORTS} columns={retentionColumns} selected={safeCohort} curveFor={(index) => void loadCurve(index)} disabled={queryLoading} sourceReady={RETENTION_SOURCE_READY} />
+          <RetentionHeatmap kind={cohortKind} cohorts={COHORTS} columns={retentionColumns} selected={safeCohort} curveFor={(index) => void loadCurve(index)} disabled={queryLoading} />
         </Panel>
         <Panel title={`${selectedCohort.w} 的留存曲线`} icon={TrendingUp} tone="role-3"
-          explain={<><p>这批人注册后第 0、1、3、7、14、21、30、60 天当天有日活记录的比例，只画已经满了天数的点。第 0 天（注册当天）固定是 100%，不是实测，所以不画。</p><p>灰线是用来对比的另一批，可以选最近两批。</p></>}>
-          {!RETENTION_SOURCE_READY
-            ? <BlockState state="empty" title="数据来源还没接上，曲线先不画" detail="接上前画出来会是一条掉到 0 的线，不代表没人用。" />
-            : selectedCohort.suppressed
+          explain={<><p>这批人注册后第 0、1、3、7、14、21、30、60 天当天有日活记录的比例，只画已有留存率的点，缺少日活采集的点留空。第 0 天（注册当天）固定是 100%，不是实测，所以不画。</p><p>灰线是用来对比的另一批，可以选最近两批。</p></>}>
+          {selectedCohort.suppressed
               ? <BlockState state="empty" title="这批少于 5 人，曲线不显示" />
-              : curveTicks.length === 0
-                ? <BlockState state="empty" title="这批还有人注册不满 1 天，还没有曲线" />
+              : curveSeries.every((series) => series.values.every((value) => value === null))
+                ? <BlockState state="empty" title={curveUncollected ? DAU_NOT_COLLECTED_LABEL : "这批还有人注册不满 1 天，还没有曲线"} />
                 : (
                   <div className="rd-stack">
                     <TrendLines label={`${selectedCohort.w} 注册后每天有日活记录的比例`} ticks={curveTicks.map((day) => `第 ${day} 天`)} format={pct}
@@ -827,7 +839,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   // 交叉分析的试用格另有自己的可不可用（后端 crossAnalysis.trial.available），和漏斗那两步分开看。
   const crossTrial = rec(XD.trial);
   const crossTrialUnavailable = metric === "trial" && !!TRIAL && crossTrial.available === false;
-  const metricBlocked = (metric === "ret" && !RETENTION_SOURCE_READY) || (metric === "trial" && (!TRIAL || crossTrialUnavailable));
+  const metricBlocked = metric === "trial" && (!TRIAL || crossTrialUnavailable);
   const crossPane = (
     <div className="rd-stack">
       <div className="rd-toolbar l2-toolbar">
@@ -845,7 +857,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         {metricBlocked
           ? crossTrialUnavailable
             ? <BlockState state="empty" title="试用人数暂不可用" detail={trialReason(typeof crossTrial.reason === "string" ? crossTrial.reason : null)} />
-            : <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "日活事件还没接上，算出来会是 0%，先不显示。" : TRIAL_OLD_NOTE} />
+            : <BlockState state="empty" title="数据来源还没接上" detail={TRIAL_OLD_NOTE} />
           : xd.rows.length && xd.columns.length
             ? <CrossTable metric={xd} name={METRIC_NAME[metric]} />
             : <BlockState state="empty" title="当前条件下没有可比较的渠道和语言" />}

@@ -745,6 +745,9 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const profileCustomerId = selected && !selectedUnbound ? selected.customerId : firstProfileCustomer?.customerId;
   const currentProfileDetail = profileDetail?.customerId === selected?.customerId ? profileDetail : null;
   const draftAssignment = selected ? currentProfileDetail : firstProfileCustomer;
+  const faqLanguage = (selected
+    ? pageConversation && messagePages.page?.customerIdentity.effectiveLanguage
+    : firstProfileCustomer?.effectiveLanguage) || "en-US";
   const logicalSlot = selected?.id ?? (requestedCustomerId ? `first:${requestedCustomerId}` : "");
   const targetKey = logicalSlot && draftAssignment?.assignmentId && draftAssignment.agentAdminId
     ? scopedDraftSlot(logicalSlot, draftAssignment.customerId, draftAssignment.assignmentId, draftAssignment.agentAdminId) : "";
@@ -2251,7 +2254,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           {composerMode === "write" && (selected || requestedCustomerId) && <>
             <div className="m3s-tools">
               {holdAllowsOther && <span className="m3s-sender"><SupportAvatar name={myName || myRoleLabel} size={22} />客户侧消息署名：<strong>{myName}</strong><Explain label="发送人与专属客服不同" content="你以本人姓名回复，客户的专属客服归属不变。" /></span>}
-              <SupportContentTools key={`${identityRef.current}:${logicalSlot}:${selected?.ownerAdminId ?? adminId}:${selected?.assignmentId ?? ""}:${selected?.status ?? ""}:${canWriteM3}`} popover textOnly={!selected} ctx={ctx} disabled={!writable || busy || Boolean(pending || firstPending)} onInsert={insertText} onSelect={choice => { setContentChoice(choice); if (!draft.trim()) insertText(choice.kind === "SKU" ? "推荐商品：" + choice.name : "查看：" + choice.name); }} />
+              <SupportContentTools key={`${identityRef.current}:${logicalSlot}:${selected?.ownerAdminId ?? adminId}:${selected?.assignmentId ?? ""}:${selected?.status ?? ""}:${canWriteM3}`} popover textOnly={!selected} faqLanguage={faqLanguage} ctx={ctx} disabled={!writable || busy || Boolean(pending || firstPending)} onInsert={insertText} onSelect={choice => { setContentChoice(choice); if (!draft.trim()) insertText(choice.kind === "SKU" ? "推荐商品：" + choice.name : "查看：" + choice.name); }} />
               <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" aria-label="选择图片" disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} hidden />
               <Button size="sm" variant="ghost" aria-label="选择图片" icon={<ImageIcon size={14} />} title={attachmentPolicyError || (!attachmentPolicy ? "正在加载图片规则…" : !attachmentPolicy.available ? supportAttachmentUnavailableText(attachmentPolicy.unavailableReason) : "发送图片")} disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onClick={() => fileInputRef.current?.click()}>图片</Button>
               {replyCustomerId && closedCandidateRows.length > 0 && displayedIntent !== "MAINTENANCE" && !closedCandidateError && !closedCandidateMissing.length && <Explain label="这条回复会处理哪些消息" content="服务回复会同步处理这位客户此前的待回复消息。" />}
