@@ -90,7 +90,7 @@ function MatrixVersionReview({ ticket }: { ticket: A2OperationRow }) {
 
   if (!binding) return <Facts><Fact k="适用国家/地区">未提供</Fact></Facts>;
   const review = loaded?.key === readKey ? loaded.review : undefined;
-  if (!canRead || (loaded?.key === readKey && !review)) return <Facts><Fact k="改动">读不到这两版内容，到「法律条款与风险披露」核对</Fact></Facts>;
+  if (!canRead || (loaded?.key === readKey && !review)) return <Facts><Fact k="改动">读不到，请到「法律条款与风险披露」核对</Fact></Facts>;
   if (!review) return <Facts><Fact k="改动">读取中</Fact></Facts>;
   const change = review.current ? disclosureChange(review.current, review.target) : undefined;
   return <>

@@ -3698,7 +3698,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   M2_TICKET_ASSIGNEE_ID_MISSING: "尚未选择要指派的坐席，请先选择坐席再提交。",
   // 确认框走得到的拒绝码，文字按后端 2912398b 的判断写。
   OBJECT_ALREADY_PENDING: "这个对象已有待批单，等批准、驳回或撤回后再操作。进度到「操作记录与审批」看。",
-  A2_DISCLOSURE_SNAPSHOT_CHANGED: "披露内容已经变了，这张审批单按的是旧内容。请重新读取后再提交。",
+  A2_DISCLOSURE_SNAPSHOT_CHANGED: "披露内容已变，这张单按的是旧内容。请重新读取后再处理。",
   A2_BUSINESS_COMMAND_REQUIRED: "这项操作没有带上业务内容，系统已拒绝。请刷新页面重新发起。",
   A2_BUSINESS_PERMISSION_UNMAPPED: "这项操作还没有配置发起审批的权限，系统已拒绝。请联系值班人员。",
   A2_BUSINESS_CONTEXT_UNMAPPED: "这项操作还没有配置发起审批的权限，系统已拒绝。请联系值班人员。",
