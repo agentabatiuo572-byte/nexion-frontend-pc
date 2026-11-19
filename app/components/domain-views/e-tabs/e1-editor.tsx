@@ -253,7 +253,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on") {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
-      if (!form.datacenter.trim()) e.datacenter = "在售商品必须填写托管机房";
       if (!form.monthlyTargetUsdt.trim()) e.monthlyTargetUsdt = "在售商品不能清空月收益目标";
     }
     if (original?.monthlyTargetUsdt != null && !form.monthlyTargetUsdt.trim() && form.monthlyTargetBandPct.trim()) e.monthlyTargetBandPct = "关闭目标时请使用关闭选项，同时清空允许波动";
