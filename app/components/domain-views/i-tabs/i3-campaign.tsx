@@ -16,7 +16,7 @@ import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Tra
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
+import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -113,7 +113,7 @@ function targetFromForm(form: NewForm): NotificationAudienceTarget {
 
 /** 没设「点了去哪」时 App 按类型去的默认位置（后端 AppNotificationService.canonicalRoute）。质押类型没有默认位置了（cd7514d1）。 */
 const KIND_DEFAULT_ROUTE: Record<string, string> = {
-  commission: "/pages/me/wallet-repurchase",
+  commission: I3_WALLET_CTA,
   team: "/pages/team/team",
   market: "/pages/market/market",
   genesis: "/pages/genesis/marketplace",
@@ -124,6 +124,8 @@ const KIND_DEFAULT_ROUTE: Record<string, string> = {
  */
 const RETIRED_CTA: Record<string, string> = { "/pages/staking/staking": "赚取 · 质押", "/staking": "赚取 · 质押" };
 const retiredCta = (href?: string) => (href ? RETIRED_CTA[href.trim()] : undefined);
+const retiredWalletCta = (href: string) => href.trim() === I3_RETIRED_WALLET_CTA;
+const RETIRED_WALLET_LABEL = "已退役的链接";
 const RETIRED_CTA_NOTE = "这个页面已下线，点了不会跳转";
 /**
  * 82fd6cb2：存着已停用去向的草稿和已排期活动，新的排期和立即发送会被拒（页面先拦下）。草稿能编辑改选；已排期的不能编辑，只能取消后新建。
@@ -750,11 +752,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
 
   /* ---------- render helpers ---------- */
-  const ctaLabelOf = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+  const ctaLabelOf = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? (href === I3_WALLET_CTA ? "我的 · 钱包" : href);
   const NO_CRITICAL = "排期、发送和取消紧急通知要有紧急通知发送权限";
 
   const renderActions = (c: CampaignRow, size: "sm" | "md" = "sm"): ReactNode => {
     const st = liveSt(c);
+    if (retiredWalletCta(c.ctaHref)) {
+      return size === "sm" ? <Button size={size} aria-label={`查看 ${c.name}`} onClick={() => setDetail(c)}>查看</Button> : null;
+    }
     if (!canWriteI3) return null;
     if (st === "draft") {
       return (
@@ -1163,7 +1168,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {/* ===== 详情：列表那一行的快照 ===== */}
       <Drawer open={!!detailRow} onClose={() => setDetail(null)} title="通知活动详情" sub={detailRow?.name} icon={Bell} tone="role-3"
         explain="内容来自打开页面或刷新时读到的列表，不是另读一次。"
-        footer={shownDetail && !errorText && canWriteI3 ? <Decision others={renderActions(shownDetail, "md")} /> : undefined}>
+        footer={shownDetail && !retiredWalletCta(shownDetail.ctaHref) && !errorText && canWriteI3 ? <Decision others={renderActions(shownDetail, "md")} /> : undefined}>
         {detailRow && (() => {
           const c = detailRow;
           const lang = splitBody(detailLang === "zh" ? c.bodyZh : detailLang === "vi" ? c.bodyVi : c.bodyEn);
@@ -1202,12 +1207,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               {deliveryGap(c) && <Fact k="原因">{deliveryGap(c)}</Fact>}
               {deliveryGap(c) && c.deliveryFacts?.sentCount != null && <Fact k="已核对到的">{`送达 ${c.deliveryFacts.sentCount.toLocaleString("en-US")} 人 · ${sentWindow(c.deliveryFacts.firstSentAt, c.deliveryFacts.lastSentAt, c.deliveryFacts.sentCount)}（${businessZone().label}）`}</Fact>}
               {deliveryGap(c) && /^\d+$/.test(c.sent.trim()) && <Fact k="活动记录写的">{`${Number(c.sent.trim()).toLocaleString("en-US")} 人，不是实际送达数`}</Fact>}
-              {retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)]
+              {retiredWalletCta(c.ctaHref)
+                ? <Fact k="点了去哪" tone="warn">{RETIRED_WALLET_LABEL}</Fact>
+                : retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)]
                 ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}（已停用）`}</Fact>
                 : retiredCta(c.ctaHref)
                 ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}：${RETIRED_CTA_NOTE}`}<Explain label="已下线的去向" content="App 里不再显示这个按钮，点通知只标已读。原来存的去向照原样留在这条活动里。" /></Fact>
                 : <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>}
-              <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : retiredCta(c.ctaHref) ? "不跳转（设的页面已下线）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : c.kind === "staking" ? "不跳转（质押页已下线）" : "不跳转"}</Fact>
+              <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : retiredWalletCta(c.ctaHref) ? RETIRED_WALLET_LABEL : retiredCta(c.ctaHref) ? "不跳转（设的页面已下线）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : c.kind === "staking" ? "不跳转（质押页已下线）" : "不跳转"}</Fact>
               <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>
             </Facts>
             {c.tier === "critical" && <Notice tone="neutral">紧急通知不看用户的通知设置，也不按保留上限清理。</Notice>}
@@ -1269,7 +1276,7 @@ type FormProps = {
 };
 
 const CTA_LABELS_EN: Readonly<Partial<Record<string, string>>> = {
-  "/pages/me/wallet-repurchase": "Reinvest",
+  [I3_WALLET_CTA]: "Wallet",
   "/pages/team/team": "Team",
   "/pages/market/market": "Market",
   "/pages/genesis/marketplace": "Genesis",
@@ -1289,6 +1296,12 @@ const budgetPlacesOver = (value: string) => /^\s*-?\d*\.\d*[1-9]\d*\s*$/.test(va
 /** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
 function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLanguages, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
   const set = (key: keyof NewForm, value: string) => { if (!frozen) setForm({ ...form, [key]: value }); };
+  const setKind = (kind: string) => {
+    if (frozen) return;
+    const defaultWallet = !editing && !form.ctaHref && kind === "commission"
+      && deliveryCatalog?.ctaRoutes.some((option) => option.value === I3_WALLET_CTA);
+    setForm({ ...form, kind, ctaHref: defaultWallet ? I3_WALLET_CTA : form.ctaHref });
+  };
   const title = form[TITLE_KEY[lang]];
   const body = form[BODY_KEY[lang]];
   const titleLen = chars(title.trim()).length;
@@ -1328,7 +1341,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="通知类型" required help="用户能按类型关掉，紧急除外。">
-                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={(next) => set("kind", next)}
+                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={setKind}
                   options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
               <Field label="点了去哪" error={retiredCta(form.ctaHref) ? "已停用，换一个才能保存。" : undefined}
