@@ -167,7 +167,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         // 两个选项各自的后果写在选项下面；选了扣回再补扣款的细则，选了不扣回上面的影响已经说完。
         feedback: (values) => ({
           invalid: false,
-          message: values.usedVoucherClawback === "true" ? "比例券也按实际抵扣额扣回。余额不够会失败；没有抵扣记录的旧券只改发放记录。"
+          message: values.usedVoucherClawback === "true" ? "比例券也按实际抵扣额扣回。余额不足时，USDT 可用余额会扣成负数，记为用户欠款。没有抵扣记录的旧券只改发放记录。"
             : values.usedVoucherClawback === "false" ? ""
               : "扣回按实际抵扣额扣 USDT 并记账。不扣回只改发放记录。",
         }),
