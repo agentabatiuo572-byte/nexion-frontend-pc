@@ -273,7 +273,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
 
   const header = (
     <PageHeader pageId="E1H" title="托管机房"
-      back={onBack ? <button type="button" id="hc-back" className="rd-link hc-back" onClick={onBack}><ArrowLeft size={14} aria-hidden />返回商品管理</button> : undefined}
+      back={onBack ? <button type="button" id="hc-back" className="rd-link hc-back" onClick={onBack}><ArrowLeft size={14} aria-hidden />返回商品管理与上架条件</button> : undefined}
       summary="新设备交付时按权重随机分到启用的机房，已交付的设备不变。"
       meta={readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : undefined}
       readOnly={canRead && !canWrite ? "当前账号只能查看" : undefined}
