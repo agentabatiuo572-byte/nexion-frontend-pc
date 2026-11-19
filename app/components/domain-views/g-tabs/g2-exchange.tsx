@@ -5,7 +5,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 /**
  * G2 兑换额度与规则（改版，RdPage）— 数据来自后端 /api/admin/market/exchange。
  * 首屏回答：兑换开着还是暂停、今天的额度用了多少、队列里压着多少；每个参数旁写清改哪个方向要另一位超级管理员批准。
@@ -299,6 +299,7 @@ function G2ExchangePage() {
   const [overview, setOverview] = useState<G2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [overviewReadError, setOverviewReadError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
   // 原命令回包不是当前概览；重读完成前不能按旧概览发起新修改。
   const [rereadPending, setRereadPending] = useState(false);
@@ -388,6 +389,7 @@ function G2ExchangePage() {
     if (!silent) setLoading(true);
     setReadFailed(true);
     setError(message);
+    setOverviewReadError("");
     try {
       const next = await fetchG2ExchangeOverview();
       if (generation !== readGeneration.current) return;
@@ -397,7 +399,7 @@ function G2ExchangePage() {
     } catch (err) {
       if (generation !== readGeneration.current) return;
       setOverview(null);
-      setError(messageOf(err));
+      setOverviewReadError(displayAdminReadError(err));
     } finally {
       if (generation === readGeneration.current) setLoading(false);
     }
@@ -1071,6 +1073,10 @@ function G2ExchangePage() {
     });
   };
 
+  const operationNotice = error && !mc && !coveredErrors.current.has(error)
+    ? <Notice tone="warn" title="操作提示">{error}</Notice>
+    : null;
+
   if (loading && !overview) {
     return (
       <>
@@ -1086,9 +1092,10 @@ function G2ExchangePage() {
     return (
       <>
         {header}
+        {operationNotice}
         {recoveryNotice()}
         <BlockState state="error" title="兑换数据读取失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
+          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={overviewReadError || "没有收到数据。"} /></>}
           retryLabel="重新加载" onRetry={() => void reload()} />
         {confirmModal}
       </>
@@ -1196,7 +1203,7 @@ function G2ExchangePage() {
     ? <Conclusion state="warn" icon={ShieldAlert}
         hint={<>新兑换和处理排队都会被拒绝，排队的单留在队列；到 {disclosureLink} 把兑换移出受限动作。</>}
         explain={<>
-          <p>兑换开关是开着的。挡住兑换的是风险披露闸门：兑换在「法律条款与风险披露」的受限动作里，和「紧急停用开关」无关。</p>
+          <p>{swap.emergencyPaused === false ? "兑换开关是开着的。" : "兑换开关的状态暂时读不到。"}挡住兑换的是风险披露闸门：兑换在「法律条款与风险披露」的受限动作里。</p>
           <p>移出要提交审批，批准后才解除；已经处理过的批次照常能查原结果。</p>
         </>}>
         风险披露闸门已阻断兑换</Conclusion>
@@ -1308,7 +1315,7 @@ function G2ExchangePage() {
     <>
       {header}
       {confirmModal}
-      {error && !mc && !coveredErrors.current.has(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {operationNotice}
       {conclusion}
       {recoveryNotice()}
 
