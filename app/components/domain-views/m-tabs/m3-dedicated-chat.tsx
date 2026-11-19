@@ -634,7 +634,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       .then(next => { if (current()) setHoldRead({ customerId: holdCustomer, hold: next }); })
       .catch(() => { if (current()) setHoldRead({ customerId: holdCustomer, hold: null }); });
     return () => controller.abort();
-  }, [holdCustomer, holdRetry, selected?.version, selected?.lastTs, inboxHolder, authEpoch, adminId, qualificationUnknown, conversationsAvailable]);
+  }, [holdCustomer, holdRetry, selected?.lastTs, inboxHolder, authEpoch, adminId, qualificationUnknown, conversationsAvailable]);
   // A send refused with 409 SUPPORT_SESSION_BUSY is the newest fact: earlier reads still in flight must not unlock it.
   const lockFromBusy = (customerId: string, busyHold: SupportSessionHold) => {
     holdRequest.current.generation++; holdRequest.current.controller?.abort();
@@ -745,6 +745,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const assignLabel = pendingAssignment ? "核对上次分配" : "分配专属客服";
   const firstProfileCustomer = !selected && conversationsAvailable && firstDetail?.assignmentId && firstDetail.customerId === requestedCustomerId && (canReviewAll || firstDetail.agentAdminId === adminId) ? firstDetail : null;
   const profileCustomerId = selected && !selectedUnbound ? selected.customerId : firstProfileCustomer?.customerId;
+  const profileScopeRevision = snapshotRevision + profileRetry;
   const currentProfileDetail = profileDetail?.customerId === selected?.customerId
     && (!selected?.assignmentId || selected.assignmentId === profileDetail?.assignmentId) ? profileDetail : null;
   const draftAssignment = selected ? currentProfileDetail : firstProfileCustomer;
@@ -789,15 +790,15 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (canWriteM3) void supportClient.customers({ mode: "PERSONAL", pageNum: 1, pageSize: 1, filter: "ALL", keyword: "", signal: controller.signal }).then(page => { if (!controller.signal.aborted) setOwnCustomers(page.total); }).catch(() => undefined);
     void supportEnhancements.bulkJobs(1, controller.signal).then(page => { if (!controller.signal.aborted) setBulkBatches(page.total); }).catch(() => undefined);
     return () => controller.abort();
-  }, [canWriteM3, qualificationUnknown, adminId, authEpoch, conversationSource, rosterSource, entryCheck]);
+  }, [canWriteM3, qualificationUnknown, adminId, authEpoch, snapshotRevision, rosterSource, entryCheck]);
   useEffect(() => {
     setNoAdvisorToAssign(false);
     if (!selectedUnbound || !canWriteAssignment || pendingAssignment || !selected?.customerId) return;
     const controller = new AbortController();
     void readSupportPoolCustomer(String(selected.customerId)).then(pool => supportClient.agents({ pageNum: 1, pageSize: 100, groupId: pool.routeGroupId ? Number(pool.routeGroupId) : undefined, signal: controller.signal })).then(page => { if (!controller.signal.aborted) setNoAdvisorToAssign(!page.records.some(agent => agent.assignmentEligible && !agent.busy)); }).catch(() => undefined);
     return () => controller.abort();
-  }, [selectedUnbound, canWriteAssignment, pendingAssignment, selected?.customerId, rosterSource, conversationSource, entryCheck]);
-  // 发送时输入框被禁用会丢焦点，核对完归属后放回去，接着打下一条。
+  }, [selectedUnbound, canWriteAssignment, pendingAssignment, selected?.customerId, rosterSource, snapshotRevision, entryCheck]);
+  // 已发送后将焦点留在当前会话，方便继续输入。
   useEffect(() => { if (refocusComposer.current && writable && !busy) { refocusComposer.current = false; composerRef.current?.focus(); } }, [writable, busy]);
   const lostAccess = Boolean(!qualificationUnknown && conversationsAvailable && selectedId && !requestedCustomerId && !visible.some((convo) => convo.id === selectedId));
   const readContextsKey = JSON.stringify(messagePages.page?.readContexts ?? []);
@@ -1205,7 +1206,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       } else setProfileError(displayAdminError(cause));
     });
     return () => controller.abort();
-  }, [selected?.id, selected?.customerId, selected?.assignmentId, selected?.ownerAdminId, selectedUnbound, conversationsAvailable, authEpoch, snapshotRevision, profileRetry, revokeCustomer, canReviewAll, adminId, leaveUnavailableConversation]);
+  }, [selected?.id, selected?.customerId, selected?.assignmentId, selected?.ownerAdminId, selectedUnbound, conversationsAvailable, qualificationUnknown, authEpoch, snapshotRevision, profileRetry, canReviewAll, adminId, leaveUnavailableConversation]);
 
   const select = (conversationNo: string, commandKey = "", source?: string) => {
     setChosenCommand(commandKey);
@@ -1575,9 +1576,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     window.dispatchEvent(new Event("support-todo-changed"));
     if (!currentPage()) return;
     ctx.refreshConversation(record.conversationId, receipt.conversation);
+    if (activeCustomerRef.current === record.customerId && (record.intent === "MAINTENANCE" || actsAsAdvisor && currentProfileDetail?.firstContact)) {
+      setProfileRetry(value => value + 1);
+    }
     if (!originalView()) return;
     setMaintenanceChosen(false); setSelectedClosedIds(new Set());
-    if (record.intent === "MAINTENANCE") setProfileRetry(value => value + 1);
     setContentChoice(null);
     refocusComposer.current = true;
   };
@@ -2291,7 +2294,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
 
       <aside className="m3s-profile" aria-label="客户资料">
         <div className="m3s-profile-narrow"><h2>客户资料</h2><Button size="sm" onClick={() => setScreen("chat")}>返回会话</Button></div>
-        {selectedUnbound ? <BlockState state="empty" title="待分配专属客服，还没有维护状态。" /> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} source="M3" openRequest={profileOpen} transferEntry={!canReviewAll || canTransfer} conversation={selected ?? undefined} scopeVersion={selected?.version ?? firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={() => { void messagePages.retry(); }} onHistory={no => { if (visible.some(convo => convo.id === no)) select(no); }} /> : !conversationsAvailable ? <p className="m3s-blank">读不到客户资料</p> : <BlockState state="empty" title={requestedCustomerId ? "客户归属尚未核对，资料暂时加载不出来。" : "选择客户后查看资料。"} />}
+        {selectedUnbound ? <BlockState state="empty" title="待分配专属客服，还没有维护状态。" /> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} source="M3" openRequest={profileOpen} transferEntry={!canReviewAll || canTransfer} conversation={selected ?? undefined} scopeVersion={profileScopeRevision} messageError={conversationError} onRetryMessages={() => { void messagePages.retry(); }} onHistory={no => { if (visible.some(convo => convo.id === no)) select(no); }} /> : !conversationsAvailable ? <p className="m3s-blank">读不到客户资料</p> : <BlockState state="empty" title={requestedCustomerId ? "客户归属尚未核对，资料暂时加载不出来。" : "选择客户后查看资料。"} />}
       </aside>
       {assignOpen && canAssign && selected?.customerId && <AssignAdvisorDialog key={`${scopeIdentity}:${selected.customerId}`} adminId={adminId} canWrite={canWriteAssignment} customerId={String(selected.customerId)} customerName={title} onClose={() => setAssignOpen(false)} onAssigned={name => { setAssignOpen(false); setActionError(""); setActionResult(`已确认原分配，专属客服为 ${name}。`); void ctx.refreshConversations().catch(() => setActionResult(`已确认原分配，专属客服为 ${name}。会话刷新失败，请刷新会话核对。`)); }} />}
       {bulkOpen && <SupportBulkComposer ctx={ctx} createBlocked={baseBlocked ?? noOwnCustomers} onClose={() => { setBulkOpen(false); setEntryCheck(value => value + 1); }} />}
