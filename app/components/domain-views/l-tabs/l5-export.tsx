@@ -25,6 +25,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { l5TaskCommands, l5TaskCommandOrigin, lReportReadAuthority, queryL5TaskCommand, type PendingL5Task } from "@/lib/admin/l5-task-commands";
+import { downloadL4NetworkSnapshot, l4NetworkGrantRecovery } from "@/lib/admin/l4-network-export";
 import { toast as notify } from "@/lib/store/ui";
 import { num, rec, rows, str } from "./live-data";
 import {
@@ -152,6 +153,7 @@ type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: str
 
 /** 导出任务状态筛选(索引 = filter 状态值;label 同时用于按钮文本与切换 toast)。 */
 const L5_TASK_FILTERS = ["全部", "待放行", "生成中", "已就绪"] as const;
+const isNetworkTree = (task: LExportTask) => task.reportType === "NETWORK_TREE";
 
 const LEDGER_PAGE = "/finance/ledger";
 const L3_PAGE = "/analytics/financial";
@@ -345,11 +347,14 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       </Notice>
     );
   })();
+  const canApproveTask = (task: LExportTask) => isNetworkTree(task)
+    ? session?.authorities.includes("bi_l4_export_tree") === true : ctx.canApproveExportTasks;
   const sendTaskAction = async (task: LExportTask, action: "approve" | "rerun", requester: string, reason: string, original?: PendingL5Task) => {
     if (actionBusy.current) throw new Error(formatAdminApiError("L5_TASK_BUSY", "L5_TASK_BUSY"));
     const auth = useAdminAuth.getState().session;
     const allowed = auth && (action === "approve"
-      ? auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_task_approve")
+      ? isNetworkTree(task) ? auth.authorities.includes("bi_l4_export_tree")
+        : auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_task_approve")
       : canAccessBiReportType(auth.role, auth.authorities, task.reportType, task.pii));
     if (!auth || String(auth.adminId) !== owner || !allowed) throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
     let record = l5TaskCommands.list().find(item => item.owner === owner && item.task.id === task.id);
@@ -386,7 +391,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         await submitL5TaskAction(record.task.id, record.action, record.request, record.commandKey);
       } catch (error) {
         const failure = error as { httpStatus?: number; apiCode?: number; reasonCode?: string };
-        const rejected = original ? isExplicitRejection(error)
+        const rejected = original || isNetworkTree(task) ? isExplicitRejection(error)
           : !failure.reasonCode?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(failure.httpStatus ?? 0, failure.apiCode);
         if (rejected) {
           l5TaskCommands.forget(record.fingerprint, record.commandKey);
@@ -436,7 +441,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       }
       // 只有这类报表的查看权限、没有导出任务权限：读不到任务现在的状态，只说原结果查到了什么和下一步。
       if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) {
-        const canWrite = record.action === "approve" ? ctx.canApproveExportTasks : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
+        const canWrite = record.action === "approve" ? canApproveTask(record.task) : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
         const step = isRetryExpired(record) ? "已过 24 小时不能再重试，请有导出任务查看权限的同事核对。"
           : canWrite ? "24 小时内可以按原请求重试。" : "请有导出任务查看权限的同事核对。";
         notify.warn(record.task.id, `${!original ? "查询失败，这不代表没执行" : "还没查出原结果的结论"}，原请求继续保留；${step}`);
@@ -456,7 +461,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     const expired = isRetryExpired(record);
     const authority = lReportReadAuthority(record.task.reportType);
     const canRead = !!authority && session?.authorities.includes(authority) || session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("bi_l5_read");
-    const canWrite = record.action === "approve" ? ctx.canApproveExportTasks : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
+    const canWrite = record.action === "approve" ? canApproveTask(record.task) : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
     return {
       key: record.commandKey, reportId: record.task.id, title: taskTitle(record.task, exportTypeText),
       action: record.action === "approve" ? "放行" : "重新发起", requester: record.requester,
@@ -512,15 +517,17 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const l3Name = pageName(L3_PAGE, "财务报表");
   function requestApproveTask(t: LExportTask, requester: string, original?: PendingL5Task) {
     let retained = original;
+    const tree = isNetworkTree(t);
     ctx.openActionConfirm({ briefKind: "record",
-    action: "审批脱敏资金明细",
-    title: "放行脱敏资金明细",
+    action: tree ? "审批团队关系明细" : "审批脱敏资金明细",
+    title: tree ? "放行团队关系明细" : "放行脱敏资金明细",
     detail: <>任务 <span className="mono">{t.id}</span> 用的是申请时生成的那份文件；下载链接只给下载的本人用。</>,
     effect: <><StatusTag tone="warn" icon={LockKeyhole} filled>放行后有权限的人就能下载</StatusTag><IrreversibleTag>放行后不能撤回</IrreversibleTag></>,
     confirmTone: "danger",
     confirmLabel: "确认放行",
     statedBrief: {
-      impact: "放行后这份脱敏明细就能下载，不解密、不重新取数、不改余额。",
+      impact: tree ? "放行后，有团队关系明细导出权限的管理员可以下载申请时生成的这份文件。"
+        : "放行后这份脱敏明细就能下载，不解密、不重新取数、不改余额。",
       check: "核对范围、内容和行数是不是申请人工单里要的；看不懂就先别放行，找申请人确认。",
     },
     facts: (
@@ -528,14 +535,14 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="行数" lead={t.rows !== "—"} unit={t.rows !== "—" ? "行" : undefined}>{rowsText(t.rows)}</Fact>
         <Fact k="导出的是什么">{taskTitle(t, exportTypeText)} · <span data-mono="">{t.id}</span></Fact>
         <Fact k="范围">{reportScopeText(t.scope)}</Fact>
-        <Fact k="内容">{operatorCopyText(t.fields)}</Fact>
-        <Fact k="脱敏到什么程度" tone="warn">只隐藏用户编码，留前 2 位和后 2 位<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。</p><p>业务编号、金额、余额、交易时间都是原值；不导出手机号、昵称、备注。系统不允许解密导出。</p></>} /></Fact>
+        <Fact k="内容">{tree ? t.fields : operatorCopyText(t.fields)}</Fact>
+        <Fact k="脱敏到什么程度" tone="warn">只隐藏用户编码，留前 2 位和后 2 位<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。</p><p>{tree ? "不导出手机号和昵称。" : "业务编号、金额、余额、交易时间都是原值；不导出手机号、昵称、备注。系统不允许解密导出。"}</p></>} /></Fact>
         <Fact k="申请人">{requester}</Fact>
         <Fact k="申请时间">{formatBusinessTimeCompact(t.requestedAt, "—")}（{businessZone().label}）</Fact>
-        <Fact k="放行后谁能下载">有资金明细导出权限的管理员，含申请人<Explain label="谁能下载" content="下载要「财务资金明细导出」权限。你放行不需要这项权限；没有它，你自己下载不了。" /></Fact>
+        <Fact k="放行后谁能下载">{tree ? "有团队关系明细导出权限的管理员，含申请人" : <>有资金明细导出权限的管理员，含申请人<Explain label="谁能下载" content="下载要「财务资金明细导出」权限。你放行不需要这项权限；没有它，你自己下载不了。" /></>}</Fact>
         <Fact k="能下多久">下载链接 24 小时内有效，过期可再下载<Explain label="任务保留多久" content="系统不会按时间自动删除任务和文件，但没有承诺固定的保存期限。要长期留存，下载后自己保存。" /></Fact>
         <Fact k="留什么记录">放行写进「{pageName(AUDIT_PAGE, "操作记录与审批")}」，每次下载也会记录</Fact>
-        <Fact k="谁能放行">另一位有导出审批权限的管理员，不能是申请人</Fact>
+        <Fact k="谁能放行">{tree ? "另一位有团队关系明细导出权限的管理员" : "另一位有导出审批权限的管理员，不能是申请人"}</Fact>
       </Facts>
     ),
     reasonPlaceholder: "写放行依据，例如：已核对申请人的工单号和用途",
@@ -556,7 +563,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     if (!auth || String(auth.adminId) !== owner || !canAccessBiReportType(auth.role, auth.authorities, t.reportType, t.pii)) {
       throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
     }
-    const file = await ctx.biActions?.downloadReport(t.id);
+    const file = isNetworkTree(t) ? await downloadL4NetworkSnapshot(t.id) : await ctx.biActions?.downloadReport(t.id);
     if (!file || !file.blob.type.toLowerCase().includes("text/csv")) throw new Error(formatAdminApiError("L5_DOWNLOAD_RESPONSE_INVALID", "L5_DOWNLOAD_RESPONSE_INVALID"));
     downloadBlob(file.blob, file.fileName);
     toast(`${t.id} 开始下载`);
@@ -728,8 +735,9 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   };
   const conclusion = pending > 0
     ? ctx.canApproveExportTasks
+      || session?.authorities.includes("bi_l4_export_tree")
       ? <Conclusion state="warn" icon={Inbox} lead hint={<>在下面「等待放行」逐份核对后放行；你自己申请的要另一位管理员放行。</>}
-          explain="待放行 = 含隐私的脱敏资金明细，在「财务报表」申请后停在这里，另一位管理员放行前谁都不能下载。数的是全部待放行任务，不分谁申请的。">
+          explain="脱敏资金明细和团队关系明细都要另一位有相应权限的管理员放行后才能下载。这里统计所有待放行任务。">
           有 <b>{pending}</b> 份含隐私的导出等待放行
         </Conclusion>
       : <Conclusion state="neutral" icon={Inbox} hint="你没有放行权限；另一位管理员放行后，有对应导出权限的人才能下载。">
@@ -743,7 +751,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         onOpen={() => toggleFilter(1)} openLabel={`等待放行 ${pending} 份，点击只看待放行`} selected={filter === 1} selectedText="已筛选" aria-pressed={filter === 1} />
       <Stat icon={Download} tone="role-2" label="可下载" value={String(L5_STATS.ready)} unit="份"
         sub={L5_STATS.legacyReadyWithoutSnapshot > 0 ? `另有 ${L5_STATS.legacyReadyWithoutSnapshot} 份没有文件` : undefined}
-        explain="已生成、有文件的任务。下载时每次签发一个只给你用、24 小时内有效的链接。点这格只看已就绪的任务（含没有文件的）。"
+        explain="已生成、有文件的任务。链接只给你用，签发后 24 小时内有效。点这格只看已就绪的任务（含没有文件的）。"
         onOpen={() => toggleFilter(3)} openLabel={`可下载 ${L5_STATS.ready} 份，点击只看已就绪`} selected={filter === 3} selectedText="已筛选" aria-pressed={filter === 3} />
       <Stat icon={LockKeyhole} tone="role-3" label="含隐私任务" value={String(L5_STATS.sensitive)} unit="份"
         explain="文件里有用户编码这类个人信息（资金明细、团队树），只能导出隐藏后的，不能导出原文。" />
@@ -753,7 +761,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   );
 
   /* ---------------- 导出任务：待放行卡在前，其余一张表 ---------------- */
-  const requesterText = (t: LExportTask) => !ctx.canApproveExportTasks ? "—"
+  const requesterText = (t: LExportTask) => !canApproveTask(t) ? "—"
     : t.requesterDisplayName ?? (t.approvalEligibility === "SELF" ? "你本人"
     : t.approvalEligibility === "ELIGIBLE" ? "另一位管理员"
     : "申请人核对不上");
@@ -761,7 +769,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const pendingTasks = visibleTasks.filter(isPendingCard);
   const otherTasks = visibleTasks.filter((t) => !isPendingCard(t));
   const approveAction = (t: LExportTask) => {
-    const approvalBlocked = !ctx.canApproveExportTasks ? "你没有放行权限，要有导出任务审批权的管理员放行"
+    const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? "这份报表需要有团队关系明细导出权限的管理员放行" : "你没有放行权限，要有导出任务审批权的管理员放行"
       : t.approvalEligibility === "SELF" ? "这是你申请的，要另一位管理员放行"
       : t.approvalEligibility === "ELIGIBLE" ? null : "暂时不能放行：系统核对不了申请人，请找技术同事";
     if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原结果</span>;
@@ -774,6 +782,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     const st = effSt(t);
     const canAccessTask = ctx.canAccessReportType?.(t.reportType, t.pii) ?? false;
     const busy = busyTask === t.id;
+    const grant = isNetworkTree(t) && acts.includes("download") ? l4NetworkGrantRecovery(t.id) : undefined;
     const out: ReactNode[] = [];
     if (!t.supported) out.push(<span key="closed" className="l5-weak">这类导出已停用</span>);
     if (t.supported && ["READY", "EXPIRED", "FAILED"].includes(st) && !t.snapshotAvailable) out.push(<span key="nofile" className="l5-weak">没有文件，不能下载</span>);
@@ -781,6 +790,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     if ((acts.includes("download") || acts.includes("retry")) && !canAccessTask) out.push(<span key="denied" className="l5-weak">你没有这类报表的导出权限</span>);
     if (acts.includes("download") && canAccessTask) out.push(
       <Button key="download" size="sm" icon={<Download size={14} aria-hidden />} loading={busy} loadingText="正在下载…"
+        disabledReason={grant && isRetryExpired(grant) ? RETRY_EXPIRED_TEXT : grant && !grant.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined}
         onClick={() => { setBusyTask(t.id); void downloadTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "下载失败")).finally(() => setBusyTask(null)); }}>下载</Button>,
     );
     if (acts.includes("retry") && canAccessTask) out.push(
@@ -799,7 +809,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         sub={taskPage ? `共 ${taskTotal} 份 · 每页 8 份${otherTasks.some((t) => reportScopeParts(t.scope).sub) ? ` · 时间为${businessZone().label}` : ""}` : undefined}
         explain={<>
           <p>各报表页和这页创建的导出都在这里：待放行在最前，其次生成中、可下载、已过期、失败。</p>
-          <p>汇总和当前披露快照创建后直接可下载；脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载；团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」导出时直接下载，这里只能再下载已生成的，不能重新发起。</p>
+          <p>汇总和当前披露快照创建后直接可下载。脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载。团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」申请，在这里放行后下载。</p>
           <p>失败或过期的任务可以「重新发起」：用原来那份文件，不重新取数；含隐私的要再放行一次。</p>
         </>}>
         <div className="l5-list-tools">
@@ -814,7 +824,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
                 <PendingCard key={t.id} task={t} title={taskTitle(t, exportTypeText)} source={taskSource(t)}
                   scope={reportScopeText(t.scope)} fields={operatorCopyText(t.fields)}
                   unknown={recoveryIds.has(t.id)}
-                  requester={ctx.canApproveExportTasks ? requesterText(t) : undefined} action={approveAction(t)} />
+                  requester={canApproveTask(t) ? requesterText(t) : undefined} action={approveAction(t)} />
               ))}
             </ul>
           </section>
@@ -872,7 +882,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const createPanel = (
     <div ref={createRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">新建导出</span>} explainLabel="新建导出" icon={FilePlus2} sub="三种出口，去向不同"
-        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，放行后在上面任务列表下载；团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出时直接下载，任务列表里只能再下载。</p></>}>
+        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 申请。放行后可在任务列表下载。</p></>}>
         <div className="l5-create">
           <article className="l5-create-card" aria-labelledby="l5-create-agg">
             <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3><Explain label="汇总数据是什么" content="关键指标、转化与留存、财务、运营四类汇总，不含个人信息。创建那一刻取数，以后下载还是那一刻的数。" /></div>

@@ -57,6 +57,8 @@ async function proxy(request: Request, context: RouteContext) {
     });
     const disposition = upstream.headers.get("Content-Disposition");
     if (disposition) responseHeaders.set("Content-Disposition", disposition);
+    const outcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    if (outcome) responseHeaders.set("X-Nexion-Upstream-Outcome", outcome);
     return new Response(await upstream.arrayBuffer(), {
       status: upstream.status,
       headers: responseHeaders,

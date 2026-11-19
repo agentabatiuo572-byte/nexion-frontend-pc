@@ -3407,7 +3407,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   L4_EXPORT_VIEW_CHANGED: "当前权限、报表或筛选条件已经变化，请关闭确认框，读取最新报表后再导出。",
   L4_TREE_RECEIPT_INVALID: "团队关系导出返回的内容不完整或对不上，结果未知。请保留原请求并查询原结果。",
   L4_TREE_FILE_INVALID: "没有收到有效的 CSV 文件，未开始下载。报表已保留，可以点「只下载」再试；仍不行请联系技术同事。",
-  L4_TREE_GRANT_UNKNOWN: "下载授权结果未知。报表已保留，请查询原报表并请有权限的同事核对，不要重复签发授权或创建快照。",
+  L4_TREE_GRANT_UNKNOWN: "下载授权结果未知。报表已保留，请找技术同事核对原报表的授权记录。",
   L4_TREE_QUERY_PERMISSION: "查询原报表需要报表读取权限，请找有权限的同事核对；原请求继续保留。",
   L4_TREE_REASON_ENCODED_TOO_LONG: "理由太长，暂时无法提交：中文和标点按编码后的长度算，上限 200，能写的字比看上去少。请缩短后重试。",
   L6_WINDOW_INVALID: "行为统计时间范围无效，请选择近 24 小时、7 天或 30 天。",
