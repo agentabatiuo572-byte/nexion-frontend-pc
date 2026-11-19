@@ -144,7 +144,7 @@ export function E1Page() {
         if ((values.forceUnlock ?? String(input.generationGate?.forceUnlock)) === "true") return phaseBlock;
         if (input.generationGateId) return undefined;
         const phaseId = values.phase;
-        if (!phaseId) return "请先选择开放阶段";
+        if (!phaseId) return "当前阶段待核实，请手动选择开放阶段";
         if (!gates?.phaseOrder.includes(phaseId) || !gates.phases.some(phase => phase.p === phaseId && phase.status !== "archived")) {
           return formatAdminApiError("E1_GATE_PHASE_INVALID", "");
         }
