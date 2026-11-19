@@ -726,6 +726,14 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
 
   /* ---------------- 结论和四个数 ---------------- */
   const pending = L5_STATS.pending;
+  const isPendingCard = (t: LExportTask) => t.supported && effActs(t).includes("approve");
+  const pendingTasks = visibleTasks.filter(isPendingCard);
+  const hasApprovableTask = pendingTasks.some(t => canApproveTask(t) && t.snapshotAvailable
+    && t.approvalEligibility === "ELIGIBLE" && !recoveryIds.has(t.id));
+  const overviewPending = rows<LExportTask>(data.exportTasks).filter(isPendingCard);
+  const onlyNetworkTrees = [pendingTasks, overviewPending].some(tasks =>
+    tasks.length === pending && tasks.every(isNetworkTree));
+  const networkApprovalHint = "要有团队关系明细导出权限的管理员放行";
   const selectFilter = (next: number) => {
     setFilter(next);
     setTaskPageNum(1);
@@ -737,13 +745,12 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     requestAnimationFrame(() => scrollTo(listRef.current));
   };
   const conclusion = pending > 0
-    ? ctx.canApproveExportTasks
-      || session?.authorities.includes("bi_l4_export_tree")
-      ? <Conclusion state="warn" icon={Inbox} lead hint={<>在下面「等待放行」逐份核对后放行；你自己申请的要另一位管理员放行。</>}
+    ? hasApprovableTask
+      ? <Conclusion state="warn" icon={Inbox} lead hint="在下面核对有「放行」按钮的任务。"
           explain="脱敏资金明细和团队关系明细都要另一位有相应权限的管理员放行后才能下载。这里统计所有待放行任务。">
           有 <b>{pending}</b> 份含隐私的导出等待放行
         </Conclusion>
-      : <Conclusion state="neutral" icon={Inbox} hint="你没有放行权限；另一位管理员放行后，有对应导出权限的人才能下载。">
+      : <Conclusion state="neutral" icon={Inbox} hint={onlyNetworkTrees ? networkApprovalHint : "另一位管理员放行后，有对应导出权限的人才能下载。"}>
           有 {pending} 份含隐私的导出等待另一位管理员放行
         </Conclusion>
     : <Conclusion state="ok" icon={ShieldCheck}>没有等待放行的导出，可下载 {L5_STATS.ready} 份</Conclusion>;
@@ -768,11 +775,9 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     : t.requesterDisplayName ?? (t.approvalEligibility === "SELF" ? "你本人"
     : t.approvalEligibility === "ELIGIBLE" ? "另一位管理员"
     : "申请人核对不上");
-  const isPendingCard = (t: LExportTask) => t.supported && effActs(t).includes("approve");
-  const pendingTasks = visibleTasks.filter(isPendingCard);
   const otherTasks = visibleTasks.filter((t) => !isPendingCard(t));
   const approveAction = (t: LExportTask) => {
-    const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? "要有团队关系明细导出权限的管理员放行" : "你没有放行权限，要有导出任务审批权的管理员放行"
+    const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? networkApprovalHint : "你没有放行权限，要有导出任务审批权的管理员放行"
       : t.approvalEligibility === "SELF" ? "这是你申请的，要另一位管理员放行"
       : t.approvalEligibility === "ELIGIBLE" ? null : "暂时不能放行：系统核对不了申请人，请找技术同事";
     if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原结果</span>;
