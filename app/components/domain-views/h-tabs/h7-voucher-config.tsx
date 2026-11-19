@@ -619,7 +619,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                     <Td><VoucherTags v={v} now={now} /></Td>
                     <Td><Cell main={skuText(v.applicableSkus, skuLabels)} sub={AUDIENCE_LABEL[v.audience]} /></Td>
                     {/* 起止都有时分两行，不挤进右边的用量列。 */}
-                    <Td>{(([from, to]) => <Cell main={from} sub={to ? `至 ${to}` : undefined} />)(periodText(v).split(" 至 "))}</Td>
+                    <Td><span className="h7-table-period">{(([from, to]) => <Cell main={from} sub={to ? `至 ${to}` : undefined} />)(periodText(v).split(" 至 "))}</span></Td>
                     <Td align="right"><span className="h7-table-usage">
                       <Cell num main={`${countText(v.redeemedCount)} / ${countText(v.issuedCount)}`} sub={v.issuanceLimit > 0 ? `上限 ${countText(v.issuanceLimit)}` : "不限量"} />
                       {v.issuedCount > 0 ? <RatioBar compact quiet label="已使用占已发出" value={v.redeemedCount} total={v.issuedCount} valueText={`已使用 ${v.redeemedCount}，已发出 ${v.issuedCount}`} /> : <span aria-hidden />}
