@@ -111,7 +111,7 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
 
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {
-  name: "", id: "", tier: "", tagline: "", badge: "",
+  name: "", id: "", tier: "", seriesCode: "", tagline: "", badge: "",
   gpuCount: "", specDocumentTitle: "", specDocumentUrl: "",
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   allowedPoolCodes: [] as string[],
@@ -158,7 +158,7 @@ export function joinGpu(model: string, count: string): string | undefined {
 }
 /** Matches the backend's legacy on-sale maintenance exception; never supplies missing values. */
 export function isLegacyOnSaleMaintenance(f: SkuForm, existing?: OpsSku): boolean {
-  if (!existing || existing.status !== "on" || supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)) return false;
+  if (!existing || existing.status !== "on" || supportsDeviceMonthlyTarget(f.seriesCode)) return false;
   const unchangedAmount = (draft: string, stored: number | string | null | undefined) => stored == null
     ? !draft.trim() : !!draft.trim() && Number(draft) === Number(stored);
   const pools = new Set(existing.allowedPoolCodes ?? []);
@@ -169,13 +169,13 @@ export function isLegacyOnSaleMaintenance(f: SkuForm, existing?: OpsSku): boolea
 
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
-  if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
-  if (existing && !supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)
-      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== (existing.monthlyTargetUsdt == null ? undefined : Number(existing.monthlyTargetUsdt))
-        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== (existing.monthlyTargetBandPct == null ? undefined : Number(existing.monthlyTargetBandPct)))) return SKU_MODEL_UNRECOGNIZED_REASON;
+  if (!supportsDeviceMonthlyTarget(f.seriesCode)) return SKU_MODEL_UNRECOGNIZED_REASON;
+  const isShare = existing?.productType ? ["SHARE", "CLOUD_SHARE"].includes(existing.productType) : f.tier === "Share";
+  if (isShare !== (f.seriesCode === "CLOUD_SHARE")) return "所属系列与商品类型不一致";
+  if (existing?.seriesLocked && f.seriesCode !== (existing.seriesCode ?? "")) return "商品已有订单或已发出设备，所属系列已锁定";
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
-  if (supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType)) {
+  {
     const target = f.monthlyTargetUsdt.trim();
     const band = f.monthlyTargetBandPct.trim();
     if (target) {
@@ -204,7 +204,7 @@ export function skuToForm(s: OpsSku): SkuForm {
   const g = s.purchaseGate;
   const gpuParts = splitGpu(s.gpu);
   return {
-    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
+    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", seriesCode: s.seriesCode ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedPoolCodes: s.allowedPoolCodes ?? [],
@@ -441,7 +441,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const stockTrim = f.stock.trim();
   const sku: OpsSku = {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
-    tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
+    tier: f.tier, seriesCode: f.seriesCode, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     allowedPoolCodes: f.allowedPoolCodes,

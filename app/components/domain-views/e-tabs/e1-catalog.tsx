@@ -4,7 +4,7 @@ import { Archive, Ban, Boxes, CheckCircle2, CircleDot, Clock3, FastForward, File
 import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
-import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, skuSeriesLabel, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
@@ -133,7 +133,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${p.size ? `?${p}` : ""}`);
   }, [query, status, tier, scope, queryReady, skuLink]);
   const clear = () => { setQuery(""); setStatus("all"); setTier("all"); setScope("all"); setParamNote(""); };
-  const oldModel = (s: OpsSku) => !supportsDeviceMonthlyTarget(s.id, s.tier, s.productType);
+  const oldModel = (s: OpsSku) => !supportsDeviceMonthlyTarget(s.seriesCode);
   const filtered = useMemo(() => skus.filter(s => {
     const haystack = [s.id, s.name, s.tagline, s.badge, s.gpu, s.vram, s.datacenter].filter(Boolean).join(" ").toLowerCase();
     return (!query.trim() || haystack.includes(query.trim().toLowerCase())) && (status === "all" || s.status === status) && (tier === "all" || s.tier === tier)
@@ -329,7 +329,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       {stats[3].value || legacy || unknown || unconfigured || ctx.e1InvalidSkus.length ? "商品目录有待处理项" : skus.length ? "商品目录已就绪" : "商品目录尚为空"}
       {!!unconfigured && <> · <Button variant="ghost" onClick={() => setScope("unconfigured")}>{unconfigured} 个在售商品没有配置任务等级</Button></>}
       {!!stats[3].value && <> · <Button variant="ghost" onClick={() => setScope("blocked")}>{stats[3].value} 个上架受阻</Button></>}
-      {!!legacy && <> · <Button variant="ghost" onClick={() => setScope("legacy")}>{legacy} 个旧编号需核对</Button></>}
+      {!!legacy && <> · <Button variant="ghost" onClick={() => setScope("legacy")}>{legacy} 个未选系列需核对</Button></>}
       {!!unknown && <> · <Button variant="ghost" onClick={() => setScope("unknown")}>{unknown} 个上架状态待核实</Button></>}
     </Conclusion>}
     <StatBand label="商品目录汇总">{stats.map(stat => <Stat key={stat.key} label={stat.label} value={available ? stat.value : "—"} unit="个" icon={stat.icon} tone={stat.key === "blocked" ? "warn" : "neutral"} onOpen={available ? () => setScope(scope === stat.key ? "all" : stat.key) : undefined} selected={scope === stat.key} selectedText="已筛选" aria-pressed={scope === stat.key} openLabel={`筛选${stat.label}商品`} explain="全量目录统计，不随关键词和档位筛选变化；发布门未声明和无效行另列。" />)}</StatBand>
@@ -340,7 +340,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       <Button onClick={() => revealPlan()}>管理开放计划</Button>
     </section>
     {ctx.gatesError && <Notice tone="warn" title="开放阶段暂时读不到" action={<Button onClick={ctx.refreshGates}>重新读取阶段</Button>}><p>{ctx.gatesError} · 开放阶段读取成功前不能提交修改</p></Notice>}
-    <FilterBar onClear={clear} canClear={!!query || status !== "all" || tier !== "all" || scope !== "all"} result={available ? `显示 ${filtered.length} / ${skus.length} 个商品${scope !== "all" ? ` · 当前筛选：${({ blocked: "上架受阻", legacy: "旧编号需核对", unknown: "上架状态待核实", unconfigured: "在售未配置任务等级", on: "在售", pending: "草稿", off: "已下架" } as Record<string, string>)[scope]}` : ""}` : undefined} notice={paramNote || undefined}>
+    <FilterBar onClear={clear} canClear={!!query || status !== "all" || tier !== "all" || scope !== "all"} result={available ? `显示 ${filtered.length} / ${skus.length} 个商品${scope !== "all" ? ` · 当前筛选：${({ blocked: "上架受阻", legacy: "未选系列需核对", unknown: "上架状态待核实", unconfigured: "在售未配置任务等级", on: "在售", pending: "草稿", off: "已下架" } as Record<string, string>)[scope]}` : ""}` : undefined} notice={paramNote || undefined}>
       <Input aria-label="搜索商品" className="e1-search" value={query} placeholder="名称 / 商品编号 / GPU / 托管机房" onChange={e => setQuery(e.target.value)} />
       <Select aria-label="商品状态筛选" value={status} onChange={setStatus} options={[{ value: "all", label: "全部状态" }, { value: "on", label: "在售" }, { value: "pending", label: "草稿" }, { value: "off", label: "已下架" }]} />
       <Select aria-label="商品档位筛选" value={tier} onChange={setTier} options={[{ value: "all", label: "全部档位" }, ...["Entry", "Pro", "Flagship", "Share"].map(t => ({ value: t, label: operatorSkuTier(t) }))]} />
@@ -360,7 +360,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           <div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge" title={nexGridBrandText(s.badge)}>{nexGridBrandText(s.badge)}</span>}</div>
           <div className="e1-product-title">
             <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
-            <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span>{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
+            <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span><span>{skuSeriesLabel(s.seriesCode)}</span>{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
             <div className="e1-product-price"><strong><E1Amount value={s.price} /> <small>USD</small></strong></div>
             {s.tagline && <div className="e1-tagline" title={nexGridBrandText(s.tagline)}>{nexGridBrandText(s.tagline)}</div>}
           </div>

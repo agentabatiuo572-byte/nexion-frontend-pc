@@ -14,7 +14,7 @@ import { compareE6Decimal, e6AmountPrecision, formatE6Amount } from "@/lib/admin
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsTask } from "@/lib/admin/platform-types";
-import type { E2PhoneTier } from "@/lib/admin/e2-client";
+import type { E2PhoneTier, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { EViewCtx } from "./types";
 import { E6PendingNotice, useE6Mutations } from "./e6-mutations";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
@@ -124,6 +124,13 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
 export function PhoneTiersSection({ctx}:{ctx:EViewCtx}) {
   const m=useE6Mutations(), rights=useAdminAuth(s=>s.session!.authorities);
   const [edit,setEdit]=useState<{tier:E2PhoneTier;field:"dailyUsdt"|"dailyNex"}|null>(null);
+  const [comparisonEdit, setComparisonEdit] = useState<E2YieldComparison | null>(null);
+  const canBindSku = ctx.canWriteE6 && rights.includes("device_e1_read") && m.canPropose
+    && rights.some(right => right === "platform_a2_read" || right === "platform_a2_proposal_create");
+  const products = ctx.skus.filter(sku => sku.status === "on" && sku.publishBlocked === false
+    && (sku.productType === "DEVICE" || sku.productType === "SERVER")
+    && Number(sku.dailyEarn) > 0 && Number(sku.dailyEarnNEX) > 0);
+  const bindingScope = comparisonEdit ? 'comparison:' + comparisonEdit.configKey : "";
   const ready=!ctx.e2Loading && ctx.phoneTiers.length===5;
   const text=(tier:E2PhoneTier,field:"dailyUsdt"|"dailyNex")=>tier[field==="dailyUsdt"?"dailyUsdtText":"dailyNexText"];
   const tierUsdtPrecision=e6AmountPrecision(ctx.phoneTiers.map(t=>text(t,"dailyUsdt"))), tierUvtPrecision=e6AmountPrecision(ctx.phoneTiers.map(t=>text(t,"dailyNex")));
@@ -138,10 +145,59 @@ export function PhoneTiersSection({ctx}:{ctx:EViewCtx}) {
     <Panel className={ctx.phoneTiers.some(t=>formatE6Amount(text(t,"dailyUsdt"),tierUsdtPrecision).length>12||formatE6Amount(text(t,"dailyNex"),tierUvtPrecision).length>12)?"e6-tier-long":undefined} title="手机 5 档收益" icon={Coins} tone="role-4" explain="柱高只比较 USDT 日收益；UVT 独立显示。批准后更新档位配置，供后续校准与引导展示使用；不改变已派任务的奖励快照。" actions={(ctx.e2Loading||ready)?<Button size="sm" disabled={ctx.e2Loading} onClick={()=>void ctx.refreshE2()}>刷新</Button>:undefined}>
       {ctx.e2Loading?<StepBar label="手机五档收益" items={[]} unit="USDT/天" max={1} state="loading"/>:!ready?<BlockState state="error" title={ctx.e2Error?"档位收益读取失败":"档位收益数据不完整，暂不能调整"} detail={ctx.e2Error} onRetry={()=>void ctx.refreshE2()}/>:<E6OriginalValues group original={<table className="e6-original-tiers"><thead><tr><th>档位</th><th>USDT/天</th><th>UVT/天</th></tr></thead><tbody>{ctx.phoneTiers.map(t=><tr key={t.tier}><td>T{t.tier}</td><td>{text(t,"dailyUsdt")}</td><td>{text(t,"dailyNex")}</td></tr>)}</tbody></table>}><StepBar label="手机五档 USDT 日收益" unit="USDT/天" max={Math.max(...ctx.phoneTiers.map(t=>t.dailyUsdt))} items={ctx.phoneTiers.map(t=>({key:String(t.tier),label:`T${t.tier}`,name:operatorCopyText(t.name).replace(/\s/g,"")===`第${t.tier}档`?undefined:operatorCopyText(t.name),value:t.dailyUsdt,valueText:formatE6Amount(text(t,"dailyUsdt"),tierUsdtPrecision),secondary:<>{formatE6Amount(text(t,"dailyNex"),tierUvtPrecision)} UVT/天 {t.note&&<Explain label={`T${t.tier}的说明`} content={operatorCopyText(t.note)}/>}</>,mark:t.tier===3?"当前引导档":undefined,actions:<>{(["dailyUsdt","dailyNex"] as const).filter(canEdit).map(field=><Button key={field} size="sm" disabledReason={m.locked(`tier:${t.tier}`)?"这个档位有结果未知的原提案":undefined} onClick={()=>setEdit({tier:t,field})}>调 {field==="dailyUsdt"?"USDT":"UVT"}</Button>)}</>}))}/></E6OriginalValues>}
     </Panel>
-    <Panel title="新用户引导收益对比" icon={Smartphone} tone="role-2" flush explain="手机行来自 T3；其他来自在售商品。实际校准结果优先使用用户当前档位，不代表所有用户都领取 T3 收益。">
-      {ready&&ctx.yieldComparisons.length!==4&&<Notice tone="warn">数据不全，请核对在售商品与手机 T3 档位。</Notice>}
-      <Table label="新用户引导收益对比" className="e6-compare-table"><thead><tr><Th>名称</Th><Th align="right">USDT/天</Th><Th align="right">UVT/天</Th><Th>来源</Th></tr></thead><tbody>{ctx.e2Loading?<TableLoading columns={4}/>:!ready?<TableMessage columns={4}>等档位收益读取成功后可用</TableMessage>:[...ctx.yieldComparisons].sort((a,b)=>Number(b.configKey==="phone")-Number(a.configKey==="phone")||a.sortOrder-b.sortOrder).map(r=><Tr key={r.configKey}><Td><Cell full main={nexGridBrandText(r.label)} sub={r.configKey==="phone"?"当前引导档":undefined}/></Td><Td align="right" data-num=""><E6Amount raw={r.dailyUsdtText} precision={comparisonUsdtPrecision} currency="USDT"/></Td><Td align="right" data-num=""><E6Amount raw={r.dailyNexText} precision={comparisonUvtPrecision} currency="UVT"/></Td><Td>{r.configKey==="phone"?"手机 T3 档位":"商品管理"}</Td></Tr>)}</tbody></Table>
+    <Panel title="新用户引导收益对比" icon={Smartphone} tone="role-2" flush
+      explain="手机行读取 T3。商品行读取对应在售商品的名称和收益。">
+      {ready && ctx.yieldComparisons.length !== 4 && <Notice tone="warn">部分对比设置未读取，请刷新核对。</Notice>}
+      <Table label="新用户引导收益对比" className="e6-compare-table">
+        <thead><tr><Th>名称</Th><Th align="right">USDT/天</Th><Th align="right">UVT/天</Th><Th>对应商品</Th>{canBindSku && <Th>操作</Th>}</tr></thead>
+        <tbody>{ctx.e2Loading ? <TableLoading columns={canBindSku ? 5 : 4} /> : !ready ?
+          <TableMessage columns={canBindSku ? 5 : 4}>等档位收益读取成功后可用</TableMessage> :
+          ctx.yieldComparisons.map(row => <Tr key={row.configKey}>
+            <Td><Cell main={nexGridBrandText(row.label)} /></Td>
+            <Td align="right">{row.available ? <E6Amount raw={row.dailyUsdtText} precision={comparisonUsdtPrecision} currency="USDT" /> : "—"}</Td>
+            <Td align="right">{row.available ? <E6Amount raw={row.dailyNexText} precision={comparisonUvtPrecision} currency="UVT" /> : "—"}</Td>
+            <Td>{row.configKey === "phone" ? "手机 T3 档位" : <>
+              {row.productNo ?? "待选择"}{!row.available && <StatusTag tone="warn">商品不可用，请重新选择</StatusTag>}
+            </>}</Td>
+            {canBindSku && <Td>{row.configKey !== "phone" && <Button size="sm"
+              disabledReason={!row.bindingRevision ? "请先刷新对应商品配置" :
+                m.locked("comparison:" + row.configKey) ? "请先核对原提案" :
+                !products.some(sku => sku.id !== row.productNo) ? "未读取到其他可选商品" : undefined}
+              onClick={() => setComparisonEdit(row)}>更换商品</Button>}</Td>}
+          </Tr>)}</tbody>
+      </Table>
     </Panel>
+    {comparisonEdit && <E6ConfirmModal scope={bindingScope} action="更换引导对比商品" briefKind="config"
+      detail="审批通过后，新手引导读取所选商品的名称和收益。"
+      edit={{kind: "select", label: "对应商品", current: comparisonEdit.productNo ?? "",
+        options: products.map(sku => sku.id), disallowCurrent: true,
+        optionLabels: Object.fromEntries(products.map(sku => [sku.id, sku.name + " · " + sku.id]))}}
+      facts={value => {
+        const product = products.find(sku => sku.id === value);
+        return <Facts>
+          <Fact k="当前商品">{comparisonEdit.label + " · " + (comparisonEdit.productNo ?? "待选择")}</Fact>
+          {product && <Fact k="新商品日收益">{product.dailyEarn + " USDT · " + product.dailyEarnNEX + " UVT"}</Fact>}
+        </Facts>;
+      }}
+      onClose={() => setComparisonEdit(null)}
+      onConfirm={async (reason, value) => {
+        const original = m.pending.find(row => row.scope === bindingScope);
+        if (original) {
+          await m.send(original, true);
+        } else {
+          const product = products.find(sku => sku.id === value);
+          if (!product || !comparisonEdit.bindingRevision) throw new Error("请选择有效的在售商品");
+          const def = findHighOp("e6_onboarding_yield_sku")!;
+          const params = {configKey: comparisonEdit.configKey, productNo: product.id,
+            expectedRevision: comparisonEdit.bindingRevision};
+          await m.proposal(bindingScope, "tiers", {action: def.action, obj: comparisonEdit.configKey,
+            beforeValue: comparisonEdit.productNo ?? "待选择", afterValue: product.id, type: def.type,
+            amplifies: false, reason, sourceDomain: "E6", command: def.buildCommand(params), target: def.buildTarget(params)});
+        }
+        setComparisonEdit(null);
+        ctx.toast("已提交，等待审批后执行");
+        await ctx.refreshE2();
+      }} />}
     {edit&&<E6ConfirmModal scope={scope} amplificationBasis={value=>`T${edit.tier.tier} ${currency} 日收益由 ${text(edit.tier,edit.field)} 增加至 ${value} ${currency}/天。`} briefKind="config" statedBrief={{impact:"只调整当前档位的一个币种，批准后更新配置；已发收益不变。",check:"核对单币金额与相邻档位，批准时检查兑付覆盖率。"}} action={`调整手机 T${edit.tier.tier} 每日收益（${currency}）`} reasonMin={8} reasonMax={200} detail="只调整这个币种；五档同币种收益须非递减。批准后更新档位配置，供后续校准与引导展示使用；不改变已派任务的奖励快照。" completionCopy="由另一位具备批准权和对应业务权限的管理员复核。" coverageCheck="批准时检查兑付覆盖率。" edit={{kind:"number",current:text(edit.tier,edit.field),unit:`${currency}/天`,min:0.000001,step:0.000001,maxDecimals:6,disallowCurrent:true,amplifiesWhen:"increase",hint:range,validate:value=>!positiveAmount.test(value)?"收益最多 12 位整数、6 位小数。":lower&&compareE6Decimal(value,text(lower,edit.field))<0||upper&&compareE6Decimal(value,text(upper,edit.field))>0?`五档同币种收益须非递减：${range}`:undefined}}
       facts={<Facts><Fact k="档位">{`T${edit.tier.tier} · ${operatorCopyText(edit.tier.name)}`}</Fact></Facts>} content={<Fold inset title="技术信息" summary="提交时核对有没有被别人改过"><Facts><Fact k="修改序号">{String(edit.tier.revision)}</Fact></Facts></Fold>} getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setEdit(null)} onConfirm={async(reason,value)=>{
         const original=m.pending.find(r=>r.scope===scope);if(original) await m.send(original,true);else {

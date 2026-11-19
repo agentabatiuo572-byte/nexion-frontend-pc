@@ -39,6 +39,8 @@ export interface PurchaseGate {
 }
 
 export interface OpsSku {
+  seriesCode?: string | null;
+  seriesLocked?: boolean;
   allowedPoolCodes?: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;

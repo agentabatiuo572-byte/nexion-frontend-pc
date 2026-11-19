@@ -27,6 +27,8 @@ interface PageResult<T> {
 }
 
 interface BackendSku {
+  seriesCode?: string | null;
+  seriesLocked?: boolean;
   allowedPoolCodes: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;
@@ -245,6 +247,8 @@ function fromSku(sku: BackendSku): OpsSku {
     id: sku.skuId,
     name: sku.name,
     tier: sku.tier ?? "Entry",
+    seriesCode: sku.seriesCode,
+    seriesLocked: sku.seriesLocked,
     tagline: sku.tagline ?? undefined,
     badge: sku.badge ?? undefined,
     gpu: sku.gpu ?? undefined,
@@ -313,6 +317,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     skuId: sku.id || undefined,
     name: sku.name,
     tier: sku.tier,
+    seriesCode: sku.seriesCode,
     tagline: sku.tagline ?? null,
     badge: sku.badge ?? null,
     gpu: sku.gpu ?? null,

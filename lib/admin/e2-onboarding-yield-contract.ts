@@ -12,6 +12,9 @@ export interface E2PhoneTier {
 
 export interface E2YieldComparison {
   configKey: string;
+  productNo?: string;
+  bindingRevision?: number;
+  available: boolean;
   label: string;
   dailyUsdt: number;
   dailyNex: number;
@@ -90,12 +93,18 @@ function yieldComparison(value: unknown): E2YieldComparison {
   if (!configKey || !label || !Number.isSafeInteger(revision) || revision < 1
     || !Number.isSafeInteger(sortOrder) || sortOrder < 0) invalid();
   const updatedAt = text(row.updatedAt);
+  const productNo = text(row.productNo);
+  const bindingRevision = number(row.bindingRevision);
+  const available = row.dailyUsdt != null || row.dailyNex != null;
   return {
+    available,
+    ...(productNo ? { productNo } : {}),
+    ...(Number.isSafeInteger(bindingRevision) && bindingRevision > 0 ? { bindingRevision } : {}),
     configKey,
     label,
-    dailyUsdt: positiveDecimal18x6(row.dailyUsdt),
-    dailyNex: positiveDecimal18x6(row.dailyNex),
-    dailyUsdtText: String(row.dailyUsdt), dailyNexText: String(row.dailyNex),
+    dailyUsdt: available ? positiveDecimal18x6(row.dailyUsdt) : 0,
+    dailyNex: available ? positiveDecimal18x6(row.dailyNex) : 0,
+    dailyUsdtText: available ? String(row.dailyUsdt) : "", dailyNexText: available ? String(row.dailyNex) : "",
     sortOrder,
     revision,
     ...(updatedAt ? { updatedAt } : {}),

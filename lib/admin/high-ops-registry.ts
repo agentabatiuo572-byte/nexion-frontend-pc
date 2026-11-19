@@ -27,7 +27,7 @@ export interface HighOpDef {
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
-    dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold,
+    dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold, seriesLocked: _seriesLocked,
     updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
@@ -1180,6 +1180,19 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: () => ({ domain: "E", type: "device_release_early_access", id: "trade-in" }),
   },
   // E2 收益(e2 phone_tier/task)
+  {
+    op: "e6_onboarding_yield_sku",
+    domain: "E",
+    action: "更换引导对比商品",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "onboarding_yield_comparison",
+    buildCommand: ({ configKey, productNo, expectedRevision }) => ({
+      domain: "E", op: "e6_onboarding_yield_sku", params: { configKey, productNo, expectedRevision },
+    }),
+    buildTarget: ({ configKey }) => ({ domain: "E", type: "onboarding_yield_comparison", id: String(configKey) }),
+  },
   {
     op: "e2_phone_tier",
     domain: "E",
