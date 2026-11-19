@@ -531,15 +531,18 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const pendingItems: D1PendingItem[] = pending.map((record): D1PendingItem => {
     const refundChallenge = record.path === "/cregis/exception-ownership/challenges"
       && exceptionObject(JSON.parse(record.body)).action === "REFUND_ORIGIN";
-    const refund = refundChallenge || record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward") || record.path.startsWith("/cregis/funds-preparation");
+    const preparation = record.path.startsWith("/cregis/funds-preparation");
+    const refund = refundChallenge || record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward");
+    const canRetry = preparation ? canRefund && authorities.includes("finance_d1_channel_manage")
+      && authorities.includes("finance_d1_read") : refund ? canRefund : canManage;
     const replayable = d1CommandReplayable(record.path);
     return {
       key: record.commandKey,
-      label: cregisCommandLabel(record.path),
+      label: preparation ? `${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
       createdAt: record.createdAt,
       hint: replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
         : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。",
-      blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
+      blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canRetry ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),
       retry: replayable ? async () => {
@@ -841,7 +844,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     <div {...subIds.panel("funds")} hidden={sub !== "funds"} className="rd-tab-pane">
       {data ? <>
         <CregisAutoForward key={`auto-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
-        <CregisFundsPreparation key={`prep-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
+        <CregisFundsPreparation reloadKey={childKey} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
       </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取…" : "收款状态读取失败，自动流程与人工准备先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
     </div>
 
@@ -930,7 +933,6 @@ function cregisCommandLabel(path: string) {
   if (path.startsWith("/cregis/exception-ownership")) return "生成钱包签名原文";
   if (path.startsWith("/cregis/reorg")) return "重组处置";
   if (path.startsWith("/cregis/auto-forward")) return `${new URLSearchParams(path.split("?")[1]).get("network") ?? "BEP20"} 自动资金流程`;
-  if (path.startsWith("/cregis/funds-preparation")) return "资金准备单";
   return "USDT 收款操作";
 }
 

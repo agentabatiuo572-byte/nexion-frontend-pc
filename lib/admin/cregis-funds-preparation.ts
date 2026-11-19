@@ -1,13 +1,19 @@
 export type PreparationKind = "COLLECTION" | "SUPPLIER_PAYMENT";
+export const PREPARATION_NETWORKS = ["BEP20", "ERC20"] as const;
+export type PreparationNetwork = typeof PREPARATION_NETWORKS[number];
+export const PREPARATION_CHAIN = { BEP20: "BSC", ERC20: "ETH" } as const;
+export const PREPARATION_GAS = { BEP20: "BNB", ERC20: "ETH" } as const;
 export type PreparationConfig = {
-  platformAddress: string; counterpartyAddress: string; network: "BSC"; asset: "USDT";
+  platformAddress: string; counterpartyAddress: string; network: "BSC" | "ETH"; asset: "USDT";
+  preparationNetwork: PreparationNetwork;
   projectId: string; executionEnabled: false; mode: "PREPARATION_ONLY";
   sources: Array<{ address: string; userId: string }>;
 };
 export const isEvmAddress = (value: unknown): value is string => typeof value === "string" && /^0x[0-9a-f]{40}$/i.test(value);
-export function preparationConfig(value: unknown): PreparationConfig {
+export function preparationConfig(value: unknown, network: PreparationNetwork): PreparationConfig {
   const row = value as PreparationConfig | null;
-  if (!row || row.network !== "BSC" || row.asset !== "USDT" || row.executionEnabled !== false
+  if (!row || row.preparationNetwork !== network || row.network !== PREPARATION_CHAIN[network]
+      || row.asset !== "USDT" || row.executionEnabled !== false
       || row.mode !== "PREPARATION_ONLY" || typeof row.projectId !== "string" || !/^[1-9][0-9]*$/.test(row.projectId)
       || !isEvmAddress(row.platformAddress) || !isEvmAddress(row.counterpartyAddress)
       || !Array.isArray(row.sources) || row.sources.some(source => !source || !isEvmAddress(source.address)
@@ -24,6 +30,7 @@ export const PREPARATION_BLOCKER: Record<string,string> = {
   PROVIDER_NOT_CONFIGURED: "供应商连接尚未就绪", PROJECT_ASSET_UNAVAILABLE: "项目暂不支持该币种操作",
   SOURCE_OWNERSHIP_UNVERIFIED: "无法确认来源地址归属", PROVIDER_READ_UNAVAILABLE: "暂时无法读取供应商状态",
   USDT_BALANCE_INSUFFICIENT: "来源 USDT 余额不足", BNB_BALANCE_ZERO: "来源 BNB 余额为零，须核对手续费安排",
+  ETH_BALANCE_ZERO: "来源 ETH 余额为零，须核对手续费安排",
   CHAIN_BALANCE_UNAVAILABLE: "暂时无法核实链上余额", EXISTING_PAYOUT_NOT_READY: "当前出款资格、风险或对账条件未满足",
   RISK_STATUS_UNAVAILABLE: "暂时无法核实资金风险状态",
 };

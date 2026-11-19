@@ -2,31 +2,46 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipboardList, Plus, RefreshCw } from "lucide-react";
-import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, JudgmentPoints, KeyValues, Notice, Panel, Select, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, Input, JudgmentPoints, KeyValues, Notice, Panel, Segments, Select, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthActivityAllowed, adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
-import { d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
+import { DRequestError, d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { exceptionCommand, exceptionList, exceptionRead, exceptionObject, type ExceptionPage, type ExceptionRecord } from "@/lib/admin/cregis-exceptions";
-import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_STATE, type PreparationConfig, type PreparationKind } from "@/lib/admin/cregis-funds-preparation";
+import { exceptionId, exceptionObject, exceptionPage, exceptionRead, type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
+import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_GAS, PREPARATION_NETWORKS, PREPARATION_STATE, type PreparationConfig, type PreparationKind, type PreparationNetwork } from "@/lib/admin/cregis-funds-preparation";
 import { LongValue, usdt } from "./d1-shared";
 import type { DCtx } from "./types";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
 const ROOT = "/funds-preparation";
+const ERC20_CONFIGURATION_REQUIRED = "ERC20 收款地址还没配置";
+const configurationRequired = (failure: unknown) => failure instanceof DRequestError && failure.status === 503
+  && failure.reasonCode === "CREGIS_PREPARATION_CONFIGURATION_REQUIRED";
 const kindLabel = (kind: unknown) => kind === "COLLECTION" ? "归集到 Cregis 准备" : "Cregis 转平台收款钱包准备";
 const planTone = (state: unknown): StateTone => state === "DRAFT" ? "warn" : state === "REVIEWED" ? "ok" : "done";
-type Props = { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onChanged?: () => void };
+type Props = { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onChanged?: () => void; reloadKey?: number };
 
-export function CregisFundsPreparation(props: Props) {
-  const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
-  if (!session?.authorities.includes("finance_d1_read")) return null;
-  return <OwnedPreparation key={`${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
-    {...props} owner={session.adminId} ownerEpoch={epoch} />;
+async function readPlans(network: PreparationNetwork, beforeId: string | null, request: ExceptionRequestScope) {
+  const result = await exceptionRead(`${ROOT}/plans?network=${network}&limit=20&beforeId=${beforeId ? exceptionId(beforeId) : "0"}`, request);
+  const page = exceptionPage(result);
+  if (result.preparationNetwork !== network || page.records.some(row => row.network !== network)) {
+    throw new Error("资金准备列表读取失败，请刷新核对");
+  }
+  return page;
 }
 
-function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, ownerEpoch }: Props & { owner: number; ownerEpoch: number }) {
+export function CregisFundsPreparation(props: Props) {
+  const [network, setNetwork] = useState<PreparationNetwork>("BEP20");
+  const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
+  if (!session?.authorities.includes("finance_d1_read")) return null;
+  return <OwnedPreparation key={`${network}:${props.reloadKey}:${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
+    {...props} owner={session.adminId} ownerEpoch={epoch} network={network} onNetworkChange={setNetwork} />;
+}
+
+function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, ownerEpoch, network, onNetworkChange }: Props & {
+  owner: number; ownerEpoch: number; network: PreparationNetwork; onNetworkChange: (network: PreparationNetwork) => void;
+}) {
   const lifecycle = useRef(adminAuthLifecycleEpoch()).current;
   const live = useRef(true), mutation = useRef(false), selection = useRef(0), readEpoch = useRef(0);
   const [config, setConfig] = useState<PreparationConfig | null>(null);
@@ -35,6 +50,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const [source, setSource] = useState(""), [amount, setAmount] = useState(""), [reference, setReference] = useState("");
   const [preflight, setPreflight] = useState<ExceptionRecord | null>(null);
   const [error, setError] = useState(""), [formError, setFormError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true);
+  const [unconfigured, setUnconfigured] = useState(false);
   const [creating, setCreating] = useState(false), [selected, setSelected] = useState<string | null>(null);
   const session = useAdminAuth(state => state.session);
   const canWrite = canManage && Boolean(session?.authorities.includes("finance_d1_channel_manage")
@@ -50,21 +66,25 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const scope = useCallback((write = false) => ({ authEpoch: lifecycle, assertOwner: () => assertOwner(write) }), [assertOwner,lifecycle]);
 
   const refresh = useCallback(async () => {
-    const request = scope(); request.assertOwner(); const at = ++readEpoch.current; setLoading(true); setError("");
+    const request = scope(); request.assertOwner(); const at = ++readEpoch.current; setLoading(true); setError(""); setUnconfigured(false);
     try {
-      const [nextConfig, nextPage] = await Promise.all([exceptionRead(`${ROOT}/status`, request), exceptionList(`${ROOT}/plans`, undefined, request)]);
+      const [nextConfig, nextPage] = await Promise.all([exceptionRead(`${ROOT}/status?network=${network}`, request), readPlans(network, null, request)]);
       request.assertOwner(); if (at !== readEpoch.current) return;
-      setConfig(preparationConfig(nextConfig)); setPage(nextPage); setPreflight(null); selection.current++;
+      setConfig(preparationConfig(nextConfig, network)); setPage(nextPage); setPreflight(null); selection.current++;
     } catch (failure) {
-      if (owns() && at === readEpoch.current) { setConfig(null); setPage(EMPTY); setError(displayAdminReadError(failure)); }
+      if (owns() && at === readEpoch.current) {
+        setConfig(null); setPage(EMPTY);
+        if (network === "ERC20" && configurationRequired(failure)) setUnconfigured(true);
+        else setError(displayAdminReadError(failure));
+      }
     } finally { if (owns() && at === readEpoch.current) setLoading(false); }
-  }, [scope, owns]);
+  }, [scope, owns, network]);
   useEffect(() => { live.current = true; void refresh(); return () => { live.current = false; selection.current++; }; }, [refresh]);
   const edit = (action: () => void) => { selection.current++; setPreflight(null); setFormError(""); action(); };
   const payload = () => {
     if (!config) throw new Error("请先读取资金准备配置");
     if (kind === "COLLECTION" && !config.sources.some(row => row.address === source)) throw new Error("请选择归集到cregis的来源地址");
-    return { kind, sourceAddress: kind === "COLLECTION" ? source : config.platformAddress, amountUsdt: preparationAmount(amount) };
+    return { ...(network === "ERC20" ? { network } : {}), kind, sourceAddress: kind === "COLLECTION" ? source : config.platformAddress, amountUsdt: preparationAmount(amount) };
   };
   const check = async () => {
     const request = scope(true); request.assertOwner(); if (mutation.current) return;
@@ -75,23 +95,35 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         method: "POST", body: JSON.stringify(body), bankManualAuthEpoch: request.authEpoch,
       }));
       request.assertOwner();
-      if (response.executionEnabled !== false || !Array.isArray(response.blockers)
+      const balance = response.balance === null ? null : exceptionObject(response.balance);
+      if (response.preparationNetwork !== network || response.executionEnabled !== false || !Array.isArray(response.blockers)
+          || (balance && (balance.gasSymbol !== PREPARATION_GAS[network]
+            || typeof balance.nativeBalance !== "string" || typeof balance.usdt !== "string"))
           || response.blockers.some(item => typeof item !== "string")) throw new Error("资金检查结果无效，请重新读取");
       if (at === selection.current) setPreflight(response);
-    } catch (failure) { if (owns()) setFormError(displayAdminError(failure)); }
+    } catch (failure) {
+      if (owns()) setFormError(network === "ERC20" && configurationRequired(failure)
+        ? ERC20_CONFIGURATION_REQUIRED : displayAdminError(failure));
+    }
     finally { mutation.current = false; if (owns()) setBusy(false); }
   };
-  const command = async (path: string, body: ExceptionRecord) => {
+  const command = async (path: string, body: ExceptionRecord, preparationNetwork: PreparationNetwork) => {
     const request = scope(true); request.assertOwner();
     if (mutation.current) throw new Error("上一项操作仍在处理，请刷新核对");
     mutation.current = true; setBusy(true);
-    try { await exceptionCommand(`${ROOT}${path}`, body, request); request.assertOwner(); }
+    try {
+      await financeAdminRequest(`/cregis${ROOT}${path}`, {
+        method: "POST", body: JSON.stringify(body), idempotencyPrefix: "cregis-exception",
+        bankManualAuthEpoch: request.authEpoch, preparationNetwork,
+      });
+      request.assertOwner();
+    }
     finally { mutation.current = false; onChanged?.(); if (owns()) { setBusy(false); await refresh(); } }
   };
   const create = () => {
     try {
       assertOwner(true); const body = payload();
-      const held = d1PendingObjectReason(`/cregis${ROOT}/plans`); if (held) throw new Error(held);
+      const held = d1PendingObjectReason(`/cregis${ROOT}/plans`, body); if (held) throw new Error(held);
       if (!reference.trim() || reference.length > 100 || /[\u0000-\u001f\u007f]/.test(reference)) throw new Error("请填写不超过 100 字的业务参考号");
       const snapshot = { ...body, businessReference: reference.trim() };
       const target = kind === "COLLECTION" ? config!.platformAddress : config!.counterpartyAddress;
@@ -99,26 +131,29 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         effect: <StatusTag tone="neutral" filled>只保存准备记录</StatusTag>,
         facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(body.amountUsdt)}</Fact><Fact k="类型">{kindLabel(kind)}</Fact><Fact k="来源">{body.sourceAddress}</Fact><Fact k="接收">{target}</Fact><Fact k="业务参考">{snapshot.businessReference}</Fact></Facts>,
         detail: `${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${target} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
-        reasonMin: 10, reasonMax: 300, completionCopy: "只保存准备记录，不发送资金。", run: async reason => { await command("/plans", { ...snapshot, reason }); setCreating(false); } });
+        reasonMin: 10, reasonMax: 300, completionCopy: "只保存准备记录，不发送资金。", run: async reason => { await command("/plans", { ...snapshot, reason }, network); setCreating(false); } });
     } catch (failure) { setFormError((failure as Error).message); }
   };
   const decide = (row: ExceptionRecord, decision: "REVIEW" | "CANCEL") => {
     assertOwner(true);
+    const planNetwork = row.network;
+    if (planNetwork !== "BEP20" && planNetwork !== "ERC20") return;
     const held = d1PendingObjectReason(`/cregis${ROOT}/plans/${String(row.planNo)}/decision`); if (held) { setError(held); return; }
     openActionConfirm({ briefKind: "record", action: decision === "REVIEW" ? "复核准备单" : "取消准备单", title: decision === "REVIEW" ? "复核准备单" : "取消准备单",
       confirmLabel: decision === "REVIEW" ? "确认复核" : "确认取消", effect: <StatusTag tone="neutral" filled>不转账</StatusTag>,
       facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact><Fact k="来源">{String(row.sourceAddress)}</Fact><Fact k="接收">{String(row.targetAddress)}</Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,
       detail: `${kindLabel(row.kind)} · ${row.amountUsdt} USDT · ${row.sourceAddress} → ${row.targetAddress} · ${row.businessReference}。复核只确认准备信息，不授权或执行转账。`,
       reasonMin: 10, reasonMax: 300, completionCopy: decision === "REVIEW" ? "准备信息已复核，尚未转账" : "准备单已取消",
-      run: reason => command(`/plans/${row.planNo}/decision`, { expectedVersion: row.version, decision, reason }) });
+      run: reason => command(`/plans/${row.planNo}/decision`, { expectedVersion: row.version, decision, reason }, planNetwork) });
   };
   const more = async () => {
     const request = scope(); request.assertOwner(); setBusy(true);
-    try { const next = await exceptionList(`${ROOT}/plans`,page.nextBeforeId ?? undefined,request); request.assertOwner(); setPage({ ...next, records: [...page.records,...next.records] }); }
+    try { const next = await readPlans(network, page.nextBeforeId, request); request.assertOwner(); setPage({ ...next, records: [...page.records,...next.records] }); }
     catch (failure) { if (owns()) setError(displayAdminReadError(failure)); }
     finally { if (owns()) setBusy(false); }
   };
   const balance = preflight?.balance && typeof preflight.balance === "object" ? preflight.balance as ExceptionRecord : null;
+  const gasSymbol = balance?.gasSymbol ?? PREPARATION_GAS[network];
   const block = loading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
   const records = page.records, index = records.findIndex(row => String(row.planNo) === selected), plan = index >= 0 ? records[index] : null;
   const planActions = (row: ExceptionRecord) => canWrite ? [
@@ -129,20 +164,22 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const checkBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue);
   const createBlock = checkBlock ?? (!reference.trim() ? "先填业务参考号" : undefined);
 
-  return <Panel icon={ClipboardList} tone="role-2" title="BEP20 人工资金准备"
-    explain={<><p>仅适用于 BEP20；这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到 Cregis 钱包。3. Cregis 钱包到账后，按业务金额创建并复核Cregis 转平台收款钱包准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
+  return <Panel icon={ClipboardList} tone="role-2" title={network === "BEP20" ? "BEP20 人工资金准备" : "ERC20 人工资金准备"}
+    explain={<><p>这里只保存 {network} 准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到 Cregis 钱包。3. Cregis 钱包到账后，按业务金额创建并复核Cregis 转平台收款钱包准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabled={busy} onClick={() => void refresh()}>刷新</Button>
       {canWrite && config && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={block} onClick={() => setCreating(true)}>新建准备单</Button>}
     </>}>
+    <Segments label="人工资金准备网络" value={network} onChange={onNetworkChange} items={PREPARATION_NETWORKS.map(value => ({ value, label: value }))} />
     {error && config && <Notice tone="warn">{error}</Notice>}
     {loading && !config ? <BlockState state="loading" title="正在读取资金准备记录…" />
+      : unconfigured ? <BlockState state="empty" title={ERC20_CONFIGURATION_REQUIRED} detail="请联系管理员核对 ERC20 收款地址配置。" />
       : !config ? <BlockState state="error" title="资金准备读取失败" detail={error} onRetry={() => void refresh()} />
         : <div className="rd-stack">
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
           <ConfigList label="准备地址">
             <ConfigRow name="Cregis 归集钱包 / 转出来源" value={<span data-mono="">{config.platformAddress}</span>} />
-            <ConfigRow name="平台收款钱包（BEP20）" value={<span data-mono="">{config.counterpartyAddress}</span>} />
+            <ConfigRow name={`平台收款钱包（${network}）`} value={<span data-mono="">{config.counterpartyAddress}</span>} />
           </ConfigList>
           {records.length === 0 ? <p className="rd-note">暂无准备单</p> : <Table label="准备记录 · 不代表已转账">
             <thead><tr><Th>准备单 · 业务参考</Th><Th align="right">金额（USDT）</Th><Th>状态</Th><Th sticky="end" align="right">操作</Th></tr></thead>
@@ -179,7 +216,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         {formError && <BlockState state="error" compact title="这一步没有完成" detail={formError} />}
         {preflight && <JudgmentPoints title="只读检查结果" rows={[
           { label: "来源 USDT", value: balance ? String(balance.usdt) : "待核实" },
-          { label: "来源 BNB", value: balance ? String(balance.bnb) : "待核实", reason: "须在执行前重新核对项目钱包绑定及实际手续费；BNB 余额大于零不表示足以支付网络费。" },
+          { label: `来源 ${gasSymbol}`, value: balance ? String(balance.nativeBalance) : "待核实", reason: `须在执行前重新核对项目钱包绑定及实际手续费；${gasSymbol} 余额大于零不表示足以支付网络费。` },
           { label: "检查时间", value: String(preflight.checkedAt), reason: "仅供准备核对，仍未授权转账。" },
           ...(preflight.blockers as string[]).map(item => ({ label: "条件", state: "warn" as const, value: PREPARATION_BLOCKER[item] ?? "仍有条件待核实，请联系管理员" })),
         ]} />}

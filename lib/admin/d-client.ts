@@ -8,6 +8,8 @@ import { createPendingMutationStore, hasPersistedPendingCommandOwner } from "@/l
 import { treasuryValuation } from "@/lib/admin/treasury-valuation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fundCommandOrigin, type FundCommandRecord } from "./fund-command-investigation";
+import { isExplicitRejection } from "./explicit-rejection";
+import type { PreparationNetwork } from "./cregis-funds-preparation";
 
 interface ApiResult<T> {
   code: number;
@@ -598,9 +600,11 @@ interface PersistedPendingMutation extends FundCommandRecord {
   method: string;
   body: string;
   adminId?: number;
+  preparationNetwork?: PreparationNetwork;
 }
 
 const D1_CREGIS_SWITCH_PATH = /^\/cregis\/(?:switch-cases(?:\/[1-9]\d*\/decision)?|switches\/emergency-off)$/;
+const D1_PREPARATION_WRITE_PATH = /^\/cregis\/funds-preparation\/plans(?:\/[^/]+\/decision)?$/;
 
 const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
   storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
@@ -629,7 +633,7 @@ const D1_RETAINED_CREGIS_WRITES = [
   /^\/cregis\/refunds\/(?:fee-policy\/cases(?:\/[1-9]\d*\/decision)?|cases(?:\/[1-9]\d*\/(?:decision|recover|retry))?)$/,
   /^\/cregis\/reorg\/(?:incidents\/[1-9]\d*\/proposals|proposals\/[1-9]\d*\/decision)$/,
   /^\/cregis\/auto-forward\/(?:policy|tasks\/[1-9]\d*\/recover)$/,
-  /^\/cregis\/funds-preparation\/plans(?:\/[^/]+\/decision)?$/,
+  D1_PREPARATION_WRITE_PATH,
 ];
 export const d1CommandReplayable = (path: string) => !path.startsWith("/cregis/")
   || D1_RETAINED_CREGIS_WRITES.some((pattern) => pattern.test(path.split("?")[0]));
@@ -683,6 +687,7 @@ export function listD1PendingCregisCommands(): D1PendingTopupCommand[] {
 export interface D1PendingCommand extends D1PendingTopupCommand {
   method: string;
   body: string;
+  preparationNetwork?: PreparationNetwork;
 }
 
 /** D1 页上还没确认结果的写请求：充值通道、对账核销、银行卡支付参数和 USDT 收款，按发出时间排。资金开关的按管理员另列。 */
@@ -705,6 +710,7 @@ export async function retryD1PendingCommand(commandKey: string) {
     body: pending.body || undefined,
     idempotencyPrefix: "d1-retry",
     idempotencyKey: pending.commandKey,
+    preparationNetwork: pending.preparationNetwork,
   });
 }
 
@@ -785,7 +791,14 @@ function assertD1BankManualAuthEpoch(epoch: number | undefined) {
   if (epoch !== undefined && epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
 }
 
-async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; retainOnSuccess?: boolean; bankManualAuthEpoch?: number }) {
+type FinanceRequestInit = RequestInit & {
+  idempotencyPrefix?: string;
+  idempotencyKey?: string;
+  bankManualAuthEpoch?: number;
+  preparationNetwork?: PreparationNetwork;
+};
+
+async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: FinanceRequestInit & { retainOnSuccess?: boolean }) {
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -799,6 +812,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     ? pendingMutations.get(mutationFingerprint)
     : undefined;
   const d1Write = isD1Write(base, path) && method !== "GET";
+  const preparationWrite = d1Write && D1_PREPARATION_WRITE_PATH.test(path);
   if (mutationFingerprint) {
     const previous = pendingMutations.list().find(value => value.commandKey === (init?.idempotencyKey ?? pendingKeyBeforeRequest));
     if (previous && previous.expiresAt <= Date.now()) {
@@ -833,6 +847,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
         path,
         method,
         body: typeof init?.body === "string" ? init.body : "",
+        ...(init.preparationNetwork ? { preparationNetwork: init.preparationNetwork } : {}),
         // A retry keeps the first locator, including its absence on legacy records.
         commandOrigin: previous ? previous.commandOrigin : investigationWrite
           ? fundCommandOrigin(method as "PATCH" | "POST", `/api/admin/finance${path}`, "finance_d1_read") : undefined,
@@ -893,11 +908,28 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // 🔴 2026-08-06 补:这道保护只覆盖「重试链」——**首次**提交撞上结构化 5xx 时
     //   pendingKeyBeforeRequest 为空,照样弃号。5xx 后端可能已落库,必须保号(统一口径见
     //   outcome-classification.ts)。
+    const refusal = new DRequestError(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`), response.status, result?.code, result?.message);
+    if (preparationWrite && commandKey && !pendingKeyBeforeRequest && !isExplicitRejection(refusal)) {
+      throw new DOutcomeUnknownError(commandKey);
+    }
     if (mutationFingerprint && !pendingKeyBeforeRequest
       && !outcomeStaysUnknown(response.status, result?.code)) {
       pendingMutations.forget(mutationFingerprint);
     }
-    throw new DRequestError(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`), response.status, result?.code, result?.message);
+    throw refusal;
+  }
+  const commandKey = headers.get("Idempotency-Key");
+  if (preparationWrite && commandKey) {
+    const plan = result.data as Record<string, unknown> | undefined;
+    const network = init?.preparationNetwork ?? "BEP20";
+    // Commands recorded before B50 can replay the stored BEP20 receipt without either network field.
+    const legacyReceipt = init?.preparationNetwork === undefined && !!pendingKeyBeforeRequest
+      && plan?.preparationNetwork === undefined && plan?.network === undefined;
+    const planNo = path.split("/")[4];
+    if (typeof plan?.planNo !== "string" || (planNo && plan.planNo !== planNo)
+        || (!legacyReceipt && (plan.preparationNetwork !== network || plan.network !== network))) {
+      throw new DOutcomeUnknownError(commandKey);
+    }
   }
   if (mutationFingerprint && !init?.retainOnSuccess) pendingMutations.forget(mutationFingerprint);
   return result.data as T;
@@ -911,7 +943,7 @@ export interface D2DevelopmentCapabilities {
 
 export function financeAdminRequest<T>(
   path: string,
-  init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; bankManualAuthEpoch?: number },
+  init?: FinanceRequestInit,
 ) {
   if ((init?.method ?? "GET").toUpperCase() === "POST" && D1_CREGIS_SWITCH_PATH.test(path)) {
     const unresolved = currentD1PendingCregisSwitchCommands().find(value => value.path === path);
