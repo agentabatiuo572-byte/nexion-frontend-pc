@@ -54,13 +54,15 @@ import {
 import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { type FDomainAttempt, commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, F2_BOOTSTRAP_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
-import { F3_SETTLEMENT_SLOT, listF3Proposals, queryF3Proposal, releaseF3Proposal, sendF3Proposal, settlementSpec, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
+import { F3_SETTLEMENT_SLOT, f3ConfigSlot, f3PayoutControlSpec, f3PendingFor, listF3Proposals, queryF3Proposal, releaseF3Proposal, sendF3Proposal, settlementSpec, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
+import { listF3ConfigWrites, pendingF3ConfigWrite, queryF3ConfigWrite, sendF3ConfigWrite } from "@/lib/admin/f3-config-write";
+import { isF3PayoutControlKey, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
 import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
 import { canRetryF4Proposal, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, releaseF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import { canRetryF4Policy, listF4PolicyWrites, queryF4Policy, sendF4Policy } from "@/lib/admin/f4-policy-write";
 import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal, sendF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
-import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
+import { F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { listF1PolicyOperations, queryF1PolicyOperation } from "@/lib/admin/f1-policy-change";
 import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
@@ -170,6 +172,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f2Error, setF2Error] = useState<string | null>(null);
   const [f3Proposals, setF3Proposals] = useState<FDomainAttempt[]>([]);
   const [f3ApprovalRows, setF3ApprovalRows] = useState<A2OperationRow[]>([]);
+  const [f3ConfigWrites, setF3ConfigWrites] = useState<FDirectAttempt[]>([]);
   const [f3ReadEpoch, setF3ReadEpoch] = useState(0);
   const [f3Overview, setF3Overview] = useState<F3BinaryOverview | null>(null);
   const [f3Loading, setF3Loading] = useState(tab === "F3");
@@ -377,6 +380,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF3Error(null);
     const originals = owner === undefined ? [] : listF3Proposals(owner);
     setF3Proposals(originals);
+    setF3ConfigWrites(owner === undefined ? [] : listF3ConfigWrites(owner));
     const [overview, queue, ...lookups] = await Promise.allSettled([
       fetchF3BinaryOverview(),
       canReadA2 ? fetchA2Overview() : Promise.resolve(null),
@@ -430,6 +434,50 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("已提交，等待审批后执行");
       return ticket;
     } finally { setF3Proposals(listF3Proposals(owner)); }
+  };
+
+  const getF3PayoutControlPending = (key: F3PayoutControlKey) => {
+    const originalProposal = f3Proposals.find(row => row.fingerprint === f3ConfigSlot(key));
+    return {
+      approval: f3PendingFor(f3ApprovalRows, key) ?? f3PendingFor(originalProposal?.ticket ? [originalProposal.ticket] : [], key),
+      originalProposal,
+      directWrite: f3ConfigWrites.find(row => row.adminId === session?.adminId && row.f3Request?.key === key),
+    };
+  };
+
+  const submitF3PayoutControl = async (key: F3PayoutControlKey, value: string, reason: string, snapshot?: F3ConfirmationSnapshot) => {
+    const current = useAdminAuth.getState().session;
+    if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!f3Overview || f3Loading || f3Error) throw new Error("F3_CONFIG_READ_UNAVAILABLE");
+    const plan = planF3PayoutControl(key, value, snapshot?.config ?? f3Overview.config);
+    if (!current.authorities.includes(plan.authority)) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (plan.direction === "unchanged") return { kind: "unchanged" } as const;
+    const pending = getF3PayoutControlPending(key);
+    const directWrite = pendingF3ConfigWrite(current.adminId, key);
+    if (directWrite) throw new F1OutcomeUncertainError(displayAdminError("F1_REQUEST_OUTCOME_UNKNOWN"), directWrite.commandKey);
+    if (plan.direction === "proposal") {
+      if (pending.approval) throw new Error("OBJECT_ALREADY_PENDING");
+      const ticket = await sendF3(f3ConfigSlot(key), f3PayoutControlSpec(key, plan.before, plan.value, reason), snapshot);
+      return { kind: "proposal", ticket } as const;
+    }
+    try {
+      const updated = await sendF3ConfigWrite(current.adminId, key, { value: plan.value, reason });
+      if (current.adminId === useAdminAuth.getState().session?.adminId) await refreshF3();
+      return { kind: "direct", updated } as const;
+    } finally {
+      if (current.adminId === useAdminAuth.getState().session?.adminId) setF3ConfigWrites(listF3ConfigWrites(current.adminId));
+    }
+  };
+
+  const recoverF3PayoutControl = async (key: F3PayoutControlKey, mode: "query" | "retry") => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    try {
+      return mode === "query" ? { kind: "query", ...await queryF3ConfigWrite(owner, key) } as const
+        : { kind: "retry", updated: await sendF3ConfigWrite(owner, key) } as const;
+    } finally {
+      if (owner === useAdminAuth.getState().session?.adminId) await refreshF3();
+    }
   };
 
   const refreshF4 = useCallback(async () => {
@@ -1165,8 +1213,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Loading,
     f3Error,
     refreshF3,
+    getF3PayoutControlPending, submitF3PayoutControl, recoverF3PayoutControl,
     updateF3Config: async (key, value, reason, amplifies, snapshot) => {
-      await proposeFConfig("F3", key, value, reason, undefined, amplifies, undefined, snapshot);
+      if (isF3PayoutControlKey(key)) await submitF3PayoutControl(key, value, reason, snapshot);
+      else await proposeFConfig("F3", key, value, reason, undefined, amplifies, undefined, snapshot);
     },
     f4Overview,
     f4VoteProjection,

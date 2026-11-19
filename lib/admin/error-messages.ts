@@ -1868,6 +1868,13 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   D4_LEDGER_AMOUNT_PRECISION_OR_OVERFLOW: "记账金额超过允许的整数范围或六位小数精度，本次未记账；请联系财务核查原记录。",
   F3_THRESHOLD_INVALID: "团队平衡奖励门槛未通过校验。请在「团队平衡奖励」填写大于 0、不超过 5000 的数字，最多 6 位小数，再提交审批。",
   F3_MATCH_RATE_INVALID: "团队平衡奖励比例未通过校验。请在「团队平衡奖励」按百分比填写大于 0、不超过 20 的数字，最多 10 位小数；填 1 表示 1%。",
+  // B54 visual copy pending.
+  F3_PLATFORM_CAP_PCT_INVALID: "",
+  F3_SUPER_ADMIN_APPROVAL_REQUIRED: "",
+  F3_CONFIG_STALE: "",
+  F3_CONFIG_READ_UNAVAILABLE: "",
+  F3_LEGACY_PERIOD_NO_PLATFORM_CAP: "",
+  F3_EARLIER_PERIOD_PENDING: "",
   D3_FORECAST_CONFIG_REQUIRED: "预测设置内容缺失，本次没有保存。请重新读取设置后编辑并查看影响预览。",
   D3_FORECAST_CONFIG_HASH_FAILED: "预测设置这次没有保存，系统出错。改动还在，请联系值班人员。",
   D3_FORECAST_CONFIG_SERIALIZATION_FAILED: "预测设置未能保存为有效内容。请保留草稿，联系值班人员核查配置服务。",

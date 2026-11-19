@@ -6,6 +6,8 @@
  * 页面上没有的键返回 undefined，A2 写「未识别的配置项」，原键放技术信息，不猜。
  */
 
+import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY } from "@/lib/admin/f3-policy";
+
 const F1 = "团队等级晋升";
 const F2 = "团队奖励设置";
 const F3 = "团队平衡奖励";
@@ -18,6 +20,8 @@ export type FConfigSpec = {
   action: string;
   /** 往哪个方向改会让平台多付钱（后端 loosensPayoutControlUiKey 的方向）；没有的这一项批准时不查兑付覆盖率。 */
   loosen?: string;
+  /** F3 payout control direction that requires superadmin approval and a B1 check. */
+  payoutControlAmplification?: "enable" | "increase";
   unit?: string;
   values?: Record<string, string>;
   /** 值是一组 JSON 时每一项的名字。 */
@@ -84,6 +88,9 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
     case "F.binary.paused": return spec(F3, "发放", { action: next === "on" ? "暂停团队平衡奖励发放" : next === "off" ? "恢复团队平衡奖励发放" : "调整团队平衡奖励发放",
       values: { on: "已暂停", off: "发放中" },
       impact: next === "on" ? "批准后，之后的结算全部被拦下；已经记账的奖励不受影响。" : "批准后，之后的结算不再被拦下；暂停期间没结的周期不自动补。" });
+    // B54 copy and value formatting are supplied with the visual change.
+    case F3_AUTO_SETTLE_KEY: return { page: F3, item: "", action: "", impact: "", payoutControlAmplification: "enable" };
+    case F3_PLATFORM_CAP_PCT_KEY: return { page: F3, item: "", action: "", impact: "", payoutControlAmplification: "increase" };
     case "F.pool.ratio": return spec(F4, "团队激励池比例", { unit: "%", loosen: "调高", impact: "批准后，本周未结算的和之后的结算按新比例放钱；已发的不重算。" });
     case "F.pool.monthlyCap": return spec(F4, "团队激励池每月上限", { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", detail: "写错格式会让池不能结算。" });
     case "F.pool.settleCron": return spec(F4, "团队激励池结算时间", { cron: true, impact: "批准后，下一次到点就按新时间结算最近结束的一周；已结算的不变。" });

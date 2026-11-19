@@ -305,6 +305,7 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
     const settlement = record(value, "F3", `settlements[${index}]`);
     rawAmounts(settlement, ["trackARaw", "trackBRaw", "matchAmountRaw", "todayPaidRaw"], `settlements[${index}]`);
     rawAmounts(settlement, ["residualTrackARaw", "residualTrackBRaw", "residualAmountUsdt"], `settlements[${index}]`);
+    rawAmounts(settlement, ["platformReductionPct", "platformCapUsdt", "platformUsedUsdt"], `settlements[${index}]`);
     for (const key of ["settlementNo", "residualPolicy", "settlementMode", "proposerName", "approverName", "a2OperationId"]) {
       if (settlement[key] !== undefined && settlement[key] !== null && typeof settlement[key] !== "string") invalid("F3", `settlements[${index}].${key}`);
     }
@@ -328,6 +329,8 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
   const config = object(row, "config", "F3");
   strings(config, ["threshold", "matchRate", "spillover", "gvResetCron", "settlePeriod", "residualPolicy", "residualPool", "residualSub"], "config");
   if (typeof config.spilloverEnabled !== "boolean") invalid("F3", "config.spilloverEnabled");
+  if (config.autoSettle != null && typeof config.autoSettle !== "boolean") invalid("F3", "config.autoSettle");
+  rawAmounts(config, ["platformCapPct"], "config");
   for (const field of [
     "maxTrackGmv",
     "participantCount",
