@@ -471,6 +471,71 @@ export function isFirstA2DisclosurePublish(review: Extract<I5DisclosureReview, {
   return !!review.draft && review.previousVersion === null && review.previousVersionSummary === null;
 }
 
+type A2DisclosureSide =
+  | { state: "available"; version: string; languageScope: string[] }
+  | { state: "first_publish" }
+  | { state: "missing_evidence"; version?: string };
+
+type A2DisclosureText =
+  | { state: "available"; text: string }
+  | { state: "out_of_scope" | "first_publish" | "missing_evidence" };
+
+function disclosureText(side: A2DisclosureSide, code: string, text: unknown): A2DisclosureText {
+  if (side.state !== "available") return { state: side.state };
+  if (!side.languageScope.includes(code)) return { state: "out_of_scope" };
+  return typeof text === "string" && text.trim() ? { state: "available", text } : { state: "missing_evidence" };
+}
+
+/** Project the additional-language comparison from the publish ticket's frozen versions. */
+export function a2DisclosureTranslationDiff(review: A2OperationRow["disclosureReview"]) {
+  if (review?.kind !== "PUBLISH") return undefined;
+  const previous = review.previousVersionSummary;
+  const draft = review.draft;
+  const before: A2DisclosureSide = previous
+    ? { state: "available", version: previous.version, languageScope: previous.languageScope.split("+") }
+    : isFirstA2DisclosurePublish(review) ? { state: "first_publish" }
+      : { state: "missing_evidence", version: review.previousVersion ?? undefined };
+  const after: A2DisclosureSide = draft
+    ? { state: "available", version: draft.version, languageScope: draft.languageScope.split("+") }
+    : { state: "missing_evidence", version: review.version };
+  const beforeScope = before.state === "available" ? before.languageScope : undefined;
+  const afterScope = after.state === "available" ? after.languageScope : undefined;
+  const scopeChanged = beforeScope && afterScope
+    ? beforeScope.length !== afterScope.length || beforeScope.some(code => !afterScope.includes(code))
+    : null;
+  const codes = [...new Set([...(beforeScope ?? []), ...(afterScope ?? [])])]
+    .filter(code => !["zh", "vi", "en"].includes(code));
+  const chapterNumbers = ["01", "02", "03", "04", "05", "06", "07"];
+  const languages = codes.map(code => {
+    const compare = (oldText: unknown, newText: unknown) => {
+      const oldValue = disclosureText(before, code, oldText);
+      const newValue = disclosureText(after, code, newText);
+      const changed = oldValue.state === "available" && newValue.state === "available"
+        ? oldValue.text !== newValue.text : null;
+      return { before: oldValue, after: newValue, changed };
+    };
+    return {
+      code,
+      summary: compare(previous?.translations?.[code], draft?.translations?.[code]),
+      chapters: chapterNumbers.map(no => {
+        const oldChapter = previous?.chapters.find(chapter => chapter.no === no);
+        const newChapter = draft?.chapters.find(chapter => chapter.no === no);
+        return {
+          no,
+          title: compare(oldChapter?.titleTranslations?.[code], newChapter?.titleTranslations?.[code]),
+          body: compare(oldChapter?.bodyTranslations?.[code], newChapter?.bodyTranslations?.[code]),
+        };
+      }),
+    };
+  });
+  return {
+    before, after, scopeChanged, languages,
+    changedSummaryLanguages: languages.filter(language => language.summary.changed === true).map(language => language.code),
+    changedChapterNumbers: chapterNumbers.filter(no => languages.some(language => language.chapters
+      .some(chapter => chapter.no === no && (chapter.title.changed === true || chapter.body.changed === true)))),
+  };
+}
+
 function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {
   const permission = (code: string) => {
     const entry = permissions?.get(code);
