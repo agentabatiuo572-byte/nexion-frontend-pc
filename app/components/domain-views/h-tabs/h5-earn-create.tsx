@@ -87,7 +87,7 @@ export function earnCreateRequest({ list, approver, rights }: { list: readonly E
       },
       fields: [
         { key: "milestoneKey", label: "档位编号", inputKind: "text", current: "", placeholder: "例如 M6", help: "字母、数字、- 或 _，建好后不能改", maxLength: 64 },
-        { key: "label", label: "名称", inputKind: "text", current: "", placeholder: "例如 Earn 500 USDT", help: `${APP_VISIBLE_TEXT_HINT}，最多 128 个字符`, maxLength: 128 },
+        { key: "label", label: "名称", inputKind: "text", current: "", placeholder: "例如 Earn 500 USDT", help: `${APP_VISIBLE_TEXT_HINT}，最多 128 字`, maxLength: 128 },
         { key: "threshold", label: "门槛（累计收益 USDT）", inputKind: "number", current: "", placeholder: "例如 500", help: "最多 6 位小数，不能和现有的档相同" },
         { key: "nex", label: "奖励（UVT）", inputKind: "number", current: "", placeholder: "例如 250", help: "最多 6 位小数，可以是 0" },
       ],

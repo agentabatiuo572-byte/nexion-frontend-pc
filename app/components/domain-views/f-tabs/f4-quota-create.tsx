@@ -48,7 +48,8 @@ export function F4QuotaCreate({ data, skuOptions, skuLabels, onClose }: { data: 
       detail={<>新建要{APPROVER}批准，批准后才生效。</>}
       effect={<StatusTag tone="progress" filled explain={`${APPROVER}批准后才加上这一档，提交人不能批自己的；批准前这个商品照常卖，不受名额限制。`}>批准后生效</StatusTag>}
       facts={<Facts>
-        <Fact k="谁来批">{`${APPROVER}，需有购机名额修改权限，不能是提交人`}</Fact>
+        <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
+        <Fact k="需有权限">购机名额修改权限</Fact>
       </Facts>}
       content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已经有档位，不在下面的可选范围里；要改，到它那一行点「调额度」。`}</Notice> : undefined}
       blockedReason={noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined}
