@@ -66,6 +66,12 @@ export function skuText(skus: readonly string[], labels: Record<string, string>)
 
 export const surfacesText = (surfaces: readonly string[]) => surfaces.map((s) => SURFACE_LABEL[s] ?? "其他页面").join("、") || "不限入口";
 
+/** 转盘专发券：四个自领入口都拒绝，只有幸运转盘中奖能发；它的空入口不是「不限」。PC 保存不改这一项。 */
+// PLACEHOLDER(pc-wire): parseH7Voucher 还没带出后端的 wheelOnly，接上前这里总是 false；接上后改成直接读 v.wheelOnly。
+export const isWheelOnly = (v: H7Voucher) => (v as H7Voucher & { wheelOnly?: boolean }).wheelOnly === true;
+export const WHEEL_ONLY_TEXT = "仅转盘发放";
+export const WHEEL_ONLY_HELP = "用户不能自己领，只在幸运转盘中奖时发到钱包。";
+
 /** 一句人话：这张券最后是什么意思。 */
 export function voucherSentence(v: Pick<H7Voucher, "type" | "amountUSD" | "percent" | "minPurchaseUSD" | "maxDiscountUSD" | "applicableSkus" | "audience" | "startAt" | "endAt">, labels: Record<string, string>): string {
   const min = v.minPurchaseUSD ?? 0, max = v.maxDiscountUSD ?? 0;

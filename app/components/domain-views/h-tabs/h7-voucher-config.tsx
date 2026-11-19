@@ -37,7 +37,7 @@ import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sen
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, expiredTag,
-  endDetailText, faceValue, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
+  endDetailText, faceValue, isWheelOnly, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, WHEEL_ONLY_HELP, WHEEL_ONLY_TEXT, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
 import { H7VoucherForm, SPLIT_RETIRED_HELP, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
@@ -661,7 +661,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <Fact k="最多减">{(v.maxDiscountUSD ?? 0) > 0 ? `${amountText(v.maxDiscountUSD)} ${UNIT}` : "不封顶"}</Fact>
                 <Fact k="适用商品">{v.applicableSkus.length ? v.applicableSkus.map((id) => skuLabels[id] ?? `已不在当前目录（${id}）`).join("、") : "全部商品"}</Fact>
                 <Fact k="发给谁">{AUDIENCE_LABEL[v.audience]}</Fact>
-                <Fact k="领取入口">{surfacesText(v.claimSurfaces)}</Fact>
+                <Fact k="领取入口">{isWheelOnly(v) ? <>{WHEEL_ONLY_TEXT}<p className="h7-form-note">{WHEEL_ONLY_HELP}</p></> : surfacesText(v.claimSurfaces)}</Fact>
                 <Fact k="开始">{startDetailText(v.startAt)}</Fact>
                 <Fact k="结束">{endDetailText(v.endAt)}</Fact>
                 <Fact k="发行上限">{v.issuanceLimit === 0 ? "不限量" : `${countText(v.issuanceLimit)} 张`}</Fact>
