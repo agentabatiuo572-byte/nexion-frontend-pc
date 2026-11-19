@@ -29,8 +29,9 @@ function bindingEffect(row: E2YieldComparison) {
     : { impact: "批准后 App 新用户引导重新显示这一位，显示新商品和它的收益；批准前这一位仍不显示。", detail: "批准后生效；批准前这一位仍不显示。", toast: "已提交审批，批准前这一位仍不显示", tag: "待审批，这一位仍不显示" };
 }
 /** 当前绑定的一句话写法，确认框和提交给审批的前值共用。 */
+// 不可用行后端回的名称会退回对比位旧名，只用绑定编号标识商品。
 const currentBinding = (row: E2YieldComparison) => row.available ? `${nexGridBrandText(row.label)} · ${row.productNo}`
-  : row.productNo ? `${nexGridBrandText(row.label)} · ${row.productNo} · 已下架或收益不完整` : "未选商品";
+  : row.productNo ? `${row.productNo} · 已下架或收益不完整` : "未选商品";
 
 /** 引导对比：手机行来自 T3，商品行各绑一件在售实物商品，换绑走审批。 */
 export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: boolean }) {
@@ -65,14 +66,14 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
           return <Tr key={r.configKey}>
             <Td><Cell main={slotName(r.configKey)} sub={phone ? "当前引导档" : undefined} /></Td>
             <Td grow><div className="e6-yield-product">
-              <Cell full main={phone ? "手机 T3 档位" : r.productNo ? nexGridBrandText(r.label) : "未选商品"} sub={!phone && r.productNo ? <span data-mono="">{r.productNo}</span> : undefined} />
+              <Cell full main={phone ? "手机 T3 档位" : r.available ? nexGridBrandText(r.label) : r.productNo ? <span data-mono="">{r.productNo}</span> : "未选商品"} sub={!phone && r.available && r.productNo ? <span data-mono="">{r.productNo}</span> : undefined} />
               {pending && (pending.terminal
                 ? <StatusTag tone="done" explain="在上方记录里点「准备新变更」后，才能再次更换。">{`原审批${TERMINAL_NAMES[pending.terminal] ?? "已结束"}`}</StatusTag>
                 : <StatusTag tone={pending.ticketId ? "progress" : "warn"} explain={pending.ticketId ? "另一位管理员批准后才换成新商品。" : "原操作已保存，到上方记录里查询结果。"}>{pending.ticketId ? bindingEffect(r).tag : "更换结果未知"}</StatusTag>)}
             </div></Td>
             {phone || r.available
               ? <><Td align="right" data-num=""><E6Amount raw={r.dailyUsdtText} precision={usdtPrecision} currency="USDT" /></Td><Td align="right" data-num=""><E6Amount raw={r.dailyNexText} precision={uvtPrecision} currency="UVT" /></Td></>
-              : <Td colSpan={2} className="e6-yield-off"><Conclusion state="warn" explainTitle="为什么不显示" explain={r.productNo ? "绑定的商品已下架、商城里看不到，或 USDT、UVT 日收益不完整。可点「更换选品」换一件在售商品。" : "这一位还没有绑定商品。可点「更换选品」选一件在售商品。"}>{r.productNo ? "商品不可用，App 引导暂不显示" : "未选商品，App 引导暂不显示"}</Conclusion></Td>}
+              : <Td colSpan={2} className="e6-yield-off"><Conclusion state="warn" explainTitle={inApp(r) ? "为什么不显示" : "为什么不可用"} explain={r.productNo ? "绑定的商品已下架、商城里看不到，或 USDT、UVT 日收益不完整。可点「更换选品」换一件在售商品。" : "这一位还没有绑定商品。可点「更换选品」选一件在售商品。"}>{r.productNo ? inApp(r) ? "商品不可用，App 引导暂不显示" : "商品不可用" : inApp(r) ? "未选商品，App 引导暂不显示" : "请选一件在售商品"}</Conclusion></Td>}
             {showActions && <Td sticky="end">{!phone && <Button size="sm" disabledReason={blockReason(r)} onClick={() => setPick({ row: r, skuId: "" })}>更换选品</Button>}</Td>}
           </Tr>;
         })}
@@ -99,7 +100,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
       const { row, sku } = confirm, scope = scopeOf(row), slot = slotName(row.configKey);
       const before = currentBinding(row), effect = bindingEffect(row);
       // 提交给审批的前后值同一种写法：名称 · 编号 · USDT/天 · UVT/天。
-      const beforeValue = row.available ? `${row.label} · ${row.productNo} · ${row.dailyUsdtText} USDT/天 · ${row.dailyNexText} UVT/天` : row.productNo ? `${row.label} · ${row.productNo} · 已下架或收益不完整` : "未选商品";
+      const beforeValue = row.available ? `${row.label} · ${row.productNo} · ${row.dailyUsdtText} USDT/天 · ${row.dailyNexText} UVT/天` : row.productNo ? `${row.productNo} · 已下架或收益不完整` : "未选商品";
       const afterValue = `${sku.name} · ${sku.id} · ${sku.dailyEarn} USDT/天 · ${sku.dailyEarnNEX} UVT/天`;
       const usdt = e6AmountPrecision([String(sku.dailyEarn), ...row.available ? [row.dailyUsdtText] : []]), uvt = e6AmountPrecision([String(sku.dailyEarnNEX), ...row.available ? [row.dailyNexText] : []]);
       return <E6ConfirmModal scope={scope} briefKind="config" action={`更换引导对比商品 · ${slot}`} confirmLabel="提交审批" reasonMin={8} reasonMax={200}
@@ -134,7 +135,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
             ctx.toast(effect.toast);
             await ctx.refreshE2();
           } else {
-            ctx.toast(status === "approved" ? `${ticket}已批准，已重新读取这一位的商品` : `${ticket}${TERMINAL_NAMES[status]}，这一位的商品不变`);
+            ctx.toast(status === "approved" ? `${ticket}已批准` : `${ticket}${TERMINAL_NAMES[status]}，这一位的商品不变`);
           }
         }} />;
     })()}
