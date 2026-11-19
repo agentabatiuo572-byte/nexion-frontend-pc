@@ -124,8 +124,8 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     purpose: "安排 UVT 每天的价格，看现价有没有按计划走，需要时暂停或固定某一天。",
     tasks: [
       { title: "改某一天的目标价", steps: ["在「七天价格计划」找到那一天，点目标价旁的笔", "填新值和理由；降低直接保存，提高要另一位超级管理员批准", "改计划不改现价，推进或固定到那一天才发布"] },
-      { title: "让价格停在某一天", steps: ["在「运行方式」点「固定生效日」的「调整」，选一天", "确认后马上按那天的目标价发布现价，之后不再自动切换；选「不固定」后，排程已配置、没有暂停时才继续推进"] },
-      { title: "暂停或恢复价格变化", steps: ["在「运行方式」点「价格自动变化」的「暂停」或「恢复」", "暂停只停自动推进和采样；恢复要超级管理员，恢复时会先查兑付覆盖率"] },
+      { title: "让价格停在某一天", steps: ["在「运行方式」点「固定生效日」的「调整」，选一天", "目标价高于现价时提交审批；其余确认后固定。选「不固定」后，排程已配置、没有暂停时才继续推进"] },
+      { title: "暂停或恢复价格变化", steps: ["在「运行方式」点「价格自动变化」的「暂停」或「恢复」", "暂停停下自动推进和采样；恢复要超级管理员，提价时还要另一位有审批权限的超级管理员批准"] },
     ],
     terms: [
       { name: "现价", text: "1 UVT 折合多少 USDT，用户兑换按它成交，取最近一次发布的价格。" },
@@ -137,7 +137,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "已停用", text: "七天波动幅度、当前波动幅度、价格来源、偏离告警阈值不能再改。系统还留着旧值时只读显示；没结论的原操作仍可查询或按原请求重试。" },
       { name: "待审批", text: "这一项有申请在等批准，标签的问号里写单号、发起人和提交时间，到「操作记录与审批」按单号找。这张单有结论之前，这一项不能再改。" },
     ],
-    more: "G3 /finance-products/market。读接口 GET /api/admin/market/nex/curve 和 /curve/history，打开时读一次，点「刷新」重读，不自动刷新。写接口 PUT /nex/curve、PATCH /nex/curve/controls/{key}、PATCH /nex/overrides/{key}；提高目标价、上涨概率、现价和首次配置排程改为 POST /api/admin/platform/audit/operations 提交审批。开发环境以外，后端拒绝人工改上涨概率和直接改现价。",
+    more: "G3 /finance-products/market。读接口 GET /api/admin/market/nex/curve 和 /curve/history，打开时读一次，点「刷新」重读，不自动刷新。写接口 PUT /nex/curve、PATCH /nex/curve/controls/{key}、PATCH /nex/overrides/{key}；提高目标价、上涨概率、现价、首次配置排程，以及提价的固定和恢复，走 POST /api/admin/platform/audit/operations 提交审批。开发环境以外，后端拒绝人工改上涨概率和直接改现价。",
   },
   K3: {
     keep: ["草稿与停用规则不算覆盖。", "放行复核", "同一类没归档的规则不能用相同的优先级。"],
