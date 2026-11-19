@@ -2,8 +2,9 @@
 
 /**
  * 侧栏单域分组 — 折叠态=图标按钮(点击展开侧栏并打开该组);展开态=域头 + L2 链接列表。
- * 图标按业务类别上色(DOMAIN_TONE)。页名前的点表示页面状态:flagship 实心,其他空心;当前页另用浅底和右端品牌色小点标出,两者互不替代。域字母和页面编号不显示(DP-30)。
- * 当前页所在的域收起时,域头也用浅底、加粗和品牌色小点标出,不自动展开(SH-H01)。
+ * 图标按业务类别上色(DOMAIN_TONE)。侧栏显示域字母和页面编号,帮运营认页面:页面编号在页名前、和域图标同一列,等宽弱色;域字母在域头箭头前;折叠态的悬停提示写「字母 域名」。面包屑和页头仍不显示编号。
+ * 当前页用浅底和紧跟页名的品牌色小点标出。
+ * 当前页所在的域收起时,域头也用浅底、加粗和紧跟域名的品牌色小点标出,不自动展开(SH-H01)。名字省略时小点跟在省略号后。域字母紧挨箭头,徽标在字母前。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -42,8 +43,8 @@ export function SidebarGroup({
       <button
         type="button"
         onClick={onToggle}
-        title={domain.name}
-        aria-label={domain.name}
+        title={`${domain.code} ${domain.name}`}
+        aria-label={`${domain.code} ${domain.name}`}
         className="rd-nav-rail"
         data-active={groupActive ? "" : undefined}
       >
@@ -65,9 +66,12 @@ export function SidebarGroup({
         data-active={groupActive && !isOpen ? "" : undefined}
       >
         <IconTile tone={tone} icon={domain.icon} size={22} />
-        <span className="flex-1 truncate text-left">{domain.name}</span>
+        <span className="rd-nav-name text-left">
+          <span>{domain.name}</span>
+          {!isOpen && groupActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
+        </span>
         {!isOpen && groupBadge > 0 && navBadge(groupBadge)}
-        {!isOpen && groupActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
+        <span className="rd-nav-letter font-mono-tabular">{domain.code}</span>
         <ChevronRight
           size={14}
           className="rd-nav-chevron"
@@ -97,10 +101,12 @@ export function SidebarGroup({
                     aria-current={active ? "page" : undefined}
                     data-active={active ? "" : undefined}
                   >
-                    <span className="rd-nav-dot" data-tone={tone} data-scaffold={l2.status === "flagship" ? undefined : ""} aria-hidden />
-                    <span className="flex-1 truncate" title={l2.name}>{l2.name}</span>
+                    <span className="rd-nav-code font-mono-tabular">{l2.id}</span>
+                    <span className="rd-nav-name">
+                      <span title={l2.name}>{l2.name}</span>
+                      {active && <span className="rd-nav-dot" data-current="" aria-hidden />}
+                    </span>
                     {(badges?.[l2.path] ?? 0) > 0 && navBadge(badges?.[l2.path] ?? 0)}
-                    {active && <span className="rd-nav-dot" data-current="" aria-hidden />}
                   </Link>
                 </li>
               );

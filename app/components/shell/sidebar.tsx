@@ -163,8 +163,10 @@ export function Sidebar({
               data-active={homeActive ? "" : undefined}
             >
               <IconTile tone="system" icon={LayoutGrid} size={22} />
-              <span className="flex-1">今日概览</span>
-              {homeActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
+              <span className="rd-nav-name">
+                <span>今日概览</span>
+                {homeActive && <span className="rd-nav-dot" data-current="" aria-hidden />}
+              </span>
             </Link>
           );
         })()}
