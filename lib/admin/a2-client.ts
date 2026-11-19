@@ -664,6 +664,32 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   };
 }
 
+type A2VoucherReversalResult =
+  | { state: "available"; disposition?: string; skippedReason?: string; amountUsdt?: string }
+  | { state: "missing_receipt" };
+
+const F1_VOUCHER_REVERSAL_ACTION = "奖励发放 · 冲正 · 券";
+const F1_VOUCHER_REVERSAL_RECEIPT = /^已冲正(?: · 券处置: ([A-Z][A-Z0-9_]*))?(?: · 未扣回原因: ([A-Z][A-Z0-9_]*))?(?: · 已扣回: (\d+(?:\.\d{1,6})?) USDT)?$/;
+
+/** The history row identifies the decision; only the visible approved ticket carries the executed result. */
+export function a2VoucherReversalResult(
+  history: A2OperationHistory | null | undefined,
+  operationQueue: readonly A2OperationRow[],
+): A2VoucherReversalResult | undefined {
+  if (!history || history.st !== "approved" || history.action !== F1_VOUCHER_REVERSAL_ACTION
+    || (history.operationCode != null && history.operationCode !== "f_reward_payout_action")) return undefined;
+  const ticket = operationQueue.find(item => item.id === history.id);
+  if (ticket?.status !== "approved" || ticket.operationCode !== "f_reward_payout_action"
+    || ticket.action !== F1_VOUCHER_REVERSAL_ACTION) return { state: "missing_receipt" };
+  const match = F1_VOUCHER_REVERSAL_RECEIPT.exec(ticket.after);
+  if (!match) return { state: "missing_receipt" };
+  const [, disposition, skippedReason, amountUsdt] = match;
+  if ((!disposition && !skippedReason && !amountUsdt) || (amountUsdt && !/[1-9]/.test(amountUsdt))) {
+    return { state: "missing_receipt" };
+  }
+  return { state: "available", disposition, skippedReason, amountUsdt };
+}
+
 function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const detail = parseDetail(log.detailJson);
   const action = asText(log.action, "UNKNOWN");
