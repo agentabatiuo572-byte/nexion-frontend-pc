@@ -7,7 +7,9 @@ import { supportPhraseClient, type SupportPersonalPhrase } from "@/lib/admin/m-s
 import { scriptGroupLabel } from "@/lib/admin/m-client";
 import type { MCtx } from "./types";
 import { Icon, Modal } from "../design-kit";
-import { BlockState, Button, KeepText, Explain, Field, Input, Select, Textarea } from "@/app/components/rd";
+import { BlockState, Button, KeepText, Explain, Field, Input, Select, StatusTag, Textarea } from "@/app/components/rd";
+import { Languages } from "lucide-react";
+import { languageName } from "./m4-kb-views";
 import "./support-content-tools.css";
 export type SelectedSupportContent = { kind: "SKU"; skuId: string; name: string } | { kind: "LINK"; linkTarget: SupportLink; name: string };
 export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false, faqLanguage }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean; faqLanguage?: string }) {
@@ -43,6 +45,9 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
       return [];
     }
   })();
+  // 单个客户：列表只有一种语言，语言写在条数后面；客户语言没有时退到英语，写明「X 暂无」。群发：每条标语言。
+  const faqLanguageText = faqLanguage === undefined || !faqs.length ? "" : faqs[0].language === faqLanguage ? ` · ${languageName(faqLanguage)}` : ` · 英语（${languageName(faqLanguage)}暂无）`;
+  const faqEmptyText = faqLanguage === undefined ? "还没有已发布的问答" : faqLanguage === "en-US" ? "还没有已发布的英语问答" : `${languageName(faqLanguage)}和英语都还没有已发布的问答`;
   const [faqQuery, setFaqQuery] = useState("");
   const faqMatches = faqs.filter(f => !faqQuery.trim() || `${f.question}${f.answer}`.includes(faqQuery.trim()));
   const faqAvailable = ctx.pget("I.support.knowledgeAvailable") === "1";
@@ -108,8 +113,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
         </>}
       </div> : picker==="faq" ? <div className="support-content-body">
         <div className="support-content-search"><Field label="搜索常见问题">{control=><Input {...control} data-search placeholder="输入问题或答案里的词" value={faqQuery} autoFocus disabled={disabled} onChange={e=>setFaqQuery(e.target.value)}/>}</Field></div>
-        <p className="support-content-meta">{faqAvailable ? faqMatches.length : "-"} 条已发布问答 <Explain label="怎么用问答" content="点一下把答案插入输入框，不会直接发送。"/></p>
-        {!faqAvailable ? (ctx.contentLoading ? <p className="support-content-state" role="status">正在加载知识库…</p> : <div className="support-content-state" role="alert">知识库加载失败。<Button size="sm" disabled={faqBusy||disabled} onClick={()=>void retryFaqs()}>{faqBusy?"正在加载知识库…":"重试知识库"}</Button>{faqError&&<span>{faqError}</span>}</div>) : !faqMatches.length ? <p className="support-content-state">{faqs.length ? "没有匹配的问答。" : "知识库暂无已发布的中文问答。"}</p> : <div className="sku-pop-list" data-short="">{faqMatches.map(f=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={f.id} title="插入输入框，不会直接发送" disabled={disabled} onClick={()=>{onInsert(f.answer);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{f.question}</span><span className="sku-pop-sub">{f.answer}</span></span><Icon name="arrow" size={15}/></button>)}</div>}
+        <p className="support-content-meta">{faqAvailable ? faqMatches.length : "-"} 条已发布问答{faqAvailable && faqLanguageText} <Explain label="怎么用问答" content="点一下把答案插入输入框，不会直接发送。"/></p>
+        {!faqAvailable ? (ctx.contentLoading ? <p className="support-content-state" role="status">正在加载知识库…</p> : <div className="support-content-state" role="alert">知识库加载失败。<Button size="sm" disabled={faqBusy||disabled} onClick={()=>void retryFaqs()}>{faqBusy?"正在加载知识库…":"重试知识库"}</Button>{faqError&&<span>{faqError}</span>}</div>) : !faqMatches.length ? <p className="support-content-state">{faqs.length ? "没有匹配的问答。" : `${faqEmptyText}，到「知识库」发布后可选。`}</p> : <div className="sku-pop-list" data-short="">{faqMatches.map(f=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={f.id} title="插入输入框，不会直接发送" disabled={disabled} onClick={()=>{onInsert(f.answer);setPicker(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{f.question}</span><span className="sku-pop-sub">{f.answer}</span></span>{faqLanguage===undefined&&<span className="support-faq-lang"><StatusTag tone="neutral" icon={Languages}>{languageName(f.language)}</StatusTag></span>}<Icon name="arrow" size={15}/></button>)}</div>}
       </div> : picker==="sku" ? <div className="support-content-body">
         <Field label="搜索商品名称或编号">{control=><Input {...control} data-search placeholder="输入商品名称或编号" value={skuQuery} disabled={disabled} onChange={e=>{setSkuQuery(e.target.value);setSkuPage(1);}}/>}</Field>
         {disabled&&!skus?<p className="support-content-state" role="status">现在不能推荐商品：当前不能发消息，或上一个操作还没结束。</p>:error?<div className="support-content-state" role="alert">{error}<Button size="sm" disabled={disabled} onClick={()=>setSkuRetry(n=>n+1)}>重试商品</Button></div>:!skus?<p className="support-content-state" role="status">{skuBusy?"正在加载在售商品…":"在售商品还没加载。"}</p>:<>
