@@ -21,6 +21,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -252,7 +253,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Loading(false);
     }
   }, []);
-  useEffect(() => { if (tab === "E1" || (tab === "E6" && canReadE1 && canWriteE6)) void refreshE1(); }, [tab, canReadE1, canWriteE6, refreshE1]);
+  useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, canReadE1, refreshE1]);
   const skus = e1Skus;
   const phaseCur = e1Gates?.phaseCurrent ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length

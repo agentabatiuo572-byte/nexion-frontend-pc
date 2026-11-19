@@ -13,7 +13,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { SKU_SERIES, supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, isLegacyOnSaleMaintenance, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
 import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
@@ -208,9 +208,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!form.tier) e.tier = "请选择档位";
     if (!form.lifecycle) e.lifecycle = "请选择生命周期";
     if (!/^\d+(?:\.\d+)?$/.test(form.price.trim()) || Number(form.price) <= 0) e.price = "售价须为大于 0 的 USD 金额";
-    if (!supportsDeviceMonthlyTarget(form.seriesCode)) e.seriesCode = SKU_MODEL_UNRECOGNIZED_REASON;
-    if (original?.seriesLocked && form.seriesCode !== original.seriesCode)
-      e.seriesCode = "商品已有订单或已发出设备，所属系列已锁定";
+    if (!editId && !supportsDeviceMonthlyTarget(form.id.trim() || form.name.trim(), form.tier)) e.id = SKU_MODEL_UNRECOGNIZED_REASON;
     if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
     if (original?.status === "on" && !isLegacyOnSaleMaintenance(form, original)) {
@@ -254,7 +252,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     setErrors(e);
     if (Object.keys(e).length) {
       const first = Object.keys(e)[0];
-      const section = ["name", "id", "tier", "seriesCode", "lifecycle", "tagline", "badge", "media"].includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
+      const section = ["name", "id", "tier", "lifecycle", "tagline", "badge", "media"].includes(first) ? "e1-basic" : ["stock", "unlock", "inventoryMode", "gateQuotaPeriod", "gateQuotaCap", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin"].includes(first) ? "e1-stock" : ["gpu", "gpuCount", "power", "specDocumentTitle", "specDocumentUrl", "uptime", "warranty"].includes(first) || first.startsWith("ai") ? "e1-specs" : "e1-earnings";
       nav.select(section); return;
     }
     if (original && !changes.length) { toast("没有任何修改，无需提交"); return; }
@@ -272,9 +270,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   </Field>;
   const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : !dirty || original && !changes.length ? "没有修改" : undefined;
   const sectionItems = SECTIONS.map((s, index) => {
-    const keys = index === 0 ? ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "media"] : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
+    const keys = index === 0 ? ["name", "id", "tier", "lifecycle", "badge", "tagline", "media"] : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
     const invalid = keys.some(key => !!(errors[key] || appTextErrors[key]));
-    const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
+    const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
@@ -285,17 +283,17 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={versionAccepted} onChange={e => { setVersionAccepted(e.target.checked); if (e.target.checked && currentSku) setOriginal(currentSku); }} /></Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
-          <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "留空按型号名称生成" })}
+          <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "留空沿型号名称生成；编号需包含型号标识" })}
             <Field label="档位" required error={errors.tier} explain="商品分类。共享份额可用不限库存，部分硬件参数收起后原值仍保留。"><Select aria-label="档位" required value={form.tier} onChange={v => setForm(f => ({ ...f, tier: v, inventoryMode: v === "Share" ? f.inventoryMode : "FINITE" }))} placeholder="请选择档位" options={[{ value: "Entry", label: "入门档" }, { value: "Pro", label: "专业档" }, { value: "Flagship", label: "旗舰档" }, { value: "Share", label: "共享份额" }]} /></Field>
-            <Field label="所属系列" required error={errors.seriesCode}
-              explain={original?.seriesLocked ? "商品已有订单或已发出设备，所属系列已锁定。" : "系列决定产能和收益适用规则。"}>
-              <Select aria-label="所属系列" required disabled={!!original?.seriesLocked}
-                value={form.seriesCode} onChange={v => update("seriesCode", v)}
-                placeholder="请选择所属系列" options={SKU_SERIES} />
-            </Field>
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
             {field("badge", "营销角标", { placeholder: "Best Seller", explain: `${APP_VISIBLE_TEXT_HINT}。商品媒体旁的活动文字，批准后显示在商品卡。` })}{field("tagline", "商品标语", { placeholder: "Fully hosted personal AI hardware", explain: `${APP_VISIBLE_TEXT_HINT}。商品识别文案，批准后供商品卡和商品详情读取。` })}
           </div>
+          {original?.status === "on" && !supportsDeviceMonthlyTarget(original.id, form.tier, original.productType)
+            ? <Notice tone="neutral" title="旧编号在售商品，可以直接维护">
+              <p>名称、售价、库存、媒体等资料可以直接改，也可以下架，不用先补齐任务等级、月收益目标和托管机房。</p>
+              <p>改任务等级时，要同时补齐这三项。旧编号不能设置或修改月收益目标；需要时请新建编号含型号标识的商品。下架后不能用这个编号重新上架。</p>
+            </Notice>
+            : (!editId && (form.id || form.name) && !supportsDeviceMonthlyTarget(form.id || form.name, form.tier) || original && !supportsDeviceMonthlyTarget(original.id, form.tier, original.productType)) && <Notice tone="warn" title={SKU_MODEL_UNRECOGNIZED_REASON} />}
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>
               <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
