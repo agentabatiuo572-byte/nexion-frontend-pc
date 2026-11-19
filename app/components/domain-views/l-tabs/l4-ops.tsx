@@ -280,7 +280,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       // The snapshot read does not prove the outcome of a lost grant response.
       // Keep that stage and its evidence; never issue a token from this query.
       await latestContext.current.reloadBi?.();
-      ctx.toast(result.status === "PENDING_CONFIRM" ? "已创建，等另一位管理员放行" : `已重新读取报表 ${result.reportId}：已就绪，${count(result.rowCount)} 行`, "success");
+      ctx.toast(result.status === "PENDING_CONFIRM" ? "已申请，等另一位管理员放行" : `已重新读取报表 ${result.reportId}：已就绪，${count(result.rowCount)} 行`, "success");
     } catch (error) {
       ctx.toast(displayAdminReadError(error), "error");
     } finally {
@@ -324,7 +324,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         impact: `下载已经生成的这一份（报表号 ${original?.result?.reportId}），不重新生成；下载会留操作记录。`,
         check: "原来的时间段、追溯次数和理由不能改。",
       } : {
-        impact: "生成快照，等另一位管理员放行后才能下载。创建会留下操作记录，不会通知其他人。",
+        impact: "提交后生成一份文件，另一位管理员放行后才能下载；不改团队关系和奖励，系统不会通知对方。",
         check: "核对时间段和追溯次数；文件在确认这一刻生成，以后下载还是这一份。",
       },
       facts: (
@@ -344,10 +344,11 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <Fact k="记录">导出留两条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
           {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="系统现在这样数理由的长度（已报给技术同事修）：汉字算 9，字母和数字算 1。下面的计数就是这么数的，写的内容不会被截短。" /></Fact>}
-          <Fact k="下载">{downloadOnly ? "下载这一份快照" : "另一位有团队关系明细导出权限的管理员放行后才能下载"}<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
+          {downloadOnly ? <Fact k="下载">下载这一份<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
+            : <Fact k="谁来放行">另一位有这项权限的管理员，不能是你</Fact>}
         </Facts>
       ),
-      confirmLabel: original?.result ? "只下载" : "确认创建",
+      confirmLabel: original?.result ? "只下载" : "提交申请",
       reasonPlaceholder: "写导出用途，例如：工单号、核对哪个团队",
       reasonMin: 8,
       reasonMax: 200,
@@ -427,7 +428,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           }
           if (record.result?.status === "PENDING_CONFIRM") {
             ctx.closeActionConfirm?.();
-            ctx.toast("已创建，等另一位管理员放行", "success");
+            ctx.toast("已申请，等另一位管理员放行", "success");
             return;
           }
           await downloadTree(record);
@@ -514,19 +515,19 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const expired = Boolean(treeGrant && isRetryExpired(treeGrant) || !report && pendingTree && isRetryExpired(pendingTree));
     const askExportPage = (what: string) => (canOpenExportPage ? exportPageLink(`到「${exportPageName}」${what}`) : <>请有「{exportPageName}」权限的同事{what}</>);
     return (
-      <Notice tone="warn" title={awaitingApproval ? "已创建，等另一位管理员放行" : !report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细已生成，下载授权结果未知" : treeGrant ? "团队关系明细已生成，还没下载成功" : "团队关系明细已就绪，可以下载"} actionBelow>
+      <Notice tone="warn" title={awaitingApproval ? "已申请团队关系明细，等另一位放行" : !report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细下载结果未知" : treeGrant ? "团队关系明细已生成，还没下载成功" : "团队关系明细已就绪，可以下载"} actionBelow>
         <p>{outcome.scope} · 向下追溯 {outcome.depth} 次{report ? ` · 报表号 ${report.reportId} · ${count(report.rowCount)} 行` : ""} · <span className="rd-keep">{outcome.at} 提交（{businessZone().label}）</span></p>
         <p>{!report
           ? expired
             ? <>可能已经生成了一份快照。已超过 24 小时，只能核对：{askExportPage("看有没有这一份")}。</>
             : <>可能已经生成了一份快照。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复生成。</>
           : awaitingApproval
-            ? <>{canOpenExportPage ? <>请另一位有团队关系明细导出权限的管理员{exportPageLink(`到「${exportPageName}」放行这份报表`)}。放行后点「查询报表」更新状态。</> : <>请另一位有权限的管理员放行这份报表。</>}</>
+            ? <>另一位有这项导出权限的管理员放行后才能下载，你不能批自己的申请。放行后点「查询报表」{canOpenExportPage ? <>，或{exportPageLink(`到「${exportPageName}」看进度`)}</> : null}。</>
           : grantUnknown
-            ? <>没有收到下载授权，请找技术同事核对原报表的授权记录。</>
+            ? <>没收到下载链接。为免重复生成链接，这里不能再下载，请找技术同事核对这份报表。</>
             : expired
               ? <>已超过 24 小时，这里不能再下载。{askExportPage("下载这份报表")}。</>
-              : <>快照已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
+              : <>文件已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
         {pendingTree && <span className="rd-toolbar">
           {pendingTree.result
             ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询报表</Button>

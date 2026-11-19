@@ -298,7 +298,7 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   FUNNEL_COHORT: "漏斗聚合",
   FINANCE_AGG: "财务聚合",
   OPERATIONS_AGG: "运营聚合",
-  NETWORK_TREE: "团队树明细",
+  NETWORK_TREE: "团队关系明细",
   REGULATORY: "当前披露快照",
 };
 
