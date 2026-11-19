@@ -665,7 +665,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       confirmLabel: `提交${on ? "移出" : "纳入"}审批`,
       detail: gate.key === "exchange"
         ? on
-          ? <>移出后，风险披露闸门不再阻断 <b>{gate.name}</b>，能不能兑换只看兑换开关。这是放松合规拦截，理由写清依据。</>
+          ? <>移出后，风险披露闸门不再阻断 <b>{gate.name}</b>，能不能兑换只看兑换开关。</>
           : <>纳入后，全平台的新兑换和处理排队都会被拒绝，不看用户有没有确认披露。</>
         : on
           ? <>移出后，没确认当前披露的用户做 <b>{gate.name}</b> 也不会被拦下。这是放松合规拦截，理由写清依据。</>
@@ -890,7 +890,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </Table>
     </Fold>
 
-    <Fold title="受限动作" icon={ShieldCheck} tone="role-4" explain={<><p>{gateEffect}</p><p>兑换纳入后全平台停兑换，不看用户有没有确认；其他操作只拦没重新确认的用户，相当于让用户重新签一次条款。</p><p>改受限动作要审批。监管要求马上停业务，去「紧急停用开关」。</p></>} summary={activeGates.length ? `${activeGates.length} 项受限${exchangeRestricted ? "，兑换被全平台阻断" : "，未确认的用户会被拦下"}` : "当前没有受限操作"}>
+    <Fold title="受限动作" icon={ShieldCheck} tone="role-4" explain={<><p>{gateEffect}</p><p>兑换不看用户有没有确认；其他操作只拦没重新确认的用户，相当于让用户重新签一次条款。</p><p>改受限动作要审批。监管要求马上停业务，去「紧急停用开关」。</p></>} summary={activeGates.length ? `${activeGates.length} 项受限${exchangeRestricted ? "，兑换被全平台阻断" : "，未确认的用户会被拦下"}` : "当前没有受限操作"}>
       {!gates.length && <p className="rd-note">现在没有受限动作。</p>}
       <ConfigList label="受限动作">
         {gates.map((gate) => (
