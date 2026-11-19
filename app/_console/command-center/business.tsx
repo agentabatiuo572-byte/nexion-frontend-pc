@@ -10,7 +10,7 @@
  */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, Gift, Server, UserPlus } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, Gift, Hourglass, Server, UserPlus } from "lucide-react";
 import { Explain, InlineRetry, LONG, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
 import { type fetchB0Business, type fetchB0Devices, type fetchB0ExchangeQueue, type B0SummaryPeriod } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
@@ -26,6 +26,8 @@ const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>�
 /** 后端这一期没有返回这一块：账号没有这一项的读取权限，不是 0。 */
 const DENIED = <>没有查看权限<Explain label="为什么没有" content="你的账号没有这一项的查看权限。需要看，请管理员在「运营账号与权限」里开通。" /></>;
 const REFUND_UNKNOWN = "这段时间有退款单查不到实际退了多少，所以先不算销售额。到「订单进度」查这些订单。";
+/** 兑换排队、奖励待结算是读取时的存量，不随时段变：对比行开头标「当前」，不和「昨日同时段」混看（不写「实时」，ST-48）。 */
+const NOW = <span className="cc-now">当前</span>;
 
 /** 只有存量卡时切时段没有用，不放切换，按今日。 */
 const canSwitchPeriod = (blocks: B0Blocks) => blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers;
@@ -279,9 +281,10 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
       {blocks.exchangeQueue && (
         <MetricCard
           label="兑换排队"
-          icon={ArrowLeftRight}
+          icon={Hourglass}
           value={exchangeQueue.data ? fmtNum(exchangeQueue.data.depth) : ""}
           unit="笔"
+          compare={NOW}
           explain="现在还在排队的兑换单，不随时段变。"
           rows={exchangeQueue.data?.estimateHours == null ? [] : [
             { k: "预计处理时长（设置值）", v: `${fmtNum(exchangeQueue.data.estimateHours)} 小时` },
@@ -298,7 +301,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           icon={Gift}
           value={reward.block.data === null ? "—" : fmtNum(reward.block.data)}
           unit={reward.unit}
-          compare={rewardState === "loading" ? `${reward.label}读取中…` : reward.label}
+          compare={<>{NOW}{rewardState === "loading" ? `${reward.label}读取中…` : reward.label}</>}
           explain={rewardDetail ? "显示现在待结算的邀请奖励人数和尚未办结的活动奖励项数，不随时段变。"
             : referral ? "显示现在待结算的邀请奖励人数，不随时段变。"
               : "显示现在尚未办结的活动奖励项数，不随时段变。"}
@@ -307,7 +310,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
               ? <Link className="pointer-events-auto" href={rewardDetail.href} prefetch={false}>{rewardDetail.label}</Link>
               : rewardDetail.label,
             v: rewardDetail.block.error
-              ? <>暂时读不到 · <InlineRetry label="重试读取活动奖励" onRetry={rewardDetail.block.reload} /></>
+              ? <>暂时读不到 · <InlineRetry onRetry={rewardDetail.block.reload} /></>
               : rewardDetail.block.data === null ? "…" : `${fmtNum(rewardDetail.block.data)} ${rewardDetail.unit}`,
           }] : []}
           href={reward.href}
