@@ -27,8 +27,8 @@ export function preparationAmount(value: string): string {
 }
 export const PREPARATION_STATE: Record<string,string> = { DRAFT: "待复核 · 未转账", REVIEWED: "准备已复核 · 未转账", CANCELLED: "准备已取消" };
 export const PREPARATION_BLOCKER: Record<string,string> = {
-  PROVIDER_NOT_CONFIGURED: "供应商连接尚未就绪", PROJECT_ASSET_UNAVAILABLE: "项目暂不支持该币种操作",
-  SOURCE_OWNERSHIP_UNVERIFIED: "无法确认来源地址归属", PROVIDER_READ_UNAVAILABLE: "暂时无法读取供应商状态",
+  PROVIDER_NOT_CONFIGURED: "收款服务还没接入", PROJECT_ASSET_UNAVAILABLE: "项目暂不支持该币种操作",
+  SOURCE_OWNERSHIP_UNVERIFIED: "无法确认来源地址归属", PROVIDER_READ_UNAVAILABLE: "暂时读不到收款服务状态",
   USDT_BALANCE_INSUFFICIENT: "来源 USDT 余额不足", BNB_BALANCE_ZERO: "来源 BNB 余额为零，须核对手续费安排",
   ETH_BALANCE_ZERO: "来源 ETH 余额为零，须核对手续费安排",
   CHAIN_BALANCE_UNAVAILABLE: "暂时无法核实链上余额", EXISTING_PAYOUT_NOT_READY: "当前出款资格、风险或对账条件未满足",
