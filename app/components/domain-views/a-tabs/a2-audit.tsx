@@ -13,6 +13,7 @@ import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview
 import { F2BootstrapReview, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
+import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 import { F5CurrentFact, F5CurrentValue, F5ReissueReadings, readF5Current } from "./a2-f5-current";
@@ -1190,18 +1191,26 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 /** F1 券冲正：申请时选的扣回或不扣回写在提案摘要开头；旧申请没写选择，后端按扣回执行。后果另起一行写在「批准后」。 */
-const f1VoucherReverse = (row: { after: string; action?: string; operationCode?: string }) => {
+const f1VoucherReverse = (row: { after: string; action?: string; operationCode?: string; status?: A2OperationRow["status"] }) => {
   const prefix = "已冲正 · 券：";
   if (row.operationCode !== "f_reward_payout_action" || row.action !== "奖励发放 · 冲正 · 券" || !row.after.startsWith(prefix)) return undefined;
   const text = row.after.slice(prefix.length);
   const chosen = /^已用券(不)?扣回。/.exec(text);
-  return { choice: chosen ? chosen[1] ? "不扣回" : "扣回" : "按扣回执行（旧申请）", impact: chosen ? text.slice(chosen[0].length) : text };
+  const submittedImpact = chosen ? text.slice(chosen[0].length) : text;
+  return {
+    choice: chosen ? chosen[1] ? "不扣回" : "扣回" : "按扣回执行（旧申请）",
+    impact: row.status === "pending" ? (chosen?.[1] ? F1_VOUCHER_REVERSE_KEEP : F1_VOUCHER_REVERSE_CLAWBACK) : submittedImpact,
+  };
 };
-const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; status?: A2OperationRow["status"]; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const voucher = f1VoucherReverse(row);
   if (voucher) return `已冲正 · 已用券${voucher.choice}`;
+  if (row.status === "pending" && row.operationCode === "f_reward_payout_action"
+      && row.action === "奖励发放 · 重发 · 券" && row.after.startsWith("已重发 · 券：")) {
+    return `已重发 · 券：${F1_VOUCHER_REISSUE}${F1_VOUCHER_REISSUE_UNAVAILABLE}`;
+  }
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
@@ -2877,7 +2886,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
-                facts={f1VoucherReverse(shown) && <Fact k="批准后">{f1VoucherReverse(shown)!.impact}</Fact>}>
+                facts={f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}
           {reissueList(shown, true)}
