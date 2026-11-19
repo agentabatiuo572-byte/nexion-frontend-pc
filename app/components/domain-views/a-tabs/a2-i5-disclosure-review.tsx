@@ -10,6 +10,16 @@ import { disclosureChange, PublishDiff } from "../i-tabs/i5-disclosures";
 type VersionReview = { current?: DisclosureVersionItemView; target: DisclosureVersionItemView };
 const DISCLOSURE_LANGUAGES = [["zh", "中文"], ["vi", "越南语"], ["en", "英语"]] as const;
 
+function additionalLanguages(version: DisclosureVersionItemView) {
+  return version.languageScope.split("+").slice(3);
+}
+
+function hasMissingAdditionalLanguages(version: DisclosureVersionItemView) {
+  const hasText = (value: unknown) => typeof value === "string" && !!value.trim();
+  return additionalLanguages(version).some(code => !hasText(version.translations?.[code])
+    || version.chapters.some(chapter => !hasText(chapter.titleTranslations?.[code]) || !hasText(chapter.bodyTranslations?.[code])));
+}
+
 export function A2I5DisclosureReview({ ticket }: { ticket: A2OperationRow }) {
   const binding = ticket.disclosureReview;
   if (ticket.operationCode === "i5_matrix_configure") {
@@ -25,19 +35,20 @@ export function A2I5DisclosureReview({ ticket }: { ticket: A2OperationRow }) {
   const missingLanguages = previous ? DISCLOSURE_LANGUAGES.filter(([code]) => previous.languageScope.split("+").includes(code)
     && (!previous[code].trim() || previous.chapters.some(chapter => !chapter[code].trim() || !chapter[`${code}Body`].trim())))
     .map(([, name]) => name) : [];
-  const additionalLanguagesUnavailable = previous && (!previous.translations
-    || previous.chapters.some(chapter => !chapter.titleTranslations || !chapter.bodyTranslations));
-  const change = draft && (first || (previous?.languageScope === draft.languageScope && !missingLanguages.length
-    && !additionalLanguagesUnavailable))
+  const baseScope = (version: DisclosureVersionItemView) => version.languageScope.split("+").slice(0, 3).join("+");
+  const change = draft && (first || (previous && baseScope(previous) === baseScope(draft) && !missingLanguages.length))
     ? disclosureChange(previous, draft) : undefined;
+  const baseOnly = previous && draft && (additionalLanguages(previous).length > 0 || additionalLanguages(draft).length > 0);
+  const headline = change && (previous && !change.summary.length && !change.chapters.length ? "和上一版内容相同" : change.headline);
   return <>
     <Facts>
       <Fact k="草稿仍与申请时一致">{match === true ? "是" : match === false ? "否" : "未知"}</Fact>
       {!draft && <Fact k="改动">未提供</Fact>}
       {draft && !first && !previous && <Fact k="上一版内容">未提供</Fact>}
-      {change && <Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{change.headline}</Fact>}
+      {change && <Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{headline}{baseOnly && "（仅对照中越英）"}</Fact>}
       {missingLanguages.length > 0 && <Fact k="上一版缺项">{missingLanguages.join("、")}内容不全</Fact>}
-      {additionalLanguagesUnavailable && <Fact k="上一版附加语言">未提供</Fact>}
+      {previous && hasMissingAdditionalLanguages(previous) && <Fact k="上一版附加语言">未提供</Fact>}
+      {draft && hasMissingAdditionalLanguages(draft) && <Fact k="本版附加语言">未提供</Fact>}
     </Facts>
     {draft && <PublishDiff current={previous} target={draft} />}
   </>;
