@@ -9,9 +9,10 @@
  * 同一个数一页只出现一次（DP-61）：待审核写在待处理那一行，那一行不显示时才写在提现卡上；净入金用比例条，不再写入金、提现金额。
  */
 import { useState, type ReactNode } from "react";
-import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, Server, UserPlus } from "lucide-react";
+import Link from "next/link";
+import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, Gift, Server, UserPlus } from "lucide-react";
 import { Explain, InlineRetry, LONG, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
-import { type fetchB0Business, type fetchB0Devices, type B0SummaryPeriod } from "@/lib/admin/b0-client";
+import { type fetchB0Business, type fetchB0Devices, type fetchB0ExchangeQueue, type B0SummaryPeriod } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fmtNum } from "@/lib/format";
@@ -26,7 +27,7 @@ const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>�
 const DENIED = <>没有查看权限<Explain label="为什么没有" content="你的账号没有这一项的查看权限。需要看，请管理员在「运营账号与权限」里开通。" /></>;
 const REFUND_UNKNOWN = "这段时间有退款单查不到实际退了多少，所以先不算销售额。到「订单进度」查这些订单。";
 
-/** 只有设备卡时切时段没有用，不放切换，按今日。 */
+/** 只有存量卡时切时段没有用，不放切换，按今日。 */
 const canSwitchPeriod = (blocks: B0Blocks) => blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers;
 export const shownBusinessPeriod = (blocks: B0Blocks, chosen: B0SummaryPeriod): B0SummaryPeriod => canSwitchPeriod(blocks) ? chosen : "today";
 
@@ -54,18 +55,21 @@ export function usePeriodChoice(adminId: number | undefined) {
   };
 }
 
-export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business, devices, reviewPending, systemProcessing, clock, reach }: {
+export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business, devices, exchangeQueue, referralRewards, promotionRewards, reviewPending, systemProcessing, clock, reach }: {
   blocks: B0Blocks;
   period: B0SummaryPeriod;
   onPeriodChange: (period: B0SummaryPeriod) => void;
   business: Block<Awaited<ReturnType<typeof fetchB0Business>>>;
   devices: Block<Awaited<ReturnType<typeof fetchB0Devices>>>;
+  exchangeQueue: Block<Awaited<ReturnType<typeof fetchB0ExchangeQueue>>>;
+  referralRewards: Block<number>;
+  promotionRewards: Block<number>;
   /** 待审核提现笔数。提现审核页可达时写在待处理那一行，这里不写。 */
   reviewPending: Block<number>;
   /** 和提现审核页「系统处理中」分组同一组单的笔数。 */
   systemProcessing: Block<number>;
   clock: string | null;
-  reach: (href: string) => boolean;
+  reach: (href: string, read?: string) => boolean;
 }) {
   const switchable = canSwitchPeriod(blocks);
   const period = shownBusinessPeriod(blocks, chosen);
@@ -78,6 +82,16 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
   const registrations = summary?.blocks.registrations;
   const active = summary?.blocks.activeUsers;
   const link = (href: string) => (reach(href) ? href : undefined);
+  const referral = blocks.referralRewards ? {
+    label: "邀请奖励", unit: "人", block: referralRewards, href: link("/growth/referral-rewards"),
+  } : null;
+  const promotion = blocks.promotionRewards ? {
+    label: "活动奖励", unit: "项", block: promotionRewards,
+    href: reach("/growth/events", "growth_promotion_read") ? "/growth/events" : undefined,
+  } : null;
+  const reward = referral ?? promotion;
+  const rewardDetail = referral ? promotion : null;
+  const rewardState = reward && cardState(reward.block);
   /** 和上一期同一时刻比；「全部」不比。上一期算不出时写原因，不写 0。 */
   const compareWith = (text: string | null, unavailable?: ReactNode): ReactNode => !summary ? undefined
     : !previous ? "累计，不对比"
@@ -117,7 +131,8 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           <p>今日、本周、本月从这一期第一天 0 点算到现在，和上一期同样长的一段比{summary?.comparison ? `，这次比的是 ${formatBusinessTimeCompact(summary.comparison.from)} 到 ${formatBusinessTimeCompact(summary.comparison.toExclusive)}` : "，比如今天 0 点到 14:20 比昨天 0 点到 14:20"}。不算百分比，数字大小不分好坏。</p>
           <p>「全部」从统计起点算到最近一次按天汇总，不对比。测试账号都不算在内。</p>
         </>
-        : "设备是此刻的用户设备，不含手机，不随时段变。"}
+        : blocks.exchangeQueue || reward ? "这里显示读取时的数量，不随时段变。"
+          : "设备是此刻的用户设备，不含手机，不随时段变。"}
       tools={switchable ? <Segments label="经营数据时段" value={period} items={PERIODS} onChange={onPeriodChange} /> : undefined}
       meta={meta}
       rows={reservedRows}
@@ -259,6 +274,46 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           openLabel="查看设备管理"
           state={cardState(devices)}
           onRetry={devices.reload}
+        />
+      )}
+      {blocks.exchangeQueue && (
+        <MetricCard
+          label="兑换排队"
+          icon={ArrowLeftRight}
+          value={exchangeQueue.data ? fmtNum(exchangeQueue.data.depth) : ""}
+          unit="笔"
+          explain="现在还在排队的兑换单，不随时段变。"
+          rows={exchangeQueue.data?.estimateHours == null ? [] : [
+            { k: "预计处理时长（设置值）", v: `${fmtNum(exchangeQueue.data.estimateHours)} 小时` },
+          ]}
+          href={link("/finance-products/exchange")}
+          openLabel="查看兑换"
+          state={cardState(exchangeQueue)}
+          onRetry={exchangeQueue.reload}
+        />
+      )}
+      {reward && (
+        <MetricCard
+          label="奖励待结算"
+          icon={Gift}
+          value={reward.block.data === null ? "—" : fmtNum(reward.block.data)}
+          unit={reward.unit}
+          compare={rewardState === "loading" ? `${reward.label}读取中…` : reward.label}
+          explain={rewardDetail ? "显示现在待结算的邀请奖励人数和尚未办结的活动奖励项数，不随时段变。"
+            : referral ? "显示现在待结算的邀请奖励人数，不随时段变。"
+              : "显示现在尚未办结的活动奖励项数，不随时段变。"}
+          rows={rewardDetail ? [{
+            k: rewardDetail.href
+              ? <Link className="pointer-events-auto" href={rewardDetail.href} prefetch={false}>{rewardDetail.label}</Link>
+              : rewardDetail.label,
+            v: rewardDetail.block.error
+              ? <>暂时读不到 · <InlineRetry label="重试读取活动奖励" onRetry={rewardDetail.block.reload} /></>
+              : rewardDetail.block.data === null ? "…" : `${fmtNum(rewardDetail.block.data)} ${rewardDetail.unit}`,
+          }] : []}
+          href={reward.href}
+          openLabel={`查看${reward.label}`}
+          state={rewardState === "loading" && rewardDetail && cardState(rewardDetail.block) !== "loading" ? "ready" : rewardState ?? undefined}
+          onRetry={reward.block.reload}
         />
       )}
     </MetricBoard>

@@ -32,6 +32,37 @@ function amount(value: unknown, field: string): number {
   return finiteDashboardNumber(value) ?? invalid(field);
 }
 
+function count(value: unknown, field = "count"): number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : invalid(field);
+}
+
+export async function fetchB0ExchangeQueue() {
+  const data = await read("/api/admin/market/exchange");
+  const stats = data.stats as Row | undefined;
+  const estimate = data.queueEstimate as Row | undefined;
+  const hours = typeof estimate?.hours === "string" ? estimate.hours.trim() : "";
+  return {
+    depth: count(stats?.queueDepth, "stats.queueDepth"),
+    estimateHours: /^[1-9][0-9]{0,2}$/.test(hours) ? Number(hours) : null,
+  };
+}
+
+export async function fetchB0ReferralPending() {
+  const data = await read("/api/admin/growth/referral-rewards?pageSize=1");
+  return count(data.pending, "pending");
+}
+
+export async function fetchB0PromotionUnfulfilled() {
+  const data = await read("/api/admin/growth/promotions?limit=1");
+  const summary = data.summary as Row | undefined;
+  return count(summary?.unfulfilledRewards, "summary.unfulfilledRewards");
+}
+
+export async function fetchB0RiskManualReview() {
+  const data = await read("/api/admin/risk/overview");
+  return count(data.manualReview, "manualReview");
+}
+
 export type B0Period = "today" | "week" | "month";
 export type B0SummaryPeriod = B0Period | "all";
 type MoneyBlock = {
@@ -60,7 +91,6 @@ export async function fetchB0BusinessSummary(period: B0SummaryPeriod, registrati
   const raw = await read(`/api/admin/overview/business-summary?period=${period}&registrationGranularity=${registrationGranularity}`, true);
   const row = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : invalid("object");
   const text = (value: unknown): string => typeof value === "string" && value.length > 0 ? value : invalid("text");
-  const count = (value: unknown): number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : invalid("count");
   const money = (value: unknown): string => typeof value === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value) ? value : invalid("amount");
   const stamp = (value: unknown): string => { const result = text(value); return /(?:Z|[+-]\d{2}:\d{2})$/.test(result) && Number.isFinite(Date.parse(result)) ? result : invalid("instant"); };
   const date = (value: unknown): string => { const result = text(value); return /^\d{4}-\d{2}-\d{2}$/.test(result) && new Date(`${result}T00:00:00Z`).toISOString().slice(0, 10) === result ? result : invalid("date"); };
