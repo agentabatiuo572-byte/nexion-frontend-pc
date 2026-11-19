@@ -1189,16 +1189,19 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.before);
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
+/** F1 券冲正：申请时选的扣回或不扣回写在提案摘要开头；旧申请没写选择，后端按扣回执行。后果另起一行写在「批准后」。 */
+const f1VoucherReverse = (row: { after: string; action?: string; operationCode?: string }) => {
+  const prefix = "已冲正 · 券：";
+  if (row.operationCode !== "f_reward_payout_action" || row.action !== "奖励发放 · 冲正 · 券" || !row.after.startsWith(prefix)) return undefined;
+  const text = row.after.slice(prefix.length);
+  const chosen = /^已用券(不)?扣回。/.exec(text);
+  return { choice: chosen ? chosen[1] ? "不扣回" : "扣回" : "按扣回执行（旧申请）", impact: chosen ? text.slice(chosen[0].length) : text };
+};
 const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
-  // A2 returns the proposal summary and operation code. Older typed voucher reversals used the default clawback.
-  const voucherReverse = "已冲正 · 券：";
-  if (row.operationCode === "f_reward_payout_action" && row.action === "奖励发放 · 冲正 · 券"
-      && row.after.startsWith(voucherReverse)) {
-    const impact = row.after.slice(voucherReverse.length);
-    if (!/^已用券(?:不)?扣回。/.test(impact)) return `${voucherReverse}已用券按扣回执行（旧申请）。${impact}`;
-  }
+  const voucher = f1VoucherReverse(row);
+  if (voucher) return `已冲正 · 已用券${voucher.choice}`;
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
@@ -1227,7 +1230,7 @@ function g3ControlReviewAfter(before: Record<string, unknown>, after: Record<str
   return { ...after, [currentPrice]: `拟按 ${day} 目标价 ${valueText(currentPrice, price)} 发布` };
 }
 
-export function A2ChangeReview({ before, after, omit = [], operationCode, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; children?: ReactNode }) {
+export function A2ChangeReview({ before, after, omit = [], operationCode, facts, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; /** 跟在「变更」后面同一块里的说明行，比如 F1 券冲正的「批准后」。 */ facts?: ReactNode; children?: ReactNode }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
   let body: ReactNode;
@@ -1237,7 +1240,7 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, childr
     // 「显示名：甲；工作邮箱：乙」这类逐项摘要：两边字段一一对应时每项一行，不拼成一长句折行。
     body = <Facts>{fieldPairs(b.text, a.text)!.map(([label, from, to]) => <Fact key={label} k={label}><Change from={from} to={to} /></Fact>)}</Facts>;
   } else if (a.kind === "text") {
-    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact></Facts>;
+    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact>{facts}</Facts>;
   } else if (a.kind === "rows") {
     body = <>
       <ReviewRows labels={labels} name="" rows={a.rows} />
@@ -1899,6 +1902,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return <>{h3ConfigName(w.obj)}<Explain label="技术信息" content={`配置键 ${w.obj}`} /></>;
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
+    // 发放单号带连字符，按正文写，在连字符处换行，不出横向滚动。
+    if (w.operationCode === "f_reward_payout_action") return w.obj;
     if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}${w.obj === "divBase" ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
@@ -2154,7 +2159,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}>
+            : <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
+                facts={f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
               </A2ChangeReview>}
@@ -2870,7 +2876,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}>
+            : <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
+                facts={f1VoucherReverse(shown) && <Fact k="批准后">{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}
           {reissueList(shown, true)}

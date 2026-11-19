@@ -133,9 +133,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         : kind === "sku" ? "批准后取消对应的履约、收回权益，按履约状态退回库存。"
           : kind === "voucher" ? "批准后按券的现状处理：没用过的作废；已用过的按券现在的面额从 USDT 可用余额扣回；已作废或查不到发券记录的只改发放记录。"
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。";
-    const voucherNote = kind !== "voucher" ? ""
-      : action === "reissue" ? "第一次重发时，券已停发、过期或发完会执行失败。"
-        : "选择扣回时，扣回不记进账单；余额不够会执行失败，券和余额都不变。";
+    const voucherNote = kind === "voucher" && action === "reissue" ? "第一次重发时，券已停发、过期或发完会执行失败。" : "";
     const check = "核对发放单、用户和奖励；理由写清依据或工单号。";
     openConfirm({
       proposalSlot: `f-payout-action:${record.payoutId}`,
@@ -154,24 +152,30 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         <Fact k="发放单">{record.payoutId}</Fact>
         <Fact k="用户">用户 {record.userId} · {dash(record.rankCode)}</Fact>
         {action === "reissue" && kind === "fund" && <Fact k="收款人">{record.sponsorUserId ? `邀请人 ${record.sponsorUserId}（原单）` : "用户本人（原单没有邀请人）"}</Fact>}
-        {voucherReverse && <Fact k="选择扣回时的金额">券现在的面额 · USDT；按比例减的券不扣</Fact>}
         <Fact k="状态"><Change from={from} to={action === "reissue" ? "已重发" : "已冲正"} /></Fact>
       </Facts>,
       statedBrief: (values) => ({
-        impact: `${voucherReverse && values.usedVoucherClawback !== "true"
-          ? values.usedVoucherClawback === "false"
-            ? "没用过的作废；已用过的不扣回，只改发放记录。"
-            : "没用过的作废；如果这张券已经用过，按你的选择处理。"
-          : impact}不改奖励模板，也不改用户等级。`,
+        impact: `${!voucherReverse ? impact
+          : values.usedVoucherClawback === "true" ? "没用过的券作废；用过的按券现在的面额从 USDT 可用余额扣回。"
+            : values.usedVoucherClawback === "false" ? "没用过的券作废；用过的不扣回，只改发放记录。"
+              : "没用过的券作废；用过的按下面的选择处理。"}不改奖励模板，也不改用户等级。`,
         check,
       }),
       businessForm: voucherReverse ? {
         kind: "multi-field",
         requireAnyChange: false,
+        // 两个选项各自的后果写在选项下面；选了扣回再补扣款的细则，选了不扣回上面的影响已经说完。
+        feedback: (values) => ({
+          invalid: false,
+          message: values.usedVoucherClawback === "true" ? "按比例减的券不扣。扣回不记账单；余额不够会执行失败，券和余额都不变。"
+            : values.usedVoucherClawback === "false" ? ""
+              : "扣回：按券现在的面额从 USDT 可用余额扣；不扣回：只改发放记录。",
+        }),
         fields: [{
           key: "usedVoucherClawback",
           label: "如果这张券已经用过",
           inputKind: "select",
+          segments: true,
           options: ["true", "false"],
           optionLabels: { true: "扣回", false: "不扣回" },
           required: true,
