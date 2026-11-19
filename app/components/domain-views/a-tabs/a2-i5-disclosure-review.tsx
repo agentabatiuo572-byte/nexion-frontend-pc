@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Fact, Facts } from "@/app/components/rd";
 import { isFirstA2DisclosurePublish, readA2DisclosureVersion, type A2OperationRow } from "@/lib/admin/a2-client";
 import { iContentActions, type DisclosureVersionItemView } from "@/lib/admin/i-client";
+import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { disclosureChange, PublishDiff } from "../i-tabs/i5-disclosures";
 
@@ -14,10 +15,12 @@ function additionalLanguages(version: DisclosureVersionItemView) {
   return version.languageScope.split("+").slice(3);
 }
 
-function hasMissingAdditionalLanguages(version: DisclosureVersionItemView) {
+/** 声明了、证据又缺的附加语言，按中文名列出（如「印尼语」）。 */
+function missingAdditionalLanguages(version: DisclosureVersionItemView) {
   const hasText = (value: unknown) => typeof value === "string" && !!value.trim();
-  return additionalLanguages(version).some(code => !hasText(version.translations?.[code])
-    || version.chapters.some(chapter => !hasText(chapter.titleTranslations?.[code]) || !hasText(chapter.bodyTranslations?.[code])));
+  return additionalLanguages(version).filter(code => !hasText(version.translations?.[code])
+    || version.chapters.some(chapter => !hasText(chapter.titleTranslations?.[code]) || !hasText(chapter.bodyTranslations?.[code])))
+    .map(code => INTERFACE_LANGUAGES.find(language => language.code === code)?.zhName ?? code).join("、");
 }
 
 export function A2I5DisclosureReview({ ticket }: { ticket: A2OperationRow }) {
@@ -47,8 +50,8 @@ export function A2I5DisclosureReview({ ticket }: { ticket: A2OperationRow }) {
       {draft && !first && !previous && <Fact k="上一版内容">未提供</Fact>}
       {change && <Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{headline}{baseOnly && "（仅对照中越英）"}</Fact>}
       {missingLanguages.length > 0 && <Fact k="上一版缺项">{missingLanguages.join("、")}内容不全</Fact>}
-      {previous && hasMissingAdditionalLanguages(previous) && <Fact k="上一版附加语言">未提供</Fact>}
-      {draft && hasMissingAdditionalLanguages(draft) && <Fact k="本版附加语言">未提供</Fact>}
+      {previous && missingAdditionalLanguages(previous) && <Fact k="上一版附加语言">{missingAdditionalLanguages(previous)}未提供</Fact>}
+      {draft && missingAdditionalLanguages(draft) && <Fact k="本版附加语言">{missingAdditionalLanguages(draft)}未提供</Fact>}
     </Facts>
     {draft && <PublishDiff current={previous} target={draft} />}
   </>;
