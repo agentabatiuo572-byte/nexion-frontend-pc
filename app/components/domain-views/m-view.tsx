@@ -477,7 +477,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         });
         return true;
       }
-      if (["I.session.convos", "I.session.ticket.__create", "I.session.archiveBatch.__create"].includes(key)
+      const m3Write = ["I.session.convos", "I.session.ticket.__create", "I.session.archiveBatch.__create"].includes(key);
+      if (m3Write
         && (!m3WriteQualifiedRef.current.qualified || m3WriteQualifiedRef.current.authEpoch !== authEpoch || m3WriteQualifiedRef.current.adminId !== session?.adminId)) {
         setToast(!session?.adminId || m3WriteQualifiedRef.current.authEpoch !== authEpoch || m3WriteQualifiedRef.current.adminId !== session?.adminId
           ? "当前登录身份未读取或已变化，暂不能执行此操作。请刷新页面重新登录后再操作。"
@@ -549,7 +550,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           if (confirming) setActionConfirm((current) => current === confirming ? null : current);
         }
         await reloadMContent();
-        const message = displayAdminError(error);
+        const message = m3Write && error instanceof MContentReadError && error.backendMessage === "ADMIN_AUTH_REQUIRED"
+          ? "登录已失效，请重新登录。" : displayAdminError(error);
         const rejectionMessage = closeMatch && attempt
           ? `后台明确拒绝原会话结束操作：${message.replace(/。$/, "")}。这次结束没有执行，请核对当前会话后重新确认。`
           : `后台拒绝了这次操作：${message}`;
