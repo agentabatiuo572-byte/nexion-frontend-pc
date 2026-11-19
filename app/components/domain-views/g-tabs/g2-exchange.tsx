@@ -311,6 +311,9 @@ function G2ExchangePage() {
   const disclosureBlocked = overview?.disclosureGate.exchange === true || overview?.swap.blockedBy === "I5_DISCLOSURE_GATE";
   const batchBlockedReason = j1ExecutionBlocked ? messageOf("EXCHANGE_SWAP_PAUSED")
     : disclosureBlocked ? messageOf("EXCHANGE_DISCLOSURE_GATE_CLOSED") : undefined;
+  // 提交前说「会被拒绝」，提交被拒后才用 batchBlockedReason。
+  const batchBlockedNote = j1ExecutionBlocked ? "兑换已暂停，这一批会被拒绝"
+    : disclosureBlocked ? "风险披露闸门已阻断兑换，这一批会被拒绝" : undefined;
   const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending, j1ExecutionBlocked, batchBlockedReason });
   latest.current = { overview, loading, busyKey, readFailed, rereadPending, j1ExecutionBlocked, batchBlockedReason };
   const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
@@ -1130,7 +1133,7 @@ function G2ExchangePage() {
           ? `按列表估算：最早 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT。列表里停用、测试账户的单也算进去了，以处理结果为准`
           : `列表只显示最近 ${fmtCount(queue.length)} 单，算不出这一批的金额；处理结果里逐单列出`}</Fact>
         <Fact k="每一单">依次检查兑换开关、风险披露闸门、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
-        {batchBlockedReason && <Fact k="现在" tone="warn">{batchBlockedReason}</Fact>}
+        {batchBlockedNote && <Fact k="现在" tone="warn">{batchBlockedNote}</Fact>}
       </Facts>;
     },
     statedBrief: { impact: "符合条件的排队单马上成交、记账；处理结果逐单列出。", check: "核对处理数量，理由写清依据或工单号。" },
@@ -1185,8 +1188,11 @@ function G2ExchangePage() {
         </>}>兑换已暂停，新发起的兑换会被拒绝</Conclusion>
     : disclosureBlocked
     ? <Conclusion state="warn" icon={ShieldAlert}
-        hint={<>新兑换和处理排队都会被拒绝；已有排队单仍在队列。</>}
-        explain={<p>在 {disclosureLink} 将兑换移出受限动作后，风险披露闸门才会解除对兑换的阻断。</p>}>
+        hint={<>新兑换和处理排队都会被拒绝，排队的单留在队列；到 {disclosureLink} 把兑换移出受限动作。</>}
+        explain={<>
+          <p>兑换开关是开着的。挡住兑换的是风险披露闸门：兑换在「法律条款与风险披露」的受限动作里，和「紧急停用开关」无关。</p>
+          <p>移出要提交审批，批准后才解除；已经处理过的批次照常能查原结果。</p>
+        </>}>
         风险披露闸门已阻断兑换</Conclusion>
     : stats.queueDepth > 0
       ? <Conclusion state="warn" icon={ListOrdered}
@@ -1284,7 +1290,7 @@ function G2ExchangePage() {
       setRecoveryError(null);
       setRecoveryKey(ownPendingBatch.commandKey);
     }}>核对原处理</Button>
-    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? batchBlockedReason ?? (queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
+    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? batchBlockedNote ?? (queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
 
   const batchItems = batchResult ? [
     ...batchResult.completed.map((row) => ({ ...row, kind: "completed" as const })),
@@ -1304,7 +1310,7 @@ function G2ExchangePage() {
         <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle}
           tone={switchUnread === "absent" ? "neutral" : switchUnread || swap.emergencyPaused ? "warn" : "ok"}
           value={switchUnread === "absent" ? "—" : switchUnread === "missing" ? "没有设置" : switchUnread === "invalid" ? "设置有误" : !swap.emergencyPaused ? "开着" : "已暂停"}
-          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "按关闭处理" : swap.emergencyPaused ? "新发起的兑换会被拒绝" : disclosureBlocked ? "风险披露闸门已阻断兑换" : "用户可以发起兑换"}
+          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "按关闭处理" : swap.emergencyPaused ? "新发起的兑换会被拒绝" : disclosureBlocked ? "兑换被风险披露闸门挡住" : "用户可以发起兑换"}
           explain={switchUnread === "absent" ? "这次没读到兑换开关的状态，到「紧急停用开关」看。"
             : switchUnread ? "「紧急停用开关」里的兑换开关读不出开或关，兑换按关闭处理。"
             : "和「紧急停用开关」里的兑换开关是同一个。"} />
@@ -1388,14 +1394,18 @@ function G2ExchangePage() {
             </Notice>
             {batchItems.length > 0 && <Table label="这一批逐单结果" className="g2x-batch-table">
               <thead><tr><Th>兑换单号</Th><Th>结果</Th><Th>原因</Th><Th>订单现在</Th></tr></thead>
-              <tbody>{batchItems.map((row) => (
+              <tbody>{batchItems.map((row) => {
+                // 后端原因写的是内部代号，闸门挡住的单换成和结论同一个叫法。
+                const reason = row.reasonCode === "EXCHANGE_DISCLOSURE_GATE_CLOSED" ? "风险披露闸门已阻断兑换，本单仍在队列" : row.reason;
+                return (
                 <tr key={`${row.kind}-${row.exchangeNo}`}>
                   <Td><ExchangeNo value={row.exchangeNo} /></Td>
                   <Td>{row.kind === "completed" ? <StatusTag tone="done">已成交</StatusTag> : row.kind === "skipped" ? <StatusTag tone="warn">跳过</StatusTag> : <StatusTag tone="danger">失败</StatusTag>}</Td>
-                  <Td grow><Cell main={row.reason || "—"} title={row.reason || undefined} /></Td>
+                  <Td grow><Cell main={reason || "—"} title={reason || undefined} /></Td>
                   <Td>{batchOrderStatusLabel[row.orderStatus]}</Td>
                 </tr>
-              ))}</tbody>
+                );
+              })}</tbody>
             </Table>}
           </div>
         )}
