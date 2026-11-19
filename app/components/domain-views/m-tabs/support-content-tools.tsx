@@ -9,7 +9,6 @@ import type { MCtx } from "./types";
 import { Icon, Modal } from "../design-kit";
 import { BlockState, Button, KeepText, Explain, Field, Input, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { Languages } from "lucide-react";
-import { languageName } from "./m4-kb-views";
 import "./support-content-tools.css";
 export type SelectedSupportContent = { kind: "SKU"; skuId: string; name: string } | { kind: "LINK"; linkTarget: SupportLink; name: string };
 export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false, faqLanguage }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean; faqLanguage?: string }) {
@@ -45,6 +44,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
       return [];
     }
   })();
+  // 名字和「知识库」页一致；不认识的语言码原样写出来。
+  const languageName = (code: string) => ({ "zh-CN": "中文", "en-US": "英语", "vi-VN": "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" } as Record<string, string>)[code] ?? code;
   // 单个客户：列表只有一种语言，语言写在条数后面；客户语言没有时退到英语，写明「X 暂无」。群发：每条标语言。
   const faqLanguageText = faqLanguage === undefined || !faqs.length ? "" : faqs[0].language === faqLanguage ? ` · ${languageName(faqLanguage)}` : ` · 英语（${languageName(faqLanguage)}暂无）`;
   const faqEmptyText = faqLanguage === undefined ? "还没有已发布的问答" : faqLanguage === "en-US" ? "还没有已发布的英语问答" : `${languageName(faqLanguage)}和英语都还没有已发布的问答`;
