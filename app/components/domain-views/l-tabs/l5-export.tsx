@@ -154,6 +154,9 @@ type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: str
 /** 导出任务状态筛选(索引 = filter 状态值;label 同时用于按钮文本与切换 toast)。 */
 const L5_TASK_FILTERS = ["全部", "待放行", "生成中", "已就绪"] as const;
 const isNetworkTree = (task: LExportTask) => task.reportType === "NETWORK_TREE";
+/** 团队关系明细的列名按文件里的叫法翻：V-Rank 是会员等级，团队GMV 是关系记录上的累计量，不是已支付成交额；部分脱敏另有一行写。 */
+const fieldsText = (task: LExportTask) => isNetworkTree(task)
+  ? task.fields.replace(/（部分脱敏）/g, "").replace(/V-Rank/g, "会员等级").replace(/团队GMV/g, "关系累计量") : operatorCopyText(task.fields);
 
 const LEDGER_PAGE = "/finance/ledger";
 const L3_PAGE = "/analytics/financial";
@@ -535,7 +538,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="行数" lead={t.rows !== "—"} unit={t.rows !== "—" ? "行" : undefined}>{rowsText(t.rows)}</Fact>
         <Fact k="导出的是什么">{taskTitle(t, exportTypeText)} · <span data-mono="">{t.id}</span></Fact>
         <Fact k="范围">{reportScopeText(t.scope)}</Fact>
-        <Fact k="内容">{tree ? t.fields : operatorCopyText(t.fields)}</Fact>
+        <Fact k="内容">{fieldsText(t)}</Fact>
         <Fact k="脱敏到什么程度" tone="warn">只隐藏用户编码，留前 2 位和后 2 位<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。</p><p>{tree ? "不导出手机号和昵称。" : "业务编号、金额、余额、交易时间都是原值；不导出手机号、昵称、备注。系统不允许解密导出。"}</p></>} /></Fact>
         <Fact k="申请人">{requester}</Fact>
         <Fact k="申请时间">{formatBusinessTimeCompact(t.requestedAt, "—")}（{businessZone().label}）</Fact>
@@ -769,7 +772,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const pendingTasks = visibleTasks.filter(isPendingCard);
   const otherTasks = visibleTasks.filter((t) => !isPendingCard(t));
   const approveAction = (t: LExportTask) => {
-    const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? "这份报表需要有团队关系明细导出权限的管理员放行" : "你没有放行权限，要有导出任务审批权的管理员放行"
+    const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? "要有团队关系明细导出权限的管理员放行" : "你没有放行权限，要有导出任务审批权的管理员放行"
       : t.approvalEligibility === "SELF" ? "这是你申请的，要另一位管理员放行"
       : t.approvalEligibility === "ELIGIBLE" ? null : "暂时不能放行：系统核对不了申请人，请找技术同事";
     if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原结果</span>;
@@ -809,7 +812,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         sub={taskPage ? `共 ${taskTotal} 份 · 每页 8 份${otherTasks.some((t) => reportScopeParts(t.scope).sub) ? ` · 时间为${businessZone().label}` : ""}` : undefined}
         explain={<>
           <p>各报表页和这页创建的导出都在这里：待放行在最前，其次生成中、可下载、已过期、失败。</p>
-          <p>汇总和当前披露快照创建后直接可下载。脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载。团队树明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」申请，在这里放行后下载。</p>
+          <p>汇总和当前披露快照创建后直接可下载。脱敏资金明细在「{l3Name}」申请，另一位管理员放行后才能下载。团队关系明细在「{pageName(L4_PAGE, "设备、任务与团队报表")}」申请，在这里放行后下载。</p>
           <p>失败或过期的任务可以「重新发起」：用原来那份文件，不重新取数；含隐私的要再放行一次。</p>
         </>}>
         <div className="l5-list-tools">
@@ -822,7 +825,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             <ul className="l5-pending-grid">
               {pendingTasks.map((t) => (
                 <PendingCard key={t.id} task={t} title={taskTitle(t, exportTypeText)} source={taskSource(t)}
-                  scope={reportScopeText(t.scope)} fields={operatorCopyText(t.fields)}
+                  scope={reportScopeText(t.scope)} fields={fieldsText(t)}
                   unknown={recoveryIds.has(t.id)}
                   requester={canApproveTask(t) ? requesterText(t) : undefined} action={approveAction(t)} />
               ))}
@@ -840,7 +843,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
                   <Tr key={t.id}>
                     <Td><Cell main={taskTitle(t, exportTypeText)} sub={<span data-mono="">{t.id}</span>} title={`${taskTitle(t, exportTypeText)} · ${t.id} · ${taskSource(t)}`} /></Td>
                     <Td className="l5-scope"><ScopeCell scope={t.scope} /></Td>
-                    <Td grow><Cell main={operatorCopyText(t.fields)} sub={`${t.pii ? "含隐私 · " : ""}${t.mask === "—" ? "不含隐私" : MASK_LABEL[t.mask]}`} title={operatorCopyText(t.fields)} /></Td>
+                    <Td grow><Cell main={fieldsText(t)} sub={`${t.pii ? "含隐私 · " : ""}${t.mask === "—" ? "不含隐私" : MASK_LABEL[t.mask]}`} title={fieldsText(t)} /></Td>
                     <Td align="right"><Cell num main={rowsText(t.rows)} /></Td>
                     <Td><TaskStatusTag task={t} unknown={recoveryIds.has(t.id)} /></Td>
                     <Td align="right" sticky="end" data-fit="">{rowActions(t)}</Td>
@@ -882,7 +885,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const createPanel = (
     <div ref={createRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">新建导出</span>} explainLabel="新建导出" icon={FilePlus2} sub="三种出口，去向不同"
-        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 申请。放行后可在任务列表下载。</p></>}>
+        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单隐藏用户编号，业务编号里代表这位用户的那段也隐藏，其余原样。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队关系明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 申请。放行后可在任务列表下载。</p></>}>
         <div className="l5-create">
           <article className="l5-create-card" aria-labelledby="l5-create-agg">
             <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3><Explain label="汇总数据是什么" content="关键指标、转化与留存、财务、运营四类汇总，不含个人信息。创建那一刻取数，以后下载还是那一刻的数。" /></div>

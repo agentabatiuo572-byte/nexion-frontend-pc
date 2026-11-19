@@ -245,7 +245,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       return <Facts>
         {target !== undefined ? <>
           <Fact k="选了之后"><Change from={priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`} to={`${price(target)} USDT（${value} 目标价）`} /></Fact>
-          <Fact k="什么时候变">{approval ? "批准后固定并发布价格，之后不再自动切换" : original ? "按原请求重试，以原结果为准"
+          <Fact k="什么时候变">{approval ? "批准后发布，之后不再自动切换" : original ? "按原请求重试，以原结果为准"
             : priceMissing ? RUNTIME_PRICE_UNAVAILABLE : `确认后马上按 ${value} 发布现价，之后不再自动切换`}</Fact>
         </> : value === "未钉住" && overview ? <>
           <Fact k="选了之后">现价不变；之后在排程已配置、没有暂停时，从 D{curDay === 7 ? loopStop ? 7 : 1 : curDay! + 1} 继续推进{curDay === 7 && loopStop ? "（D7 之后选的是停在末值）" : ""}</Fact>
@@ -722,8 +722,8 @@ function G3MarketEditor() {
               return {
                 heading: "要另一位超级管理员（需有审批批准权限）批准后生效",
                 completionCopy: resume
-                  ? "本次申请批准前不改变价格。批准时按当时的价格曲线复核；恢复后等实际推进再变价。"
-                  : "本次申请批准前不改变价格。批准时按当时的价格曲线执行。",
+                  ? "批准前现价不变。批准时按当时的七天计划重算兑付覆盖率；恢复后到下一次推进才变价。"
+                  : "批准前现价不变。批准时按那天当时的目标价重算兑付覆盖率并发布。",
                 disabledReason: approval && !/^[0-9a-f]{64}$/.test(approval.expectedRevision ?? "")
                   ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。"
                   : approval && session && !canWriteG3MarketChange(session, confirm.change, value, true) ? "你没有修改这一项的权限。" : undefined,
@@ -972,7 +972,7 @@ function G3MarketEditor() {
 
   const controls = [...overview.controls].sort((a, b) => (CONTROL_ORDER.indexOf(a.key) + 99) % 99 - (CONTROL_ORDER.indexOf(b.key) + 99) % 99);
   const controlCopy: Record<string, { name: string; what: string; when: string; effect: string; value: (value: string) => string }> = {
-    pin: { name: "固定生效日", what: "把价格固定在七天里的某一天，自动推进停下", when: "固定到比现价高的一天要审批；其余确认后生效", effect: "固定后按那天的目标价发布现价；选「不固定」现价不变，之后在排程已配置、没有暂停时按排程推进", value: (value) => value === "未钉住" ? "不固定" : `固定在 ${value}` },
+    pin: { name: "固定生效日", what: "把价格固定在七天里的某一天，自动推进停下", when: "固定到比现价高的一天要审批，其余直接生效", effect: "固定后按那天的目标价发布现价；选「不固定」现价不变，之后在排程已配置、没有暂停时按排程推进", value: (value) => value === "未钉住" ? "不固定" : `固定在 ${value}` },
     schedule: { name: "自动按日推进", what: "每天几点切换到下一天的目标价，时区写在时刻后面，不写按 UTC", when: "已有排程直接保存，从下一次排程时刻起按新时间；第一次配置要另一位超级管理员批准", effect: "只改切换时间，现价不当场变；同一个 UTC 日期最多推进一次", value: (value) => value === "" ? "未配置" : value },
     loop: { name: "D7 之后", what: "七天走完后回到 D1 循环，还是一直用 D7", when: "确认后立即保存，到 D7 之后的那次推进才用上", effect: "只决定 D7 之后怎么走，现价不变；停在末值不是暂停", value: (value) => value },
   };
@@ -1055,7 +1055,7 @@ function G3MarketEditor() {
           <ConfigList label="运行方式">
             <ConfigRow name="价格自动变化"
               what="每日推进和 5 分钟采样是否在跑"
-              when="暂停和不提价的恢复直接保存；提价的恢复要审批"
+              when="暂停直接生效；恢复会提价时要审批"
               effect="暂停后不再自动推进；恢复后等下一次排程再推进，恢复时检查兑付覆盖率"
               note="暂停挡不住应急改现价和固定生效日，这两项照常发布价格。暂停只要暂停权限；恢复还要超级管理员。"
               value={<span className="g3-value">{paused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag> : <StatusTag tone="ok">自动变化中</StatusTag>}<ObjectTag state={OBJECT_STATES.paused} /></span>}

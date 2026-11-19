@@ -125,7 +125,7 @@ export function E1Page() {
   const gatesReadBlock = gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : undefined;
   const discountReadBlock = discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
   const currentPhase = e1CurrentPhase(gates);
-  const phaseBlock = currentPhase.phaseId ? undefined : E1_CURRENT_PHASE_UNVERIFIED;
+  const phaseBlock = currentPhase.phaseId ? undefined : `${E1_CURRENT_PHASE_UNVERIFIED}，暂不能提交`;
   const archiveCurrentBlock = (phaseId?: string) => phaseBlock ?? (phaseId === currentPhase.phaseId ? "当前阶段不能删除" : undefined);
   const readBlock: E1CatalogContext["writeBlockedReason"] = (input, values) => {
     switch (input.op) {
@@ -144,7 +144,7 @@ export function E1Page() {
         if ((values.forceUnlock ?? String(input.generationGate?.forceUnlock)) === "true") return phaseBlock;
         if (input.generationGateId) return undefined;
         const phaseId = values.phase;
-        if (!phaseId) return "请先选择开放阶段";
+        if (!phaseId) return "当前阶段待核实，请手动选择开放阶段";
         if (!gates?.phaseOrder.includes(phaseId) || !gates.phases.some(phase => phase.p === phaseId && phase.status !== "archived")) {
           return formatAdminApiError("E1_GATE_PHASE_INVALID", "");
         }

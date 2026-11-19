@@ -124,16 +124,16 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
     const impact = action === "reissue"
       ? kind === "fund" ? `批准后按原发放单重新记一笔 ${rewardText} 应付：付给邀请人的立即可用，付给本人的先进冷却期。批准时检查兑付覆盖率。`
         : kind === "sku" ? "批准后恢复原商品的履约和权益，并核对库存；库存不够或状态变了会被拒。"
-          : kind === "voucher" ? "批准后给用户再发一张这张券。"
+          : kind === "voucher" ? "第一次重发会给用户新发一张这张券；同一笔再重发不会再发新券，还是上次那张，发放记录仍显示已重发。"
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。"
       : kind === "fund" ? record.commissionEventId
         ? `批准后按原奖励记录反向记账，收回这笔 ${rewardText}。`
         : "这笔没有关联的奖励记录，批准后只把状态改成已冲正，不动账。"
         : kind === "sku" ? "批准后取消对应的履约、收回权益，按履约状态退回库存。"
-          : kind === "voucher" ? "批准后收回这张券：没用过的作废；已用过的从用户 USDT 可用余额扣回。"
+          : kind === "voucher" ? "批准后按券的现状处理：没用过的作废；已用过的按券现在的面额从 USDT 可用余额扣回；已作废或查不到发券记录的只改发放记录。"
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。";
     const voucherNote = kind !== "voucher" ? ""
-      : action === "reissue" ? "券已停发、过期或发完时会执行失败；同一笔第二次重发不会再发新券。"
+      : action === "reissue" ? "券已停发、过期或发完时会执行失败。"
         : "扣回不记进账单，用户只看到余额变少；余额不够扣时目前会执行失败，券和余额都不变。";
     openConfirm({
       proposalSlot: `f-payout-action:${record.payoutId}`,
@@ -144,7 +144,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
       confirmTone: action === "reverse" ? "danger" : "primary",
       confirmLabel: "提交审批",
       coverageLead: kind === "fund" ? "重发会让平台再付一次这笔钱" : kind === "sku" ? "重发会恢复商品履约，按会让平台多付钱的操作检查"
-        : kind === "voucher" ? "重发会给用户再发一张券，按会让平台多付钱的操作检查" : "按会让平台多付钱的操作检查；这笔实际不会补发",
+        : kind === "voucher" ? "重发可能给用户新发一张券，按会让平台多付钱的操作检查" : "按会让平台多付钱的操作检查；这笔实际不会补发",
       coverageCheck: "提交时先检查兑付覆盖率；资金奖励在批准执行时再检查一次。",
       effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有${action === "reissue" ? "重发" : "冲正"}奖励权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这笔记录不变。`}>批准后生效</StatusTag>,
       facts: <Facts>

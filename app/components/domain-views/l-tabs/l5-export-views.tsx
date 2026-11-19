@@ -28,7 +28,7 @@ const TYPE_NAME: Record<string, string> = {
   FUNNEL_COHORT: "转化与留存汇总",
   FINANCE_AGG: "财务汇总",
   OPERATIONS_AGG: "运营汇总",
-  NETWORK_TREE: "团队树明细",
+  NETWORK_TREE: "团队关系明细",
   REGULATORY: "当前披露快照",
 };
 
