@@ -79,7 +79,7 @@ export type H3Stats = {
   weeklyPaidSource?: string;
   monthlyInflight?: number | null;
   monthlyInflightAvailable?: boolean;
-  monthlyInflightReason?: string;
+  monthlyInflightReason?: string | null;
   userScope?: string;
   asOf?: string;
   weekTimeZone?: string;
@@ -164,7 +164,10 @@ export function parseH3Model(value: unknown): H3Model {
     const invalid = () => { throw new Error("H3_RESPONSE_INVALID"); };
     if (typeof stats.operatingStatsAvailable !== "boolean" || typeof stats.operatingStatsComplete !== "boolean"
       || typeof stats.monthlyInflightAvailable !== "boolean") invalid();
-    strings(stats, ["monthlyInflightReason", "dayOneRateBasis", "dayOneRateUnit", "weeklyNexAsset", "userScope"]);
+    strings(stats, ["dayOneRateBasis", "dayOneRateUnit", "weeklyNexAsset", "userScope"]);
+    // af96b171: with the monthly count available the backend sends monthlyInflightReason null; the reason is only required when the count is missing.
+    if (stats.monthlyInflightAvailable ? stats.monthlyInflightReason != null && typeof stats.monthlyInflightReason !== "string"
+      : typeof stats.monthlyInflightReason !== "string") invalid();
     for (const key of ["dayOneRate24h", "dayOneRateGrace", "weeklyDone", "t1Done", "t2Done", "monthlyInflight"]) {
       const value = stats[key];
       if (value !== null && (typeof value !== "number" || !Number.isFinite(value) || value < 0
