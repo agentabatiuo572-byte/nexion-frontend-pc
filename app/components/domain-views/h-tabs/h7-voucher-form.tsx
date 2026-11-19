@@ -172,7 +172,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
   const [leaving, setLeaving] = useState(false);
   const [folds, setFolds] = useState({ popup: false, stack: false });
   const typeLocked = !!voucher && voucher.issuedCount > 0;
-  // 转盘专发券的入口不能选：勾选全部不可用，保存时原样带回存的入口。
+  // 转盘专发券的入口不能改：换成锁定标签，保存时原样带回存的入口。
   const wheelOnly = !!voucher && isWheelOnly(voucher);
   const errors = useMemo(() => formErrors(value), [value]);
   const shown = attempted ? errors : {};
@@ -261,10 +261,14 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               <Field label="发给谁" required error={shown.audience} help={value.audience === "new" ? "新用户指注册不满 1 个月的账号；不是没下过单的人。" : undefined}>
                 <Segments label="发给谁" value={value.audience} onChange={(next) => set("audience", next)} items={[{ value: "all", label: AUDIENCE_LABEL.all }, { value: "new", label: AUDIENCE_LABEL.new }]} />
               </Field>
-              <CheckGroup legend="领取入口" summary={wheelOnly ? WHEEL_ONLY_TEXT : selectedSurfaces.length ? `已选 ${selectedSurfaces.length} 个` : "不选＝不限"}
-                help={wheelOnly ? "用户不能自己领，只在幸运转盘中奖时发到钱包，所以入口不能选。" : "App 目前只有首页和商城能领券，选别的不会多出入口。"}>
-                {SURFACES.map((id) => <Check key={id} label={SURFACE_LABEL[id]} disabled={wheelOnly} checked={selectedSurfaces.includes(id)} onChange={() => toggle("claimSurfaces", id)} />)}
-              </CheckGroup>
+              {wheelOnly
+                ? <Field label="领取入口" help="用户不能自己领，只在幸运转盘中奖时发到钱包，所以入口不能改。">
+                  <span className="h7-locked-type"><StatusTag tone="neutral" icon={Lock}>{WHEEL_ONLY_TEXT}</StatusTag></span>
+                </Field>
+                : <CheckGroup legend="领取入口" summary={selectedSurfaces.length ? `已选 ${selectedSurfaces.length} 个` : "不选＝不限"}
+                help="App 目前只有首页和商城能领券，选别的不会多出入口。">
+                {SURFACES.map((id) => <Check key={id} label={SURFACE_LABEL[id]} checked={selectedSurfaces.includes(id)} onChange={() => toggle("claimSurfaces", id)} />)}
+              </CheckGroup>}
               {shown.claimSurfaces && <p className="rd-form-error" role="alert">{shown.claimSurfaces}</p>}
             </section>
 
@@ -333,7 +337,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
             </div>
             <p className="h7-preview-sentence">{voucherSentence(preview, skuLabels)}</p>
             <ul className="h7-preview-notes">
-              <li>{value.status === "paused" ? "保存后是已暂停：用户还领不到。" : wheelOnly ? "保存后是投放中：用户不能自己领，转盘中奖时发放。" : "保存后是投放中：符合条件的用户可以领。"}</li>
+              <li>{value.status === "paused" ? wheelOnly ? "保存后是已暂停：转盘抽中这一档会发券失败。" : "保存后是已暂停：用户还领不到。" : wheelOnly ? "保存后是投放中：用户不能自己领，转盘中奖时发放。" : "保存后是投放中：符合条件的用户可以领。"}</li>
               <li>{`领取入口：${wheelOnly ? WHEEL_ONLY_TEXT : selectedSurfaces.length ? selectedSurfaces.map((id) => SURFACE_LABEL[id]).join("、") : "不限"}`}</li>
             </ul>
             {voucher && issued > 0 && (touchesIssued

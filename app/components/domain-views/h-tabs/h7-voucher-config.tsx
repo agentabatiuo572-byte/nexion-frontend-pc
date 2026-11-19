@@ -37,7 +37,7 @@ import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sen
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, expiredTag,
-  endDetailText, faceValue, isWheelOnly, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, WHEEL_ONLY_HELP, WHEEL_ONLY_TEXT, type H7RecoveryRow, type H7Voucher,
+  endDetailText, faceValue, isWheelOnly, limitReached, pendingFacts, pendingTag, periodText, skuText, startDetailText, surfacesText, unknownTag, voucherPhase, voucherSentence, WHEEL_ONLY_HELP, WHEEL_ONLY_TEXT, WHEEL_STOP_HINT, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
 import { H7VoucherForm, SPLIT_RETIRED_HELP, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
 
@@ -285,12 +285,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `编辑代金券 · ${v.name}`,
       title: "编辑代金券",
-      detail: `${v.name} · 改面值、门槛、适用商品、发给谁、有效期、领取入口或弹窗设置。${v.issuedCount > 0 ? "已发券的模板类型不可修改。" : "尚未发券，可修改类型。"}代金券不算平台负债，不受覆盖率限制。`,
+      detail: `${v.name} · ${isWheelOnly(v) ? "改面值、门槛、适用商品、发给谁、有效期或弹窗设置；仅转盘发放，领取入口不能改。" : "改面值、门槛、适用商品、发给谁、有效期、领取入口或弹窗设置。"}${v.issuedCount > 0 ? "已发券的模板类型不可修改。" : "尚未发券，可修改类型。"}代金券不算平台负债，不受覆盖率限制。`,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: {
         impact: touchesIssued
           ? `保存后立即按新规则生效：已发出还没用的 ${countText(v.availableCount)} 张也按新规则使用，已用掉的 ${countText(v.redeemedCount)} 张和已完成的订单不变。`
-          : "保存后立即按新规则生效，之后领券和用券都按新规则。",
+          : isWheelOnly(v) ? "保存后立即按新规则生效，之后转盘发券和用券都按新规则。" : "保存后立即按新规则生效，之后领券和用券都按新规则。",
         check: "核对每一项改前改后，理由写清依据或工单号。",
       },
       facts: (
@@ -319,14 +319,21 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     if (!restored && blockNew(v.id)) return;
     const next = v.status === "active" ? "paused" : "active";
     const label = next === "active" ? "投放" : "暂停";
+    const wheelOnly = isWheelOnly(v);
     openActionConfirm({ briefKind: "content",
       action: `${label}代金券 · ${v.name}`,
       title: `${label}代金券`,
-      detail: next === "paused"
+      detail: wheelOnly
+        ? `${v.name} · 仅转盘发放${next === "paused" ? "；已领到的不收回，有效期内仍能用。" : "；还要在有效期内、没到发行上限。"}`
+        : next === "paused"
         ? `${v.name} · 暂停后用户不能再领这张券；已领到的不收回，有效期内仍能用。`
         : `${v.name} · 投放后符合条件的用户可以领；还要符合有效期、发给谁、发行上限和领取入口。`,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      statedBrief: next === "paused"
+      statedBrief: wheelOnly
+        ? next === "paused"
+          ? { impact: "暂停后，用户在转盘抽中这一档时会抽奖出错、发不出券。", check: WHEEL_STOP_HINT }
+          : { impact: "投放后，用户在幸运转盘抽中这一档时才会发到钱包；用户不能自己领。", check: "确认有效期和发行上限，App 下次读取时才看到变化。" }
+        : next === "paused"
         ? { impact: `用户不能再领这张券；已领到还没用的 ${countText(v.availableCount)} 张不收回，有效期内仍能用。`, check: "确认是停止新领取，不是收回已发的券。" }
         : { impact: "符合条件的用户可以领：还要在有效期内、符合发给谁、没到发行上限、从开放的入口领；不会自动发给任何人。", check: "确认有效期和发行上限，App 下次读取时才看到变化。" },
       facts: (
@@ -567,7 +574,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
       <StatBand label="代金券概况">
         <Stat tone="role-4" icon={TicketCheck} label="投放中" value={countText(activeN)} unit="张" sub={`共 ${countText(total)} 张 · 已暂停 ${countText(pausedN)} 张`}
-          explain="只看券的状态。已过有效期但没暂停的也算在内；用户能不能领还要看有效期、发给谁、发行上限和领取入口。" />
+          explain={`只看券的状态。已过有效期但没暂停的也算在内；用户能不能领还要看有效期、发给谁、发行上限和领取入口。${data.vouchers.some(isWheelOnly) ? "「仅转盘发放」的券只在幸运转盘中奖时发。" : ""}`} />
         <Stat tone="role-2" icon={Send} label="已发出" value={countText(issuedSum)} unit="张" sub={`未使用 ${countText(availableSum)} 张`}
           explain="这页现有券的领取记录合计，不是人数；删掉的券不再计入。未使用包括已过有效期还没用的。" />
         <Stat tone="role-2" icon={ReceiptText} label="已使用" value={countText(redeemedSum)} unit="张" sub={`已作废 ${countText(revokedSum)} 张`}
