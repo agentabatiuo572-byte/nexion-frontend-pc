@@ -36,11 +36,14 @@
 .rd-nav-item[data-group-open], .rd-nav-item[data-active] { color: var(--rd-text); font-weight: 500; }
 .rd-nav-item[data-active] { background: var(--rd-panel-inner); }
 .rd-nav-chevron { flex: none; color: var(--rd-text-3); transition: transform 180ms ease; }
-.rd-nav-children { list-style: none; margin: 0; padding: 2px 0 6px 26px; }
-.rd-nav-sub { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border-radius: 8px; color: var(--rd-text-2); font-size: 14px; line-height: 22px; }
+.rd-nav-children { list-style: none; margin: 0; padding: 2px 0 6px; }
+/* 页面编号和域图标同一列（22px 宽，放得下 A10），页名和域名左边对齐。 */
+.rd-nav-sub { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 4px 8px 4px 10px; border-radius: 8px; color: var(--rd-text-2); font-size: 14px; line-height: 22px; }
 .rd-nav-sub[data-active] { background: var(--rd-panel-inner); color: var(--rd-text); font-weight: 500; }
+.rd-nav-code { flex: none; width: 22px; color: var(--rd-text-3); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.rd-nav-sub[data-active] .rd-nav-code { color: var(--rd-text-2); }
+.rd-nav-letter { flex: none; color: var(--rd-text-3); font-size: 12px; font-weight: 400; }
 .rd-nav-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone, transparent); }
-.rd-nav-dot[data-scaffold] { border: 1px solid var(--rd-text-3); background: transparent; }
 .rd-nav-dot[data-current] { background: var(--rd-brand-ink); }
 .rd-nav-badge { flex: none; color: var(--rd-warn); font-size: 13px; font-weight: 500; }
 .rd-nav-rail { position: relative; display: grid; place-items: center; width: 40px; height: 40px; margin-inline: auto; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
