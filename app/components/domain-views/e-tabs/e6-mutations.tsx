@@ -53,6 +53,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     setPending(saved);
     setRejected(saved.filter(r => r.retryRejection).map(r => r.commandKey));
     setDevicePending(e5Commands.list().filter(r => r.actorId === String(owner)));
+    return saved;
   };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
   const canAudit = rights.includes("platform_a2_read");
@@ -61,9 +62,20 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     && (canAudit || rights.includes("platform_a2_proposal_create"));
   const visible = (section: E6Section) => rights.includes(section === "tasks" || section === "tiers" ? "device_e2_read" : section === "phones" ? "device_e5_read" : "device_e6_read");
   useEffect(() => {
-    active.current = true; sync();
+    active.current = true;
+    const restored = sync();
+    let cancelled = false;
+    // Restore only this maker's unresolved binding proposals, including lost create receipts.
+    void Promise.resolve().then(async () => {
+      for (const record of restored) {
+        if (cancelled) return;
+        if (visible(record.section) && isYieldSkuProposal(record.payload) && !record.terminal) {
+          await check(record);
+        }
+      }
+    });
     if (hasPersistedPendingCommandOwner(String(owner))) setLegacy([...legacyCommands.list().filter(r => /^(e2_task_|e2_phone_tier|e6_compute_config|e6_phone_calibration|e5_device_)/.test(r.fingerprint)), ...legacyPhones.list()]);
-    return () => { active.current = false; };
+    return () => { cancelled = true; active.current = false; };
   }, [owner, epoch]);
   const locked = (scope: string) => pending.some(r => r.scope === scope || scope.startsWith("phone:") && r.scope === `user:${scope.split(":")[2]}` || scope.startsWith("user:") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === scope.slice(5))
     || legacy.some(r => { const [op,obj] = r.fingerprint.split("|"); return scope === "task:create" ? op === "e2_task_create" : scope.startsWith("task:") ? op.startsWith("e2_task_") && obj === scope.slice(5) : scope.startsWith("tier:") ? op === "e2_phone_tier" && obj === scope.slice(5) : scope === "calibration" ? op === "e6_phone_calibration" : scope.startsWith("param:") && op === "e6_compute_config" && obj === scope.slice(6); })
