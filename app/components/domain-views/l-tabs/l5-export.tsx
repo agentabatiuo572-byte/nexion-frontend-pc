@@ -156,7 +156,7 @@ const L5_TASK_FILTERS = ["全部", "待放行", "生成中", "已就绪"] as con
 const isNetworkTree = (task: LExportTask) => task.reportType === "NETWORK_TREE";
 /** 团队关系明细的列名按文件里的叫法翻：V-Rank 是会员等级，团队GMV 是关系记录上的累计量，不是已支付成交额。 */
 const fieldsText = (task: LExportTask) => isNetworkTree(task)
-  ? task.fields.replace(/V-Rank/g, "会员等级").replace(/团队GMV/g, "关系累计量（USDT）") : operatorCopyText(task.fields);
+  ? task.fields.replace(/V-Rank/g, "会员等级").replace(/团队GMV/g, "关系累计量") : operatorCopyText(task.fields);
 
 const LEDGER_PAGE = "/finance/ledger";
 const L3_PAGE = "/analytics/financial";
