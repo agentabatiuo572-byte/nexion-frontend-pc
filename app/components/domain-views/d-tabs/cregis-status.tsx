@@ -519,13 +519,12 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
           : row.kind === original?.kind && row.businessReference === original?.businessReference);
         if (plan) {
           const state = PREPARATION_STATE[String(plan.state)] ?? "状态未知";
-          const version = planNo ? `，第 ${text(plan.version)} 版` : "";
-          return `读取结果：${network} 准备单 ${text(plan.planNo)} 现在是「${state}」${version}。${kept}`;
+          return `读取结果：${network} 准备单 ${text(plan.planNo)} 现在是「${state}」。${kept}`;
         }
         beforeId = page.hasMore ? page.nextBeforeId : null;
       } while (beforeId);
-      return planNo ? "这个网络的准备单里没找到原单号，请到操作记录核对。记录继续保留。"
-        : "这个网络的准备单里没找到这次申请的参考号，请到操作记录核对。记录继续保留。";
+      return planNo ? `${network} 准备单里没找到原单 ${planNo}，请到操作记录核对；记录继续保留。`
+        : `${network} 准备单里没找到业务参考号「${text(original?.businessReference)}」，请到操作记录核对；记录继续保留。`;
     }
     if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
