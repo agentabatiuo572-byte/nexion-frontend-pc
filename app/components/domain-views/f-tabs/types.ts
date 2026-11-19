@@ -132,7 +132,7 @@ export interface FViewCtx {
   queryPayouts: (filters?: F1PayoutFilters, append?: boolean) => Promise<void>;
   proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
   proposeVRankBootstrap: (ranks: VRankBootstrapRow[], reason: string) => Promise<void>;
-  proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
+  proposePayoutAction: (record: F1RewardPayout, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2PayoutStatistics?: F2PayoutStatistic[];
