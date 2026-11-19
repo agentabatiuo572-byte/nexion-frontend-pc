@@ -5,7 +5,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
+  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Pause, Pencil, Play, Plus, RefreshCw,
   Route, Sparkles, Trash2,
 } from "lucide-react";
 import {
@@ -1074,8 +1074,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const triLegacy = legacyAssetText(triRaw);
   const tri = parseTriReward(triLegacy.text);
   const eligibility = text(model.dayOneEligibilityHours, "");
-  const promo = model.promoBanner;
-  const promoStatus = text(promo.status, "");
   const regionPending = region.pending;
   // 后端读回的新建申请：读得出的按类型放进对应页签；读不出的（审批锁定）只在要处理的事里提一句。
   const creations = model.pendingMissionCreations ?? [];
@@ -1539,29 +1537,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     </div>
   );
 
-  // ----- 首页备用卡（d7540265：七项设置已停用，新保存一律被拒；只读显示以前存的值，收在页底折叠里） -----
-  const promoBase = decimalOf(promo.baseReward);
-  const promoMult = decimalOf(promo.multiplier);
-  const promoFold = (
-    <Fold title="首页备用卡" icon={Megaphone} tone="role-other"
-      summary={<span className="h3-retired-sum"><StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>{promoStatus ? "以前存的值，仅供查看" : "没读到以前存的值"}</span>}
-      explain={promo.promoBannerConfigNote ?? "这 7 项已停用，不能改，也不能启用。App 首页仍读得到这些值，现在的 App 和 H5 不显示。"}>
-      <ConfigList label="首页备用卡以前存的值">
-        <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"} />
-        <ConfigRow name="基础奖励" value={promoBase == null ? "—" : `${amountText(promoBase)} UVT`} />
-        <ConfigRow name="展示倍率" value={promoMult == null ? "—" : `${promoMult}×`} />
-        <ConfigRow name="卡上写的奖励" value={mulDecimal(promoBase, promoMult) == null ? "—" : `${mulDecimal(promoBase, promoMult)} UVT`}
-          sub="基础奖励 × 展示倍率" what="按上面两项算，不是实际发的奖励。" />
-        <ConfigRow name="倒计时" value={promo.countdownDays == null && promo.countdownHours == null ? "—" : `${text(promo.countdownDays, "—")} 天 ${text(promo.countdownHours, "—")} 小时`} />
-        <ConfigRow name="推荐设备" value={text(promo.targetDevice, "") || "—"} />
-        {/* 币种：USDT 跟在金额后；后端给 null 或旧数据没有这项写「币种未知」；认不出的写「币种读不出」，原值放问号里。 */}
-        <ConfigRow name="卡上写的日收益" value={decimalOf(promo.targetDaily) == null ? "—" : promo.targetDailyAsset === "USDT" ? `${text(promo.targetDaily)} USDT` : text(promo.targetDaily)}
-          sub={decimalOf(promo.targetDaily) == null || promo.targetDailyAsset === "USDT" ? undefined : promo.targetDailyAsset == null ? "币种未知" : "币种读不出"}
-          note={decimalOf(promo.targetDaily) != null && promo.targetDailyAsset != null && promo.targetDailyAsset !== "USDT" ? `页面认不出这个币种，原值 ${promo.targetDailyAsset}` : undefined} />
-      </ConfigList>
-    </Fold>
-  );
-
   // ----- 数据口径（第三层） -----
   const monitor = model.taskMonitor ?? [];
   // 11ea3732 起同一个数改按完成时间数；旧后端没有口径字段时仍是新建记录数，表头跟着返回的口径走。
@@ -1634,7 +1609,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {tab === "bindings" && bindingsTab}
       {tab === "monthly" && monthlyTab}
       {contracts}
-      {promoFold}
 
       <Drawer open={!!detailTask} onClose={() => setDetail(null)} title="任务详情" icon={ListChecks} tone="role-2" sub={detailTask ? nameOf(detailTask) : undefined}
         nav={{ hasPrev: detailIndex > 0, hasNext: detailIndex >= 0 && detailIndex < detailList.length - 1,
