@@ -42,7 +42,7 @@ export function A2I5DisclosureReview({ ticket }: { ticket: A2OperationRow }) {
   const headline = change && (previous && !change.summary.length && !change.chapters.length ? "和上一版内容相同" : change.headline);
   return <>
     <Facts>
-      <Fact k="草稿仍与申请时一致">{match === true ? "是" : match === false ? "否" : "未知"}</Fact>
+      <Fact k="申请后草稿" tone={match === false ? "warn" : undefined}>{match === true ? "没改过" : match === false ? "已改动，批准不会成功" : "无法核对"}</Fact>
       {!draft && <Fact k="改动">未提供</Fact>}
       {draft && !first && !previous && <Fact k="上一版内容">未提供</Fact>}
       {change && <Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{headline}{baseOnly && "（仅对照中越英）"}</Fact>}
@@ -87,7 +87,7 @@ function MatrixVersionReview({ ticket }: { ticket: A2OperationRow }) {
 
   if (!binding) return <Facts><Fact k="适用国家/地区">未提供</Fact></Facts>;
   const review = loaded?.key === readKey ? loaded.review : undefined;
-  if (!canRead || (loaded?.key === readKey && !review)) return <Facts><Fact k="改动">读不到这两版内容，到 I5 核对</Fact></Facts>;
+  if (!canRead || (loaded?.key === readKey && !review)) return <Facts><Fact k="改动">读不到这两版内容，到「法律条款与风险披露」核对</Fact></Facts>;
   if (!review) return <Facts><Fact k="改动">读取中</Fact></Facts>;
   const change = review.current ? disclosureChange(review.current, review.target) : undefined;
   return <>
