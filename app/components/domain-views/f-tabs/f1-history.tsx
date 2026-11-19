@@ -169,7 +169,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
           invalid: false,
           message: values.usedVoucherClawback === "true" ? "按比例减的券不扣。扣回不记账单；余额不够会执行失败，券和余额都不变。"
             : values.usedVoucherClawback === "false" ? ""
-              : "扣回：按券现在的面额从 USDT 可用余额扣；不扣回：只改发放记录。",
+              : "扣回：从 USDT 可用余额扣，余额不够会失败；不扣回：只改发放记录。",
         }),
         fields: [{
           key: "usedVoucherClawback",

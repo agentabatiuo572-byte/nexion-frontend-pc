@@ -1903,7 +1903,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
     // 发放单号带连字符，按正文写，在连字符处换行，不出横向滚动。
-    if (w.operationCode === "f_reward_payout_action") return w.obj;
+    if (w.operationCode === "f_reward_payout_action") return objectText(w);
     if (isGParamTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`参数键 ${w.obj}${w.obj === "divBase" ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} /></>;
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
