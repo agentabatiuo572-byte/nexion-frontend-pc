@@ -722,8 +722,8 @@ function G3MarketEditor() {
               return {
                 heading: "要另一位超级管理员（需有审批批准权限）批准后生效",
                 completionCopy: resume
-                  ? "批准前现价不变。批准时按当时的七天计划重算兑付覆盖率；恢复后到下一次推进才变价。"
-                  : "批准前现价不变。批准时按那天当时的目标价重算兑付覆盖率并发布。",
+                  ? "这次申请批准前不改价，价格自动变化仍暂停。批准时按当时的七天计划重算兑付覆盖率；恢复后到下一次推进才变价。"
+                  : "这次申请批准前不改价；没有暂停时，现价仍按排程推进。批准时按那天当时的目标价重算兑付覆盖率并发布。",
                 disabledReason: approval && !/^[0-9a-f]{64}$/.test(approval.expectedRevision ?? "")
                   ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。"
                   : approval && session && !canWriteG3MarketChange(session, confirm.change, value, true) ? "你没有修改这一项的权限。" : undefined,

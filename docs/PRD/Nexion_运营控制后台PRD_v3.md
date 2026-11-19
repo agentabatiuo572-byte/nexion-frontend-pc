@@ -285,7 +285,7 @@
 
 价格输入大于 0、最多八位小数，页面上限 1,000,000 USDT；概率 0–1、页面步长 0.01（协议最多六位）；波动 0–20%、阈值 0–50%。成本后端没有相同上限，页面现有上限保留，不擅改交互。理由按服务端策略及可见字符要求校验，读取失败不提交。
 
-**2026-11-19 视觉复审（hd-bs-vis，2b2a0380e、cf874ef6a）**：W05、W13 走审批时确认框写「批准前现价不变。批准时按那天当时的目标价重算兑付覆盖率并发布。」（固定）或「批准前现价不变。批准时按当时的七天计划重算兑付覆盖率；恢复后到下一次推进才变价。」（恢复）；提交成功提示「已提交审批，批准前价格不变」；运行方式行写「固定到比现价高的一天要审批，其余直接生效」「暂停直接生效；恢复会提价时要审批」。
+**2026-11-19 视觉复审（hd-bs-vis，2b2a0380e、cf874ef6a）**：W05、W13 走审批时确认框写「这次申请批准前不改价；没有暂停时，现价仍按排程推进。批准时按那天当时的目标价重算兑付覆盖率并发布。」（固定）或「这次申请批准前不改价，价格自动变化仍暂停。批准时按当时的七天计划重算兑付覆盖率；恢复后到下一次推进才变价。」（恢复）；提交成功提示「已提交审批，这次申请批准前不改价」；运行方式行写「固定到比现价高的一天要审批，其余直接生效」「暂停直接生效；恢复会提价时要审批」。
 
 **④ G3 专用审批**：W01/W02/W05/W07/W13 提高及 W04 首次配置。POST `/api/admin/platform/audit/operations`，`sourceDomain=G3`、`command={domain:G,op:g3_market_policy_change,params:{values}}`。values 含 action、字符串 value 及 expectedRevision；曲线另带 dayIndex/field。目标分别为 `G:nex_market_curve:weekly`、`G:nex_market_override:currentPrice`、`G:nex_market_control:schedule`、`G:nex_market_control:pin`、`G:nex_market_override:paused`，obj 与 target.id 一致。固定提价传 `{action:"pin", value:"Dn", expectedRevision:pinRevision}`，发起人须有 `finprod_g3_write`。恢复提价传 `{action:"resume", value:"false", expectedRevision:pausedRevision}`，发起人须有 `finprod_g3_engine_pause_toggle`；两类均为 fund、amplifies=true。批准人必须是另一位有 `platform_a2_operation_approve` 的真实超管。提案只创建待审单，批准前本次申请不改变价格或运行状态。批准重新核对修订及覆盖率。固定和恢复的修订分别绑定固定设置、暂停状态，批准按当时的曲线和推进位置复核（后端 `07ec3930`，G3-BE-07 待处理）。不能比较现价时，先重新读取以确定固定或恢复的提价方向；暂停及解除固定可直接保存。
 
