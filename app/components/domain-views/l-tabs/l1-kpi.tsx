@@ -33,7 +33,7 @@ import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigat
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { L1_KPI_IDS, validateL1Dashboard, validateL1Drilldown, validateL1Trend, type L1CohortPoint, type L1Dashboard, type L1KpiRow } from "./l1-kpi-contract";
 import { L1_EXPORT_ORIGINAL_INCOMPLETE, L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource, type L1PendingExport } from "./l1-export-contract";
-import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
+import { L1_DEFAULT_OVERLAY_IDS, loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { ATTRIBUTION_ROUTE_READ, assertL1AttributionLinks } from "./l-attribution-routes";
 
@@ -460,7 +460,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
   const [picked, setPicked] = useState<number | null>(null); // 没点过时跟着排在最前的那一项
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
-  const [ovlSel, setOvlSel] = useState<number[]>([1, 2, 3]);
+  const [ovlKpiIds, setOvlKpiIds] = useState<number[]>(L1_DEFAULT_OVERLAY_IDS);
   const [editingOffset, setEditingOffset] = useState(false);
   const [win, setWin] = useState<L1Window>("7d");
   const [customOpen, setCustomOpen] = useState(false);
@@ -497,7 +497,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       if (saved) {
         setPhaseOn(saved.phaseOn);
         setYlOffset(saved.ylOffset);
-        setOvlSel(saved.ovlSel);
+        setOvlKpiIds(saved.ovlKpiIds);
       }
       next = queryFromUrl(window.location.search) ?? (saved ? {
         ...(saved.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved.window }),
@@ -600,7 +600,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
     try {
       // 存屏幕上这份，不存没应用的输入：它和网址一致，刷新才真的还是这个视图。
       saved = saveL1LocalView(window.localStorage, {
-        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", granularity: applied.granularity, phaseOn, ylOffset, ovlSel,
+        window: applied.window ?? "7d", customFrom: applied.from ?? "", customTo: applied.to ?? "", granularity: applied.granularity, phaseOn, ylOffset, ovlKpiIds,
         cohortFilter: applied.cohort ?? "", phaseFilter: applied.phase ?? "", localeFilter: applied.locale ?? "", refFilter: applied.ref ?? "",
       });
     } catch {
@@ -778,7 +778,11 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
 
     // 指数只对单侧目标成立：越高越好算实际 ÷ 目标，越低越好算目标 ÷ 实际，高于 100 都是好于目标。
     // 健康带没有单一目标，不换算，按真实值和上下限单独画（DP-63）。
-    const picks = ovlSel.filter(index => KPIS[index].scope !== "NOT_APPLICABLE_TO_COHORT").map((index) => ({ ...KPIS[index], spark: trendOf(index) }));
+    const picks = ovlKpiIds.flatMap((id) => {
+      const index = KPIS.findIndex((item) => item.n === id);
+      const item = KPIS[index];
+      return item && item.scope !== "NOT_APPLICABLE_TO_COHORT" ? [{ ...item, spark: trendOf(index) }] : [];
+    });
     const bandPicks = picks.filter((item) => item.dir === "band");
     const compared = picks.filter((item) => item.dir !== "band").map((item, position) => ({
       item,
@@ -946,10 +950,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
             <div role="group" aria-label="要比的指标" className="rd-filter-more-row">
               {order.map((index) => {
                 const item = KPIS[index];
-                const on = ovlSel.includes(index);
+                const on = ovlKpiIds.includes(item.n);
                 // 不适用的一项不能勾，保存过的勾选留在视图里，不画（画图集合已排除它）。
                 if (item.scope === "NOT_APPLICABLE_TO_COHORT") return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={false} disabled explain="按注册批次看时不适用。" onChange={() => undefined} />;
-                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && picks.length === 1} onChange={() => setOvlSel((current) => (on ? current.filter((value) => value !== index) : [...current, index]))} />;
+                return <Check key={item.n} label={`#${item.n} ${operatorCopyText(item.name)}`} checked={on} disabled={on && picks.length === 1} onChange={() => setOvlKpiIds((current) => (on ? current.filter((id) => id !== item.n) : [...current, item.n]))} />;
               })}
             </div>
             {drawable.length > 0 && (

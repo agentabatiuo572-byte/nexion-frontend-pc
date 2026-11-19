@@ -71,14 +71,32 @@ function sameInstant(a: unknown, b: unknown) {
   const canonical = (value: string) => value.replace(/(\.\d*?)0+Z$/, "$1Z").replace(".Z", "Z");
   return instant(a) && instant(b) && canonical(a) === canonical(b);
 }
-function validTrend(values: unknown, markers: unknown, reasons: unknown, length: number) {
-  return Array.isArray(values) && (values.length === 0 || values.length === length)
-    && values.every(point => point === null || finite(point))
-    && (markers === undefined || Array.isArray(markers) && markers.length === values.length
-      && markers.every((masked, index) => typeof masked === "boolean" && (!masked || values[index] === null)))
-    && Array.isArray(reasons) && reasons.length === values.length
-    && reasons.every((reason, index) => reason === null || typeof reason === "string" && values[index] === null);
+const LEGACY_TREND_LENGTH = 6;
+const LEGACY_REASONS: Readonly<Record<number, readonly string[]>> = {
+  1: ["NO_REGISTRATION_DENOMINATOR"],
+  2: ["NO_MATURE_DAY7_COHORT", "DAU_NOT_COLLECTED"],
+  3: ["NO_REGISTRATION_DENOMINATOR"],
+  4: ["NO_STORE_VIEW_DENOMINATOR"],
+  5: ["NO_DEVICE_HOLDER_DENOMINATOR"],
+  7: ["NO_DIRECT_REFERRAL_DENOMINATOR"],
+  8: ["NO_GENESIS_PURCHASES", "GENESIS_NOT_SOLD_OUT"],
+};
+
+function validLegacyPoint(id: number, value: unknown, suppressed: unknown, reason: unknown) {
+  const allowedReasons = LEGACY_REASONS[id];
+  if (!allowedReasons || typeof suppressed !== "boolean") return false;
+  if (suppressed) return value === null && reason === null;
+  if (value === null) return typeof reason === "string" && allowedReasons.includes(reason);
+  return reason === null && finite(value) && (id === 8 ? value > 0 : value >= 0 && value <= 100);
 }
+
+function validTrend(id: number, values: unknown, markers: unknown, reasons: unknown) {
+  return Array.isArray(values) && values.length === LEGACY_TREND_LENGTH
+    && Array.isArray(markers) && markers.length === LEGACY_TREND_LENGTH
+    && Array.isArray(reasons) && reasons.length === LEGACY_TREND_LENGTH
+    && values.every((point, index) => validLegacyPoint(id, point, markers[index], reasons[index]));
+}
+
 function metadata(value: unknown, expectedId: number) {
   const row = record(value);
   if (row.n !== expectedId || row.kpiId !== String(expectedId)) throw new Error("L1_KPI_ID_SEQUENCE_INVALID");
@@ -94,11 +112,11 @@ function metadata(value: unknown, expectedId: number) {
 }
 function legacyKpi(value: unknown, expectedId: number): L1KpiRow {
   const row = metadata(value, expectedId);
-  const notCollected = expectedId === 2 && row.unavailableReason === "DAU_NOT_COLLECTED";
-  if (!validTrend(row.spark, row.sparkSuppressed, row.sparkUnavailableReasons, 6)
-      || notCollected && row.suppressed !== false
-      || (row.suppressed === true || notCollected
-        ? row.available || row.numerator != null || row.denominator != null || row.momDelta != null
+  const hiddenCounts = row.suppressed === true || row.unavailableReason === "DAU_NOT_COLLECTED";
+  if (!validLegacyPoint(expectedId, row.value, row.suppressed, row.unavailableReason)
+      || !validTrend(expectedId, row.spark, row.sparkSuppressed, row.sparkUnavailableReasons)
+      || (hiddenCounts
+        ? row.numerator !== null || row.denominator !== null || row.momDelta !== null
         : !count(row.numerator) || !count(row.denominator))) throw new Error("L1_KPI_ROW_INVALID");
   return row as L1KpiRow;
 }
@@ -259,7 +277,7 @@ export function validateL1Dashboard(value: unknown, expected?: L1KpiQuery): L1Da
     weeks = kpis[0].points!.map(point => point.bucketKey);
   } else {
     kpis = data.kpis.map((row, index) => legacyKpi(row, L1_KPI_IDS[index]));
-    if (!Array.isArray(data.weeks) || data.weeks.length !== 6 || !data.weeks.every(item => typeof item === "string" && item.length > 0)) throw new Error("L1_TREND_LABELS_INVALID");
+    if (!Array.isArray(data.weeks) || data.weeks.length !== LEGACY_TREND_LENGTH || !data.weeks.every(item => typeof item === "string" && item.length > 0)) throw new Error("L1_TREND_LABELS_INVALID");
     weeks = data.weeks;
   }
   definitions(data, kpis);
@@ -298,8 +316,8 @@ export function validateL1Trend(value: unknown, expectedId: number, expected?: L
     const checked = validateL1Drilldown(data, expectedId, expected, axis);
     return { ...checked, labels: checked.weeks as string[], values: checked.selected.spark, suppressedPoints: checked.selected.sparkSuppressed, unavailableReasons: checked.selected.sparkUnavailableReasons };
   }
-  if (data.module !== "L1" || data.kpiId !== expectedId || !Array.isArray(data.labels) || data.labels.length !== 6
+  if (data.module !== "L1" || data.kpiId !== expectedId || !Array.isArray(data.labels) || data.labels.length !== LEGACY_TREND_LENGTH
       || !data.labels.every(item => typeof item === "string" && item.length > 0)
-      || !validTrend(data.values, data.suppressedPoints, data.unavailableReasons, data.labels.length)) throw new Error("L1_TREND_PROTOCOL_INVALID");
+      || !validTrend(expectedId, data.values, data.suppressedPoints, data.unavailableReasons)) throw new Error("L1_TREND_PROTOCOL_INVALID");
   return { ...data, labels: data.labels as string[], values: data.values as (number | null)[], suppressedPoints: data.suppressedPoints as boolean[] | undefined, unavailableReasons: data.unavailableReasons as (string | null)[] };
 }

@@ -35,6 +35,15 @@ import {
   validateL2LifecycleContract,
 } from "./l2-stage-events-contract";
 import type { LCtx } from "./types";
+import {
+  validL2CollectionDate,
+  validL2CrossAnalysis,
+  validL2RetentionCurve,
+  validL2RetentionDashboard,
+  validL2RetentionMatrix,
+  type L2RetentionCurve,
+  type L2RetentionMatrix,
+} from "./l2-retention-contract";
 import { ATTRIBUTION_ROUTE_READ, L2_ATTRIBUTION_LINKS } from "./l-attribution-routes";
 import {
   CrossTable,
@@ -75,21 +84,9 @@ function finiteCount(value: unknown) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-function validCurve(raw: unknown) {
-  if (!Array.isArray(raw) || raw.length === 0) return false;
-  let previousDay = -1;
-  return raw.every((point) => {
-    if (!Array.isArray(point) || point.length !== 2) return false;
-    const [day, value] = point;
-    if (!finiteCount(day) || day <= previousDay || !finitePercent(value, false)) return false;
-    previousDay = day;
-    return true;
-  });
-}
-
 function hasDetailedL2(raw: unknown) {
   const data = rec(raw);
-  return ["funnel", "funnelExt", "cohorts", "curves", "crossAnalysis"]
+  return data.available === true || ["funnel", "funnelExt", "cohorts", "curves", "crossAnalysis", "day7Kpi"]
     .some((key) => Object.prototype.hasOwnProperty.call(data, key));
 }
 
@@ -97,11 +94,11 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
   const data = rec(raw);
   const funnel = rows<Record<string, unknown>>(data.funnel);
   const extensions = rows<Record<string, unknown>>(data.funnelExt);
-  const cohorts = rows<Record<string, unknown>>(data.cohorts);
-  const monthly = rows<Record<string, unknown>>(data.monthlyCohorts);
   const lifecycleStagesPresent = Object.prototype.hasOwnProperty.call(data, "stages");
   const canonicalStageCount: number = L2_STAGE_EVENT_CONTRACT.length;
-  if (canonicalStageCount === 0 || funnel.length !== canonicalStageCount || extensions.length !== canonicalStageCount || cohorts.length === 0
+  if (canonicalStageCount === 0 || funnel.length !== canonicalStageCount || extensions.length !== canonicalStageCount
+    || !validL2RetentionDashboard(data)
+    || !validL2CrossAnalysis(data.crossAnalysis, data.retentionCollectionFrom)
     || !isCanonicalL2StageEvents(data.stageEvents)
     || !validateL2FunnelEventBindings(data.funnel, data.stageEvents)
     || (lifecycleStagesPresent && !validateL2LifecycleContract(data))) return false;
@@ -109,7 +106,7 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
   for (let index = 0; index < funnel.length; index += 1) {
     const item = funnel[index];
     const ext = extensions[index];
-    if (!str(item.stage) || !str(item.lc) || !str(item.color) || !str(ext.plain)
+    if (!item || !ext || !str(item.stage) || !str(item.lc) || !str(item.color) || !str(ext.plain)
       || !Array.isArray(ext.dwell) || ext.dwell.some((value) => !finiteCount(value))) return false;
     if (item.suppressed === true) {
       if (item.users != null || item.cvr != null || ext.suppressed !== true
@@ -118,35 +115,6 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
     }
     if (!finiteCount(item.users) || !finitePercent(item.cvr) || Number(item.users) > previousUsers) return false;
     previousUsers = Number(item.users);
-  }
-  const validateCohorts = (items: Record<string, unknown>[], pattern: RegExp) => {
-    const seen = new Set<string>();
-    return items.every((item) => {
-      const key = str(item.w || item.cohort);
-      if (!pattern.test(key) || seen.has(key)) return false;
-      seen.add(key);
-      const rates = [item.d1, item.d7, item.d14, item.d30, item.d60];
-      return item.suppressed === true
-        ? item.size == null && rates.every((rate) => rate == null)
-        : finiteCount(item.size) && rates.every((rate) => finitePercent(rate));
-    });
-  };
-  if (!validateCohorts(cohorts, /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/)
-    || (monthly.length > 0 && !validateCohorts(monthly, /^\d{4}-(?:0[1-9]|1[0-2])$/))) return false;
-  const validateCurves = (items: Record<string, unknown>[], curves: Record<string, unknown>) => items.every((item) => {
-    const curve = curves[str(item.w || item.cohort)];
-    return item.suppressed === true ? Array.isArray(curve) && curve.length === 0 : validCurve(curve);
-  });
-  if (!validateCurves(cohorts, rec(data.curves)) || !validateCurves(monthly, rec(data.monthlyCurves))) return false;
-  const cross = rec(data.crossAnalysis);
-  for (const key of ["cvr", "ret", "trial"]) {
-    const metric = rec(cross[key]);
-    const columns = strings(metric.columns);
-    const metricRows = rows<unknown[]>(metric.rows);
-    if (columns.length === 0 || new Set(columns).size !== columns.length || metricRows.length === 0
-      || metricRows.some((row) => row.length !== columns.length + 2
-        || !str(row[0])
-        || row.slice(1).some((value) => !finitePercent(value)))) return false;
   }
   const quality = rec(data.quality);
   return quality.sameUserJoin === true
@@ -244,6 +212,8 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const [queryLoading, setQueryLoading] = useState(false);
   const [sliceLoading, setSliceLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [matrixOverride, setMatrixOverride] = useState<L2RetentionMatrix | null>(null);
+  const [curveOverrides, setCurveOverrides] = useState<Record<string, L2RetentionCurve>>({});
   const [crossOverride, setCrossOverride] = useState<Record<string, unknown> | null>(null);
   const queryGeneration = useRef(0);
   // 以下只管显示：哪个输入框填错了、下面看哪个页签、导出后的结果条。不参与请求。
@@ -252,6 +222,12 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const [exportOutcome, setExportOutcome] = useState<"full" | "stages" | "unknown" | null>(null);
 
   useEffect(() => () => { queryGeneration.current += 1; }, []);
+
+  const resetDetailOverrides = () => {
+    setMatrixOverride(null);
+    setCurveOverrides({});
+    setCrossOverride(null);
+  };
 
   const cancelQuery = () => {
     queryGeneration.current += 1;
@@ -329,11 +305,12 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     setSliceLoading(true);
     setQueryError(null);
     setQueryData({});
-    setCrossOverride(null);
+    resetDetailOverrides();
     ctx.setL2SliceExportable?.(false);
     try {
       const response = await fetchL2FunnelDrilldown(query);
       if (generation !== queryGeneration.current) return;
+      if (!validL2CollectionDate(response.retentionCollectionFrom)) throw new Error("L2_RESPONSE_PROTOCOL_ERROR");
       if (response.available === false) {
         setQueryData(response);
         ctx.setL2Query?.({ cohort, phase: draftPhase, locale, ref });
@@ -368,7 +345,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     setQueryData(null);
     setQueryError(null);
     setInvalidField(null);
-    setCrossOverride(null);
+    resetDetailOverrides();
     ctx.setL2Query?.({});
     ctx.setL2SliceExportable?.(true);
     ctx.toast("已恢复全部数据");
@@ -378,7 +355,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     setQueryData(null);
     setQueryError(null);
     setInvalidField(null);
-    setCrossOverride(null);
+    resetDetailOverrides();
     ctx.setL2Query?.({});
     ctx.setL2SliceExportable?.(true);
   };
@@ -391,22 +368,30 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   // trialFunnel 在读取边界已按新口径校验过（l-client normalizeL2Trial），这里只是把 Record 里的类型取回来。
   const TRIAL = data?.trialFunnel as L2TrialFunnel | undefined;
   const [TRIAL_START, TRIAL_BUY] = TRIAL?.steps ?? [];
-  const WEEKLY_COHORTS = rows<CohortRow>(data?.cohorts);
+  const BASE_WEEKLY_COHORTS = rows<CohortRow>(data?.cohorts);
+  const WEEKLY_COHORTS = matrixOverride?.cohorts ?? BASE_WEEKLY_COHORTS;
   const MONTHLY_COHORTS = rows<CohortRow>(data?.monthlyCohorts);
   const cohortKind = gran === 1 && MONTHLY_COHORTS.length ? "月" : "周";
-  const COHORTS = cohortKind === "月" ? MONTHLY_COHORTS : WEEKLY_COHORTS;
+  const baseCohorts = cohortKind === "月" ? MONTHLY_COHORTS : BASE_WEEKLY_COHORTS;
+  const visibleCohorts = cohortKind === "月" ? MONTHLY_COHORTS : WEEKLY_COHORTS;
+  const COHORTS = visibleCohorts.map((row) => row && curveOverrides[row.w]?.suppressed && !row.suppressed
+    ? { ...row, size: null, d1: null, d7: null, d14: null, d30: null, d60: null, suppressed: true as const }
+    : row);
   const CURVES = rec<[number, number][]>(cohortKind === "月" ? data?.monthlyCurves : data?.curves);
   const XD = crossOverride ?? rec(data?.crossAnalysis);
   const STAGE_EV = strings(data?.stageEvents);
   const day7 = rec(data?.day7Kpi);
   const retentionCollectionFrom = str(data?.retentionCollectionFrom);
-  const liveStages = detailedAttempt ? [] : readL2LiveStages(data);
+  const invalidCoverage = data?.available === false && !validL2CollectionDate(data.retentionCollectionFrom);
+  const liveStages = detailedAttempt || invalidCoverage ? [] : readL2LiveStages(data);
   const applied: L2FunnelQuery = ctx.l2Query ?? {};
   const scope = scopeText(applied);
 
   /* ---- 页头导出：条件和请求体沿用改版前（L2-A03），按钮按 rd 的写法放进页头。 ---- */
   const parentComplete = isStrictL2Dashboard(ctx.biData?.l2);
-  const parentLiveStages = hasDetailedL2(ctx.biData?.l2) ? [] : readL2LiveStages(ctx.biData?.l2);
+  const parent = ctx.biData?.l2;
+  const parentCoverageInvalid = parent?.available === false && !validL2CollectionDate(parent.retentionCollectionFrom);
+  const parentLiveStages = hasDetailedL2(parent) || parentCoverageInvalid ? [] : readL2LiveStages(parent);
   const exportable = ctx.l2SliceExportable !== false && (parentComplete || parentLiveStages.length > 0);
   const exportLabel = parentComplete ? "导出用户转化与留存数据" : "导出用户各阶段人数";
   const exportPageName = findByPath(EXPORT_PAGE)?.l2.name ?? "数据导出与监管报告";
@@ -554,7 +539,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     <BlockState state="empty" title="当前筛选条件下没有注册用户" detail="算不出同一批人的转化率和留存，也不能导出。" />
   </>);
   if (!detailedAttempt && liveStages.length) return page(<LiveStagesView stages={liveStages} reason={str(rec(data).reason)} />);
-  if (detailedAttempt && !strictDetailed) return page(<>
+  if ((detailedAttempt && !strictDetailed) || invalidCoverage) return page(<>
     <Conclusion state="unknown">用户转化：统计数据暂不可用</Conclusion>
     <BlockState state="error" title="收到的转化、留存或对比数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请把这页的情况告诉技术同事。" />
   </>);
@@ -590,14 +575,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     try {
       const response = await fetchL2RetentionMatrix(activeQuery, nextWins);
       if (generation !== queryGeneration.current) return;
-      const cohorts = rows<CohortRow>(response.cohorts);
-      const curves = { ...rec(data?.curves) };
-      for (const cohort of cohorts) {
-        if (cohort.suppressed) curves[cohort.w] = [];
-      }
-      const merged = { ...rec(data), cohorts, curves, retentionCollectionFrom: response.retentionCollectionFrom };
-      if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_PROTOCOL_ERROR");
-      setQueryData(merged);
+      if (!validL2RetentionMatrix(response)) throw new Error("L2_RETENTION_PROTOCOL_ERROR");
+      setMatrixOverride(response);
+      setCurveOverrides((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.includes("-W"))));
       setWins(nextWins);
       ctx.setL2Query?.(activeQuery);
       ctx.setL2SliceExportable?.(true);
@@ -616,10 +596,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     try {
       const response = await fetchL2Cross(nextMetric === "ret" ? "retention" : nextMetric, activeQuery);
       if (generation !== queryGeneration.current) return;
-      const nextCross = rec(response.crossAnalysis);
-      const merged = { ...rec(data), crossAnalysis: nextCross };
-      if (!isStrictL2Dashboard(merged)) throw new Error("L2_CROSS_PROTOCOL_ERROR");
-      setCrossOverride(nextCross);
+      if (response.available !== true || !validL2CollectionDate(response.retentionCollectionFrom)
+          || !validL2CrossAnalysis(response.crossAnalysis, response.retentionCollectionFrom)) throw new Error("L2_CROSS_PROTOCOL_ERROR");
+      setCrossOverride(rec(response.crossAnalysis));
       setMetric(nextMetric);
       ctx.setL2Query?.(activeQuery);
       ctx.setL2SliceExportable?.(true);
@@ -645,25 +624,8 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     try {
       const response = await fetchL2RetentionCurve(cohort, activeQuery);
       if (generation !== queryGeneration.current) return;
-      const suppressed = response.suppressed === true;
-      if (suppressed ? !Array.isArray(response.curve) || response.curve.length > 0 : !validCurve(response.curve)) {
-        throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
-      }
-      const curveKey = cohortKind === "月" ? "monthlyCurves" : "curves";
-      const rowKey = cohortKind === "月" ? "monthlyCohorts" : "cohorts";
-      const merged = {
-        ...rec(data),
-        [curveKey]: { ...rec(data?.[curveKey]), [cohort]: response.curve },
-        [rowKey]: COHORTS.map((row) => row.w === cohort
-          ? {
-            ...(suppressed ? { w: row.w, size: null, suppressed: true } : row),
-            retentionUnavailableReasons: response.retentionUnavailableReasons,
-          }
-          : row),
-        retentionCollectionFrom: response.retentionCollectionFrom,
-      };
-      if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
-      setQueryData(merged);
+      if (!validL2RetentionCurve(response)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
+      setCurveOverrides((previous) => ({ ...previous, [cohort]: response }));
       setSelCohort(cohortIndex);
       ctx.setL2Query?.(activeQuery);
       ctx.setL2SliceExportable?.(true);
@@ -771,19 +733,25 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const compareKeys = cohortCurveKeys.filter((key) => key !== selectedCohort.w).slice(-2);
   const comparedCohort = compareKeys.includes(cmp) ? COHORTS.find((cohort) => cohort.w === cmp) : undefined;
   const curveCohorts = comparedCohort ? [selectedCohort, comparedCohort] : [selectedCohort];
-  const curveTicks = [...new Set(curveCohorts.flatMap((cohort) => [
-    ...(CURVES[cohort.w] ?? []).map(([day]) => day),
-    ...Object.entries(cohort.retentionUnavailableReasons ?? {}).flatMap(([key, reason]) =>
-      reason === "DAU_NOT_COLLECTED" ? [Number(key.slice(1))] : []),
+  const curveData = curveCohorts.map((cohort) => {
+    const override = curveOverrides[cohort.w];
+    return {
+      cohort,
+      points: override?.curve ?? CURVES[cohort.w] ?? [],
+      reasons: override?.retentionUnavailableReasons ?? baseCohorts.find((row) => row.w === cohort.w)?.retentionUnavailableReasons ?? {},
+    };
+  });
+  const curveTicks = [...new Set(curveData.flatMap(({ points, reasons }) => [
+    ...points.map(([day]) => day),
+    ...Object.entries(reasons).flatMap(([key, reason]) => reason === "DAU_NOT_COLLECTED" ? [Number(key.slice(1))] : []),
   ]))].filter((day) => day > 0).sort((a, b) => a - b);
-  const curveSeries = curveCohorts.map((cohort, index) => ({
+  const curveSeries = curveData.map(({ cohort, points }, index) => ({
     key: cohort.w,
     label: cohort.w,
     slot: index === 0 ? 3 as const : "other" as const,
-    values: curveTicks.map((day) => CURVES[cohort.w]?.find(([pointDay]) => pointDay === day)?.[1] ?? null),
+    values: curveTicks.map((day) => points.find(([pointDay]) => pointDay === day)?.[1] ?? null),
   }));
-  const curveUncollected = curveCohorts.some((cohort) =>
-    Object.values(cohort.retentionUnavailableReasons ?? {}).includes("DAU_NOT_COLLECTED"));
+  const curveUncollected = curveData.some(({ reasons }) => Object.values(reasons).includes("DAU_NOT_COLLECTED"));
   const retentionPane = (
     <div className="rd-stack">
       <div className="rd-toolbar l2-toolbar">
