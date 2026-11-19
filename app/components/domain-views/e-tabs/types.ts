@@ -15,6 +15,11 @@ import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
 import type { ToastKind } from "@/lib/store/ui";
 
+export type E6SkuCandidates =
+  | { status: "forbidden" | "loading" }
+  | { status: "error"; error: string }
+  | { status: "ready"; skus: OpsSku[] };
+
 /**
  * E 域子视图共享类型。
  * shell(e-view.tsx)持有全部 store 接线 + 抽屉(SKU/任务/订单详情)+ OperationConfirmModal,
@@ -132,6 +137,8 @@ export interface EViewCtx {
   tasks: OpsTask[];
   phoneTiers: E2PhoneTier[];
   yieldComparisons: E2YieldComparison[];
+  e6SkuCandidates: E6SkuCandidates;
+  refreshE6SkuCandidates: () => Promise<void>;
   e2Loading: boolean;
   e2Error: string | null;
   e2TaskCatalogReady: boolean;

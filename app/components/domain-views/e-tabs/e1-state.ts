@@ -1,6 +1,7 @@
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { SkuForm } from "./data";
+import { skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { createPendingMutationStore, isPendingCommandOwnedBy, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 export const E1_LEVELS = [
@@ -139,7 +140,7 @@ export function e1LegacyObject(record: E1Legacy): string {
 
 /** Read-only field list also drives full, untruncated before/after review. */
 export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: string }[] = [
-  { key: "name", label: "型号名称" }, { key: "id", label: "商品编号" }, { key: "tier", label: "档位" },
+  { key: "name", label: "型号名称" }, { key: "id", label: "商品编号" }, { key: "tier", label: "档位" }, { key: "seriesCode", label: "所属系列" },
   { key: "status", label: "商城状态" }, { key: "lifecycle", label: "生命周期" },
   { key: "price", label: "售价", unit: "USD" }, { key: "computePoints", label: "每件算力点" },
   { key: "allowedPoolCodes", label: "任务等级" }, { key: "monthlyTargetUsdt", label: "月收益目标", unit: "USDT/月" },
@@ -171,6 +172,7 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
   return E1_SKU_FIELDS.map(({ key, label, unit }) => {
     const input = raw && numericInputs.includes(key) ? raw[key as keyof SkuForm] : undefined;
     const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${e1Decimal(after.monthlyTargetUsdt, e1TargetPrecision(after))} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : e1Value(after[key], unit);
+    if (key === "seriesCode") return { key, label, before: before ? skuSeriesText(before.seriesCode) : "未创建", after: skuSeriesText(after.seriesCode), note: undefined };
     return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${e1Decimal(before.monthlyTargetUsdt, e1TargetPrecision(before))} ${unit}` : e1Value(before[key], unit) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
