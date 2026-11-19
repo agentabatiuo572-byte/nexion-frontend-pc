@@ -2132,6 +2132,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({ domain: "F", op: "f_reward_payout_action", params: {
       payoutId: String(ctx.payoutId),
       action: String(ctx.action),
+      ...(ctx.action === "reverse" && typeof ctx.usedVoucherClawback === "boolean" ? { usedVoucherClawback: ctx.usedVoucherClawback } : {}),
     } }),
     buildTarget: (ctx) => ({ domain: "F", type: "vrank_reward_payout", id: String(ctx.payoutId) }),
   },
