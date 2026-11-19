@@ -6,7 +6,7 @@
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import type { StateTone } from "@/app/components/rd";
-import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
+import { SKU_SERIES_CODES, supportsDeviceMonthlyTarget, type SkuSeriesCode } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
@@ -111,7 +111,7 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
 
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {
-  name: "", id: "", tier: "", tagline: "", badge: "",
+  name: "", id: "", tier: "", seriesCode: "", tagline: "", badge: "",
   gpuCount: "", specDocumentTitle: "", specDocumentUrl: "",
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   allowedPoolCodes: [] as string[],
@@ -129,6 +129,22 @@ export const EMPTY_SKU_FORM = {
   gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "lifetime", gateEnforce: "true",
 };
 export type SkuForm = typeof EMPTY_SKU_FORM;
+
+type SkuSeriesError = "SKU_SERIES_REQUIRED" | "SKU_SERIES_INVALID" | "SKU_SERIES_TYPE_MISMATCH" | "SKU_SERIES_LOCKED";
+
+export function skuSeriesChoices(tier: string, existing?: OpsSku): SkuSeriesCode[] {
+  const originalType: string | undefined = existing?.productType;
+  const isShare = existing ? originalType === "SHARE" || originalType === "CLOUD_SHARE" : tier.trim() === "Share";
+  return SKU_SERIES_CODES.filter(code => (code === "CLOUD_SHARE") === isShare);
+}
+
+export function validateSkuSeries(f: Pick<SkuForm, "seriesCode" | "tier">, existing?: OpsSku): SkuSeriesError | null {
+  if (!f.seriesCode.trim()) return "SKU_SERIES_REQUIRED";
+  if (!supportsDeviceMonthlyTarget(f.seriesCode)) return "SKU_SERIES_INVALID";
+  if (!skuSeriesChoices(f.tier, existing).includes(f.seriesCode)) return "SKU_SERIES_TYPE_MISMATCH";
+  if (existing?.seriesLocked === true && f.seriesCode !== existing.seriesCode) return "SKU_SERIES_LOCKED";
+  return null;
+}
 
 // purchaseGate → 表单门类型:条件门形态由「设了哪几个条件」反推。
 // 单 activeDirect → activeDirect;单 rank → rank;其余(含团队算力点或多条件)→ combo;无条件 → none(可能仍有锁额)。
@@ -156,37 +172,20 @@ export function joinGpu(model: string, count: string): string | undefined {
   const value = model.trim();
   return value ? count.trim() ? `${Number(count)}× ${value}` : value : undefined;
 }
-/** Matches the backend's legacy on-sale maintenance exception; never supplies missing values. */
-export function isLegacyOnSaleMaintenance(f: SkuForm, existing?: OpsSku): boolean {
-  if (!existing || existing.status !== "on" || supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)) return false;
-  const unchangedAmount = (draft: string, stored: number | string | null | undefined) => stored == null
-    ? !draft.trim() : !!draft.trim() && Number(draft) === Number(stored);
-  const pools = new Set(existing.allowedPoolCodes ?? []);
-  return unchangedAmount(f.monthlyTargetUsdt, existing.monthlyTargetUsdt)
-    && unchangedAmount(f.monthlyTargetBandPct, existing.monthlyTargetBandPct)
-    && pools.size === new Set(f.allowedPoolCodes).size && f.allowedPoolCodes.every(code => pools.has(code));
-}
-
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
-  if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
-  if (existing && !supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)
-      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== (existing.monthlyTargetUsdt == null ? undefined : Number(existing.monthlyTargetUsdt))
-        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== (existing.monthlyTargetBandPct == null ? undefined : Number(existing.monthlyTargetBandPct)))) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
-  if (supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType)) {
-    const target = f.monthlyTargetUsdt.trim();
-    const band = f.monthlyTargetBandPct.trim();
-    if (target) {
-      if (!/^\d+(?:\.\d{1,2})?$/.test(target) || Number(target) < 1 || Number(target) > 1_000_000) return "月收益目标须为 1–1,000,000 USDT，最多 2 位小数";
-      if (!/^\d+(?:\.\d)?$/.test(band) || Number(band) < 1 || Number(band) > 50) return "允许波动须为 1%–50%，最多 1 位小数";
-    } else if (existing?.monthlyTargetUsdt != null) {
-      if (f.tier === "Share") {
-        const low = Number(f.shareYieldMin); const high = Number(f.shareYieldMax);
-        if (!f.shareYieldMin.trim() || !f.shareYieldMax.trim() || !Number.isFinite(low) || !Number.isFinite(high) || low < 0 || high < low) return "关闭月收益目标时，请填写有效的参考年奖励率上下限";
-      } else if (!/^\d+(?:\.\d{1,6})?$/.test(f.dailyEarn.trim()) || !Number.isFinite(Number(f.dailyEarn))) return "关闭月收益目标时，请填写不小于 0 的每日收益 USDT，最多 6 位小数";
-    }
+  const target = f.monthlyTargetUsdt.trim();
+  const band = f.monthlyTargetBandPct.trim();
+  if (target) {
+    if (!/^\d+(?:\.\d{1,2})?$/.test(target) || Number(target) < 1 || Number(target) > 1_000_000) return "月收益目标须为 1–1,000,000 USDT，最多 2 位小数";
+    if (!/^\d+(?:\.\d)?$/.test(band) || Number(band) < 1 || Number(band) > 50) return "允许波动须为 1%–50%，最多 1 位小数";
+  } else if (existing?.monthlyTargetUsdt != null) {
+    if (f.tier === "Share") {
+      const low = Number(f.shareYieldMin); const high = Number(f.shareYieldMax);
+      if (!f.shareYieldMin.trim() || !f.shareYieldMax.trim() || !Number.isFinite(low) || !Number.isFinite(high) || low < 0 || high < low) return "关闭月收益目标时，请填写有效的参考年奖励率上下限";
+    } else if (!/^\d+(?:\.\d{1,6})?$/.test(f.dailyEarn.trim()) || !Number.isFinite(Number(f.dailyEarn))) return "关闭月收益目标时，请填写不小于 0 的每日收益 USDT，最多 6 位小数";
   }
   if (f.gpuCount.trim() && (!/^[1-9]\d*$/.test(f.gpuCount.trim()) || Number(f.gpuCount) > 1024 || !f.gpu.trim())) return "GPU 数量须为 1–1024 的整数，并填写单卡型号";
   if (f.gpuCount.trim() && /^\d+\s*[×xX*]/u.test(f.gpu.trim())) return "GPU 型号请只填单卡型号，数量填写在 GPU 数量中";
@@ -204,7 +203,7 @@ export function skuToForm(s: OpsSku): SkuForm {
   const g = s.purchaseGate;
   const gpuParts = splitGpu(s.gpu);
   return {
-    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
+    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", seriesCode: s.seriesCode ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedPoolCodes: s.allowedPoolCodes ?? [],
@@ -441,7 +440,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const stockTrim = f.stock.trim();
   const sku: OpsSku = {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
-    tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
+    tier: f.tier, seriesCode: f.seriesCode || undefined, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     allowedPoolCodes: f.allowedPoolCodes,

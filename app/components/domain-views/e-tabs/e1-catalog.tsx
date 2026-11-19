@@ -4,7 +4,7 @@ import { Archive, Ban, Boxes, CheckCircle2, CircleDot, Clock3, FastForward, File
 import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Facts, Fact, FilterBar, Fold, IconButton, Input, JudgmentPoints, LevelStrip, MoreMenu, Notice, Panel, RatioBar, ScaleBar, Segments, Select, StageLine, Stat, StatBand, StatusTag, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
-import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
+import { supportsDeviceMonthlyTarget, LEGACY_SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
@@ -133,11 +133,11 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${p.size ? `?${p}` : ""}`);
   }, [query, status, tier, scope, queryReady, skuLink]);
   const clear = () => { setQuery(""); setStatus("all"); setTier("all"); setScope("all"); setParamNote(""); };
-  const oldModel = (s: OpsSku) => !supportsDeviceMonthlyTarget(s.id, s.tier, s.productType);
+  const hasUnsupportedSeries = (s: OpsSku) => !supportsDeviceMonthlyTarget(s.seriesCode);
   const filtered = useMemo(() => skus.filter(s => {
     const haystack = [s.id, s.name, s.tagline, s.badge, s.gpu, s.vram, s.datacenter].filter(Boolean).join(" ").toLowerCase();
     return (!query.trim() || haystack.includes(query.trim().toLowerCase())) && (status === "all" || s.status === status) && (tier === "all" || s.tier === tier)
-      && (scope === "all" || scope === "blocked" && s.publishBlocked === true || scope === "unknown" && s.publishBlocked === undefined || scope === "legacy" && oldModel(s) || scope === "unconfigured" && s.status === "on" && s.allowedPoolCodes?.length === 0 || ["on", "pending", "off"].includes(scope) && s.status === scope && s.publishBlocked === false);
+      && (scope === "all" || scope === "blocked" && s.publishBlocked === true || scope === "unknown" && s.publishBlocked === undefined || scope === "legacy" && hasUnsupportedSeries(s) || scope === "unconfigured" && s.status === "on" && s.allowedPoolCodes?.length === 0 || ["on", "pending", "off"].includes(scope) && s.status === scope && s.publishBlocked === false);
   }), [skus, query, status, tier, scope]);
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [], phases = ctx.e1Gates?.phases ?? [], releases = ctx.e1Gates?.releases ?? [];
   const platformMonth = ctx.e1Gates?.platformMonth ?? 0;
@@ -313,7 +313,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     { key: "blocked", label: "上架受阻", icon: ShieldAlert, value: skus.filter(s => s.publishBlocked === true).length },
   ];
   const unconfigured = skus.filter(s => s.status === "on" && s.allowedPoolCodes?.length === 0).length;
-  const unknown = skus.filter(s => s.publishBlocked === undefined).length, legacy = skus.filter(oldModel).length;
+  const unknown = skus.filter(s => s.publishBlocked === undefined).length, legacy = skus.filter(hasUnsupportedSeries).length;
   const available = !ctx.e1Loading && !ctx.e1Error;
   const gated = releases.filter(g => !gateReadiness(g).unlocked).length;
   const knownSold = skus.filter(s => s.publishBlocked === false && s.sold != null);
@@ -350,8 +350,8 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const { release, open, needsAttention, blockers } = ctx.e1Gates ? e1SkuOpening(s, ctx.e1Gates, phaseCur) : { open: !s.unlock, needsAttention: !!s.unlock, blockers: [], release: undefined };
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);
-      const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && oldModel(s) ? SKU_MODEL_UNRECOGNIZED_REASON : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && !s.datacenter?.trim() ? "上架前请填写托管机房" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
-      const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(oldModel(s) ? [SKU_MODEL_UNRECOGNIZED_REASON] : [])])];
+      const onBlock = writeBlock({ op: "sku-status", status: s.status === "on" ? "off" : "on" }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && !s.datacenter?.trim() ? "上架前请填写托管机房" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
+      const cardReasons = [...new Set([...blockers, ...(s.publishBlocked === true ? [publishReason] : []), ...(s.publishBlocked === undefined ? ["上架状态待核实"] : []), ...(hasUnsupportedSeries(s) ? [LEGACY_SKU_MODEL_UNRECOGNIZED_REASON] : [])])];
       const actionReason = onBlock && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const proposal = ctx.pendingProposal(s.id);
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
@@ -379,7 +379,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             <StatusTag tone="neutral" icon={open ? CheckCircle2 : Clock3}>{s.unlock ? ctx.e1Gates ? phaseLabel(s.unlock) : "开放阶段未读取" : "无需阶段"}</StatusTag>
           </div>
           <div className="e1-meta-room">托管 · {s.datacenter?.trim() ? datacenterNameText(s.datacenter) : "— · 未填写"}</div>
-          {cardReasons.length > 0 && <div className={needsAttention || s.publishBlocked !== false || oldModel(s) ? "e1-card-warning" : "e1-card-note"}>{cardReasons.join("；")}{release && <Button size="sm" variant="ghost" onClick={() => revealPlan(s.id)}>查看条件</Button>}</div>}
+          {cardReasons.length > 0 && <div className={needsAttention || s.publishBlocked !== false || hasUnsupportedSeries(s) ? "e1-card-warning" : "e1-card-note"}>{cardReasons.join("；")}{release && <Button size="sm" variant="ghost" onClick={() => revealPlan(s.id)}>查看条件</Button>}</div>}
           {proposal && <Button size="sm" variant="ghost" onClick={() => ctx.openPending(proposal.id)}>有变更待审批 · {proposal.id}</Button>}
         </div>
         {canWrite && <div className="e1-product-actions">

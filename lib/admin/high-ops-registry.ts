@@ -1,5 +1,6 @@
 import { fConfigBatchTargetType } from "./f-config-batch";
 import { accountAvatarFields } from "./account-avatar-contract.ts";
+import type { E2YieldComparison } from "./e2-onboarding-yield-contract";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
 export interface ReplayCommand {
@@ -27,7 +28,8 @@ export interface HighOpDef {
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
-    dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold,
+    dailyEarnNEX, phoneDailyEarnNEX, unlock, sold: _sold, seriesLocked: _seriesLocked,
+    seriesCode,
     updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
@@ -44,6 +46,7 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
   const hasTarget = monthlyTargetUsdt != null;
   return {
     ...rest,
+    seriesCode,
     monthlyTargetUsdt, monthlyTargetBandPct, clearMonthlyTarget: clearMonthlyTarget === true ? true : undefined,
     dailyEarn: hasTarget ? undefined : ctx.dailyEarn,
     shareYieldMin: hasTarget ? undefined : ctx.shareYieldMin,
@@ -54,6 +57,37 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     expectedUpdatedAt: updatedAt,
     // 内部兼容列不能通过库存编辑重置；新建仍沿用既有默认值。
     generation: ctx.generation ?? 1,
+  };
+}
+
+const E6_ONBOARDING_YIELD_SKU: HighOpDef = {
+  op: "e6_onboarding_yield_sku",
+  domain: "E",
+  action: "TODO(B53)",
+  amplifies: false,
+  type: "param",
+  gateLabel: "TODO(B53)",
+  targetType: "onboarding_yield_comparison",
+  buildCommand: ({ configKey, productNo, expectedRevision }) => ({
+    domain: "E", op: "e6_onboarding_yield_sku", params: { configKey, productNo, expectedRevision },
+  }),
+  buildTarget: ({ configKey }) => ({ domain: "E", type: "onboarding_yield_comparison", id: String(configKey) }),
+};
+
+export function buildE6OnboardingYieldSkuProposal(
+  row: Pick<E2YieldComparison, "configKey" | "bindingRevision">,
+  productNo: string,
+) {
+  const { configKey, bindingRevision } = row;
+  if (bindingRevision == null || !["s1", "pro", "rack"].includes(configKey)) return null;
+  const params = { configKey, productNo, expectedRevision: bindingRevision };
+  return {
+    obj: configKey,
+    sourceDomain: "E6",
+    type: E6_ONBOARDING_YIELD_SKU.type,
+    amplifies: E6_ONBOARDING_YIELD_SKU.amplifies,
+    command: E6_ONBOARDING_YIELD_SKU.buildCommand(params),
+    target: E6_ONBOARDING_YIELD_SKU.buildTarget(params),
   };
 }
 
@@ -1179,6 +1213,7 @@ export const HIGH_OPS: HighOpDef[] = [
     } }),
     buildTarget: () => ({ domain: "E", type: "device_release_early_access", id: "trade-in" }),
   },
+  E6_ONBOARDING_YIELD_SKU,
   // E2 收益(e2 phone_tier/task)
   {
     op: "e2_phone_tier",

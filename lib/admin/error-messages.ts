@@ -1,4 +1,4 @@
-import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
+import { LEGACY_SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 import { eventRuleMissingLabel } from "./event-rule-form.ts";
 
 /** APP_TEXT_CHINESE_NOT_ALLOWED 回来的字段写成运营认得的名字；认不出的只写通用那句。 */
@@ -614,7 +614,16 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H1_APPROVAL_FORBIDDEN: "批准运营阶段参数调整需要超级管理员身份和审批批准权限，请由另一位具备相应权限的超级管理员处理。驳回仍按原权限核验。",
   C5_SESSION_REVOKE_APPROVAL_FORBIDDEN: "批准退出全部设备需要超级管理员身份和审批批准权限，请由另一位具备账户或登录设备全退权限的超级管理员处理。驳回仍按原权限核验。",
 
-  SKU_MODEL_UNRECOGNIZED: SKU_MODEL_UNRECOGNIZED_REASON,
+  SKU_MODEL_UNRECOGNIZED: LEGACY_SKU_MODEL_UNRECOGNIZED_REASON,
+  SKU_SERIES_REQUIRED: "",
+  SKU_SERIES_INVALID: "",
+  SKU_SERIES_TYPE_MISMATCH: "",
+  SKU_SERIES_LOCKED: "",
+  ONBOARDING_COMPARISON_SKU_INVALID: "",
+  ONBOARDING_COMPARISON_NOT_FOUND: "",
+  ONBOARDING_COMPARISON_VERSION_CONFLICT: "",
+  ONBOARDING_COMPARISON_SKU_UNCHANGED: "",
+  ONBOARDING_COMPARISON_SKU_UNAVAILABLE: "",
   CREGIS_SWITCH_DIFFERENT_CHECKER_REQUIRED: "不能复核自己发起的资金开关申请，请由另一位有权限的管理员复核。",
   CREGIS_SWITCH_VERSION_CHANGED: "资金开关版本已变化，请刷新当前状态后重新提交审批。",
   CREGIS_SWITCH_CASE_CHANGED: "该资金开关申请已处理或状态已变化，请刷新待复核申请。",

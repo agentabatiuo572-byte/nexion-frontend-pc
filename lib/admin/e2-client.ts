@@ -394,7 +394,7 @@ export async function updateE2YieldComparison(
   if (!row) throw new Error("E2_ONBOARDING_YIELD_NOT_FOUND");
   const dailyUsdt = patch.dailyUsdt ?? row.dailyUsdt;
   const dailyNex = patch.dailyNex ?? row.dailyNex;
-  if (!positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)) {
+  if (dailyUsdt == null || dailyNex == null || !positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)) {
     throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
   }
   await e2ConfigRequest<unknown>("phone-tiers/comparison", {
