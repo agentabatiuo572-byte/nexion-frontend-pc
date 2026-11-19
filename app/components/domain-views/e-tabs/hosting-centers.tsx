@@ -4,12 +4,12 @@
  * E1 托管机房清单（B55）。8 个托管机房：显示名、启用、权重。新设备交付时按启用机房的权重随机分配，已交付的设备不变。
  * 整份清单一起改、一起提交审批（后端按整份清单的修改序号防覆盖），所以这页不按单项保存。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Clock3, HelpCircle, Hourglass, Pencil, RefreshCw, Server, ShieldAlert, XCircle } from "lucide-react";
+import { ArrowLeft, Clock3, HelpCircle, Hourglass, Pencil, RefreshCw, Server, ShieldAlert, XCircle } from "lucide-react";
 import {
-  BlockState, Button, Cell, Check, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Fold, Input, Notice, NumberInput, PageHeader, PageTabs, Panel,
-  RatioBar, RdPage, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds, type DiffRow,
+  BlockState, Button, Cell, Check, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Fold, Input, Notice, NumberInput, PageHeader, Panel,
+  RatioBar, RdPage, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, type DiffRow,
 } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E1Page } from "./e1-page";
@@ -116,7 +116,7 @@ function changesOf(before: Center[], draft: DraftRow[]): DiffRow[] {
   });
 }
 
-export function HostingCentersPage() {
+export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const canRead = authorities.includes("device_e1_read");
   const canWrite = canRead && authorities.includes("device_e1_write") && authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
@@ -273,6 +273,7 @@ export function HostingCentersPage() {
 
   const header = (
     <PageHeader pageId="E1H" title="托管机房"
+      back={onBack ? <button type="button" id="hc-back" className="rd-link hc-back" onClick={onBack}><ArrowLeft size={14} aria-hidden />返回商品管理</button> : undefined}
       summary="新设备交付时按权重随机分到启用的机房，已交付的设备不变。"
       meta={readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : undefined}
       readOnly={canRead && !canWrite ? "当前账号只能查看" : undefined}
@@ -462,22 +463,20 @@ export function HostingCentersPage() {
 
 type Area = "catalog" | "hosting";
 
-/** E1 路由下的两个区域：商品管理与上架条件、托管机房。用网址里的 area=hosting 记住当前区域。 */
+/** E1 路由下的两个视图：商品管理与上架条件（默认）、托管机房（页头按钮进入）。用网址里的 area=hosting 记住当前视图。 */
 export function E1Area() {
   const canRead = useAdminAuth(s => s.session?.authorities.includes("device_e1_read") ?? false);
-  const ids = useTabIds();
   const [area, setArea] = useState<Area>("catalog");
+  const [focusTo, setFocusTo] = useState<string | null>(null);
   useEffect(() => { if (new URLSearchParams(window.location.search).get("area") === "hosting") setArea("hosting"); }, []);
+  useEffect(() => { if (focusTo) { document.getElementById(focusTo)?.focus(); setFocusTo(null); } }, [focusTo, area]);
   const change = (next: Area) => {
     setArea(next);
+    setFocusTo(next === "hosting" ? "hc-back" : "e1-hosting-entry");
     const url = new URL(window.location.href);
     if (next === "hosting") url.searchParams.set("area", "hosting"); else url.searchParams.delete("area");
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   };
-  const items = useMemo(() => [{ value: "catalog" as const, label: "商品与上架条件" }, { value: "hosting" as const, label: "托管机房" }], []);
   if (!canRead) return <E1Page />;
-  return <div className="hc-area">
-    <div className="hc-area-tabs"><PageTabs label="商品管理分区" value={area} items={items} ids={ids} onChange={change} /></div>
-    <div {...ids.panel(area)}>{area === "hosting" ? <HostingCentersPage /> : <E1Page />}</div>
-  </div>;
+  return area === "hosting" ? <HostingCentersPage onBack={() => change("catalog")} /> : <E1Page onOpenHosting={() => change("hosting")} />;
 }
