@@ -291,7 +291,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
 
   const treeGrant = pendingTree?.result ? l4NetworkGrantRecovery(pendingTree.result.reportId) : undefined;
   const treeRecoveryBlocked = pendingTree?.result?.status === "PENDING_CONFIRM" ? "等另一位管理员放行后才能下载"
-    : !pendingTree?.result && pendingTree && isRetryExpired(pendingTree) || treeGrant && isRetryExpired(treeGrant) ? RETRY_EXPIRED_TEXT
+    : !pendingTree?.result && pendingTree && isRetryExpired(pendingTree) ? RETRY_EXPIRED_TEXT
     : treeGrant && !treeGrant.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined;
 
   const requestNetworkTreeExport = (original?: PendingL4NetworkExport) => {
@@ -512,7 +512,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const report = pendingTree?.result;
     const awaitingApproval = report?.status === "PENDING_CONFIRM";
     const grantUnknown = Boolean(treeGrant && !treeGrant.downloadToken);
-    const expired = Boolean(treeGrant && isRetryExpired(treeGrant) || !report && pendingTree && isRetryExpired(pendingTree));
+    const expired = Boolean(!report && pendingTree && isRetryExpired(pendingTree));
     const askExportPage = (what: string) => (canOpenExportPage ? exportPageLink(`到「${exportPageName}」${what}`) : <>请有「{exportPageName}」权限的同事{what}</>);
     return (
       <Notice tone="warn" title={awaitingApproval ? "已申请团队关系明细，等另一位放行" : !report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细下载结果未知" : treeGrant ? "团队关系明细已生成，还没下载成功" : "团队关系明细已就绪，可以下载"} actionBelow>
@@ -525,9 +525,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
             ? <>另一位有这项导出权限的管理员放行后才能下载，你不能批自己的申请。放行后点「查询报表」{canOpenExportPage ? <>，或{exportPageLink(`到「${exportPageName}」看进度`)}</> : null}。</>
           : grantUnknown
             ? <>没收到下载链接。为免重复生成链接，这里不能再下载，请找技术同事核对这份报表。</>
-            : expired
-              ? <>已超过 24 小时，这里不能再下载。{askExportPage("下载这份报表")}。</>
-              : <>文件已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
+            : <>文件已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
         {pendingTree && <span className="rd-toolbar">
           {pendingTree.result
             ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询报表</Button>

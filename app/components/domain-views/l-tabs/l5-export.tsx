@@ -793,7 +793,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     if ((acts.includes("download") || acts.includes("retry")) && !canAccessTask) out.push(<span key="denied" className="l5-weak">你没有这类报表的导出权限</span>);
     if (acts.includes("download") && canAccessTask) out.push(
       <Button key="download" size="sm" icon={<Download size={14} aria-hidden />} loading={busy} loadingText="正在下载…"
-        disabledReason={grant && isRetryExpired(grant) ? RETRY_EXPIRED_TEXT : grant && !grant.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined}
+        disabledReason={grant && !grant.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined}
         onClick={() => { setBusyTask(t.id); void downloadTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "下载失败")).finally(() => setBusyTask(null)); }}>下载</Button>,
     );
     if (acts.includes("retry") && canAccessTask) out.push(
