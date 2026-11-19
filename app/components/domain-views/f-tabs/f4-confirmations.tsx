@@ -201,15 +201,23 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     name: `${quota.name} 月额度调整`, op: "param",
     paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
     expectedVersion: quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? undefined : Number(quota.monthlyQuota),
-    edit: { kind: "number", current: quota.monthlyQuota === undefined ? String(quota.cap) : quota.monthlyQuota ?? "", unit: "台" },
+    edit: { kind: "number", current: quota.monthlyQuota === undefined ? String(quota.cap) : quota.monthlyQuota ?? "", unit: "台",
+      preview: (value) => {
+        if (!/^\d+$/.test(value.trim())) return null;
+        const next = Number(value), now = quota.monthlyQuota === undefined ? quota.cap : Number(quota.monthlyQuota);
+        if (next > now && next < quota.current) return `调高时不能低于本月已用 ${count(quota.current)} 台，批准时会被拒绝。`;
+        if (next <= quota.current) return `本月已用 ${count(quota.current)} 台，改完本月不再卖。`;
+        return `改完本月还剩 ${count(next - quota.current)} 台。`;
+      } },
     title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。新额度不能低于本月已用。",
-      check: "只能填 0–1,000,000 的整数；批准时额度已被别人改过，或新额度低于本月已用，会被拒绝并给出最新值。",
+      impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。改到本月已用或更低（可以填 0），本月就不再卖。",
+      check: "只能填 0–1,000,000 的整数；调高时不能低于本月已用。批准时额度已被别人改过，会被拒绝并给出最新值。",
     },
     completionCopy: approvalCopy("这页的常规修改"),
     facts: <KeyValues rows={[
       { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
+      ...(quota.status === 0 ? [{ key: "paused", label: "状态", value: "已暂停：调额度不会恢复销售" }] : []),
       { key: "code", label: "额度编号", value: <span data-mono>{quota.quotaCode || quota.id}</span> },
     ]} />,
     detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"}。如果别人刚改过，会提示你刷新后再改。`,
