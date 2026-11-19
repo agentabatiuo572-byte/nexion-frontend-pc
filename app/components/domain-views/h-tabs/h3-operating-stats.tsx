@@ -52,7 +52,7 @@ function rowsOf(s: H3Stats): Row[] {
     { key: "monthly", name: "本月有任务记录的用户", range: "本月",
       value: ok && s.monthlyInflightAvailable && s.monthlyInflight != null ? `${count(s.monthlyInflight)} 人` : "—",
       basis: !ok ? "这次读不到" : s.monthlyInflightAvailable && s.monthlyInflight != null
-        ? "本月完成新手或每周任务、或参加活动的用户，一人算一次" : "没有这项统计" },
+        ? "本月完成任务或参加活动的用户，一人算一次" : "没有这项统计" },
   ];
 }
 
