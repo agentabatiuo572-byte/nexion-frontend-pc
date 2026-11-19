@@ -309,6 +309,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const downloadOnly = Boolean(original?.result);
     setOutcome(null);
     let attemptedKey = original?.commandKey;
+    const pendingCreation = () => l4NetworkCommands.list().find(record =>
+      record.owner === owner && record.commandKey === attemptedKey && !record.result);
     ctx.openActionConfirm({ briefKind: "export",
       title: downloadOnly ? "下载已生成的团队关系明细" : "导出团队关系明细",
       action: downloadOnly ? "下载团队明细" : "导出团队明细",
@@ -353,9 +355,10 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       reasonMin: 8,
       reasonMax: 200,
       measureReason: networkReasonLength,
-      getPendingReason: () => l4NetworkCommands.list().find(record => record.owner === owner)?.request.reason,
-      getPendingBusinessValue: () => {
-        const request = l4NetworkCommands.list().find(record => record.owner === owner)?.request;
+      initialReason: downloadOnly ? original?.request.reason : undefined,
+      getPendingReason: downloadOnly ? undefined : () => pendingCreation()?.request.reason,
+      getPendingBusinessValue: downloadOnly ? undefined : () => {
+        const request = pendingCreation()?.request;
         return request ? { depth: String(request.depth) } : undefined;
       },
       businessForm: {
