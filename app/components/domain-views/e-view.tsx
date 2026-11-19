@@ -21,7 +21,6 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -31,6 +30,7 @@ import { fetchTaskPools, fetchSkuDatacenterLabels, type TaskPool } from "@/lib/a
 import { OpsHint } from "./e-tabs/ops-hint";
 import {
   fetchE1Catalog,
+  fetchE6OnboardingSkuCandidates,
   type E1BundleDiscount,
   type E1GenerationGateData,
   type E1InvalidSku,
@@ -62,7 +62,7 @@ import {
   E4_DEFAULT_QUERY, FOLD, ORDER_STATES, e4GroupStates, e4QueryFromUrl, writeE4QueryToUrl, type E4Query,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel,
 } from "./e-tabs/data";
-import type { E4PendingCommand, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
+import type { E4PendingCommand, E6SkuCandidates, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
 import { E1Area } from "./e-tabs/hosting-centers";
 import { E2Tasks } from "./e-tabs/e2-tasks";
@@ -309,6 +309,20 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setE2Loading(false);
   }, [canReadE2]);
   useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
+
+  const [e6SkuCandidateRead, setE6SkuCandidateRead] = useState<E6SkuCandidates>({ status: "loading" });
+  const canReadE6SkuCandidates = tab === "E6" && canReadE2 && canReadE1;
+  const refreshE6SkuCandidates = useCallback(async () => {
+    if (!canReadE6SkuCandidates) return;
+    setE6SkuCandidateRead({ status: "loading" });
+    try {
+      const skus = await fetchE6OnboardingSkuCandidates();
+      setE6SkuCandidateRead({ status: "ready", skus });
+    } catch (error) {
+      setE6SkuCandidateRead({ status: "error", error: displayAdminReadError(error) });
+    }
+  }, [canReadE6SkuCandidates]);
+  useEffect(() => { void refreshE6SkuCandidates(); }, [refreshE6SkuCandidates]);
 
   const e3Reconcile = useRef(e3Proposals.reconcile);
   e3Reconcile.current = e3Proposals.reconcile;
@@ -852,6 +866,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE1: false, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1,
     openSku: () => setToast("请到商品管理与上架条件编辑商品"), delSku: () => setToast("请到商品管理与上架条件删除商品"),
     canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
+    e6SkuCandidates: canReadE6SkuCandidates ? e6SkuCandidateRead : { status: "forbidden" }, refreshE6SkuCandidates,
     canWriteE3, e3Proposals, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
     orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4InvestigationResults, e4InvestigationAccess: fundInvestigationAccess, checkE4Investigation, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, e4ExpiredNotFound, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,

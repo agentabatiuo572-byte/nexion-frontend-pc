@@ -1,0 +1,19 @@
+/* E6 新用户引导收益对比：对比位、当前商品、两币日收益、更换选品。颜色只用 --rd-* 令牌。 */
+.e6-yield-table { table-layout: fixed; }
+.e6-yield-table th:nth-child(1) { width: 14%; }
+.e6-yield-table th:nth-child(3), .e6-yield-table th:nth-child(4) { width: 18%; }
+.e6-yield-table th:nth-child(5) { width: 112px; }
+.e6-yield-product { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); min-width: 0; }
+.e6-yield-product > :first-child { min-width: 0; }
+.e6-yield-off { text-align: start; }
+.e6-yield-off .rd-conclusion { width: 100%; padding: var(--rd-space-2) var(--rd-space-3); }
+.e6-yield-picks { display: grid; gap: var(--rd-space-2); max-height: 360px; overflow-y: auto; }
+.e6-yield-pick { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; column-gap: 10px; row-gap: 2px; align-items: center; padding: 10px var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); cursor: pointer; }
+.e6-yield-pick[data-on] { border-color: var(--rd-brand-ink, var(--rd-focus)); background: var(--rd-selected); }
+.e6-yield-pick:has(input:focus-visible) { outline: 2px solid var(--rd-focus); outline-offset: 1px; }
+.e6-yield-pick input { grid-row: 1 / 3; margin: 0; accent-color: var(--rd-brand-ink, var(--rd-focus)); }
+.e6-yield-pick-name { display: flex; align-items: baseline; gap: var(--rd-space-2); min-width: 0; }
+.e6-yield-pick-name strong { font-weight: var(--rd-weight-medium); color: var(--rd-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e6-yield-pick-name span, .e6-yield-pick-id { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e6-yield-pick-id { grid-column: 2; }
+.e6-yield-pick-earn { grid-column: 3; grid-row: 1 / 3; color: var(--rd-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }

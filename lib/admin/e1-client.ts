@@ -27,6 +27,8 @@ interface PageResult<T> {
 }
 
 interface BackendSku {
+  seriesCode?: string | null;
+  seriesLocked?: boolean;
   allowedPoolCodes: string[];
   productTaskPolicyVersion?: number;
   productTaskPolicyEffectiveAt?: string;
@@ -245,6 +247,8 @@ function fromSku(sku: BackendSku): OpsSku {
     id: sku.skuId,
     name: sku.name,
     tier: sku.tier ?? "Entry",
+    seriesCode: sku.seriesCode,
+    seriesLocked: sku.seriesLocked,
     tagline: sku.tagline ?? undefined,
     badge: sku.badge ?? undefined,
     gpu: sku.gpu ?? undefined,
@@ -313,6 +317,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     skuId: sku.id || undefined,
     name: sku.name,
     tier: sku.tier,
+    seriesCode: sku.seriesCode,
     tagline: sku.tagline ?? null,
     badge: sku.badge ?? null,
     gpu: sku.gpu ?? null,
@@ -411,6 +416,14 @@ export async function fetchE1Products(): Promise<Pick<E1CatalogSnapshot, "skus" 
   const { valid, invalid } = inspectE1SkuPage<BackendSku>({ ...firstSkuPage, records: skuRows });
   const skus = await Promise.all(valid.map(fromSku).map(withFreshSkuMediaPreview));
   return { skus, invalidSkus: invalid };
+}
+
+export async function fetchE6OnboardingSkuCandidates(): Promise<OpsSku[]> {
+  const { skus } = await fetchE1Products();
+  // E1 does not expose store visibility. The A2 backend rechecks eligibility.
+  return skus.filter(sku => sku.status === "on" && sku.publishBlocked === false
+    && (sku.productType === "DEVICE" || sku.productType === "SERVER")
+    && sku.dailyEarn > 0 && sku.dailyEarnNEX != null && sku.dailyEarnNEX > 0);
 }
 
 export async function fetchE1GenerationGates(): Promise<E1GenerationGateData> {
