@@ -36,6 +36,7 @@ import {
 } from "./l2-stage-events-contract";
 import type { LCtx } from "./types";
 import {
+  isL2EmptyDetailResponse,
   validL2CollectionDate,
   validL2CrossAnalysis,
   validL2RetentionCurve,
@@ -361,6 +362,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   };
 
   const data = queryData ?? ctx.biData?.l2;
+  const emptyCohort = queryData?.available === false && queryData.reason === "NO_REGISTRATION_COHORT";
   const detailedAttempt = hasDetailedL2(data);
   const strictDetailed = isStrictL2Dashboard(data);
   const FUNNEL = rows<FunnelRow>(data?.funnel);
@@ -392,7 +394,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const parent = ctx.biData?.l2;
   const parentCoverageInvalid = parent?.available === false && !validL2CollectionDate(parent.retentionCollectionFrom);
   const parentLiveStages = hasDetailedL2(parent) || parentCoverageInvalid ? [] : readL2LiveStages(parent);
-  const exportable = ctx.l2SliceExportable !== false && (parentComplete || parentLiveStages.length > 0);
+  const exportable = !emptyCohort && ctx.l2SliceExportable !== false && (parentComplete || parentLiveStages.length > 0);
   const exportLabel = parentComplete ? "导出用户转化与留存数据" : "导出用户各阶段人数";
   const exportPageName = findByPath(EXPORT_PAGE)?.l2.name ?? "数据导出与监管报告";
   const canOpenExportPage = reach(EXPORT_PAGE, "bi_l5_read");
@@ -523,7 +525,6 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     </>
   );
 
-  const emptyCohort = queryData?.available === false && queryData.reason === "NO_REGISTRATION_COHORT";
   if (sliceLoading) return page(<>
     <Conclusion state="unknown">用户转化：正在按新条件查询</Conclusion>
     <BlockState state="loading" title="正在查询这批用户的转化和留存…" detail="查询完成后自动显示；这次筛选的结果出来之前不能导出。" />
@@ -569,12 +570,22 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const cohortCurveKeys = COHORTS.filter((cohort) => !cohort.suppressed).map((cohort) => cohort.w);
   const activeQuery: L2FunnelQuery = ctx.l2Query ?? {};
 
+  const acceptEmptyDetail = (response: Record<string, unknown>, field: "cohorts" | "curve" | "crossAnalysis") => {
+    if (!isL2EmptyDetailResponse(response, field)) return false;
+    resetDetailOverrides();
+    setQueryData(response);
+    setQueryError(null);
+    ctx.setL2SliceExportable?.(false);
+    return true;
+  };
+
   const loadRetentionWindows = async (nextWins: string[]) => {
     const generation = ++queryGeneration.current;
     setQueryLoading(true);
     try {
       const response = await fetchL2RetentionMatrix(activeQuery, nextWins);
       if (generation !== queryGeneration.current) return;
+      if (acceptEmptyDetail(response, "cohorts")) return;
       if (!validL2RetentionMatrix(response)) throw new Error("L2_RETENTION_PROTOCOL_ERROR");
       setMatrixOverride(response);
       setCurveOverrides((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.includes("-W"))));
@@ -596,6 +607,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     try {
       const response = await fetchL2Cross(nextMetric === "ret" ? "retention" : nextMetric, activeQuery);
       if (generation !== queryGeneration.current) return;
+      if (acceptEmptyDetail(response, "crossAnalysis")) return;
       if (response.available !== true || !validL2CollectionDate(response.retentionCollectionFrom)
           || !validL2CrossAnalysis(response.crossAnalysis, response.retentionCollectionFrom)) throw new Error("L2_CROSS_PROTOCOL_ERROR");
       setCrossOverride(rec(response.crossAnalysis));
@@ -624,6 +636,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     try {
       const response = await fetchL2RetentionCurve(cohort, activeQuery);
       if (generation !== queryGeneration.current) return;
+      if (acceptEmptyDetail(response, "curve")) return;
       if (!validL2RetentionCurve(response)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
       setCurveOverrides((previous) => ({ ...previous, [cohort]: response }));
       setSelCohort(cohortIndex);

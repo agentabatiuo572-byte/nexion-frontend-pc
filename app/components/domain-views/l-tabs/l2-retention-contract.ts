@@ -28,6 +28,14 @@ export function validL2CollectionDate(value: unknown): value is string | null {
     && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 }
 
+export function isL2EmptyDetailResponse(value: unknown, field: "cohorts" | "curve" | "crossAnalysis") {
+  if (!record(value) || value.available !== false || value.reason !== NO_COHORT
+      || !validL2CollectionDate(value.retentionCollectionFrom)) return false;
+  const payload = value[field];
+  return field === "crossAnalysis" ? record(payload) && Object.keys(payload).length === 0
+    : Array.isArray(payload) && payload.length === 0;
+}
+
 function optionalProtection(value: unknown) {
   return value === undefined || typeof value === "boolean";
 }
@@ -137,7 +145,7 @@ function validCrossMetric(metric: unknown, retention: boolean, coverage: string 
     if (suppressed.has(key)) return false;
     suppressed.add(key);
   }
-  if (!retention) return true;
+  if (!retention) return !("unavailableCells" in metric);
 
   const unavailable = new Map<string, string>();
   if (!Array.isArray(metric.unavailableCells)) return false;
