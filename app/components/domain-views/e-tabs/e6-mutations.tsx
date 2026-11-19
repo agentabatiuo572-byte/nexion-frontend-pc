@@ -5,7 +5,7 @@ import { SearchCheck } from "lucide-react";
 import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
@@ -23,7 +23,13 @@ import { SETTLED_REJECTED, businessCodeOf } from "../recovery-panel";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
-export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolean; readbackFailed?: boolean; originalRiskResponse?: PhoneRiskOverview };
+export type E6WriteReceipt = {
+  changedCount?: number;
+  pendingDeactivate?: boolean;
+  readbackFailed?: boolean;
+  originalRiskResponse?: PhoneRiskOverview;
+  proposal?: { ticketId: string; status: A2OperationRow["status"] };
+};
 /** 换绑引导对比商品时写进审批单的审批人说明。 */
 export const E6_SKU_BINDING_ROLE_GATE = "另一位有批准权限和手机算力配置查看权限的管理员";
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
@@ -50,7 +56,8 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
   };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
   const canAudit = rights.includes("platform_a2_read");
-  const canBindYieldSku = canPropose && rights.includes("device_e6_write") && rights.includes("device_e1_read")
+  const showYieldSkuActions = canPropose && rights.includes("device_e6_write");
+  const canBindYieldSku = showYieldSkuActions && rights.includes("device_e1_read")
     && (canAudit || rights.includes("platform_a2_proposal_create"));
   const visible = (section: E6Section) => rights.includes(section === "tasks" || section === "tiers" ? "device_e2_read" : section === "phones" ? "device_e5_read" : "device_e6_read");
   useEffect(() => {
@@ -81,7 +88,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
   }
   const canRetry = (record?: E6Pending) => !!record && record.owner === owner && allowed(record) && !isRetryExpired(record)
     && (record.payload.kind !== "risk" || record.payload.receiptVersion === 1);
-  async function send(record: E6Pending, retry: boolean) {
+  async function send(record: E6Pending, retry: boolean): Promise<E6WriteReceipt | undefined> {
     if (sending.current || !allowed(record)) throw new Error("当前没有这项操作的提交权限。");
     if (retry && !canRetry(record)) throw new Error("原操作仅可核查，不能重新发送。");
     record = { ...record, retryRejection: undefined, absent: false };
@@ -90,24 +97,26 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
     sending.current = true; setBusy(record.commandKey);
     let checkingProposal = retry && record.payload.kind === "proposal";
     try {
-      if (retry && record.payload.kind === "proposal") {
-        const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
+      if (record.payload.kind === "proposal") {
+        let ticket = retry ? await fetchA2ProposalByKey(record.commandKey, true, "f") : null;
         if (ticket) {
           if (!ticket.mine || ticket.obj !== record.payload.input.obj) throw new Error("原提案归属无法核实，请到操作记录核对。");
-          commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal: ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined });
-          if (active.current) {
-            sync();
-            if (ticket.status === "approved" && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
-          }
-          return;
+        } else {
+          checkingProposal = false;
+          ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
         }
+        const terminal = ticket.status === "pending" ? undefined : ticket.status;
+        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal });
+        if (active.current) {
+          sync();
+          if (!checkingProposal && !terminal) setNotes(n => ({ ...n, [record.commandKey]: "已提交，等待审批后执行。" }));
+          if (terminal && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
+        }
+        return { proposal: { ticketId: ticket.id, status: ticket.status } };
       }
       checkingProposal = false;
       let writeResult: E6WriteReceipt | undefined;
-      if (record.payload.kind === "proposal") {
-        const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
-        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
-      } else if (record.payload.kind === "device") {
+      if (record.payload.kind === "device") {
         const i = record.payload.input;
         if (i.action === "activate") { const result = await activateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); writeResult = { pendingDeactivate: result.pendingDeactivate }; }
         else if (i.action === "deactivate") { const result = await deactivateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); writeResult = { pendingDeactivate: result.pendingDeactivate }; }
@@ -118,17 +127,15 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
         writeResult = { originalRiskResponse };
         commands.forget(record.fingerprint, record.commandKey);
       }
-      if (record.payload.kind !== "proposal") {
-        // The write receipt settles this command before any independent readback.
-        if (active.current) { sync(); setRejected(keys => keys.filter(key => key !== record.commandKey)); }
-        try {
-          if (record.payload.kind === "device") await fetchE5Devices({ pageNum: 1, pageSize: 10, keyword: record.payload.input.serial }, true);
-          else await fetchPhoneRisk();
-        } catch {
-          writeResult = { ...writeResult, readbackFailed: true };
-        }
+      // The write receipt settles this command before any independent readback.
+      if (active.current) { sync(); setRejected(keys => keys.filter(key => key !== record.commandKey)); }
+      try {
+        if (record.payload.kind === "device") await fetchE5Devices({ pageNum: 1, pageSize: 10, keyword: record.payload.input.serial }, true);
+        else await fetchPhoneRisk();
+      } catch {
+        writeResult = { ...writeResult, readbackFailed: true };
       }
-      if (active.current) { sync(); setNotes(n => ({ ...n, [record.commandKey]: record.payload.kind === "proposal" ? "已提交，等待审批后执行。" : "已提交成功，请刷新核对当前值。" })); }
+      if (active.current) { sync(); setNotes(n => ({ ...n, [record.commandKey]: "已提交成功，请刷新核对当前值。" })); }
       return writeResult;
     } catch (failure) {
       const response = failure as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
@@ -221,7 +228,7 @@ function useMutations(refreshYieldBinding: () => Promise<void>) {
       throw failure;
     } finally { if (active.current) { sync(); setBusy(""); } }
   }
-  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send,
+  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseMissing, checkDirect, send,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
