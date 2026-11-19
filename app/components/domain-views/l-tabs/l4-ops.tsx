@@ -345,6 +345,10 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <Fact k="多少行">{downloadOnly ? `${count(original!.result!.rowCount)} 行（已生成）` : <>现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></>}</Fact>
           <Fact k="记录">导出留两条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
+          {downloadOnly && original && <>
+            <Fact k="向下追溯的邀请次数">{original.request.depth} 次</Fact>
+            <Fact k="操作理由">{original.request.reason}</Fact>
+          </>}
           {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="系统现在这样数理由的长度（已报给技术同事修）：汉字算 9，字母和数字算 1。下面的计数就是这么数的，写的内容不会被截短。" /></Fact>}
           {downloadOnly ? <Fact k="下载">下载这一份<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
             : <Fact k="谁来放行">另一位有这项权限的管理员，不能是你</Fact>}
@@ -355,13 +359,13 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       reasonMin: 8,
       reasonMax: 200,
       measureReason: networkReasonLength,
-      initialReason: downloadOnly ? original?.request.reason : undefined,
+      requireReason: !downloadOnly,
       getPendingReason: downloadOnly ? undefined : () => pendingCreation()?.request.reason,
       getPendingBusinessValue: downloadOnly ? undefined : () => {
         const request = pendingCreation()?.request;
         return request ? { depth: String(request.depth) } : undefined;
       },
-      businessForm: {
+      businessForm: downloadOnly ? undefined : {
         kind: "multi-field",
         hint: "次数越多，导出越多；1 次只含直接邀请的好友，最多 10 次。",
         fields: [{

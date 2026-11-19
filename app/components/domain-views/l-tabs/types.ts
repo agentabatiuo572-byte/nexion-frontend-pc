@@ -17,7 +17,7 @@ export type ActionConfirmReq = {
   amplifies?: boolean;
   reasonMin?: number;
   reasonMax?: number;
-  initialReason?: string;
+  requireReason?: boolean;
   measureReason?: (reason: string) => number;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
