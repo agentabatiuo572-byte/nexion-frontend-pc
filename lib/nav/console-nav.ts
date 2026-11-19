@@ -25,7 +25,7 @@ import {
   Headset,
 } from "lucide-react";
 
-import { b0Blocks, b0HasDailyWork } from "@/lib/admin/b0-access";
+import { B0_BANK_REVIEW_PATH, b0Blocks, b0HasDailyWork } from "@/lib/admin/b0-access";
 
 export type BuiltinAdminRole =
   | "superadmin"
@@ -614,7 +614,7 @@ export function defaultConsolePath(role: AdminRole, domains: NavDomain[], author
       if (page) return page.path;
     }
   }
-  if (b0HasDailyWork(b0Blocks(authorities))) return "/";
+  if (b0HasDailyWork(b0Blocks(authorities), canAccessResolvedPath(domains, B0_BANK_REVIEW_PATH))) return "/";
   const platform = domains.find(domain => domain.code === "A");
   // Keep the previous landing priority for the shipped platform order.
   if (platform?.landingSortOrder !== undefined

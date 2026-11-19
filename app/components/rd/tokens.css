@@ -62,6 +62,12 @@
   --rd-role-3: #C497FF;        --rd-role-3-bg: #332843;  --rd-role-3-tile: #42305A;  --rd-role-3-tile-ink: #C497FF;   /* 紫 */
   --rd-role-4: #FFA6CA;        --rd-role-4-bg: #432C3C;  --rd-role-4-tile: #5E364E;  --rd-role-4-tile-ink: #FFA6CA;   /* 品红 */
   --rd-role-other: #989EA9;    --rd-role-other-bg: #232429; --rd-role-other-tile: #2A2B31; --rd-role-other-tile-ink: #989EA9;
+  /* 补充图标色：只给今日概览经营数据卡的图标底（产品 2026-11-19 要求每张卡图标一色）。五个色相避开状态色（绿、橙黄、红、蓝）和四个角色色，不用于数字、状态和图表 */
+  --rd-icon-indigo-tile: #2B2F63; --rd-icon-indigo-tile-ink: #A3A8FF;   /* 靛 */
+  --rd-icon-olive-tile: #383D12;  --rd-icon-olive-tile-ink: #CBD263;    /* 橄榄 */
+  --rd-icon-orchid-tile: #4A2650; --rd-icon-orchid-tile-ink: #E39CE6;   /* 兰紫 */
+  --rd-icon-slate-tile: #26323F;  --rd-icon-slate-tile-ink: #A3B8CD;    /* 石板 */
+  --rd-icon-bronze-tile: #45321F; --rd-icon-bronze-tile-ink: #DDAB82;   /* 古铜 */
 
   /* 图表 */
   --rd-chart-1: #B88A00;       /* 金 */
@@ -194,6 +200,12 @@
   --rd-role-3: #7E4AC2;        --rd-role-3-bg: #F0E9F8;  --rd-role-3-tile: #794DB6;  --rd-role-3-tile-ink: #FFFFFF;
   --rd-role-4: #B32F77;        --rd-role-4-bg: #F6E6EF;  --rd-role-4-tile: #CB5790;  --rd-role-4-tile-ink: #FFFFFF;
   --rd-role-other: #5B616B;    --rd-role-other-bg: #F3F4F7; --rd-role-other-tile: #E8EAEF; --rd-role-other-tile-ink: #5B616B;
+  /* 补充图标色：实色底配白图标，和角色色图标底一样 */
+  --rd-icon-indigo-tile: #5B63C9; --rd-icon-indigo-tile-ink: #FFFFFF;
+  --rd-icon-olive-tile: #7A8420;  --rd-icon-olive-tile-ink: #FFFFFF;
+  --rd-icon-orchid-tile: #A548A8; --rd-icon-orchid-tile-ink: #FFFFFF;
+  --rd-icon-slate-tile: #567189;  --rd-icon-slate-tile-ink: #FFFFFF;
+  --rd-icon-bronze-tile: #8D6748; --rd-icon-bronze-tile-ink: #FFFFFF;
 
   /* 图表 */
   --rd-chart-1: #AD7D00;

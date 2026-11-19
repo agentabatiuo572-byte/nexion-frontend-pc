@@ -14,14 +14,14 @@ import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, Notice, PageHead
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText, a2ObjectText } from "@/lib/admin/operator-copy";
-import { b0Blocks } from "@/lib/admin/b0-access";
+import { B0_BANK_REVIEW_PATH, b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
-import { fetchB0Business, fetchB0Devices } from "@/lib/admin/b0-client";
+import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchD2Withdrawals } from "@/lib/admin/d-client";
+import { fetchD1TopupOverview, fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
@@ -38,6 +38,8 @@ import { fundLevel, statusSentence } from "./command-center/status";
 import { useBlock, type Block } from "./command-center/use-block";
 
 const RESERVE_PAGE = "/overview/dual-ledger";
+const BANK_REVIEW_PAGE = `${B0_BANK_REVIEW_PATH}?tab=bank&bankSettlementStatus=MANUAL_REVIEW`;
+const BANK_REVIEW_LABEL = "越南盾充值待人工复核";
 
 const countReviewPending = async () => (await fetchD2Withdrawals({ status: "REVIEW_PENDING", pageNum: 1, pageSize: 1 })).total;
 const countOrphaned = async () => (await fetchD2Withdrawals({ status: "TX_ORPHANED", pageNum: 1, pageSize: 1 })).total;
@@ -72,6 +74,7 @@ export default function CommandCenter() {
   const pendingExport = session ? pendingB0Export(session.adminId) : undefined;
   const blocks = useMemo(() => b0Blocks(session?.authorities ?? []), [session?.authorities]);
   const reach = useReach();
+  const canShowBankReview = blocks.bankManualReview && reach(B0_BANK_REVIEW_PATH);
 
   const [refreshKey, setRefreshKey] = useState(0);
   const bDomain = useBDomainDashboard(blocks.fund);
@@ -79,6 +82,10 @@ export default function CommandCenter() {
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
   const business = useBlock(fetchB0Business, blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers, refreshKey);
   const devices = useBlock(fetchB0Devices, blocks.devices, refreshKey);
+  const exchangeQueue = useBlock(fetchB0ExchangeQueue, blocks.exchangeQueue, refreshKey);
+  const referralRewards = useBlock(fetchB0ReferralPending, blocks.referralRewards, refreshKey);
+  const promotionRewards = useBlock(fetchB0PromotionUnfulfilled, blocks.promotionRewards, refreshKey);
+  const topup = useBlock(fetchD1TopupOverview, blocks.topup, refreshKey);
   const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
   // 待审核按提现读权读：提现审核页可达时写在待处理，不可达时写在提现卡上，都要有这个数。
   const reviewPending = useBlock(countReviewPending, blocks.withdrawals, refreshKey);
@@ -144,17 +151,30 @@ export default function CommandCenter() {
     ];
     for (const row of deviceRows) if (row.count > 0) rows.push({ key: `device-${row.state}`, title: `${row.title} ${fmtNum(row.count)} 台`, sub: row.sub, owner: "设备", href: reach("/devices/ops") ? `/devices/ops?simState=${row.state}` : undefined, tone: "warn" });
   }
+  if (canShowBankReview) {
+    if (topup.error) rows.push({ key: "bank-review", name: BANK_REVIEW_LABEL, onRetry: topup.reload });
+    else if (topup.data && topup.data.bankManualReviewCount > 0) rows.push({
+      key: "bank-review",
+      title: `${BANK_REVIEW_LABEL} ${fmtNum(topup.data.bankManualReviewCount)} 笔`,
+      owner: "财务",
+      href: BANK_REVIEW_PAGE,
+    });
+  }
 
   const pendingFailed = rows.flatMap((row) => ("onRetry" in row ? [row.name] : []));
   const pendingRows = rows.length - pendingFailed.length;
   const urgentRows = risks.filter((item) => item.sev === "p0").length + (!j1.error && backfill?.level === "high" ? 1 : 0);
   const firstLoad = (block: Block<unknown>) => block.loading && block.data === null;
-  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad) || (canReadJ1 && !j1.settled);
-  const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support || blocks.devices;
+  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad)
+    || (canShowBankReview && firstLoad(topup)) || (canReadJ1 && !j1.settled);
+  const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support
+    || blocks.devices || canShowBankReview;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
-  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || business.loading || systemProcessing.loading || devices.loading || pendingLoading;
-  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, business, devices].some(firstLoad);
+  const businessBlocks = [business, devices, exchangeQueue, referralRewards, promotionRewards];
+  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || systemProcessing.loading
+    || topup.loading || businessBlocks.some((block) => block.loading) || pendingLoading;
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, ...businessBlocks].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -211,7 +231,11 @@ export default function CommandCenter() {
       ...(business.error && blocks.newUsers ? ["注册用户"] : []),
       ...(business.error && blocks.activeUsers ? ["活跃用户"] : []),
       ...(flows.error ? ["资金进出"] : []),
+      ...(topup.error && !canShowBankReview ? ["今日充值"] : []),
       ...(devices.error ? ["设备数据"] : []),
+      ...(exchangeQueue.error ? ["兑换排队"] : []),
+      ...(referralRewards.error ? ["待结算新人"] : []),
+      ...(promotionRewards.error ? ["活动奖励"] : []),
       ...pendingFailed,
     ],
     loading: statusLoading,
@@ -236,7 +260,8 @@ export default function CommandCenter() {
 
   const { period, setPeriod } = usePeriodChoice(session?.adminId);
   const shownPeriod = shownBusinessPeriod(blocks, period);
-  const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers || blocks.devices;
+  const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers || blocks.devices
+    || blocks.exchangeQueue || blocks.referralRewards || blocks.promotionRewards;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok") && !sentence.fundFailed;
 
   const fundLine = !showFundLine ? null : bDomain.error ? (
@@ -336,6 +361,9 @@ export default function CommandCenter() {
           onPeriodChange={setPeriod}
           business={business}
           devices={devices}
+          exchangeQueue={exchangeQueue}
+          referralRewards={referralRewards}
+          promotionRewards={promotionRewards}
           reviewPending={reviewPending}
           systemProcessing={systemProcessing}
           clock={clock}
@@ -391,6 +419,7 @@ export default function CommandCenter() {
               summaryError={business.error || null}
               summaryLoading={business.loading}
               onRetrySummary={business.reload}
+              topup={topup}
               topupOnCard={blocks.deposits && !business.error}
               netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
               clock={clock}
