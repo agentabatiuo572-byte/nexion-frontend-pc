@@ -66,7 +66,7 @@ const E6_ONBOARDING_YIELD_SKU: HighOpDef = {
   action: "更换引导对比商品",
   amplifies: false,
   type: "param",
-  gateLabel: "另一位有批准权限、能修改手机算力配置并能查看商品目录的管理员",
+  gateLabel: "另一位有批准权限和手机算力配置查看权限的管理员",
   targetType: "onboarding_yield_comparison",
   buildCommand: ({ configKey, productNo, expectedRevision }) => ({
     domain: "E", op: "e6_onboarding_yield_sku", params: { configKey, productNo, expectedRevision },

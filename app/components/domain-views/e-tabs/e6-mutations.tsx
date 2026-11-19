@@ -25,7 +25,7 @@ import type { ToastKind } from "@/lib/store/ui";
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
 export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolean; readbackFailed?: boolean; originalRiskResponse?: PhoneRiskOverview };
 /** 换绑引导对比商品时写进审批单的审批人说明。 */
-export const E6_SKU_BINDING_ROLE_GATE = "另一位有批准权限、能修改手机算力配置并能查看商品目录的管理员";
+export const E6_SKU_BINDING_ROLE_GATE = "另一位有批准权限和手机算力配置查看权限的管理员";
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
 

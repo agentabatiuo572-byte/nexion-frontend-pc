@@ -19,6 +19,7 @@ import "./e6-yield-comparison.css";
 const SLOT_NAMES: Record<string, string> = { phone: "手机", s1: "S1 位", pro: "Pro 位", rack: "Rack 位" };
 const slotName = (key: string) => SLOT_NAMES[key] ?? key;
 const scopeOf = (row: E2YieldComparison) => `comparison:${row.configKey}`;
+const TERMINAL_NAMES: Record<string, string> = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 
 /** 引导对比：手机行来自 T3，商品行各绑一件在售实物商品，换绑走审批。 */
 export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: boolean }) {
@@ -33,7 +34,8 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
   const usable = rows.filter(r => r.available);
   const usdtPrecision = e6AmountPrecision(usable.map(r => r.dailyUsdtText)), uvtPrecision = e6AmountPrecision(usable.map(r => r.dailyNexText));
   const others = (row: E2YieldComparison) => candidates.status === "ready" ? candidates.skus.filter(sku => sku.id !== row.productNo) : [];
-  const blockReason = (row: E2YieldComparison) => m.locked(scopeOf(row)) ? "这一位有待审批或结果未知的更换"
+  const blockReason = (row: E2YieldComparison) => m.pending.find(p => p.scope === scopeOf(row))?.terminal ? "原审批已有结论，先在上方点「准备新变更」"
+    : m.locked(scopeOf(row)) ? "这一位有待审批或结果未知的更换"
     : row.bindingRevision == null ? "这一位暂时不能更换，请刷新后核对"
       : candidates.status === "forbidden" ? "需要商品目录的查看权限"
         : candidates.status === "loading" ? "正在加载可选商品"
@@ -54,7 +56,9 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
             <Td><Cell main={slotName(r.configKey)} sub={phone ? "当前引导档" : undefined} /></Td>
             <Td grow><div className="e6-yield-product">
               <Cell full main={phone ? "手机 T3 档位" : r.available ? nexGridBrandText(r.label) : r.productNo ? <span data-mono="">{r.productNo}</span> : "未选商品"} sub={!phone && r.available && r.productNo ? <span data-mono="">{r.productNo}</span> : undefined} />
-              {pending && <StatusTag tone={pending.ticketId ? "progress" : "warn"} explain={pending.ticketId ? "另一位管理员批准后才换成新商品。" : "原操作已保存，到上方记录里查询结果。"}>{pending.ticketId ? "待审批，原商品仍生效" : "更换结果未知"}</StatusTag>}
+              {pending && (pending.terminal
+                ? <StatusTag tone={pending.terminal === "approved" ? "ok" : "done"} explain="在上方记录里点「准备新变更」后，才能再次更换。">{`原审批${TERMINAL_NAMES[pending.terminal] ?? "已结束"}`}</StatusTag>
+                : <StatusTag tone={pending.ticketId ? "progress" : "warn"} explain={pending.ticketId ? "另一位管理员批准后才换成新商品。" : "原操作已保存，到上方记录里查询结果。"}>{pending.ticketId ? "待审批，原商品仍生效" : "更换结果未知"}</StatusTag>)}
             </div></Td>
             {phone || r.available
               ? <><Td align="right" data-num=""><E6Amount raw={r.dailyUsdtText} precision={usdtPrecision} currency="USDT" /></Td><Td align="right" data-num=""><E6Amount raw={r.dailyNexText} precision={uvtPrecision} currency="UVT" /></Td></>
@@ -88,7 +92,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
       return <E6ConfirmModal scope={scope} briefKind="config" action={`更换引导对比商品 · ${slot}`} confirmLabel="提交审批" reasonMin={8} reasonMax={200}
         statedBrief={{ impact: "批准后 App 新用户引导的这一位改显示新商品和它的收益；批准前原商品照常显示。", check: "核对新商品名称和两种日收益。" }}
         detail="批准后生效；批准前原商品照常显示。"
-        completionCopy="提交后请另一位有批准权限、能修改手机算力配置并能查看商品目录的管理员在「操作记录与审批」中批准。"
+        completionCopy="提交后请另一位有批准权限和手机算力配置查看权限的管理员在「操作记录与审批」中批准。"
         facts={<Facts>
           <Fact k="对比位">{slot}</Fact>
           <Fact k="商品"><Change from={before} to={`${nexGridBrandText(sku.name)} · ${sku.id}`} /></Fact>
