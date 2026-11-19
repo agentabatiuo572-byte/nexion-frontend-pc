@@ -21,6 +21,8 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
   const deniedRef = useRef(onDenied); deniedRef.current = onDenied;
   const loadDetailRef = useRef(loadDetail); loadDetailRef.current = loadDetail;
   const [writeState, setWriteState] = useState<{ key: string; value?: ConversationWriteState | null }>({ key: "" });
+  const writeStateRef = useRef(writeState); writeStateRef.current = writeState;
+  const writeKey = summary ? `${key}:${summary.status}` : "";
   const detailController = useRef<AbortController | null>(null), detailSerial = useRef(0);
   const [state, setState] = useState(() => empty(key));
   const stateRef = useRef(state); stateRef.current = state.key === key ? state : empty(key);
@@ -42,7 +44,8 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
     const abort = new AbortController(), generation = ++serial.current;
     controller.current = abort;
     const isCurrent = () => !abort.signal.aborted && generation === serial.current && keyRef.current === requestKey;
-    if (kind !== "older") {
+    const requestWriteKey = `${requestKey}:${current.status}`;
+    if (kind !== "older" && (kind === "reset" || writeStateRef.current.key !== requestWriteKey || !writeStateRef.current.value)) {
       detailController.current?.abort();
       const detailAbort = new AbortController(), detailGeneration = ++detailSerial.current;
       detailController.current = detailAbort;
@@ -50,7 +53,7 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
       // Read metadata beside the message page, without delaying or replacing its messages.
       void loadDetailRef.current(current.id, detailAbort.signal, false).then(detail => {
         if (!detailAbort.signal.aborted && detailGeneration === detailSerial.current && keyRef.current === requestKey) {
-          setWriteState({ key: requestKey, value: detail?.writeState });
+          setWriteState({ key: requestWriteKey, value: detail?.writeState });
         }
       }).catch(() => {
         // This optional read cannot establish reply authority on failure: keep it unknown.
@@ -100,7 +103,7 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
   }, [version, key, request]);
   const safe = state.key === key ? state : empty(key);
   return { ...safe,
-    writeState: writeState.key === key ? writeState.value : undefined,
+    writeState: writeState.key === writeKey && writeState.value ? summary?.writeState ?? writeState.value : undefined,
     readCursor: readCursor.current,
     readReady: Boolean(safe.page && safe.page.conversation.id === summary?.id && (safe.failed === "older" || !safe.loading && !safe.error) && safe.page.conversation.version >= (summary?.version ?? 0)),
     contextReady: Boolean(safe.page && safe.page.conversation.id === summary?.id && !safe.gap && (safe.failed === "older" || !safe.loading && !safe.error) && safe.page.conversation.version >= (summary?.version ?? 0)),
