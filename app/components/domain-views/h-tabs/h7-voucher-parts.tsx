@@ -105,13 +105,13 @@ export function VoucherTags({ v, now, showPending = true }: { v: H7Voucher; now:
     <span className="h7-tags">
       {showPending && v.pendingApproval && pendingTag(v.pendingApproval)}
       {phase === "expired"
-        ? <StatusTag tone="done" icon={Hourglass} explain={v.status === "active" ? "有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「投放中」。" : "有效期已过，用户不能再领，已领到的也不能再用。已暂停的不能投放，先编辑有效期。"}>已过期</StatusTag>
+        ? <StatusTag tone="done" icon={Hourglass} explain={wheelOnly ? `有效期已过，转盘抽中这一档会发券失败。${WHEEL_STOP_HINT}` : v.status === "active" ? "有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「投放中」。" : "有效期已过，用户不能再领，已领到的也不能再用。已暂停的不能投放，先编辑有效期。"}>已过期</StatusTag>
         : v.status === "active"
           ? <StatusTag tone="ok" icon={CheckCircle2} explain={wheelOnly ? "用户在幸运转盘抽中这一档时发到钱包；还要在有效期内、没到发行上限。" : "用户可以领；还要符合有效期、发给谁、发行上限和领取入口。"}>投放中</StatusTag>
           : <StatusTag tone="done" icon={PauseCircle} explain={wheelOnly ? `转盘抽中这一档会发券失败；已领到的不收回，有效期内仍能用。${WHEEL_STOP_HINT}` : "用户不能再领；已领到的不收回，有效期内仍能用。"}>已暂停</StatusTag>}
       {wheelOnly && <StatusTag tone="neutral" icon={Dices} explain={WHEEL_ONLY_HELP}>{WHEEL_ONLY_TEXT}</StatusTag>}
       {phase === "upcoming" && <StatusTag tone="progress" icon={CalendarClock}>{`${h7Stamp(v.startAt).slice(5, 10)} 开始`}</StatusTag>}
-      {phase !== "expired" && limitReached(v) && <StatusTag tone="warn" icon={TriangleAlert} explain="已发出的张数到了发行上限，用户领不到了；作废或用掉的也占上限。要继续发，调高发行上限。">已发完</StatusTag>}
+      {phase !== "expired" && limitReached(v) && <StatusTag tone="warn" icon={TriangleAlert} explain={wheelOnly ? `已发出的张数到了发行上限，转盘抽中这一档会发券失败。${WHEEL_STOP_HINT}` : "已发出的张数到了发行上限，用户领不到了；作废或用掉的也占上限。要继续发，调高发行上限。"}>已发完</StatusTag>}
     </span>
   );
 }
