@@ -1442,7 +1442,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   HARDWARE_QUOTA_RECYCLE_INVALID: "回收记录或动作无效；请重新读取已用名额。",
   LEADERBOARD_MEMBER_ACTION_INVALID: "榜单成员或处置动作无效；请从本周榜重新选择。",
   NO_RISK_EVIDENCE: "没有找到这个成员可用于取消资格的风险证据；请先到风险页面核对，不能直接取消资格。",
-  HARDWARE_QUOTA_TIER_STALE_OR_MISSING: "额度已变化、商品已不存在，或新额度低于本月已用；请重新读取最新额度和占用数后提交。",
+  HARDWARE_QUOTA_TIER_STALE_OR_MISSING: "额度已变化、商品已不存在，或调高后仍低于本月已用；请重新读取最新额度和占用数后提交。",
   HARDWARE_QUOTA_ALREADY_RECYCLED_OR_MISSING: "这条名额记录已经回收或不存在；请重新读取已用记录。",
   LEADERBOARD_MEMBER_ALREADY_DISQUALIFIED_OR_MISSING: "这个成员已被取消资格或记录不存在；请重新读取本周榜。",
   F4_LEADERBOARD_ALREADY_LIVE: "排行榜已经恢复实时运行；请重新读取当前状态。",
