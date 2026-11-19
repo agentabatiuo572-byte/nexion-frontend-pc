@@ -1311,12 +1311,18 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 .rd-number-unit { position: absolute; z-index: 1; top: 0; right: 12px; height: var(--rd-control-h); display: inline-flex; align-items: center; color: var(--rd-text-3); font-size: var(--rd-text-body); pointer-events: none; }
 .rd-confirm-preview { margin-top: 8px; color: var(--rd-text); }
 
-/* 主题开关（顶栏、登录页）：太阳浅色、月亮深色，选中的一格亮底。 */
-.rd-theme { display: inline-flex; align-items: center; flex: none; padding: 2px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
-.rd-theme button { display: inline-flex; align-items: center; gap: 4px; min-height: var(--rd-control-h-sm); padding: 0 8px; border: 0; border-radius: var(--rd-radius-tag); background: transparent; color: var(--rd-text-3); font: inherit; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
-.rd-theme button[data-on] { background: var(--rd-panel); color: var(--rd-text); box-shadow: 0 0 0 1px var(--rd-line-strong); }
-.rd-theme button:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
-@media (hover: hover) and (pointer: fine) { .rd-theme button:not([data-on]):hover { color: var(--rd-text); } }
+/* 主题开关（顶栏、登录页）：只有图标的滑动开关，滑槽有底色，左太阳浅色、右月亮深色，滑块停在当前一侧，那一侧的图标亮、另一侧弱一档。
+   滑块位置和图标明暗按 <html data-theme> 定，不跟 React 状态：首屏脚本先设好属性，加载时滑块就在对的一侧，不会滑一下。
+   高 32（--rd-control-h），圆角和顶栏其它控件一样 8，滑块 6；焦点环画在滑槽外 2px，滑块盖不住。减少动效时全局规则把过渡压到 0，直接到位。 */
+.rd-theme { display: inline-flex; flex: none; }
+.rd-theme button { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; align-items: center; justify-items: center; width: 60px; height: var(--rd-control-h); padding: 2px; border: 0; border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); color: var(--rd-text-3); cursor: pointer; }
+.rd-theme-thumb { position: absolute; top: 2px; left: 2px; width: calc(50% - 2px); height: calc(100% - 4px); border-radius: var(--rd-radius-control); background: var(--rd-panel); box-shadow: 0 0 0 1px var(--rd-line-strong); transform: translateX(100%); transition: transform .16s ease-out; }
+.rd-theme svg { position: relative; transition: color .16s; }
+:root:not([data-theme="light"]) .rd-theme-moon, :root[data-theme="light"] .rd-theme-sun { color: var(--rd-text); }
+:root[data-theme="light"] .rd-theme-thumb { transform: none; }
+:root[data-theme="light"] .rd-theme button { box-shadow: inset 0 0 0 1px var(--rd-line); }  /* 浅色的滑槽底和页面几乎一样，加 1px 边才看得出（VS-94） */
+.rd-theme > button[role="switch"]:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }  /* 压过顶栏按钮的内缩焦点环 */
+@media (hover: hover) and (pointer: fine) { .rd-theme button:hover { color: var(--rd-text-2); } }
 .rd-theme[data-floating] { position: fixed; top: 16px; right: 16px; z-index: 1; }
 
 /* 浅色主题（VS-94）：白面板在浅灰页面上加 1px 边，用内阴影，不改尺寸。 */

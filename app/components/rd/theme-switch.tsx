@@ -3,7 +3,9 @@
 /**
  * 主题。深色是默认，浅色挂 data-theme="light"，两套都正式保留（产品 2026-11-05 定）。
  * - <ThemeScript />：放在 <head> 里同步执行，首屏按记住的选择设属性，不闪屏。
- * - <ThemeToggle />：顶栏和登录页的开关，太阳「浅色」、月亮「深色」，有文字。
+ * - <ThemeToggle />：顶栏和登录页的滑动开关，只有图标：左太阳浅色、右月亮深色，滑块停在当前一侧。
+ *   读屏是「深色主题」开关（role=switch，aria-checked 是不是深色）；点哪里都切到另一套，空格、回车切换，左右方向键直接选浅色、深色。
+ *   悬停和聚焦写「切换到深色」「切换到浅色」。滑块位置和图标明暗由 CSS 按 <html data-theme> 定，首屏就在对的一侧，不会滑一下。
  * - useAdminTheme(adminId)：登录后按这个账号记住的选择切换，在绘制前生效，内容不会先按本机选择画一次。
  * 记忆：localStorage `nexion-admin-rd-theme` 是本机最近一次的选择，登录前也用它；
  * `nexion-admin-rd-theme:<adminId>` 是每个账号的选择，登录后以它为准。
@@ -11,6 +13,7 @@
  */
 import { useLayoutEffect, useSyncExternalStore } from "react";
 import { Moon, Sun } from "lucide-react";
+import { IconTip } from "./button";
 
 export type Theme = "light" | "dark";
 const KEY = "nexion-admin-rd-theme";
@@ -58,21 +61,29 @@ export function useAdminTheme(adminId: number | undefined) {
   }, [adminId]);
 }
 
-const OPTIONS: readonly { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "浅色", icon: Sun },
-  { value: "dark", label: "深色", icon: Moon },
-];
-
 export function ThemeToggle({ adminId, floating }: { adminId?: number; floating?: boolean }) {
   const theme = useTheme();
   return (
-    <div className="rd-theme" role="group" aria-label="界面主题" data-floating={floating ? "" : undefined}>
-      {OPTIONS.map(({ value, label, icon: Icon }) => (
-        <button key={value} type="button" aria-pressed={theme === value} data-on={theme === value ? "" : undefined} title={`${label}主题`} onClick={() => applyTheme(value, adminId)}>
-          <Icon size={14} aria-hidden />
-          <span className="rd-theme-label">{label}</span>
+    <div className="rd-theme" data-floating={floating ? "" : undefined}>
+      <IconTip label={theme === "dark" ? "切换到浅色" : "切换到深色"}>
+        <button
+          type="button"
+          role="switch"
+          aria-label="深色主题"
+          aria-checked={theme === "dark"}
+          onClick={() => applyTheme(theme === "dark" ? "light" : "dark", adminId)}
+          onKeyDown={(e) => {
+            const pick = e.key === "ArrowLeft" ? "light" : e.key === "ArrowRight" ? "dark" : null;
+            if (!pick) return;
+            e.preventDefault();
+            if (pick !== theme) applyTheme(pick, adminId);
+          }}
+        >
+          <span className="rd-theme-thumb" aria-hidden />
+          <Sun className="rd-theme-sun" size={14} aria-hidden />
+          <Moon className="rd-theme-moon" size={14} aria-hidden />
         </button>
-      ))}
+      </IconTip>
     </div>
   );
 }
