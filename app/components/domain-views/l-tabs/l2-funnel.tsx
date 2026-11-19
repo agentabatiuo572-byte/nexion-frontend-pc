@@ -781,12 +781,9 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     label: cohort.w,
     slot: index === 0 ? 3 as const : "other" as const,
     values: curveTicks.map((day) => CURVES[cohort.w]?.find(([pointDay]) => pointDay === day)?.[1] ?? null),
-    missingLabels: curveTicks.map((day) => {
-      const reason = cohort.retentionUnavailableReasons?.[`d${day}`];
-      return reason ? retentionReasonLabel(reason) : null;
-    }),
   }));
-  const curveUncollected = curveSeries.some((series) => series.missingLabels.includes(DAU_NOT_COLLECTED_LABEL));
+  const curveUncollected = curveCohorts.some((cohort) =>
+    Object.values(cohort.retentionUnavailableReasons ?? {}).includes("DAU_NOT_COLLECTED"));
   const retentionPane = (
     <div className="rd-stack">
       <div className="rd-toolbar l2-toolbar">

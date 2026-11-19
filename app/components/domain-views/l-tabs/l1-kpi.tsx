@@ -897,7 +897,7 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
                         label={`${operatorCopyText(k.name)}的走势`}
                         ticks={TICKS}
                         format={pct}
-                        series={[{ key: "kpi", label: operatorCopyText(k.name), slot: 2, values: k.spark, missingLabels: k.sparkUnavailableReasons?.map((reason) => reason === "DAU_NOT_COLLECTED" ? BLANK_TEXT.uncollected : null) }]}
+                        series={[{ key: "kpi", label: operatorCopyText(k.name), slot: 2, values: k.spark }]}
                         marks={goalMarks}
                         event={phaseEvent}
                       />

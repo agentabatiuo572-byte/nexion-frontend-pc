@@ -239,7 +239,7 @@ function axisBounds(values: readonly number[]) {
 export function TrendLines({ label, ticks, series, format, axisFormat = format, marks = [], event, height = 180 }: {
   label: string;
   ticks: readonly string[];
-  series: readonly { key: string; label: string; slot: ChartSlot; values: readonly KpiTrendPoint[]; missingLabels?: readonly (string | null)[] }[];
+  series: readonly { key: string; label: string; slot: ChartSlot; values: readonly KpiTrendPoint[] }[];
   format: (value: number) => string;
   axisFormat?: (value: number) => string;
   marks?: readonly { key: string; text: string; value: number; tone: StateTone }[];
@@ -281,7 +281,7 @@ export function TrendLines({ label, ticks, series, format, axisFormat = format, 
           {active !== null && (
             <Tip index={active} count={ticks.length}>
               <b>{ticks[active]}</b>
-              {series.map((item) => <span key={item.key}>{series.length > 1 ? `${item.label} ` : ""}{item.values[active] == null ? item.missingLabels?.[active] ?? "暂无数据" : format(item.values[active])}</span>)}
+              {series.map((item) => <span key={item.key}>{series.length > 1 ? `${item.label} ` : ""}{item.values[active] == null ? "暂无数据" : format(item.values[active])}</span>)}
             </Tip>
           )}
         </div>
