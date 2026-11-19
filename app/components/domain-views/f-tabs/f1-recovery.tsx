@@ -12,7 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
-import { f1ProposalAuthority } from "@/lib/admin/f1-approval";
+import { f1ProposalAuthority, isF1PayoutSlot } from "@/lib/admin/f1-approval";
 import { f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
@@ -21,19 +21,20 @@ import { FReleaseButton } from "./f-release";
 import type { FViewCtx } from "./types";
 
 type State = "unknown" | "received" | "pending" | "expired";
-type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; actions: ReactNode };
+type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; keepExpired?: boolean; actions: ReactNode };
 
 /** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
 const HOW_TAB = "App 等级说明";
 const UNIT: Record<string, string> = { selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
-function stateTag(state: State, direct: boolean) {
+function stateTag(state: State, direct: boolean, keepExpired: boolean) {
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={direct
     ? "原请求超过 24 小时，不能再重试。查询只读取当前内容，证明不了原操作有没有执行，到「操作记录与审批」核对。"
-    : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
+    : keepExpired ? "原请求超过 24 小时，继续保留，只能查询原审批单。"
+      : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除原操作记录。"}>已过期</StatusTag>;
   return <StatusTag tone="warn" icon={CircleHelp} explain={direct
     ? "提交时没收到确定结果，可能已经保存。先查询原结果；有结论前不要换个办法重做。"
     : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
@@ -52,9 +53,16 @@ function ordinaryLabel(original: FDomainAttempt): { name: string; change: ReactN
     return { name: "各级头衔", change: spec && count ? `设置 ${count} 级头衔` : "原请求不完整，只能查询原结果" };
   }
   if (slot.startsWith("f-vrank-override:")) return { name: `人工调整等级 · 用户 ${id}`, change: spec ? `${spec.amplifies ? "升级" : "降级"}到 ${spec.after}` : "原请求不完整，只能查询原结果" };
-  if (slot.startsWith("f-payout-action:")) {
-    const reissue = spec ? spec.after === "REISSUED" : undefined;
-    return { name: `${reissue === undefined ? "处理奖励" : reissue ? "重发奖励" : "冲正奖励"} · 发放单 ${id}`, change: reissue === undefined ? "原请求不完整，只能查询原结果" : <Change from={reissue ? "已冲正" : "现在的状态"} to={reissue ? "已重发" : "已冲正"} /> };
+  if (isF1PayoutSlot(slot)) {
+    const action = spec?.command.params.action;
+    const clawback = spec?.command.params.usedVoucherClawback;
+    const reissue = action === "reissue";
+    const reverse = action === "reverse";
+    const to = reissue ? "已重发" : typeof clawback === "boolean" ? `已冲正 · 已用券${clawback ? "扣回" : "不扣回"}` : "已冲正";
+    return {
+      name: `${reissue ? "重发奖励" : reverse ? "冲正奖励" : "处理奖励"} · 发放单 ${id}`,
+      change: reissue || reverse ? <Change from={reissue ? "已冲正" : "现在的状态"} to={to} /> : "原请求不完整，只能查询原结果",
+    };
   }
   if (slot.startsWith("f-vrank-bootstrap:")) return { name: "首次配置九级", change: spec ? <Change from="还没有会员等级" to="九级门槛" /> : "原请求不完整，只能查询原结果" };
   return { name: "等级设置的原申请", change: "原请求不完整，只能查询原结果" };
@@ -78,16 +86,17 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   for (const original of ctx.f1Proposals) {
     const { name, change } = ordinaryLabel(original);
     const expired = isRetryExpired(original);
+    const keepExpired = isF1PayoutSlot(original.fingerprint);
     const state: State = original.ticket?.status === "pending" ? "pending" : original.received ? "received" : expired ? "expired" : "unknown";
     const canRetry = !!original.spec && !!original.request && !original.received && !original.ticket && !expired;
     const retryBlock = original.spec && !(session.authorities.includes(f1ProposalAuthority(original.spec))
       && session.authorities.some((a) => a === "platform_a2_write" || a === "platform_a2_proposal_create")) ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined;
     rows.push({
-      key: original.commandKey, name, change, submittedAt: original.createdAt, state,
+      key: original.commandKey, name, change, submittedAt: original.createdAt, state, keepExpired,
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
         {canRetry && <Button size="sm" disabledReason={retryBlock} onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
-        {expired && original.absent && !original.ticket && !original.received && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
+        {expired && !keepExpired && original.absent && !original.ticket && !original.received && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
     });
   }
@@ -151,7 +160,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
           <span className="f1-recovery-name">{row.name}</span>
           <span className="f1-recovery-change">{row.change}</span>
           <span className="f1-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
-          <span>{stateTag(row.state, !!row.direct)}</span>
+          <span>{stateTag(row.state, !!row.direct, !!row.keepExpired)}</span>
           <span className="f1-recovery-actions">{row.actions}</span>
         </li>)}
       </ul>}

@@ -1192,6 +1192,13 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
 const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
+  // A2 returns the proposal summary and operation code. Older typed voucher reversals used the default clawback.
+  const voucherReverse = "已冲正 · 券：";
+  if (row.operationCode === "f_reward_payout_action" && row.action === "奖励发放 · 冲正 · 券"
+      && row.after.startsWith(voucherReverse)) {
+    const impact = row.after.slice(voucherReverse.length);
+    if (!/^已用券(?:不)?扣回。/.test(impact)) return `${voucherReverse}已用券按扣回执行（旧申请）。${impact}`;
+  }
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);

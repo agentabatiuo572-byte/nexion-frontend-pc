@@ -10,6 +10,8 @@ import { useAdminAuth } from "../store/admin-auth";
 const legacyF1Slot = (slot: string) => /^f-(?:vrank-(?:bootstrap|override)|payout-action):/.test(slot)
   || ["f-config:F.vrank.permanent", "f-config:F.vrank.titles", "f-config:F.prize.name"].includes(slot);
 
+export const isF1PayoutSlot = (slot: string) => slot.startsWith("f-payout-action:");
+
 export function listF1Proposals(adminId: number) {
   return fCommands.list().filter(row => row.spec?.sourceDomain === "F1" || legacyF1Slot(row.fingerprint))
     .filter(row => row.adminId === adminId || row.adminId === undefined);
@@ -89,7 +91,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+    if (recovering || isF1PayoutSlot(slot) ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
     throw error;
   }
@@ -109,6 +111,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
 export async function releaseF1Proposal(adminId: number, original: FDomainAttempt) {
   if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
+  if (isF1PayoutSlot(original.fingerprint)) throw new Error("原操作已超过 24 小时，只能查询原结果。");
   const ticket = await queryF1Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");
   if (!ticket) fCommands.forget(original.fingerprint, original.commandKey);

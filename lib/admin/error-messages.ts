@@ -1678,6 +1678,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   L1_LEGACY_NEX_READ_ONLY_DURING_SPLIT: "好友购买奖励拆分已启用，旧 L1 UVT 系数只能查看。请先核对好友奖励政策。",
   UNILEVEL_RULE_BUSINESS_TABLE_UPDATE_FAILED: "这一层的规则没有更新成功；可能缺少这一层的原始规则。请联系值班人员初始化或核对。",
   F1_PAYOUT_ACTION_INVALID: "奖励发放处置无效，请重新读取发放记录并核对可用操作。",
+  F1_CLAWBACK_VOUCHER_ONLY: "这笔奖励不是券，无法设置已用券扣回。请核对发放记录后重新提交。",
+  F1_CLAWBACK_REVERSE_ONLY: "重发不能设置已用券扣回。请核对原申请，重发时按重发操作重新提交。",
   F4_LEADERBOARD_SNAPSHOT_READ_FAILED: "排行榜暂停快照暂时无法读取。请核对原操作结果后联系值班人员恢复读取。",
   F4_LEADERBOARD_ALREADY_PAUSED: "排行榜已经暂停，请刷新后核对当前状态。",
   DIRECT_REFERRAL_RULE_INVALID: "好友奖励比例或冷却无效。比例须在 0–100、最多 6 位小数；启用时总比例大于 0、两币占比都大于 0；冷却须为 0–365 整天。",
