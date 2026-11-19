@@ -58,11 +58,6 @@ export async function fetchB0PromotionUnfulfilled() {
   return count(summary?.unfulfilledRewards, "summary.unfulfilledRewards");
 }
 
-export async function fetchB0RiskManualReview() {
-  const data = await read("/api/admin/risk/overview");
-  return count(data.manualReview, "manualReview");
-}
-
 export type B0Period = "today" | "week" | "month";
 export type B0SummaryPeriod = B0Period | "all";
 type MoneyBlock = {

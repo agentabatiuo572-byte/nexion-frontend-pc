@@ -2,8 +2,6 @@
  * 今日概览各块要的读权限（B0 重构说明 5.7）。没有权限的块不出现，也不发请求。
  * 不依赖菜单：落地页计算在 console-nav 里用它，目标页是否可达由页面逐行判断（X03）。
  */
-const RISK_READS = ["risk_k1_read", "risk_k2_read", "risk_k3_read", "risk_k4_read"];
-
 export function b0Blocks(authorities: readonly string[]) {
   const has = (code: string) => authorities.includes(code);
   return {
@@ -24,7 +22,6 @@ export function b0Blocks(authorities: readonly string[]) {
     exchangeQueue: has("finprod_g2_read"),
     referralRewards: has("growth_h8_read"),
     promotionRewards: has("growth_promotion_read"),
-    riskManualReview: RISK_READS.some(has),
     bankManualReview: has("finance_d1_read"),
     topup: has("finance_d1_read"),
     redemption: has("bi_l3_read"),
@@ -39,8 +36,7 @@ export type B0Blocks = ReturnType<typeof b0Blocks>;
 export function b0HasDailyWork(blocks: B0Blocks) {
   return blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support
     || blocks.sales || blocks.newUsers || blocks.netFlow || blocks.devices
-    || blocks.exchangeQueue || blocks.referralRewards || blocks.promotionRewards
-    || blocks.riskManualReview || blocks.bankManualReview;
+    || blocks.exchangeQueue || blocks.referralRewards || blocks.promotionRewards || blocks.bankManualReview;
 }
 
 /** 一块都看不到的账号不进这页（PG-22）。 */

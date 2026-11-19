@@ -16,7 +16,7 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText, a2ObjectText } from "@/lib/admin/operator-copy";
 import { b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
-import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending, fetchB0RiskManualReview } from "@/lib/admin/b0-client";
+import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
@@ -39,7 +39,6 @@ import { useBlock, type Block } from "./command-center/use-block";
 
 const RESERVE_PAGE = "/overview/dual-ledger";
 const BANK_REVIEW_PAGE = "/finance/recon?tab=bank&bankSettlementStatus=MANUAL_REVIEW";
-const RISK_REVIEW_LABEL = "风控待人工审核";
 const BANK_REVIEW_LABEL = "越南盾充值待人工复核";
 
 const countReviewPending = async () => (await fetchD2Withdrawals({ status: "REVIEW_PENDING", pageNum: 1, pageSize: 1 })).total;
@@ -85,7 +84,6 @@ export default function CommandCenter() {
   const exchangeQueue = useBlock(fetchB0ExchangeQueue, blocks.exchangeQueue, refreshKey);
   const referralRewards = useBlock(fetchB0ReferralPending, blocks.referralRewards, refreshKey);
   const promotionRewards = useBlock(fetchB0PromotionUnfulfilled, blocks.promotionRewards, refreshKey);
-  const riskManualReview = useBlock(fetchB0RiskManualReview, blocks.riskManualReview, refreshKey);
   const topup = useBlock(fetchD1TopupOverview, blocks.bankManualReview, refreshKey);
   const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
   // 待审核按提现读权读：提现审核页可达时写在待处理，不可达时写在提现卡上，都要有这个数。
@@ -152,9 +150,6 @@ export default function CommandCenter() {
     ];
     for (const row of deviceRows) if (row.count > 0) rows.push({ key: `device-${row.state}`, title: `${row.title} ${fmtNum(row.count)} 台`, sub: row.sub, owner: "设备", href: reach("/devices/ops") ? `/devices/ops?simState=${row.state}` : undefined, tone: "warn" });
   }
-  if (riskManualReview.error) rows.push({ key: "risk-review", name: RISK_REVIEW_LABEL, onRetry: riskManualReview.reload });
-  // PC 目前没有案件审核页；K1/K2 的排查页面不能处理这个队列。
-  else if (riskManualReview.data) rows.push({ key: "risk-review", title: `${RISK_REVIEW_LABEL} ${fmtNum(riskManualReview.data)} 件`, owner: "风控" });
   if (topup.error) rows.push({ key: "bank-review", name: BANK_REVIEW_LABEL, onRetry: topup.reload });
   else if (topup.data && topup.data.bankManualReviewCount > 0) rows.push({
     key: "bank-review",
@@ -167,9 +162,9 @@ export default function CommandCenter() {
   const pendingRows = rows.length - pendingFailed.length;
   const urgentRows = risks.filter((item) => item.sev === "p0").length + (!j1.error && backfill?.level === "high" ? 1 : 0);
   const firstLoad = (block: Block<unknown>) => block.loading && block.data === null;
-  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo, riskManualReview, topup].some(firstLoad) || (canReadJ1 && !j1.settled);
+  const pendingLoading = [approvals, reviewPending, orphaned, supportTodo, topup].some(firstLoad) || (canReadJ1 && !j1.settled);
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support
-    || blocks.devices || blocks.riskManualReview || blocks.bankManualReview;
+    || blocks.devices || blocks.bankManualReview;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
   const businessBlocks = [business, devices, exchangeQueue, referralRewards, promotionRewards];
