@@ -45,7 +45,7 @@ export function A2I5DisclosureReview({ ticket }: { ticket: A2OperationRow }) {
   const headline = change && (previous && !change.summary.length && !change.chapters.length ? "和上一版内容相同" : change.headline);
   return <>
     <Facts>
-      <Fact k="申请后草稿" tone={match === false ? "warn" : undefined}>{match === true ? "没改过" : match === false ? "已改动，批准不会成功" : "无法核对"}</Fact>
+      <Fact k="申请后草稿" tone={match === false && ticket.status === "pending" ? "warn" : undefined}>{match === true ? "没改过" : match === false ? ticket.status === "pending" ? "已改动，批准不会成功" : "已改动" : "无法核对"}</Fact>
       {!draft && <Fact k="改动">未提供</Fact>}
       {draft && !first && !previous && <Fact k="上一版内容">未提供</Fact>}
       {change && <Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{headline}{baseOnly && "（仅对照中越英）"}</Fact>}
