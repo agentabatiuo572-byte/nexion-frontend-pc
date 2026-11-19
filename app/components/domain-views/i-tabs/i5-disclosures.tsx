@@ -347,9 +347,14 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   /** 批准后收不回来的：删除、归档映射、发布封存（VS-106）。 */
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;
 
-  // 「要重新确认」拦不拦人看受限动作：现在一项都没有时，没确认的用户不会被拦（M2）。
-  const activeGates = gates.filter((gate) => gate.active).map((gate) => gate.name);
-  const gateEffect = activeGates.length ? `没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限操作，不确认也不影响用户使用。";
+  const activeGates = gates.filter((gate) => gate.active && !gate.retired);
+  const exchangeRestricted = activeGates.some((gate) => gate.key === "exchange");
+  const confirmationGates = activeGates.filter((gate) => gate.key !== "exchange").map((gate) => gate.name);
+  const exchangeGateEffect = "兑换纳入受限时，全平台的新兑换和处理排队都会被拒绝，直到获批移出。";
+  const gateEffect = activeGates.length ? [
+    exchangeRestricted ? exchangeGateEffect : "",
+    confirmationGates.length ? `没确认的用户做${confirmationGates.join("、")}时会被拦下。` : "",
+  ].filter(Boolean).join(" ") : "现在没有受限操作，不确认也不影响用户使用。";
 
   // ---------- 地区 ----------
   const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({ briefKind: "config",
@@ -628,7 +633,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         ? "批准后用户还看当前版本；「调整生效版本」换成这版后，用户原来的确认失效，之后也能切回旧版本或归档生效设置。这个版本封存，不能再改或删除。"
         : "批准后用户还读不到披露，「设置生效版本」选了这版才显示。这个版本封存，不能再改或删除。", check: change.onlySummary ? "这次只改了总文，核对总文的新旧对照，理由写清版本依据。" : `核对总文和七章的${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
-        <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={activeGates.length ? `切换后没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限的操作，不确认也不影响使用。"} /></Fact><Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{change.headline}</Fact></Facts>
+        <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={gateEffect} /></Fact><Fact k="改动" tone={change.onlySummary ? "warn" : undefined}>{change.headline}</Fact></Facts>
         <PublishDiff current={current} target={row} />
       </>,
       businessForm: {
@@ -652,19 +657,22 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
 
   const toggleGate = (gate: typeof gates[number]) => {
     const on = gate.active;
+    const exchangeImpact = on ? "获批移出后，风险披露闸门会解除对新兑换和处理排队的阻断。" : exchangeGateEffect;
     openActionConfirm({ briefKind: "record", ...approvalProps,
       action: <>{on ? "移出" : "纳入"}受限动作 · {gate.name}</>,
       title: `${on ? "移出" : "纳入"}受限动作`,
       confirmLabel: `提交${on ? "移出" : "纳入"}审批`,
-      detail: on
-        ? <>移出后，没确认当前披露的用户做 <b>{gate.name}</b> 也不会被拦下。这是放松合规拦截，理由写清依据。</>
-        : <>纳入后，没确认当前披露的用户做 <b>{gate.name}</b> 会被拦下。</>,
+      detail: gate.key === "exchange"
+        ? exchangeImpact
+        : on
+          ? <>移出后，没确认当前披露的用户做 <b>{gate.name}</b> 也不会被拦下。这是放松合规拦截，理由写清依据。</>
+          : <>纳入后，没确认当前披露的用户做 <b>{gate.name}</b> 会被拦下。</>,
       amplifies: on, // 移出受限范围 = 放松合规拦截；纳入 = 收紧
       coverageLead: "这项操作放松合规拦截",
-      statedBrief: { impact: `${on ? "批准后用户做这个操作不用先确认披露" : "批准后还没确认当前披露的用户会被拦下"}。`, check: "核对操作名称，理由写清合规依据。" },
+      statedBrief: { impact: gate.key === "exchange" ? exchangeImpact : `${on ? "批准后用户做这个操作不用先确认披露" : "批准后还没确认当前披露的用户会被拦下"}。`, check: "核对操作名称，理由写清合规依据。" },
       facts: <Facts><Fact k="操作">{gate.name}</Fact><Fact k="范围"><Change from={on ? "受限内" : "已移出"} to={on ? "已移出" : "受限内"} /></Fact></Facts>,
       run: async (reason) => {
-        const nextScope = gates.filter((item) => (item.key === gate.key ? !on : item.active)).map((item) => item.name).join(" + ") || gate.name;
+        const nextScope = gates.filter((item) => (item.key === gate.key ? !on : item.active)).map((item) => item.name).join(" + ") || "无";
         const def = findHighOp("i5_gate_adjust")!;
         await submit("gate", {
           action: `${on ? "移出" : "纳入"}受限动作 · ${gate.name}`, obj: gate.name, before: on ? "受限内" : "已移出", after: on ? "已移出" : "受限内", amplifies: on, gateLabel: def.gateLabel, reason,
@@ -743,7 +751,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重试</Button>}>{errorText} 下面是上次读到的内容，现在不能修改。</Notice>}
     {conclusion}
     <StatBand label="风险披露关键数字">
-      <Stat tone="role-3" icon={Users} label="当前版本未确认用户" value={count(stats.staleAckUsers)} unit="人" explain="用户自己在 App 里确认，不是运营待办；现在不确认也不影响使用。" />
+      <Stat tone="role-3" icon={Users} label="当前版本未确认用户" value={count(stats.staleAckUsers)} unit="人" explain="用户自己在 App 里确认，不是运营待办。" />
       <Stat tone="role-2" icon={Globe2} label="生效的适用范围" value={effectiveCount} unit="个" explain="已发布、正在生效的适用范围数，已归档的不算。" />
     </StatBand>
 
@@ -880,12 +888,12 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       </Table>
     </Fold>
 
-    <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" explain={<><p>{gates.some((gate) => gate.active) ? "还没重新确认的用户，做这里受限的操作时会被拦下。" : "当前没有受限的操作，用户不会被拦。"}</p><p>重新确认相当于让用户重新签一次条款，不是紧急开关。监管要求停业务，去「紧急停用开关」。</p></>} summary={gates.some((gate) => gate.active) ? `${gates.filter((gate) => gate.active).length} 项受限，未确认的用户会被拦下` : "当前没有受限操作"}>
+    <Fold title="需要先确认的操作" icon={ShieldCheck} tone="role-4" explain={<><p>{gateEffect}</p><p>重新确认相当于让用户重新签一次条款，不是紧急开关。监管要求停业务，去「紧急停用开关」。</p></>} summary={activeGates.length ? `${activeGates.length} 项受限${exchangeRestricted ? "，兑换被全平台阻断" : "，未确认的用户会被拦下"}` : "当前没有受限操作"}>
       {!gates.length && <p className="rd-note">现在没有需要先确认披露的操作。</p>}
       <ConfigList label="需要先确认的操作">
         {gates.map((gate) => (
           <ConfigRow key={gate.key} name={gate.name}
-            value={gate.retired ? <StatusTag tone="done" explain="已移出，不能再纳入。">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"} explain={gate.sub}>{gate.active ? "受限内" : "已移出"}</StatusTag>}
+            value={gate.retired ? <StatusTag tone="done" explain="已移出，不能再纳入。">不再纳入</StatusTag> : <StatusTag tone={gate.active ? "ok" : "done"} explain={gate.key === "exchange" ? exchangeGateEffect : gate.sub}>{gate.active ? "受限内" : "已移出"}</StatusTag>}
             action={canAdjustGate && !gate.retired ? <Button size="sm" disabledReason={blocked("gate", gateInApproval)} onClick={() => toggleGate(gate)}>{gate.active ? "移出" : "纳入"}</Button> : undefined} />
         ))}
         <ConfigRow name="未确认被拦截（近 7 天）" what="历史记录，可能包含已经确认过的用户。" value={`${count(stats.weeklyGateBlocked)} 次`} />
@@ -905,7 +913,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         danger={<Button variant="danger-outline" disabledReason={regionBlocked(jur.code)} onClick={() => archiveMatrix(jur)}>归档</Button>}
         primary={<Button variant="primary" disabledReason={switchBlocked(jur.code)} onClick={() => configMatrix(jur)}>调整生效版本</Button>} /> : undefined}>
       {jur && <>
-        <JudgmentPoints rows={regionPoints(jur, issues.get(jur.code), activeGates)} />
+        <JudgmentPoints rows={regionPoints(jur, issues.get(jur.code), confirmationGates)} />
         <Fold inset title="版本历史" summary={`${regionHistory.length} 个版本`}>
           <RecordList label="这个适用范围的版本" records={regionHistory.map((row) => ({
             id: versionKey(row), value: <button type="button" className="rd-link rd-link-button" onClick={() => openVersion(row)}>{row.version}</button>,

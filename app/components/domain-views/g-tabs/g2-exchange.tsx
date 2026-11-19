@@ -307,9 +307,12 @@ function G2ExchangePage() {
   const switchUnavailableReason = overview?.emergencySwitch?.exchange.unavailableReason;
   const switchBlockedReason = switchUnavailableReason === "MISSING" ? "兑换开关没有设置，兑换现在是停的"
     : switchUnavailableReason === "INVALID" ? "兑换开关设置有误，兑换现在是停的" : undefined;
-  const exchangeExecutionBlocked = overview?.swap.emergencyPaused === true || switchBlockedReason !== undefined;
-  const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending, exchangeExecutionBlocked });
-  latest.current = { overview, loading, busyKey, readFailed, rereadPending, exchangeExecutionBlocked };
+  const j1ExecutionBlocked = overview?.swap.emergencyPaused === true || switchBlockedReason !== undefined;
+  const disclosureBlocked = overview?.disclosureGate.exchange === true || overview?.swap.blockedBy === "I5_DISCLOSURE_GATE";
+  const batchBlockedReason = j1ExecutionBlocked ? messageOf("EXCHANGE_SWAP_PAUSED")
+    : disclosureBlocked ? messageOf("EXCHANGE_DISCLOSURE_GATE_CLOSED") : undefined;
+  const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending, j1ExecutionBlocked, batchBlockedReason });
+  latest.current = { overview, loading, busyKey, readFailed, rereadPending, j1ExecutionBlocked, batchBlockedReason };
   const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
   const openActionConfirm = useCallback((request: G2ConfirmReq | null) => {
     const view = latest.current;
@@ -852,7 +855,7 @@ function G2ExchangePage() {
       void readOriginalCommand(original);
       return;
     }
-    if (!original && latest.current.exchangeExecutionBlocked) return;
+    if (!original && latest.current.j1ExecutionBlocked) return;
     openActionConfirm({ briefKind: "emergency",
       action: "紧急暂停全部兑换",
       title: "紧急暂停全部兑换",
@@ -887,7 +890,7 @@ function G2ExchangePage() {
           catch (error) { await reload(true); if (!pendingG2ExchangeCommand(batchAdminId, saved.path)) openActionConfirm(null); throw error; }
           return;
         }
-        if (!latest.current.overview || latest.current.exchangeExecutionBlocked || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey) {
+        if (!latest.current.overview || latest.current.j1ExecutionBlocked || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey) {
           throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
         }
         const countries = (businessValue?.geoBlock ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -1113,7 +1116,7 @@ function G2ExchangePage() {
   const openBatch = () => openActionConfirm({ briefKind: "funds",
     action: "处理排队中的兑换",
     title: "处理排队中的兑换",
-    detail: <>按当前 UVT 价格、每日额度、地区封锁和用户余额逐单检查，符合条件的马上成交。</>,
+    detail: <>按当前 UVT 价格、每日额度、地区封锁和用户余额逐单检查，符合条件的马上成交。批次开始前和逐笔复核时都会检查风险披露闸门。</>,
     effect: <><StatusTag tone="progress" filled>立即执行</StatusTag><IrreversibleTag>成交后不能撤销</IrreversibleTag></>,
     confirmLabel: "确认处理",
     facts: (value?: string) => {
@@ -1126,8 +1129,8 @@ function G2ExchangePage() {
         <Fact k="金额">{count === undefined ? `排队中 ${fmtCount(stats.queueDepth)} 单` : queueAllVisible && stats.queueDepth > 0
           ? `按列表估算：最早 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT。列表里停用、测试账户的单也算进去了，以处理结果为准`
           : `列表只显示最近 ${fmtCount(queue.length)} 单，算不出这一批的金额；处理结果里逐单列出`}</Fact>
-        <Fact k="每一单">依次检查兑换开关、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
-        {swap.emergencyPaused === true && <Fact k="现在" tone="warn">兑换已暂停，这一批会被拒绝</Fact>}
+        <Fact k="每一单">依次检查兑换开关、风险披露闸门、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
+        {batchBlockedReason && <Fact k="现在" tone="warn">{batchBlockedReason}</Fact>}
       </Facts>;
     },
     statedBrief: { impact: "符合条件的排队单马上成交、记账；处理结果逐单列出。", check: "核对处理数量，理由写清依据或工单号。" },
@@ -1136,8 +1139,12 @@ function G2ExchangePage() {
     run: async (reason, value) => {
       const saved = pendingG2QueueBatch(batchAdminId);
       if (saved && g2ExchangeCommandExpired(saved)) { await checkOriginalBatch(saved); return; }
-      if (!saved && (!latest.current.overview || latest.current.exchangeExecutionBlocked || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey)) {
-        throw new Error("兑换已暂停，这一批没有处理。恢复兑换要到「紧急停用开关」页面。");
+      if (!saved) {
+        const view = latest.current;
+        if (!view.overview || view.loading || view.readFailed || view.rereadPending || view.busyKey) {
+          throw new Error("当前值没读到，重新加载后再改");
+        }
+        if (view.batchBlockedReason) throw new Error(view.batchBlockedReason);
       }
       try {
         await processQueueBatch(saved?.limit ?? Number(value || 50), saved?.reason ?? reason);
@@ -1154,24 +1161,20 @@ function G2ExchangePage() {
   const switchUnread = swap.emergencyPaused !== null ? null
     : overview.emergencySwitch?.exchange.unavailableReason === "MISSING" ? "missing"
     : overview.emergencySwitch?.exchange.unavailableReason === "INVALID" ? "invalid" : "absent";
-  // 风险披露闸门是另一件事，开着时单独说一句，不当成兑换停了。
-  const disclosureOn = overview.disclosureGate.exchange;
-  const disclosureHint = disclosureOn ? <>风险披露闸门对兑换开着，在{reach("/content/disclosures") ? <> <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> </> : "「法律条款与风险披露」"}管。</> : null;
-  const disclosureExplain = disclosureOn ? <p>风险披露闸门和兑换开关是两件事：兑换和处理排队能不能进行只看兑换开关；闸门对兑换具体拦谁，规则还在定。</p> : null;
-  const conclusion = switchUnread === "absent"
+  const disclosureLink = reach("/content/disclosures") ? <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> : "「法律条款与风险披露」";
+  const disclosureHint = disclosureBlocked ? <>风险披露闸门也在阻断兑换，在 {disclosureLink} 管。</> : null;
+  const conclusion = switchUnread === "absent" && !disclosureBlocked
     ? <Conclusion state="warn" icon={CircleHelp}
-        hint={<>真实状态到 {killSwitchLink} 看。{disclosureHint}</>}
+        hint={<>真实状态到 {killSwitchLink} 看。</>}
         explain={<>
           <p>兑换开关的状态暂时读不到。这页不据此判断用户能不能兑换，也不当成暂停。</p>
-          {disclosureExplain}
         </>}>这页读不到兑换开关</Conclusion>
-    : switchUnread
+    : switchUnread === "missing" || switchUnread === "invalid"
     ? <Conclusion state="warn" icon={ShieldAlert}
         hint={<>新兑换和处理排队都会被拒绝；到 {killSwitchLink} 打开。{disclosureHint}</>}
         explain={<>
           <p>{switchUnread === "missing" ? "「紧急停用开关」里没有兑换这一项。" : "「紧急停用开关」里兑换这一项存的不是开或关。"}这种情况兑换一律按关闭处理。</p>
           <p>点「紧急暂停兑换」会提示已经是关的；额度和超额度处置策略照常能改。</p>
-          {disclosureExplain}
         </>}>{switchUnread === "missing" ? "兑换开关没有设置，兑换现在是停的" : "兑换开关设置有误，兑换现在是停的"}</Conclusion>
     : swap.emergencyPaused
     ? <Conclusion state="warn" icon={PauseCircle}
@@ -1179,21 +1182,22 @@ function G2ExchangePage() {
         explain={<>
           <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
           <p>暂停时，用户新发起的兑换和「处理排队」都会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
-          {disclosureExplain}
         </>}>兑换已暂停，新发起的兑换会被拒绝</Conclusion>
+    : disclosureBlocked
+    ? <Conclusion state="warn" icon={ShieldAlert}
+        hint={<>新兑换和处理排队都会被拒绝；已有排队单仍在队列。</>}
+        explain={<p>在 {disclosureLink} 将兑换移出受限动作后，风险披露闸门才会解除对兑换的阻断。</p>}>
+        风险披露闸门已阻断兑换</Conclusion>
     : stats.queueDepth > 0
       ? <Conclusion state="warn" icon={ListOrdered}
-          hint={<>{canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}{disclosureHint}</>}
+          hint={canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}
           explain={<>
             <p>排队数是所有还在排队的单，不限哪天创建。没有定时处理，由运营确认后成交，到账时间以实际处理为准。</p>
-            {disclosureExplain}
           </>}>
           兑换开着，有 {fmtCount(stats.queueDepth)} 单在排队等处理</Conclusion>
       : <Conclusion state="neutral" icon={ArrowLeftRight}
-          hint={disclosureHint ?? undefined}
           explain={<>
             <p>只说开关和队列：兑换开着、没有排队的单。今天的额度用量和拦截在下面。</p>
-            {disclosureExplain}
           </>}>
           兑换开着，队列是空的{totalGate > 0 ? `，今天拦下 ${fmtCount(totalGate)} 次` : ""}</Conclusion>;
 
@@ -1280,7 +1284,7 @@ function G2ExchangePage() {
       setRecoveryError(null);
       setRecoveryKey(ownPendingBatch.commandKey);
     }}>核对原处理</Button>
-    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? (swap.emergencyPaused === true ? "兑换已暂停，这一批会被拒绝" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
+    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? switchBlockedReason ?? batchBlockedReason ?? (queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
 
   const batchItems = batchResult ? [
     ...batchResult.completed.map((row) => ({ ...row, kind: "completed" as const })),
@@ -1300,7 +1304,7 @@ function G2ExchangePage() {
         <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : !swap.emergencyPaused ? PlayCircle : PauseCircle}
           tone={switchUnread === "absent" ? "neutral" : switchUnread || swap.emergencyPaused ? "warn" : "ok"}
           value={switchUnread === "absent" ? "—" : switchUnread === "missing" ? "没有设置" : switchUnread === "invalid" ? "设置有误" : !swap.emergencyPaused ? "开着" : "已暂停"}
-          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "按关闭处理" : !swap.emergencyPaused ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
+          sub={switchUnread === "absent" ? "这页读不到" : switchUnread ? "按关闭处理" : swap.emergencyPaused ? "新发起的兑换会被拒绝" : disclosureBlocked ? "风险披露闸门已阻断兑换" : "用户可以发起兑换"}
           explain={switchUnread === "absent" ? "这次没读到兑换开关的状态，到「紧急停用开关」看。"
             : switchUnread ? "「紧急停用开关」里的兑换开关读不出开或关，兑换按关闭处理。"
             : "和「紧急停用开关」里的兑换开关是同一个。"} />
@@ -1416,7 +1420,7 @@ function G2ExchangePage() {
 
       <Fold title="地区封锁" icon={Globe2} tone="role-other"
         summary={geoBlocked.length ? `${fmtCount(geoBlocked.length)} 个地区 · ${geoBlocked.map((row) => row.cc).join(" / ")}` : "没有封锁的地区"}
-        explain={<><p>在「地区访问限制」页修改，这里只能查看。用户发起兑换时按访问来源的国家拦截。</p><p>处理排队时，一单先过开关、用户、钱包和额度检查，再看用户资料里的国家：被封锁的取消，有预占的退回；前面没过的留在队列。</p><p>改封锁地区本身不会马上取消已经在排队的单。</p></>}
+        explain={<><p>在「地区访问限制」页修改，这里只能查看。用户发起兑换时按访问来源的国家拦截。</p><p>处理排队时，一单先过兑换开关、风险披露闸门、用户、钱包和额度检查，再看用户资料里的国家：被封锁的取消，有预占的退回；前面没过的留在队列。</p><p>改封锁地区本身不会马上取消已经在排队的单。</p></>}
         actions={reach("/emergency/geo-block", "emergency_j2_read") ? <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去「地区访问限制」</Link> : undefined}>
         {geoBlocked.length === 0
           ? <BlockState state="empty" compact title="没有封锁的地区" detail="这里只列「地区访问限制」里状态是封锁的地区。" />

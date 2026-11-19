@@ -326,6 +326,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EXCHANGE_QUEUE_STATE_CONFLICT: "这笔兑换的状态刚刚变了，本次没有处理。请刷新页面查看最新状态后再操作。",
   EXCHANGE_QUEUE_REFUND_CONFLICT: "退回预占金额时用户钱包更新失败，整笔没有生效、没有取消或成交。请刷新后重试；一直失败请联系值班同事核对钱包。",
   EXCHANGE_LEDGER_CONFLICT: "兑换账本写入失败，整笔没有生效、没有改动资金。请刷新后重试；一直失败请联系值班同事核对账本。",
+  EXCHANGE_DISCLOSURE_GATE_CLOSED: "风险披露闸门已阻断兑换，这一批没有处理，排队单仍在队列。请到「法律条款与风险披露」核对受限动作。",
   EXCHANGE_SWAP_PAUSED: "兑换已暂停，这一批没有处理。恢复兑换要到「紧急停用开关」页面。",
   G2_EXECUTION_MUTEX_UNAVAILABLE: "暂时拿不到兑换处理的执行锁，这一批没有开始。请稍后再试，不要连续重复点击。",
   G2_COMMAND_BOUNDARY_UNAVAILABLE: "兑换处理服务暂时不可用，这一批没有处理。请稍后刷新再试。",
