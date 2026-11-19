@@ -538,7 +538,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     const replayable = d1CommandReplayable(record.path);
     return {
       key: record.commandKey,
-      label: preparation ? `${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
+      label: preparation ? `${record.path.endsWith("/decision") ? exceptionObject(JSON.parse(record.body)).decision === "CANCEL" ? "取消" : "复核" : "新建"} ${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
       createdAt: record.createdAt,
       hint: replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
         : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。",

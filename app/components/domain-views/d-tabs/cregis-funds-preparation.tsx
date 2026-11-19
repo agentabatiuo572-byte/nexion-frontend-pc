@@ -38,7 +38,7 @@ export function CregisFundsPreparation(props: Props) {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   if (!session?.authorities.includes("finance_d1_read")) return null;
   return <OwnedPreparation key={`${network}:${props.reloadKey}:${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
-    {...props} owner={session.adminId} ownerEpoch={epoch} network={network} switched={switched} onNetworkChange={next => { switched.current = true; setNetwork(next); }} />;
+    {...props} owner={session.adminId} ownerEpoch={epoch} network={network} switched={switched} onNetworkChange={next => { if (next === network) return; switched.current = true; setNetwork(next); }} />;
 }
 
 function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, ownerEpoch, network, switched, onNetworkChange }: Props & {
@@ -137,7 +137,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
       openActionConfirm({ briefKind: "record", action: "创建资金准备单", title: "创建资金准备单", confirmLabel: "确认创建",
         effect: <StatusTag tone="neutral" filled>只保存准备记录</StatusTag>,
         facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(body.amountUsdt)}</Fact><Fact k="类型">{kindLabel(kind)}</Fact>{network === "ERC20" && <Fact k="网络">ERC20</Fact>}<Fact k="来源">{body.sourceAddress}</Fact><Fact k="接收">{target}</Fact><Fact k="业务参考">{snapshot.businessReference}</Fact></Facts>,
-        detail: `${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${target} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
+        detail: `${network === "ERC20" ? "ERC20 · " : ""}${kindLabel(kind)} · ${body.amountUsdt} USDT · 来源 ${body.sourceAddress} · 接收 ${target} · 业务参考 ${snapshot.businessReference}。仅保存准备记录，不发送资金。`,
         reasonMin: 10, reasonMax: 300, completionCopy: "只保存准备记录，不发送资金。", run: async reason => { await command("/plans", { ...snapshot, reason }, network); setCreating(false); } });
     } catch (failure) { setFormError((failure as Error).message); }
   };
@@ -149,7 +149,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     openActionConfirm({ briefKind: "record", action: decision === "REVIEW" ? "复核准备单" : "取消准备单", title: decision === "REVIEW" ? "复核准备单" : "取消准备单",
       confirmLabel: decision === "REVIEW" ? "确认复核" : "确认取消", effect: <StatusTag tone="neutral" filled>不转账</StatusTag>,
       facts: <Facts><Fact k="金额" lead tone="role-1" unit="USDT">{usdt(String(row.amountUsdt))}</Fact><Fact k="类型">{kindLabel(row.kind)}</Fact>{planNetwork === "ERC20" && <Fact k="网络">ERC20</Fact>}<Fact k="来源">{String(row.sourceAddress)}</Fact><Fact k="接收">{String(row.targetAddress)}</Fact><Fact k="业务参考">{String(row.businessReference)}</Fact></Facts>,
-      detail: `${kindLabel(row.kind)} · ${row.amountUsdt} USDT · ${row.sourceAddress} → ${row.targetAddress} · ${row.businessReference}。复核只确认准备信息，不授权或执行转账。`,
+      detail: `${planNetwork === "ERC20" ? "ERC20 · " : ""}${kindLabel(row.kind)} · ${row.amountUsdt} USDT · ${row.sourceAddress} → ${row.targetAddress} · ${row.businessReference}。复核只确认准备信息，不授权或执行转账。`,
       reasonMin: 10, reasonMax: 300, completionCopy: decision === "REVIEW" ? "准备信息已复核，尚未转账" : "准备单已取消",
       run: reason => command(`/plans/${row.planNo}/decision`, { expectedVersion: row.version, decision, reason }, planNetwork) });
   };
@@ -181,7 +181,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     </>}>
     {error && config && <Notice tone="warn">{error}</Notice>}
     {loading && !config ? <BlockState state="loading" title="正在读取资金准备记录…" />
-      : unconfigured ? <BlockState state="empty" title={ERC20_CONFIGURATION_REQUIRED} detail="请联系管理员配置 ERC20 的 Cregis 归集钱包和平台收款钱包，配好后点「刷新」。" />
+      : unconfigured ? <BlockState state="empty" title={ERC20_CONFIGURATION_REQUIRED} detail="请联系管理员核对 ERC20 的收款服务项目和钱包地址配置，配好后点「刷新」。" />
       : !config ? <BlockState state="error" title="资金准备读取失败" detail={error} onRetry={() => void refresh()} />
         : <div className="rd-stack">
           <p className="rd-note">只保存准备单和复核意见，不会转出资金。</p>
