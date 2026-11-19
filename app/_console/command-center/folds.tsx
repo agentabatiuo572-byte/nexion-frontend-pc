@@ -3,7 +3,7 @@
 /**
  * 第二层：5 行带结论的折叠摘要，点一下原地展开。标题写结论，不重复首屏数字（DP-04、DP-61）。
  * 每块最多一个「查看…」入口，放在标题行右侧，正文色不加箭头（VS-06）；结论句已给的入口这里不再给一个。读取失败一行写完，不占整块。
- * 资金和风险用首屏已读的数据；资金进出的今日充值和提现明细、用户与转化、关键指标展开时才读，
+ * 资金和风险用首屏已读的数据；资金进出的充值数据复用待处理读取，提现明细、用户与转化、关键指标展开时才读，
  * 转化每读一次写一条审计，所以第一次展开后才挂载，收起也不卸载。
  */
 import Link from "next/link";
@@ -16,7 +16,7 @@ import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import type { BLedger, BLiquidity, BRiskRadar } from "@/lib/admin/b-client";
 import { useB3Funnel } from "@/lib/admin/b3-client";
-import { fetchD1TopupOverview } from "@/lib/admin/d-client";
+import type { fetchD1TopupOverview } from "@/lib/admin/d-client";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -25,7 +25,7 @@ import { UNAVAILABLE_GATES, byGateDisplayOrder } from "@/lib/admin/j-client";
 import { fmtAmount, fmtConfigPct, fmtNum, fmtPct } from "@/lib/format";
 import { PERIODS, usdtText } from "./period";
 import type { FundLevel } from "./status";
-import { useBlock } from "./use-block";
+import { useBlock, type Block } from "./use-block";
 
 const usdt = (value: number) => `${fmtAmount(value)} USDT`;
 /** 充值渠道显示名：接口叫「银行卡支付」，页面和入金卡问号统一叫「银行卡」（DT-14），接口名不动。 */
@@ -310,7 +310,7 @@ function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B
   );
 }
 
-export function FlowFold({ blocks, period, summary, summaryError, summaryLoading, onRetrySummary, history, historyError, historyRetrying, onRetryHistory, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
+export function FlowFold({ blocks, period, summary, summaryError, summaryLoading, onRetrySummary, history, historyError, historyRetrying, onRetryHistory, topup, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
   blocks: B0Blocks;
   /** 经营数据选中的时段和它读到的数，读不到时为 null。 */
   period: B0SummaryPeriod;
@@ -323,6 +323,7 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
   historyError: string | null;
   historyRetrying: boolean;
   onRetryHistory: () => void;
+  topup: Block<Awaited<ReturnType<typeof fetchD1TopupOverview>>>;
   /** 入金卡上已经写了今日充值合计（有 L3 而且读到了），这里只写各渠道。 */
   topupOnCard: boolean;
   netFlow24h: number | null;
@@ -331,8 +332,6 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
   reach: Reach;
 }) {
   const opened = useOpenedOnce(open);
-  // 充值渠道只看 D1 读权，不跟入金卡走：入金卡读不到时这里照样有，各自重试。
-  const topup = useBlock(fetchD1TopupOverview, opened && blocks.topup, refreshKey);
   const redemption = useBlock(fetchB0Redemption, opened && blocks.redemption, refreshKey);
   const title = !blocks.netFlow ? "入金和提现明细" : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
   const todayFlow = history?.flowWindows.at(-1);
