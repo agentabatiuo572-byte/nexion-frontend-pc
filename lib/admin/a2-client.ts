@@ -204,8 +204,14 @@ export interface A2RoleGrantsReview {
 }
 
 type I5DisclosureReview = { jurisdiction: string; version: string } & (
-  | { kind: "PUBLISH"; draft?: DisclosureVersionItemView }
-  | { kind: "MATRIX"; expectedVersion: string }
+  | {
+    kind: "PUBLISH";
+    draft?: DisclosureVersionItemView;
+    previousVersion?: string | null;
+    previousVersionSummary?: DisclosureVersionItemView | null;
+    draftMatchesFrozenEvidence?: boolean | null;
+  }
+  | { kind: "MATRIX"; expectedVersion: string; originalCountryCodes?: string[] | null; targetCountryCodes?: string[] | null }
 );
 
 export interface A2OperationRow {
@@ -412,18 +418,47 @@ export function readA2DisclosureVersion(value: unknown, jurisdiction: string, ve
   return row as DisclosureVersionItemView;
 }
 
+function readDisclosureCountryCodes(value: unknown): string[] | null | undefined {
+  if (value === null) return null;
+  return Array.isArray(value) && value.every(code => typeof code === "string" && code.trim()) ? value : undefined;
+}
+
 function readI5DisclosureReview(value: unknown, operation: BackendTicket["operationCode"]): I5DisclosureReview | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { kind, jurisdiction, version, expectedVersion, revision, contentHash, draft, chapters } = value as Record<string, unknown>;
+  const {
+    kind, jurisdiction, version, expectedVersion, revision, contentHash, draft, chapters,
+    previousVersion, previousVersionSummary, draftMatchesFrozenEvidence, originalCountryCodes, targetCountryCodes,
+  } = value as Record<string, unknown>;
   if (typeof jurisdiction !== "string" || !jurisdiction.trim() || typeof version !== "string" || !version.trim()) return undefined;
   if (kind === "MATRIX" && operation === "i5_matrix_configure" && typeof expectedVersion === "string") {
-    return { kind, jurisdiction, version, expectedVersion };
+    return { kind, jurisdiction, version, expectedVersion,
+      originalCountryCodes: readDisclosureCountryCodes(originalCountryCodes),
+      targetCountryCodes: readDisclosureCountryCodes(targetCountryCodes) };
   }
   if (kind !== "PUBLISH" || (operation !== "i4_disclosure_publish" && operation !== "i5_disclosure_publish")) return undefined;
   const frozen = draft && typeof draft === "object" ? readA2DisclosureVersion({ ...draft, chapters }, jurisdiction, version) : undefined;
-  return { kind, jurisdiction, version, draft: frozen?.status.toLowerCase() === "draft"
-    && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0 && frozen.revision === revision
-    && typeof contentHash === "string" && /^[a-f0-9]{64}$/.test(contentHash) && frozen.contentHash === contentHash ? frozen : undefined };
+  const previous = typeof previousVersion === "string" && previousVersion.trim() ? previousVersion : undefined;
+  // The frozen previous summary omits the jurisdiction on the version and both identifiers on each chapter.
+  const summary = previousVersionSummary as { chapters?: unknown } | null | undefined;
+  const previousRow = previous && previous !== version && Array.isArray(summary?.chapters)
+    ? readA2DisclosureVersion({ ...summary, jurisdiction,
+      chapters: summary.chapters.map(chapter => ({ ...chapter, jurisdiction, version: previous })) }, jurisdiction, previous)
+    : undefined;
+  return {
+    kind, jurisdiction, version,
+    draft: frozen?.status.toLowerCase() === "draft"
+      && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0 && frozen.revision === revision
+      && typeof contentHash === "string" && /^[a-f0-9]{64}$/.test(contentHash) && frozen.contentHash === contentHash ? frozen : undefined,
+    previousVersion: previousVersion === null ? null : previous,
+    previousVersionSummary: previousVersionSummary === null ? null
+      : previousRow && ["published", "archived"].includes(previousRow.status.toLowerCase()) ? previousRow : undefined,
+    draftMatchesFrozenEvidence: typeof draftMatchesFrozenEvidence === "boolean" || draftMatchesFrozenEvidence === null
+      ? draftMatchesFrozenEvidence : undefined,
+  };
+}
+
+export function isFirstA2DisclosurePublish(review: Extract<I5DisclosureReview, { kind: "PUBLISH" }>): boolean {
+  return !!review.draft && review.previousVersion === null && review.previousVersionSummary === null;
 }
 
 function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {

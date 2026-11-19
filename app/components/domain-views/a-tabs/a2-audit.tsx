@@ -48,6 +48,7 @@ import {
   fetchA2RetentionPreview,
   fetchA2Overview,
   isA2OutcomeUncertainError,
+  isFirstA2DisclosurePublish,
   rejectA2Operation,
   runA2RetentionNow,
   updateA2MechanismParam,
@@ -1168,12 +1169,15 @@ function deviceApprovalValue(value: string, operationCode?: string) {
  * 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。
  * F5 奖励状态单的变更前是「以服务器执行时状态与版本为准」、变更后是英文状态：写成「冷却中 → 已解锁」；改之前能是几种状态的写「批准时的状态」。
  */
-function i5MatrixVersionText(summary: string, version: string) {
-  return version ? summary.startsWith(`${version} · `) ? summary : version : "未配置";
+function i5MatrixVersionText(version: string, countries?: string[] | null) {
+  return `${version || "未配置"} · ${countries?.join("、") || (countries ? "未配置" : "未提供")}`;
 }
 
 const changeBefore = (row: { before: string; after?: string; obj?: string; action?: string; operationCode?: string; ambassadorMaterialProposal?: unknown; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
-  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.before, row.disclosureReview.expectedVersion);
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.expectedVersion, row.disclosureReview.originalCountryCodes);
+  if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.previousVersion
+    ?? (isFirstA2DisclosurePublish(row.disclosureReview) ? "无上一版" : "未提供");
+  if (row.operationCode === "i5_disclosure_publish" || row.operationCode === "i4_disclosure_publish") return "未提供";
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_FROM[fund.state] ?? "批准时的状态";
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.before);
@@ -1186,7 +1190,7 @@ const changeBefore = (row: { before: string; after?: string; obj?: string; actio
   return deviceApprovalValue(changeBeforeText(row), row.operationCode);
 };
 const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
-  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.after, row.disclosureReview.version);
+  if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const fund = fundTicket(row);
   if (fund?.kind === "f5Status") return F5_STATE_NAME[fund.state] ?? row.after;
