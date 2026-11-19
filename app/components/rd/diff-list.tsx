@@ -34,8 +34,9 @@ export interface DiffRow {
   key: string;
   /** 只有一行时不显示：框的标题已经写明是哪一项，写成一句「现在 → 改后」。 */
   label?: ReactNode;
-  before: string;
-  after: string;
+  /** Omit an undocumented side when the row is evidence rather than a replacement value. */
+  before?: string;
+  after?: string;
   /** 这一项改了会怎样。只写风险和后果，跟在这一行下面。 */
   note?: ReactNode;
   /** note 的语气：要注意传 warn（默认），真危险才传 danger。 */
@@ -43,7 +44,7 @@ export interface DiffRow {
 }
 
 export function DiffList({ rows, emptyNote, restTitle = "其余设置" }: { rows: readonly DiffRow[]; emptyNote?: ReactNode; restTitle?: ReactNode }) {
-  if (rows.length === 1) {
+  if (rows.length === 1 && rows[0].before !== undefined && rows[0].after !== undefined) {
     const [{ before, after }] = rows;
     return (
       <p className="rd-diff-one">
@@ -65,7 +66,7 @@ export function DiffList({ rows, emptyNote, restTitle = "其余设置" }: { rows
               <li key={row.key} className="rd-diff-row">
                 <span className="rd-diff-name">{row.label}</span>
                 <span className="rd-diff-before">{row.before}</span>
-                <span className="rd-diff-arrow"><ArrowRight size={14} aria-hidden /><span className="rd-sr-only">改为</span></span>
+                <span className="rd-diff-arrow">{row.before !== undefined && row.after !== undefined && <><ArrowRight size={14} aria-hidden /><span className="rd-sr-only">改为</span></>}</span>
                 <span className="rd-diff-after">{row.after}</span>
                 {row.note && <span className="rd-diff-note" data-tone={row.tone ?? "warn"}><NoteIcon size={14} strokeWidth={1.9} aria-hidden /><span>{row.note}</span></span>}
               </li>
