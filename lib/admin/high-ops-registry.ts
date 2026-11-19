@@ -63,10 +63,10 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
 const E6_ONBOARDING_YIELD_SKU: HighOpDef = {
   op: "e6_onboarding_yield_sku",
   domain: "E",
-  action: "TODO(B53)",
+  action: "更换引导对比商品",
   amplifies: false,
   type: "param",
-  gateLabel: "TODO(B53)",
+  gateLabel: "另一位有批准权限、能修改手机算力配置并能查看商品目录的管理员",
   targetType: "onboarding_yield_comparison",
   buildCommand: ({ configKey, productNo, expectedRevision }) => ({
     domain: "E", op: "e6_onboarding_yield_sku", params: { configKey, productNo, expectedRevision },

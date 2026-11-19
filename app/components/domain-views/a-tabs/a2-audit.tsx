@@ -3,6 +3,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { k1EarningSourceName } from "@/lib/admin/k1-earning-sources";
 import { parseK1ReleaseTicketBefore } from "@/lib/admin/k1-risk-approval";
 import { operatorDeviceStatus } from "@/lib/admin/e-operator-display";
+import { skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "@/lib/admin/audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -1002,6 +1003,12 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const a = parseReview(operationCode === "g_param" ? gParamText(after) : k1ApprovalSummaryText(after, operationCode));
   const labels = hiReviewLabels(operationCode);
   const original = { b, a, labels, evidenceKeys: [] as string[] };
+  // E1 商品的所属系列：后端冻结的是代码值，这里换成名称。新建没有前值；旧票没有这一项时不补。
+  if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
+    const named = (review: Review | null): Review | null => review?.kind === "object" && "seriesCode" in review.value
+      ? { kind: "object", value: { ...review.value, seriesCode: skuSeriesText(review.value.seriesCode) } } : review;
+    return { b: named(b), a: named(a), labels: { ...labels, seriesCode: "所属系列" }, evidenceKeys: [] as string[] };
+  }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
     const status = b.value.status === "1" ? "启用" : b.value.status === "0" ? "停用" : b.value.status;

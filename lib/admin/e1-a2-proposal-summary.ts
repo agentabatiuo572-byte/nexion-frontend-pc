@@ -1,5 +1,6 @@
 import type { OpsSku } from "./platform-types";
 import { shareBaseRateText } from "./operator-copy.ts";
+import { skuSeriesText } from "./device-monthly-target.ts";
 
 export interface SkuProposalSummary {
   before: string;
@@ -71,7 +72,7 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "商城状态", read: (sku) => sku.status, format: text, equal: stringEqual },
   { label: "商品类型", read: (sku) => sku.productType, format: productType },
   { label: "商品档位", read: (sku) => sku.tier, format: text, equal: stringEqual },
-  { label: "seriesCode", read: (sku) => sku.seriesCode, format: text, equal: stringEqual },
+  { label: "所属系列", read: (sku) => sku.seriesCode, format: skuSeriesText, equal: stringEqual },
   { label: "日产收益", targetDerived: true, read: (sku) => sku.dailyEarn, format: money, equal: numberEqual },
   { label: "日产 UVT", read: (sku) => sku.dailyEarnNEX, format: number, equal: numberEqual },
   { label: "手机日产收益", read: (sku) => sku.phoneDailyEarn, format: money, equal: numberEqual },
