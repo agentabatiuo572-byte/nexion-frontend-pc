@@ -323,7 +323,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         if (index < 0 || previous.conversations[index].version > detail.version || previous.conversations[index].ownerAdminId !== detail.ownerAdminId || previous.conversations[index].assignmentId !== detail.assignmentId) return previous;
         const conversations = previous.conversations.slice();
         // Message-only history reads must not replace an already verified profile with list placeholders.
-        conversations[index] = includeCustomerProfile ? detail : { ...detail, profile: previous.conversations[index].profile, customer: previous.conversations[index].customer, holder: detail.holder === undefined ? previous.conversations[index].holder : detail.holder };
+        const prior = conversations[index];
+        const withHolder = { ...detail, holder: detail.holder === undefined ? prior.holder : detail.holder };
+        conversations[index] = includeCustomerProfile ? withHolder : { ...withHolder, profile: prior.profile, customer: prior.customer };
         return { ...previous, conversations };
       });
       return detail;
