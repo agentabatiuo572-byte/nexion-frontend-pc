@@ -282,7 +282,7 @@ export async function executeG3MarketChange(
       const { change, value, reason, request } = command;
       commands.remember(fingerprint, key, { input: JSON.stringify({ change, value, reason, request, ticketId: ticket.id }) });
     } else forget();
-    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位有权超管批准，尚未生效" : "请核对审批记录及当前配置"}`,
+    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等另一位超级管理员批准，尚未生效" : "请核对审批记录及当前配置"}`,
       ticketKey: ticket.status === "pending" ? key : undefined };
   };
   if (command.request.kind === "approval" && previous) {
@@ -308,7 +308,7 @@ export async function executeG3MarketChange(
       if (ticket.status !== "pending") return result;
       return { acknowledgement: runtimeProposal
         ? "已提交审批，批准前价格不变"
-        : `已提交审批 · ${ticket.id} · 等待另一位有权超管批准，尚未生效`, ticketKey: key };
+        : `已提交审批 · ${ticket.id} · 等另一位超级管理员批准，尚未生效`, ticketKey: key };
     }
     const active = await submitG3MarketCommand(command.request.path, command.request.method, command.request.body, key);
     ensureOwner(false);
