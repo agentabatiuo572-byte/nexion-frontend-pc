@@ -63,6 +63,8 @@ interface BackendOverview {
   curveRevision?: string;
   priceRevision?: string;
   scheduleRevision?: string;
+  pinRevision?: string;
+  pausedRevision?: string;
 }
 
 interface BackendHistoryPoint {
@@ -133,6 +135,8 @@ export interface G3Overview {
   curveRevision?: string;
   priceRevision?: string;
   scheduleRevision?: string;
+  pinRevision?: string;
+  pausedRevision?: string;
 }
 
 export interface G3ObjectReadState {
@@ -377,6 +381,8 @@ function normalizeReadOverview(data: BackendOverview | null | undefined): G3Read
     curveRevision: data.curveRevision,
     priceRevision: data.priceRevision,
     scheduleRevision: data.scheduleRevision,
+    pinRevision: data.pinRevision,
+    pausedRevision: data.pausedRevision,
   };
 }
 

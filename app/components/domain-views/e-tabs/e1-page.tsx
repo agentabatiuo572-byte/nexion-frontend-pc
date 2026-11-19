@@ -11,7 +11,7 @@ import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -19,7 +19,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { McSpec } from "./types";
-import type { SkuForm } from "./data";
+import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1PhaseId, type SkuForm } from "./data";
 import { E1Catalog, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest } from "./e1-editor";
 import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
@@ -124,16 +124,38 @@ export function E1Page() {
   const catalogReadBlock = loading || error ? "商品目录读取成功前不能提交修改" : undefined;
   const gatesReadBlock = gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : undefined;
   const discountReadBlock = discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
-  const readBlock: E1CatalogContext["writeBlockedReason"] = input => {
+  const currentPhase = e1CurrentPhase(gates);
+  const phaseBlock = currentPhase.phaseId ? undefined : `${E1_CURRENT_PHASE_UNVERIFIED}，暂不能提交`;
+  const archiveCurrentBlock = (phaseId?: string) => phaseBlock ?? (phaseId === currentPhase.phaseId ? "当前阶段不能删除" : undefined);
+  const readBlock: E1CatalogContext["writeBlockedReason"] = (input, values) => {
     switch (input.op) {
-      case "sku-save": return catalogReadBlock ?? (gatesReadBlock ? "商品编辑需要开放阶段和审核契约，请先读取开放阶段" : undefined);
+      case "sku-save": return catalogReadBlock ?? (gatesReadBlock ? "商品编辑需要开放阶段和审核契约，请先读取开放阶段" : edit?.unlock ? phaseBlock : undefined);
       case "sku-delete": return catalogReadBlock;
-      case "sku-status": return catalogReadBlock ?? (input.status === "on" ? gatesReadBlock : undefined);
-      case "phase-archive": return gatesReadBlock ?? catalogReadBlock;
-      case "generation-gate-save": return gatesReadBlock ?? (!input.generationGateId ? catalogReadBlock : undefined);
-      case "generation-gate-force": return gatesReadBlock ?? (input.generationGate?.forceUnlock ? catalogReadBlock : undefined);
-      case "phase-save":
-      case "param":
+      case "sku-status": {
+        if (catalogReadBlock || input.status !== "on") return catalogReadBlock;
+        if (gatesReadBlock) return gatesReadBlock;
+        const sku = skus.find(item => item.id === input.target);
+        return sku && gates ? e1SkuOpening(sku, gates, currentPhase.phaseId).blockers.join("；") || undefined : undefined;
+      }
+      case "phase-archive": return gatesReadBlock ?? catalogReadBlock ?? archiveCurrentBlock(input.phaseId);
+      case "generation-gate-save": {
+        const sourceBlock = gatesReadBlock ?? (!input.generationGateId ? catalogReadBlock : undefined);
+        if (sourceBlock || !values || !phaseBlock) return sourceBlock;
+        if ((values.forceUnlock ?? String(input.generationGate?.forceUnlock)) === "true") return phaseBlock;
+        if (input.generationGateId) return undefined;
+        const phaseId = values.phase;
+        if (!phaseId) return "当前阶段待核实，请手动选择开放阶段";
+        if (!gates?.phaseOrder.includes(phaseId) || !gates.phases.some(phase => phase.p === phaseId && phase.status !== "archived")) {
+          return formatAdminApiError("E1_GATE_PHASE_INVALID", "");
+        }
+        const sku = skus.find(item => item.id === (values.skuId ?? input.generationGate?.skuId));
+        if (!sku || resolveE1PhaseId(gates.phases, sku.unlock.trim()) !== phaseId) return formatAdminApiError("E1_GATE_SKU_PHASE_MISMATCH", "");
+        return undefined;
+      }
+      case "generation-gate-force": return gatesReadBlock ?? (input.generationGate?.forceUnlock ? catalogReadBlock ?? phaseBlock : undefined);
+      case "phase-save": return gatesReadBlock ?? (input.phaseId && values?.status === "archived"
+        && gates?.phases.some(phase => phase.p === input.phaseId && phase.status !== "archived") ? archiveCurrentBlock(input.phaseId) : undefined);
+      case "param": return gatesReadBlock ?? (gates?.releases.some(gate => gate.id === input.generationGateId && gate.forceUnlock) ? phaseBlock : undefined);
       case "generation-gate-archive": return gatesReadBlock;
       case "bundle-discount": return discountReadBlock;
       case "early-access": return earlyReady ? undefined : "当前设置未读取，请先重新读取抢先购设置";
@@ -167,7 +189,7 @@ export function E1Page() {
     || receipts.some(r => r.status === "pending" && r.object === `${type}|${id}`);
 
   const openSku = (skuId?: string, unlock?: string) => {
-    if (!skuWritesReady || skuId && locked("device_sku", skuId)) return;
+    if (!skuWritesReady || unlock && unlock !== currentPhase.phaseId || skuId && locked("device_sku", skuId)) return;
     if (edit) { toast("请先完成或关闭正在编辑的商品草稿"); return; }
     setEdit({ sku: skuId ? skus.find(s => s.id === skuId) : undefined, unlock, nonce: Date.now() });
   };
@@ -270,7 +292,7 @@ export function E1Page() {
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
     const mc = confirmation;
     if (!mc || !canWrite) throw new Error("当前不能提交，请保留输入并刷新目录核对");
-    const missingSource = readBlock(mc);
+    const missingSource = readBlock(mc, business);
     if (missingSource) throw new Error(missingSource);
     let op = "", context: Record<string, unknown> = {}, before = "", after = "", obj = "", amplifies = !!mc.amplify;
     if (mc.op === "sku-save" && mc.sku) {
@@ -343,7 +365,7 @@ export function E1Page() {
   const skuDiff = mc?.op === "sku-save" && mc.sku ? e1SkuDiff(mc.beforeSku, mc.sku, mc.form) : null;
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
-    skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, phaseCur: gates?.phaseCurrent ?? "", refreshE1: async () => { await refresh(); },
+    skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: async () => { await refresh(); },
     pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError, refreshEarly: () => void refreshEarly(),
     gatesLoading, gatesError, discountLoading, discountError, refreshGates: () => void refreshGates(), refreshDiscount: () => void refreshDiscount(), writeBlockedReason: readBlock,
     pendingProposal: id => receipts.find(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)),
@@ -398,7 +420,7 @@ export function E1Page() {
         explain="有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
       <E1Catalog ctx={ctx} />
     </>}
-    <E1Editor request={edit} gates={gates} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
+    <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
     {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); return value; } } : mc.businessForm}
       amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
@@ -417,7 +439,7 @@ export function E1Page() {
             setConflict(false); setConflictLatest(null); setAttemptKey("");
           }}>已核对，保留输入并采用此修订</Button>
         </Notice>}
-      </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc)}
+      </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc, businessValues)}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
     {release && (isRetryExpired(release)

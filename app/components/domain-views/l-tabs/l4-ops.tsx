@@ -15,12 +15,12 @@ import {
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { downloadL4NetworkFile, fetchL4NetworkReport, isLOutcomeUnknownError, LOutcomeUnknownError, type L4OperationsQuery } from "@/lib/admin/l-client";
+import { fetchL4NetworkReport, isLOutcomeUnknownError, LOutcomeUnknownError, type L4OperationsQuery } from "@/lib/admin/l-client";
 import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { isL4NetworkDurable, l4NetworkCommands, networkReasonLength, type PendingL4NetworkExport } from "@/lib/admin/l4-network-export";
+import { downloadL4NetworkSnapshot, isL4NetworkDurable, l4NetworkCommands, l4NetworkGrantRecovery, networkReasonLength, type PendingL4NetworkExport } from "@/lib/admin/l4-network-export";
 import { fetchH1Phases } from "@/lib/admin/h-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findByPath } from "@/lib/nav/console-nav";
@@ -250,33 +250,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     return record;
   };
 
-  const downloadTree = async (original: PendingL4NetworkExport) => {
-    let record = original;
+  const downloadTree = async (record: PendingL4NetworkExport) => {
     const result = record.result;
-    if (!result) return;
-    if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
-    if (record.grantRequested && !record.downloadToken) throw new Error(formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN"));
-    if (!record.downloadToken) {
-      // This endpoint has no idempotency contract. Save the attempt first; a
-      // lost reply must never be followed by another automatic grant issuance.
-      record = saveTree({ ...record, grantRequested: true });
-      let grant: Record<string, unknown>;
-      try {
-        grant = await ctx.biActions!.downloadToken(result.reportId);
-      } catch (error) {
-        if (isExplicitRejection(error)) saveTree({ ...record, grantRequested: false });
-        throw error;
-      }
-      if (grant.reportId !== result.reportId || typeof grant.downloadToken !== "string" || !grant.downloadToken) {
-        throw new LOutcomeUnknownError(formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN"));
-      }
-      record = saveTree({ ...record, downloadToken: grant.downloadToken });
-    }
+    if (result?.status !== "READY") return;
     if (!isL4NetworkDurable(record)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
-    const file = await downloadL4NetworkFile(result.reportId, record.downloadToken!);
-    if (!file.blob.type.toLowerCase().includes("text/csv")) throw new Error(formatAdminApiError("L4_TREE_FILE_INVALID", "L4_TREE_FILE_INVALID"));
+    const file = await downloadL4NetworkSnapshot(result.reportId);
     downloadBlob(file.blob, file.fileName);
-    l4NetworkCommands.forget(record.fingerprint, record.commandKey);
     syncTree();
     treeLastSuccessAtRef.current = Date.now();
     ctx.closeActionConfirm?.();
@@ -294,11 +273,14 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     setTreeExporting(true);
     try {
       const result = await fetchL4NetworkReport(record.result.reportId, record.request);
+      if (result.rowCount !== record.result.rowCount || record.result.status === "READY" && result.status !== "READY") {
+        throw new Error(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+      }
       saveTree({ ...record, result });
       // The snapshot read does not prove the outcome of a lost grant response.
       // Keep that stage and its evidence; never issue a token from this query.
       await latestContext.current.reloadBi?.();
-      ctx.toast(`已重新读取报表 ${result.reportId}：已生成，${count(result.rowCount)} 行`, "success");
+      ctx.toast(result.status === "PENDING_CONFIRM" ? "已申请，等另一位管理员放行" : `已重新读取报表 ${result.reportId}：已就绪，${count(result.rowCount)} 行`, "success");
     } catch (error) {
       ctx.toast(displayAdminReadError(error), "error");
     } finally {
@@ -307,9 +289,14 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     }
   };
 
+  const treeGrant = pendingTree?.result ? l4NetworkGrantRecovery(pendingTree.result.reportId) : undefined;
+  const treeRecoveryBlocked = pendingTree?.result?.status === "PENDING_CONFIRM" ? "等另一位管理员放行后才能下载"
+    : !pendingTree?.result && pendingTree && isRetryExpired(pendingTree) ? RETRY_EXPIRED_TEXT
+    : treeGrant && !treeGrant.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined;
+
   const requestNetworkTreeExport = (original?: PendingL4NetworkExport) => {
     if (treeExportingRef.current || !ctx.canExportNetworkTree) return;
-    if (original ? isRetryExpired(original) || original.grantRequested && !original.downloadToken
+    if (original ? treeRecoveryBlocked
       : pendingTree || !data || ctx.biLoading || ctx.biError || !queryMatchesData || query.period === "custom" || data.liveFacts.teamRelationships <= 0) return;
     const now = Date.now();
     if (treeLastSuccessAtRef.current && now - treeLastSuccessAtRef.current < 2_000) return;
@@ -322,6 +309,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const downloadOnly = Boolean(original?.result);
     setOutcome(null);
     let attemptedKey = original?.commandKey;
+    const pendingCreation = () => l4NetworkCommands.list().find(record =>
+      record.owner === owner && record.commandKey === attemptedKey && !record.result);
     ctx.openActionConfirm({ briefKind: "export",
       title: downloadOnly ? "下载已生成的团队关系明细" : "导出团队关系明细",
       action: downloadOnly ? "下载团队明细" : "导出团队明细",
@@ -332,12 +321,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <p>下载链接 24 小时有效。</p>
         </div>
       ),
-      effect: <StatusTag tone="warn" icon={LockKeyhole}>敏感导出 · 不经放行</StatusTag>,
+      effect: <StatusTag tone="warn" icon={LockKeyhole}>{downloadOnly ? "敏感导出 · 已就绪" : "敏感导出 · 需要放行"}</StatusTag>,
       statedBrief: downloadOnly ? {
         impact: `下载已经生成的这一份（报表号 ${original?.result?.reportId}），不重新生成；下载会留操作记录。`,
         check: "原来的时间段、追溯次数和理由不能改。",
       } : {
-        impact: "直接生成并下载，不经另一位管理员放行，也不通知任何人。不改团队关系和奖励。",
+        impact: "提交后生成一份文件，另一位管理员放行后才能下载；不改团队关系和奖励，系统不会通知对方。",
         check: "核对时间段和追溯次数；文件在确认这一刻生成，以后下载还是这一份。",
       },
       facts: (
@@ -356,21 +345,27 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <Fact k="多少行">{downloadOnly ? `${count(original!.result!.rowCount)} 行（已生成）` : <>现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></>}</Fact>
           <Fact k="记录">导出留两条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
+          {downloadOnly && original && <>
+            <Fact k="向下追溯的邀请次数">{original.request.depth} 次</Fact>
+            <Fact k="操作理由">{original.request.reason}</Fact>
+          </>}
           {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="系统现在这样数理由的长度（已报给技术同事修）：汉字算 9，字母和数字算 1。下面的计数就是这么数的，写的内容不会被截短。" /></Fact>}
-          <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
+          {downloadOnly ? <Fact k="下载">下载这一份<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
+            : <Fact k="谁来放行">另一位有这项权限的管理员，不能是你</Fact>}
         </Facts>
       ),
-      confirmLabel: original?.result ? "只下载" : "确认导出并下载",
+      confirmLabel: original?.result ? "只下载" : "提交申请",
       reasonPlaceholder: "写导出用途，例如：工单号、核对哪个团队",
       reasonMin: 8,
       reasonMax: 200,
       measureReason: networkReasonLength,
-      getPendingReason: () => l4NetworkCommands.list().find(record => record.owner === owner)?.request.reason,
-      getPendingBusinessValue: () => {
-        const request = l4NetworkCommands.list().find(record => record.owner === owner)?.request;
+      requireReason: !downloadOnly,
+      getPendingReason: downloadOnly ? undefined : () => pendingCreation()?.request.reason,
+      getPendingBusinessValue: downloadOnly ? undefined : () => {
+        const request = pendingCreation()?.request;
         return request ? { depth: String(request.depth) } : undefined;
       },
-      businessForm: {
+      businessForm: downloadOnly ? undefined : {
         kind: "multi-field",
         hint: "次数越多，导出越多；1 次只含直接邀请的好友，最多 10 次。",
         fields: [{
@@ -391,13 +386,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
         }
         let record = l4NetworkCommands.list().find(item => item.owner === owner);
-        const retrying = attemptedKey !== undefined;
         if (attemptedKey) {
           if (!record || record.commandKey !== attemptedKey) {
             ctx.closeActionConfirm?.();
             throw new Error(formatAdminApiError("L4_TREE_ALREADY_SETTLED", "L4_TREE_ALREADY_SETTLED"));
           }
-          if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
+          if (!record.result && isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
         } else {
           if (record) throw new Error(formatAdminApiError("L4_TREE_PENDING", "L4_TREE_PENDING"));
           const latest = latestContext.current;
@@ -429,12 +423,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
             try {
               result = await ctx.biActions.createNetworkTreeExport(record.request, record.request.reason, record.commandKey);
             } catch (error) {
-              const failure = error as { status?: number; reasonCode?: string; hadUncertainAttempt?: boolean };
-              const rejected = retrying || failure.hadUncertainAttempt ? isExplicitRejection(error)
-                : !failure.reasonCode?.startsWith("IDEMPOTENCY_")
-                  && ![401, 408, 425, 429].includes(failure.status ?? 0)
-                  && isDeterministicRejection(failure.status ?? 0);
-              if (rejected) {
+              if (isExplicitRejection(error)) {
                 l4NetworkCommands.forget(record.fingerprint, record.commandKey);
                 attemptedKey = undefined;
                 syncTree();
@@ -443,6 +432,11 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
               throw error;
             }
             record = saveTree({ ...record, result });
+          }
+          if (record.result?.status === "PENDING_CONFIRM") {
+            ctx.closeActionConfirm?.();
+            ctx.toast("已申请，等另一位管理员放行", "success");
+            return;
           }
           await downloadTree(record);
         } finally {
@@ -475,7 +469,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       {ctx.canExportNetworkTree && (
         <span className="l4-pair" data-pair="">
           <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={() => requestNetworkTreeExport()}>导出团队关系明细</Button>
-          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「上级 · 成员」一行，一位成员可能有几行；用户编码部分隐藏，不含手机号、昵称；超过 100,000 行时不导出。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由；确认后直接下载到这台电脑，不经另一位管理员放行，也不通知任何人，留两条高风险操作记录。</p></>} />
+          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「上级 · 成员」一行，一位成员可能有几行；用户编码部分隐藏，不含手机号、昵称；超过 100,000 行时不导出。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由。创建后，等另一位有这项权限的管理员放行才能下载。</p></>} />
         </span>
       )}
       {ctx.canExport && !ctx.canExportNetworkTree && <span className="rd-toolbar-note">团队关系明细需要专门的导出权限</span>}
@@ -523,26 +517,27 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       </Notice>
     );
     const report = pendingTree?.result;
-    const grantUnknown = Boolean(pendingTree?.grantRequested && !pendingTree.downloadToken);
-    const expired = pendingTree ? isRetryExpired(pendingTree) : false;
+    const awaitingApproval = report?.status === "PENDING_CONFIRM";
+    const grantUnknown = Boolean(treeGrant && !treeGrant.downloadToken);
+    const expired = Boolean(!report && pendingTree && isRetryExpired(pendingTree));
     const askExportPage = (what: string) => (canOpenExportPage ? exportPageLink(`到「${exportPageName}」${what}`) : <>请有「{exportPageName}」权限的同事{what}</>);
     return (
-      <Notice tone="warn" title={!report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细已生成，下载授权结果未知" : "团队关系明细已生成，还没下载成功"} actionBelow>
+      <Notice tone="warn" title={awaitingApproval ? "已申请团队关系明细，等另一位放行" : !report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细下载结果未知" : treeGrant ? "团队关系明细已生成，还没下载成功" : "团队关系明细已就绪，可以下载"} actionBelow>
         <p>{outcome.scope} · 向下追溯 {outcome.depth} 次{report ? ` · 报表号 ${report.reportId} · ${count(report.rowCount)} 行` : ""} · <span className="rd-keep">{outcome.at} 提交（{businessZone().label}）</span></p>
         <p>{!report
           ? expired
             ? <>可能已经生成了一份快照。已超过 24 小时，只能核对：{askExportPage("看有没有这一份")}。</>
             : <>可能已经生成了一份快照。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复生成。</>
+          : awaitingApproval
+            ? <>另一位有这项导出权限的管理员放行后才能下载，你不能批自己的申请。放行后点「查询报表」{canOpenExportPage ? <>，或{exportPageLink(`到「${exportPageName}」看进度`)}</> : null}。</>
           : grantUnknown
-            ? <>签发下载授权时没有收到结果，为防止重复签发，这里不能再下载。{askExportPage("下载这份报表")}。</>
-            : expired
-              ? <>已超过 24 小时，这里不能再下载。{askExportPage("下载这份报表")}。</>
-              : <>快照已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
+            ? <>没收到下载链接。为免重复生成链接，这里不能再下载，请找技术同事核对这份报表。</>
+            : <>文件已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
         {pendingTree && <span className="rd-toolbar">
           {pendingTree.result
             ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询报表</Button>
             : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
-          <Button size="sm" loading={treeExporting} disabledReason={isRetryExpired(pendingTree) ? RETRY_EXPIRED_TEXT : !ctx.canExportNetworkTree ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : pendingTree.grantRequested && !pendingTree.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined} onClick={() => requestNetworkTreeExport(pendingTree)}>{pendingTree.result ? "只下载" : "按原请求重试"}</Button>
+          {!awaitingApproval && <Button size="sm" loading={treeExporting} disabledReason={!ctx.canExportNetworkTree ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : treeRecoveryBlocked} onClick={() => requestNetworkTreeExport(pendingTree)}>{pendingTree.result ? "只下载" : "按原请求重试"}</Button>}
         </span>}
       </Notice>
     );

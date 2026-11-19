@@ -22,6 +22,7 @@ export type G3DirectChange = ChangeBasis & (
   | { action: "override"; key: Exclude<G3OverrideKey, "currentPrice"> }
 );
 export type G3MarketChange = G3ReviewedChange | G3DirectChange;
+type G3RuntimeApproval = { action: "pin" | "resume"; expectedRevision?: string };
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type CommandPayload = {
   change: G3MarketChange;
@@ -135,6 +136,24 @@ export function g3MarketRequiresApproval(change: G3MarketChange, value: string) 
       ? Number(value) > Number(change.current) : false;
 }
 
+/** undefined is direct; null means a price comparison is unavailable. */
+export function g3RuntimeApproval(overview: G3ReadOverview | null, change: G3DirectChange, value: string): G3RuntimeApproval | null | undefined {
+  const pin = change.action === "control" && change.key === "pin" && /^D[1-7]$/.test(value);
+  const resume = change.action === "override" && change.key === "paused" && change.current === "true" && value === "false";
+  if (!pin && !resume) return undefined;
+  if (!overview || overview.priceAvailable === false || overview.currentPrice === null || overview.currentPrice <= 0) return null;
+
+  const pinned = (pin ? value : overview.controls.find(row => row.key === "pin")?.value ?? "").trim().toUpperCase();
+  const loop = overview.controls.find(row => row.key === "loop")?.value;
+  const dayIndex = /^D[1-7]$/.test(pinned) ? Number(pinned.slice(1)) - 1
+    : overview.activeDayIndex === 6 && /停|stop|末值/i.test(loop ?? "") ? 6 : (overview.activeDayIndex + 1) % 7;
+  const frame = overview.frames.find(row => row.dayIndex === dayIndex);
+  if (!frame) return null;
+  if (frame.targetPrice <= overview.currentPrice) return undefined;
+  return pin ? { action: "pin", expectedRevision: overview.pinRevision }
+    : { action: "resume", expectedRevision: overview.pausedRevision };
+}
+
 export function g3MarketChangeAuthority(change: G3MarketChange) {
   return change.action === "curve-cell"
     ? change.field === "targetPrice" ? "finprod_g3_curve_target_price_write" : change.field === "pumpProbability" ? "finprod_g3_curve_pump_prob_write" : "finprod_g3_write"
@@ -142,9 +161,9 @@ export function g3MarketChangeAuthority(change: G3MarketChange) {
     : change.action === "override" && change.key === "paused" ? "finprod_g3_engine_pause_toggle" : "finprod_g3_write";
 }
 
-export function canWriteG3MarketChange(session: AdminSession, change: G3MarketChange, value = "") {
+export function canWriteG3MarketChange(session: AdminSession, change: G3MarketChange, value = "", runtimeApproval = false) {
   const superAdmin = session.role === "super" || session.role === "superadmin";
-  return (superAdmin || session.authorities.includes(g3MarketChangeAuthority(change)))
+  return ((superAdmin && !runtimeApproval) || session.authorities.includes(g3MarketChangeAuthority(change)))
     && (superAdmin || change.action !== "override" || change.key !== "oracle" && (change.key !== "paused" || value !== "false"));
 }
 
@@ -166,7 +185,7 @@ export async function refreshG3MarketApprovals(adminId: number) {
 /** Every new request is saved before sending; recovery uses only that saved request. */
 export async function executeG3MarketChange(
   session: AdminSession, requested: G3MarketChange, value: string, reason: string,
-  mode: "submit" | "lookup" | "retry" = "submit", forceApproval = false,
+  mode: "submit" | "lookup" | "retry" = "submit", forceApproval = false, runtimeApproval?: G3RuntimeApproval,
 ): Promise<G3CommandResult | null> {
   const epoch = useAdminAuth.getState().authEpoch;
   const previous = pendingG3MarketCommand(session.adminId, requested);
@@ -177,7 +196,10 @@ export async function executeG3MarketChange(
       throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
     }
     if (write) {
-      if (!canWriteG3MarketChange(auth.session, change, previous?.value ?? value)) {
+      const runtimeProposal = previous
+        ? previous.request.kind === "approval" && (change.action === "control" || change.action === "override")
+        : !!runtimeApproval;
+      if (!canWriteG3MarketChange(auth.session, change, previous?.value ?? value, runtimeProposal)) {
         throw new Error("你没有修改这一项的权限。");
       }
     }
@@ -205,18 +227,23 @@ export async function executeG3MarketChange(
         throw new Error(probability ? "上涨概率须为 0–1、最多六位小数，且与当前值不同。" : "价格须大于 0、不超过 1,000,000 USDT，最多八位小数，且与当前值不同。");
       }
     }
-    const approval = forceApproval || g3MarketRequiresApproval(change, value);
+    const approval = runtimeApproval || forceApproval || g3MarketRequiresApproval(change, value);
     let request: CommandPayload["request"];
     if (approval) {
-      if (!("expectedRevision" in change) || !/^[0-9a-f]{64}$/.test(change.expectedRevision)) throw new Error("当前配置版本未就绪，请关闭弹窗后重新读取页面。");
+      const expectedRevision = runtimeApproval?.expectedRevision ?? ("expectedRevision" in change ? change.expectedRevision : "");
+      if (!/^[0-9a-f]{64}$/.test(expectedRevision)) throw new Error("当前配置版本未就绪，请关闭弹窗后重新读取页面。");
       const initial = change.action === "schedule";
-      const target = { domain: "G", type: change.action === "curve-cell" ? "nex_market_curve" : initial ? "nex_market_control" : "nex_market_override",
-        id: change.action === "curve-cell" ? "weekly" : initial ? "schedule" : "currentPrice" };
-      const values = change.action === "curve-cell"
-        ? { action: "curve-cell", dayIndex: change.dayIndex, field: change.field, value, expectedRevision: change.expectedRevision }
-        : { action: initial ? "initial-schedule" : "current-price", value, expectedRevision: change.expectedRevision };
+      const policy = runtimeApproval?.action ?? (initial ? "initial-schedule" : change.action);
+      const target = { domain: "G",
+        type: policy === "curve-cell" ? "nex_market_curve" : initial || policy === "pin" ? "nex_market_control" : "nex_market_override",
+        id: policy === "curve-cell" ? "weekly" : policy === "pin" ? "pin" : policy === "resume" ? "paused" : initial ? "schedule" : "currentPrice" };
+      const values = { action: policy, value, expectedRevision,
+        ...(change.action === "curve-cell" ? { dayIndex: change.dayIndex, field: change.field } : {}) };
+      const action = change.action === "curve-cell" ? `提高周价格计划 · D${change.dayIndex + 1} · ${change.field === "targetPrice" ? "目标价" : "上涨概率"}`
+        : policy === "pin" ? "钉住并提高UVT价格" : policy === "resume" ? "恢复G3价格引擎并提价"
+        : initial ? "首次配置自动推进时间" : "提高当前 UVT 价格";
       request = { kind: "approval", input: {
-        action: change.action === "curve-cell" ? `提高周价格计划 · D${change.dayIndex + 1} · ${change.field === "targetPrice" ? "目标价" : "上涨概率"}` : initial ? "首次配置自动推进时间" : "提高当前 UVT 价格",
+        action,
         obj: target.id, beforeValue: change.current || "未配置", afterValue: value,
         operator: session.operator || session.username, operatorRole: roleLabel(session.role),
         type: initial ? "param" : "fund", amplifies: !initial, sos: false,
@@ -247,6 +274,7 @@ export async function executeG3MarketChange(
   }
 
   const key = command.commandKey;
+  const runtimeProposal = command.request.kind === "approval" && (change.action === "control" || change.action === "override");
   const store = command.legacy ? g3LegacyCommands : commands;
   const forget = () => store.forget(command.fingerprint, key);
   const acknowledgeTicket = (ticket: { id: string; status: string }) => {
@@ -254,12 +282,12 @@ export async function executeG3MarketChange(
       const { change, value, reason, request } = command;
       commands.remember(fingerprint, key, { input: JSON.stringify({ change, value, reason, request, ticketId: ticket.id }) });
     } else forget();
-    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位有权超管批准，尚未生效" : "请核对审批记录及当前配置"}`,
+    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等另一位超级管理员批准，尚未生效" : "请核对审批记录及当前配置"}`,
       ticketKey: ticket.status === "pending" ? key : undefined };
   };
   if (command.request.kind === "approval" && previous) {
     // Only A2_PROPOSAL_NOT_FOUND permits replay. OPERATION_RESULT_UNKNOWN is not absence.
-    const ticket = await fetchA2ProposalByKey(key, true);
+    const ticket = await fetchA2ProposalByKey(key, true, runtimeProposal ? "a" : false);
     ensureOwner(false);
     if (ticket) return acknowledgeTicket(ticket);
   }
@@ -274,10 +302,13 @@ export async function executeG3MarketChange(
   try {
     ensureOwner(true);
     if (command.request.kind === "approval") {
-      const ticket = await createA2OperationProposal(command.request.input, key, true);
+      const ticket = await createA2OperationProposal(command.request.input, key, true, runtimeProposal);
       ensureOwner(false);
-      acknowledgeTicket(ticket);
-      return { acknowledgement: `已提交审批 · ${ticket.id} · 等待另一位有权超管批准，尚未生效`, ticketKey: key };
+      const result = acknowledgeTicket(ticket);
+      if (ticket.status !== "pending") return result;
+      return { acknowledgement: runtimeProposal
+        ? "已提交审批，这次申请批准前不改价"
+        : `已提交审批 · ${ticket.id} · 等另一位超级管理员批准，尚未生效`, ticketKey: key };
     }
     const active = await submitG3MarketCommand(command.request.path, command.request.method, command.request.body, key);
     ensureOwner(false);
@@ -290,7 +321,9 @@ export async function executeG3MarketChange(
     }
     const uncertain = new A2OutcomeUncertainError("", key);
     // The shared approval modal appends the number; do not append it twice here.
-    uncertain.message = "提交结果未知，可能已经生效。请查询原结果，或在有效期内按原请求重试；过期后只能查询。";
+    uncertain.message = runtimeProposal
+      ? "提交结果未知，可能已提交审批。请查询原结果，或在有效期内按原请求重试；过期后只能查询。"
+      : "提交结果未知，可能已经生效。请查询原结果，或在有效期内按原请求重试；过期后只能查询。";
     throw uncertain;
   }
 }

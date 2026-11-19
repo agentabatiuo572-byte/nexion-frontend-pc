@@ -9,6 +9,7 @@ import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
 import type { DisclosureVersionItemView } from "@/lib/admin/i-client";
+import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   buildA2FilterQuery,
@@ -204,8 +205,14 @@ export interface A2RoleGrantsReview {
 }
 
 type I5DisclosureReview = { jurisdiction: string; version: string } & (
-  | { kind: "PUBLISH"; draft?: DisclosureVersionItemView }
-  | { kind: "MATRIX"; expectedVersion: string }
+  | {
+    kind: "PUBLISH";
+    draft?: DisclosureVersionItemView;
+    previousVersion?: string | null;
+    previousVersionSummary?: DisclosureVersionItemView | null;
+    draftMatchesFrozenEvidence?: boolean | null;
+  }
+  | { kind: "MATRIX"; expectedVersion: string; originalCountryCodes?: string[] | null; targetCountryCodes?: string[] | null }
 );
 
 export interface A2OperationRow {
@@ -397,10 +404,19 @@ function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
   };
 }
 
+function isDisclosureLanguageScope(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const scope = value.trim();
+  if (scope === "en" || scope === "zh+vi" || scope === "zh+vi+en") return true;
+  const codes = scope.split("+");
+  return scope.startsWith("zh+vi+en+") && new Set(codes).size === codes.length
+    && codes.slice(3).every(code => INTERFACE_LANGUAGES.some(language => language.code === code));
+}
+
 export function readA2DisclosureVersion(value: unknown, jurisdiction: string, version: string): DisclosureVersionItemView | undefined {
   const row = value as Partial<DisclosureVersionItemView> | null | undefined;
   if (row?.jurisdiction !== jurisdiction || row.version !== version || typeof row.status !== "string"
-    || (row.languageScope !== "zh+vi" && row.languageScope !== "zh+vi+en")
+    || !isDisclosureLanguageScope(row.languageScope)
     || typeof row.effectiveDate !== "string" || typeof row.requiresReack !== "boolean"
     || typeof row.zh !== "string" || typeof row.vi !== "string" || typeof row.en !== "string"
     || !Array.isArray(row.chapters) || row.chapters.length !== 7
@@ -409,21 +425,50 @@ export function readA2DisclosureVersion(value: unknown, jurisdiction: string, ve
       && typeof chapter.zh === "string" && typeof chapter.vi === "string" && typeof chapter.en === "string"
       && typeof chapter.zhBody === "string" && typeof chapter.viBody === "string" && typeof chapter.enBody === "string")
     || new Set(row.chapters.map((chapter) => chapter.no)).size !== 7) return undefined;
-  return row as DisclosureVersionItemView;
+  return { ...row, languageScope: row.languageScope.trim() } as DisclosureVersionItemView;
+}
+
+function readDisclosureCountryCodes(value: unknown): string[] | null | undefined {
+  if (value === null) return null;
+  return Array.isArray(value) && value.every(code => typeof code === "string" && code.trim()) ? value : undefined;
 }
 
 function readI5DisclosureReview(value: unknown, operation: BackendTicket["operationCode"]): I5DisclosureReview | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { kind, jurisdiction, version, expectedVersion, revision, contentHash, draft, chapters } = value as Record<string, unknown>;
+  const {
+    kind, jurisdiction, version, expectedVersion, revision, contentHash, draft, chapters,
+    previousVersion, previousVersionSummary, draftMatchesFrozenEvidence, originalCountryCodes, targetCountryCodes,
+  } = value as Record<string, unknown>;
   if (typeof jurisdiction !== "string" || !jurisdiction.trim() || typeof version !== "string" || !version.trim()) return undefined;
   if (kind === "MATRIX" && operation === "i5_matrix_configure" && typeof expectedVersion === "string") {
-    return { kind, jurisdiction, version, expectedVersion };
+    return { kind, jurisdiction, version, expectedVersion,
+      originalCountryCodes: readDisclosureCountryCodes(originalCountryCodes),
+      targetCountryCodes: readDisclosureCountryCodes(targetCountryCodes) };
   }
   if (kind !== "PUBLISH" || (operation !== "i4_disclosure_publish" && operation !== "i5_disclosure_publish")) return undefined;
   const frozen = draft && typeof draft === "object" ? readA2DisclosureVersion({ ...draft, chapters }, jurisdiction, version) : undefined;
-  return { kind, jurisdiction, version, draft: frozen?.status.toLowerCase() === "draft"
-    && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0 && frozen.revision === revision
-    && typeof contentHash === "string" && /^[a-f0-9]{64}$/.test(contentHash) && frozen.contentHash === contentHash ? frozen : undefined };
+  const previous = typeof previousVersion === "string" && previousVersion.trim() ? previousVersion : undefined;
+  // The frozen previous summary omits the jurisdiction on the version and both identifiers on each chapter.
+  const summary = previousVersionSummary as { chapters?: unknown } | null | undefined;
+  const previousRow = previous && previous !== version && Array.isArray(summary?.chapters)
+    ? readA2DisclosureVersion({ ...summary, jurisdiction,
+      chapters: summary.chapters.map(chapter => ({ ...chapter, jurisdiction, version: previous })) }, jurisdiction, previous)
+    : undefined;
+  return {
+    kind, jurisdiction, version,
+    draft: frozen?.status.toLowerCase() === "draft"
+      && typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0 && frozen.revision === revision
+      && typeof contentHash === "string" && /^[a-f0-9]{64}$/.test(contentHash) && frozen.contentHash === contentHash ? frozen : undefined,
+    previousVersion: previousVersion === null ? null : previous,
+    previousVersionSummary: previousVersionSummary === null ? null
+      : previousRow && ["published", "archived"].includes(previousRow.status.toLowerCase()) ? previousRow : undefined,
+    draftMatchesFrozenEvidence: typeof draftMatchesFrozenEvidence === "boolean" || draftMatchesFrozenEvidence === null
+      ? draftMatchesFrozenEvidence : undefined,
+  };
+}
+
+export function isFirstA2DisclosurePublish(review: Extract<I5DisclosureReview, { kind: "PUBLISH" }>): boolean {
+  return !!review.draft && review.previousVersion === null && review.previousVersionSummary === null;
 }
 
 function roleGrantsReview(diff: A2RoleGrantsDiff, permissions?: ReadonlyMap<string, A8Permission>, menus?: ReadonlyMap<number, A7MenuTreeNode>): A2RoleGrantsReview {

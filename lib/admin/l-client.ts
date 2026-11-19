@@ -109,7 +109,7 @@ export type LRegulatoryReportInput = {
 
 export type LNetworkTreeExportResult = {
   reportId: string;
-  status: string;
+  status: "PENDING_CONFIRM" | "READY";
   rowCount: number;
   maskingPolicy: string;
   containsPii: boolean;
@@ -198,14 +198,16 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const execute = () => guardedFetch(`/api/admin/bi${path}`, { ...init, headers, cache: "no-store" });
   const isReportCreation = (path === "/reports" && init?.method === "POST")
     || (path.startsWith("/export/network?") && init?.method === "GET");
+  const isNetworkGrant = /^\/exports\/L4TREE-[A-Z0-9]{8}\/download-token$/.test(path);
+  const needsWriteReceipt = isReportCreation || isNetworkGrant;
   let res: Response;
   try {
     res = await execute();
   } catch {
     // A lost response does not settle creation; the operator chooses recovery.
-    throw networkFailure(isReportCreation);
+    throw networkFailure(needsWriteReceipt);
   }
-  if (isReportCreation && res.status >= 500) throw networkFailure(true);
+  if (needsWriteReceipt && (res.status >= 500 || res.headers.get("X-Nexion-Upstream-Outcome") === "unknown")) throw networkFailure(true);
   let payload: ApiResult<T> = {};
   try {
     const raw = await res.text();
@@ -214,10 +216,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       ? raw.replace(/("valuedNetExposureUsdt"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') : raw;
     if (text) payload = (JSON.parse(text) ?? {}) as ApiResult<T>;
   } catch (cause) {
-    if (!isReportCreation) throw cause;
+    if (!needsWriteReceipt) throw cause;
     if (res.ok) throw new LOutcomeUnknownError();
   }
-  const status = isReportCreation ? reportCreationStatus(res, payload) : res.status;
+  const status = needsWriteReceipt ? reportCreationStatus(res, payload) : res.status;
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
@@ -296,7 +298,7 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   FUNNEL_COHORT: "漏斗聚合",
   FINANCE_AGG: "财务聚合",
   OPERATIONS_AGG: "运营聚合",
-  NETWORK_TREE: "团队树明细",
+  NETWORK_TREE: "团队关系明细",
   REGULATORY: "当前披露快照",
 };
 
@@ -306,7 +308,7 @@ function reportToTask(report: LReportView): LExportTask {
   const normalizedType = report.type.trim().toUpperCase();
   const supported = CURRENT_L5_REPORT_TYPES.includes(normalizedType as typeof CURRENT_L5_REPORT_TYPES[number]);
   const acts: LExportTask["acts"] = !supported ? []
-    : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" ? ["approve"]
+    : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" && normalizedType !== "NETWORK_TREE" ? ["approve"]
       : status === "READY" && report.snapshotAvailable ? ["download"]
         : normalizedType !== "NETWORK_TREE" && (status === "EXPIRED" || status === "FAILED") && report.snapshotAvailable ? ["retry"]
           : [];
@@ -819,7 +821,8 @@ export async function submitL5TaskAction(reportId: string, action: "approve" | "
     || !["READY", "PENDING_CONFIRM"].includes(String(receipt.status))
     || action === "approve" && receipt.status !== "READY"
     || typeof receipt.containsPii !== "boolean" || !["NONE", "MASKED", "PARTIAL", "DECRYPTED"].includes(String(receipt.maskingPolicy))
-    || action === "rerun" && receipt.status !== (receipt.containsPii ? "PENDING_CONFIRM" : "READY")) {
+    || action === "rerun" && receipt.status !== (receipt.containsPii ? "PENDING_CONFIRM" : "READY")
+    || reportId.startsWith("L4TREE-") && (receipt.containsPii !== true || receipt.maskingPolicy !== "PARTIAL")) {
     throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
   }
 }
@@ -946,12 +949,13 @@ export const downloadL4NetworkFile = (reportId: string, token: string) => downlo
 export async function fetchL4NetworkReport(reportId: string, request: { period: string; depth: number }): Promise<LNetworkTreeExportResult> {
   const report = rec(await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`));
   if (report.reportId !== reportId || report.type !== "NETWORK_TREE" || report.format !== "CSV"
-    || report.scope !== `period=${request.period};depth=${request.depth}` || report.status !== "READY"
+    || report.scope !== `period=${request.period};depth=${request.depth}`
+    || (report.status !== "PENDING_CONFIRM" && report.status !== "READY")
     || report.containsPii !== true || report.maskingPolicy !== "PARTIAL" || report.snapshotAvailable !== true
     || typeof report.rowCount !== "number" || !Number.isSafeInteger(report.rowCount) || report.rowCount <= 0 || report.rowCount > 100_000) {
     throw new Error(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
   }
-  return { reportId, status: "READY", rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
+  return { reportId, status: report.status, rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = currentAdminOperator()) {
@@ -1009,7 +1013,8 @@ export const lBiActions: LBiActions = {
       const result = rec(value);
       // exportNetworkTreeOnce returns these fields, not an A2 proposal envelope.
       if (typeof result.reportId !== "string" || !/^L4TREE-[A-Z0-9]{8}$/.test(result.reportId)
-        || result.status !== "READY" || result.scope !== `period=${query.period};depth=${query.depth}`
+        || (result.status !== "READY" && (result.status !== "PENDING_CONFIRM" || result.approvalRequired !== true))
+        || result.scope !== `period=${query.period};depth=${query.depth}`
         || typeof result.rowCount !== "number" || !Number.isSafeInteger(result.rowCount) || result.rowCount <= 0 || result.rowCount > 100_000
         || result.maskingPolicy !== "PARTIAL" || result.containsPii !== true || result.downloadTtlHours !== 24) {
         throw new LOutcomeUnknownError(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
