@@ -40,9 +40,12 @@
 /* 页面编号和域图标同一列（22px 宽，放得下 A10），页名和域名左边对齐。 */
 .rd-nav-sub { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 4px 8px 4px 10px; border-radius: 8px; color: var(--rd-text-2); font-size: 14px; line-height: 22px; }
 .rd-nav-sub[data-active] { background: var(--rd-panel-inner); color: var(--rd-text); font-weight: 500; }
-.rd-nav-code { flex: none; width: 22px; color: var(--rd-text-3); font-size: 12px; font-weight: 400; white-space: nowrap; }
-.rd-nav-sub[data-active] .rd-nav-code { color: var(--rd-text-2); }
-.rd-nav-letter { flex: none; color: var(--rd-text-3); font-size: 12px; font-weight: 400; }
+.rd-nav-code { flex: none; width: 22px; color: var(--rd-text-disabled); font-size: 11px; font-weight: 400; white-space: nowrap; }
+.rd-nav-sub[data-active] .rd-nav-code { color: var(--rd-text-3); }
+.rd-nav-letter { flex: none; color: var(--rd-text-disabled); font-size: 11px; font-weight: 400; }
+/* 名字和当前小点：小点紧跟名字，名字太长时先省略名字，小点留在省略号后。 */
+.rd-nav-name { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rd-nav-name > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rd-nav-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone, transparent); }
 .rd-nav-dot[data-current] { background: var(--rd-brand-ink); }
 .rd-nav-badge { flex: none; color: var(--rd-warn); font-size: 13px; font-weight: 500; }
