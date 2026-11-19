@@ -556,8 +556,12 @@ export function parseI3Json(text: string): unknown {
   return JSON.parse(text.replace(/("budget"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
 }
 
+export const I3_WALLET_CTA = "/pages/me/wallet";
+export const I3_RETIRED_WALLET_CTA = "/pages/me/wallet-repurchase";
+const I3_RETIRED_CTAS = ["/pages/staking/staking", "/staking", I3_RETIRED_WALLET_CTA];
+
 function i3CampaignBody(body: Record<string, unknown>, reason: string): string {
-  if (["/pages/staking/staking", "/staking"].includes(String(body.ctaHref ?? "").trim())) throw new Error(formatAdminApiError("NOTIFICATION_DELIVERY_CONFIG_INVALID", "CONTENT_API_422"));
+  if (I3_RETIRED_CTAS.includes(String(body.ctaHref ?? "").trim())) throw new Error(formatAdminApiError("NOTIFICATION_DELIVERY_CONFIG_INVALID", "CONTENT_API_422"));
   const budget = body.budget;
   let decimal: string | undefined;
   if (typeof budget === "string") {
@@ -710,7 +714,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
 export async function fetchI3CampaignOverview(): Promise<NotificationCampaignOverview> {
   const overview = parseIOverview("I3", await apiRequest<unknown>("/campaigns/overview")) as NotificationCampaignOverview;
   return { ...overview, deliveryCatalog: { ...overview.deliveryCatalog,
-    ctaRoutes: overview.deliveryCatalog.ctaRoutes.filter(option => !["/pages/staking/staking", "/staking"].includes(option.value.trim())),
+    ctaRoutes: overview.deliveryCatalog.ctaRoutes.filter(option => !I3_RETIRED_CTAS.includes(option.value.trim())),
   } };
 }
 
@@ -727,12 +731,12 @@ export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvi
 }
 
 async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {
-  // 82fd6cb2 validates the stored delivery at execution; never apply this to original retries.
+  // OpsNotificationCampaignService.validDelivery at c822ec33, for new commands only.
   if (snapshot && /\/(schedule|send-now)$/.test(path)) {
     const kind = snapshot.kind.trim().toLowerCase() || "system";
     const href = snapshot.ctaHref.trim(), label = snapshot.ctaLabel.trim();
     if (!["system", "commission", "team", "staking", "market", "genesis"].includes(kind)
-      || label.length > 64 || !["", "/pages/me/wallet-repurchase", "/pages/team/team", "/pages/market/market", "/pages/genesis/marketplace"].includes(href)
+      || [...label].length > 64 || !["", I3_WALLET_CTA, "/pages/team/team", "/pages/market/market", "/pages/genesis/marketplace"].includes(href)
       || href !== "" && label === "") {
       throw Object.assign(new Error(formatAdminApiError("NOTIFICATION_DELIVERY_CONFIG_INVALID", "CONTENT_API_422")),
         { status: 422, reasonCode: "NOTIFICATION_DELIVERY_CONFIG_INVALID" });

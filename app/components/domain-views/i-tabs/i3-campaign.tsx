@@ -16,7 +16,7 @@ import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Tra
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
+import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -113,26 +113,33 @@ function targetFromForm(form: NewForm): NotificationAudienceTarget {
 
 /** 没设「点了去哪」时 App 按类型去的默认位置（后端 AppNotificationService.canonicalRoute）。质押类型没有默认位置了（cd7514d1）。 */
 const KIND_DEFAULT_ROUTE: Record<string, string> = {
-  commission: "/pages/me/wallet-repurchase",
+  commission: I3_WALLET_CTA,
   team: "/pages/team/team",
   market: "/pages/market/market",
   genesis: "/pages/genesis/marketplace",
 };
 /**
- * 已下线的去向（cd7514d1）：目录里不再有，新建和草稿不能选；旧活动存着的照原样显示。App 读到时当成没设：不显示按钮，点了和左滑都不跳。
- * 名称是下线前目录里的叫法。
+ * 已退出投递目录的去向。App 历史通知只对退役的质押链接隐藏按钮。
  */
-const RETIRED_CTA: Record<string, string> = { "/pages/staking/staking": "赚取 · 质押", "/staking": "赚取 · 质押" };
+const RETIRED_WALLET_LABEL = "已退役的链接";
+const RETIRED_CTA: Record<string, string> = {
+  "/pages/staking/staking": "赚取 · 质押",
+  "/staking": "赚取 · 质押",
+  [I3_RETIRED_WALLET_CTA]: RETIRED_WALLET_LABEL,
+};
 const retiredCta = (href?: string) => (href ? RETIRED_CTA[href.trim()] : undefined);
+const retiredWalletCta = (href: string) => href.trim() === I3_RETIRED_WALLET_CTA;
 const RETIRED_CTA_NOTE = "这个页面已下线，点了不会跳转";
+const RETIRED_SCHEDULE_STATUS = "到点不会发出：按钮链接已退役";
 /**
- * 82fd6cb2：存着已停用去向的草稿和已排期活动，新的排期和立即发送会被拒（页面先拦下）。草稿能编辑改选；已排期的不能编辑，只能取消后新建。
- * 已发出的历史活动不受影响，详情照旧写 RETIRED_CTA_NOTE。
+ * c822ec33：排期和立即发送会校验已存去向，定时派发也在认领前拒绝退役去向。
+ * 草稿能编辑改选；已排期的可以取消。
  */
 const RETIRED_CTA_FIX: Partial<Record<CampaignRow["st"], string>> = {
   draft: "「点了去哪」的页面已停用：先编辑换一个，再排期",
-  scheduled: "「点了去哪」的页面已停用，可能发不出去：取消排期后新建一条",
+  scheduled: "到点不会发出：按钮链接已退役。取消排期后新建一条",
 };
+const blockedSchedule = (row: CampaignRow) => row.st === "scheduled" && !!retiredCta(row.ctaHref);
 /** 一组里默认显示几张卡，多的点「显示全部」切到这个状态。 */
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
@@ -750,7 +757,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
 
   /* ---------- render helpers ---------- */
-  const ctaLabelOf = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+  const ctaLabelOf = (href: string) => retiredCta(href) ? `${retiredCta(href)}（已停用）` : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? (href === I3_WALLET_CTA ? "我的 · 钱包" : href);
   const NO_CRITICAL = "排期、发送和取消紧急通知要有紧急通知发送权限";
 
   const renderActions = (c: CampaignRow, size: "sm" | "md" = "sm"): ReactNode => {
@@ -899,12 +906,17 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     />
   );
 
-  const upcoming = filtered.filter((c) => c.st === "scheduled" || c.st === "sending")
+  const scheduled = CAMPAIGNS.filter((c) => c.st === "scheduled" && !blockedSchedule(c));
+  const blockedSchedules = CAMPAIGNS.filter(blockedSchedule);
+  const upcoming = filtered.filter((c) => (c.st === "scheduled" && !blockedSchedule(c)) || c.st === "sending")
     .sort((a, b) => (a.st === "sending" ? 0 : 1) - (b.st === "sending" ? 0 : 1) || a.schedule.localeCompare(b.schedule));
-  const nextScheduled = CAMPAIGNS.filter((c) => c.st === "scheduled").sort((a, b) => a.schedule.localeCompare(b.schedule))[0];
+  const nextScheduled = scheduled.sort((a, b) => a.schedule.localeCompare(b.schedule))[0];
   const sendingN = CAMPAIGNS.filter((c) => c.st === "sending").length;
   const failedN = CAMPAIGNS.filter((c) => c.st === "failed").length;
-  const scheduledN = CAMPAIGNS.filter((c) => c.st === "scheduled").length;
+  const waitingN = scheduled.length + sendingN;
+  const criticalWaitingN = I3_STATS.criticalInflight - blockedSchedules.filter((c) => c.tier === "critical").length;
+  // The overview has the monthly status aggregate, but no per-row creation time.
+  const monthScheduledLabel = blockedSchedules.length > 0 ? "已排期或发送中" : "等着发";
   const countOf = (key: StFlt) => key === "all" ? CAMPAIGNS.length : CAMPAIGNS.filter((c) => c.st === key).length;
   const auditReachable = reach(AUDIT_HREF, "platform_a2_read");
   const shownDetail = detail ? CAMPAIGNS.find((c) => c.id === detail.id) ?? null : null;
@@ -912,20 +924,20 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
 
   const conclusion = CAMPAIGNS.length === 0
     ? <Conclusion state="neutral" icon={Bell} hint={canWriteI3 ? "点右上角「新建通知」写第一条。" : undefined}>还没有通知活动</Conclusion>
-    : <Conclusion state={failedN > 0 ? "warn" : scheduledN + sendingN > 0 ? "neutral" : "ok"} icon={failedN > 0 ? undefined : CalendarClock}
+    : <Conclusion state={failedN > 0 || blockedSchedules.length > 0 ? "warn" : waitingN > 0 ? "neutral" : "ok"} icon={failedN > 0 ? undefined : CalendarClock}
       hint={failedN > 0 ? "发送失败的不能重发，要发请新建一条。" : undefined}
       explain={<>
-        <p>等着发是已排期和发送中的活动；时间是北京时间。到点后由后台自动发出，后台每 30 秒检查一次，排队多时会晚。</p>
+        <p>等着发是可发送的已排期活动和发送中的活动。时间是北京时间。到点后后台每 30 秒检查一次，排队多时会晚。</p>
         <p>保留上限的修改要批准后才生效。这页只查得到你在这个标签页提交的申请，别人提交的到「操作记录与审批」看。</p>
       </>}
       action={auditReachable && pendingCapRows.length === 0 ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>看等批准的上限修改</Link> : undefined}>
-      {scheduledN + sendingN > 0
-        ? <><b>{scheduledN + sendingN}</b>{" 条等着发"}{nextScheduled && <>，<span className="rd-keep">{`最近一条 ${whenText(nextScheduled)}`}</span></>}{sendingN > 0 && <>，<span className="rd-keep">{`${sendingN} 条正在发送`}</span></>}</>
+      {waitingN > 0
+        ? <><b>{waitingN}</b>{" 条等着发"}{nextScheduled && <>，<span className="rd-keep">{`最近一条 ${whenText(nextScheduled)}`}</span></>}{sendingN > 0 && <>，<span className="rd-keep">{`${sendingN} 条正在发送`}</span></>}</>
         : "没有等着发的通知"}
       {failedN > 0 && <>；<span className="rd-keep">{`${failedN} 条发送失败`}</span></>}
     </Conclusion>;
 
-  const group = (key: Exclude<StFlt, "all" | "scheduled">, title: string, rows: CampaignRow[], icon: typeof Bell) => {
+  const group = (key: Exclude<StFlt, "all">, title: string, rows: CampaignRow[], icon: typeof Bell) => {
     if (rows.length === 0) return null;
     const limited = stFlt === "all" && rows.length > GROUP_PREVIEW;
     return (
@@ -933,7 +945,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <h3 className="i3-group-title" id={`i3-group-${key}`}>{iconOf(icon)}{title}<span className="i3-group-count">{`${rows.length} 条`}</span></h3>
         <div className="i3-cards">
           {(limited ? rows.slice(0, GROUP_PREVIEW) : rows).map((row) => (
-            <CampaignCard key={row.id} row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} alert={retiredCta(row.ctaHref) ? RETIRED_CTA_FIX[liveSt(row)] : undefined} />
+            <CampaignCard key={row.id} row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} alert={retiredCta(row.ctaHref) ? RETIRED_CTA_FIX[liveSt(row)] : undefined} statusLabel={blockedSchedule(row) ? RETIRED_SCHEDULE_STATUS : undefined} />
           ))}
         </div>
         {limited && <Button variant="ghost" size="sm" onClick={() => setStFlt(key)}>{`显示全部 ${rows.length} 条`}</Button>}
@@ -974,10 +986,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               <p>{`${monthStart} 起（${zoneLabel}）新建、没删除的活动个数，到现在为止。是活动个数，不是发出去的通知条数。`}</p>
               <p>上个月建、这个月才发的活动不算在这里。</p>
             </>} />
-          <Stat tone="role-2" icon={Send} label="其中已发送" value={String(I3_STATS.monthSent)} unit="个" sub={`等着发 ${I3_STATS.monthScheduled} · 草稿 ${I3_STATS.monthDraft}`}
-            explain="本月新建的活动里，现在各是什么状态：已发送、等着发（已排期和发送中）、草稿。取消和失败的不在这三项里。" />
-          <Stat tone="role-3" icon={CalendarClock} label="等着发的紧急活动" value={String(I3_STATS.criticalInflight)} unit="个" sub="不限月份"
-            explain="现在所有已排期和发送中、紧急优先级的活动，不只本月新建的。" />
+          <Stat tone="role-2" icon={Send} label="其中已发送" value={String(I3_STATS.monthSent)} unit="个" sub={`${monthScheduledLabel} ${I3_STATS.monthScheduled} · 草稿 ${I3_STATS.monthDraft}`}
+            explain="本月新建的活动按当前状态统计：已发送、已排期或发送中、草稿。按钮链接已退役的活动在取消前仍是已排期。" />
+          <Stat tone="role-3" icon={CalendarClock} label="等着发的紧急活动" value={String(criticalWaitingN)} unit="个" sub="不限月份"
+            explain="所有可发送的已排期活动和发送中的活动里，紧急优先级的条数，不限月份。" />
           <Stat tone="role-3" icon={Users} label="已读率" value={I3_STATS.avgReadRate ?? "—"}
             sub={I3_STATS.avgReadRate == null ? statsBasis.deliveryFactsComplete ? "还没有送达记录" : "送达记录不全，算不出" : statsBasis.weeklyReadAvailable && statsBasis.weeklyReadCount != null ? `本周已读 ${statsBasis.weeklyReadCount.toLocaleString("en-US")} 条` : "本周已读算不出"}
             explain={<>
@@ -987,7 +999,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               {statsBasis.deliveryFactsComplete && !statsBasis.weeklyReadAvailable && <p>{`有 ${statsBasis.undatedReadCount.toLocaleString("en-US")} 条已读没记下读的时间，本周已读算不出。`}</p>}
             </>} />
         </> : <>
-          <Stat tone="role-3" icon={CalendarClock} label="等着发" value={String(I3_STATS.monthScheduled)} unit="条" sub={`其中紧急 ${I3_STATS.criticalInflight} 条`}
+          <Stat tone="role-3" icon={CalendarClock} label={monthScheduledLabel} value={String(I3_STATS.monthScheduled)} unit="条" sub={`其中紧急 ${I3_STATS.criticalInflight} 条`}
             explain="已排期和发送中的活动。紧急指紧急优先级的活动条数。" />
           <Stat tone="role-2" icon={FilePen} label="草稿" value={String(I3_STATS.monthDraft)} unit="条" explain="还没排期，不会发给任何人。" />
           <Stat tone="role-2" icon={Send} label="已发送" value={String(I3_STATS.monthSent)} unit="条" sub={`活动共 ${I3_STATS.monthCampaigns} 条`}
@@ -1019,6 +1031,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 </ol>
               </section>
             )}
+            {group("scheduled", "排期不会发出", filtered.filter(blockedSchedule), CalendarClock)}
             {group("draft", "草稿", filtered.filter((c) => c.st === "draft"), FilePen)}
             {group("failed", "发送失败", filtered.filter((c) => c.st === "failed"), Send)}
             {group("sent", "已发送", filtered.filter((c) => c.st === "sent"), Send)}
@@ -1062,7 +1075,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             </Table>
           </section>
           <section aria-labelledby="i3-route-catalog">
-            <h4 className="i3-sub-title" id="i3-route-catalog">系统登记的说明<Explain label="系统登记的说明是什么" content="系统里写死的三行说明，和 App 实际跳转不全一致（比如退款没有对应的通知类型），以上面的实际规则为准；已提出统一。" /></h4>
+            <h4 className="i3-sub-title" id="i3-route-catalog">系统登记的说明<Explain label="系统登记的说明是什么" content="系统登记各通知类型的默认左滑去向。设了按钮去向时，按上面的实际规则跳转。" /></h4>
             <Table label="系统登记的左滑说明" className="i3-route-table">
               <thead><tr><Th>通知类型</Th><Th>写的跳转</Th><Th>说明</Th></tr></thead>
               <tbody>
@@ -1089,8 +1102,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           },
           {
             label: "系统登记的左滑说明",
-            maxRows: 3,
-            reason: "系统固定的三行说明",
+            maxRows: 5,
+            reason: "系统固定的五行说明",
           },
         ]}
       />
@@ -1132,7 +1145,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {/* ===== 排期 ===== */}
       {scheduleRow && (canSendCampaign(scheduleRow) || !!schedulePendingKey) && (
         <Modal title="排期发送" icon={CalendarClock}
-          sub={<><StatusTag tone="progress" filled>到点自动发送</StatusTag><StatusTag tone="neutral">发出前可以取消</StatusTag></>}
+          sub={<><StatusTag tone={retiredCta(scheduleRow.ctaHref) ? "warn" : "progress"} filled>{retiredCta(scheduleRow.ctaHref) ? RETIRED_SCHEDULE_STATUS : "到点自动发送"}</StatusTag><StatusTag tone="neutral">发出前可以取消</StatusTag></>}
           busy={submitting} dirty={!!(scheduledAt || scheduleReason || scheduleVerified)}
           onClose={() => { if (!submitting) setScheduleRow(null); }}
           footer={<>
@@ -1179,7 +1192,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             {retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)] && <Notice tone="warn">{`${RETIRED_CTA_FIX[liveSt(c)]}。`}</Notice>}
             <Facts>
               <Fact k={reachLabel(c)} lead unit={campaignQuantity(c, "reach") === "—" ? undefined : "人"}>{campaignQuantity(c, "reach")}</Fact>
-              <Fact k="状态"><CampaignStatusTag st={liveSt(c)} /></Fact>
+              <Fact k="状态"><CampaignStatusTag st={liveSt(c)} label={blockedSchedule(c) ? RETIRED_SCHEDULE_STATUS : undefined} /></Fact>
               <Fact k="发送">{c.st === "scheduled" || c.st === "sent" && c.deliveryFacts?.complete ? `${whenText(c)}（${businessZone().label}）` : whenText(c)}</Fact>
               <Fact k="发给谁">{c.audience}</Fact>
               <Fact k="优先级"><TierTag tier={c.tier} /></Fact>
@@ -1194,7 +1207,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                   { value: "en", label: "英语", missing: enMissing },
                 ]} />
               </div>
-              <NotificationPreview lang={detailLang} title={lang.title} body={lang.body} ctaLabel={c.ctaHref && !retiredCta(c.ctaHref) ? (c.ctaLabel || ctaLabelOf(c.ctaHref)) : ""} tier={c.tier} kindLabel={kindLabel(c.kind)}
+              <NotificationPreview lang={detailLang} title={lang.title} body={lang.body} ctaLabel={c.ctaHref && (retiredWalletCta(c.ctaHref) || !retiredCta(c.ctaHref)) ? (c.ctaLabel || ctaLabelOf(c.ctaHref)) : ""} tier={c.tier} kindLabel={kindLabel(c.kind)}
                 missing={detailLang === "en" && enMissing} fallback="英语没填：英语用户收到系统默认的英文；其他语言有译文用译文，没有也用默认英文。" />
             </section>
             <Facts>
@@ -1202,12 +1215,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               {deliveryGap(c) && <Fact k="原因">{deliveryGap(c)}</Fact>}
               {deliveryGap(c) && c.deliveryFacts?.sentCount != null && <Fact k="已核对到的">{`送达 ${c.deliveryFacts.sentCount.toLocaleString("en-US")} 人 · ${sentWindow(c.deliveryFacts.firstSentAt, c.deliveryFacts.lastSentAt, c.deliveryFacts.sentCount)}（${businessZone().label}）`}</Fact>}
               {deliveryGap(c) && /^\d+$/.test(c.sent.trim()) && <Fact k="活动记录写的">{`${Number(c.sent.trim()).toLocaleString("en-US")} 人，不是实际送达数`}</Fact>}
-              {retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)]
+              {retiredWalletCta(c.ctaHref)
+                ? <Fact k="点了去哪" tone="warn">{RETIRED_WALLET_LABEL}</Fact>
+                : retiredCta(c.ctaHref) && RETIRED_CTA_FIX[liveSt(c)]
                 ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}（已停用）`}</Fact>
                 : retiredCta(c.ctaHref)
                 ? <Fact k="点了去哪" tone="warn">{`${retiredCta(c.ctaHref)}：${RETIRED_CTA_NOTE}`}<Explain label="已下线的去向" content="App 里不再显示这个按钮，点通知只标已读。原来存的去向照原样留在这条活动里。" /></Fact>
                 : <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>}
-              <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : retiredCta(c.ctaHref) ? "不跳转（设的页面已下线）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : c.kind === "staking" ? "不跳转（质押页已下线）" : "不跳转"}</Fact>
+              <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : retiredWalletCta(c.ctaHref) ? RETIRED_WALLET_LABEL : retiredCta(c.ctaHref) ? "不跳转（设的页面已下线）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : c.kind === "staking" ? "不跳转（质押页已下线）" : "不跳转"}</Fact>
               <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>
             </Facts>
             {c.tier === "critical" && <Notice tone="neutral">紧急通知不看用户的通知设置，也不按保留上限清理。</Notice>}
@@ -1269,7 +1284,7 @@ type FormProps = {
 };
 
 const CTA_LABELS_EN: Readonly<Partial<Record<string, string>>> = {
-  "/pages/me/wallet-repurchase": "Reinvest",
+  [I3_WALLET_CTA]: "Wallet",
   "/pages/team/team": "Team",
   "/pages/market/market": "Market",
   "/pages/genesis/marketplace": "Genesis",
@@ -1289,6 +1304,12 @@ const budgetPlacesOver = (value: string) => /^\s*-?\d*\.\d*[1-9]\d*\s*$/.test(va
 /** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
 function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLanguages, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
   const set = (key: keyof NewForm, value: string) => { if (!frozen) setForm({ ...form, [key]: value }); };
+  const setKind = (kind: string) => {
+    if (frozen) return;
+    const defaultWallet = !editing && !form.ctaHref && kind === "commission"
+      && deliveryCatalog?.ctaRoutes.some((option) => option.value === I3_WALLET_CTA);
+    setForm({ ...form, kind, ctaHref: defaultWallet ? I3_WALLET_CTA : form.ctaHref });
+  };
   const title = form[TITLE_KEY[lang]];
   const body = form[BODY_KEY[lang]];
   const titleLen = chars(title.trim()).length;
@@ -1328,7 +1349,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="通知类型" required help="用户能按类型关掉，紧急除外。">
-                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={(next) => set("kind", next)}
+                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={setKind}
                   options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
               <Field label="点了去哪" error={retiredCta(form.ctaHref) ? "已停用，换一个才能保存。" : undefined}
