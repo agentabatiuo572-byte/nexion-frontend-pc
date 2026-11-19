@@ -1065,7 +1065,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "新建设备 SKU",
     amplifies: false,
     type: "param",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
     // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
     // Response-only estimates are omitted; explicit clearing retains the manual earnings in this request.
@@ -1078,7 +1078,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "更新设备 SKU",
     amplifies: false,
     type: "param",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
     // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_update", params: canonicalE1SkuParams(ctx) }),
@@ -1090,7 +1090,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "调整 SKU 上下架",
     amplifies: false,
     type: "param",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_status",
       params: { skuId: String(ctx.skuId), status: String(ctx.status), expectedUpdatedAt: String(ctx.updatedAt ?? "") } }),
@@ -1102,7 +1102,7 @@ export const HIGH_OPS: HighOpDef[] = [
     action: "删除设备 SKU",
     amplifies: false,
     type: "sos",
-    gateLabel: "门槛者",
+    gateLabel: "另一位有批准权限和商品业务权限的管理员",
     targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_delete",
       params: { skuId: String(ctx.skuId), expectedUpdatedAt: String(ctx.updatedAt ?? "") } }),
