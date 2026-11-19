@@ -70,6 +70,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F4VoteProjectionRead } from "@/lib/admin/f4-vote-projection";
 import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
+import { rewardKind } from "./f-tabs/f1-shared";
 import { RdPage } from "@/app/components/rd";
 import { F2Page } from "./f-tabs/f2-page";
 
@@ -1005,14 +1006,29 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         target: def.buildTarget({ userId, targetV, direction }),
       });
     },
-    proposePayoutAction: async (payoutId, action, reason) => {
+    proposePayoutAction: async (record, action, reason) => {
       const def = findHighOp("f_reward_payout_action");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_reward_payout_action");
+      const { payoutId, rewardType, commissionEventId, sponsorUserId } = record;
+      const kind = rewardKind(rewardType);
+      const reissue = action === "reissue";
+      const rewardLabel = { voucher: "券", fund: "资金", sku: "商品", custom: "自定义奖励" }[kind];
+      const impact = reissue ? {
+        voucher: "给用户再发一张原券",
+        fund: sponsorUserId ? "按原发放单重新记一笔应付，付给原邀请人，立即可用" : "按原发放单重新记一笔应付，付给用户本人，先进入冷却期",
+        sku: "恢复原商品的履约和权益，并核对库存",
+        custom: "只更新发放记录状态，奖品不补发",
+      }[kind] : {
+        voucher: "没用过的券作废，已用过的按券面额从 USDT 可用余额扣回",
+        fund: commissionEventId ? "按原奖励记录反向记账，收回这笔奖励" : "没有关联的奖励记录，只更新发放状态，账务不动",
+        sku: "取消对应的履约、收回权益，按履约状态退回库存",
+        custom: "只更新发放记录状态，奖品不收回",
+      }[kind];
       await proposeStable(`f-payout-action:${payoutId}`, JSON.stringify([action, reason]), {
-        action: `${def.action} · ${action === "reissue" ? "重发" : "冲正"}`,
+        action: `奖励发放 · ${reissue ? "重发" : "冲正"} · ${rewardLabel}`,
         obj: `发放单 ${payoutId}`,
         before: "当前状态",
-        after: action === "reissue" ? "REISSUED" : "REVERSED",
+        after: `${reissue ? "已重发" : "已冲正"} · ${rewardLabel}：${impact}`,
         type: "fund",
         amplifies: action === "reissue",
         gate: { roles: [] },

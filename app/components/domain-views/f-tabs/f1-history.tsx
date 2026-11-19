@@ -157,7 +157,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
       </Facts>,
       statedBrief: { impact: `${impact}不改奖励模板，也不改用户等级。`, check: "核对发放单、用户和奖励；理由写清依据或工单号。" },
       detail: `${action === "reissue" ? `只有已冲正的奖励可以重新发放${kind === "fund" ? "，平台会再付一次这笔钱" : ""}。` : "只有已发放、已重发或待发放的奖励可以冲正。"}${voucherNote}提交后需批准才生效。`,
-      submit: async (reason) => ctx.proposePayoutAction(record.payoutId, action, reason),
+      submit: async (reason) => ctx.proposePayoutAction(record, action, reason),
     });
   };
 
