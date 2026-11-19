@@ -20,6 +20,8 @@ import {
   explicitMContentRejectionCode,
   fetchMConversationSnapshot,
   fetchMConversationDetail,
+  fetchM3CustomerConversations,
+  parseM3ReplySnapshot,
   fetchMContentData,
   readSupportKnowledge,
   readSupportTemplates,
@@ -33,7 +35,7 @@ import { MDomainLoadCoordinator } from "@/lib/admin/m-content-load-coordinator";
 import { shouldStartM3ConversationRecovery } from "@/lib/admin/m-conversation-recovery-gate";
 import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
+import { useConversationStream } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
 import { useSupportInboxAlerts } from "@/lib/admin/support-alerts";
@@ -42,7 +44,6 @@ import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type Session
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq, SupportScopeNotice } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
-import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { supportClient, isSupportScopeDenial, supportAssignmentChanged, SupportClientError, agentSwitchText, type SupportMessageInput } from "@/lib/admin/m-support-client";
 import { supportLengthHint, identifySavedCustomer, blocksNewSend, failedDraftCopies, closeFailedDraft, restoreFailedDraft, SUPPORT_MESSAGE_MAX_LENGTH, dockCommands, dockDraftKey, refusedMessage, readSavedSends, revokedPrivateTargets, redactCustomerSends, parseConversations as dockParseConvos, pendingSendCustomers, useSendJournalRevision } from "./m-tabs/m-message-journal";
@@ -150,7 +151,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   currentAuthEpoch.current = authEpoch;
   const mDataRef = useRef<MContentData | null>(null);
   const [conversationSnapshotRevision, setConversationSnapshotRevision] = useState(0);
-  const liveSnapshotController = useRef<AbortController | null>(null);
   const safeMData = mDataAuthEpoch.current === authEpoch ? mData : null;
   mDataRef.current = safeMData;
 
@@ -166,7 +166,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     const generation = mLoadCoordinator.current.beginFullLoad();
     const isCurrent = () => currentAuthEpoch.current === authEpoch
       && mLoadCoordinator.current.isFullLoadCurrent(generation);
-    liveSnapshotController.current?.abort();
     // A changed authenticated session must never inherit the previous
     // operator's seat authority.  Same-session refreshes retain only a
     // previously validated M1 roster while the next M1 read is still pending.
@@ -254,7 +253,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       return;
     }
     mLoadCoordinator.current.beginConversationSnapshot();
-    liveSnapshotController.current?.abort();
     window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { conversationNo, customerId, cleared, changedAssignmentKey } }));
     setMData((previous) => previous ? {
       ...previous,
@@ -315,136 +313,101 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       if (mDataAuthEpoch.current !== detailEpoch) throw new Error("会话身份已变化，请重新打开会话。");
       if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation)) continue;
       const row = mDataRef.current?.conversations.find((conversation) => conversation.id === no);
-      if (!row || row.version > detail.version || row.ownerAdminId !== detail.ownerAdminId || row.assignmentId !== detail.assignmentId) {
+      if (!row || row.ownerAdminId !== detail.ownerAdminId || row.assignmentId !== detail.assignmentId) {
         throw new Error("会话归属或版本已变化，请刷新会话列表。");
       }
+      if (row.version > detail.version) return;
       setMData((previous) => {
         if (!previous) return previous;
         const index = previous.conversations.findIndex((conversation) => conversation.id === no);
         if (index < 0 || previous.conversations[index].version > detail.version || previous.conversations[index].ownerAdminId !== detail.ownerAdminId || previous.conversations[index].assignmentId !== detail.assignmentId) return previous;
         const conversations = previous.conversations.slice();
         // Message-only history reads must not replace an already verified profile with list placeholders.
-        conversations[index] = includeCustomerProfile ? detail : { ...detail, profile: previous.conversations[index].profile, customer: previous.conversations[index].customer };
+        const prior = conversations[index];
+        const withHolder = { ...detail, holder: detail.holder === undefined ? prior.holder : detail.holder };
+        conversations[index] = includeCustomerProfile ? withHolder : { ...withHolder, profile: prior.profile, customer: prior.customer };
         return { ...previous, conversations };
       });
       return detail;
     }
     throw new Error("会话列表正在刷新，请稍后再打开详情。");
   }, [authEpoch]);
-  const reconcileLiveConversationSnapshot = useCallback(async (connectionSignal: AbortSignal) => {
-    if (connectionSignal.aborted) return;
-    liveSnapshotController.current?.abort();
-    const controller = new AbortController();
-    liveSnapshotController.current = controller;
-    const abortSnapshot = () => controller.abort();
-    connectionSignal.addEventListener("abort", abortSnapshot, { once: true });
-    if (connectionSignal.aborted) controller.abort();
+  const customerReads = useRef(new Map<string, { signal?: AbortSignal; again: boolean }>());
+  const refreshLiveConversation = useCallback(async (no: string, signal?: AbortSignal) => {
+    if (signal?.aborted) return;
+    const row = mDataRef.current?.conversations.find(conversation => conversation.id === no);
+    const requireSnapshot = async () => {
+      if (signal) return true as const;
+      await reconcileConversationSnapshot(new AbortController().signal);
+    };
+    if (!row?.customerId) return requireSnapshot();
+    const customerId = row.customerId;
+    const reads = customerReads.current;
+    const running = reads.get(customerId);
+    if (running && !running.signal?.aborted) { running.again = true; return; }
+    const entry = { signal, again: false };
+    reads.set(customerId, entry);
     try {
-      await reconcileConversationSnapshot(controller.signal);
-    } finally {
-      connectionSignal.removeEventListener("abort", abortSnapshot);
-      if (liveSnapshotController.current === controller) liveSnapshotController.current = null;
-    }
-  }, [reconcileConversationSnapshot]);
-  useEffect(() => () => liveSnapshotController.current?.abort(), []);
-
-  const detailReads = useRef(new Map<string, { again: boolean }>());
-  // M3 即时会话 SSE 订阅：后端 OpsConversationStreamController 推 ConversationMessageEvent。
-  // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
-  // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
-  const handleStreamEvent = useCallback(async (event: ConversationStreamEvent, connectionSignal: AbortSignal) => {
-    if (connectionSignal.aborted) return;
-    // M-31: a message or receipt on a conversation we already hold re-reads only that conversation, as long as it is
-    // the customer's only thread here (a reply can also clear pending messages on the customer's older threads).
-    // Bursts on one conversation share one read plus one trailing read. Ownership changes, new conversations and
-    // anything unexpected still reconcile the whole inbox.
-    const held = mDataRef.current?.conversations;
-    const target = held?.find((conversation) => conversation.id === event.conversationNo);
-    const onlyThread = Boolean(target && !held!.some((conversation) => conversation.id !== target.id && conversation.customerId && conversation.customerId === target.customerId));
-    if ((event.eventType === "MESSAGE" || event.eventType === "RECEIPT") && onlyThread) {
-      try {
-        const reads = detailReads.current, running = reads.get(event.conversationNo);
-        if (running) { running.again = true; return; }
-        const state = { again: false };
-        reads.set(event.conversationNo, state);
-        try {
-          do { state.again = false; await loadConversationDetail(event.conversationNo, connectionSignal); } while (state.again && !connectionSignal.aborted);
-        } finally { reads.delete(event.conversationNo); }
-        return;
-      } catch {
-        if (connectionSignal.aborted) return;
-      }
-    }
-    if (
-      event.eventType === "RECEIPT"
-      || event.eventType === "MESSAGE"
-      || event.eventType === "STATUS"
-      || event.eventType === "INITIATE"
-      || event.senderType === "SYSTEM"
-    ) {
-      // 回执、终态和系统定时任务统一回读权威快照：不靠正文猜状态，也不把
-      // 系统提醒当作坐席消息推进前端 lastTs。
-      await reconcileLiveConversationSnapshot(connectionSignal);
-      return;
-    }
-    if (!mDataRef.current?.conversations.some((conversation) => conversation.id === event.conversationNo)) {
-      await reconcileLiveConversationSnapshot(connectionSignal);
-      return;
-    }
-    setMData((prev) => {
-      if (!prev) return prev;
-      const idx = prev.conversations.findIndex((c) => c.id === event.conversationNo);
-      if (idx === -1) return prev;
-      const convo = prev.conversations[idx];
-      const eventTs = event.ts ? new Date(event.ts).getTime() : Date.now();
-      let nextConvo: SessionConvo = convo;
-
-      if (event.eventType === "MESSAGE" || event.eventType === "INITIATE") {
-        const sender: "user" | "agent" = event.senderType === "USER" ? "user" : "agent";
-        const text = event.body ?? "";
-        // 去重：同 ts + 同正文已存在则不重复 push（本坐席自己发的回复会经 SSE 回环）。
-        const dup = containsConversationMessage(convo.messages, {
-          messageId: event.messageId,
-          ts: eventTs,
-          body: text,
+      do {
+        entry.again = false;
+        const generation = mLoadCoordinator.current.captureConversationSnapshot();
+        const list = await fetchM3CustomerConversations(customerId, signal);
+        if (signal?.aborted || useAdminAuth.getState().authEpoch !== authEpoch) return;
+        if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation)) return requireSnapshot();
+        const original = mDataRef.current?.conversations.filter(conversation => conversation.customerId === customerId) ?? [];
+        const byNo = new Map(list?.map(conversation => [conversation.id, conversation]));
+        if (!list || list.length !== original.length || original.some(conversation => {
+          const updated = byNo.get(conversation.id);
+          return !updated || conversation.ownerAdminId !== updated.ownerAdminId || conversation.assignmentId !== updated.assignmentId;
+        })) return requireSnapshot();
+        setMData(previous => previous && {
+          ...previous,
+          conversations: previous.conversations.map(conversation => {
+            const updated = byNo.get(conversation.id);
+            return updated && conversation.customerId === customerId && conversation.ownerAdminId === updated.ownerAdminId
+              && conversation.assignmentId === updated.assignmentId && conversation.version <= updated.version
+              ? { ...conversation, ...updated, messages: conversation.messages, profile: conversation.profile,
+                customer: conversation.customer, detailReady: conversation.id !== no && updated.version === conversation.version && conversation.detailReady,
+                writeState: conversation.status === updated.status ? conversation.writeState : undefined }
+              : conversation;
+          }),
         });
-        if (!dup) {
-          const msg: SessionMsg = {
-            id: event.messageId,
-            ts: eventTs,
-            sender,
-            agentName: sender === "agent" ? (event.senderName ?? convo.agentName) : undefined,
-            text,
-          };
-          nextConvo = {
-            ...convo,
-            messages: [...convo.messages, msg],
-            lastTs: eventTs,
-            unread: sender === "user" ? convo.unread + 1 : convo.unread,
-          };
-        }
-      } else if (event.eventType === "TRANSFER") {
-        // 转交态（from/to/reason）由后端快照权威表达；此处仅扰动 lastTs 让 UI 重渲，
-        // 具体 transfer 字段等下一次 reloadMContent 同步，避免本地推断错位。
-        nextConvo = { ...convo, lastTs: eventTs };
-      }
+      } while (entry.again && !signal?.aborted);
+    } catch (cause) {
+      if (signal?.aborted || useAdminAuth.getState().authEpoch !== authEpoch) return;
+      if (isSupportScopeDenial(cause)) invalidateScope(no, customerId);
+      else throw cause;
+    } finally {
+      if (reads.get(customerId) === entry) reads.delete(customerId);
+    }
+  }, [authEpoch, invalidateScope, reconcileConversationSnapshot]);
 
-      if (nextConvo === convo) return prev;
-      const conversations = prev.conversations.slice();
-      conversations[idx] = nextConvo;
-      return { ...prev, conversations };
+  const applyReplySnapshot = (no: string, receipt: unknown) => {
+    const updated = parseM3ReplySnapshot(receipt);
+    const original = mDataRef.current?.conversations.find(row => row.id === no);
+    if (!updated || !original || updated.id !== no || updated.customerId !== original.customerId || updated.ownerAdminId !== original.ownerAdminId) {
+      void refreshLiveConversation(no).catch(() => {});
+      return;
+    }
+    setMData(previous => previous && {
+      ...previous,
+      conversations: previous.conversations.map(row => row.id === no && row.customerId === updated.customerId
+        && row.ownerAdminId === updated.ownerAdminId && row.assignmentId === original.assignmentId && row.version < updated.version
+        ? { ...row, detailReady: false, version: updated.version, lastTs: updated.lastTs, lastHumanTs: updated.lastHumanTs, lastPublicMessageId: updated.lastPublicMessageId,
+          lastPreview: updated.lastPreview, lastMessageKind: updated.lastMessageKind, unread: updated.unread,
+          pendingReplyCount: updated.pendingReplyCount, pendingReplySince: updated.pendingReplySince, status: updated.status }
+        : row),
     });
-  }, [reconcileLiveConversationSnapshot, loadConversationDetail]);
-  // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
-  // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
+    if (!conversationStreamReady) void refreshLiveConversation(no).catch(() => {});
+  };
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const m3RecoveryEnabled = shouldStartM3ConversationRecovery({
     hasM3ReadAuthority: authorities.includes("service_m3_read"),
     hasMContentSnapshot: Boolean(safeMData),
     isMContentLoading: mLoading,
   });
-  const { ready: conversationStreamReady, reconnectExhausted, retry: retryConversationStream } = useConversationStream({
-    onEvent: handleStreamEvent,
+  const { ready: conversationStreamReady, reconnecting: conversationReconnecting, reconnectExhausted, retry: retryConversationStream } = useConversationStream({
+    onEvent: refreshLiveConversation,
     onReconnectSnapshot: reconcileConversationSnapshot,
     onScopeInvalidated: invalidateScope,
     lifecycleSignal: mLoadCoordinator.current.conversationStreamSignal,
@@ -662,6 +625,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         throw cause;
       }
     },
+    refreshConversation: applyReplySnapshot,
     refreshContent: reloadMContent,
     refreshM5Content: () => reloadMContent(true),
     contentLoading: mLoading,
@@ -747,7 +711,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {(permissionUnknown && (tab === "M1" || tab === "M2") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
       {tab === "M3" && !safeMData && !hasM3Recovery && m3Banner}
-      {tab === "M3" && !reconnectExhausted && safeMData?.conversationsAvailable && (
+      {tab === "M3" && (conversationStreamReady || conversationReconnecting) && !reconnectExhausted && safeMData?.conversationsAvailable && (
         <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "连接已断开，正在重连；下面是最近一次的数据"}</span>
       )}
 
@@ -763,7 +727,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ) : (safeMData || hasM3Recovery) && (
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
-          {tab === "M3" && <M3DedicatedChat ctx={ctx} snapshotRevision={conversationSnapshotRevision} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
+          {tab === "M3" && <M3DedicatedChat ctx={ctx} snapshotRevision={conversationSnapshotRevision} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnecting={conversationReconnecting} reconnectExhausted={reconnectExhausted} />}
         </>
       )}
 

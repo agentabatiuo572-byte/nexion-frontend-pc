@@ -7,7 +7,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { supportClient, SupportClientError, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { Icon, Modal } from "../design-kit";
 import type { SupportCustomerStatistics } from "@/lib/admin/support-analytics-client";
 import type { MCtx } from "./types";
@@ -187,6 +187,15 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
   const currencies = asRows(finance?.byCurrency), devices = asRows(deviceGroup?.data?.records), flows = asRows(flowGroup?.data?.records);
   const deviceStatuses = deviceGroup?.data?.fieldStatuses as Record<string,string>|undefined;
   const history = (() => { try { return (JSON.parse(ctx.pget("I.session.convos") ?? "[]") as SessionConvo[]).filter(c => c.customerId === customerId).sort((a,b)=>b.lastTs-a.lastTs); } catch { return []; } })();
+  const latestServiceMessage = conversation?.messages.findLast(message => message.sourceSenderType === "AGENT" && message.origin !== "WELCOME");
+  const cachedServiceTime = typeof service?.lastServiceAt === "string" ? parseBusinessTime(service.lastServiceAt) : 0;
+  const newerServiceMessage = latestServiceMessage && latestServiceMessage.ts > (cachedServiceTime || 0) ? latestServiceMessage : undefined;
+  const lastServiceAt = newerServiceMessage?.sourceCreatedAt ?? service?.lastServiceAt;
+  const serviceConversationNo = newerServiceMessage?.sourceConversationNo ?? service?.conversationNo;
+  const serviceConversationStatus = (source === "M3" ? history.find(row => row.id === serviceConversationNo)?.status.toUpperCase() : undefined) ?? service?.conversationStatus;
+  const waitingReply = source === "M3" && history.length === service?.conversationCount && history.every(row => row.pendingReplyCount != null)
+    ? history.some(row => row.pendingReplyCount! > 0)
+    : service?.waitingReply;
   const tickets = (() => { try { return (JSON.parse(ctx.pget("I.support.tickets") ?? "[]") as SupportTicket[]).filter(t => String(t.userId) === customerId); } catch { return []; } })();
   const financeLabels: Record<string,string> = { netContributionTotal: "累计净贡献", creditedDepositTotal: "累计成功充值实际入账", successfulWithdrawalPrincipalTotal: "累计成功提现金额", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现金额", balance: "余额", availableBalance: "可用余额" };
   // 一页放得下就不显示（ST-13）。
@@ -266,7 +275,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       {!writable&&<p className="m-admin-muted">只读 <Explain label="谁能修改标签和备注" content={conversation ? "只有这位客户当前的专属客服能改，客服主管审阅时只读。" : "还没有服务会话，标签和备注只读。发出第一条消息后，专属客服就能修改。"}/></p>}{writeError&&<p role="alert">{writeError}</p>}
     </Group>
     <Group title="服务与维护" open={opens("服务与维护")} summary={advisorName ? `当前专属客服 ${String(advisorName)}` : "暂无专属客服"} group={profile?.service} failed={Boolean(error)} retry={()=>void retryGroup("service")}>
-      <div className="cvp-row"><span className="k">当前专属客服</span><span className="v m3-profile-advisor"><SupportAvatar name={String(advisorName??"专属客服")} size={22} path={advisorId&&service?.advisorAvatar?advisorAvatarPath(advisorId,customerId):undefined} version={typeof (service?.advisorAvatar as Record<string,unknown>|undefined)?.version==="number"?(service?.advisorAvatar as {version:number}).version:undefined}/>{show(advisorName)}</span></div><Row label="归属状态" value={labelState(service?.assignmentState)}/>{assignmentSource && <Row label="绑定来源" value={assignmentSource}/>}<Row label="会话状态" value={service?.conversationCount===0?"暂无会话":labelState(service?.conversationStatus)}/><Row label="账户活动" value={labelState(service?.activityStatus)}/><Row label="主动维护" value={service?.maintenanceEnabled==null?"未知":service.maintenanceEnabled?"正常维护":"不再维护"}/><Row label="有效活动" value={dates(service?.lastEffectiveAt)}/><Row label="下次维护" value={dates(service?.nextMaintenanceAt)}/><Row label="最近服务" value={dates(service?.lastServiceAt)}/><Row label="首次待联系" value={service?.firstContact}/><Row label="待专属客服回复" value={service?.waitingReply}/>
+      <div className="cvp-row"><span className="k">当前专属客服</span><span className="v m3-profile-advisor"><SupportAvatar name={String(advisorName??"专属客服")} size={22} path={advisorId&&service?.advisorAvatar?advisorAvatarPath(advisorId,customerId):undefined} version={typeof (service?.advisorAvatar as Record<string,unknown>|undefined)?.version==="number"?(service?.advisorAvatar as {version:number}).version:undefined}/>{show(advisorName)}</span></div><Row label="归属状态" value={labelState(service?.assignmentState)}/>{assignmentSource && <Row label="绑定来源" value={assignmentSource}/>}<Row label="会话状态" value={service?.conversationCount===0?"暂无会话":labelState(serviceConversationStatus)}/><Row label="账户活动" value={labelState(service?.activityStatus)}/><Row label="主动维护" value={service?.maintenanceEnabled==null?"未知":service.maintenanceEnabled?"正常维护":"不再维护"}/><Row label="有效活动" value={dates(service?.lastEffectiveAt)}/><Row label="下次维护" value={dates(service?.nextMaintenanceAt)}/><Row label="最近服务" value={dates(lastServiceAt)}/><Row label="首次待联系" value={service?.firstContact}/><Row label="待专属客服回复" value={waitingReply}/>
       {transferEntry && <div className="m3-profile-actions"><a className="rd-btn" data-variant="secondary" data-size="sm" href={`/service/overview?customerId=${customerId}&action=transfer`}><span className="rd-btn-face">维护状态与正式转绑</span></a></div>}
     </Group>
     <Fold inset title="最近服务记录" {...recordFold("最近服务记录")} summary={conversation?.detailReady ? `最近 ${Math.min(4, conversation.messages.length)} 条` : "打开后查看"}>

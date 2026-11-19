@@ -8,7 +8,8 @@ export interface RealtimeEnvelope { code:number; message?:string; data:unknown }
 export interface RealtimePresence { conversationNo:string; online:boolean; typing:boolean; expiresIn?:number }
 interface Options {
   url:string; ticket:(signal:AbortSignal)=>Promise<{ticket:string}>; socket:(url:string)=>RealtimeSocket;
-  reconcile:(signal:AbortSignal)=>Promise<void>; state?:(ready:boolean,terminal:boolean,reason?:string)=>void;
+  reconcile:(signal:AbortSignal)=>Promise<void>; onEvent?:(no:string,signal:AbortSignal)=>Promise<true|void>;
+  state?:(ready:boolean,terminal:boolean,reason:string|undefined,reconnecting:boolean)=>void;
   presence?:(value:RealtimePresence|null)=>void;
   scopeInvalidated?:(conversationNo?:string,customerId?:string)=>void;
 }
@@ -26,9 +27,10 @@ export class ConversationRealtime {
   private retryTimer?:Timer; private pollTimer?:Timer; private heartbeatTimer?:Timer; private deadline?:Timer; private eventTimer?:Timer;private stableTimer?:Timer;
   private pending=new Map<string,{resolve:(value:RealtimeEnvelope)=>void;reject:(error:Error)=>void;timer:Timer}>();
   private eventIds=new Set<string>(); private dirty=false; private syncing=false; private authenticated=false;
+  private connectedOnce=false; private reconnecting=false;
   private watched:string|null=null; private lastTyping=0; private lastPong=0; private sequence=0; private lastFailure="";
   constructor(private readonly options:Options){}
-  start(){if(!this.stopped)return;this.stopped=false;this.terminal=false;this.exhausted=false;this.lastFailure="";this.attempts=0;this.lifecycle++;this.fallback=new AbortController();this.connect();this.poll(this.lifecycle);}
+  start(){if(!this.stopped)return;this.stopped=false;this.terminal=false;this.exhausted=false;this.lastFailure="";this.attempts=0;this.connectedOnce=false;this.reconnecting=false;this.lifecycle++;this.fallback=new AbortController();this.connect();this.poll(this.lifecycle);}
   stop(){this.stopped=true;this.lifecycle++;this.disconnect(false);this.fallback.abort();clearTimeout(this.pollTimer);this.options.presence?.(null);}
   watch(no:string|null){this.watched=no;if(this.authenticated)this.send({type:'watch',conversationNo:no});}
   typing(active:boolean){
@@ -50,9 +52,10 @@ export class ConversationRealtime {
     });
   }
   private send(value:unknown){this.connection?.send(JSON.stringify(value));}
-  private setReady(value:boolean){this.ready=value;this.options.state?.(value,this.terminal,this.exhausted?this.lastFailure:undefined);}
+  private setReady(value:boolean){this.ready=value;this.options.state?.(value,this.terminal,this.exhausted?this.lastFailure:undefined,this.reconnecting);}
   private disconnect(retry:boolean,terminal=false,reason=""){
     if(reason)this.lastFailure=reason;
+    this.reconnecting=retry&&!terminal&&this.connectedOnce;
     this.epoch++;this.controller.abort();this.fallback.abort();this.fallback=new AbortController();this.connection?.close();this.connection=null;
     this.authenticated=false;this.syncing=false;this.dirty=false;this.terminal=terminal;
     for(const timer of [this.retryTimer,this.heartbeatTimer,this.deadline,this.eventTimer,this.stableTimer])clearTimeout(timer);
@@ -92,19 +95,26 @@ export class ConversationRealtime {
           switch(f.type){
             case 'ready':
               clearTimeout(this.deadline);this.fallback.abort();this.authenticated=true;this.lastPong=Date.now();this.watch(this.watched);
+              this.connectedOnce=true;this.reconnecting=false;this.setReady(false);
               this.dirty=true;void this.sync(epoch);this.heartbeat(epoch);break;
             case 'pong':this.lastPong=Date.now();break;
             case 'ack':{const p=this.pending.get(f.requestId);if(p){this.pending.delete(f.requestId);p.resolve(f.result)}break;}
             case 'event':
               if(typeof f.eventId!=='string'||this.eventIds.has(f.eventId))break;
               this.eventIds.add(f.eventId);if(this.eventIds.size>2048)this.eventIds.delete(this.eventIds.values().next().value!);
-              this.dirty=true;if(!this.syncing){clearTimeout(this.eventTimer);this.eventTimer=setTimeout(()=>void this.sync(epoch),80)}break;
+              if(this.ready&&typeof f.conversationNo==='string'&&f.conversationNo&&this.options.onEvent){
+                const no=f.conversationNo;
+                void this.options.onEvent(no,signal).then(needsSnapshot=>{
+                  if(needsSnapshot&&current())this.scheduleSync(epoch,80);
+                },()=>{if(current())this.scheduleSync(epoch,80);});
+              }else this.scheduleSync(epoch,80);
+              break;
             case 'scope-invalidated':
               this.options.scopeInvalidated?.(
                 typeof f.conversationNo==='string'?f.conversationNo:undefined,
                 typeof f.customerId==='string'?f.customerId:Number.isSafeInteger(f.customerId)&&f.customerId>0?String(f.customerId):undefined,
               );
-              this.dirty=true;if(!this.syncing){clearTimeout(this.eventTimer);this.eventTimer=setTimeout(()=>void this.sync(epoch),0)}break;
+              this.scheduleSync(epoch,0);break;
             case 'presence':if(f.conversationNo===this.watched)this.options.presence?.(f);break;
             case 'error':{
               const denied=f.code===401||f.code===403;
@@ -122,6 +132,12 @@ export class ConversationRealtime {
       }
     }
   }
+  private scheduleSync(epoch:number,delay:number){
+    this.dirty=true;
+    if(this.syncing)return;
+    clearTimeout(this.eventTimer);
+    this.eventTimer=setTimeout(()=>void this.sync(epoch),delay);
+  }
   private async sync(epoch:number){
     if(this.syncing||!this.authenticated)return;
     this.syncing=true;const signal=this.controller.signal;
@@ -131,7 +147,13 @@ export class ConversationRealtime {
         const wasReady=this.ready;this.setReady(true);
         if(!wasReady)this.stableTimer=setTimeout(()=>{if(epoch===this.epoch)this.attempts=0;},30000);
       }
-    }catch{if(epoch===this.epoch)this.disconnect(true,false,"会话快照补拉失败");}
+    }catch(cause){
+      if(epoch!==this.epoch||signal.aborted)return;
+      this.syncing=false;
+      const status=(cause as {status?:number}|null)?.status;
+      if(status===401||status===403||status===428)this.disconnect(true,true,"会话数据鉴权被拒");
+      else this.scheduleSync(epoch,cause instanceof Error&&cause.message==="M3_CONVERSATION_SNAPSHOT_SUPERSEDED"?80:5000);
+    }
     finally{if(epoch===this.epoch)this.syncing=false;}
   }
   private heartbeat(epoch:number){

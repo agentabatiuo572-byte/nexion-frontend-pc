@@ -1962,6 +1962,19 @@ export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<
   throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
 }
 
+export async function fetchM3CustomerConversations(customerId: string, signal?: AbortSignal): Promise<SessionConvo[] | null> {
+  const page = assertConversationPage(await apiRequest<unknown>(
+    `/conversations?userId=${supportWireId(customerId, "conversation.customerId")}&pageNum=1&pageSize=100`, { signal },
+  ));
+  const rows = page.records.map(adaptConversation);
+  return page.total === rows.length && rows.every(row => row.customerId === customerId) ? rows : null;
+}
+
+export function parseM3ReplySnapshot(value: unknown): SessionConvo | undefined {
+  try { return adaptConversation(assertConversationRow(value)); }
+  catch { /* Older reply receipts may only identify the conversation. */ }
+}
+
 export async function fetchMConversationDetail(no: string, signal?: AbortSignal, includeCustomerProfile = true): Promise<SessionConvo> {
   const detail = assertConversationDetail(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}${includeCustomerProfile ? "" : "?includeCustomerProfile=false"}`, { signal }));
   const conversation = adaptConversation(detail);

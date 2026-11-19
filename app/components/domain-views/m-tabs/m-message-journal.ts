@@ -6,7 +6,7 @@ import { isSupportScopeDenial, supportClient, isDefiniteSupportRefusal, SupportC
 import type { SessionConvo, SessionMsg } from "./data";
 
 type Intent = "SERVICE" | "MAINTENANCE";
-export type Pending = { conversationId: string; customerId?: string; key: string; body: string; originalDraft?: string; draftSlot?: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
+export type Pending = { conversationId: string; customerId?: string; key: string; body: string; originalDraft?: string; draftSlot?: string; draftDetached?: boolean; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedStatus?: string; expectedVersion: number };
 type FirstContact = { key: string; body: string; originalDraft?: string; draftSlot?: string; intent: Intent; clientMessageId: string; customerId: string; assignmentId: string; version: number; replyTargets: Array<{ conversationNo: string; throughMessageId: number }> };
 
 let revision = 0;
