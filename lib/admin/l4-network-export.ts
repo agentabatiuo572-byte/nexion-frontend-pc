@@ -1,5 +1,6 @@
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { visibleReasonLength } from "./a2-client";
+import { parseBusinessTime } from "./business-time";
 import { downloadL4NetworkFile, lBiActions, LOutcomeUnknownError, type LNetworkTreeExportResult } from "./l-client";
 import { formatAdminApiError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -58,14 +59,16 @@ export function isL4NetworkDurable(record: PendingL4NetworkExport): boolean {
 }
 
 const GRANT_STORAGE_KEY = "nexion-admin-l4-network-grants-v1";
-const grants = createPendingMutationStore<PendingMutationRecord & { downloadToken?: string }>({
+type NetworkGrant = PendingMutationRecord & { downloadToken?: string; tokenExpiresAt?: number };
+const grants = createPendingMutationStore<NetworkGrant>({
   storageKey: GRANT_STORAGE_KEY,
   retainExpiredRecords: true,
   isValidRecord: record => /^L4TREE-[A-Z0-9]{8}$/.test(record.fingerprint)
-    && (record.downloadToken === undefined || typeof record.downloadToken === "string" && record.downloadToken.length > 0),
+    && (record.downloadToken === undefined || typeof record.downloadToken === "string" && record.downloadToken.length > 0)
+    && (record.tokenExpiresAt === undefined || !!record.downloadToken && Number.isFinite(record.tokenExpiresAt)),
 });
 
-export function l4NetworkGrantRecovery(reportId: string) {
+export function l4NetworkGrantRecovery(reportId: string): NetworkGrant | undefined {
   const legacy = l4NetworkCommands.list().find(record => record.result?.reportId === reportId && record.grantRequested);
   return legacy ?? grants.list().find(record => record.fingerprint === reportId);
 }
@@ -75,21 +78,33 @@ const downloadError = (code: string) => formatAdminApiError(code, code);
 /** L4 and L5 share the grant attempt, including old L4 records. The endpoint has no idempotency key. */
 export async function downloadL4NetworkSnapshot(reportId: string) {
   const original = l4NetworkCommands.list().find(record => record.result?.reportId === reportId);
-  const priorGrant = l4NetworkGrantRecovery(reportId);
-  if (priorGrant && isRetryExpired(priorGrant)) throw new Error(RETRY_EXPIRED_TEXT);
+  let priorGrant = l4NetworkGrantRecovery(reportId);
   if (priorGrant && !priorGrant.downloadToken) throw new Error(downloadError("L4_TREE_GRANT_UNKNOWN"));
+  if (priorGrant && Date.now() >= (priorGrant.tokenExpiresAt ?? priorGrant.expiresAt)) {
+    if (original?.commandKey === priorGrant.commandKey) {
+      // Legacy entries stored the token alongside the creation receipt.
+      const reset = { ...original, grantRequested: false, downloadToken: undefined };
+      l4NetworkCommands.remember(reset.fingerprint, reset.commandKey, reset);
+      if (!isL4NetworkDurable(reset)) throw new Error(downloadError("L4_TREE_STORAGE_UNAVAILABLE"));
+    } else {
+      grants.forget(reportId, priorGrant.commandKey);
+    }
+    if (l4NetworkGrantRecovery(reportId)) throw new Error(downloadError("L4_TREE_STORAGE_UNAVAILABLE"));
+    priorGrant = undefined;
+  }
 
   let token = priorGrant?.downloadToken;
   const key = priorGrant?.commandKey ?? `l4-network-grant-${crypto.randomUUID()}`;
-  const saveGrant = (downloadToken?: string) => {
-    grants.remember(reportId, key, { downloadToken });
+  const saveGrant = (downloadToken?: string, tokenExpiresAt?: number) => {
+    grants.remember(reportId, key, { downloadToken, tokenExpiresAt });
     const stored = JSON.parse(window.sessionStorage.getItem(GRANT_STORAGE_KEY) ?? "{}")[key];
-    if (!grants.isDurablyStored(reportId, key) || stored?.downloadToken !== downloadToken) {
+    if (!grants.isDurablyStored(reportId, key) || stored?.downloadToken !== downloadToken || stored?.tokenExpiresAt !== tokenExpiresAt) {
       throw new Error(downloadError("L4_TREE_STORAGE_UNAVAILABLE"));
     }
   };
   if (!token) {
     saveGrant();
+    let expiry: number | undefined;
     try {
       const grant = await lBiActions.downloadToken(reportId);
       if (grant.reportId !== reportId || typeof grant.downloadToken !== "string" || !grant.downloadToken
@@ -97,6 +112,8 @@ export async function downloadL4NetworkSnapshot(reportId: string) {
         throw new LOutcomeUnknownError(downloadError("L4_TREE_GRANT_UNKNOWN"));
       }
       token = grant.downloadToken;
+      const expiresAt = typeof grant.expiresAt === "string" ? parseBusinessTime(grant.expiresAt) : NaN;
+      if (Number.isFinite(expiresAt)) expiry = expiresAt;
     } catch (error) {
       if (isExplicitRejection(error)) {
         grants.forget(reportId, key);
@@ -104,7 +121,7 @@ export async function downloadL4NetworkSnapshot(reportId: string) {
       }
       throw new LOutcomeUnknownError(downloadError("L4_TREE_GRANT_UNKNOWN"));
     }
-    saveGrant(token);
+    saveGrant(token, expiry);
   }
   const file = await downloadL4NetworkFile(reportId, token);
   if (!file.blob.type.toLowerCase().includes("text/csv")) throw new Error(downloadError("L4_TREE_FILE_INVALID"));
