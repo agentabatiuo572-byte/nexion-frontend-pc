@@ -276,7 +276,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const linkedCustomerId = searchParams.get("customerId");
   const [requestedCustomerId, setRequestedCustomerId] = useState<string | null>(null);
   const [restoredId, setRestoredId] = useState("");
-  const pickDefaultConversation = typeof window === "undefined" || window.history.state?.m3SelectionDismissed !== true;
+  const pickDefaultConversation = typeof window === "undefined" || window.history.state?.m3SelectionDismissed !== performance.timeOrigin;
   const selectedId = linkedConversationNo ?? restoredId;
   const [messageOpening, setMessageOpening] = useState(0);
   const selectionRestored = useRef(false);
@@ -307,8 +307,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const scopeGeneration = useRef(0);
   const [draftOwner, setDraftOwner] = useState(0), [metaTarget, setMetaTarget] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const draftsRef = useRef(drafts);
-  draftsRef.current = drafts;
   // Saved drafts may still carry a purpose; it is now derived from the explicit 联系维护 switch below (M-26 / M-54).
   const messageRevision = useSendJournalRevision();
   const mounted = useRef(false);
@@ -317,7 +315,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     return () => { mounted.current = false; };
   }, []);
   const [recoveryError, setRecoveryError] = useState("");
-  const [sendFeedback, setSendFeedback] = useState<{ customer: string | null; conversationId?: string; commandKey?: string; text: string } | null>(null);
+  const [sendFeedback, setSendFeedback] = useState<{ customer: string | null; conversationId?: string; commandKey?: string; firstContactIdentity?: string; text: string } | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [attachmentPolicy, setAttachmentPolicy] = useState<SupportAttachmentPolicy | null>(null);
   const [attachmentPolicyError, setAttachmentPolicyError] = useState("");
@@ -475,10 +473,15 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     // A denied deep link must stop driving selection before invalidation reloads the inbox.
     const url = new URL(window.location.href);
     const linked = url.searchParams.get("conversationNo");
-    if (linked === no || !linked && !url.searchParams.has("customerId")) {
+    const linkedCustomer = url.searchParams.get("customerId");
+    if (linked === no || !linked && (!linkedCustomer || linkedCustomer === customerId)) {
       url.searchParams.delete("conversationNo");
-      // Keep the inbox clear even if changing the URL remounts the chat.
-      window.history.replaceState({ m3SelectionDismissed: true }, "", url);
+      url.searchParams.delete("customerId");
+      // Keep the inbox clear within this document, including a chat remount.
+      window.history.replaceState({ m3SelectionDismissed: performance.timeOrigin }, "", url);
+      selectionRestored.current = true;
+      followSelection.current = false;
+      setRequestedCustomerId(null);
       setScreen("list");
     }
     setRestoredId(current => current === no ? "" : current);
@@ -668,7 +671,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const selectedConversationId = selected?.id;
   const activeConversationRef = useRef(selectedConversationId);
   activeConversationRef.current = selectedConversationId;
-  const targetSends = savedSends.filter(entry => !queryOnly(entry) && targetCustomer && originalCustomer(entry.locator) === targetCustomer);
+  const customerSends = savedSends.filter(entry => targetCustomer && originalCustomer(entry.locator) === targetCustomer);
+  const targetSends = customerSends.filter(entry => !queryOnly(entry));
   const replyEntry = targetSends.find(entry => entry.reply && entry.reply.conversationId === selectedConversationId);
   const otherReplyBlocksTarget = targetSends.some(entry => entry.reply && entry.reply.conversationId !== selectedConversationId);
   const firstEntry = targetSends.find(entry => entry.first);
@@ -677,7 +681,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     ?? (requestedCustomerId ? firstEntry ?? replyEntry : replyEntry ?? firstEntry);
   const activeKey = activeEntry?.row.commandKey;
   const canRetryActiveSend = !activeEntry?.dock && selected?.writeState?.canReply !== false;
-  const sendError = sendFeedback?.customer === targetCustomer && sendFeedback.conversationId === selectedConversationId
+  const sendError = sendFeedback?.customer === targetCustomer
+    && (sendFeedback.firstContactIdentity
+      ? sendFeedback.firstContactIdentity === identityRef.current && (!sendFeedback.conversationId || sendFeedback.conversationId === selectedConversationId)
+      : sendFeedback.conversationId === selectedConversationId)
     && (!activeKey || !sendFeedback.commandKey || sendFeedback.commandKey === activeKey) ? sendFeedback.text : "";
   const setSendError = useCallback((text: string) => {
     if (activeCustomerRef.current === targetCustomer && activeConversationRef.current === selectedConversationId) {
@@ -687,7 +694,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const pending = activeEntry?.reply;
   const firstPending = activeEntry?.first;
   const privateContentReady = !qualificationUnknown && conversationsAvailable && draftOwner === adminId
-    && targetSends.every(entry => !(entry.first || entry.reply) || verifiedKeys.current?.has(entry.row.commandKey));
+    && customerSends.every(entry => verifiedKeys.current?.has(entry.row.commandKey));
   const firstRecoveryText = privateContentReady && firstPending ? firstPending.body : "";
   const otherSends = savedSends.filter(entry => !queryOnly(entry) && !awaitingFirstResponse(entry)).filter(({ reply, first }) => first ? first !== firstPending
     : reply && (reply !== pending || reply.conversationId !== selected?.id) && visible.some(convo => convo.id === reply.conversationId));
@@ -738,33 +745,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const failedCopy = privateContentReady && failedCopies.find(copy => conversationsAvailable && (!copy.conversationId || copy.conversationId === selectedConversationId)
     && originalCustomerId(copy, visible) === targetCustomer && verifiedKeys.current?.has(copy.commandKey));
   const draft = privateContentReady ? activeEntry?.dock && pending?.conversationId === selected?.id ? pending?.body ?? "" : drafts[targetKey] ?? "" : "";
-  const carryContinuationDraft = (source: string, destination: string, customerId: string) => {
-    if (source === destination || !privateContentReady || !draftAssignment?.assignmentId
-      || !draftAssignment.agentAdminId || draftAssignment.customerId !== customerId
-      || blocksNewSend(pendingSendCustomers(adminId, visible), customerId)) return false;
-    const { assignmentId, agentAdminId } = draftAssignment;
-    const sourceKey = scopedDraftSlot(source, customerId, assignmentId, agentAdminId);
-    const destinationKey = scopedDraftSlot(destination, customerId, assignmentId, agentAdminId);
-    const current = draftsRef.current;
-    if (current[destinationKey]?.trim()) return false;
-    const copy = failedDraftCopies.list().find(row => row.commandOwnerId === adminId && row.source !== "dock"
-      && row.customerId === customerId && row.assignmentId === assignmentId
-      && (row.conversationId ?? `first:${customerId}`) === source && row.body.trim());
-    const body = current[sourceKey]?.trim() ? current[sourceKey] : copy?.body;
-    if (!body) return false;
-    const updated = { ...current, [destinationKey]: body };
-    delete updated[sourceKey];
-    try {
-      sessionStorage.setItem(`nexion-m3-drafts:${adminId}`, JSON.stringify(updated));
-    } catch {
-      setSendError("草稿保存不可用；当前输入仍保留在此页面。");
-      return false;
-    }
-    draftsRef.current = updated;
-    setDrafts(updated);
-    if (copy?.body === body) failedDraftCopies.forget(copy.fingerprint, copy.commandKey);
-    return true;
-  };
   const recoveryBlocksTarget = savedSends.some(entry => {
     const customerId = originalCustomer(entry.locator);
     return !customerId || customerId === targetCustomer && queryOnly(entry);
@@ -888,6 +868,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     });
     if (commandKey || cleared.assignmentId !== undefined) {
       if (commandKey && commandKey === activeKey || cleared.matchesDraft(draftSlotRef.current)) {
+        setSendFeedback(null);
         clearAttachment(false); setContentChoice(null); setMaintenanceChosen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false);
         setMetaTarget(""); setProfileDetail(null); setFirstDetail(null); setProfileRetry(n => n + 1); setDetailRetry(n => n + 1);
       }
@@ -949,46 +930,62 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
     setDraftOwner(adminId);
   }, [adminId, authEpoch, conversationsAvailable, qualificationUnknown]);
-  // First contact can race with another sender opening the current conversation.
-  // Check only earlier threads that actually have text to move.
+  // Move drafts when opening a destination. Once it has its own draft or send,
+  // clearing its input must not pull an old draft into this opening.
   const firstSource = targetCustomer ? `first:${targetCustomer}` : "";
-  const explicitSource = continuationFrom?.destination === selected?.id ? continuationFrom?.source : undefined;
-  const sourceThreads = linkedConversationNo ? explicitSource ? [explicitSource, firstSource] : [firstSource]
-    : [firstSource, ...visible.filter(row => row.customerId === targetCustomer && row.id !== selected?.id).map(row => row.id)];
-  const continuationSources = selected && targetCustomer && draftAssignment?.assignmentId && draftAssignment.agentAdminId
-    ? sourceThreads.filter(no => drafts[scopedDraftSlot(no, targetCustomer, draftAssignment.assignmentId!, draftAssignment.agentAdminId!)]?.trim()
-        || failedCopies.some(copy => copy.source !== "dock" && copy.customerId === targetCustomer
-          && copy.assignmentId === draftAssignment.assignmentId && (copy.conversationId ?? firstSource) === no && copy.body.trim()))
+  const explicitSource = continuationFrom?.destination === logicalSlot ? continuationFrom?.source : undefined;
+  const sourceThreads = selected
+    ? explicitSource ? [explicitSource, firstSource]
+      : linkedConversationNo ? [firstSource]
+        : [firstSource, ...visible.filter(row => row.customerId === targetCustomer && row.id !== selected.id).map(row => row.id)]
+    : explicitSource ? [explicitSource] : [];
+  const continuationSources = targetCustomer && draftAssignment?.assignmentId && draftAssignment.agentAdminId
+    ? sourceThreads.filter(no => drafts[scopedDraftSlot(no, targetCustomer, draftAssignment.assignmentId!, draftAssignment.agentAdminId!)]?.trim())
     : [];
   const continuationCandidates = continuationSources.join("|");
+  const continuationBlocked = useRef(false);
+  useEffect(() => { continuationBlocked.current = false; }, [logicalSlot, messageOpening, authEpoch]);
+  const destinationOccupied = Boolean(targetKey && drafts[targetKey]?.trim() || (selected ? replyEntry : firstEntry) || selected && failedCopies.some(copy =>
+    copy.source !== "dock" && copy.customerId === targetCustomer && copy.conversationId === selected.id
+      && copy.assignmentId === draftAssignment?.assignmentId));
   const recoverContinuationDraft = useEffectEvent(async (sources: string[], signal: AbortSignal) => {
-    if (!selected?.customerId || !draftAssignment?.agentAdminId || draftsRef.current[targetKey]?.trim()) return;
-    const { id: destination, customerId } = selected;
+    if (!targetCustomer || !draftAssignment?.assignmentId || !draftAssignment.agentAdminId) return;
+    const { assignmentId, agentAdminId } = draftAssignment;
     const stamp = identityRef.current;
     for (const source of sources) {
-      if (source !== firstSource) {
+      if (selected && source !== firstSource) {
         try {
           const detail = await fetchMConversationDetail(source, signal, false);
-          if (detail.customerId !== customerId || detail.writeState?.canReply !== false
-            || detail.writeState.writableConversationNo !== destination
-            || detail.writeState.currentAssignmentAgentId !== String(draftAssignment.agentAdminId)) continue;
+          if (detail.customerId !== targetCustomer || detail.writeState?.canReply !== false
+            || detail.writeState.writableConversationNo !== selected.id
+            || detail.writeState.currentAssignmentAgentId !== String(agentAdminId)) continue;
         } catch {
           // No authoritative old-thread state means the draft stays in its original slot.
           continue;
         }
       }
-      if (signal.aborted || stamp !== identityRef.current || !originalView()) return;
-      if (carryContinuationDraft(source, destination, customerId)) return;
+      if (signal.aborted || stamp !== identityRef.current || !originalView()
+        || blocksNewSend(pendingSendCustomers(adminId, visible), targetCustomer)) return;
+      const sourceKey = scopedDraftSlot(source, targetCustomer, assignmentId, agentAdminId);
+      // Revocation and draft edits may have updated either slot during the read.
+      setDrafts(old => {
+        if (sourceKey === targetKey || !old[sourceKey]?.trim() || old[targetKey]?.trim()) return old;
+        const next = { ...old, [targetKey]: old[sourceKey] };
+        delete next[sourceKey];
+        return next;
+      });
+      return;
     }
   });
   const canRecoverContinuation = writeAuthorized && privateContentReady && !busy && !activeEntry
     && !otherReplyBlocksTarget && !recoveryBlocksTarget && Boolean(targetKey);
   useEffect(() => {
-    if (!canRecoverContinuation || !continuationCandidates) return;
+    if (destinationOccupied) continuationBlocked.current = true;
+    if (continuationBlocked.current || !canRecoverContinuation || !continuationCandidates) return;
     const controller = new AbortController();
     void recoverContinuationDraft(continuationCandidates.split("|"), controller.signal);
     return () => controller.abort();
-  }, [canRecoverContinuation, continuationCandidates, targetKey]);
+  }, [canRecoverContinuation, continuationCandidates, targetKey, destinationOccupied, messageOpening]);
   useEffect(() => {
     if (!adminId || draftOwner!==adminId || qualificationUnknown) return;
     try { sessionStorage.setItem(`nexion-m3-drafts:${adminId}`,JSON.stringify(drafts)); } catch { setSendError("草稿保存不可用；当前输入仍保留在此页面。"); }
@@ -1086,7 +1083,10 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       return next;
     });
   }, [pending, firstPending, selected?.id, privateContentReady, activeEntry?.dock, targetKey, logicalSlot, activeKey]);
-  useEffect(() => { clearAttachment(); setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
+  useEffect(() => {
+    clearAttachment();
+    setSendFeedback(previous => previous?.firstContactIdentity === identityRef.current && previous?.customer === targetCustomer ? previous : null);
+  }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, targetCustomer, clearAttachment]);
   useEffect(() => {
     if (!selected || !messagePages.readReady || !conversationsAvailable || selected.ownerAdminId !== adminId || document.visibilityState === "hidden" || !chatColumnRef.current?.getClientRects().length) return;
     const contexts = messagePages.page?.readContexts.filter(context => !context.alreadyRead) ?? [];
@@ -1348,16 +1348,23 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         window.dispatchEvent(new Event("support-todo-changed"));
         try {
           await ctx.refreshConversations();
-          if (identityRef.current !== identity) return;
-          if (firstPending && originalView()) {
-            setContinuation(null);
+          if (!currentPage()) return;
+          if (firstPending && targetCustomer && activeCustomerRef.current === targetCustomer) {
             const receipt = result.result;
             if (receipt && typeof receipt === "object" && "conversationNo" in receipt && typeof receipt.conversationNo === "string") {
-              followSelection.current = true;
-              setRequestedCustomerId(null);
-              const url = new URL(window.location.href);
-              url.searchParams.delete("customerId"); url.searchParams.set("conversationNo", receipt.conversationNo);
-              window.history.replaceState(null, "", url);
+              if (originalView() || activeConversationRef.current === receipt.conversationNo) {
+                setSendFeedback({ customer: targetCustomer, conversationId: receipt.conversationNo,
+                  firstContactIdentity: identity, text: "原消息已发送，记录已解除，不要再发一次。" });
+                if (originalView()) {
+                  setContinuation(null);
+                  followSelection.current = true;
+                  setRequestedCustomerId(null);
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete("customerId"); url.searchParams.set("conversationNo", receipt.conversationNo);
+                  window.history.replaceState(null, "", url);
+                }
+                return;
+              }
             }
           }
           setSendError("原消息已发送，记录已解除，不要再发一次。");
@@ -1432,9 +1439,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           ctx.invalidateScope(undefined, customerId, refused ? "消息没有发出：你已不能接待这位客户，原文已清除。" : "消息发送结果未知：你已不能接待这位客户，原文已清除，只能查询结果。");
           return;
         }
-        if (!currentPage() || !originalView()) return;
+        if (!currentPage()) return;
+        if (refused && conversationPeerChanged(cause) && activeCustomerRef.current === record.customerId
+          && (originalView() || new URLSearchParams(window.location.search).get("customerId") === record.customerId)) {
+          setSendFeedback({ customer: record.customerId, firstContactIdentity: identity, text: PEER_CHANGED_SEND_REFUSAL });
+        }
+        if (!originalView()) return;
         if (conversationPeerChanged(cause)) {
-          setSendError(refused ? PEER_CHANGED_SEND_REFUSAL : MESSAGE_UNKNOWN);
+          if (!refused) setSendError(MESSAGE_UNKNOWN);
           await refreshChangedPeer(identity);
         } else if (busyHold) lockFromBusy(customerId, busyHold);
         else if (refused) { setDetailRetry(value => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
@@ -1663,7 +1675,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         select(next.conversationNo, "", sourceKey);
         return;
       }
-      carryContinuationDraft(sourceKey, `first:${next.customerId}`, next.customerId);
+      setContinuationFrom({ source: sourceKey, destination: `first:${next.customerId}` });
       setContinuation(next);
       const url = new URL(window.location.href); url.searchParams.delete("conversationNo"); url.searchParams.set("customerId", next.customerId); window.history.replaceState(null, "", url);
       setRequestedCustomerId(next.customerId);
