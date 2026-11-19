@@ -108,7 +108,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
               {canWrite && <Button size="sm" disabledReason={quota.monthlyQuota === null ? QUOTA_MISSING : undefined} onClick={() => openQuota(quota)}>调额度</Button>}
             </span>
             <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
-            <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={paused ? "neutral" : quota.tight ? "warn" : "role-2"}
+            <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={paused ? "done" : quota.tight ? "warn" : "role-2"}
               state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText="这个商品的月额度没读到" emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
             <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{paused ? <StatusTag tone="neutral" icon={PauseCircle}>已暂停</StatusTag> : quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
             {paused && <span className="f4-quota-cond">用户买不了这个商品，不算进总量</span>}

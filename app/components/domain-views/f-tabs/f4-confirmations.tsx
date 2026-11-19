@@ -206,6 +206,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         if (!/^\d+$/.test(value.trim())) return null;
         const next = Number(value), now = quota.monthlyQuota === undefined ? quota.cap : Number(quota.monthlyQuota);
         if (next > now && next < quota.current) return `调高时不能低于本月已用 ${count(quota.current)} 台，批准时会被拒绝。`;
+        if (quota.status === 0) return null;
         if (next <= quota.current) return `本月已用 ${count(quota.current)} 台，改完本月不再卖。`;
         return `改完本月还剩 ${count(next - quota.current)} 台。`;
       } },
