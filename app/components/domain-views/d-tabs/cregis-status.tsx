@@ -15,10 +15,11 @@ import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-m
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { exceptionObject } from "@/lib/admin/cregis-exceptions";
+import { PREPARATION_STATE } from "@/lib/admin/cregis-funds-preparation";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations, type ClaimSource, type RecoveredChallenge } from "./cregis-exceptions";
-import { CregisFundsPreparation } from "./cregis-funds-preparation";
+import { CregisFundsPreparation, readPreparationPlans } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
 import { CregisDepositPolicy, type DepositProposalActivity } from "./cregis-deposit-policy";
@@ -503,6 +504,28 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
   const verifyCregisCommand = async (record: D1PendingCommand) => {
     const kept = "状态可能是别人改的，记录继续保留。";
+    if (record.path.startsWith("/cregis/funds-preparation/")) {
+      const network = record.preparationNetwork ?? "BEP20";
+      const planNo = record.path.split("/")[4];
+      const original = planNo ? null : exceptionObject(JSON.parse(record.body));
+      const authEpoch = adminAuthLifecycleEpoch();
+      const request = { authEpoch, assertOwner: () => {
+        if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+      } };
+      let beforeId: string | null = null;
+      do {
+        const page = await readPreparationPlans(network, beforeId, request);
+        const plan = page.records.find(row => planNo ? row.planNo === planNo
+          : row.kind === original?.kind && row.businessReference === original?.businessReference);
+        if (plan) {
+          const state = PREPARATION_STATE[String(plan.state)] ?? "状态未知";
+          return `读取结果：${network} 准备单 ${text(plan.planNo)} 现在是「${state}」。${kept}`;
+        }
+        beforeId = page.hasMore ? page.nextBeforeId : null;
+      } while (beforeId);
+      return planNo ? `${network} 准备单里没找到原单 ${planNo}，请到操作记录核对；记录继续保留。`
+        : `${network} 准备单里没找到业务参考号「${text(original?.businessReference)}」，请到操作记录核对；记录继续保留。`;
+    }
     if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
@@ -531,15 +554,18 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   const pendingItems: D1PendingItem[] = pending.map((record): D1PendingItem => {
     const refundChallenge = record.path === "/cregis/exception-ownership/challenges"
       && exceptionObject(JSON.parse(record.body)).action === "REFUND_ORIGIN";
-    const refund = refundChallenge || record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward") || record.path.startsWith("/cregis/funds-preparation");
+    const preparation = record.path.startsWith("/cregis/funds-preparation");
+    const refund = refundChallenge || record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward");
+    const canRetry = preparation ? canRefund && authorities.includes("finance_d1_channel_manage")
+      && authorities.includes("finance_d1_read") : refund ? canRefund : canManage;
     const replayable = d1CommandReplayable(record.path);
     return {
       key: record.commandKey,
-      label: cregisCommandLabel(record.path),
+      label: preparation ? `${record.path.endsWith("/decision") ? exceptionObject(JSON.parse(record.body)).decision === "CANCEL" ? "取消" : "复核" : "新建"} ${record.preparationNetwork ?? "BEP20"} 资金准备单` : cregisCommandLabel(record.path),
       createdAt: record.createdAt,
       hint: replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
         : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。",
-      blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
+      blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canRetry ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),
       retry: replayable ? async () => {
@@ -841,7 +867,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     <div {...subIds.panel("funds")} hidden={sub !== "funds"} className="rd-tab-pane">
       {data ? <>
         <CregisAutoForward key={`auto-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
-        <CregisFundsPreparation key={`prep-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
+        <CregisFundsPreparation reloadKey={childKey} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
       </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取…" : "收款状态读取失败，自动流程与人工准备先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
     </div>
 
@@ -930,7 +956,6 @@ function cregisCommandLabel(path: string) {
   if (path.startsWith("/cregis/exception-ownership")) return "生成钱包签名原文";
   if (path.startsWith("/cregis/reorg")) return "重组处置";
   if (path.startsWith("/cregis/auto-forward")) return `${new URLSearchParams(path.split("?")[1]).get("network") ?? "BEP20"} 自动资金流程`;
-  if (path.startsWith("/cregis/funds-preparation")) return "资金准备单";
   return "USDT 收款操作";
 }
 
