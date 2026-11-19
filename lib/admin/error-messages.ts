@@ -982,7 +982,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CREGIS_PAYOUT_RECOVERY_EVIDENCE_CONFLICT: "供应商原单与提现地址、金额或业务单号不一致，原预留保持，请核实原单。",
   CREGIS_PAYOUT_RECOVERY_QUERY_UNAVAILABLE: "供应商原单暂时无法查询，请保留原 CID 稍后重试，原预留继续保留。",
   H7_VOUCHER_NOT_GRANTABLE: "所选优惠券现在不能发放，可能还没生效、已失效或已停用。请在「团队等级晋升」核对奖励选的券，并在「代金券」核对券状态和有效期，处理后再审核原申请。",
-  H7_VOUCHER_INVENTORY_EXHAUSTED: "这张券已经发完，这次没有发出。请在「代金券」调高发放数量上限或换一张券，处理后再审核原申请。",
+  H7_VOUCHER_INVENTORY_EXHAUSTED: "这张券已经发完，这次没有发出。请在「代金券」调高发行上限或换一张券，处理后再审核原申请。",
   H7_VOUCHER_GRANT_IDEMPOTENCY_CONFLICT: "这张券的发放记录和这次请求对不上，这次没有发出。请到「操作记录与审批」核对原申请，不要重复提交。",
   SUPPORT_RECOVERY_FACTS_UNAVAILABLE: "暂时读不到用于核对的客户资料，原操作结果未知；原记录继续保留，请查询原结果，不要重复提交。",
   SUPPORT_RECOVERY_FACTS_CHANGED: "客户绑定或资料已变化，原操作结果还没核对完；请保留原记录，重新加载现在可看的资料后继续查询。",

@@ -152,7 +152,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         <Fact k="发放单">{record.payoutId}</Fact>
         <Fact k="用户">用户 {record.userId} · {dash(record.rankCode)}</Fact>
         {action === "reissue" && kind === "fund" && <Fact k="收款人">{record.sponsorUserId ? `邀请人 ${record.sponsorUserId}（原单）` : "用户本人（原单没有邀请人）"}</Fact>}
-        {action === "reverse" && kind === "voucher" && <Fact k="已用过时扣回">券现在的面额 · USDT</Fact>}
+        {action === "reverse" && kind === "voucher" && <Fact k="已用过时扣回">券现在的面额 · USDT；按比例减的券不扣</Fact>}
         <Fact k="状态"><Change from={from} to={action === "reissue" ? "已重发" : "已冲正"} /></Fact>
       </Facts>,
       statedBrief: { impact: `${impact}不改奖励模板，也不改用户等级。`, check: "核对发放单、用户和奖励；理由写清依据或工单号。" },
