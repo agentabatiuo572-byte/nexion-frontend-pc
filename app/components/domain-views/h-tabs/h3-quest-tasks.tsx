@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import Link from "next/link";
 import {
   ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
-  Route, Sparkles, Trash2, Trophy,
+  Route, Sparkles, Trash2,
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag,
@@ -1369,7 +1369,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       hint: "0.1–5，例如 1.2",
     }))}>调整</Button>;
   } : undefined;
-  const champion = text(model.weeklyChampionBonus, "");
   const weeklyTab = (
     <div {...tabIds.panel("weekly")} className="h3-tabpanel">
       <Panel title="每周奖励怎么算" icon={Sparkles} tone="role-4" sub={currentPhase ? `现在是 ${currentPhase}` : "当前阶段没读到"}
@@ -1391,23 +1390,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           {multipliers.map((item) => cleanPhaseKey(item.p)).filter((phase) => backendLock(`weekly.mult.${phase}`))
             .map((phase) => <Fragment key={phase}>{pendingLine(`weekly.mult.${phase}`, phase)}</Fragment>)}
         </div>}
-        <ConfigList label="周冠军">
-          <ConfigRow name="周冠军说明文字" value={champion ? operatorCopyText(champion) : "还没填"}
-            sub={<StatusTag tone="neutral" icon={Trophy}>App 不显示，也不发奖</StatusTag>}
-            what="一段只在后台看得到的说明文字。" effect="App 和 H5 都不显示这段字；系统不选冠军、不发奖，也不按里面的数字算钱。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:5"]), () => openSimpleConfig("weekly.champBonus", "周冠军说明文字", text(model.weeklyChampionBonus), false, {
-              title: "改周冠军说明文字",
-              effect: <StatusTag tone="neutral">只改文字</StatusTag>,
-              facts: <Facts>
-                <Fact k="改的是">一段只在后台看得到的文字</Fact>
-                <Fact k="App">不显示，H5 也不显示</Fact>
-                <Fact k="发奖">不发：系统不选冠军，也不按文字里的数字算钱</Fact>
-              </Facts>,
-              statedBrief: { impact: "只改后台这段字；App 不显示，也不会给任何人发奖。", check: "核对文字；理由写清依据。" },
-              confirmLabel: "确认修改",
-              hint: "最多 160 字",
-            }, <>只在后台看得到，App 不显示。</>))}>调整</Button> : undefined} />
-        </ConfigList>
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
