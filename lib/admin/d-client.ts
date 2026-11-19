@@ -34,8 +34,8 @@ export class DRequestError extends Error {
  * 原请求编号只留在 commandKey 上，句子里不出现；没有地方按文案判断。
  */
 export class DOutcomeUnknownError extends Error {
-  constructor(public readonly commandKey: string) {
-    super("结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。");
+  constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。") {
+    super(message);
     this.name = "DOutcomeUnknownError";
   }
 }

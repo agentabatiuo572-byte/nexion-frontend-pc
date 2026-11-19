@@ -15,10 +15,11 @@ import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-m
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { exceptionObject } from "@/lib/admin/cregis-exceptions";
+import { PREPARATION_STATE } from "@/lib/admin/cregis-funds-preparation";
 import type { OperatorBriefKind } from "../design-kit";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations, type ClaimSource, type RecoveredChallenge } from "./cregis-exceptions";
-import { CregisFundsPreparation } from "./cregis-funds-preparation";
+import { CregisFundsPreparation, readPreparationPlans } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
 import { CregisDepositPolicy, type DepositProposalActivity } from "./cregis-deposit-policy";
@@ -503,6 +504,29 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
   const verifyCregisCommand = async (record: D1PendingCommand) => {
     const kept = "状态可能是别人改的，记录继续保留。";
+    if (record.path.startsWith("/cregis/funds-preparation/")) {
+      const network = record.preparationNetwork ?? "BEP20";
+      const planNo = record.path.split("/")[4];
+      const original = planNo ? null : exceptionObject(JSON.parse(record.body));
+      const authEpoch = adminAuthLifecycleEpoch();
+      const request = { authEpoch, assertOwner: () => {
+        if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+      } };
+      let beforeId: string | null = null;
+      do {
+        const page = await readPreparationPlans(network, beforeId, request);
+        const plan = page.records.find(row => planNo ? row.planNo === planNo
+          : row.kind === original?.kind && row.businessReference === original?.businessReference);
+        if (plan) {
+          const state = PREPARATION_STATE[String(plan.state)] ?? "状态未知";
+          const version = planNo ? `，第 ${text(plan.version)} 版` : "";
+          return `读取结果：${network} 准备单 ${text(plan.planNo)} 现在是「${state}」${version}。${kept}`;
+        }
+        beforeId = page.hasMore ? page.nextBeforeId : null;
+      } while (beforeId);
+      return planNo ? "这个网络的准备单里没找到原单号，请到操作记录核对。记录继续保留。"
+        : "这个网络的准备单里没找到这次申请的参考号，请到操作记录核对。记录继续保留。";
+    }
     if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");

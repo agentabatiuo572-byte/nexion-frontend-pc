@@ -6,7 +6,7 @@ import { BlockState, Button, Cell, ConfigList, ConfigRow, Decision, Drawer, Fact
 import type { StateTone } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminAuthActivityAllowed, adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
-import { DRequestError, d1PendingObjectReason, financeAdminRequest } from "@/lib/admin/d-client";
+import { DOutcomeUnknownError, DRequestError, d1PendingObjectReason, financeAdminRequest, isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { exceptionId, exceptionObject, exceptionPage, exceptionRead, type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
 import { preparationAmount, preparationConfig, PREPARATION_BLOCKER, PREPARATION_GAS, PREPARATION_NETWORKS, PREPARATION_STATE, type PreparationConfig, type PreparationKind, type PreparationNetwork } from "@/lib/admin/cregis-funds-preparation";
@@ -23,7 +23,7 @@ const kindLabel = (kind: unknown) => kind === "COLLECTION" ? "归集到 Cregis �
 const planTone = (state: unknown): StateTone => state === "DRAFT" ? "warn" : state === "REVIEWED" ? "ok" : "done";
 type Props = { canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; onChanged?: () => void; reloadKey?: number };
 
-async function readPlans(network: PreparationNetwork, beforeId: string | null, request: ExceptionRequestScope) {
+export async function readPreparationPlans(network: PreparationNetwork, beforeId: string | null, request: ExceptionRequestScope) {
   const result = await exceptionRead(`${ROOT}/plans?network=${network}&limit=20&beforeId=${beforeId ? exceptionId(beforeId) : "0"}`, request);
   const page = exceptionPage(result);
   if (result.preparationNetwork !== network || page.records.some(row => row.network !== network)) {
@@ -71,7 +71,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   const refresh = useCallback(async () => {
     const request = scope(); request.assertOwner(); const at = ++readEpoch.current; setLoading(true); setError(""); setUnconfigured(false);
     try {
-      const [nextConfig, nextPage] = await Promise.all([exceptionRead(`${ROOT}/status?network=${network}`, request), readPlans(network, null, request)]);
+      const [nextConfig, nextPage] = await Promise.all([exceptionRead(`${ROOT}/status?network=${network}`, request), readPreparationPlans(network, null, request)]);
       request.assertOwner(); if (at !== readEpoch.current) return;
       setConfig(preparationConfig(nextConfig, network)); setPage(nextPage); setPreflight(null); selection.current++;
     } catch (failure) {
@@ -124,6 +124,11 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
         bankManualAuthEpoch: request.authEpoch, preparationNetwork,
       });
       request.assertOwner();
+    } catch (failure) {
+      if (isDOutcomeUnknownError(failure)) {
+        throw new DOutcomeUnknownError(failure.commandKey, "结果未知，可能已经生效。请关闭确认框，在页面上方选择「读取现在的值」或「按原请求重试」。");
+      }
+      throw failure;
     }
     finally { mutation.current = false; onChanged?.(); if (owns()) { setBusy(false); await refresh(); } }
   };
@@ -155,7 +160,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   };
   const more = async () => {
     const request = scope(); request.assertOwner(); setBusy(true);
-    try { const next = await readPlans(network, page.nextBeforeId, request); request.assertOwner(); setPage({ ...next, records: [...page.records,...next.records] }); }
+    try { const next = await readPreparationPlans(network, page.nextBeforeId, request); request.assertOwner(); setPage({ ...next, records: [...page.records,...next.records] }); }
     catch (failure) { if (owns()) setError(displayAdminReadError(failure)); }
     finally { if (owns()) setBusy(false); }
   };
