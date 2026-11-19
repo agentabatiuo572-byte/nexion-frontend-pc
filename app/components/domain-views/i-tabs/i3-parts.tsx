@@ -47,9 +47,9 @@ export function TierTag({ tier }: { tier: TierK }) {
   return <StatusTag tone={meta.tone} icon={meta.icon}>{`${meta.label}优先级`}</StatusTag>;
 }
 
-export function CampaignStatusTag({ st }: { st: CampaignRow["st"] }) {
+export function CampaignStatusTag({ st, label }: { st: CampaignRow["st"]; label?: string }) {
   const meta = STATUS[st];
-  return <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag>;
+  return <StatusTag tone={label ? "warn" : meta.tone} icon={meta.icon}>{label ?? meta.label}</StatusTag>;
 }
 
 /** reach、sent、read 是后端的字符串，「-」和空不是 0。 */
@@ -169,12 +169,13 @@ export function NotificationPreview({ lang, title, body, ctaLabel, tier, kindLab
 }
 
 /** 一条活动的卡：标题、通知第一行、发给谁和人数、什么时候发、动作。整张可点开详情。 */
-export function CampaignCard({ row, kindLabel, selected, onOpen, actions, alert }: {
+export function CampaignCard({ row, kindLabel, selected, onOpen, actions, alert, statusLabel }: {
   row: CampaignRow;
   kindLabel: string;
   selected: boolean;
   onOpen: () => void;
   actions?: ReactNode;
+  statusLabel?: string;
   /** 排期或发送前要先处理的事（比如去向已停用）：一个标签，悬停看怎么办。 */
   alert?: string;
 }) {
@@ -182,7 +183,7 @@ export function CampaignCard({ row, kindLabel, selected, onOpen, actions, alert 
   return (
     <article className="i3-card" data-selected={selected ? "" : undefined} data-status={row.st}>
       <div className="i3-card-tags">
-        <CampaignStatusTag st={row.st} />
+        <CampaignStatusTag st={row.st} label={statusLabel} />
         <TierTag tier={row.tier} />
         <span className="i3-card-kind">{kindLabel}</span>
         {alert && <StatusTag tone="warn" icon={AlertTriangle} explain={alert}>去向已停用</StatusTag>}
