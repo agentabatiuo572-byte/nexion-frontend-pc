@@ -5,6 +5,7 @@
  */
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { h5Amount } from "@/lib/admin/h5-contract";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { amountText, type EarnMilestone } from "./h5-parts";
 import type { ActionConfirmReq } from "./types";
@@ -16,24 +17,33 @@ const KEY_RULE = /^[A-Za-z0-9_-]{1,64}$/;
 const MIN_THRESHOLD = BigInt(1000000);
 const MAX_AMOUNT = BigInt("100000000000000");
 
-/** 新的一档排在第几档、夹在哪两档之间；门槛读不懂时返回 undefined。 */
-function placeOf(list: readonly EarnMilestone[], threshold: string) {
-  const value = h5Amount(threshold);
-  if (value === undefined) return undefined;
-  const after = list.filter(item => h5Amount(item.threshold)! < value);
-  const prev = after.at(-1), next = list[after.length];
-  return { index: after.length + 1, prev, next };
+/** The read model follows the backend's order: sortOrder, then threshold. */
+function placeOf(list: readonly EarnMilestone[], threshold: bigint) {
+  let previousThreshold: bigint | undefined;
+  let index = 0;
+  for (const item of list) {
+    const amount = h5Amount(item.threshold);
+    if (item.sortOrder === undefined || amount === undefined || amount === threshold
+        || (previousThreshold !== undefined && amount <= previousThreshold)) return undefined;
+    if (amount < threshold) index++;
+    previousThreshold = amount;
+  }
+  const prev = list[index - 1], next = list[index];
+  // The threshold breaks ties, so either neighboring order may be shared.
+  const sortOrder = Math.max(0, prev?.sortOrder ?? next?.sortOrder ?? 1);
+  if (next?.sortOrder !== undefined && sortOrder > next.sortOrder) return undefined;
+  return { index: index + 1, prev, next, sortOrder };
 }
 
-function placeText(list: readonly EarnMilestone[], threshold: string) {
-  const place = placeOf(list, threshold);
-  if (!place) return undefined;
+function placeText(place: NonNullable<ReturnType<typeof placeOf>>) {
   const between = place.prev && place.next ? `排在 ${amountText(place.prev.threshold)} 和 ${amountText(place.next.threshold)} USDT 之间`
     : place.prev ? `排在最后，上一档 ${amountText(place.prev.threshold)} USDT` : place.next ? `排在最前，下一档 ${amountText(place.next.threshold)} USDT` : "这是第一档";
   return `第 ${place.index} 档，${between}`;
 }
 
-export function earnCreateIssue(list: readonly EarnMilestone[], values: Record<string, string>): { message: string; field: string } | undefined {
+type EarnCreatePlacement = { message: string; field: string } | NonNullable<ReturnType<typeof placeOf>>;
+
+function assessEarnCreate(list: readonly EarnMilestone[], values: Record<string, string>): EarnCreatePlacement {
   const key = values.milestoneKey.trim();
   if (!KEY_RULE.test(key)) return { field: "milestoneKey", message: "编号只能用字母、数字、- 和 _，最多 64 个字符" };
   if (list.some(item => item.key.toLowerCase() === key.toLowerCase())) return { field: "milestoneKey", message: `编号 ${key} 已经有了，换一个` };
@@ -46,6 +56,7 @@ export function earnCreateIssue(list: readonly EarnMilestone[], values: Record<s
   if (threshold === undefined || threshold < MIN_THRESHOLD || threshold > MAX_AMOUNT) return { field: "threshold", message: "门槛为 1–100,000,000 USDT，最多 6 位小数" };
   if (list.some(item => h5Amount(item.threshold) === threshold)) return { field: "threshold", message: `已有 ${amountText(values.threshold)} USDT 这一档，换一个` };
   if (reward === undefined || reward > MAX_AMOUNT) return { field: "nex", message: "奖励为 0–100,000,000 UVT，最多 6 位小数" };
+  return placeOf(list, threshold) ?? { field: "threshold", message: displayAdminError("EARN_MILESTONE_THRESHOLD_ORDER_INVALID") };
 }
 
 export function earnCreateRequest({ snapshot, approver, rights, runChange }: { snapshot: H5Change["snapshot"]; approver: string; rights: string; runChange: (change: H5Change) => Promise<void> }): ActionConfirmReq & { target: string } {
@@ -83,8 +94,9 @@ export function earnCreateRequest({ snapshot, approver, rights, runChange }: { s
       kind: "multi-field",
       amplifies: () => true,
       feedback: values => {
-        const issue = earnCreateIssue(list, values);
-        return issue ? { invalid: true, message: issue.message, field: issue.field } : { invalid: false, message: placeText(list, values.threshold) ?? "" , field: "threshold" };
+        const placement = assessEarnCreate(list, values);
+        return "message" in placement ? { invalid: true, ...placement }
+          : { invalid: false, message: placeText(placement), field: "threshold" };
       },
       fields: [
         { key: "milestoneKey", label: "档位编号", inputKind: "text", current: "", placeholder: "例如 M6", help: "字母、数字、- 或 _，建好后不能改", maxLength: 64 },
@@ -95,11 +107,11 @@ export function earnCreateRequest({ snapshot, approver, rights, runChange }: { s
     },
     run: async (reason, _value, form) => {
       if (!form) throw new Error("EARN_MILESTONE_AMOUNTS_REQUIRED");
-      const issue = earnCreateIssue(list, form);
-      if (issue) throw new Error(issue.message);
+      const placement = assessEarnCreate(list, form);
+      if ("message" in placement) throw new Error(placement.message);
       const milestoneKey = form.milestoneKey.trim(), label = form.label.trim();
       const threshold = form.threshold.trim(), nex = form.nex.trim();
-      const sortOrder = placeOf(list, threshold)!.index;
+      const { sortOrder } = placement;
       await runChange({
         target: EARN_CREATE_TARGET, action: "收益里程碑 · 新建档位", name: `收益里程碑 · ${milestoneKey}`,
         before: "还没有", after: `${amountText(threshold)} USDT · ${amountText(nex)} UVT`,

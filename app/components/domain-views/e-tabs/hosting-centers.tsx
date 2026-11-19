@@ -47,7 +47,8 @@ const hostingRecords = createPendingMutationStore<HostingReceipt>({
   isValidRecord: row => row.fingerprint === SLOT && row.commandKey === row.key && Array.isArray(row.changes)
     && ["unknown", "pending", "rejected", "conflict", "expired"].includes(row.status)
     && row.request?.command?.op === HOSTING_OPERATION && row.request?.command?.domain === "E"
-    && row.request.obj === "default" && row.request.sourceDomain === "E1",
+    && row.request.obj === "default" && row.request.sourceDomain === "E1"
+    && Array.isArray(row.request.command.params?.centers),
 });
 
 const NAME_MAX = 128;
@@ -131,7 +132,7 @@ export function HostingCentersPage() {
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [receipts, setReceipts] = useState<HostingReceipt[]>([]);
-  const [conflict, setConflict] = useState<{ draft: DraftRow[]; before: Center[] } | null>(null);
+  const [conflict, setConflict] = useState<{ draft: DraftRow[]; changes: DiffRow[] } | null>(null);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
   useEffect(() => { setReceipts(hostingRecords.list()); }, [owner]);
@@ -164,6 +165,14 @@ export function HostingCentersPage() {
   }, [canRead]);
   useEffect(() => { void reload(); }, [reload]);
 
+  async function handleCreationConflict(receipt: HostingReceipt) {
+    dismiss(receipt);
+    setConflict({ draft: toDraft(receipt.request.command.params.centers as Center[]), changes: receipt.changes });
+    setConfirming(false);
+    setDraft(null);
+    await reload();
+  }
+
   async function applyTicket(receipt: HostingReceipt, ticket: A2OperationRow) {
     if (!ticket.mine || ticket.obj !== "default" || ticket.operationCode !== HOSTING_OPERATION) {
       throw new Error("A2_RESPONSE_UNREADABLE");
@@ -192,9 +201,10 @@ export function HostingCentersPage() {
       }
     } catch (cause) {
       const code = (cause as { backendMessage?: string }).backendMessage;
-      if (resending && isExplicitRejection(cause)) {
-        remember({ ...receipt, status: code === "HOSTING_CENTERS_REVISION_CONFLICT" ? "conflict" : "rejected",
-          why: code ? HOSTING_ERRORS[code] ?? displayAdminError(cause) : displayAdminError(cause) });
+      if (resending && code === "HOSTING_CENTERS_REVISION_CONFLICT" && isExplicitRejection(cause)) {
+        await handleCreationConflict(receipt);
+      } else if (resending && isExplicitRejection(cause)) {
+        remember({ ...receipt, status: "rejected", why: code ? HOSTING_ERRORS[code] ?? displayAdminError(cause) : displayAdminError(cause) });
         await reload();
       } else setReceiptError(displayAdminError(cause));
     } finally {
@@ -286,12 +296,13 @@ export function HostingCentersPage() {
   const conflictNotice = conflict && state && (
     <Notice tone="warn" title="没有提交：清单已被别人改过"
       action={<><Button size="sm" onClick={() => { openEdit(toDraft(centers).map(row => {
-        const edited = conflict.draft.find(item => item.id === row.id)!;
-        const before = conflict.before.find(item => item.id === row.id)!;
+        const edited = conflict.draft.find(item => item.id === row.id);
+        if (!edited) return row;
+        const changed = (field: string) => conflict.changes.some(change => change.key === `${row.id}:${field}`);
         return { ...row,
-          name: edited.name.trim() === before.name ? row.name : edited.name,
-          enabled: edited.enabled === before.enabled ? row.enabled : edited.enabled,
-          weight: edited.weight.trim() === String(before.weight) ? row.weight : edited.weight,
+          name: changed("name") ? edited.name : row.name,
+          enabled: changed("enabled") ? edited.enabled : row.enabled,
+          weight: changed("weight") ? edited.weight : row.weight,
         };
       })); setConflict(null); }}>按现在的清单重新编辑</Button><Button size="sm" variant="ghost" onClick={() => setConflict(null)}>放弃这次修改</Button></>}>
       已读到最新清单。你这次填的内容还留着，重新编辑时会带上，核对后再提交。
@@ -435,14 +446,11 @@ export function HostingCentersPage() {
             setDraft(null);
             return;
           }
-          dismiss(receipt);
           if (code === "HOSTING_CENTERS_REVISION_CONFLICT") {
-            setConflict({ draft, before: baseline.centers });
-            setConfirming(false);
-            setDraft(null);
-            await reload();
+            await handleCreationConflict(receipt);
             return;
           }
+          dismiss(receipt);
           throw code && HOSTING_ERRORS[code] ? new Error(HOSTING_ERRORS[code]) : cause;
         }
         setConfirming(false);
@@ -473,4 +481,3 @@ export function E1Area() {
     <div {...ids.panel(area)}>{area === "hosting" ? <HostingCentersPage /> : <E1Page />}</div>
   </div>;
 }
-

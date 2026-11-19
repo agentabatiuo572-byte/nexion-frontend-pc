@@ -8,7 +8,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { growthRequest } from "./h-client";
-import { h5RuleWriteRefusal, h5Amount, parseH5Model, type H5Model } from "./h5-contract";
+import { H5_MAX_SORT_ORDER, h5RuleWriteRefusal, h5Amount, parseH5Model, type H5Model } from "./h5-contract";
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -83,7 +83,7 @@ const pending = createPendingMutationStore<H5PendingCommand>({
         return c.target === EARN_CREATE_TARGET && c.approvalRequired && !!values && !!body
           && body.milestoneKey === values.milestoneKey && /^[A-Za-z0-9_-]{1,64}$/.test(body.milestoneKey)
           && body.label === values.label && body.thresholdUsd === values.threshold && body.rewardNex === values.nex
-          && Number.isSafeInteger(body.sortOrder) && body.sortOrder > 0 && body.reason === c.reason
+          && Number.isSafeInteger(body.sortOrder) && body.sortOrder >= 0 && body.sortOrder <= H5_MAX_SORT_ORDER && body.reason === c.reason
           && (!r.ticket || validTicket(r.ticket, body.milestoneKey, EARN_CREATE_OPERATION));
       }
       if (kind === "earn-create") return false;

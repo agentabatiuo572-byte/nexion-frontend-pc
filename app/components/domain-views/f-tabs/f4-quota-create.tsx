@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { fetchE1Products } from "@/lib/admin/e1-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Fact, Facts, Notice, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
@@ -37,10 +38,11 @@ function conditionText(values: Record<string, string>) {
 
 export function F4QuotaCreate({ data, ctx, onClose }: { data: F4LeadershipPoolOverview; ctx: FViewCtx; onClose: () => void }) {
   const [products, setProducts] = useState<Awaited<ReturnType<typeof fetchE1Products>>["skus"]>([]);
+  const [catalogError, setCatalogError] = useState<string>();
   useEffect(() => {
     let active = true;
-    void fetchE1Products().then(({ skus }) => { if (active) setProducts(skus); }).catch(() => {
-      if (active) setProducts([]);
+    void fetchE1Products().then(({ skus }) => { if (active) setProducts(skus); }).catch(error => {
+      if (active) setCatalogError(displayAdminError(error));
     });
     return () => { active = false; };
   }, []);
@@ -61,7 +63,7 @@ export function F4QuotaCreate({ data, ctx, onClose }: { data: F4LeadershipPoolOv
         <Fact k="需有权限">购机名额修改权限</Fact>
       </Facts>}
       content={!noSkus && takenNames.length > 0 ? <Notice tone="neutral" title="一个商品只能有一个名额档位">{`${takenNames.join("、")} 已经有档位，不在下面的可选范围里；要改，到它那一行点「调额度」。`}</Notice> : undefined}
-      blockedReason={noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined}
+      blockedReason={catalogError ?? (noSkus ? "商品清单没读到，暂时选不了商品；刷新这页后再试" : !free.length ? "在售商品都已经有名额档位" : undefined)}
       statedBrief={(values) => ({
         impact: values.productNo && WHOLE.test((values.monthlyQuota ?? "").trim())
           ? `批准后 ${skuLabels[values.productNo] ?? values.productNo} 每月最多卖 ${count(Number(values.monthlyQuota))} 台，${conditionText(values)}；批准前照常卖，不受限制。`
