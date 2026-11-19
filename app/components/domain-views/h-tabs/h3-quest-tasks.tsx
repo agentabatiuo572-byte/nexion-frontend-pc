@@ -1261,7 +1261,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const grace = compareH3Decimal(next.grace, tri.grace);
     return full > 0 || grace > 0 ? "up" : full === 0 && grace === 0 ? "same" : "down";
   };
-  const windowRaw = text(model.dayOneWindow, "");
   const dayOneTab = (
     <div {...tabIds.panel("dayOne")} className="h3-tabpanel">
       <Panel title="新手任务奖励和期限" icon={Gift} tone="role-4" sub={`完成期限 ${eligibility ? `注册后 ${eligibility} 小时` : "—"}`}
@@ -1309,11 +1308,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               hint: "24–720 的整数小时",
               preview: (value) => /^\d+$/.test(value.trim()) ? `之后注册的用户，注册后 ${value.trim()} 小时新手任务过期。` : null,
             }, <>从注册算，过了这个时间新手任务过期。</>))}>调整</Button> : undefined} />
-          {/* 任务时长说明文字已停用（后端 d9e2038f：新保存被拒，返回里带 dayOneWindowConfig 只读标记）：只读显示原来的文字，不再给调整入口。 */}
-          {windowRaw && <ConfigRow name="任务时长说明文字" value={operatorCopyText(windowRaw)}
-            sub={<StatusTag tone="neutral" icon={CircleSlash}>已停用，不能再改</StatusTag>}
-            what="以前填的一段展示文字，现在只显示，不能再改。"
-            effect="不改变 App 的倒计时和奖励：倒计时按完成期限走，全额时限固定 24 小时。" />}
         </ConfigList>
       </Panel>
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
