@@ -717,10 +717,20 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const queueUnknown = !canQueue || queueFailed || !queueRead;
   const queueLimit = queueUnknown ? (!canQueue ? "这个账号看不到待审批" : queueRead ? "待审批没读到" : "待审批还在读取") : undefined;
   const unconfirmed = writes.unconfirmed((target) => target === "gate" || target.startsWith("jur:"));
+  // 兑换受限是全平台阻断，比版本状态要紧：写进结论，版本状态挪到第二行（VS-23）。
+  const exchangeAlso = exchangeRestricted ? "风险披露闸门也在阻断兑换" : undefined;
+  const versionNote = unmapped.length ? `${unmapped.length} 个启用的适用范围还没有生效版本：${unmapped.map((item) => item.code).join("、")}` : effectiveCount === 0 ? "还没有适用范围配置生效版本" : undefined;
   const conclusion = unconfirmed > 0 && !issues.size
-    ? <Conclusion state="warn" action={headActions} hint="到页面上方处理。"><b>{unconfirmed}</b> 项操作结果未知</Conclusion>
+    ? <Conclusion state="warn" action={headActions} hint={exchangeAlso ? `到页面上方处理。${exchangeAlso}。` : "到页面上方处理。"}><b>{unconfirmed}</b> 项操作结果未知</Conclusion>
     : issues.size
-    ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={todoHint}><b>{issues.size}</b> 个适用范围的生效版本有问题，App 可能读不到披露</Conclusion>
+    ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={[todoHint, exchangeAlso].filter(Boolean).join(" · ") || undefined}><b>{issues.size}</b> 个适用范围的生效版本有问题，App 可能读不到披露</Conclusion>
+    : exchangeRestricted
+    ? <Conclusion state="warn" icon={ShieldAlert} action={headActions}
+        hint={[versionNote, todoHint, queueLimit, "到下面「受限动作」移出兑换，批准后才恢复"].filter(Boolean).join(" · ")}
+        explain={<>
+          <p>兑换在受限动作里：全平台的新兑换和处理排队都会被拒绝，不看用户有没有确认披露。</p>
+          <p>这和「紧急停用开关」里的兑换开关是两道闸，「兑换额度与规则」页分开显示。</p>
+        </>}>风险披露闸门已阻断兑换，全平台的新兑换和处理排队都会被拒绝</Conclusion>
     : unmapped.length
       ? <Conclusion state="warn" action={headActions} hint={todoHint}><b>{unmapped.length}</b> 个启用的适用范围还没有生效版本：{unmapped.map((item) => item.code).join("、")}</Conclusion>
       : todoCount

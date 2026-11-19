@@ -1401,8 +1401,9 @@ function G2ExchangePage() {
             {batchItems.length > 0 && <Table label="这一批逐单结果" className="g2x-batch-table">
               <thead><tr><Th>兑换单号</Th><Th>结果</Th><Th>原因</Th><Th>订单现在</Th></tr></thead>
               <tbody>{batchItems.map((row) => {
-                // 后端原因写的是内部代号，闸门挡住的单换成和结论同一个叫法。
-                const reason = row.reasonCode === "EXCHANGE_DISCLOSURE_GATE_CLOSED" ? "风险披露闸门已阻断兑换，本单仍在队列" : row.reason;
+                // 后端原因写的是内部代号和「熔断」，闸门挡住、兑换暂停的单换成和结论同一个叫法。
+                const reason = row.reasonCode === "EXCHANGE_DISCLOSURE_GATE_CLOSED" ? "风险披露闸门已阻断兑换，本单仍在队列"
+                  : row.reasonCode === "EXCHANGE_SWAP_PAUSED" ? "兑换已暂停，本单仍在队列" : row.reason;
                 return (
                 <tr key={`${row.kind}-${row.exchangeNo}`}>
                   <Td><ExchangeNo value={row.exchangeNo} /></Td>
