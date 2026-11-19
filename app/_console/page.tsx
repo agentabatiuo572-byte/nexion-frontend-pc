@@ -231,6 +231,7 @@ export default function CommandCenter() {
       ...(business.error && blocks.newUsers ? ["注册用户"] : []),
       ...(business.error && blocks.activeUsers ? ["活跃用户"] : []),
       ...(flows.error ? ["资金进出"] : []),
+      ...(topup.error && !canShowBankReview ? ["今日充值"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...(exchangeQueue.error ? ["兑换排队"] : []),
       ...(referralRewards.error ? ["待结算新人"] : []),
