@@ -9,6 +9,7 @@ import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { permLabel, menuLabel } from "@/lib/admin/rbac-labels";
 import type { DisclosureVersionItemView } from "@/lib/admin/i-client";
+import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   buildA2FilterQuery,
@@ -403,10 +404,19 @@ function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
   };
 }
 
+function isDisclosureLanguageScope(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const scope = value.trim();
+  if (scope === "en" || scope === "zh+vi" || scope === "zh+vi+en") return true;
+  const codes = scope.split("+");
+  return scope.startsWith("zh+vi+en+") && new Set(codes).size === codes.length
+    && codes.slice(3).every(code => INTERFACE_LANGUAGES.some(language => language.code === code));
+}
+
 export function readA2DisclosureVersion(value: unknown, jurisdiction: string, version: string): DisclosureVersionItemView | undefined {
   const row = value as Partial<DisclosureVersionItemView> | null | undefined;
   if (row?.jurisdiction !== jurisdiction || row.version !== version || typeof row.status !== "string"
-    || (row.languageScope !== "zh+vi" && row.languageScope !== "zh+vi+en")
+    || !isDisclosureLanguageScope(row.languageScope)
     || typeof row.effectiveDate !== "string" || typeof row.requiresReack !== "boolean"
     || typeof row.zh !== "string" || typeof row.vi !== "string" || typeof row.en !== "string"
     || !Array.isArray(row.chapters) || row.chapters.length !== 7
@@ -415,7 +425,7 @@ export function readA2DisclosureVersion(value: unknown, jurisdiction: string, ve
       && typeof chapter.zh === "string" && typeof chapter.vi === "string" && typeof chapter.en === "string"
       && typeof chapter.zhBody === "string" && typeof chapter.viBody === "string" && typeof chapter.enBody === "string")
     || new Set(row.chapters.map((chapter) => chapter.no)).size !== 7) return undefined;
-  return row as DisclosureVersionItemView;
+  return { ...row, languageScope: row.languageScope.trim() } as DisclosureVersionItemView;
 }
 
 function readDisclosureCountryCodes(value: unknown): string[] | null | undefined {
