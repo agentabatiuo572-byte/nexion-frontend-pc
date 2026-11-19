@@ -307,7 +307,7 @@ export async function executeG3MarketChange(
       const result = acknowledgeTicket(ticket);
       if (ticket.status !== "pending") return result;
       return { acknowledgement: runtimeProposal
-        ? `已提交审批 · ${ticket.id} · 另一位有审批权限的超级管理员批准前，本次申请不改变价格`
+        ? `已提交审批 · ${ticket.id} · 批准前价格不变`
         : `已提交审批 · ${ticket.id} · 等待另一位有权超管批准，尚未生效`, ticketKey: key };
     }
     const active = await submitG3MarketCommand(command.request.path, command.request.method, command.request.body, key);
