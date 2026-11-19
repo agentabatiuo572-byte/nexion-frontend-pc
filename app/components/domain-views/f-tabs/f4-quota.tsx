@@ -5,7 +5,7 @@
  * 写入口和请求沿用旧页面：额度、回收走 shell 的 param/dispose 提交（A2 审批），申请规则走 ctx.updateF4AmbassadorPolicy 或 ctx.submitTeamApproval。
  */
 import { useState } from "react";
-import { AlertCircle, FileText, Package, Users } from "lucide-react";
+import { AlertCircle, FileText, Package, Plus, Users } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fold, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
@@ -13,6 +13,7 @@ import type { F4AmbassadorApplication, F4LeadershipPoolOverview } from "@/lib/ad
 import { count, decimalText, stamp, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
 import { f4Confirmation } from "./f4-confirmations";
+import { F4QuotaCreate } from "./f4-quota-create";
 
 type StageKey = "materials" | "business" | "finance" | "approve" | "approved" | "rejected" | "legacy";
 
@@ -63,6 +64,7 @@ function monthQuota(label: string) {
 
 export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F4LeadershipPoolOverview; onOpenMaterials: (application: F4AmbassadorApplication) => void }) {
   const [stageFilter, setStageFilter] = useState<StageKey | null>(null);
+  const [creating, setCreating] = useState(false);
   const canWrite = ctx.can("network_f4_write");
   const policy = ctx.f4AmbassadorPolicy;
   const total = data.quotaMonthlyStockTotal;
@@ -80,7 +82,9 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
 
   return (
     <div className="f4-stack">
+      {creating && <F4QuotaCreate data={data} skuOptions={ctx.skuOptions} skuLabels={ctx.skuLabels} onClose={() => setCreating(false)} />}
       <Panel title="购机名额" icon={Package} tone="role-2" sub="本月 · 台"
+        actions={canWrite && data.quotaRows.length > 0 ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>新建档位</Button> : undefined}
         explain={<>
           <p>每个商品每月最多卖多少台。已用按本月还在占用的记录合计；剩余 = 总量 − 已用，不会小于 0。门槛是买这个商品要满足的条件，不是订单金额。</p>
           <p>总量不是下面各商品额度直接相加：每个商品取额度和已用里较大的一个再加，用超了或额度读不到的按已用算。</p>
@@ -108,7 +112,8 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
               state={quota.monthlyQuota === null ? "failed" : quota.cap > 0 ? "ready" : "empty"} failedText="这个商品的月额度没读到" emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota ?? "—"} 台`} quiet />
             <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.monthlyQuota === undefined ? quota.cap : quota.monthlyQuota === null ? null : Number(quota.monthlyQuota))} 台</span>{quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
           </li>)}
-        </ul> : <BlockState state="empty" title="还没有设置购机名额" />}
+        </ul> : <BlockState state="empty" title="还没有设置购机名额" detail={canWrite ? "新建一档后，要另一位管理员批准才生效。" : undefined}
+          onRetry={canWrite ? () => setCreating(true) : undefined} retryLabel="新建档位" />}
         <KeyValues rows={[
           { key: "pro", label: "Pro 商品月额度", value: monthQuota(data.proUnlock), explain: "名字里带 Pro 的第一个商品，取额度和已用里较大的一个；额度读不到时按已用算。不是购买门槛。" },
           { key: "rack", label: "Rack 商品月额度", value: monthQuota(data.rackUnlock), explain: "名字里带 Rack 的第一个商品，取额度和已用里较大的一个；额度读不到时按已用算。不是购买门槛。" },

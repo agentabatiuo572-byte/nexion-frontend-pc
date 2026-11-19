@@ -1,0 +1,17 @@
+/* E1 托管机房：区域页签、机房表、编辑抽屉。颜色只用 --rd-* 令牌。 */
+.hc-area { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.hc-area-tabs { min-width: 0; }
+.hc-page { container-type: inline-size; }
+
+.hc-table td[data-grow] { min-width: 240px; }
+.hc-share { display: flex; align-items: center; gap: var(--rd-space-3); max-width: 420px; }
+.hc-share > :first-child { flex: 1 1 auto; min-width: 120px; }
+.hc-share-num { flex: none; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rd-text); }
+.hc-muted { color: var(--rd-text-3); }
+
+.hc-edit-table td { vertical-align: top; }
+.hc-edit-table td[data-grow] { min-width: 260px; }
+.hc-edit-table td[data-num] { padding-top: 14px; }
+.hc-edit-table .rd-check-item, .hc-edit-table label { padding-top: 6px; }
+.hc-field-error { display: block; margin-top: 4px; color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: 1.5; }
+.hc-help { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--rd-text-2); }
