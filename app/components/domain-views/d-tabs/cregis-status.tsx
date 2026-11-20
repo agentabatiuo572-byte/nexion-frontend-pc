@@ -985,7 +985,7 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
   const matches = !!evidence && String(evidence.cid) === cid;
   const own = caseRow ? String(caseRow.makerId) === String(adminId) : false;
   const sameEvidence = matches && !!caseRow && String(evidence?.evidenceHash) === String(caseRow.evidenceHash);
-  const proposeBlock = readBlock ?? d1PendingObjectReason("/cregis/review-cases", { cid: Number(cid) }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
+  const proposeBlock = readBlock ?? d1PendingObjectReason("/cregis/review-cases", { cid }) ?? (loading ? "正在核验证据" : !matches ? "证据没读到，先点「刷新证据」" : undefined);
   const decideBlock = own ? "发起人不能复核自己的工单" : readBlock ?? (caseRow ? d1PendingObjectReason(`/cregis/review-cases/${text(caseRow.id)}/decision`) : undefined) ?? (loading ? "正在核验证据" : !evidence ? "先点「刷新证据」" : !sameEvidence ? "证据和发起时不一致，不能复核" : undefined);
   const net = caseRow?.proposedNetAmount ?? evidence?.proposedNetAmount;
   const caseFacts = caseRow && <Facts>
@@ -1017,7 +1017,7 @@ function ReviewDrawer({ cid, caseRow, canManage, adminId, busy, readBlock, onClo
           action: "提交入金复核", title: "提交入金复核", confirmLabel: "提交审批", effect: approval,
           facts: <Facts><Fact k="净入账" lead tone="role-1" unit="USDT">{usdt(text(evidence.proposedNetAmount))}</Fact><Fact k="CID">{cid}</Fact><Fact k="用户">{text(evidence.userId)}</Fact><Fact k="证据摘要">{text(evidence.evidenceHash)}</Fact></Facts>,
           detail: `CID ${cid} · 证据 ${text(evidence.evidenceHash)}。需另一位管理员复核。`, completion: "提交后需另一位管理员复核才生效。",
-          path: "/cregis/review-cases", body: { cid: Number(cid), evidenceHash: evidence.evidenceHash } })}>提交入金复核</Button>} />
+          path: "/cregis/review-cases", body: { cid, evidenceHash: evidence.evidenceHash } })}>提交入金复核</Button>} />
       : undefined}>
     {error && <BlockState state="error" title="证据核验失败" detail={error} onRetry={() => void load()} />}
     <JudgmentPoints loading={loading} rows={[
