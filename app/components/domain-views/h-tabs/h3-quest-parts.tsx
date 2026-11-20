@@ -3,7 +3,6 @@
 /**
  * H3 用户任务管理的展示件：任务卡、首日时间线、每周奖励算式、阶段倍率格、App 上的样子、结果未知逐条提醒。
  * 只排版：数据由页面按后端读模型传进来，不发请求、不判权限、不改请求内容。
- * 选项表和取值小工具照旧页面 h3-quest-events.tsx 原样搬过来（那边的 H4 部分不动）。
  */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";

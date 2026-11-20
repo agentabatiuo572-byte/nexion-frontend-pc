@@ -10,7 +10,7 @@ import type { BusinessFormValue } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
-import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
   BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, Fold, IrreversibleTag, Notice, Panel, RatioBar, ReleaseModal, Stat, StatBand, StatusTag,
@@ -20,6 +20,7 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   fetchH3QuestEvents,
+  fetchH4EventCreateCandidates,
   updateH4LocalizedContent,
   updateH4EventFeatured,
   updateH4EventReward,
@@ -37,17 +38,17 @@ import {
 import type { H4Statistics } from "@/lib/admin/h4-statistics";
 import { fetchH4WheelDailyUsage, type H4WheelDailyUsage } from "@/lib/admin/h4-daily-usage";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { useUI } from "@/lib/store/ui";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
-import { fetchAdminRaffles, RAFFLE_READBACK_ADVANCED, type AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
-import H4GenesisRaffle from "./h4-genesis-raffle";
+import H4GenesisRaffle, { useH4RaffleReadback } from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
@@ -290,8 +291,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(EVENT_CONTENT_LOCALES);
   const [contentRefresh, setContentRefresh] = useState(0);
-  const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
+  const raffleReadback = useH4RaffleReadback(ctx);
   const [contentId, setContentId] = useState<string | null>(null);
+  const [loadingCreateCandidates, setLoadingCreateCandidates] = useState(false);
+  const createRequest = useRef(0);
+  const overviewReady = !!model && !error;
+  useLayoutEffect(() => {
+    setLoadingCreateCandidates(false);
+    return () => { createRequest.current += 1; };
+  }, [sub, adminId, canModuleWrite, overviewReady, contentId]);
   const localizedDraft = useRef<{ code: string; field: string; locale: LocaleCode; value: string; reason: string } | null>(null);
   const reloadH4Approvals = async () => {
     const owner = useAdminAuth.getState().session?.adminId;
@@ -549,10 +557,17 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     });
   };
 
-  const openCreateEvent = () => {
+  const openCreateEvent = async () => {
+    const request = ++createRequest.current;
+    const dialogs = useUI.getState().dialogs;
+    setLoadingCreateCandidates(true);
     const builtIds = new Set((model?.events ?? []).map((event) => event.id));
-    const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !builtIds.has(code));
-    const builtCount = H4_EVENT_RULE_CODES.size - freeCodes.length;
+    const createCandidates = await fetchH4EventCreateCandidates().catch(() => null);
+    if (request !== createRequest.current) return;
+    setLoadingCreateCandidates(false);
+    if (dialogs !== useUI.getState().dialogs || adminId !== useAdminAuth.getState().session?.adminId) return;
+    const usedCodes = [...H4_EVENT_RULE_CODES].filter((code) => createCandidates ? createCandidates.some((row) => row.id === code && row.occupied) : builtIds.has(code));
+    const freeCodes = [...H4_EVENT_RULE_CODES].filter((code) => !usedCodes.includes(code));
     openActionConfirm({ briefKind: "config",
       action: "新建活动",
       title: "新建既有活动",
@@ -564,9 +579,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "id", label: "活动编号", current: "", inputKind: "select", mustChoose: true, options: freeCodes, required: true,
-            help: freeCodes.length === 0 ? "内置活动都已建好，没有能新建的编号" : builtCount > 0 ? `已建的 ${builtCount} 个不在列表里` : undefined,
-            explain: "只能用这几个内置编号，建好后不能改。删除过的活动用过的编号这里看不出来，选了会被拒绝。" },
+          { key: "id", label: "活动编号", current: "", inputKind: "select", mustChoose: true, options: [...freeCodes, ...usedCodes], disabledOptions: usedCodes,
+            optionLabels: Object.fromEntries(usedCodes.map((code) => [code, `${code}（已用过）`])), required: true,
+            help: freeCodes.length === 0 ? "内置编号都用过了，不能再新建" : !createCandidates ? "没读到已删活动的编号，选到会被拒" : usedCodes.length > 0 ? `置灰的 ${usedCodes.length} 个已用过，删除的活动也算` : undefined,
+            explain: "只能用这几个内置编号，建好后不能改。" },
           { key: "name", label: "活动名", current: "", placeholder: "如 夏日狂欢", required: true, help: "后台看的名字，App 上不显示",
             explain: <><span className="rd-keep">App 上的活动名建好后到卡片底部</span><span className="rd-keep">「App 上的文字」按语言填，</span><span className="rd-keep">开放前要填齐英文和运营区域语言。</span></> },
           { key: "kind", label: "玩法", current: "discount", inputKind: "select", options: KIND_OPTIONS, optionLabels: Object.fromEntries(KIND_OPTIONS.map((kind) => [kind, KIND_LABEL(kind)])) },
@@ -978,12 +994,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const refreshAll = async () => {
     await reloadH4Approvals();
     await reload();
-    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), fetchAdminRaffles()]);
+    const [rules] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), raffleReadback.load(false, true)]);
     window.dispatchEvent(new CustomEvent("admin-h4-readback", { detail: {
       rules: rules.status === "fulfilled" ? rules.value : undefined, ruleError: rules.status === "rejected" ? displayAdminError(rules.reason) : "",
-      raffles: raffles.status === "fulfilled" ? raffles.value.rows : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
     } }));
-    if (raffles.status === "fulfilled" && raffles.value.advanced) toast(RAFFLE_READBACK_ADVANCED);
   };
   const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);
@@ -1063,7 +1077,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       action={h4Approvals === "error" ? <Button size="sm" onClick={() => void reloadH4Approvals()}>重试</Button> : <ul className="h4-pending">
         {h4Pending.map((row) => {
           const eventOp = ["h4_legacy_event_reward_update", "h4_legacy_event_open", "h4_event_rule_enable"].includes(row.operationCode ?? "");
-          const subject = eventOp ? eventName(row.obj) : row.operationCode === "h4_genesis_raffle_open" ? raffles?.find(draw => draw.id === row.obj)?.titleZh || row.obj
+          const subject = eventOp ? eventName(row.obj) : row.operationCode === "h4_genesis_raffle_open" ? raffleReadback.rows.find(draw => draw.id === row.obj)?.titleZh || row.obj
             : row.operationCode?.startsWith("h4_wheel_guard_") ? GUARD_NAME[row.obj] || row.obj : "转盘奖池";
           return <li key={row.id}>
             <span className="h4-pending-what"><b>{row.action} · {subject}</b></span>
@@ -1185,7 +1199,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     <div hidden={sub !== "events"} className="h4-tabpanel">
       <Panel id="h4l-events" title="既有活动" icon={Gift} tone="role-3" sub={`共 ${events.length} 个`}
         explain={<><p>平台内置的运营活动，一张卡一个：名称和说明、奖励、地区、时间、参与情况。卡底部改各语言的文字，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
-        actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateEvent:1"]), openCreateEvent)}>新建既有活动</Button>}>
+        actions={<Button icon={<Plus size={14} aria-hidden />} loading={loadingCreateCandidates} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={() => void openCreateEvent()}>新建既有活动</Button>}>
         {gapCount > 0 && <Notice tone="warn" title={`有 ${gapCount} 项翻译没填，点卡片底部的「翻译没填」逐格补`}>
           {gapsClosed.count > 0 && <p>补齐才能开放：{gapNames(gapsClosed.rows)}</p>}
           {gapsOpen.count > 0 && <p>已开放，App 上正显示英文或原文：{gapNames(gapsOpen.rows)}</p>}
@@ -1204,7 +1218,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
       <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
-      <H4GenesisRaffle ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRaffles} />
+      <H4GenesisRaffle ctx={ctx} readback={raffleReadback} onApprovalCompleted={reloadH4Approvals} />
     </div>
 
     <div hidden={sub !== "wheel"} className="h4-tabpanel">

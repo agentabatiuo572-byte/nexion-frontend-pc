@@ -1337,6 +1337,19 @@ const H4_SUPPORTED_EVENT_CODES = new Set([
   "evt-spring-spin", "evt-reinvest-bonus", "evt-onboarding-7d", "evt-black-friday", "evt-anniversary-spin",
 ]);
 
+type H4EventCreateCandidate = { id: string; occupied: boolean };
+
+export async function fetchH4EventCreateCandidates(): Promise<H4EventCreateCandidate[]> {
+  const result = await growthRequest<{ candidates: H4EventCreateCandidate[] }>("/quest-events/events/create-candidates");
+  const candidates = result?.candidates;
+  if (!Array.isArray(candidates) || candidates.length !== H4_SUPPORTED_EVENT_CODES.size
+    || candidates.some(row => !row || !H4_SUPPORTED_EVENT_CODES.has(row.id) || typeof row.occupied !== "boolean")
+    || new Set(candidates.map(row => row.id)).size !== candidates.length) {
+    throw new Error("活动编号读取失败");
+  }
+  return candidates;
+}
+
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
   if (!H4_SUPPORTED_EVENT_CODES.has(String(event.id ?? "").trim())) throw new Error("EVENT_CODE_UNSUPPORTED");
   return h4CommandRequest(

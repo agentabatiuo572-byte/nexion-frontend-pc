@@ -296,7 +296,6 @@ function deriveLeafSurfaces(leaves, files) {
   const fileSet = new Set(files);
   const overrides = new Map([
     ["A5", ["app/_console/platform/params-registry/params-registry-client.tsx"]],
-    ["H4", ["app/components/domain-views/h-tabs/h3-quest-events.tsx"]],
     ["I5", ["app/components/domain-views/i-tabs/i5-disclosures.tsx"]],
   ]);
   const result = new Map();
