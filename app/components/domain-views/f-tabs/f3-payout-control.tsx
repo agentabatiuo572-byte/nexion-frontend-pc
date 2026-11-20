@@ -141,9 +141,9 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const originalValue = direct?.f3Request?.value ?? original?.spec?.after ?? "";
   const expired = direct ? isRetryExpired(direct) : original ? !canRetryF3Proposal(original) : false;
   const recoveryText = direct
-    ? expired ? "超过 24 小时，只能查询原结果" : "提交结果未知，可能已经生效；先查询原结果"
+    ? expired ? "超过 24 小时，只能查询原结果" : "可能已经生效；先查询原结果"
     : original?.ticket?.status === "pending" ? `审批单在等${SUPER}批准；批准前不生效`
-      : expired ? "超过 24 小时，只能查询原审批单" : "没收到确定结果，可能已经建了审批单；先查询原结果";
+      : expired ? "超过 24 小时，只能查询原审批单" : "可能已经建了审批单；先查询原结果";
   // 框里填的原样值：被挡下的调高也要写在事实里、按钮写「提交审批」。amplifiesWhen 每次渲染都拿到原值，先于事实和按钮。
   const rawTyped = useRef<string | undefined>(undefined);
   const [typed, setTyped] = useState<string>();
