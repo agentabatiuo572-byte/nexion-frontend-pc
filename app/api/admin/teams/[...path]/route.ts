@@ -35,6 +35,9 @@ function backendPath(parts: string[], method: string) {
   if (parts.length === 1 && parts[0] === "binary") {
     return "/api/admin/teams/binary";
   }
+  if (method === "GET" && parts.length === 2 && parts[0] === "binary" && parts[1] === "current-period") {
+    return "/api/admin/teams/binary/current-period";
+  }
   if (
     parts.length === 2
     && parts[0] === "binary"
