@@ -11,6 +11,7 @@ import { useState } from "react";
 import { Button, Change, ConfigRow, Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { FViewCtx } from "./types";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { canRetryF3Proposal, f3ConfigSlot, listF3Proposals, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import { pendingF3ConfigWrite } from "@/lib/admin/f3-config-write";
 import { F3_AUTO_SETTLE_KEY, F3_PLATFORM_CAP_PCT_KEY, f3PlatformCapPct, planF3PayoutControl, type F3PayoutControlKey } from "@/lib/admin/f3-policy";
@@ -250,6 +251,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         const result = await ctx.submitF3PayoutControl(key, value, reason, snapshot).catch((error: unknown) => {
           // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
           if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」；查不到再按原请求重试，不会重复执行。" });
+          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；查不到可按原请求重试。" });
           throw error;
         });
         ctx.toast(result.kind === "unchanged" ? "和现在一样，没有提交"
