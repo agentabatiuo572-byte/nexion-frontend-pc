@@ -37,6 +37,7 @@ import { F3_MODE_EXPLAIN, F3BlockedAttempts, F3SettlementDrawer, f3ModeText } fr
 import { F3PairBar, F3RuleFlow, PERIOD_TEXT, RESIDUAL_TEXT, residualLabel, type F3Rule } from "./f3-rule";
 import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
+import { F3PeriodOverview } from "./f3-period-overview";
 
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
 const fmtInt = (value: number | null) => value === null ? "—" : Math.round(value).toLocaleString("en-US");
@@ -434,6 +435,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           sub={spillOn ? "自动分组已启用" : "自动分组已关闭"}
           explain="最近 7 天结算时自动补进 A 组或 B 组的成员数，按分组时间算；不含手动分组。" />
       </StatBand>
+
+      <F3PeriodOverview ctx={ctx} />
 
       <Panel title="平衡奖励怎么算" icon={Scale} tone="role-4" sub="按现在的设置"
         explain="用现在的设置画：门槛、比例和周期在下面「结算设置」改，每日上限跟随运营阶段设置。改了只影响之后的结算，已经记账的不重算。">
